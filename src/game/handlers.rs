@@ -4751,6 +4751,13 @@ async fn send_lookat_npc_info(state: &mut GameState, conn_id: ConnectionId, npc_
 
 /// Actually cast the pending spell at the target coordinates.
 /// Called from handle_right_click when pending_spell > 0.
+///
+/// VB6 flow (modHechizos.bas LanzarHechizo):
+///   1. Basic checks (dead, paralyzed, weapon, mana, skill)
+///   2. Target validation by TargetType — if invalid → message, EXIT, NO mana consumed
+///   3. HandleHechizo → specific validations (self-attack, PuedeAtacar)
+///   4. InfoHechizo (FX + messages) — only if all checks pass
+///   5. Consume mana — only if spell succeeded (b = True)
 async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => {
@@ -4761,17 +4768,22 @@ async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) {
                 u.pos_map, u.pos_x, u.pos_y, u.char_index,
                 u.dead, u.paralyzed, u.min_mana,
                 spell_id, u.level, u.target_x, u.target_y, u.target_map,
-                u.target_user, u.target_npc as usize,
+                u.target_user, u.target_npc as usize, u.privileges,
             )
         }
         _ => return,
     };
     let (map, x, y, char_index, dead, paralyzed, min_mana,
          spell_id, _level, target_x, target_y, _target_map,
-         target_user_conn, target_npc_idx) = user_data;
+         target_user_conn, target_npc_idx, privileges) = user_data;
 
     if dead || paralyzed || spell_id == 0 {
         return;
+    }
+
+    // Clear pending spell immediately
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.pending_spell = 0;
     }
 
     // Look up spell data
@@ -4780,163 +4792,126 @@ async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
 
-    // Check mana
+    // ===== STEP 1: PuedeLanzar — mana, skill checks (VB6 lines 269-309) =====
     if min_mana < spell.mana_requerido {
-        let pkt = format!("P|No tienes suficiente mana{}", font_types::INFO);
-        state.send_to(conn_id, &pkt).await;
+        state.send_to(conn_id, "||18").await; // Not enough mana
         return;
     }
-
-    // Check skill
     if spell.min_skill > 0 {
-        let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0); // SK6 = Magia
+        let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0);
         if magic_skill < spell.min_skill {
-            let pkt = format!("P|No tenes suficiente skill para lanzar este hechizo{}", font_types::INFO);
-            state.send_to(conn_id, &pkt).await;
+            state.send_to(conn_id, "||834").await; // Magic skill too low
             return;
         }
     }
 
-    // Determine target: use the click target (user/NPC on tile, or self)
-    let target_conn = if target_user_conn != 0 {
-        // User target from LookatTile (LC click)
+    // ===== STEP 2: Resolve targets from world grid =====
+    let target_conn: Option<ConnectionId> = if target_user_conn != 0 {
         Some(target_user_conn)
     } else {
-        // Check for user on clicked tile
+        // Check tile and tile+1 for user (VB6 LookatTile checks Y and Y+1)
         state.world.grid(map)
-            .and_then(|g| g.tile(target_x, target_y))
-            .and_then(|t| t.user_conn)
+            .and_then(|g| {
+                g.tile(target_x, target_y).and_then(|t| t.user_conn)
+                    .or_else(|| g.tile(target_x, target_y + 1).and_then(|t| t.user_conn))
+            })
+    };
+    let target_npc = if target_npc_idx > 0 {
+        Some(target_npc_idx)
+    } else {
+        // Check tile for NPC
+        state.npc_at_tile(map, target_x, target_y)
+            .or_else(|| state.npc_at_tile(map, target_x, target_y + 1))
     };
 
-    // VB6: If healing a USER with full HP → send ||145 and abort (does NOT apply to NPCs)
-    if spell.sube_hp == 1 {
-        let target_id = target_conn.unwrap_or(conn_id);
-        // Only check for user targets (not NPCs)
-        if target_npc_idx == 0 || target_conn.is_some() {
-            let full_hp = state.users.get(&target_id)
-                .map(|u| u.min_hp >= u.max_hp)
-                .unwrap_or(false);
-            if full_hp {
-                state.send_to(conn_id, "||145").await;
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.pending_spell = 0;
-                }
+    let has_user_target = target_conn.is_some();
+    let has_npc_target = target_npc.is_some();
+
+    // ===== STEP 3: Target validation by TargetType (VB6 lines 632-695) =====
+    // VB6: Select Case Hechizos(uh).Target
+    use crate::data::spells::TargetType;
+    match spell.target {
+        TargetType::UserOnly => {
+            // Needs a user target
+            if !has_user_target {
+                state.send_to(conn_id, "||25").await; // No valid user target
                 return;
             }
         }
-    }
-
-    // Consume mana (after validation checks pass)
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        user.min_mana -= spell.mana_requerido;
-        user.pending_spell = 0;
-    }
-    send_stats_mana(state, conn_id).await;
-
-    // VB6: DecirPalabrasMagicas sends N| (Yell) with vbCyan (&HFFFF00 = 16776960)
-    if !spell.palabras_magicas.is_empty() {
-        let magic_pkt = format!("N|16776960\u{00B0}{}\u{00B0}{}", spell.palabras_magicas, char_index.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &magic_pkt).await;
-    }
-
-    // Determine target char_index for FX
-    let target_char: i32 = if let Some(tid) = target_conn {
-        state.users.get(&tid).map(|u| u.char_index.0).unwrap_or(char_index.0)
-    } else if target_npc_idx > 0 {
-        state.get_npc(target_npc_idx).map(|n| n.char_index.0).unwrap_or(char_index.0)
-    } else {
-        char_index.0
-    };
-
-    // Get target position for area broadcast (VB6 sends to target's area)
-    let (fx_map, fx_x, fx_y) = if let Some(tid) = target_conn {
-        state.users.get(&tid).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((map, x, y))
-    } else if target_npc_idx > 0 {
-        state.get_npc(target_npc_idx).map(|n| (n.map, n.x, n.y)).unwrap_or((map, x, y))
-    } else {
-        (map, x, y)
-    };
-
-    // VB6 order: TW (sound) first, then CFX (visual)
-    if spell.wav > 0 {
-        let snd_pkt = format!("TW{}", spell.wav);
-        state.send_data(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
-    }
-
-    if spell.fx_grh > 0 {
-        let fx_pkt = format!("CFX{},{},{}", target_char, spell.fx_grh, spell.loops);
-        info!("[SPELL-FX] Sending '{}' to area map={} x={} y={} | target_npc_idx={} target_user_conn={} caster_ci={}",
-              fx_pkt, fx_map, fx_x, fx_y, target_npc_idx, target_user_conn, char_index.0);
-        state.send_data(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt).await;
-    }
-
-    // Log spell cast
-    let caster_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    info!("[SPELL] '{}' cast '{}'", caster_name, spell.nombre);
-
-    // ===== VB6 InfoHechizo: Console messages =====
-    // N| messages with ~255~0~0~1 (red, bold)
-    let spell_hechizero_msg = spell.hechizero_msg.clone();
-    let spell_target_msg = spell.target_msg.clone();
-    let spell_propio_msg = spell.propio_msg.clone();
-
-    if let Some(tid) = target_conn {
-        if tid != conn_id {
-            // Casting on another user
-            let target_name = state.users.get(&tid).map(|u| u.char_name.clone()).unwrap_or_default();
-            if !spell_hechizero_msg.is_empty() {
-                let msg = format!("N|{} {}~255~0~0~1", spell_hechizero_msg, target_name);
-                state.send_to(conn_id, &msg).await;
-            }
-            if !spell_target_msg.is_empty() {
-                let msg = format!("N|{} {}~255~0~0~1", caster_name, spell_target_msg);
-                state.send_to(tid, &msg).await;
-            }
-        } else {
-            // Casting on self
-            if !spell_propio_msg.is_empty() {
-                let msg = format!("N|{}~255~0~0~1", spell_propio_msg);
-                state.send_to(conn_id, &msg).await;
+        TargetType::NpcOnly => {
+            // Needs an NPC target
+            if !has_npc_target {
+                state.send_to(conn_id, "||29").await; // No valid NPC target
+                return;
             }
         }
-    } else if target_npc_idx > 0 {
-        // Casting on NPC
-        if !spell_hechizero_msg.is_empty() {
-            let msg = format!("N|{} la criatura.~255~0~0~1", spell_hechizero_msg);
-            state.send_to(conn_id, &msg).await;
+        TargetType::UserAndNpc => {
+            // Needs either user or NPC
+            if !has_user_target && !has_npc_target {
+                state.send_to(conn_id, "||25").await; // No valid target
+                return;
+            }
         }
-    } else {
-        // No specific target (self-cast terrain/etc)
-        if !spell_propio_msg.is_empty() {
-            let msg = format!("N|{}~255~0~0~1", spell_propio_msg);
-            state.send_to(conn_id, &msg).await;
+        TargetType::Self_ => {
+            // Self-only — VB6: TargetUser must equal userindex
+            // Force target to self (ignore what was clicked)
+        }
+        TargetType::Terrain | TargetType::Unknown => {
+            // Terrain spells (invocations, teleport) — no target needed
         }
     }
 
-    // Determine if spell is offensive (cannot self-cast)
-    let is_offensive = spell.sube_hp == 2 || spell.paraliza || spell.inmoviliza || spell.envenena || spell.maldicion;
+    // Determine if spell is offensive
+    let is_offensive = spell.sube_hp == 2 || spell.paraliza || spell.inmoviliza
+        || spell.envenena || spell.maldicion;
 
-    // Apply effects based on spell type
-    if target_npc_idx > 0 && target_conn.is_none() {
-        // ===== NPC target: apply spell effects to NPC =====
+    // ===== STEP 4: Specific spell validations (inside HandleHechizo) =====
+
+    // Route to NPC or User handling
+    if has_npc_target && !has_user_target {
+        // ===== NPC TARGET =====
+        let npc_idx = target_npc.unwrap();
+
+        // VB6: InfoHechizo — FX + messages (sent BEFORE mana consumption)
+        send_spell_info_npc(state, conn_id, npc_idx, &spell, char_index).await;
+
+        // Apply effect
         match spell.tipo {
             crate::data::spells::SpellType::Properties => {
-                apply_spell_properties_npc(state, conn_id, target_npc_idx, &spell).await;
+                apply_spell_properties_npc(state, conn_id, npc_idx, &spell).await;
             }
             crate::data::spells::SpellType::Status => {
-                apply_spell_status_npc(state, conn_id, target_npc_idx, &spell).await;
+                apply_spell_status_npc(state, conn_id, npc_idx, &spell).await;
             }
-            _ => {
-                info!("[SPELL] Spell type {:?} on NPC not applicable", spell.tipo);
-            }
+            _ => {}
         }
-    } else if let Some(target_id) = target_conn {
-        // ===== Explicit user target =====
-        // VB6: Offensive spells on self are blocked (can't damage/paralyze/poison yourself)
+
+        // Consume mana (VB6: only if b=True, after HandleHechizoNPC)
+        consume_spell_mana(state, conn_id, &spell, privileges).await;
+    } else if has_user_target {
+        // ===== USER TARGET =====
+        let target_id = target_conn.unwrap();
+
+        // VB6: Self-attack check (HechizoEstadoUsuario line 725, HechizoPropUsuario line 1425)
         if is_offensive && target_id == conn_id {
-            state.send_to(conn_id, "||31").await;
-            return;
+            state.send_to(conn_id, "||31").await; // Can't attack yourself
+            return; // NO mana consumed, NO FX
         }
+
+        // VB6: Healing full HP check (||145)
+        if spell.sube_hp == 1 {
+            let full_hp = state.users.get(&target_id)
+                .map(|u| u.min_hp >= u.max_hp).unwrap_or(false);
+            if full_hp {
+                state.send_to(conn_id, "||145").await;
+                return;
+            }
+        }
+
+        // VB6: InfoHechizo — FX + messages (sent BEFORE mana consumption)
+        send_spell_info_user(state, conn_id, target_id, &spell, char_index).await;
+
+        // Apply effects
         match spell.tipo {
             crate::data::spells::SpellType::Properties => {
                 apply_spell_properties(state, conn_id, target_id, &spell).await;
@@ -4948,40 +4923,149 @@ async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) {
             }
             _ => {}
         }
+
+        // Consume mana
+        consume_spell_mana(state, conn_id, &spell, privileges).await;
     } else {
-        // ===== No target on tile — self-cast only if beneficial =====
-        if is_offensive {
-            // VB6: Offensive spell with no valid target → nothing happens
-            // (mana already consumed, but no effect — matches VB6 behavior)
-            return;
-        }
-        match spell.tipo {
-            crate::data::spells::SpellType::Properties => {
-                apply_spell_properties(state, conn_id, conn_id, &spell).await;
-                apply_spell_buffs(state, conn_id, conn_id, &spell).await;
+        // ===== SELF / TERRAIN (no external target) =====
+        match spell.target {
+            TargetType::Self_ => {
+                // Self-only spell — beneficial only
+                send_spell_info_user(state, conn_id, conn_id, &spell, char_index).await;
+                match spell.tipo {
+                    crate::data::spells::SpellType::Properties => {
+                        apply_spell_properties(state, conn_id, conn_id, &spell).await;
+                        apply_spell_buffs(state, conn_id, conn_id, &spell).await;
+                    }
+                    crate::data::spells::SpellType::Status => {
+                        apply_spell_status(state, conn_id, conn_id, &spell).await;
+                        apply_spell_buffs(state, conn_id, conn_id, &spell).await;
+                    }
+                    _ => {}
+                }
+                consume_spell_mana(state, conn_id, &spell, privileges).await;
             }
-            crate::data::spells::SpellType::Status => {
-                apply_spell_status(state, conn_id, conn_id, &spell).await;
-                apply_spell_buffs(state, conn_id, conn_id, &spell).await;
-            }
-            crate::data::spells::SpellType::Invocation => {
-                apply_spell_invocation(state, conn_id, &spell).await;
-            }
-            crate::data::spells::SpellType::SummonPet => {
-                apply_spell_summon_pet(state, conn_id, &spell).await;
-            }
-            crate::data::spells::SpellType::Teleport => {
-                apply_spell_teleport(state, conn_id, &spell).await;
+            TargetType::Terrain | TargetType::Unknown => {
+                // Terrain spells (invocation, summon, teleport)
+                match spell.tipo {
+                    crate::data::spells::SpellType::Invocation => {
+                        apply_spell_invocation(state, conn_id, &spell).await;
+                    }
+                    crate::data::spells::SpellType::SummonPet => {
+                        apply_spell_summon_pet(state, conn_id, &spell).await;
+                    }
+                    crate::data::spells::SpellType::Teleport => {
+                        apply_spell_teleport(state, conn_id, &spell).await;
+                    }
+                    _ => {}
+                }
+                consume_spell_mana(state, conn_id, &spell, privileges).await;
             }
             _ => {
-                info!("[SPELL] Spell type {:?} not yet fully implemented", spell.tipo);
+                // Should have been caught by Step 3 target validation
+                return;
             }
         }
     }
+}
 
-    // Update caster mana & stamina
+/// Consume mana and stamina after a successful spell cast.
+/// VB6: Only consumed if b=True (spell succeeded), and only for normal users (not GMs).
+async fn consume_spell_mana(state: &mut GameState, conn_id: ConnectionId,
+                             spell: &crate::data::spells::SpellData, privileges: i32) {
+    if privileges == 0 {
+        // Normal user — consume mana and stamina
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_mana = (user.min_mana - spell.mana_requerido).max(0);
+            user.min_sta = (user.min_sta - spell.sta_requerido).max(0);
+        }
+    }
     send_stats_mana(state, conn_id).await;
     send_stats_sta(state, conn_id).await;
+}
+
+/// VB6: InfoHechizo — Send FX, sound, and chat messages for a spell cast on a USER.
+async fn send_spell_info_user(state: &mut GameState, caster_id: ConnectionId,
+                               target_id: ConnectionId,
+                               spell: &crate::data::spells::SpellData,
+                               caster_ci: crate::game::world::CharIndex) {
+    let caster_name = state.users.get(&caster_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let (map, x, y) = state.users.get(&caster_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
+
+    // Magic words
+    if !spell.palabras_magicas.is_empty() {
+        let pkt = format!("N|16776960\u{00B0}{}\u{00B0}{}", spell.palabras_magicas, caster_ci.0);
+        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+    }
+
+    // Target char_index for FX
+    let target_ci = state.users.get(&target_id).map(|u| u.char_index.0).unwrap_or(caster_ci.0);
+    let (fx_map, fx_x, fx_y) = state.users.get(&target_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((map, x, y));
+
+    // FX + Sound
+    if spell.fx_grh > 0 {
+        let fx_pkt = format!("CFX{},{},{}", target_ci, spell.fx_grh, spell.loops);
+        state.send_data(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt).await;
+    }
+    if spell.wav > 0 {
+        let snd_pkt = format!("TW{}", spell.wav);
+        state.send_data(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
+    }
+
+    // Console messages
+    if target_id != caster_id {
+        let target_name = state.users.get(&target_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        if !spell.hechizero_msg.is_empty() {
+            let msg = format!("N|{} {}~255~0~0~1", spell.hechizero_msg, target_name);
+            state.send_to(caster_id, &msg).await;
+        }
+        if !spell.target_msg.is_empty() {
+            let msg = format!("N|{} {}~255~0~0~1", caster_name, spell.target_msg);
+            state.send_to(target_id, &msg).await;
+        }
+    } else {
+        if !spell.propio_msg.is_empty() {
+            let msg = format!("N|{}~255~0~0~1", spell.propio_msg);
+            state.send_to(caster_id, &msg).await;
+        }
+    }
+}
+
+/// VB6: InfoHechizo — Send FX, sound, and chat messages for a spell cast on an NPC.
+async fn send_spell_info_npc(state: &mut GameState, caster_id: ConnectionId,
+                              npc_idx: usize,
+                              spell: &crate::data::spells::SpellData,
+                              caster_ci: crate::game::world::CharIndex) {
+    let (map, x, y) = state.users.get(&caster_id)
+        .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
+
+    // Magic words
+    if !spell.palabras_magicas.is_empty() {
+        let pkt = format!("N|16776960\u{00B0}{}\u{00B0}{}", spell.palabras_magicas, caster_ci.0);
+        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+    }
+
+    // NPC char_index for FX
+    let npc_ci = state.get_npc(npc_idx).map(|n| n.char_index.0).unwrap_or(0);
+    let (fx_map, fx_x, fx_y) = state.get_npc(npc_idx)
+        .map(|n| (n.map, n.x, n.y)).unwrap_or((map, x, y));
+
+    if spell.fx_grh > 0 {
+        let fx_pkt = format!("CFX{},{},{}", npc_ci, spell.fx_grh, spell.loops);
+        state.send_data(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt).await;
+    }
+    if spell.wav > 0 {
+        let snd_pkt = format!("TW{}", spell.wav);
+        state.send_data(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
+    }
+
+    // Console message
+    if !spell.hechizero_msg.is_empty() {
+        let msg = format!("N|{} la criatura.~255~0~0~1", spell.hechizero_msg);
+        state.send_to(caster_id, &msg).await;
+    }
 }
 
 /// Apply property-type spell effects to an NPC (damage/heal).
