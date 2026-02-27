@@ -4913,6 +4913,9 @@ async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) {
         }
     }
 
+    // Determine if spell is offensive (cannot self-cast)
+    let is_offensive = spell.sube_hp == 2 || spell.paraliza || spell.inmoviliza || spell.envenena || spell.maldicion;
+
     // Apply effects based on spell type
     if target_npc_idx > 0 && target_conn.is_none() {
         // ===== NPC target: apply spell effects to NPC =====
@@ -4927,18 +4930,39 @@ async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) {
                 info!("[SPELL] Spell type {:?} on NPC not applicable", spell.tipo);
             }
         }
-    } else {
-        // ===== User target =====
+    } else if let Some(target_id) = target_conn {
+        // ===== Explicit user target =====
+        // VB6: Offensive spells on self are blocked (can't damage/paralyze/poison yourself)
+        if is_offensive && target_id == conn_id {
+            state.send_to(conn_id, "||31").await;
+            return;
+        }
         match spell.tipo {
             crate::data::spells::SpellType::Properties => {
-                let target_id = target_conn.unwrap_or(conn_id);
                 apply_spell_properties(state, conn_id, target_id, &spell).await;
                 apply_spell_buffs(state, conn_id, target_id, &spell).await;
             }
             crate::data::spells::SpellType::Status => {
-                let target_id = target_conn.unwrap_or(conn_id);
                 apply_spell_status(state, conn_id, target_id, &spell).await;
                 apply_spell_buffs(state, conn_id, target_id, &spell).await;
+            }
+            _ => {}
+        }
+    } else {
+        // ===== No target on tile — self-cast only if beneficial =====
+        if is_offensive {
+            // VB6: Offensive spell with no valid target → nothing happens
+            // (mana already consumed, but no effect — matches VB6 behavior)
+            return;
+        }
+        match spell.tipo {
+            crate::data::spells::SpellType::Properties => {
+                apply_spell_properties(state, conn_id, conn_id, &spell).await;
+                apply_spell_buffs(state, conn_id, conn_id, &spell).await;
+            }
+            crate::data::spells::SpellType::Status => {
+                apply_spell_status(state, conn_id, conn_id, &spell).await;
+                apply_spell_buffs(state, conn_id, conn_id, &spell).await;
             }
             crate::data::spells::SpellType::Invocation => {
                 apply_spell_invocation(state, conn_id, &spell).await;
