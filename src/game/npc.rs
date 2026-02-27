@@ -104,6 +104,8 @@ pub struct NpcState {
 
     // Status effects
     pub veneno: bool,   // Poisons on hit
+    pub paralyzed: bool,
+    pub counter_paralisis: i32,  // Ticks remaining (decremented in game tick)
 
     // Spells
     pub lanza_spells: i32,
@@ -217,6 +219,8 @@ impl NpcState {
             name: data.name.clone(),
             desc: data.desc.clone(),
             veneno: data.veneno,
+            paralyzed: false,
+            counter_paralisis: 0,
             lanza_spells: data.lanza_spells,
             spells: data.spells.clone(),
             maestro_user: None,

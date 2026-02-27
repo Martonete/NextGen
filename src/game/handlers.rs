@@ -5019,6 +5019,7 @@ async fn apply_spell_status_npc(
     npc_idx: usize,
     spell: &crate::data::spells::SpellData,
 ) {
+    let paralisis_interval = state.config.intervalo_paralizado;
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         if spell.envenena {
             npc.veneno = true;
@@ -5026,7 +5027,11 @@ async fn apply_spell_status_npc(
         if spell.cura_veneno {
             npc.veneno = false;
         }
-        // NPC paralysis is not tracked in current NpcState (would need field)
+        if spell.paraliza {
+            npc.paralyzed = true;
+            npc.counter_paralisis = paralisis_interval;
+        }
+        // VB6: RemoverParalisis does NOT work on NPCs (only users)
     }
 }
 
@@ -7050,6 +7055,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
         .collect();
 
     for npc_idx in active_npcs {
+        // Skip paralyzed NPCs — they can't move or attack
+        let is_paralyzed = state.get_npc(npc_idx).map(|n| n.paralyzed).unwrap_or(false);
+        if is_paralyzed { continue; }
+
         let npc_data = match state.get_npc(npc_idx) {
             Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target,
                         n.lanza_spells, n.spells.clone(), n.npc_type, n.attacked_by.clone(),
@@ -8302,6 +8311,19 @@ pub async fn tick_intervals(state: &mut GameState) {
     // Send PARADOK to users who just got unparalyzed
     for conn_id in unparalyze {
         state.send_to(conn_id, "PARADOK").await;
+    }
+
+    // NPC paralysis countdown (same 40ms tick as user paralysis)
+    for slot in state.npcs.iter_mut() {
+        if let Some(npc) = slot.as_mut() {
+            if npc.paralyzed {
+                if npc.counter_paralisis > 0 {
+                    npc.counter_paralisis -= 1;
+                } else {
+                    npc.paralyzed = false;
+                }
+            }
+        }
     }
 }
 
