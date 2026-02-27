@@ -6386,6 +6386,11 @@ async fn user_attack_npc(
     let damage = ((base_dmg as f64) * class_mod) as i32;
     let damage = damage.max(1);
 
+    // Check attacker GM status BEFORE taking mutable NPC borrow
+    let attacker_is_gm = state.users.get(&conn_id)
+        .map(|u| u.privileges > 0)
+        .unwrap_or(false);
+
     // Apply damage to NPC
     let (npc_dead, npc_give_exp, npc_give_gld_min, npc_give_gld_max) = {
         match state.get_npc_mut(npc_idx) {
@@ -6396,16 +6401,19 @@ async fn user_attack_npc(
                 npc.damage_received.push((conn_id, damage));
 
                 // NpcAtacado trigger (VB6): if NPC is not hostile, switch to defense mode
-                if !npc.hostile && npc.movement != npc::AI_DEFENSE {
-                    npc.old_movement = npc.movement;
-                    npc.old_hostile = npc.hostile;
-                    npc.movement = npc::AI_DEFENSE;
-                    npc.hostile = true;
-                    npc.attacked_by = attacker_name.to_string();
-                    npc.target = Some(conn_id);
-                } else if npc.target.is_none() {
-                    // Already hostile — just set target
-                    npc.target = Some(conn_id);
+                // GMs (privileges > 0) should NOT become NPC targets
+                if !attacker_is_gm {
+                    if !npc.hostile && npc.movement != npc::AI_DEFENSE {
+                        npc.old_movement = npc.movement;
+                        npc.old_hostile = npc.hostile;
+                        npc.movement = npc::AI_DEFENSE;
+                        npc.hostile = true;
+                        npc.attacked_by = attacker_name.to_string();
+                        npc.target = Some(conn_id);
+                    } else if npc.target.is_none() {
+                        // Already hostile — just set target
+                        npc.target = Some(conn_id);
+                    }
                 }
 
                 let dead = npc.min_hp <= 0;
@@ -6425,7 +6433,7 @@ async fn user_attack_npc(
     state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
 
     // Blood FX on NPC
-    let fx_pkt = format!("CFX{},{},{}", npc_char_index.0, 1, 0); // FX 1 = blood
+    let fx_pkt = format!("CFX{},{},{}", npc_char_index.0, 14, 0); // VB6: FXSANGRE = 14
     state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
     if npc_dead {
@@ -6830,8 +6838,8 @@ async fn npc_attack_user(state: &mut GameState, npc_idx: usize, target_conn: Con
     let n2_pkt = format!("N2{},{}", body_part, damage);
     state.send_to(target_conn, &n2_pkt).await;
 
-    // Blood FX on player
-    let fx_pkt = format!("CFX{},{},{}", u_char_index.0, 1, 0);
+    // Blood FX on player (VB6: FXSANGRE = 14)
+    let fx_pkt = format!("CFX{},{},{}", u_char_index.0, 14, 0);
     state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &fx_pkt).await;
 
     // Impact sound
@@ -7117,7 +7125,11 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 if !attacked {
                     // Scan vision range for nearest player
-                    let chase_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                    // Filter out GM targets — if existing target is a GM, discard it
+                    let valid_target = target.filter(|t| {
+                        state.users.get(t).map(|u| u.privileges == 0).unwrap_or(false)
+                    });
+                    let chase_target = valid_target.or_else(|| find_nearest_player(state, map, x, y));
 
                     if let Some(target_conn) = chase_target {
                         if let Some(n) = state.get_npc_mut(npc_idx) {
@@ -7177,7 +7189,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
             npc::AI_DEFENSE => {
                 // VB6 AI_AI_Defense — follow attacker (attacked_by) within 15 tiles
                 // Adjacent → melee. Far → spell + chase. Gone → restore_old_movement.
-                let attacker_conn = find_player_by_name(state, map, x, y, &attacked_by);
+                // Filter out GM attackers — NPCs should not chase GMs
+                let attacker_conn = find_player_by_name(state, map, x, y, &attacked_by)
+                    .filter(|c| state.users.get(c).map(|u| u.privileges == 0).unwrap_or(false));
 
                 if let Some(target_conn) = attacker_conn {
                     if let Some(n) = state.get_npc_mut(npc_idx) {
