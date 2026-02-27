@@ -1969,9 +1969,8 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                 }
                 // Collect equipped item obj indices + saved state before mutation
                 let equip_info = state.users.get(&conn_id).map(|u| {
-                    let get_inv_obj = |slot: i32| -> i32 {
-                        let s = slot as usize;
-                        if s >= 1 && s <= u.inventory.len() { u.inventory[s - 1].obj_index } else { 0 }
+                    let get_inv_obj = |slot: usize| -> i32 {
+                        if slot >= 1 && slot <= u.inventory.len() { u.inventory[slot - 1].obj_index } else { 0 }
                     };
                     (
                         get_inv_obj(u.equip.armor),
@@ -1984,11 +1983,11 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                     )
                 });
                 if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, race, gender)) = equip_info {
-                    // Look up appearance from object database
-                    let armor_body = if armor_obj > 0 { state.game_data.objects.get(&(armor_obj as usize)).map(|o| o.num_ropaje).unwrap_or(0) } else { 0 };
-                    let weapon_anim = if weapon_obj > 0 { state.game_data.objects.get(&(weapon_obj as usize)).map(|o| o.weapon_anim).unwrap_or(0) } else { 0 };
-                    let shield_anim = if shield_obj > 0 { state.game_data.objects.get(&(shield_obj as usize)).map(|o| o.shield_anim).unwrap_or(0) } else { 0 };
-                    let casco_anim = if helmet_obj > 0 { state.game_data.objects.get(&(helmet_obj as usize)).map(|o| o.casco_anim).unwrap_or(0) } else { 0 };
+                    // Look up appearance from object database (1-based index via get_object)
+                    let armor_body = state.get_object(armor_obj).map(|o| o.num_ropaje).unwrap_or(0);
+                    let weapon_anim = state.get_object(weapon_obj).map(|o| o.weapon_anim).unwrap_or(0);
+                    let shield_anim = state.get_object(shield_obj).map(|o| o.shield_anim).unwrap_or(0);
+                    let casco_anim = state.get_object(helmet_obj).map(|o| o.casco_anim).unwrap_or(0);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.navigating = false;
                         // VB6 DoNavega: Restore original head
