@@ -600,6 +600,7 @@ async fn connect_user(
         user.dead = char_data.dead;
         user.body = char_data.body;
         user.head = char_data.head;
+        user.old_head = char_data.head; // VB6 OrigChar.Head — for boat/invis restore
 
         // Safety: if charfile has ghost body (8/500) but dead=false, restore naked body.
         // This can happen from a bad revive that didn't restore body before saving.
@@ -836,8 +837,18 @@ async fn connect_user(
     // --- PHASE 10c: NAVEG if navigating (VB6 line 1734) ---
     // NAVEG is a toggle — client starts with UserNavegando=False,
     // so we send one NAVEG to set it to True if the char was navigating.
+    // VB6 TCP.bas lines 1515-1521: Also set boat appearance on login.
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        if user.navigating {
+            user.head = 0;
+            user.weapon_anim = 0;
+            user.shield_anim = 0;
+            user.casco_anim = 0;
+            // Body should already be boat ropaje from charfile save
+        }
+    }
     if let Some(user) = state.users.get(&conn_id) {
-        if user.navegando {
+        if user.navigating {
             state.send_to(conn_id, "NAVEG").await;
         }
     }
@@ -968,10 +979,17 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let new_y = old_y + dy;
 
     // Check map bounds and blocked
-    // VB6: When navigating (boat), water tiles (blocked=true) become passable
-    // and land tiles (blocked=false) become impassable — logic is inverted.
+    // VB6 LegalPos: When navigating (PuedeAgua=True), only water tiles are legal.
+    // When walking normally, water tiles are impassable.
     let tile_blocked = state.is_tile_blocked(map, new_x, new_y);
-    let blocked = if navigating { !tile_blocked } else { tile_blocked };
+    let has_water = state.hay_agua(map, new_x, new_y);
+    let blocked = if navigating {
+        // On boat: can only move on water tiles, blocked tiles still block
+        tile_blocked || !has_water
+    } else {
+        // On foot: blocked tiles and water tiles are impassable
+        tile_blocked || has_water
+    };
     let legal = state.world.is_legal_pos(map, new_x, new_y, blocked);
 
     // Walk movement — don't log (too frequent)
@@ -1937,7 +1955,7 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                 _ => return,
             };
             if is_navigating {
-                // Unequip boat — must be adjacent to land (non-blocked, non-water tile)
+                // Dismount boat — must be adjacent to land (non-blocked, non-water tile)
                 let has_land_nearby = (1..=4).any(|h| {
                     let (dx, dy) = world::heading_to_offset(h);
                     let nx = user_x + dx;
@@ -1949,26 +1967,60 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                     state.send_to(conn_id, &msg).await;
                     return;
                 }
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    u.navigating = false;
-                    let race = u.race.clone();
-                    let gender = u.gender.to_string();
-                    u.body = naked_body(&race, &gender);
+                // Collect equipped item obj indices + saved state before mutation
+                let equip_info = state.users.get(&conn_id).map(|u| {
+                    let get_inv_obj = |slot: i32| -> i32 {
+                        let s = slot as usize;
+                        if s >= 1 && s <= u.inventory.len() { u.inventory[s - 1].obj_index } else { 0 }
+                    };
+                    (
+                        get_inv_obj(u.equip.armor),
+                        get_inv_obj(u.equip.weapon),
+                        get_inv_obj(u.equip.shield),
+                        get_inv_obj(u.equip.helmet),
+                        u.old_head,
+                        u.race.clone(),
+                        u.gender,
+                    )
+                });
+                if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, race, gender)) = equip_info {
+                    // Look up appearance from object database
+                    let armor_body = if armor_obj > 0 { state.game_data.objects.get(&(armor_obj as usize)).map(|o| o.num_ropaje).unwrap_or(0) } else { 0 };
+                    let weapon_anim = if weapon_obj > 0 { state.game_data.objects.get(&(weapon_obj as usize)).map(|o| o.weapon_anim).unwrap_or(0) } else { 0 };
+                    let shield_anim = if shield_obj > 0 { state.game_data.objects.get(&(shield_obj as usize)).map(|o| o.shield_anim).unwrap_or(0) } else { 0 };
+                    let casco_anim = if helmet_obj > 0 { state.game_data.objects.get(&(helmet_obj as usize)).map(|o| o.casco_anim).unwrap_or(0) } else { 0 };
+                    if let Some(u) = state.users.get_mut(&conn_id) {
+                        u.navigating = false;
+                        // VB6 DoNavega: Restore original head
+                        u.head = saved_head;
+                        // Restore body: equipped armor or naked
+                        u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
+                        // Restore equipment animations
+                        u.weapon_anim = weapon_anim;
+                        u.shield_anim = shield_anim;
+                        u.casco_anim = casco_anim;
+                    }
                 }
                 // Send NAVEG toggle to client
                 state.send_to(conn_id, "NAVEG").await;
             } else {
-                // Equip boat — must be adjacent to water (VB6: HayAgua graphic check)
+                // Mount boat — must be adjacent to water (VB6: HayAgua graphic check)
                 let has_water_nearby = (1..=4).any(|h| {
                     let (dx, dy) = world::heading_to_offset(h);
                     state.hay_agua(user_map, user_x + dx, user_y + dy)
                 });
                 if !has_water_nearby {
-                    state.send_to(conn_id, "||106").await; // TEXTO106: Debes aproximarte al agua para usar el barco
+                    state.send_to(conn_id, "||106").await; // TEXTO106: Debes aproximarte al agua
                     return;
                 }
                 let ropaje = obj_data.num_ropaje;
                 if let Some(u) = state.users.get_mut(&conn_id) {
+                    // VB6 DoNavega: Save head, set to 0, change body to boat
+                    u.old_head = u.head;
+                    u.head = 0;
+                    u.weapon_anim = 0;
+                    u.shield_anim = 0;
+                    u.casco_anim = 0;
                     u.navigating = true;
                     if ropaje > 0 {
                         u.body = ropaje;
