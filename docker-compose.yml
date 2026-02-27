@@ -1,0 +1,21 @@
+services:
+  ao-server:
+    build: .
+    container_name: ao-server
+    ports:
+      - "5028:5028"
+      - "7669:7669"
+    volumes:
+      - charfile:/app/server/charfile
+      - accounts:/app/server/Accounts
+      - guilds:/app/server/guilds
+      - logs:/app/server/logs
+    environment:
+      - RUST_LOG=ao_server=info
+    restart: unless-stopped
+
+volumes:
+  charfile:
+  accounts:
+  guilds:
+  logs:

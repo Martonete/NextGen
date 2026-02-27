@@ -116,6 +116,10 @@ pub struct UserState {
     pub safe_toggle: bool,  // PvP safety (SEG)
     pub criminal: bool,
     pub navigating: bool,   // On a boat
+    pub transformed: bool,  // Demon/Angel transformation active
+    pub gender: i32,        // 1=Male, 2=Female (from charfile Genero)
+    pub es_noble: bool,     // Has noble rank (VB6 flags.EsNoble)
+    pub en_guerra: bool,    // Enrolled in current war event
     pub comerciando: bool,  // In NPC commerce window
     pub target_npc: usize,  // NPC runtime index for commerce/interaction
 
@@ -373,6 +377,10 @@ impl UserState {
             safe_toggle: true, // Safety ON by default
             criminal: false,
             navigating: false,
+            transformed: false,
+            gender: 1,
+            es_noble: false,
+            en_guerra: false,
             comerciando: false,
             target_npc: 0,
             bank: (0..MAX_BANK_SLOTS).map(|_| InventorySlot::default()).collect(),
@@ -685,6 +693,23 @@ pub struct GameState {
     pub ip_max_connections: u32,                               // Max connections per IP (default 10)
     pub ip_min_interval_ms: u64,                               // Min ms between connections (default 500)
 
+    // War system (frmMain.frm / TCP_HandleData2.bas)
+    pub hay_guerra: bool,
+    pub hay_guerra_anvil: bool,         // War at Anvilmar (map 29)
+    pub hay_guerra_khalim: bool,        // War at Khalimdar (map 27)
+    pub rey_guerra_index: usize,        // NPC runtime index of war king
+    pub guerra_minutes: i32,            // Minute counter for war timer (VB6 Minus)
+    pub guerra_seconds: i32,            // Second counter (0-59, increments to minutes)
+    pub chat_global: bool,              // Global chat enabled (toggled by /NOGLOBAL)
+
+    // Treasure system (modTesoros.bas)
+    pub tesoro_map: i32,
+    pub tesoro_x: i32,
+    pub tesoro_y: i32,
+    pub tesoro_contando: bool,
+    pub tesoro_tiempo: i32,             // Countdown ticks
+    pub se_puede_desenterrar: bool,
+
     // Castle siege state (modSiege.bas)
     pub siege_active: bool,
     pub siege_guild_owner: i32,           // Guild index that owns the castle
@@ -747,6 +772,19 @@ pub struct GameState {
     pub torneo_auto_ronda_actual: i32,    // Current round
     pub torneo_auto_bracket: Vec<ConnectionId>, // Players in bracket (2^N)
     pub torneo_auto_timer: i32,           // Countdown timer
+
+    // Ancalagon boss system (VB6: modDragon.bas)
+    pub ancalagon_alive: bool,            // Is the dragon (NPC 936) currently alive?
+    pub ancalagon_guardians: i32,         // Number of guardian NPCs (938) still alive
+    pub ancalagon_pre_dragon: bool,       // Is the pre-dragon (937) spawned?
+    pub ancalagon_minutes: i32,           // Minutes since dragon death (counts to 60)
+    pub ancalagon_seconds: i32,           // Seconds counter (0-59)
+
+    // Global NPC attack timer (VB6: CanAttackNpc counter — every 3 AI ticks)
+    pub npc_can_attack_counter: i32,
+
+    // Map user counts cache (map_number → user count, for skipping empty maps)
+    pub map_user_counts: HashMap<i32, u32>,
 }
 
 /// SOS message (help request from player)
@@ -829,6 +867,19 @@ impl GameState {
             ip_connection_count: HashMap::new(),
             ip_max_connections: 10,
             ip_min_interval_ms: 500,
+            hay_guerra: false,
+            hay_guerra_anvil: false,
+            hay_guerra_khalim: false,
+            rey_guerra_index: 0,
+            guerra_minutes: 0,
+            guerra_seconds: 0,
+            chat_global: true,
+            tesoro_map: 0,
+            tesoro_x: 0,
+            tesoro_y: 0,
+            tesoro_contando: false,
+            tesoro_tiempo: 0,
+            se_puede_desenterrar: false,
             siege_active: false,
             siege_guild_owner: 0,
             siege_guild_attacker: 0,
@@ -870,6 +921,13 @@ impl GameState {
             torneo_auto_ronda_actual: 0,
             torneo_auto_bracket: Vec::new(),
             torneo_auto_timer: 0,
+            ancalagon_alive: false,
+            ancalagon_guardians: 0,
+            ancalagon_pre_dragon: false,
+            ancalagon_minutes: 0,
+            ancalagon_seconds: 0,
+            npc_can_attack_counter: 0,
+            map_user_counts: HashMap::new(),
         }
     }
 
@@ -1232,6 +1290,13 @@ impl GameState {
             npc.y = orig_y;
             npc.target = None;
             npc.can_attack = true;
+            // Reset defense AI state
+            npc.movement = npc.old_movement;
+            npc.hostile = npc.old_hostile;
+            npc.attacked_by.clear();
+            npc.damage_received.clear();
+            npc.pf_path.clear();
+            npc.pf_step = 0;
         }
 
         // Place on grid

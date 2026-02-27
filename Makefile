@@ -1,4 +1,4 @@
-.PHONY: build run dev test clean
+.PHONY: build run dev test clean docker-build docker-run docker-stop
 
 build:
 	cargo build --release
@@ -16,3 +16,12 @@ test:
 clean:
 	cargo clean
 	rm -f server/ao-server
+
+docker-build:
+	docker build -t ao-server .
+
+docker-run: docker-build
+	docker compose up -d
+
+docker-stop:
+	docker compose down

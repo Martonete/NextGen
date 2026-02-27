@@ -1,0 +1,11 @@
+target/
+.git/
+docs/
+server/ao-server
+server/charfile/
+server/Accounts/
+server/logs/
+server/Logs/
+*.md
+.dockerignore
+docker-compose.yml

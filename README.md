@@ -26,7 +26,26 @@ make dev
 make test
 ```
 
+## Docker
+
+```bash
+# Build image and start server
+make docker-run
+
+# Or manually
+docker build -t ao-server .
+docker compose up -d
+
+# Stop
+make docker-stop
+```
+
+Persistent data (charfiles, accounts, guilds, logs) is stored in named Docker volumes and survives container restarts.
+
+Ports exposed: `5028` (game), `7669` (stats).
+
 ## Requirements
 
-- Rust 1.75+ (async/await, tokio)
+- Rust 1.85+ (edition 2024, async/await, tokio)
 - Game data files in `server/` (Dat/, Maps/, Server.ini, etc.)
+- Docker (optional, for containerized deployment)
