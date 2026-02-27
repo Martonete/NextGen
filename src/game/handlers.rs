@@ -672,7 +672,8 @@ async fn connect_user(
         user.max_ham = char_data.max_ham;
         user.min_ham = char_data.min_ham;
         user.attributes = char_data.attributes;
-        user.skills = char_data.skills;
+        // VB6 hardcodes all skills to 100 (skill system unused in TS)
+        user.skills = [100i32; 22];
         user.reputation = char_data.reputation;
 
         // Inventory

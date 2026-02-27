@@ -456,10 +456,10 @@ pub fn create_charfile(
         lines.push(format!("AT{}={}", i + 1, attrs[i]));
     }
 
-    // [SKILLS] — all start at 0
+    // [SKILLS] — VB6 hardcodes all skills to 100 (skill system unused in TS)
     lines.push("[SKILLS]".into());
     for i in 1..=22 {
-        lines.push(format!("SK{}=0", i));
+        lines.push(format!("SK{}=100", i));
     }
 
     // [FLAGS]
