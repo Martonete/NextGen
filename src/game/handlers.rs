@@ -1656,6 +1656,8 @@ async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, data: &str) 
         if old_slot > 0 && old_slot <= MAX_INVENTORY_SLOTS {
             let old_idx = old_slot - 1;
             unequip_slot(state, conn_id, old_idx, &obj_data.obj_type);
+            // Send updated CSI for the OLD slot so client sees it as unequipped
+            send_inventory_slot(state, conn_id, old_idx).await;
         }
 
         // Equip the new item
