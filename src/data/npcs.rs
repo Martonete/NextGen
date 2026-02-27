@@ -123,6 +123,24 @@ pub struct NpcData {
     // Spells
     pub lanza_spells: i32,      // Number of spells (0 = can't cast)
     pub spells: Vec<i32>,       // Spell indices (Sp1..SpN)
+
+    // Crystal drops (VB6: Cristales section in NPC dat)
+    pub cristales: bool,                   // Whether NPC drops crystals on death
+    pub crystal_min1: i32,
+    pub crystal_max1: i32,
+    pub crystal_min2: i32,
+    pub crystal_max2: i32,
+    pub crystal_min3: i32,
+    pub crystal_max3: i32,
+    pub crystal_min4: i32,
+    pub crystal_max4: i32,
+
+    // Points awarded on kill (VB6: GivePTS — faction points)
+    pub give_pts: i32,
+
+    // Sound effects (VB6: SND1 = attack sound, SND3 = death sound)
+    pub snd1: i32,
+    pub snd3: i32,
 }
 
 /// NPC inventory item as loaded from dat file.
@@ -150,6 +168,13 @@ impl Default for NpcData {
             nro_items: 0, items: Vec::new(), alineacion: 0,
             veneno: false,
             lanza_spells: 0, spells: Vec::new(),
+            cristales: false,
+            crystal_min1: 0, crystal_max1: 0,
+            crystal_min2: 0, crystal_max2: 0,
+            crystal_min3: 0, crystal_max3: 0,
+            crystal_min4: 0, crystal_max4: 0,
+            give_pts: 0,
+            snd1: 0, snd3: 0,
         }
     }
 }
@@ -227,6 +252,18 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
             }
             spells
         },
+        cristales: get_bool("Cristales"),
+        crystal_min1: get_int("CristalMin1"),
+        crystal_max1: get_int("CristalMax1"),
+        crystal_min2: get_int("CristalMin2"),
+        crystal_max2: get_int("CristalMax2"),
+        crystal_min3: get_int("CristalMin3"),
+        crystal_max3: get_int("CristalMax3"),
+        crystal_min4: get_int("CristalMin4"),
+        crystal_max4: get_int("CristalMax4"),
+        give_pts: get_int("GivePTS"),
+        snd1: get_int("SND1"),
+        snd3: get_int("SND3"),
     }
 }
 
@@ -305,7 +342,7 @@ mod tests {
 
     #[test]
     fn load_real_npcs() {
-        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust");
+        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
         if !base.join("Dat").join("NPCs.dat").exists() {
             return;
         }

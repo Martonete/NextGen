@@ -27,7 +27,17 @@ async fn main() {
     info!("==============================================");
 
     // Determine base path (where Server.ini and data folders are)
-    let base_path = std::env::current_dir().expect("Failed to get current directory");
+    // Accept optional CLI arg, default to ./server relative to CWD
+    let base_path = std::env::args().nth(1)
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("./server"));
+    let base_path = if base_path.is_relative() {
+        std::env::current_dir()
+            .expect("Failed to get current directory")
+            .join(&base_path)
+    } else {
+        base_path
+    };
     info!("Base path: {}", base_path.display());
 
     // Load configuration
@@ -263,7 +273,9 @@ async fn main() {
                 game::handlers::tick_clean_world(&mut state).await;
                 game::handlers::tick_nobleza(&mut state).await;
                 game::handlers::tick_siege(&mut state).await;
+                game::handlers::tick_guerra(&mut state).await;
                 game::handlers::tick_eventos(&mut state).await;
+                game::handlers::tick_ancalagon(&mut state).await;
             }
         } // end tokio::select!
     } // end loop

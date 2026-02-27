@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn load_real_experience_table() {
-        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust");
+        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
         if !base.join("Dat").join("Experiencia.dat").exists() {
             return; // Skip if data files not present
         }

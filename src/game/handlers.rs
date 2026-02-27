@@ -15,6 +15,7 @@
 //   RPU — request position update
 //   ; — chat message (talk)
 
+use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::net::ConnectionId;
@@ -26,6 +27,7 @@ use crate::data::guilds;
 use super::types::{GameState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
 use super::world;
 use super::npc;
+use crate::data::npcs::NpcType;
 
 /// Route a decrypted packet to the appropriate handler.
 pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &str) {
@@ -614,6 +616,7 @@ async fn connect_user(
         user.shield_anim = 2;
         user.casco_anim = 2;
         user.privileges = char_data.privileges;
+        user.gender = char_data.gender;
         user.poisoned = char_data.poisoned;
         user.paralyzed = char_data.paralyzed;
         // VB6: FileIO.bas sets Counters.Paralisis = IntervaloParalizado on load
@@ -4565,80 +4568,42 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     }
 }
 
-/// /RESUCITAR — Resurrect the user (simplified: no NPC check, just revive if dead).
-/// VB6 requires a Revividor NPC, but since we don't have NPCs yet, allow direct resurrection.
+/// /RESUCITAR — Resurrect. VB6: requires Revividor NPC target, distance <= 10, must be dead.
 async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
-    let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.dead => {
-            (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.race.clone(), u.heading,
-             u.max_hp, u.weapon_anim, u.shield_anim, u.casco_anim)
-        }
-        Some(u) if u.logged && !u.dead => {
-            // Not dead — can't resurrect
-            let msg = format!("P|No estas muerto!{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
-            return;
-        }
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
         _ => return,
     };
-    let (map, x, y, char_index, race, heading, max_hp, weapon_anim, shield_anim, casco_anim) = user_data;
 
-    // Look up gender from charfile to determine naked body
-    let gender = {
-        let base = &state.base_path;
-        let char_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        if let Ok(chr) = charfile::load_charfile(base, &char_name) {
-            chr.gender.to_string()
-        } else {
-            "1".to_string() // Default male
-        }
-    };
-
-    // Resurrect: clear dead flag, restore HP to 35 (capped at max)
-    let revive_hp = 35.min(max_hp);
-    let new_body;
-    let new_head;
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        user.dead = false;
-        user.min_hp = revive_hp;
-        // Restore body model (naked body based on race/gender)
-        new_body = naked_body(&race, &gender);
-        user.body = new_body;
-        // Restore original head from charfile
-        new_head = {
-            let base = &state.base_path;
-            if let Ok(chr) = charfile::load_charfile(base, &user.char_name) {
-                chr.head
-            } else {
-                user.head // fallback
-            }
-        };
-        user.head = new_head;
-    } else {
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
         return;
     }
 
-    // Send resurrection FX (CFF packet: charindex,fxid,loops)
-    let cff_pkt = format!("CFF{},65,0", char_index.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &cff_pkt).await;
+    // VB6: NPCtype must be Revividor (1) AND user must be dead
+    let npc_type = state.get_npc(target_npc).map(|n| n.npc_type);
+    if npc_type != Some(crate::data::npcs::NpcType::Reviver) || !dead {
+        return;
+    }
 
-    // Broadcast character model change (CP packet)
-    let cp_pkt = format!(
-        "CP{},{},{},{},{},{},0,0,{}",
-        char_index.0, new_body, new_head, heading,
-        weapon_anim, shield_anim, casco_anim
-    );
-    state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+    // VB6: distance > 10 → ||11
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
+        state.send_to(conn_id, "||11").await;
+        return;
+    }
 
-    // Send updated HP and mana
-    send_stats_hp(state, conn_id).await;
-    send_stats_mana(state, conn_id).await;
-
-    // Notify player
-    let msg = format!("P|Has sido resucitado!{}", font_types::INFO);
-    state.send_to(conn_id, &msg).await;
-
-    info!("[REVIVE] '{}' resurrected", state.users.get(&conn_id).map(|u| u.char_name.as_str()).unwrap_or("?"));
+    // VB6: RevivirUsuario(userindex) then ||396
+    revive_user(state, conn_id).await;
+    state.send_to(conn_id, "||396").await;
 }
 
 /// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
@@ -6357,10 +6322,23 @@ async fn user_attack_npc(
         match state.get_npc_mut(npc_idx) {
             Some(npc) => {
                 npc.min_hp -= damage;
-                // Set aggro target
-                if npc.target.is_none() && npc.hostile {
+
+                // Track damage for proportional EXP
+                npc.damage_received.push((conn_id, damage));
+
+                // NpcAtacado trigger (VB6): if NPC is not hostile, switch to defense mode
+                if !npc.hostile && npc.movement != npc::AI_DEFENSE {
+                    npc.old_movement = npc.movement;
+                    npc.old_hostile = npc.hostile;
+                    npc.movement = npc::AI_DEFENSE;
+                    npc.hostile = true;
+                    npc.attacked_by = attacker_name.to_string();
+                    npc.target = Some(conn_id);
+                } else if npc.target.is_none() {
+                    // Already hostile — just set target
                     npc.target = Some(conn_id);
                 }
+
                 let dead = npc.min_hp <= 0;
                 (dead, npc.give_exp, npc.give_gld_min, npc.give_gld_max)
             }
@@ -6386,7 +6364,9 @@ async fn user_attack_npc(
     }
 }
 
-/// NPC dies — remove from world, reward player, schedule respawn.
+/// NPC dies — remove from world, reward players proportionally, schedule respawn.
+/// VB6: MuereNpc (modNPC.bas) — full parity with death sound, proportional EXP,
+/// gold to inventory, crystal drops, Ancalagon boss, faction points.
 async fn npc_die(
     state: &mut GameState,
     npc_idx: usize,
@@ -6395,18 +6375,117 @@ async fn npc_die(
     give_gld_min: i32,
     give_gld_max: i32,
 ) {
-    let (map, x, y, char_index, npc_name, npc_number) = match state.get_npc(npc_idx) {
-        Some(n) => (n.map, n.x, n.y, n.char_index, n.name.clone(), n.npc_number),
+    let npc_info = match state.get_npc(npc_idx) {
+        Some(n) => (n.map, n.x, n.y, n.char_index, n.name.clone(), n.npc_number,
+                    n.snd3, n.max_hp, n.give_pts, n.cristales,
+                    n.crystal_min1, n.crystal_max1, n.crystal_min2, n.crystal_max2,
+                    n.crystal_min3, n.crystal_max3, n.crystal_min4, n.crystal_max4,
+                    n.damage_received.clone(), n.maestro_user),
         None => return,
     };
+    let (map, x, y, char_index, npc_name, npc_number,
+         snd3, npc_max_hp, give_pts, has_crystals,
+         cr_min1, cr_max1, cr_min2, cr_max2,
+         cr_min3, cr_max3, cr_min4, cr_max4,
+         damage_received, is_pet_owner) = npc_info;
 
-    // Drop items (NPC_TIRAR_ITEMS) — only if not a pet
-    let is_pet = state.get_npc(npc_idx).and_then(|n| n.maestro_user).is_some();
+    // 1) Death sound (VB6: TW{snd3})
+    if snd3 > 0 {
+        let snd_pkt = format!("TW{}", snd3);
+        state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+    }
+
+    // 2) Send ||50 to killer (NPC death notification — client plays sound/animation)
+    state.send_to(killer_id, "||50").await;
+
+    // 3) War king death check (VB6: NPC is rey de guerra)
+    if state.hay_guerra && npc_idx == state.rey_guerra_index {
+        // Faction wins — broadcast, award gold + faction points
+        let killer_name = state.users.get(&killer_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let msg = format!("||{}@{} ha matado al rey de la guerra!", 53, killer_name);
+        state.send_data(SendTarget::ToAll, &msg).await;
+
+        if let Some(user) = state.users.get_mut(&killer_id) {
+            user.gold += 1_000_000;
+            if user.armada_real {
+                user.recompensas_real = (user.recompensas_real + 30).min(999);
+            } else if user.fuerzas_caos {
+                user.recompensas_caos = (user.recompensas_caos + 30).min(999);
+            }
+        }
+        send_stats_gold(state, killer_id).await;
+        state.hay_guerra = false;
+    }
+
+    // 4) Ancalagon boss system
+    match npc_number {
+        936 => {
+            // Dragon killed — broadcast ||54, award points
+            state.send_data(SendTarget::ToAll, "||54").await;
+            state.ancalagon_alive = false;
+            state.ancalagon_minutes = 0;
+            state.ancalagon_seconds = 0;
+            if let Some(user) = state.users.get_mut(&killer_id) {
+                if user.armada_real {
+                    user.recompensas_real = (user.recompensas_real + 25).min(999);
+                } else if user.fuerzas_caos {
+                    user.recompensas_caos = (user.recompensas_caos + 25).min(999);
+                }
+            }
+        }
+        937 => {
+            // Pre-dragon killed → spawn real dragon (936) at same location
+            state.ancalagon_pre_dragon = false;
+            try_spawn_ancalagon_dragon(state).await;
+        }
+        938 => {
+            // Guardian killed → decrement guardian count
+            state.ancalagon_guardians = (state.ancalagon_guardians - 1).max(0);
+        }
+        _ => {}
+    }
+
+    // 5) Drop items (NPC_TIRAR_ITEMS) — only if not a pet
+    let is_pet = is_pet_owner.is_some();
     if !is_pet {
         npc_drop_items(state, npc_idx, killer_id, map, x, y).await;
     }
 
-    // Remove NPC character from area (BP packet)
+    // 6) Crystal drops (VB6: level >= 60 NPCs drop crystals obj 1275-1278)
+    if has_crystals && !is_pet {
+        let crystal_objs = [
+            (1275, cr_min1, cr_max1),
+            (1276, cr_min2, cr_max2),
+            (1277, cr_min3, cr_max3),
+            (1278, cr_min4, cr_max4),
+        ];
+        for (obj_id, cmin, cmax) in &crystal_objs {
+            if *cmax > 0 {
+                let amount = rand_range((*cmin).max(1), *cmax);
+                if amount > 0 {
+                    // Drop crystal on ground near NPC
+                    let (dx, dy) = find_free_tile(state, map, x, y);
+                    let drop_x = x + dx;
+                    let drop_y = y + dy;
+                    let grid = state.world.grid_mut(map);
+                    if let Some(tile) = grid.tile_mut(drop_x, drop_y) {
+                        if tile.ground_item.obj_index == 0 {
+                            tile.ground_item.obj_index = *obj_id;
+                            tile.ground_item.amount = amount;
+                        }
+                    }
+                    let grh = state.get_object(*obj_id).map(|o| o.grh_index).unwrap_or(0);
+                    if grh > 0 {
+                        let ho = format!("HO{},{},{}", grh, drop_x, drop_y);
+                        state.send_data(SendTarget::ToArea { map, x, y }, &ho).await;
+                    }
+                    clean_world_add_item(state, map, drop_x, drop_y, 10, *obj_id);
+                }
+            }
+        }
+    }
+
+    // 7) Remove NPC character from area (BP packet)
     let bp_pkt = format!("BP{}", char_index.0);
     state.send_data(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
 
@@ -6421,29 +6500,92 @@ async fn npc_die(
     // Check ARAM tower death
     aram_check_tower_death(state, npc_idx).await;
 
-    // Award experience
-    if give_exp > 0 {
+    // 8) Proportional EXP distribution (VB6: (give_exp / max_hp) * player_damage * mult_exp)
+    let exp_mult = state.multiplicador_exp;
+    let npc_max_hp_f = (npc_max_hp as f64).max(1.0);
+
+    if give_exp > 0 && !damage_received.is_empty() {
+        // Aggregate damage per player
+        let mut damage_per_player: HashMap<ConnectionId, i32> = HashMap::new();
+        for (conn, dmg) in &damage_received {
+            *damage_per_player.entry(*conn).or_insert(0) += dmg;
+        }
+
+        for (conn_id, player_damage) in &damage_per_player {
+            // Calculate proportional EXP: (give_exp / max_hp) * player_damage * mult_exp
+            let mut exp_award = ((give_exp as f64 / npc_max_hp_f) * (*player_damage as f64) * exp_mult as f64) as i64;
+
+            // Scroll(0) = EXP scroll multiplier
+            let scroll_mult = state.users.get(conn_id)
+                .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
+                .unwrap_or(1);
+            exp_award *= scroll_mult;
+
+            // Level cap check
+            let can_level = state.users.get(conn_id)
+                .map(|u| u.logged && u.level < MAX_LEVEL)
+                .unwrap_or(false);
+
+            if can_level && exp_award > 0 {
+                if let Some(user) = state.users.get_mut(conn_id) {
+                    user.exp += exp_award;
+                }
+                send_stats_exp(state, *conn_id).await;
+                check_user_level(state, *conn_id).await;
+            }
+        }
+    } else if give_exp > 0 {
+        // Fallback: no damage tracking — give full EXP to killer (backward compat)
+        let mut exp_award = (give_exp as i64) * (exp_mult as i64);
+        let scroll_mult = state.users.get(&killer_id)
+            .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
+            .unwrap_or(1);
+        exp_award *= scroll_mult;
         if let Some(user) = state.users.get_mut(&killer_id) {
-            user.exp += give_exp as i64;
+            if user.level < MAX_LEVEL {
+                user.exp += exp_award;
+            }
         }
         send_stats_exp(state, killer_id).await;
         check_user_level(state, killer_id).await;
     }
 
-    // Award gold
-    let gold_award = if give_gld_max > give_gld_min {
-        rand_range(give_gld_min, give_gld_max)
+    // 9) Gold to killer's inventory (VB6: gold goes to player, NOT floor)
+    let gold_mult = state.multiplicador_oro;
+    let scroll_gold_mult = state.users.get(&killer_id)
+        .map(|u| if u.scroll_active[1] { u.scroll_mult[1] } else { 1 })
+        .unwrap_or(1);
+    let gld_min = (give_gld_min as i64) * (gold_mult as i64) * (scroll_gold_mult as i64);
+    let gld_max = (give_gld_max as i64) * (gold_mult as i64) * (scroll_gold_mult as i64);
+    let gold_award = if gld_max > gld_min {
+        rand_range(gld_min as i32, gld_max as i32) as i64
     } else {
-        give_gld_min
+        gld_min
     };
     if gold_award > 0 {
         if let Some(user) = state.users.get_mut(&killer_id) {
-            user.gold += gold_award as i64;
+            user.gold += gold_award;
         }
         send_stats_gold(state, killer_id).await;
     }
 
-    // Notify killer
+    // 10) Faction points (VB6: GivePTS)
+    if give_pts > 0 {
+        if let Some(user) = state.users.get_mut(&killer_id) {
+            if user.armada_real {
+                user.recompensas_real = (user.recompensas_real + give_pts).min(999);
+            } else if user.fuerzas_caos {
+                user.recompensas_caos = (user.recompensas_caos + give_pts).min(999);
+            }
+        }
+    }
+
+    // 11) Pet cleanup — if NPC was someone's pet, remove from owner
+    if let Some(owner_conn) = is_pet_owner {
+        remove_pet_from_owner(state, owner_conn, npc_idx);
+    }
+
+    // 12) Notify killer
     let msg = format!(
         "P|Has matado a {}! Ganaste {} exp y {} oro{}",
         npc_name, give_exp, gold_award, font_types::COMBAT
@@ -6457,6 +6599,7 @@ async fn npc_die(
           state.users.get(&killer_id).map(|u| u.char_name.as_str()).unwrap_or("?"),
           npc_name, npc_idx, give_exp, gold_award);
 }
+
 
 /// Drop NPC inventory items on death.
 /// VB6: NPC_TIRAR_ITEMS (Modulo_InventANDobj.bas).
@@ -6497,19 +6640,25 @@ async fn npc_drop_items(
         c => (c - 21).max(0),
     };
 
+    // Drop multiplier (VB6: multiplicador_drop + scroll(2))
+    let drop_mult = state.multiplicador_drop;
+    let scroll_drop_mult = state.users.get(&killer_id)
+        .map(|u| if u.scroll_active[2] { u.scroll_mult[2] } else { 1 })
+        .unwrap_or(1);
+
     for (obj_index, amount, prob_tirar) in npc_inv {
         if prob_tirar <= 0 {
             continue;
         }
 
-        // Calculate drop probability (VB6: ProbTirar * 2, cap 200)
-        let mut prob = (prob_tirar * 2 + luck_mod).max(1).min(200);
+        // Calculate drop probability (VB6: ProbTirar * 2 * scroll * mult_drop, cap 200)
+        let prob = ((prob_tirar * 2 + luck_mod) * drop_mult * scroll_drop_mult).max(1).min(200);
 
         // Roll
         let roll = random_number(1, 200);
         if roll <= prob {
-            // Drop item on ground near NPC
-            let drop_amount = amount.min(1).max(1); // Drop 1 at a time (VB6 drops amount)
+            // Drop item — use actual amount from NPC inventory (VB6 drops full amount)
+            let drop_amount = amount.max(1);
 
             // Find a free tile near the NPC
             let (dx, dy) = find_free_tile(state, map, npc_x, npc_y);
@@ -6521,7 +6670,7 @@ async fn npc_drop_items(
             if let Some(tile) = grid.tile_mut(drop_x, drop_y) {
                 if tile.ground_item.obj_index == 0 {
                     tile.ground_item.obj_index = obj_index;
-                    tile.ground_item.amount = amount;
+                    tile.ground_item.amount = drop_amount;
                 }
             }
 
@@ -6681,8 +6830,12 @@ async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target_conn: Conn
     // Spell effect
     match spell.sube_hp {
         1 => {
-            // Heal spell (SubeHP=1) — heals the NPC or target
-            // NPCs casting heal on users is rare; usually they heal themselves
+            // Heal spell (SubeHP=1) — when cast on a user target, NPC heals ITSELF
+            // (VB6: NpcLanzaSpellSobreUser with SubeHP=1 heals the NPC, not the user)
+            let heal = rand_range(spell.min_hp.max(1), spell.max_hp.max(1));
+            if let Some(npc) = state.get_npc_mut(npc_idx) {
+                npc.min_hp = (npc.min_hp + heal).min(npc.max_hp);
+            }
         }
         2 => {
             // Damage spell (SubeHP=2)
@@ -6771,7 +6924,26 @@ fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> bool {
 }
 
 /// AI tick — called every 100ms from the main loop.
+/// VB6: AI_MoveNpc / modIA.bas — full NPC behavior including hostile chase,
+/// defense mode, guard chase, self-heal, and global attack timer.
 pub async fn tick_npc_ai(state: &mut GameState) {
+    // Global CanAttack timer: every 3 ticks (300ms), all NPCs can attack again
+    state.npc_can_attack_counter += 1;
+    if state.npc_can_attack_counter >= 3 {
+        state.npc_can_attack_counter = 0;
+        // Reset all NPCs' can_attack flag
+        for slot in state.npcs.iter_mut() {
+            if let Some(npc) = slot.as_mut() {
+                if npc.active {
+                    npc.can_attack = true;
+                }
+            }
+        }
+    }
+
+    // Update map user counts for skipping empty maps
+    update_map_user_counts(state);
+
     // Collect active NPC indices to process
     let active_npcs: Vec<usize> = state.npcs.iter().enumerate()
         .filter_map(|(i, slot)| {
@@ -6781,10 +6953,25 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
     for npc_idx in active_npcs {
         let npc_data = match state.get_npc(npc_idx) {
-            Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target),
+            Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target,
+                        n.lanza_spells, n.spells.clone(), n.npc_type, n.attacked_by.clone(),
+                        n.min_hp, n.max_hp, n.alineacion),
             None => continue,
         };
-        let (movement, hostile, can_attack, map, x, y, target) = npc_data;
+        let (movement, hostile, can_attack, map, x, y, target,
+             lanza_spells, spells, npc_type, attacked_by,
+             cur_hp, max_hp, alineacion) = npc_data;
+
+        // Skip NPCs on maps with no users (VB6 optimization)
+        let map_users = state.map_user_counts.get(&map).copied().unwrap_or(0);
+        if map_users == 0 && movement != npc::AI_FOLLOW_OWNER {
+            continue;
+        }
+
+        // NPC self-heal: if HP < 50% and has a heal spell, try to cast it on self
+        if max_hp > 0 && cur_hp > 0 && cur_hp < max_hp / 2 && lanza_spells > 0 {
+            npc_try_self_heal(state, npc_idx, &spells).await;
+        }
 
         match movement {
             npc::AI_STATIC => {
@@ -6792,7 +6979,6 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 if hostile && can_attack {
                     if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
                         npc_attack_user(state, npc_idx, target_conn).await;
-                        // Reset attack cooldown
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
                         }
@@ -6802,6 +6988,15 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
             npc::AI_RANDOM => {
                 // Random movement (1/12 chance per tick)
+                // Guards with AI_RANDOM also chase their targets
+                if hostile && can_attack {
+                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                        npc_attack_user(state, npc_idx, target_conn).await;
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.can_attack = false;
+                        }
+                    }
+                }
                 if rand_range(1, 12) == 3 {
                     let heading = rand_range(1, 4);
                     if move_npc(state, npc_idx, heading) {
@@ -6811,10 +7006,110 @@ pub async fn tick_npc_ai(state: &mut GameState) {
             }
 
             npc::AI_HOSTILE_CHASE => {
-                // Chase nearest player (simple, no pathfinding)
-                let chase_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                // VB6 AI_AI_Hostile (modIA.bas)
+                // 1) Check 4 adjacent tiles for users/pets → attack
+                // 2) Scan vision for nearest player → spell + chase
+                // 3) No target → restore_old_movement + random 1/12
 
-                if let Some(target_conn) = chase_target {
+                let mut attacked = false;
+
+                // First: check adjacent tiles for attack
+                if can_attack {
+                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                        npc_attack_user(state, npc_idx, target_conn).await;
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.can_attack = false;
+                            n.target = Some(target_conn);
+                        }
+                        attacked = true;
+                    } else {
+                        // Check for pet NPC at adjacent tiles
+                        for heading in 1..=4 {
+                            let (dx, dy) = world::heading_to_offset(heading);
+                            let tx = x + dx;
+                            let ty = y + dy;
+                            if let Some(adj_npc_idx) = state.npc_at_tile(map, tx, ty) {
+                                let is_pet = state.get_npc(adj_npc_idx)
+                                    .map(|n| n.maestro_user.is_some() && n.is_alive())
+                                    .unwrap_or(false);
+                                if is_pet {
+                                    npc_attack_npc(state, npc_idx, adj_npc_idx).await;
+                                    if let Some(n) = state.get_npc_mut(npc_idx) {
+                                        n.can_attack = false;
+                                    }
+                                    attacked = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if !attacked {
+                    // Scan vision range for nearest player
+                    let chase_target = target.or_else(|| find_nearest_player(state, map, x, y));
+
+                    if let Some(target_conn) = chase_target {
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.target = Some(target_conn);
+                        }
+
+                        let target_pos = state.users.get(&target_conn)
+                            .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                            .map(|u| (u.pos_x, u.pos_y));
+
+                        if let Some((tx, ty)) = target_pos {
+                            let dist = (x - tx).abs() + (y - ty).abs();
+
+                            // Cast spell if in range
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                            }
+
+                            // Chase target
+                            if dist > 1 {
+                                let heading = chase_heading(x, y, tx, ty);
+                                if move_npc(state, npc_idx, heading) {
+                                    send_npc_move(state, npc_idx).await;
+                                }
+                            }
+                        } else {
+                            // Target gone (left map or dead)
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.target = None;
+                            }
+                        }
+                    } else {
+                        // No target at all — if this was originally a non-hostile NPC
+                        // that was switched to hostile chase, restore old movement
+                        let was_defense_switch = state.get_npc(npc_idx)
+                            .map(|n| n.old_movement != npc::AI_HOSTILE_CHASE && !n.attacked_by.is_empty())
+                            .unwrap_or(false);
+                        if was_defense_switch {
+                            restore_old_movement(state, npc_idx);
+                        }
+                        // Random walk
+                        if rand_range(1, 12) == 3 {
+                            let heading = rand_range(1, 4);
+                            if move_npc(state, npc_idx, heading) {
+                                send_npc_move(state, npc_idx).await;
+                            }
+                        }
+                    }
+                }
+            }
+
+            npc::AI_DEFENSE => {
+                // VB6 AI_AI_Defense — follow attacker (attacked_by) within 15 tiles
+                // Adjacent → melee. Far → spell + chase. Gone → restore_old_movement.
+                let attacker_conn = find_player_by_name(state, map, x, y, &attacked_by);
+
+                if let Some(target_conn) = attacker_conn {
                     if let Some(n) = state.get_npc_mut(npc_idx) {
                         n.target = Some(target_conn);
                     }
@@ -6823,37 +7118,97 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
                         .map(|u| (u.pos_x, u.pos_y));
 
-                    let npc_spells = state.get_npc(npc_idx)
-                        .map(|n| (n.lanza_spells, n.spells.clone()))
-                        .unwrap_or((0, Vec::new()));
-
                     if let Some((tx, ty)) = target_pos {
                         let dist = (x - tx).abs() + (y - ty).abs();
+
                         if dist <= 1 && can_attack {
                             npc_attack_user(state, npc_idx, target_conn).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
-                        } else if dist > 1 && dist <= 8 && npc_spells.0 > 0 && can_attack && !npc_spells.1.is_empty() {
-                            let spell_idx = rand_range(0, npc_spells.1.len() as i32 - 1) as usize;
-                            let spell_id = npc_spells.1[spell_idx];
-                            npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            if let Some(n) = state.get_npc_mut(npc_idx) {
-                                n.can_attack = false;
+                        } else {
+                            // Cast spell if possible
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
                             }
-                        } else if dist > 1 {
-                            let heading = chase_heading(x, y, tx, ty);
-                            if move_npc(state, npc_idx, heading) {
-                                send_npc_move(state, npc_idx).await;
+
+                            // Chase attacker
+                            if dist > 1 {
+                                let heading = chase_heading(x, y, tx, ty);
+                                if move_npc(state, npc_idx, heading) {
+                                    send_npc_move(state, npc_idx).await;
+                                }
                             }
                         }
                     } else {
-                        if let Some(n) = state.get_npc_mut(npc_idx) {
-                            n.target = None;
-                        }
+                        // Attacker left map — restore
+                        restore_old_movement(state, npc_idx);
                     }
                 } else {
+                    // Attacker not found within 15 tiles — restore old movement
+                    restore_old_movement(state, npc_idx);
                     if rand_range(1, 12) == 3 {
+                        let heading = rand_range(1, 4);
+                        if move_npc(state, npc_idx, heading) {
+                            send_npc_move(state, npc_idx).await;
+                        }
+                    }
+                }
+            }
+
+            npc::AI_GUARD => {
+                // VB6 AI_AI_Guardia — Royal guards chase criminals, Chaos guards chase citizens
+                // Castle guards (map 620/621) don't move
+                let is_royal = npc_type == NpcType::RoyalGuard || alineacion == 1;
+                let is_castle = map == 620 || map == 621;
+
+                // First check adjacent for attack
+                if can_attack {
+                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                        let should_attack = if is_royal {
+                            state.users.get(&target_conn).map(|u| u.criminal).unwrap_or(false)
+                        } else {
+                            // Chaos guard — attack citizens
+                            state.users.get(&target_conn).map(|u| !u.criminal).unwrap_or(false)
+                        };
+                        if should_attack {
+                            npc_attack_user(state, npc_idx, target_conn).await;
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = false;
+                            }
+                        }
+                    }
+                }
+
+                // Chase behavior (skip for castle guards)
+                if !is_castle {
+                    let chase_target = if is_royal {
+                        find_nearest_criminal(state, map, x, y)
+                    } else {
+                        find_nearest_citizen(state, map, x, y)
+                    };
+
+                    if let Some(target_conn) = chase_target {
+                        let target_pos = state.users.get(&target_conn)
+                            .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                            .map(|u| (u.pos_x, u.pos_y));
+
+                        if let Some((tx, ty)) = target_pos {
+                            let dist = (x - tx).abs() + (y - ty).abs();
+                            if dist > 1 {
+                                let heading = chase_heading(x, y, tx, ty);
+                                if move_npc(state, npc_idx, heading) {
+                                    send_npc_move(state, npc_idx).await;
+                                }
+                            }
+                        }
+                    } else if rand_range(1, 12) == 3 {
+                        // No target — random wander
                         let heading = rand_range(1, 4);
                         if move_npc(state, npc_idx, heading) {
                             send_npc_move(state, npc_idx).await;
@@ -6875,10 +7230,6 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
                         .map(|u| (u.pos_x, u.pos_y));
 
-                    let npc_spells = state.get_npc(npc_idx)
-                        .map(|n| (n.lanza_spells, n.spells.clone()))
-                        .unwrap_or((0, Vec::new()));
-
                     if let Some((tx, ty)) = target_pos {
                         let dist = (x - tx).abs() + (y - ty).abs();
                         if dist <= 1 && can_attack {
@@ -6886,9 +7237,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
-                        } else if dist > 1 && dist <= 8 && npc_spells.0 > 0 && can_attack && !npc_spells.1.is_empty() {
-                            let spell_idx = rand_range(0, npc_spells.1.len() as i32 - 1) as usize;
-                            let spell_id = npc_spells.1[spell_idx];
+                        } else if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
+                            let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                            let spell_id = spells[spell_idx];
                             npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
@@ -6900,12 +7251,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 .unwrap_or(false);
 
                             if has_path {
-                                // Follow existing path
                                 if npc_pathfind_step(state, npc_idx) {
                                     send_npc_move(state, npc_idx).await;
                                 }
                             } else {
-                                // Compute new path via BFS
                                 let path = pathfind_bfs(state, map, x, y, tx, ty);
                                 if !path.is_empty() {
                                     if let Some(n) = state.get_npc_mut(npc_idx) {
@@ -6916,7 +7265,6 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                         send_npc_move(state, npc_idx).await;
                                     }
                                 } else {
-                                    // BFS failed — fallback to simple chase
                                     let heading = chase_heading(x, y, tx, ty);
                                     if move_npc(state, npc_idx, heading) {
                                         send_npc_move(state, npc_idx).await;
@@ -6941,27 +7289,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 }
             }
 
-            npc::AI_GUARD => {
-                // Guard AI — attack criminals in adjacent tiles
-                // Simplified: attack any adjacent player for now
-                if can_attack {
-                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
-                        // Only attack criminals
-                        let is_criminal = state.users.get(&target_conn)
-                            .map(|u| u.criminal)
-                            .unwrap_or(false);
-                        if is_criminal {
-                            npc_attack_user(state, npc_idx, target_conn).await;
-                            if let Some(n) = state.get_npc_mut(npc_idx) {
-                                n.can_attack = false;
-                            }
-                        }
-                    }
-                }
-            }
-
             npc::AI_FOLLOW_OWNER => {
-                // Pet AI — follow master and attack their attackers
+                // Pet AI — follow master and attack master's target NPC
                 let master_id = state.get_npc(npc_idx)
                     .and_then(|n| n.maestro_user);
                 if let Some(master_conn) = master_id {
@@ -6974,28 +7303,24 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                         // If master has a target NPC, attack it
                         if master_target_npc > 0 && can_attack {
-                            let target_npc_pos = state.get_npc(master_target_npc)
-                                .filter(|n| n.is_alive())
-                                .map(|n| (n.x, n.y));
-                            if let Some((tnx, tny)) = target_npc_pos {
-                                let tdist = (x - tnx).abs() + (y - tny).abs();
-                                if tdist <= 1 {
-                                    // Adjacent to target — attack (NPC vs NPC simplified)
-                                    let pet_dmg = rand_range(
-                                        state.get_npc(npc_idx).map(|n| n.min_hit).unwrap_or(1),
-                                        state.get_npc(npc_idx).map(|n| n.max_hit).unwrap_or(1),
-                                    );
-                                    if let Some(target_npc) = state.get_npc_mut(master_target_npc) {
-                                        target_npc.min_hp -= pet_dmg;
-                                    }
-                                    if let Some(n) = state.get_npc_mut(npc_idx) {
-                                        n.can_attack = false;
-                                    }
-                                } else {
-                                    // Move towards target NPC
-                                    let heading = chase_heading(x, y, tnx, tny);
-                                    if move_npc(state, npc_idx, heading) {
-                                        send_npc_move(state, npc_idx).await;
+                            let target_npc_alive = state.get_npc(master_target_npc)
+                                .map(|n| n.is_alive())
+                                .unwrap_or(false);
+                            if target_npc_alive {
+                                let target_npc_pos = state.get_npc(master_target_npc)
+                                    .map(|n| (n.x, n.y));
+                                if let Some((tnx, tny)) = target_npc_pos {
+                                    let tdist = (x - tnx).abs() + (y - tny).abs();
+                                    if tdist <= 1 {
+                                        npc_attack_npc(state, npc_idx, master_target_npc).await;
+                                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                                            n.can_attack = false;
+                                        }
+                                    } else {
+                                        let heading = chase_heading(x, y, tnx, tny);
+                                        if move_npc(state, npc_idx, heading) {
+                                            send_npc_move(state, npc_idx).await;
+                                        }
                                     }
                                 }
                             }
@@ -7020,12 +7345,48 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // Unknown AI type — do nothing
             }
         }
+    }
+}
 
-        // Reset attack cooldown (NPC can attack every other tick = 200ms)
-        if !can_attack {
-            if let Some(n) = state.get_npc_mut(npc_idx) {
-                n.can_attack = true;
+/// NPC self-heal: check if any spell has SubeHP=1 and cast it on self.
+async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spells: &[i32]) {
+    for &spell_id in spells {
+        let spell = match state.get_spell(spell_id) {
+            Some(s) => s.clone(),
+            None => continue,
+        };
+        if spell.sube_hp == 1 {
+            // Heal spell — heal the NPC
+            let heal = rand_range(spell.min_hp.max(1), spell.max_hp.max(1));
+            let (map, nx, ny, npc_name) = match state.get_npc(npc_idx) {
+                Some(n) => (n.map, n.x, n.y, n.name.clone()),
+                None => return,
+            };
+            let npc_char = match state.get_npc(npc_idx) {
+                Some(n) => n.char_index,
+                None => return,
+            };
+
+            if let Some(npc) = state.get_npc_mut(npc_idx) {
+                npc.min_hp = (npc.min_hp + heal).min(npc.max_hp);
             }
+
+            // FX on NPC
+            if spell.fx_grh > 0 {
+                let fx = format!("CFX{},{},{}", npc_char.0, spell.fx_grh, spell.loops);
+                state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &fx).await;
+            }
+            if spell.wav > 0 {
+                let snd = format!("TW{}", spell.wav);
+                state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+            }
+
+            // Magic words
+            if !spell.palabras_magicas.is_empty() {
+                let talk = format!(";{} dice: {}~255~0~0", npc_name, spell.palabras_magicas);
+                state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &talk).await;
+            }
+            break; // Only cast one heal per tick
         }
     }
 }
@@ -7240,6 +7601,203 @@ fn chase_heading(x: i32, y: i32, tx: i32, ty: i32) -> i32 {
         if dx > 0 { world::HEADING_EAST } else { world::HEADING_WEST }
     } else {
         if dy > 0 { world::HEADING_SOUTH } else { world::HEADING_NORTH }
+    }
+}
+
+// =====================================================================
+// NPC AI helper functions
+// =====================================================================
+
+/// Find nearest criminal player within NPC vision range (for royal guards).
+fn find_nearest_criminal(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    let mut best: Option<(ConnectionId, i32)> = None;
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if let Some(conn) = tile.user_conn {
+                        if let Some(user) = state.users.get(&conn) {
+                            if user.logged && !user.dead && user.criminal && user.privileges == 0 {
+                                let dist = (x - cx).abs() + (y - cy).abs();
+                                if best.is_none() || dist < best.unwrap().1 {
+                                    best = Some((conn, dist));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(conn, _)| conn)
+}
+
+/// Find nearest citizen (non-criminal) player within NPC vision range (for chaos guards).
+fn find_nearest_citizen(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    let mut best: Option<(ConnectionId, i32)> = None;
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if let Some(conn) = tile.user_conn {
+                        if let Some(user) = state.users.get(&conn) {
+                            if user.logged && !user.dead && !user.criminal && user.privileges == 0 {
+                                let dist = (x - cx).abs() + (y - cy).abs();
+                                if best.is_none() || dist < best.unwrap().1 {
+                                    best = Some((conn, dist));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(conn, _)| conn)
+}
+
+/// Find a player by name within 15 tiles (for defense AI — NPC looking for its attacker).
+fn find_player_by_name(state: &GameState, map: i32, x: i32, y: i32, name: &str) -> Option<ConnectionId> {
+    if name.is_empty() { return None; }
+    let range = 15;
+    let min_x = (x - range).max(1);
+    let max_x = (x + range).min(100);
+    let min_y = (y - range).max(1);
+    let max_y = (y + range).min(100);
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if let Some(conn) = tile.user_conn {
+                        if let Some(user) = state.users.get(&conn) {
+                            if user.logged && !user.dead && user.char_name == name {
+                                return Some(conn);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Restore NPC to its original movement AI (VB6: RestoreOldMovement).
+/// Called when defense-mode NPC loses its target.
+fn restore_old_movement(state: &mut GameState, npc_idx: usize) {
+    if let Some(npc) = state.get_npc_mut(npc_idx) {
+        npc.movement = npc.old_movement;
+        npc.hostile = npc.old_hostile;
+        npc.attacked_by.clear();
+        npc.target = None;
+    }
+}
+
+/// NPC vs NPC combat (VB6: NpcAtacaNpc — used by pets attacking target NPCs).
+async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, target_idx: usize) {
+    let attacker_data = match state.get_npc(attacker_idx) {
+        Some(n) if n.is_alive() => (n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.maestro_user),
+        _ => return,
+    };
+    let (a_min_hit, a_max_hit, _a_char, a_map, a_x, a_y, a_master) = attacker_data;
+
+    let target_alive = state.get_npc(target_idx).map(|n| n.is_alive()).unwrap_or(false);
+    if !target_alive { return; }
+
+    // Simple damage — no armor for NPC vs NPC
+    let damage = rand_range(a_min_hit.max(1), a_max_hit.max(1));
+
+    let target_dead = {
+        match state.get_npc_mut(target_idx) {
+            Some(target) => {
+                target.min_hp -= damage;
+                target.min_hp <= 0
+            }
+            None => return,
+        }
+    };
+
+    // Impact sound
+    let snd_pkt = format!("TW{}", 10);
+    state.send_data(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt).await;
+
+    if target_dead {
+        // Target NPC dies — use pet owner as killer if available
+        if let Some(master_conn) = a_master {
+            let (give_exp, give_gld_min, give_gld_max) = state.get_npc(target_idx)
+                .map(|n| (n.give_exp, n.give_gld_min, n.give_gld_max))
+                .unwrap_or((0, 0, 0));
+            npc_die(state, target_idx, master_conn, give_exp, give_gld_min, give_gld_max).await;
+        } else {
+            // No master — just kill it
+            let (map, x, y, char_index) = match state.get_npc(target_idx) {
+                Some(n) => (n.map, n.x, n.y, n.char_index),
+                None => return,
+            };
+            let bp_pkt = format!("BP{}", char_index.0);
+            state.send_data(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+            state.kill_npc(target_idx);
+        }
+    }
+
+    // Check if attacker (pet) died from target's counter (not implemented in VB6 NvN)
+    // Pets can also die — check attacker_idx NPC
+    let pet_dead = state.get_npc(attacker_idx).map(|n| n.min_hp <= 0).unwrap_or(false);
+    if pet_dead {
+        let (p_map, p_x, p_y, p_ci) = match state.get_npc(attacker_idx) {
+            Some(n) => (n.map, n.x, n.y, n.char_index),
+            None => return,
+        };
+        let bp = format!("BP{}", p_ci.0);
+        state.send_data(SendTarget::ToArea { map: p_map, x: p_x, y: p_y }, &bp).await;
+        // Remove pet from owner
+        if let Some(owner_conn) = a_master {
+            remove_pet_from_owner(state, owner_conn, attacker_idx);
+        }
+        state.kill_npc(attacker_idx);
+    }
+}
+
+/// Remove a pet NPC from its owner's mascotas array.
+fn remove_pet_from_owner(state: &mut GameState, owner_conn: ConnectionId, npc_idx: usize) {
+    if let Some(user) = state.users.get_mut(&owner_conn) {
+        for i in 0..3 {
+            if user.mascotas_index[i] == npc_idx {
+                user.mascotas_index[i] = 0;
+                user.mascotas_type[i] = 0;
+                user.nro_mascotas = (user.nro_mascotas - 1).max(0);
+                break;
+            }
+        }
+    }
+}
+
+/// Update map_user_counts cache (how many logged users per map).
+fn update_map_user_counts(state: &mut GameState) {
+    state.map_user_counts.clear();
+    for user in state.users.values() {
+        if user.logged && !user.dead {
+            *state.map_user_counts.entry(user.pos_map).or_insert(0) += 1;
+        }
     }
 }
 
@@ -11606,8 +12164,37 @@ async fn handle_clan_bank_save(state: &mut GameState, conn_id: ConnectionId) {
 const FACTION_TIER_THRESHOLDS: [i32; 4] = [50, 100, 200, 350];
 
 /// /ENLISTAR — Join a faction (Royal Army or Chaos Forces).
-/// Requirements: 50+ kills of opposing faction, correct alignment.
+/// VB6: requires NPC target (type 5), distance <= 4, not dead.
 async fn handle_slash_enlistar(state: &mut GameState, conn_id: ConnectionId) {
+    let (target_npc, dead) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.target_npc, u.dead),
+        _ => return,
+    };
+
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
+        return;
+    }
+
+    // VB6: NPCtype must be 5 (faction officer) AND not dead
+    let npc_type_num = state.get_npc(target_npc).map(|n| n.npc_type as i32).unwrap_or(0);
+    if npc_type_num != 5 || dead { return; }
+
+    // VB6: distance > 4 → ||158
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 4 || (u_y - npc_y).abs() > 4 {
+        state.send_to(conn_id, "||158").await;
+        return;
+    }
+
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (
             u.armada_real, u.fuerzas_caos, u.criminal,
@@ -11762,8 +12349,37 @@ fn faction_rank_name(tier: i32, is_royal: bool) -> &'static str {
     }
 }
 
-/// /RECOMPENSA — Claim faction tier reward.
+/// /RECOMPENSA — Claim faction tier reward. VB6: requires NPC type 5, distance <= 4.
 async fn handle_slash_recompensa(state: &mut GameState, conn_id: ConnectionId) {
+    let (target_npc, dead) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.target_npc, u.dead),
+        _ => return,
+    };
+
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
+        return;
+    }
+
+    // VB6: NPCtype must be 5, not dead
+    let npc_type_num = state.get_npc(target_npc).map(|n| n.npc_type as i32).unwrap_or(0);
+    if npc_type_num != 5 || dead { return; }
+
+    // VB6: distance > 4 → ||12
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 4 || (u_y - npc_y).abs() > 4 {
+        state.send_to(conn_id, "||12").await;
+        return;
+    }
+
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (
             u.armada_real, u.fuerzas_caos,
@@ -11901,10 +12517,16 @@ async fn handle_slash_balance(state: &mut GameState, conn_id: ConnectionId) {
 
 /// /GLOBAL <text> — Send global chat message.
 async fn handle_slash_global(state: &mut GameState, conn_id: ConnectionId, text: &str) {
-    let char_name = match state.users.get(&conn_id) {
-        Some(u) if u.logged => u.char_name.clone(),
+    let (char_name, priv_level) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.char_name.clone(), u.privileges),
         _ => return,
     };
+
+    // VB6: If ChatGlobal == False and user is not staff → blocked
+    if !state.chat_global && priv_level == 0 {
+        state.send_to(conn_id, "||549").await;
+        return;
+    }
 
     if text.contains('~') { return; }
 
@@ -14272,10 +14894,16 @@ async fn handle_slash_ip2nick(state: &mut GameState, conn_id: ConnectionId, ip: 
     }
 }
 
-/// /NOGLOBAL — Toggle global chat mute for self.
+/// /NOGLOBAL — Toggle global chat on/off (GM Dios+ command). VB6: frmMain.frm
 async fn handle_slash_noglobal(state: &mut GameState, conn_id: ConnectionId) {
-    // Simple toggle — just acknowledge
-    state.send_to(conn_id, &format!("{}Chat global toggled.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
+    if priv_level < 4 { return; } // Dios+
+    state.chat_global = !state.chat_global;
+    if state.chat_global {
+        state.send_data(SendTarget::ToAll, "||803").await;
+    } else {
+        state.send_data(SendTarget::ToAll, "||804").await;
+    }
 }
 
 /// /FPS — Show server stats.
@@ -15290,9 +15918,53 @@ async fn handle_slash_comerciar(state: &mut GameState, conn_id: ConnectionId) {
     }
 }
 
-/// /BOVEDA — Open bank vault. Requires banker NPC nearby.
+/// /BOVEDA — Open bank vault. VB6: requires Banquero NPC target, distance <= 5, not dead.
 async fn handle_slash_boveda(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}Debes estar frente a un banquero.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
+        _ => return,
+    };
+
+    // VB6: If Muerto = 1 Then ||3
+    if dead {
+        state.send_to(conn_id, "||3").await;
+        return;
+    }
+
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
+        return;
+    }
+
+    // VB6: distance > 5 → ||13
+    let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y, npc.npc_type),
+        None => { state.send_to(conn_id, "||9").await; return; }
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 5 || (u_y - npc_y).abs() > 5 {
+        state.send_to(conn_id, "||13").await;
+        return;
+    }
+
+    // VB6: NPCtype must be Banquero (4)
+    if npc_type != crate::data::npcs::NpcType::Banker {
+        return;
+    }
+
+    // VB6: IniciarDeposito — send bank inventory then INITBANCO
+    enviar_banco_inv(state, conn_id).await;
+    send_stats_gold(state, conn_id).await;
+
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.comerciando = true;
+    }
+
+    state.send_to(conn_id, server_opcodes::INIT_BANK).await;
 }
 
 /// /DARORO <name>@<amount> — Give gold to another player. Min 10000.
@@ -15476,59 +16148,129 @@ async fn handle_slash_advertencias(state: &mut GameState, conn_id: ConnectionId)
     }
 }
 
-/// /CURAR — Heal at NPC (simplified: heals if not dead, requires NPC nearby).
+/// /CURAR — Heal at Revividor NPC. VB6: requires Revividor NPC, distance <= 10, alive.
+/// Removes poison, heals to full HP.
 async fn handle_slash_curar(state: &mut GameState, conn_id: ConnectionId) {
-    let dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(true);
-    if dead {
-        state.send_to(conn_id, &format!("{}Estas muerto!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
+        _ => return,
+    };
+
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
         return;
     }
 
-    // Simplified: heal to full HP
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        user.min_hp = user.max_hp;
-        user.poisoned = false;
-        user.paralyzed = false;
-    }
-    send_stats_hp(state, conn_id).await;
-    state.send_to(conn_id, &format!("{}Has sido curado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-}
-
-/// /DEMONIO or /ANGEL — Transform based on faction/alignment (VB6: CJerarquia).
-async fn handle_slash_transform(state: &mut GameState, conn_id: ConnectionId, cmd: &str) {
-    let (dead, criminal, level) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.criminal, u.level),
-        _ => return,
-    };
-    if dead || level < 25 { return; }
-
-    if cmd == "/DEMONIO" {
-        if !criminal {
-            state.send_to(conn_id, &format!("{}Debes ser criminal para transformarte en demonio.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-            return;
-        }
-        // Set demon body (VB6: body 24 for demon)
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.body = 24;
-        }
-    } else {
-        if criminal {
-            state.send_to(conn_id, &format!("{}Debes ser ciudadano para transformarte en angel.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-            return;
-        }
-        // Set angel body (VB6: body 25 for angel)
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.body = 25;
-        }
+    // VB6: NPCtype must be Revividor (1) AND user must be alive
+    let npc_type = state.get_npc(target_npc).map(|n| n.npc_type);
+    if npc_type != Some(crate::data::npcs::NpcType::Reviver) || dead {
+        return;
     }
 
-    // Broadcast appearance change
-    let (char_index, map, x, y, body, head, heading, weapon, shield, casco) = match state.users.get(&conn_id) {
-        Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+    // VB6: distance > 10 → ||12
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
         None => return,
     };
-    let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, body, head, heading, weapon, shield, casco);
-    state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
+        state.send_to(conn_id, "||12").await;
+        return;
+    }
+
+    // VB6: Remove poison, heal to full HP, send ||398
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.poisoned = false;
+        user.min_hp = user.max_hp;
+    }
+    send_stats_hp(state, conn_id).await;
+    state.send_to(conn_id, "||398").await;
+}
+
+/// /DEMONIO or /ANGEL — VB6: requires CJerarquia=1, toggles transform.
+/// Demon body=289 (criminal), Angel body=288 (citizen). FX=1 (FXWARP), Sound=SND_TRANSF.
+async fn handle_slash_transform(state: &mut GameState, conn_id: ConnectionId, cmd: &str) {
+    let (dead, navigating, criminal, transformed, c_jerarquia) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.navigating, u.criminal, u.transformed, u.jerarquia_dios),
+        _ => return,
+    };
+
+    // VB6: If Navegando=1 Or Muerto=1 Then ||397
+    if navigating || dead {
+        state.send_to(conn_id, "||397").await;
+        return;
+    }
+
+    let (ci, map, x, y) = match state.users.get(&conn_id) {
+        Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+
+    if transformed {
+        // VB6: Revert transformation — DarCuerpoDesnudo, reset head, FX + sound
+        let (race, char_name, gender) = match state.users.get(&conn_id) {
+            Some(u) => (u.race.clone(), u.char_name.clone(), u.gender),
+            None => return,
+        };
+        let gender_str = gender.to_string();
+        let orig_head = {
+            let base = &state.base_path;
+            charfile::load_charfile(base, &char_name).map(|c| c.head).unwrap_or(0)
+        };
+        let new_body = naked_body(&race, &gender_str);
+
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.body = new_body;
+            user.head = orig_head;
+            user.transformed = false;
+        }
+
+        // Broadcast appearance + FX
+        let (heading, weapon, shield, casco) = match state.users.get(&conn_id) {
+            Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+            None => return,
+        };
+        let cp = format!("CP{},{},{},{},{},{},0,0,{}", ci, new_body, orig_head, heading, weapon, shield, casco);
+        state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+        state.send_data(SendTarget::ToArea { map, x, y }, &format!("CFX{},1,0", ci)).await;
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW3").await;
+
+    } else if cmd == "/DEMONIO" && c_jerarquia >= 1 && criminal {
+        // VB6: Transform to demon — body 289, head 0
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.body = 289;
+            user.head = 0;
+            user.transformed = true;
+        }
+        let (heading, weapon, shield, casco) = match state.users.get(&conn_id) {
+            Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+            None => return,
+        };
+        let cp = format!("CP{},289,0,{},{},{},0,0,{}", ci, heading, weapon, shield, casco);
+        state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+        state.send_data(SendTarget::ToArea { map, x, y }, &format!("CFX{},1,0", ci)).await;
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW3").await;
+
+    } else if cmd == "/ANGEL" && c_jerarquia >= 1 && !criminal {
+        // VB6: Transform to angel — body 288, head 0
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.body = 288;
+            user.head = 0;
+            user.transformed = true;
+        }
+        let (heading, weapon, shield, casco) = match state.users.get(&conn_id) {
+            Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+            None => return,
+        };
+        let cp = format!("CP{},288,0,{},{},{},0,0,{}", ci, heading, weapon, shield, casco);
+        state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+        state.send_data(SendTarget::ToArea { map, x, y }, &format!("CFX{},1,0", ci)).await;
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW3").await;
+    }
 }
 
 /// /PMSG <msg> — Party message to all party members.
@@ -16200,42 +16942,89 @@ async fn handle_slash_salir(state: &mut GameState, conn_id: ConnectionId) {
     close_connection(state, conn_id).await;
 }
 
-/// /MEDITAR — Toggle meditation. GMs get instant full mana.
+/// /MEDITAR — Toggle meditation. VB6: level-based FX, GMs get instant full mana.
+/// FX IDs: chico=4 (<15), mediano=5 (15-29), grande=6 (30-49), xgrande=43 (50-59),
+/// neutral=103/alianza=104/horda=105 (60+), transfo=16 (transformed).
 async fn handle_slash_meditar(state: &mut GameState, conn_id: ConnectionId) {
-    let (privileges, meditating) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => (u.privileges, u.meditating),
+    let (dead, privileges, meditating, max_mana) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.privileges, u.meditating, u.max_mana),
         _ => return,
     };
 
-    // GMs get instant full mana
+    // VB6: If Muerto = 1 Then ||3
+    if dead {
+        state.send_to(conn_id, "||3").await;
+        return;
+    }
+
+    // VB6: If MaxMAN = 0 Then ||4
+    if max_mana == 0 {
+        state.send_to(conn_id, "||4").await;
+        return;
+    }
+
+    // GMs get instant full mana (VB6: Privilegios > User)
     if privileges > privilege_level::USER {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.min_mana = user.max_mana;
         }
+        state.send_to(conn_id, "||393").await;
         send_stats_mana(state, conn_id).await;
-        state.send_to(conn_id, &format!("{}Mana restaurado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
         state.send_to(conn_id, "MEDOK").await;
         return;
     }
 
-    // Toggle meditation for regular players
+    // Toggle meditation
+    let was_meditating = meditating;
     if let Some(user) = state.users.get_mut(&conn_id) {
-        user.meditating = !user.meditating;
+        user.meditating = !was_meditating;
     }
-    let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
 
-    if is_meditating {
-        // Show meditation FX
-        let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
-        let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
-        let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
-        let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
-        let pkt = format!("CFX{},4,999", char_index);
-        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
-        state.send_to(conn_id, &format!("{}Empezas a meditar.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-    } else {
+    if !was_meditating {
+        // Starting meditation — VB6: ||394 + MEDOK
+        state.send_to(conn_id, "||394").await;
         state.send_to(conn_id, "MEDOK").await;
-        state.send_to(conn_id, &format!("{}Dejas de meditar.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+
+        // VB6: If MinMAN = MaxMAN Then exit (already full)
+        let min_mana = state.users.get(&conn_id).map(|u| u.min_mana).unwrap_or(0);
+        if min_mana >= max_mana { return; }
+
+        // VB6: Send level-based meditation FX
+        let (ci, map, x, y, level, transformed) = match state.users.get(&conn_id) {
+            Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y, u.level, u.transformed),
+            None => return,
+        };
+
+        let fx_id = if transformed {
+            16 // FXMEDITARTRANSFO
+        } else if level < 15 {
+            4  // FXMEDITARCHICO
+        } else if level < 30 {
+            5  // FXMEDITARMEDIANO
+        } else if level < 50 {
+            6  // FXMEDITARGRANDE
+        } else if level <= 59 {
+            43 // FXMEDITARXGRANDE
+        } else {
+            // Level 60+ — faction-based
+            103 // FXNUEVATPNEUTRAL (default)
+        };
+
+        let loops = 999; // LoopAdEternum
+        let pkt = format!("CFX{},{},{}", ci, fx_id, loops);
+        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+    } else {
+        // Stopping meditation — VB6: ||205 + MEDOK + clear FX
+        state.send_to(conn_id, "||205").await;
+        state.send_to(conn_id, "MEDOK").await;
+
+        // VB6: Clear FX for area
+        let (ci, map, x, y) = match state.users.get(&conn_id) {
+            Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
+            None => return,
+        };
+        let pkt = format!("CFX{},0,0", ci);
+        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
     }
 }
 
@@ -17740,6 +18529,128 @@ async fn resolve_siege(state: &mut GameState) {
     }
 }
 
+/// War timer tick — runs every 1s. VB6: frmMain.frm lines 819-876.
+/// War starts at minute 120, warnings from 122-131, ends at 132.
+/// Ancalagon boss timer — called every 1 second from main loop.
+/// VB6: modDragon.bas — When dragon is dead, count to 60 minutes.
+/// Spawn pre-dragon (937) + 4 guardians (938) at map 123. Pre-dragon death → spawn dragon (936).
+pub async fn tick_ancalagon(state: &mut GameState) {
+    if state.ancalagon_alive {
+        return; // Dragon is alive, nothing to do
+    }
+
+    state.ancalagon_seconds += 1;
+    if state.ancalagon_seconds < 60 {
+        return;
+    }
+    state.ancalagon_seconds = 0;
+    state.ancalagon_minutes += 1;
+
+    if state.ancalagon_minutes >= 60 && !state.ancalagon_pre_dragon {
+        // Time to spawn pre-dragon + guardians
+        state.ancalagon_minutes = 0;
+        state.ancalagon_seconds = 0;
+
+        // Broadcast warning
+        state.send_data(SendTarget::ToAll, "||471").await;
+
+        // Spawn 4 guardians (NPC 938) at map 123
+        let guardian_positions = [(50, 45), (52, 45), (50, 47), (52, 47)];
+        state.ancalagon_guardians = 0;
+        for (gx, gy) in &guardian_positions {
+            if state.spawn_npc(938, 123, *gx, *gy).is_some() {
+                state.ancalagon_guardians += 1;
+            }
+        }
+
+        // Spawn pre-dragon (NPC 937) at map 123
+        if state.spawn_npc(937, 123, 51, 46).is_some() {
+            state.ancalagon_pre_dragon = true;
+        }
+    }
+
+}
+
+/// Check if pre-dragon was killed and spawn real dragon.
+/// Called from npc_die when NPC 937 dies.
+async fn try_spawn_ancalagon_dragon(state: &mut GameState) {
+    if !state.ancalagon_alive && !state.ancalagon_pre_dragon {
+        if let Some(_) = state.spawn_npc(936, 123, 51, 46) {
+            state.ancalagon_alive = true;
+            let msg = "T|¡El Ancalagon ha aparecido!~255~0~0~1~0";
+            state.send_data(SendTarget::ToAll, msg).await;
+        }
+    }
+}
+
+pub async fn tick_guerra(state: &mut GameState) {
+    state.guerra_seconds += 1;
+    if state.guerra_seconds < 60 { return; }
+    state.guerra_seconds = 0;
+    state.guerra_minutes += 1;
+
+    let mins = state.guerra_minutes;
+
+    if mins == 120 {
+        // Start war — pick random location
+        // Simple alternation based on system time for pseudo-randomness
+        let location = if std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default().as_secs() % 2 == 0 { 1u32 } else { 2u32 };
+        if location == 1 {
+            // Anvilmar (map 29)
+            state.send_data(SendTarget::ToAll, "||460").await;
+            state.hay_guerra_anvil = true;
+            if let Some(npc_idx) = state.spawn_npc(947, 29, 78, 45) {
+                state.rey_guerra_index = npc_idx;
+            }
+            state.hay_guerra = true;
+        } else {
+            // Khalimdar (map 27)
+            state.send_data(SendTarget::ToAll, "||461").await;
+            state.hay_guerra_khalim = true;
+            if let Some(npc_idx) = state.spawn_npc(948, 27, 50, 18) {
+                state.rey_guerra_index = npc_idx;
+            }
+            state.hay_guerra = true;
+        }
+    }
+
+    if mins >= 122 && mins < 132 && state.hay_guerra {
+        let remaining = 132 - mins;
+        state.send_data(SendTarget::ToAll, &format!("||462@{}", remaining)).await;
+    }
+
+    if mins == 132 && state.hay_guerra {
+        // War ends — no winner
+        if state.hay_guerra_khalim {
+            state.send_data(SendTarget::ToAll, "||463").await;
+        } else if state.hay_guerra_anvil {
+            state.send_data(SendTarget::ToAll, "||464").await;
+        }
+        // Remove war king NPC
+        if state.rey_guerra_index > 0 {
+            state.kill_npc(state.rey_guerra_index);
+        }
+        state.hay_guerra = false;
+        state.hay_guerra_anvil = false;
+        state.hay_guerra_khalim = false;
+        state.rey_guerra_index = 0;
+        state.guerra_minutes = 0;
+
+        // Reset all players' en_guerra flag
+        let war_users: Vec<ConnectionId> = state.users.values()
+            .filter(|u| u.en_guerra)
+            .map(|u| u.conn_id)
+            .collect();
+        for uid in war_users {
+            if let Some(user) = state.users.get_mut(&uid) {
+                user.en_guerra = false;
+            }
+        }
+    }
+}
+
 /// Capture a conquest point in the siege (called when a guild member stands on a point tile).
 pub fn siege_capture_point(state: &mut GameState, point: usize, guild_index: i32) {
     if !state.siege_active || point < 1 || point > 3 { return; }
@@ -18661,11 +19572,22 @@ async fn handle_slash_montar(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
 
+    // VB6: Check first pet's NPC number and assign mount body
+    let pet_idx = state.users.get(&conn_id).map(|u| u.mascotas_index[0]).unwrap_or(0);
+    let npc_num = state.get_npc(pet_idx).map(|n| n.npc_number).unwrap_or(0);
+    let mount_body = match npc_num {
+        156 => 331, // Horse 1
+        157 => 330, // Horse 2
+        158 => 352, // Horse 3
+        181 => 358, // Dragon/Special 1
+        182 => 359, // Dragon/Special 2
+        _ => 296,   // Generic mount fallback
+    };
+
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.montado = true;
         user.montado_body = user.body;
-        // Use a generic mount body (VB6 uses specific dragon/horse bodies)
-        user.body = 296; // Common mount body
+        user.body = mount_body;
         user.weapon_anim = 0;
         user.shield_anim = 0;
         user.casco_anim = 0;
@@ -18787,26 +19709,56 @@ async fn handle_slash_msj(state: &mut GameState, conn_id: ConnectionId) {
     }
 }
 
-/// /CIUDADANIA — Set citizenship.
+/// /CIUDADANIA — Set citizenship. VB6: requires Ciudadania NPC (type 13), distance <= 3.
+/// Maps: 130→Inthak, 25→Thir/Ruvendel.
 async fn handle_slash_ciudadania(state: &mut GameState, conn_id: ConnectionId) {
-    let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
+    let (target_npc, map) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.target_npc, u.pos_map),
+        _ => return,
+    };
 
-    // Determine city based on map
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
+        return;
+    }
+
+    // VB6: distance > 3 → ||10
+    let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y, npc.npc_type),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 3 || (u_y - npc_y).abs() > 3 {
+        state.send_to(conn_id, "||10").await;
+        return;
+    }
+
+    // VB6: NPCtype must be Ciudadania (13)
+    if npc_type != crate::data::npcs::NpcType::Citizenship { return; }
+
+    // VB6: Set home based on map (130=Inthak, 25=Thir)
     let city = match map {
-        1 | 2 | 3 | 4 | 5 => "Inthak",
-        6 | 7 | 8 | 9 | 10 => "Thir",
-        11 | 12 | 13 | 14 | 15 => "Ruvendel",
+        130 => "Inthak",
+        25 => "Thir",
         _ => {
             state.send_to(conn_id, &format!("{}No estas en una ciudad valida.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
             return;
         }
     };
 
+    let current_home = state.users.get(&conn_id).map(|u| u.hogar.clone()).unwrap_or_default();
+    if current_home == city { return; } // VB6: If already same home, exit
+
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.hogar = city.to_string();
     }
 
-    state.send_to(conn_id, &format!("{}Ahora eres ciudadano de {}.{}", server_opcodes::CONSOLE_MSG, city, font_types::INFO)).await;
+    // VB6: ||318@<home>
+    state.send_to(conn_id, &format!("||318@{}", city)).await;
 }
 
 /// /VIAJAR — Travel to city via Traveler NPC.
@@ -18888,13 +19840,43 @@ async fn handle_slash_viajar(state: &mut GameState, conn_id: ConnectionId, city:
 }
 
 /// /ENTRENAR — Open creature training list from trainer NPC.
+/// VB6: requires Entrenador NPC (type 3), distance <= 10, not dead.
 async fn handle_slash_entrenar(state: &mut GameState, conn_id: ConnectionId) {
-    let target = state.users.get(&conn_id).map(|u| u.target_npc).unwrap_or(0);
-    if target == 0 {
-        state.send_to(conn_id, &format!("{}No estas interactuando con un entrenador.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
+        _ => return,
+    };
+
+    // VB6: If Muerto Then ||3
+    if dead {
+        state.send_to(conn_id, "||3").await;
         return;
     }
-    // Simple stub — would need NPC trainer data
+
+    // VB6: If TargetNPC = 0 Then ||9
+    if target_npc == 0 {
+        state.send_to(conn_id, "||9").await;
+        return;
+    }
+
+    // VB6: distance > 10 → ||10
+    let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y, npc.npc_type),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
+        state.send_to(conn_id, "||10").await;
+        return;
+    }
+
+    // VB6: NPCtype must be Entrenador (3)
+    if npc_type != crate::data::npcs::NpcType::Trainer { return; }
+
+    // VB6: EnviarListaCriaturas — training system not fully implemented yet
     state.send_to(conn_id, &format!("{}Sistema de entrenamiento no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
 }
 
@@ -18951,24 +19933,214 @@ async fn handle_slash_resultados(state: &mut GameState, conn_id: ConnectionId) {
     state.send_to(conn_id, &msg).await;
 }
 
-/// /GUERRA — Join war event.
+/// /GUERRA — Join war event. VB6: TCP_HandleData2.bas:430-454.
+/// Warps player to the war zone based on faction (Alianza/Horda).
 async fn handle_slash_guerra(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}No hay guerra activa.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    if !state.hay_guerra {
+        state.send_to(conn_id, "||322").await;
+        return;
+    }
+
+    let (armada, caos, jerarquia, cur_map_pk, en_guerra) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => {
+            let map_pk = state.game_data.maps.get(u.pos_map as usize)
+                .and_then(|m| m.as_ref()).map(|m| m.info.pk).unwrap_or(false);
+            (u.armada_real, u.fuerzas_caos, u.jerarquia_dios, map_pk, u.en_guerra)
+        },
+        _ => return,
+    };
+
+    // Must be in a faction with hierarchy
+    if jerarquia < 1 && !armada && !caos {
+        state.send_to(conn_id, "||324").await;
+        return;
+    }
+
+    if cur_map_pk {
+        state.send_to(conn_id, "||323").await;
+        return;
+    }
+
+    if en_guerra { return; }
+
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.en_guerra = true;
+    }
+
+    // Determine faction: armada_real = Alianza, fuerzas_caos = Horda
+    let is_alianza = armada;
+
+    if state.hay_guerra_khalim {
+        if is_alianza {
+            warp_user(state, conn_id, 1, 21, 30).await;
+        } else {
+            warp_user(state, conn_id, 27, 50, 78).await;
+        }
+    } else if state.hay_guerra_anvil {
+        if is_alianza {
+            warp_user(state, conn_id, 29, 46, 68).await;
+        } else {
+            warp_user(state, conn_id, 41, 50, 13).await;
+        }
+    }
+
+    state.send_to(conn_id, "||325").await;
 }
 
-/// /CIRUJIA — Surgery (race change).
+/// /CIRUJIA — Surgery (race change). VB6: requires cirujano NPC, distance <= 3.
 async fn handle_slash_cirujia(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}Sistema de cirujia no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
+        _ => return,
+    };
+
+    if dead {
+        state.send_to(conn_id, "||3").await;
+        return;
+    }
+
+    if target_npc == 0 { return; }
+
+    // Check distance <= 3
+    let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y, npc.npc_type),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 3 || (u_y - npc_y).abs() > 3 {
+        state.send_to(conn_id, "||158").await;
+        return;
+    }
+
+    // VB6: NPCtype must be cirujano (19)
+    if npc_type != crate::data::npcs::NpcType::Surgeon { return; }
+
+    // VB6: sends CIRUJA<raza>,<genero>
+    let (raza, genero) = match state.users.get(&conn_id) {
+        Some(u) => (u.race.clone(), u.gender),
+        None => return,
+    };
+    let raza_num = match raza.as_str() {
+        "Humano" => 1, "Elfo" => 2, "ElfoOscuro" => 3, "Enano" => 4, "Gnomo" => 5,
+        _ => 1,
+    };
+    state.send_to(conn_id, &format!("CIRUJA{},{}", raza_num, genero)).await;
 }
 
-/// /NOBLE — Become noble.
+/// /NOBLE — Become noble. VB6: TCP_HandleData2.bas:998-1052.
+/// Requires items 1073-1077 (qty 1 each). Grants spell 46. Sets EsNoble flag.
 async fn handle_slash_noble(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}Sistema de nobleza no disponible desde este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    // Check all 5 required items
+    for obj_id in 1073..=1077 {
+        if !user_has_items(state, conn_id, obj_id, 1) {
+            state.send_to(conn_id, "||356").await;
+            return;
+        }
+    }
+
+    let (dead, es_noble, class) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.es_noble, u.class.clone()),
+        _ => return,
+    };
+
+    if dead {
+        state.send_to(conn_id, "||3").await;
+        return;
+    }
+
+    if es_noble { return; }
+
+    // Consume all 5 items
+    for obj_id in 1073..=1077 {
+        remove_items_from_inv(state, conn_id, obj_id, 1).await;
+    }
+
+    // Grant spell 46
+    let spell_idx = 46i32;
+    let already_has = state.users.get(&conn_id).map(|u| {
+        u.spells.iter().any(|&s| s == spell_idx)
+    }).unwrap_or(false);
+
+    if !already_has {
+        let empty_slot = state.users.get(&conn_id).and_then(|u| {
+            u.spells.iter().position(|&s| s == 0)
+        });
+        if let Some(slot) = empty_slot {
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.spells[slot] = spell_idx;
+                user.es_noble = true;
+            }
+            // Send spell update for the slot
+            let spell_name = state.game_data.spells.get(spell_idx as usize)
+                .map(|s| s.nombre.as_str()).unwrap_or("Desconocido");
+            state.send_to(conn_id, &format!("SHI{},{}", slot + 1, spell_name)).await;
+        } else {
+            state.send_to(conn_id, "||181").await; // No spell slots
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.es_noble = true;
+            }
+        }
+    } else {
+        state.send_to(conn_id, "||182").await; // Already has spell
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.es_noble = true;
+        }
+    }
+
+    let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_to(conn_id, &format!("||357@{}", class)).await;
+    state.send_data(SendTarget::ToAll, &format!("||358@{}", name)).await;
 }
 
-/// /DESENTERRAR — Dig treasure.
+/// /DESENTERRAR — Dig up treasure. VB6: TCP_HandleData2.bas:1054-1072 + modTesoros.bas.
+/// Must be at exact treasure coords AND have LlaveTesoro (obj 1062).
 async fn handle_slash_desenterrar(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}No hay nada para desenterrar aqui.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    // Check if player is at treasure location
+    if map != state.tesoro_map || x != state.tesoro_x || y != state.tesoro_y || state.tesoro_map == 0 {
+        state.send_to(conn_id, "||359").await;
+        return;
+    }
+
+    // Check for LlaveTesoro (obj 1062)
+    const LLAVE_TESORO: i32 = 1062;
+    if !user_has_items(state, conn_id, LLAVE_TESORO, 1) {
+        state.send_to(conn_id, "||360").await;
+        return;
+    }
+
+    // Consume key
+    remove_items_from_inv(state, conn_id, LLAVE_TESORO, 1).await;
+
+    // Start treasure countdown
+    state.tesoro_contando = true;
+    state.tesoro_tiempo = 30;
+
+    // Spawn Cofre Cerrado (obj 11) on the map tile
+    const COFRE_CERRADO: i32 = 11;
+    let t_map = state.tesoro_map;
+    let t_x = state.tesoro_x;
+    let t_y = state.tesoro_y;
+    let grh = state.get_object(COFRE_CERRADO).map(|o| o.grh_index).unwrap_or(0);
+    {
+        let grid = state.world.grid_mut(t_map);
+        if let Some(tile) = grid.tile_mut(t_x, t_y) {
+            tile.ground_item.obj_index = COFRE_CERRADO;
+            tile.ground_item.amount = 1;
+        }
+    }
+    // Notify area about the new object
+    let obj_pkt = format!("HO{},{},{},{}", grh, t_x, t_y, 1);
+    state.send_data(SendTarget::ToArea { map: t_map, x: t_x, y: t_y }, &obj_pkt).await;
+
+    state.send_to(conn_id, "||361").await;
 }
 
 /// /BOTIX — Spawn AI bot.
@@ -19783,7 +20955,7 @@ mod tests {
     use tokio::net::{TcpListener, TcpStream};
 
     /// Real server base path (contains Dat/, Maps/ etc.)
-    const SERVER_BASE: &str = "/workspace/Tierras-Sagradas-AO/server-rust";
+    const SERVER_BASE: &str = "/workspace/Tierras-Sagradas-AO/server-rust/server";
 
     /// Create a temp test directory with symlinks to real game data.
     fn setup_test_dir(test_name: &str) -> PathBuf {

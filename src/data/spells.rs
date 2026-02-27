@@ -250,7 +250,7 @@ mod tests {
 
     #[test]
     fn load_real_spells() {
-        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust");
+        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
         if !base.join("Dat").join("Hechizos.dat").exists() {
             return;
         }

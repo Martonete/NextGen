@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn load_single_map() {
-        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust");
+        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
         let map_file = base.join("Maps").join("Mapa1.map");
         if !map_file.exists() {
             return;
@@ -456,7 +456,7 @@ mod tests {
 
     #[test]
     fn load_map_metadata() {
-        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust");
+        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
         let dat_file = base.join("Maps").join("Mapa1.dat");
         if !dat_file.exists() {
             return;

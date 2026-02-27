@@ -1,6 +1,7 @@
-/target
-ao-server
+/target/
+/server/ao-server
+/server/logs/*.log
+/server/charfile/*.chr
+/server/Accounts/*.act
+/server/guilds/Bancos/
 *.log
-charfile/
-Accounts/
-guilds/Bancos/
