@@ -1949,25 +1949,48 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
             state.send_to(conn_id, &msg).await;
         }
         ObjType::Boat => {
-            // Equip/unequip boat (VB6: InvUsuario.bas — Barcas)
+            // VB6: InvUsuario.bas Case eOBJType.otBarcos + Trabajo.bas DoNavega
             let (is_navigating, user_map, user_x, user_y) = match state.users.get(&conn_id) {
                 Some(u) if u.logged => (u.navigating, u.pos_map, u.pos_x, u.pos_y),
                 _ => return,
             };
-            if is_navigating {
-                // Dismount boat — must be adjacent to land (non-blocked, non-water tile)
-                let has_land_nearby = (1..=4).any(|h| {
+
+            // VB6 mount check: LegalPos(adjacent, PuedeAgua=True) checks water + not blocked + no user/NPC
+            // VB6 dismount: NO land check — always allowed (player may get stuck on water)
+            if !is_navigating {
+                // Mount — must have water tile adjacent (VB6: 4 cardinal LegalPos checks)
+                let has_water_nearby = (1..=4).any(|h| {
                     let (dx, dy) = world::heading_to_offset(h);
                     let nx = user_x + dx;
                     let ny = user_y + dy;
-                    !state.is_tile_blocked(user_map, nx, ny) && !state.hay_agua(user_map, nx, ny)
+                    // VB6 LegalPos(map, x, y, PuedeAgua=True): not blocked AND has water AND no user/NPC
+                    !state.is_tile_blocked(user_map, nx, ny)
+                        && state.hay_agua(user_map, nx, ny)
+                        && state.world.grids.get(&user_map)
+                            .map(|g| g.is_tile_free(nx, ny)).unwrap_or(false)
                 });
-                if !has_land_nearby {
-                    let msg = format!("P|No puedes desembarcar aqui, no hay tierra cerca{}", font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                if !has_water_nearby {
+                    state.send_to(conn_id, "||106").await; // TEXTO106
                     return;
                 }
-                // Collect equipped item obj indices + saved state before mutation
+            }
+
+            // VB6 DoNavega: If hidden, reveal first (NOVER)
+            let (was_hidden, char_index_val, map_for_nover) = match state.users.get(&conn_id) {
+                Some(u) => (u.hidden, u.char_index.0, u.pos_map),
+                None => return,
+            };
+            if was_hidden {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.hidden = false;
+                }
+                let nover = format!("NOVER{},0", char_index_val);
+                state.send_data(SendTarget::ToMap(map_for_nover), &nover).await;
+            }
+
+            if is_navigating {
+                // === DISMOUNT (VB6 DoNavega else branch) ===
+                // No land check — VB6 allows dismounting anywhere
                 let equip_info = state.users.get(&conn_id).map(|u| {
                     let get_inv_obj = |slot: usize| -> i32 {
                         if slot >= 1 && slot <= u.inventory.len() { u.inventory[slot - 1].obj_index } else { 0 }
@@ -1977,44 +2000,36 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                         get_inv_obj(u.equip.weapon),
                         get_inv_obj(u.equip.shield),
                         get_inv_obj(u.equip.helmet),
-                        u.old_head,
-                        u.race.clone(),
-                        u.gender,
+                        u.old_head, u.dead, u.race.clone(), u.gender,
                     )
                 });
-                if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, race, gender)) = equip_info {
-                    // Look up appearance from object database (1-based index via get_object)
+                if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, dead, race, gender)) = equip_info {
                     let armor_body = state.get_object(armor_obj).map(|o| o.num_ropaje).unwrap_or(0);
                     let weapon_anim = state.get_object(weapon_obj).map(|o| o.weapon_anim).unwrap_or(0);
                     let shield_anim = state.get_object(shield_obj).map(|o| o.shield_anim).unwrap_or(0);
                     let casco_anim = state.get_object(helmet_obj).map(|o| o.casco_anim).unwrap_or(0);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.navigating = false;
-                        // VB6 DoNavega: Restore original head
-                        u.head = saved_head;
-                        // Restore body: equipped armor or naked
-                        u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
-                        // Restore equipment animations
-                        u.weapon_anim = weapon_anim;
-                        u.shield_anim = shield_anim;
-                        u.casco_anim = casco_anim;
+                        if !dead {
+                            u.head = saved_head;
+                            u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
+                            u.weapon_anim = weapon_anim;
+                            u.shield_anim = shield_anim;
+                            u.casco_anim = casco_anim;
+                        } else {
+                            // VB6: dead dismount → ghost body/head, no equipment
+                            u.body = DEAD_BODY_NEUTRAL;
+                            u.head = DEAD_HEAD_NEUTRAL;
+                            u.weapon_anim = 0;
+                            u.shield_anim = 0;
+                            u.casco_anim = 0;
+                        }
                     }
                 }
-                // Send NAVEG toggle to client
-                state.send_to(conn_id, "NAVEG").await;
             } else {
-                // Mount boat — must be adjacent to water (VB6: HayAgua graphic check)
-                let has_water_nearby = (1..=4).any(|h| {
-                    let (dx, dy) = world::heading_to_offset(h);
-                    state.hay_agua(user_map, user_x + dx, user_y + dy)
-                });
-                if !has_water_nearby {
-                    state.send_to(conn_id, "||106").await; // TEXTO106: Debes aproximarte al agua
-                    return;
-                }
+                // === MOUNT (VB6 DoNavega if branch) ===
                 let ropaje = obj_data.num_ropaje;
                 if let Some(u) = state.users.get_mut(&conn_id) {
-                    // VB6 DoNavega: Save head, set to 0, change body to boat
                     u.old_head = u.head;
                     u.head = 0;
                     u.weapon_anim = 0;
@@ -2025,17 +2040,33 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                         u.body = ropaje;
                     }
                 }
-                // Send NAVEG toggle to client
-                state.send_to(conn_id, "NAVEG").await;
             }
-            // Broadcast appearance change
-            let (cc, map, bx, by) = match state.users.get(&conn_id) {
-                Some(u) => (u.build_cc_packet(), u.pos_map, u.pos_x, u.pos_y),
+
+            // VB6 DoNavega packets (order matters):
+            // 1. ChangeUserChar → CP packet to area (including self)
+            // 2. NAVEG to self
+            // 3. NVG<charindex>,<flag> to ALL players
+            let (cp_pkt, nvg_pkt, map, bx, by) = match state.users.get(&conn_id) {
+                Some(u) => {
+                    let nav_flag = if u.navigating { 1 } else { 0 };
+                    // VB6 CP format: CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<fx>,<loops>,<helmet>
+                    let cp = format!("CP{},{},{},{},{},{},{},{},{}",
+                        u.char_index.0, u.body, u.head, u.heading,
+                        u.weapon_anim, u.shield_anim,
+                        0, 0, // FX, loops (no active FX during boat toggle)
+                        u.casco_anim,
+                    );
+                    let nvg = format!("NVG{},{}", u.char_index.0, nav_flag);
+                    (cp, nvg, u.pos_map, u.pos_x, u.pos_y)
+                }
                 None => return,
             };
-            if !cc.is_empty() {
-                state.send_data(SendTarget::ToArea { map, x: bx, y: by }, &cc).await;
-            }
+            // CP to area (VB6 SendToUserArea = includes self)
+            state.send_data(SendTarget::ToArea { map, x: bx, y: by }, &cp_pkt).await;
+            // NAVEG to self (toggle client navigation state)
+            state.send_to(conn_id, "NAVEG").await;
+            // NVG to all (VB6 SendTarget.ToAll)
+            state.send_data(SendTarget::ToAll, &nvg_pkt).await;
         }
         ObjType::Instrument => {
             // VB6: Play music instrument — broadcast TW<Snd1> to area
