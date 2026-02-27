@@ -106,8 +106,10 @@ async fn main() {
 
     // Game tick (40ms — anti-cheat interval decrements, matches VB6 TimerRestoTiempo)
     let mut game_tick = tokio::time::interval(std::time::Duration::from_millis(40));
-    // AI tick timer (100ms — matches VB6 server AI interval)
-    let mut ai_tick = tokio::time::interval(std::time::Duration::from_millis(100));
+    // AI tick timer — VB6: TIMER_AI.Interval = IntervaloNpcAI (default 1300ms from Server.ini)
+    let ai_interval_ms = config.npc_ai_interval_ms.max(100); // floor at 100ms
+    let mut ai_tick = tokio::time::interval(std::time::Duration::from_millis(ai_interval_ms));
+    info!("NPC AI interval: {}ms", ai_interval_ms);
     // Respawn timer (every 30 seconds check for dead NPCs to respawn)
     let mut respawn_tick = tokio::time::interval(std::time::Duration::from_secs(30));
     // Player passive timer (1s — hunger/thirst drain, stamina regen, poison)

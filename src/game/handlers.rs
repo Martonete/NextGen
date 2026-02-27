@@ -971,7 +971,7 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     if !legal {
         // Check if there's a map exit at the target tile
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
-            // VB6: FX only if tile has otTeleport object
+            // VB6: FX only if tile has otTeleport object (not on map border exits)
             let has_teleport_obj = {
                 let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
                 obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false)
@@ -1039,13 +1039,18 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         ).await;
     }
 
+    // VB6: ZonaCura check — auto-heal/revive if near a Revividor NPC (Sacerdotes automáticos)
+    if zona_cura(state, map, new_x, new_y) {
+        auto_cura_user(state, conn_id).await;
+    }
+
     // Area boundary visibility (VB6: ModAreas.CheckUpdateNeededUser)
     // Only fires when crossing a 9x9 zone boundary — sends CA + new strip CCs
     check_update_needed_user(state, conn_id, heading).await;
 
     // VB6 DoTileEvents: check tile exit AFTER successful movement (map transitions)
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
-        // VB6: FX only if tile has otTeleport object
+        // VB6: FX only if tile has otTeleport object (not on map border exits)
         let has_teleport_obj = {
             let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
             obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false)
@@ -3021,70 +3026,23 @@ async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, data: 
                             state.send_to(conn_id, "DAMEQUEST").await;
                         }
                         NpcType::Reviver => {
+                            // VB6 Acciones.bas:408-422 — Revividor NPC
+                            // Distance check: <= 10 tiles
                             if dist > 10 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_to(conn_id, "||12").await; return;
                             }
+
+                            // If dead: revive first
                             if dead {
-                                // VB6 RevivirUsuario (Modulo_UsUaRiOs.bas:156-171)
-                                // 1. Get user data for body restoration
-                                let user_data = state.users.get(&conn_id).map(|u| {
-                                    (u.pos_map, u.pos_x, u.pos_y, u.char_index,
-                                     u.race.clone(), u.heading, u.max_hp,
-                                     u.weapon_anim, u.shield_anim, u.casco_anim,
-                                     u.char_name.clone())
-                                });
-                                if let Some((map, ux, uy, char_index, race, heading, max_hp, wa, sa, ca, char_name)) = user_data {
-                                    // 2. Look up gender from charfile for naked body
-                                    let gender = {
-                                        if let Ok(chr) = crate::data::charfile::load_charfile(&state.base_path, &char_name) {
-                                            chr.gender.to_string()
-                                        } else {
-                                            "1".to_string()
-                                        }
-                                    };
-
-                                    // 3. Resurrect: dead=false, HP=35, restore body
-                                    let new_body = naked_body(&race, &gender);
-                                    let new_head;
-                                    if let Some(user) = state.users.get_mut(&conn_id) {
-                                        user.dead = false;
-                                        user.min_hp = 35.min(max_hp);
-                                        user.body = new_body;
-                                        // Restore original head from charfile
-                                        new_head = {
-                                            if let Ok(chr) = crate::data::charfile::load_charfile(&state.base_path, &user.char_name) {
-                                                chr.head
-                                            } else {
-                                                user.head
-                                            }
-                                        };
-                                        user.head = new_head;
-                                        user.weapon_anim = 0;
-                                        user.shield_anim = 0;
-                                        user.casco_anim = 0;
-                                    } else { return; }
-
-                                    // 4. CFF resurrection effect (FX 65)
-                                    let cff = format!("CFF{},65,0", char_index.0);
-                                    state.send_data(SendTarget::ToArea { map, x: ux, y: uy }, &cff).await;
-
-                                    // 5. CP packet — broadcast new body/head to area
-                                    let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index.0, new_body, new_head, heading, wa, sa, ca);
-                                    state.send_data(SendTarget::ToArea { map, x: ux, y: uy }, &cp).await;
-
-                                    // 6. VB6: after revive, always set MinHP = MaxHP (full heal)
-                                    if let Some(user) = state.users.get_mut(&conn_id) {
-                                        user.min_hp = user.max_hp;
-                                    }
-
-                                    // 7. Send updated stats
-                                    send_stats_hp(state, conn_id).await;
-                                    send_stats_mana(state, conn_id).await;
-                                }
-                            } else {
-                                let msg = format!("{}No estas muerto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                                state.send_to(conn_id, &msg).await;
+                                revive_user(state, conn_id).await;
                             }
+
+                            // Always full-heal + cure poison (VB6: MinHP=MaxHP, Envenenado=False)
+                            if let Some(user) = state.users.get_mut(&conn_id) {
+                                user.min_hp = user.max_hp;
+                                user.poisoned = false;
+                            }
+                            send_stats_hp(state, conn_id).await;
                         }
                         NpcType::Trainer => {
                             if dead { state.send_to(conn_id, "||3").await; return; }
@@ -4607,55 +4565,55 @@ async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
 }
 
 /// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
-/// VB6: RevivirUsuario() — sets dead=false, HP=35, strips equipment visually, broadcasts appearance.
+/// VB6: RevivirUsuario() — sets dead=false, HP=35, DarCuerpoDesnudo, ChangeUserChar(OrigChar.Head).
 async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
-    let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.dead => {
-            (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.race.clone(), u.heading,
-             u.max_hp, u.weapon_anim, u.shield_anim, u.casco_anim, u.char_name.clone())
-        }
+    let (char_name, race, max_hp) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.dead => (u.char_name.clone(), u.race.clone(), u.max_hp),
         _ => return,
     };
-    let (map, x, y, char_index, race, heading, max_hp, weapon_anim, shield_anim, casco_anim, char_name) = user_data;
+
+    // Load original head from charfile (VB6: OrigChar.Head)
+    let orig_head = {
+        let base = &state.base_path;
+        charfile::load_charfile(base, &char_name)
+            .map(|chr| chr.head)
+            .unwrap_or(1)
+    };
 
     let gender = {
         let base = &state.base_path;
-        if let Ok(chr) = charfile::load_charfile(base, &char_name) {
-            chr.gender.to_string()
-        } else {
-            "1".to_string()
-        }
+        charfile::load_charfile(base, &char_name)
+            .map(|chr| chr.gender.to_string())
+            .unwrap_or_else(|_| "1".to_string())
     };
 
     let revive_hp = 35.min(max_hp);
-    let new_body;
-    let new_head;
+    let new_body = naked_body(&race, &gender);
+
+    // Update user state: revive + restore living appearance
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.dead = false;
         user.min_hp = revive_hp;
-        new_body = naked_body(&race, &gender);
         user.body = new_body;
-        new_head = {
-            let base = &state.base_path;
-            if let Ok(chr) = charfile::load_charfile(base, &user.char_name) {
-                chr.head
-            } else {
-                user.head
-            }
-        };
-        user.head = new_head;
-    } else {
-        return;
+        user.head = orig_head;
+        // VB6: weapon/shield/helmet stay as-is (already 0 from death), ChangeUserChar sends current values
     }
 
-    // Resurrection FX
+    // Read final state for packets
+    let (map, x, y, char_index, heading, weapon_anim, shield_anim, casco_anim) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+        None => return,
+    };
+
+    // Resurrection FX (VB6: CFF charindex, 65, 0)
     let cff_pkt = format!("CFF{},65,0", char_index.0);
     state.send_data(SendTarget::ToArea { map, x, y }, &cff_pkt).await;
 
-    // Broadcast character model change
+    // Broadcast character model change (VB6: ChangeUserChar → CP packet)
+    // VB6 CP format: CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<fx>,<loops>,<helmet>
     let cp_pkt = format!(
         "CP{},{},{},{},{},{},0,0,{}",
-        char_index.0, new_body, new_head, heading,
+        char_index.0, new_body, orig_head, heading,
         weapon_anim, shield_anim, casco_anim
     );
     state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
@@ -6113,6 +6071,91 @@ fn find_free_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
     (x, y)
 }
 
+/// VB6 ZonaCura (General.bas:2136) — Check if a Revividor NPC (type=1) is within the player's
+/// visible area (MinXBorder × MinYBorder) and distance < 20.
+fn zona_cura(state: &GameState, map: i32, px: i32, py: i32) -> bool {
+    let min_x = (px - world::MIN_X_BORDER + 1).max(1);
+    let max_x = (px + world::MIN_X_BORDER - 1).min(100);
+    let min_y = (py - world::MIN_Y_BORDER + 1).max(1);
+    let max_y = (py + world::MIN_Y_BORDER - 1).min(100);
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if tile.npc_index > 0 {
+                        if let Some(npc) = state.get_npc(tile.npc_index as usize) {
+                            if npc.npc_type == crate::data::npcs::NpcType::Reviver && npc.is_alive() {
+                                let dist = (px - npc.x).abs() + (py - npc.y).abs();
+                                if dist < 20 {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// VB6 AutoCuraUser (General.bas:2156) — Automatic priest heal/revive/cure.
+/// Called when player moves into ZonaCura range of a Revividor NPC.
+async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
+    let (dead, hp_low, poisoned) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.min_hp < u.max_hp, u.poisoned),
+        _ => return,
+    };
+
+    // VB6: skip if in ring/arena
+    let in_ring = state.users.get(&conn_id).map(|u| u.en_duelo || u.en_desafio).unwrap_or(false);
+    if in_ring {
+        state.send_to(conn_id, "||395").await;
+        return;
+    }
+
+    if dead {
+        // Revive + full heal + full stamina
+        revive_user(state, conn_id).await;
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_hp = user.max_hp;
+            user.min_sta = user.max_sta;
+        }
+        // VB6: ||693 = "Los dioses te han resucitado"
+        state.send_to(conn_id, "||693").await;
+        // Sound: TW20
+        let (map, x, y) = match state.users.get(&conn_id) {
+            Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+            None => return,
+        };
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW20").await;
+        send_stats_hp(state, conn_id).await;
+        send_stats_sta(state, conn_id).await;
+        // CFF resurrection effect (FX 65) — already sent by revive_user, skip duplicate
+    } else if hp_low {
+        // Full heal
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_hp = user.max_hp;
+        }
+        // VB6: ||694 = "Los dioses te han curado"
+        state.send_to(conn_id, "||694").await;
+        let (map, x, y) = match state.users.get(&conn_id) {
+            Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+            None => return,
+        };
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW20").await;
+        send_stats_hp(state, conn_id).await;
+    }
+
+    // Cure poison
+    if poisoned {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.poisoned = false;
+        }
+    }
+}
+
 // =====================================================================
 // Helper functions
 // =====================================================================
@@ -6727,7 +6770,8 @@ async fn npc_attack_user(state: &mut GameState, npc_idx: usize, target_conn: Con
     let (npc_ataque, npc_min_hit, npc_max_hit, npc_char_index, map, nx, ny, npc_name) = npc_data;
 
     let user_data = match state.users.get(&target_conn) {
-        Some(u) if u.logged && !u.dead => {
+        // VB6 NpcAtacaUser: AdminInvisible=1 or Privilegios<>User → exit (no attack)
+        Some(u) if u.logged && !u.dead && u.privileges == 0 && !u.admin_invisible => {
             (u.attributes[1], // Agility
              u.skills[3],     // SK4 = Tacticas
              u.level, u.char_index)
@@ -7545,9 +7589,9 @@ fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) -> Option<C
         if let Some(grid) = state.world.grid(map) {
             if let Some(tile) = grid.tile(tx, ty) {
                 if let Some(conn) = tile.user_conn {
-                    // Check if player is alive and logged
+                    // Check if player is alive, logged, and NOT a GM (VB6: Privilegios = User)
                     if let Some(user) = state.users.get(&conn) {
-                        if user.logged && !user.dead {
+                        if user.logged && !user.dead && user.privileges == 0 && !user.admin_invisible {
                             return Some(conn);
                         }
                     }
@@ -13575,6 +13619,7 @@ async fn handle_slash_telep(state: &mut GameState, conn_id: ConnectionId, args: 
     };
 
     warp_user(state, target_id, map, x, y).await;
+    send_warp_fx(state, target_id).await;
 
     // Notify target
     if target_id != conn_id {
@@ -13605,6 +13650,7 @@ async fn handle_slash_teleploc(state: &mut GameState, conn_id: ConnectionId) {
     }
 
     warp_user(state, conn_id, map, tx, ty).await;
+    send_warp_fx(state, conn_id).await;
 }
 
 /// /GO map — Teleport self to map at position 50,50 (VB6 behavior, requires SEMIDIOS+).
@@ -13641,6 +13687,7 @@ async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId, args: &st
     }
 
     warp_user(state, conn_id, map, x, y).await;
+    send_warp_fx(state, conn_id).await;
     state.send_to(conn_id, &format!("{}Teleportado a mapa {} ({},{}).{}", server_opcodes::CONSOLE_MSG, map, x, y, font_types::INFO)).await;
 }
 
@@ -13671,6 +13718,7 @@ async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionId, target: 
     };
 
     warp_user(state, conn_id, map, x, y).await;
+    send_warp_fx(state, conn_id).await;
     state.send_to(conn_id, &format!("{}Te transportaste a '{}'.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
 }
 
@@ -13693,6 +13741,7 @@ async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionId, target: 
     };
 
     warp_user(state, target_id, my_map, my_x, my_y).await;
+    send_warp_fx(state, target_id).await;
     state.send_to(conn_id, &format!("{}Invocaste a '{}'.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
     state.send_to(target_id, &format!("{}Has sido invocado por un GM.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
 }
@@ -14401,18 +14450,35 @@ async fn handle_slash_revivir(state: &mut GameState, conn_id: ConnectionId, targ
             };
 
             let new_body = naked_body(&race, &gender);
-            let head = state.users.get(&tc).map(|u| {
-                if u.admin_invisible { u.old_head } else { u.head }
-            }).unwrap_or(1);
+
+            // Load original head from charfile (VB6: OrigChar.Head)
+            let orig_head = {
+                let char_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
+                crate::data::charfile::load_charfile(&state.base_path, &char_name)
+                    .map(|chr| chr.head)
+                    .unwrap_or(1)
+            };
 
             if let Some(user) = state.users.get_mut(&tc) {
                 user.dead = false;
                 user.min_hp = max_hp;
                 user.body = new_body;
+                user.head = orig_head;
                 if user.admin_invisible {
                     user.old_body = new_body;
+                    user.old_head = orig_head;
                 }
             }
+
+            // Read final state for CP packet
+            let (heading, weapon_anim, shield_anim, casco_anim, char_index) = match state.users.get(&tc) {
+                Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim, u.char_index),
+                None => return,
+            };
+
+            // Resurrection FX (VB6: CFF charindex, 65, 0)
+            let cff_pkt = format!("CFF{},65,0", char_index.0);
+            state.send_data(SendTarget::ToArea { map, x, y }, &cff_pkt).await;
 
             // Send HP update
             let hp_pkt = {
@@ -14421,9 +14487,13 @@ async fn handle_slash_revivir(state: &mut GameState, conn_id: ConnectionId, targ
             };
             state.send_to(tc, &hp_pkt).await;
 
-            // Broadcast CC
-            let cc = state.users.get(&tc).unwrap().build_cc_packet();
-            state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+            // Broadcast CP (character model change) — VB6: ChangeUserChar
+            let cp_pkt = format!(
+                "CP{},{},{},{},{},{},0,0,{}",
+                char_index.0, new_body, orig_head, heading,
+                weapon_anim, shield_anim, casco_anim
+            );
+            state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
 
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
             state.send_to(conn_id, &format!("{}{} revivido.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
