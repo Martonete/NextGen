@@ -306,7 +306,7 @@ fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
         num: map_num,
         name: get_str("Name"),
         music: get_int("MusicNum"),
-        pk: get_bool("Pk"),
+        pk: !get_bool("Pk"), // VB6 inverts: file Pk=0 → MapInfo.Pk=True (PvP), Pk=1 → False (safe)
         magia_sin_efecto: get_bool("MagiaSinefecto"),
         invi_sin_efecto: get_bool("InviSinEfecto"),
         resu_sin_efecto: get_bool("ResuSinEfecto"),

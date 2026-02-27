@@ -1095,6 +1095,21 @@ impl GameState {
         }
     }
 
+    /// Check if a tile has water (VB6 HayAgua: Graphic(1) in 1505..1520 AND Graphic(2) = 0).
+    pub fn hay_agua(&self, map: i32, x: i32, y: i32) -> bool {
+        let map_idx = map as usize;
+        if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
+            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
+                let tile = &game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+                tile.graphic[0] >= 1505 && tile.graphic[0] <= 1520 && tile.graphic[1] == 0
+            } else {
+                false
+            }
+        } else {
+            false
+        }
+    }
+
     /// Look up an object by index (1-based, matching VB6 OBJ1..OBJn).
     /// Look up guild name by guild index (1-based). Loads from guildsinfo.inf.
     pub fn get_guild_name(&self, guild_index: i32) -> Option<String> {

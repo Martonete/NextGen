@@ -953,7 +953,7 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
             user.meditating = false;
         }
         state.send_to(conn_id, "MEDOK").await;
-        let msg = format!("{}Dejas de meditar.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||205".to_string(); // TEXTO205: Dejas de meditar
         state.send_to(conn_id, &msg).await;
         // Remove meditation FX from area
         let cfx_pkt = format!("CFX{},{},{}", char_index.0, 0, 0);
@@ -1127,7 +1127,7 @@ async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // Silenced users can't chat
     if silenced {
-        state.send_to(conn_id, &format!("{}Estas silenciado y no puedes hablar.{}", server_opcodes::CONSOLE_MSG, font_types::COMBAT)).await;
+        state.send_to(conn_id, "||191").await; // TEXTO191: Has sido silenciado
         return;
     }
 
@@ -1202,8 +1202,7 @@ async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId, data: &str
 
     if target_id.is_none() {
         // User not found — send console message
-        let pkt = format!("P|El usuario no esta conectado{}", font_types::WHISPER_SENT);
-        state.send_to(conn_id, &pkt).await;
+        state.send_to(conn_id, "||196").await;
         return;
     }
     let target_id = target_id.unwrap();
@@ -1587,7 +1586,7 @@ async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, data: &str) 
         if !is_gm && !obj_data.class_prohibida.is_empty() {
             let uc = user_class.to_uppercase();
             if obj_data.class_prohibida.iter().any(|c| c.to_uppercase() == uc) {
-                let msg = format!("{}Tu clase no puede usar este item{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+                let msg = "||113".to_string(); // TEXTO113: Tu clase, genero o raza no puede usar este objeto
                 state.send_to(conn_id, &msg).await;
                 return;
             }
@@ -1616,7 +1615,7 @@ async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, data: &str) 
         match obj_data.obj_type {
             ObjType::Weapon | ObjType::Armor | ObjType::Shield |
             ObjType::Helmet | ObjType::Arrow | ObjType::Instrument |
-            ObjType::Boat | ObjType::Mount | ObjType::Tool => {},
+            ObjType::Tool => {},
             _ => {
                 // Not an equippable item type — reject silently
                 return;
@@ -1838,8 +1837,7 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
     };
 
     if is_dead && obj_data.obj_type != ObjType::ResurrectPotion {
-        let msg = format!("P|Estas muerto!{}", font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, "||5").await; // VB6 TEXTO5: muerto, no puede usar items
         return;
     }
 
@@ -1939,10 +1937,12 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                 _ => return,
             };
             if is_navigating {
-                // Unequip boat — must be adjacent to land (non-blocked tile)
+                // Unequip boat — must be adjacent to land (non-blocked, non-water tile)
                 let has_land_nearby = (1..=4).any(|h| {
                     let (dx, dy) = world::heading_to_offset(h);
-                    !state.is_tile_blocked(user_map, user_x + dx, user_y + dy)
+                    let nx = user_x + dx;
+                    let ny = user_y + dy;
+                    !state.is_tile_blocked(user_map, nx, ny) && !state.hay_agua(user_map, nx, ny)
                 });
                 if !has_land_nearby {
                     let msg = format!("P|No puedes desembarcar aqui, no hay tierra cerca{}", font_types::INFO);
@@ -1958,14 +1958,13 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                 // Send NAVEG toggle to client
                 state.send_to(conn_id, "NAVEG").await;
             } else {
-                // Equip boat — must be adjacent to water (blocked tile = water)
+                // Equip boat — must be adjacent to water (VB6: HayAgua graphic check)
                 let has_water_nearby = (1..=4).any(|h| {
                     let (dx, dy) = world::heading_to_offset(h);
-                    state.is_tile_blocked(user_map, user_x + dx, user_y + dy)
+                    state.hay_agua(user_map, user_x + dx, user_y + dy)
                 });
                 if !has_water_nearby {
-                    let msg = format!("P|Necesitas estar cerca del agua para navegar{}", font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_to(conn_id, "||106").await; // TEXTO106: Debes aproximarte al agua para usar el barco
                     return;
                 }
                 let ropaje = obj_data.num_ropaje;
@@ -2011,8 +2010,7 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                 .map(|u| u.spells.iter().any(|&s| s == spell_id))
                 .unwrap_or(false);
             if already_known {
-                let msg = format!("P|Ya conoces ese hechizo{}", font_types::INFO);
-                state.send_to(conn_id, &msg).await;
+                state.send_to(conn_id, "||182").await; // TEXTO182: Ya tenes ese hechizo
                 return;
             }
 
@@ -2038,17 +2036,14 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                 let shs_slot = slot_idx + 1; // 1-based
                 let shs_pkt = format!("SHS{},{},{}", shs_slot, spell_id, spell_name);
                 state.send_to(conn_id, &shs_pkt).await;
-                let msg = format!("P|Has aprendido el hechizo: {}{}", spell_name, font_types::INFO);
-                state.send_to(conn_id, &msg).await;
+                state.send_to(conn_id, &format!("||832@{}", spell_name)).await; // TEXTO832
             } else {
-                let msg = format!("P|No tienes espacio para mas hechizos{}", font_types::INFO);
-                state.send_to(conn_id, &msg).await;
+                state.send_to(conn_id, "||181").await; // TEXTO181
             }
         }
         ObjType::EmptyBottle => {
             // Fill at water source — simplified, just inform
-            let msg = format!("P|Necesitas estar junto a una fuente de agua{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, "||103").await; // TEXTO103: No hay agua allí
         }
         ObjType::FullBottle => {
             // Drink from bottle → restore thirst, swap to empty bottle variant
@@ -2082,8 +2077,7 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
         ObjType::ResurrectPotion => {
             // Resurrection potion — can only use while dead
             if !is_dead {
-                let msg = format!("P|No estas muerto!{}", font_types::INFO);
-                state.send_to(conn_id, &msg).await;
+                state.send_to(conn_id, "||117").await; // TEXTO117: Debes estar muerto para utilizar esta poción
                 return;
             }
             // Consume the item first
@@ -2096,8 +2090,7 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
             send_inventory_slot(state, conn_id, idx).await;
             // Use shared revive logic (restores body, head, sends CFF + CP)
             revive_user(state, conn_id).await;
-            let msg = format!("P|Has sido resucitado!{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, "||119").await; // TEXTO119: Te has resucitado
         }
         ObjType::Mount => {
             // Mount/dismount — similar to boat but for land mounts
@@ -2382,8 +2375,7 @@ async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId) {
     let slot = match free_slot {
         Some(s) => s,
         None => {
-            let msg = format!("P|No tienes espacio en el inventario{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, "||108").await; // TEXTO108: No podes cargar mas objetos
             return;
         }
     };
@@ -2424,8 +2416,7 @@ async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId) {
         .map(|o| o.name.clone())
         .unwrap_or_else(|| format!("Item #{}", obj_idx));
 
-    let msg = format!("P|Has recogido {} x {}{}", amount, item_name, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_to(conn_id, &format!("||115@{}@{}", amount, item_name)).await; // TEXTO115: Recibiste %1 - %2
 }
 
 /// TI<slot>,<amount> — Drop item from inventory to ground.
@@ -2486,8 +2477,7 @@ async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionId, data: &s
     };
 
     if !can_place {
-        let msg = format!("P|No hay lugar para tirar el item{}", font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, "||107").await; // TEXTO107: No hay espacio en el piso
         return;
     }
 
@@ -3242,7 +3232,7 @@ async fn accion_para_puerta(state: &mut GameState, conn_id: ConnectionId, map: i
 
     // Distance check: must be within 3 tiles
     if (x - user_x).abs() > 3 || (y - user_y).abs() > 3 {
-        let msg = format!("{}Estas demasiado lejos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||10".to_string(); // TEXTO10: Estas demasiado lejos
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -3267,7 +3257,7 @@ async fn accion_para_puerta(state: &mut GameState, conn_id: ConnectionId, map: i
             }).unwrap_or(false);
 
             if !has_key {
-                let msg = format!("{}La puerta esta cerrada con llave.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+                let msg = "||652".to_string(); // TEXTO652: La puerta esta cerrada con llave
                 state.send_to(conn_id, &msg).await;
                 return;
             }
@@ -3449,23 +3439,20 @@ async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(victim_id) = target_conn {
         // PvP attack
         if safe_on {
-            let pkt = format!("P|Tenes activado el seguro, no podes atacar{}", font_types::COMBAT);
-            state.send_to(conn_id, &pkt).await;
+            state.send_to(conn_id, "||207").await; // TEXTO207: Escribe /SEG para quitar el seguro
             return;
         }
 
         // VB6: Safe zone check (trigger=4) — no combat allowed
         let attacker_trigger = get_map_tile_trigger(state, map, x, y);
         if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            let pkt = format!("P|No puedes atacar en zona segura{}", font_types::COMBAT);
-            state.send_to(conn_id, &pkt).await;
+            state.send_to(conn_id, "||163").await; // TEXTO163: zona segura
             return;
         }
         let victim_pos = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
         let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
         if victim_trigger == crate::data::maps::Trigger::SafeZone {
-            let pkt = format!("P|No puedes atacar a alguien en zona segura{}", font_types::COMBAT);
-            state.send_to(conn_id, &pkt).await;
+            state.send_to(conn_id, "||163").await; // TEXTO163: zona segura
             return;
         }
 
@@ -4025,12 +4012,9 @@ async fn user_die(state: &mut GameState, conn_id: ConnectionId, killer_id: Optio
         // Check quest kill tracking (pass victim conn_id for trigger zone check)
         quest_check_player_kill(state, killer, conn_id).await;
 
-        // Notify killer
-        let kill_msg = format!(
-            "P|Has matado a {}! Has ganado {} puntos de experiencia{}",
-            victim_name, exp_gain, font_types::COMBAT
-        );
-        state.send_to(killer, &kill_msg).await;
+        // Notify killer (VB6: ||60@name@class + ||170@exp)
+        state.send_to(killer, &format!("||60@{}@{}", victim_name, exp_gain)).await;
+        state.send_to(killer, &format!("||170@{}", exp_gain)).await;
         send_stats_exp(state, killer).await;
         check_user_level(state, killer).await;
 
@@ -4576,8 +4560,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_cheat(state, conn_id, target).await;
     } else {
         // Unknown command — send feedback
-        let msg = format!("P|Comando desconocido: {}{}", cmd, font_types::SYSTEM);
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, "||714").await; // TEXTO714: Comando no reconocido
     }
 }
 
@@ -5755,10 +5738,9 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         let fx_pkt = format!("CFF{},58,0", char_index);
         state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
-        // Stat notifications
-        let notify = format!("P|Has subido al nivel {}! HP+{} Mana+{} Sta+{} Hit+{}{}",
-                             new_level, hp_gain, mana_gain, sta_gain, hit_gain, font_types::INFO);
-        state.send_to(conn_id, &notify).await;
+        // Stat notifications (VB6: ||67 + ||68@level@hp_gain)
+        state.send_to(conn_id, "||67").await; // TEXTO67: Has subido de nivel!
+        state.send_to(conn_id, &format!("||68@{}@{}", new_level, hp_gain)).await; // TEXTO68
 
         // Send updated stats
         let lvl_pkt = format!("[L]{}", new_level);
@@ -6822,12 +6804,12 @@ async fn npc_die(
         remove_pet_from_owner(state, owner_conn, npc_idx);
     }
 
-    // 12) Notify killer
-    let msg = format!(
-        "P|Has matado a {}! Ganaste {} exp y {} oro{}",
-        npc_name, give_exp, gold_award, font_types::COMBAT
-    );
-    state.send_to(killer_id, &msg).await;
+    // 12) Notify killer (VB6: ||50 + ||170@exp + ||56@gold)
+    state.send_to(killer_id, "||50").await; // TEXTO50: Has matado a la criatura!
+    state.send_to(killer_id, &format!("||170@{}", give_exp)).await; // TEXTO170: Has ganado %1 exp
+    if gold_award > 0 {
+        state.send_to(killer_id, &format!("||56@{}", gold_award)).await; // TEXTO56: La criatura ha dejado %1 monedas
+    }
 
     // Quest kill tracking (VB6 RestarNPC)
     quest_check_npc_kill(state, killer_id, npc_number as i32).await;
@@ -8080,13 +8062,11 @@ async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        let msg = format!("P|Dejas de meditar{}", font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, "||205").await; // TEXTO205: Dejas de meditar
     } else {
         // Check if mana is already full
         if user.min_mana >= user.max_mana {
-            let msg = format!("P|Tu mana está al máximo{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, "||393").await; // TEXTO393: Mana restaurado
             return;
         }
 
@@ -8098,8 +8078,7 @@ async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
         let fx_pkt = format!("CFF{},{},999", char_index.0, MEDITATION_FX);
         state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
-        let msg = format!("P|Comienzas a meditar{}", font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, "||394").await; // TEXTO394: Comenzas a meditar
     }
 }
 
@@ -8307,8 +8286,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 // Stop meditation when full
                 if let Some(u) = state.users.get(&conn_id) {
                     if !u.meditating {
-                        let msg = format!("P|Has terminado de meditar{}", font_types::INFO);
-                        state.send_to(conn_id, &msg).await;
+                        state.send_to(conn_id, "||829").await; // TEXTO829: Has terminado de meditar
                     }
                 }
             }
@@ -8644,7 +8622,7 @@ async fn iniciar_comercio_npc(state: &mut GameState, conn_id: ConnectionId, npc_
     // Check user not dead
     if let Some(u) = state.users.get(&conn_id) {
         if u.dead {
-            let msg = format!("{}Estas muerto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||3".to_string(); // TEXTO3: Estás muerto
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -8771,7 +8749,7 @@ async fn handle_commerce_buy(state: &mut GameState, conn_id: ConnectionId, data:
     };
 
     if dead {
-        let msg = format!("{}Estas muerto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||3".to_string(); // TEXTO3: Estás muerto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -8814,7 +8792,7 @@ async fn handle_commerce_buy(state: &mut GameState, conn_id: ConnectionId, data:
 
     // Check gold
     if user_gold < total_price {
-        let msg = format!("{}No tienes suficiente dinero{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||663".to_string(); // TEXTO663: No tenes suficiente dinero
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -8844,7 +8822,7 @@ async fn handle_commerce_buy(state: &mut GameState, conn_id: ConnectionId, data:
     let user_slot = match user_inv_slot {
         Some(s) => s,
         None => {
-            let msg = format!("{}No tienes espacio en el inventario{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||108".to_string(); // TEXTO108: No podes cargar mas objetos
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -8905,7 +8883,7 @@ async fn handle_commerce_sell(state: &mut GameState, conn_id: ConnectionId, data
     };
 
     if dead {
-        let msg = format!("{}Estas muerto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||3".to_string(); // TEXTO3: Estás muerto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -8930,7 +8908,7 @@ async fn handle_commerce_sell(state: &mut GameState, conn_id: ConnectionId, data
 
     if obj_index <= 0 || user_amount <= 0 { return; }
     if equipped {
-        let msg = format!("{}No puedes vender un objeto equipado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||185".to_string(); // TEXTO185: No podes depositar este objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -8943,23 +8921,23 @@ async fn handle_commerce_sell(state: &mut GameState, conn_id: ConnectionId, data
 
     // Reject conditions (VB6: NpcCompraObj)
     if obj.newbie {
-        let msg = format!("{}El comerciante no compra objetos newbie{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||660".to_string(); // TEXTO660: No comercio objetos para newbies
         state.send_to(conn_id, &msg).await;
         return;
     }
     if obj_index == GOLD_OBJ_INDEX {
-        let msg = format!("{}El comerciante no esta interesado en ese objeto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||661".to_string(); // TEXTO661: El npc no esta interesado en comprar ese objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
     if obj.obj_type == ObjType::Key {
-        let msg = format!("{}El comerciante no esta interesado en ese objeto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||661".to_string(); // TEXTO661: El npc no esta interesado en comprar ese objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
     // TipoItems filter: 0 = buys anything, otherwise must match
     if npc_tipo_items != 0 && npc_tipo_items != obj.obj_type as i32 {
-        let msg = format!("{}El comerciante no esta interesado en ese objeto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||661".to_string(); // TEXTO661: El npc no esta interesado en comprar ese objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -9181,7 +9159,7 @@ async fn handle_trade_offer_item(state: &mut GameState, conn_id: ConnectionId, d
         o.obj_type == ObjType::Key || o.intransferible || o.item_dios
     }).unwrap_or(false);
     if blocked {
-        let msg = format!("{}Este objeto no se puede comerciar.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||223".to_string(); // TEXTO223: No puedes transferir este objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -9352,7 +9330,7 @@ const MAX_BANK_STACK: i32 = 999;
 async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         if u.dead {
-            let msg = format!("{}Estas muerto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||3".to_string(); // TEXTO3: Estás muerto
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -9438,7 +9416,7 @@ async fn handle_bank_deposit(state: &mut GameState, conn_id: ConnectionId, data:
 
     if obj_index <= 0 || user_amount <= 0 { return; }
     if equipped {
-        let msg = format!("{}No puedes depositar un objeto equipado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||185".to_string(); // TEXTO185: No podes depositar este objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -9446,7 +9424,7 @@ async fn handle_bank_deposit(state: &mut GameState, conn_id: ConnectionId, data:
     // Check not intransferible
     let intransferible = state.get_object(obj_index).map(|o| o.intransferible).unwrap_or(false);
     if intransferible {
-        let msg = format!("{}Ese objeto no es transferible{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||223".to_string(); // TEXTO223: No puedes transferir este objeto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -9476,7 +9454,7 @@ async fn handle_bank_deposit(state: &mut GameState, conn_id: ConnectionId, data:
     let bank_idx = match bank_slot {
         Some(i) => i,
         None => {
-            let msg = format!("{}No tienes espacio en el banco{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||186".to_string(); // TEXTO186: No tienes mas espacio en el banco
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -9542,7 +9520,7 @@ async fn handle_bank_withdraw(state: &mut GameState, conn_id: ConnectionId, data
     let inv_idx = match inv_slot {
         Some(i) => i,
         None => {
-            let msg = format!("{}No tienes espacio en el inventario{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||108".to_string(); // TEXTO108: No podes cargar mas objetos
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -9757,7 +9735,7 @@ async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, da
     };
 
     if dead {
-        let msg = format!("{}Estas muerto{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||3".to_string(); // TEXTO3: Estás muerto
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -9869,7 +9847,7 @@ async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, da
                 send_stats_mana(state, conn_id).await;
                 send_stats_hp(state, conn_id).await;
             } else {
-                let msg = format!("{}Primero selecciona un hechizo con el boton Lanzar{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+                let msg = "||288".to_string(); // TEXTO288: Primero selecciona el hechizo!
                 state.send_to(conn_id, &msg).await;
             }
         }
@@ -9898,21 +9876,11 @@ async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i3
         return;
     }
 
-    // Check target has water (VB6 HayAgua: Graphic(1) >= 1505 AND <= 1520 AND Graphic(2) = 0)
-    let has_water = state.game_data.maps.get(map as usize)
-        .and_then(|m| m.as_ref())
-        .map(|m| {
-            if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
-                tile.graphic[0] >= 1505 && tile.graphic[0] <= 1520 && tile.graphic[1] == 0
-            } else {
-                false
-            }
-        })
-        .unwrap_or(false);
+    // Check target has water (VB6 HayAgua)
+    let has_water = state.hay_agua(map, tx, ty);
 
     if !has_water {
-        let msg = format!("{}No hay agua donde pescar{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||250".to_string(); // TEXTO250: No hay agua donde pescar
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -9921,7 +9889,7 @@ async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i3
     let sta_cost = if is_recolector(&class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            let msg = format!("{}Estas muy cansado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||17".to_string(); // TEXTO17: Estas muy cansado para realizar esa acción
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -9948,11 +9916,11 @@ async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i3
         let slot = find_or_add_inv_slot(state, conn_id, PESCADO_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            let msg = format!("{}Has pescado exitosamente{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||813".to_string(); // TEXTO813: Has pescado un lindo pez!
             state.send_to(conn_id, &msg).await;
         }
     } else {
-        let msg = format!("{}No has podido pescar nada{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||814".to_string(); // TEXTO814: No has pescado nada!
         state.send_to(conn_id, &msg).await;
     }
 
@@ -10013,7 +9981,7 @@ async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
 
     let is_tree = tile_obj == Some(ObjType::Trees) || ground_obj_type == Some(ObjType::Trees);
     if !is_tree {
-        let msg = format!("{}No hay un arbol ahi{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||255".to_string(); // TEXTO255: No hay ningun arbol ahi
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -10022,7 +9990,7 @@ async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
     let sta_cost = if is_recolector(&class) { ESFUERZO_TALAR_RECOLECTOR } else { ESFUERZO_TALAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            let msg = format!("{}Estas muy cansado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||17".to_string(); // TEXTO17: Estas muy cansado para realizar esa acción
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -10044,11 +10012,11 @@ async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
         let slot = find_or_add_inv_slot(state, conn_id, LENA_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            let msg = format!("{}Has talado exitosamente{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||825".to_string(); // TEXTO825: Has conseguido algo de leña!
             state.send_to(conn_id, &msg).await;
         }
     } else {
-        let msg = format!("{}No has podido talar{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||826".to_string(); // TEXTO826: No has obtenido leña!
         state.send_to(conn_id, &msg).await;
     }
 
@@ -10109,7 +10077,7 @@ async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i
     let mineral_data = match mineral_obj {
         Some(ref o) if o.obj_type == ObjType::Deposit => o.clone(),
         _ => {
-            let msg = format!("{}No hay un yacimiento ahi{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||256".to_string(); // TEXTO256: Ahi no hay ningun yacimiento
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -10119,7 +10087,7 @@ async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i
     let sta_cost = if is_recolector(&class) { ESFUERZO_EXCAVAR_RECOLECTOR } else { ESFUERZO_EXCAVAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            let msg = format!("{}Estas muy cansado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||17".to_string(); // TEXTO17: Estas muy cansado para realizar esa acción
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -10148,11 +10116,11 @@ async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i
         let slot = find_or_add_inv_slot(state, conn_id, mineral_item, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            let msg = format!("{}Has extraido minerales exitosamente{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||827".to_string(); // TEXTO827: Has extraido algunos minerales!
             state.send_to(conn_id, &msg).await;
         }
     } else {
-        let msg = format!("{}No has podido extraer nada{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||828".to_string(); // TEXTO828: No has conseguido nada!
         state.send_to(conn_id, &msg).await;
     }
 
@@ -10182,7 +10150,7 @@ async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
     let npc_idx = match npc_idx {
         Some(idx) => idx,
         None => {
-            let msg = format!("{}No hay una criatura ahi{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||258".to_string(); // TEXTO258: No hay ninguna criatura alli!
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -10198,7 +10166,7 @@ async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
         .unwrap_or(0);
 
     if domable <= 0 {
-        let msg = format!("{}No puedes domar esa criatura{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||257".to_string(); // TEXTO257: No podes domar a esa criatura
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -10278,7 +10246,7 @@ async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: 
         .unwrap_or(false);
 
     if !is_anvil {
-        let msg = format!("{}No hay un yunque ahi{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||263".to_string(); // TEXTO263: Ahi no hay ningun yunque
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -10333,7 +10301,7 @@ async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     let (slot_idx, mineral_obj, amount, lingote_idx) = match mineral_slot {
         Some(data) => data,
         None => {
-            let msg = format!("{}No tienes minerales para fundir{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||259".to_string(); // TEXTO259: No tienes mas minerales
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -10406,7 +10374,7 @@ async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
     let target_conn = match target_conn {
         Some(id) if id != conn_id => id,
         _ => {
-            let msg = format!("{}No hay nadie ahi{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||252".to_string(); // TEXTO252: No hay a quien robarle!
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -10432,22 +10400,23 @@ async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32
                 thief.gold = (thief.gold + stolen).min(MAX_GOLD);
             }
 
-            let msg = format!("{}Has robado {} monedas de oro{}", server_opcodes::CONSOLE_MSG, stolen, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
-
-            let victim_msg = format!("{}Te han robado {} monedas de oro{}", server_opcodes::CONSOLE_MSG, stolen, font_types::COMBAT);
-            state.send_to(target_conn, &victim_msg).await;
+            // TEXTO816: Le has robado %1 monedas de oro a %2
+            let victim_name_for_rob = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+            state.send_to(conn_id, &format!("||816@{}@{}", stolen, victim_name_for_rob)).await;
+            // TEXTO819: %1 ha intentado robarte!
+            let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+            state.send_to(target_conn, &format!("||819@{}", thief_name)).await;
 
             send_stats_gold(state, conn_id).await;
             send_stats_gold(state, target_conn).await;
         } else {
-            let msg = format!("{}No has podido robar nada{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+            let msg = "||818".to_string(); // TEXTO818: No has logrado robar nada!
             state.send_to(conn_id, &msg).await;
         }
     } else {
         // Fail — notify victim
         let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        let msg = format!("{}No has podido robar nada{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+        let msg = "||818".to_string(); // TEXTO818: No has logrado robar nada!
         state.send_to(conn_id, &msg).await;
 
         let victim_msg = format!("{}{} ha intentado robarte!{}", server_opcodes::CONSOLE_MSG, thief_name, font_types::COMBAT);
@@ -10683,8 +10652,7 @@ async fn resolve_attack_user(state: &mut GameState, conn_id: ConnectionId, victi
          min_hit, max_hit, skill_armas, attacker_name, class, safe_on) = att_data;
 
     if safe_on {
-        let pkt = format!("P|Tenes activado el seguro, no podes atacar{}", font_types::COMBAT);
-        state.send_to(conn_id, &pkt).await;
+        state.send_to(conn_id, "||207").await; // TEXTO207: Escribe /SEG para quitar el seguro
         return;
     }
 
@@ -13838,10 +13806,13 @@ async fn handle_slash_telep(state: &mut GameState, conn_id: ConnectionId, args: 
     warp_user(state, target_id, map, x, y).await;
     send_warp_fx(state, target_id).await;
 
-    // Notify target
-    if target_id != conn_id {
+    // Notify
+    if target_id == conn_id {
+        state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
+    } else {
         let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_to(target_id, &format!("||651@{}", gm_name)).await;
+        state.send_to(target_id, &format!("||778@{}", gm_name)).await; // TEXTO778: %1 te ha transportado
+        state.send_to(conn_id, &format!("||651@{}", gm_name)).await; // TEXTO651: %1 transportado
     }
 }
 
@@ -13868,6 +13839,7 @@ async fn handle_slash_teleploc(state: &mut GameState, conn_id: ConnectionId) {
 
     warp_user(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
+    state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
 }
 
 /// /GO map — Teleport self to map at position 50,50 (VB6 behavior, requires SEMIDIOS+).
@@ -13905,7 +13877,7 @@ async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId, args: &st
 
     warp_user(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
-    state.send_to(conn_id, &format!("{}Teleportado a mapa {} ({},{}).{}", server_opcodes::CONSOLE_MSG, map, x, y, font_types::INFO)).await;
+    state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
 }
 
 /// /IRA name — Teleport to a player's position (requires SEMIDIOS+).
@@ -13936,7 +13908,7 @@ async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionId, target: 
 
     warp_user(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
-    state.send_to(conn_id, &format!("{}Te transportaste a '{}'.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+    state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
 }
 
 /// /SUM name — Summon a player to your position (requires SEMIDIOS+).
@@ -21369,6 +21341,7 @@ mod tests {
             notice: notice.to_string(),
             pretoriano_map: 0,
             intervalo_paralizado: 500,
+            npc_ai_interval_ms: 1300,
         }
     }
 
