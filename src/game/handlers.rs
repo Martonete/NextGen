@@ -929,7 +929,9 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed and not_move block.
     if paralyzed || not_move {
-        // Rejected movement — too frequent to log
+        // Force client back to server position (prevents ghost movement on client)
+        let pu_pkt = format!("PU{},{}", old_x, old_y);
+        state.send_to(conn_id, &pu_pkt).await;
         return;
     }
 
@@ -5079,22 +5081,31 @@ async fn apply_spell_status(
     target_id: ConnectionId,
     spell: &crate::data::spells::SpellData,
 ) {
+    // VB6: Can't paralyze/immobilize yourself (||31)
+    if spell.paraliza && caster_id == target_id {
+        state.send_to(caster_id, "||31").await;
+        return;
+    }
+
+    // Track what we need to send after dropping the mutable borrow
+    let mut send_paradok_on = false;   // paralysis applied → send PARADOK + PU
+    let mut send_paradok_off = false;  // paralysis removed → send PARADOK
+
     if let Some(target) = state.users.get_mut(&target_id) {
         if spell.cura_veneno {
             target.poisoned = false;
         }
         if spell.paraliza {
-            target.paralyzed = true;
-            target.counter_paralisis = state.config.intervalo_paralizado;
+            if !target.paralyzed {
+                target.paralyzed = true;
+                target.counter_paralisis = state.config.intervalo_paralizado;
+                send_paradok_on = true;
+            }
         }
         if spell.remover_paralisis {
             if target.paralyzed {
                 target.paralyzed = false;
-                // Send PARADOK to target
-                let paradok = "PARADOK".to_string();
-                // Must drop borrow first
-            } else {
-                // Target is not paralyzed — nothing to do
+                send_paradok_off = true;
             }
         }
         if spell.envenena {
@@ -5106,8 +5117,17 @@ async fn apply_spell_status(
         }
     }
 
-    // Send PARADOK outside borrow scope
-    if spell.remover_paralisis {
+    // Send PARADOK + PU outside borrow scope (VB6: lines 759-760)
+    if send_paradok_on {
+        state.send_to(target_id, "PARADOK").await;
+        // PU forces client position to server-known position (prevents ghost movement)
+        let pu = state.users.get(&target_id)
+            .map(|u| format!("PU{},{}", u.pos_x, u.pos_y));
+        if let Some(pkt) = pu {
+            state.send_to(target_id, &pkt).await;
+        }
+    }
+    if send_paradok_off {
         state.send_to(target_id, "PARADOK").await;
     }
 
