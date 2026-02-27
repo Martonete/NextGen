@@ -1,0 +1,6 @@
+/target
+ao-server
+*.log
+charfile/
+Accounts/
+guilds/Bancos/
