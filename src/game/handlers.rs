@@ -1668,7 +1668,10 @@ async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, data: &str) 
                 }
                 ObjType::Armor => {
                     user.equip.armor = slot;
-                    // Body change would need num_ropaje lookup
+                    // VB6: equiparRopaje — set body to armor's Ropaje graphic
+                    if obj_data.num_ropaje > 0 {
+                        user.body = obj_data.num_ropaje;
+                    }
                 }
                 ObjType::Shield => {
                     user.equip.shield = slot;
@@ -1700,6 +1703,12 @@ async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, data: &str) 
             let pkt = format!("|W{},{}", char_index.0, weapon);
             state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
+        ObjType::Armor => {
+            // VB6: ChangeUserBody sends |B packet with new body
+            let body = state.users.get(&conn_id).map(|u| u.body).unwrap_or(0);
+            let pkt = format!("|B{},{}", char_index.0, body);
+            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+        }
         ObjType::Shield => {
             let pkt = format!("|E{},{}", char_index.0, shield);
             state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
@@ -1723,6 +1732,10 @@ fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: usize, obj_ty
             }
             ObjType::Armor => {
                 user.equip.armor = 0;
+                // VB6: DarCuerpoDesnudo — revert to naked body for race/gender
+                let race = user.race.clone();
+                let gender = user.gender.to_string();
+                user.body = naked_body(&race, &gender);
             }
             ObjType::Shield => {
                 user.equip.shield = 0;
@@ -15268,24 +15281,27 @@ async fn handle_slash_mod(state: &mut GameState, conn_id: ConnectionId, args: &s
         _ => return,
     }
 
-    let parts: Vec<&str> = args.splitn(3, ' ').collect();
+    // VB6: ReadField(1, rData, 32) and ReadField(2, rData, 32) — space-delimited
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
     if parts.len() < 2 { return; }
     let stat = parts[0].to_uppercase();
-    let value: i64 = parts.get(1).and_then(|v| v.parse().ok()).unwrap_or(0);
+    let value_str = parts[1];
+    let value: i64 = value_str.parse().unwrap_or(0);
 
-    // Apply to self
+    // Apply to self — /MOD only affects the invoker
     let target = conn_id;
-    apply_mod(state, conn_id, target, &stat, value, false).await;
+    apply_mod_self(state, conn_id, target, &stat, value, value_str).await;
 }
 
 /// /SMOD <name> <stat> <value> — Modify another player's stats. Requires Director+.
+/// VB6: Only a subset of /MOD subcommands (no AURA, ARMA, ESCU, CASCO, HAM, AGU, ATRI, FX).
 async fn handle_slash_smod(state: &mut GameState, conn_id: ConnectionId, args: &str) {
     let gm_name = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIRECTOR => u.char_name.clone(),
         _ => return,
     };
 
-    // Args format: name stat value (space-delimited, name may contain +)
+    // VB6: ReadField(1)=name, ReadField(2)=subcommand, ReadField(3)=value — space delimited
     let parts: Vec<&str> = args.splitn(3, ' ').collect();
     if parts.len() < 3 { return; }
     let target_name = parts[0].replace('+', " ");
@@ -15304,179 +15320,31 @@ async fn handle_slash_smod(state: &mut GameState, conn_id: ConnectionId, args: &
         }
     };
 
-    apply_mod(state, conn_id, target_conn, &stat, value, true).await;
+    apply_mod_other(state, conn_id, target_conn, &stat, value).await;
 }
 
-/// Apply a stat modification to a target user.
-async fn apply_mod(state: &mut GameState, gm_conn: ConnectionId, target: ConnectionId, stat: &str, value: i64, announce: bool) {
-    let gm_name = state.users.get(&gm_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    let target_name = state.users.get(&target).map(|u| u.char_name.clone()).unwrap_or_default();
+/// /MOD apply — self-modification only. VB6: TCP_HandleData3.bas:1725-1877
+/// Supports all subcommands: PART, AURA, FX, ATRI, ORO, EXP, BODY, HEAD,
+/// CRI, CIU, LEVEL, CLASE, HAM, AGU, STA, MP, HP, ESCU, CASCO, ARMA.
+async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId, target: ConnectionId, stat: &str, value: i64, value_str: &str) {
+    let (char_index, map, x, y) = match state.users.get(&target) {
+        Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
 
     match stat {
-        "ORO" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.gold = value;
-            }
-            send_stats_gold(state, target).await;
-            if announce {
-                let pkt = format!("||591@{}@oro@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||572@{}", value)).await;
-            }
+        "PART" => {
+            if value <= 0 { return; }
+            let pkt = format!("CFF{},{},0", char_index, value);
+            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
-        "EXP" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.exp = value;
-            }
-            check_user_level(state, target).await;
-            send_stats_exp(state, target).await;
-            if announce {
-                let pkt = format!("||591@{}@experiencia@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||572@{}", value)).await;
-            }
+        "AURA" => {
+            // VB6: UserList(tIndex).Char.AuraA = val(Arg2); SendUserAura
+            // TODO: implement aura field if needed
         }
-        "BODY" => {
-            let char_index;
-            let map;
-            let head;
-            let heading;
-            let weapon;
-            let shield;
-            let casco;
-            if let Some(user) = state.users.get_mut(&target) {
-                user.body = value as i32;
-                char_index = user.char_index;
-                map = user.pos_map;
-                head = user.head;
-                heading = user.heading;
-                weapon = user.weapon_anim;
-                shield = user.shield_anim;
-                casco = user.casco_anim;
-            } else { return; }
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index.0, value, head, heading, weapon, shield, casco);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
-            if announce {
-                let pkt = format!("||591@{}@body@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||573@{}", value)).await;
-            }
-        }
-        "HEAD" => {
-            let char_index;
-            let map;
-            let body;
-            let heading;
-            let weapon;
-            let shield;
-            let casco;
-            if let Some(user) = state.users.get_mut(&target) {
-                user.head = value as i32;
-                char_index = user.char_index;
-                map = user.pos_map;
-                body = user.body;
-                heading = user.heading;
-                weapon = user.weapon_anim;
-                shield = user.shield_anim;
-                casco = user.casco_anim;
-            } else { return; }
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index.0, body, value, heading, weapon, shield, casco);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
-            if announce {
-                let pkt = format!("||591@{}@head@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||574@{}", value)).await;
-            }
-        }
-        "CRI" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.criminales_matados = value as i32;
-            }
-            if announce {
-                let pkt = format!("||591@{}@criminales@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||575@{}", value)).await;
-            }
-        }
-        "CIU" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.ciudadanos_matados = value as i32;
-            }
-            if announce {
-                let pkt = format!("||591@{}@ciudadanos@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||576@{}", value)).await;
-            }
-        }
-        "LEVEL" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.level = value as i32;
-            }
-            let pkt = format!("[L]{}", value);
-            state.send_to(target, &pkt).await;
-            if announce {
-                let pkt = format!("||591@{}@nivel@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||577@{}", value)).await;
-            }
-        }
-        "CLASE" => {
-            let parts: Vec<&str> = stat.splitn(2, ' ').collect();
-            let _ = parts; // value is used as string from args
-            // For CLASE, value represents the class name but we received it as i64.
-            // The caller should handle this differently. For simplicity, just set it.
-            if announce {
-                let pkt = format!("||591@{}@clase@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||578@{}", value)).await;
-            }
-        }
-        "HP" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.min_hp = value as i32;
-                user.max_hp = value as i32;
-            }
-            send_stats_hp(state, target).await;
-            if announce {
-                let pkt = format!("||591@{}@vida@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||583@{}", value)).await;
-            }
-        }
-        "MP" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.min_mana = value as i32;
-                user.max_mana = value as i32;
-            }
-            send_stats_mana(state, target).await;
-            if announce {
-                let pkt = format!("||591@{}@mana@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||582@{}", value)).await;
-            }
-        }
-        "STA" => {
-            if let Some(user) = state.users.get_mut(&target) {
-                user.min_sta = value as i32;
-                user.max_sta = value as i32;
-            }
-            send_stats_sta(state, target).await;
-            if announce {
-                let pkt = format!("||591@{}@energia@{}@{}", gm_name, target_name, value);
-                state.send_data(SendTarget::ToAdmins, &pkt).await;
-            } else {
-                state.send_to(gm_conn, &format!("||581@{}", value)).await;
-            }
+        "FX" => {
+            let pkt = format!("CFX{},{},20", char_index, value);
+            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
         "ATRI" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -15484,27 +15352,245 @@ async fn apply_mod(state: &mut GameState, gm_conn: ConnectionId, target: Connect
                     user.attributes[i] = value as i32;
                 }
             }
-            state.send_to(gm_conn, &format!("||571@{}", value)).await;
+            state.send_to(conn_id, &format!("||571@{}", value)).await;
         }
-        "FX" => {
-            let char_index = state.users.get(&target).map(|u| u.char_index.0).unwrap_or(0);
-            let map = state.users.get(&target).map(|u| u.pos_map).unwrap_or(0);
-            let x = state.users.get(&target).map(|u| u.pos_x).unwrap_or(0);
-            let y = state.users.get(&target).map(|u| u.pos_y).unwrap_or(0);
-            let pkt = format!("CFX{},{},20", char_index, value);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+        "ORO" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.gold = value;
+            }
+            send_stats_gold(state, target).await;
+            state.send_to(conn_id, &format!("||572@{}", value)).await;
         }
+        "EXP" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.exp = value;
+            }
+            check_user_level(state, target).await;
+            send_stats_exp(state, target).await;
+            state.send_to(conn_id, &format!("||572@{}", value)).await;
+        }
+        "BODY" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.body = value as i32;
+            }
+            state.send_to(conn_id, &format!("||573@{}", value)).await;
+            // VB6: ChangeUserChar → CP to map
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, value, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+        }
+        "HEAD" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.head = value as i32;
+            }
+            state.send_to(conn_id, &format!("||574@{}", value)).await;
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, value, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+        }
+        "CRI" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.criminales_matados = value as i32;
+            }
+            state.send_to(conn_id, &format!("||575@{}", value)).await;
+        }
+        "CIU" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.ciudadanos_matados = value as i32;
+            }
+            state.send_to(conn_id, &format!("||576@{}", value)).await;
+        }
+        "LEVEL" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.level = value as i32;
+            }
+            state.send_to(conn_id, &format!("||577@{}", value)).await;
+        }
+        "CLASE" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.class = value_str.to_string();
+            }
+            state.send_to(conn_id, &format!("||578@{}", value_str)).await;
+        }
+        "HAM" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_ham = value as i32;
+                user.max_ham = value as i32;
+            }
+            state.send_to(conn_id, &format!("||579@{}", value)).await;
+        }
+        "AGU" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_agua = value as i32;
+                user.max_agua = value as i32;
+            }
+            state.send_to(conn_id, &format!("||580@{}", value)).await;
+        }
+        "STA" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_sta = value as i32;
+                user.max_sta = value as i32;
+            }
+            send_stats_sta(state, target).await;
+            state.send_to(conn_id, &format!("||581@{}", value)).await;
+        }
+        "MP" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_mana = value as i32;
+                user.max_mana = value as i32;
+            }
+            send_stats_mana(state, target).await;
+            state.send_to(conn_id, &format!("||582@{}", value)).await;
+        }
+        "HP" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_hp = value as i32;
+                user.max_hp = value as i32;
+            }
+            send_stats_hp(state, target).await;
+            state.send_to(conn_id, &format!("||583@{}", value)).await;
+        }
+        "ESCU" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.shield_anim = value as i32;
+            }
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, u.head, u.heading, u.weapon_anim, value, u.casco_anim);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+        }
+        "CASCO" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.casco_anim = value as i32;
+            }
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, value);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+        }
+        "ARMA" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.weapon_anim = value as i32;
+            }
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, u.head, u.heading, value, u.shield_anim, u.casco_anim);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+        }
+        _ => {
+            state.send_to(conn_id, "||584").await;
+        }
+    }
+}
+
+/// /SMOD apply — modify another player. VB6: TCP_HandleData3.bas:2051-2163
+/// Only supports: PART, ORO, EXP, BODY, HEAD, CRI, CIU, LEVEL, CLASE, STA, MP, HP.
+/// All modifications are broadcast to admins via ||591 packets.
+async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId, target: ConnectionId, stat: &str, value: i64) {
+    let gm_name = state.users.get(&gm_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+    let target_name = state.users.get(&target).map(|u| u.char_name.clone()).unwrap_or_default();
+    let (char_index, map, x, y) = match state.users.get(&target) {
+        Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+
+    match stat {
         "PART" => {
             if value <= 0 { return; }
-            let char_index = state.users.get(&target).map(|u| u.char_index.0).unwrap_or(0);
-            let map = state.users.get(&target).map(|u| u.pos_map).unwrap_or(0);
-            let x = state.users.get(&target).map(|u| u.pos_x).unwrap_or(0);
-            let y = state.users.get(&target).map(|u| u.pos_y).unwrap_or(0);
             let pkt = format!("CFF{},{},0", char_index, value);
             state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
+        "ORO" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.gold = value;
+            }
+            send_stats_gold(state, target).await;
+            let pkt = format!("||591@{}@oro@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "EXP" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.exp = value;
+            }
+            check_user_level(state, target).await;
+            send_stats_exp(state, target).await;
+            let pkt = format!("||591@{}@experiencia@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "BODY" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.body = value as i32;
+            }
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, value, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let pkt = format!("||591@{}@body@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "HEAD" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.head = value as i32;
+            }
+            let u = state.users.get(&target).unwrap();
+            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, value, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
+            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let pkt = format!("||591@{}@head@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "CRI" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.criminales_matados = value as i32;
+            }
+            let pkt = format!("||591@{}@criminales@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "CIU" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.ciudadanos_matados = value as i32;
+            }
+            let pkt = format!("||591@{}@ciudadanos@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "LEVEL" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.level = value as i32;
+            }
+            let pkt_level = format!("[L]{}", value);
+            state.send_to(target, &pkt_level).await;
+            let pkt = format!("||591@{}@nivel@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "CLASE" => {
+            // VB6: class is a string, but we receive it as numeric here
+            let pkt = format!("||591@{}@clase@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "STA" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_sta = value as i32;
+                user.max_sta = value as i32;
+            }
+            send_stats_sta(state, target).await;
+            let pkt = format!("||591@{}@energia@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "MP" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_mana = value as i32;
+                user.max_mana = value as i32;
+            }
+            send_stats_mana(state, target).await;
+            let pkt = format!("||591@{}@mana@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
+        "HP" => {
+            if let Some(user) = state.users.get_mut(&target) {
+                user.min_hp = value as i32;
+                user.max_hp = value as i32;
+            }
+            send_stats_hp(state, target).await;
+            let pkt = format!("||591@{}@vida@{}@{}", gm_name, target_name, value);
+            state.send_data(SendTarget::ToAdmins, &pkt).await;
+        }
         _ => {
-            state.send_to(gm_conn, "||584").await; // Unknown stat
+            state.send_to(gm_conn, "||584").await;
         }
     }
 }
