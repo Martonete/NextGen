@@ -1784,16 +1784,24 @@ async fn handle_use_item_click(state: &mut GameState, conn_id: ConnectionId, dat
     let is_projectile = state.get_object(obj_index).map(|o| o.proyectil).unwrap_or(false);
     if is_projectile { return; }
 
-    // Anti-cheat: PuedoClickear (use interval_click)
-    let interval = state.users.get(&conn_id).map(|u| u.interval_click).unwrap_or(0);
-    if interval > 0 { return; }
+    // Anti-cheat: PuedoClickear — checks interval_click AND sets both
+    // interval_click=6 and interval_poteo=8 (cross-locking, matches VB6)
+    if !puede_clickear(state, conn_id) { return; }
 
-    // Delegate to the regular use-item logic (same as USA)
+    // Delegate to inner use-item with from_click=true so it skips
+    // puede_potear() (already set by puede_clickear above)
     let usa_data = format!("USA{}", slot);
-    handle_use_item(state, conn_id, &usa_data).await;
+    handle_use_item_inner(state, conn_id, &usa_data, true).await;
 }
 
 async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    handle_use_item_inner(state, conn_id, data, false).await;
+}
+
+/// Inner use-item logic. `from_click` = true when called from QSA (double-click),
+/// which means puede_clickear() already set both interval_click and interval_poteo,
+/// so we skip the puede_potear() check to avoid double-blocking.
+async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, data: &str, from_click: bool) {
     let slot_str = strip_opcode(data, 3);
     let slot: usize = match slot_str.parse::<usize>() {
         Ok(s) if s >= 1 && s <= MAX_INVENTORY_SLOTS => s,
@@ -1830,7 +1838,8 @@ async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId, data: &st
     match obj_data.obj_type {
         ObjType::UseOnce | ObjType::Potion => {
             // Anti-cheat: check potion cooldown
-            if !puede_potear(state, conn_id) {
+            // When from_click=true, puede_clickear() already set both cooldowns
+            if !from_click && !puede_potear(state, conn_id) {
                 return;
             }
 

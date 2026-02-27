@@ -118,6 +118,9 @@ async fn main() {
     let mut respawn_tick = tokio::time::interval(std::time::Duration::from_secs(30));
     // Player passive timer (1s — hunger/thirst drain, stamina regen, poison)
     let mut player_tick = tokio::time::interval(std::time::Duration::from_secs(1));
+    // World cleanup timer (60s — VB6: LimpiezaTimer.Interval = 60000)
+    // Items dropped on ground get 10 ticks × 60s = 10 minutes before removal
+    let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(60));
 
     // Main event loop
     loop {
@@ -276,12 +279,16 @@ async fn main() {
             // Player passive tick — regen/drain (every 1s)
             _ = player_tick.tick() => {
                 game::handlers::tick_player_passive(&mut state).await;
-                game::handlers::tick_clean_world(&mut state).await;
                 game::handlers::tick_nobleza(&mut state).await;
                 game::handlers::tick_siege(&mut state).await;
                 game::handlers::tick_guerra(&mut state).await;
                 game::handlers::tick_eventos(&mut state).await;
                 game::handlers::tick_ancalagon(&mut state).await;
+            }
+
+            // World cleanup tick — auto-remove ground items (every 60s, VB6: LimpiezaTimer)
+            _ = cleanup_tick.tick() => {
+                game::handlers::tick_clean_world(&mut state).await;
             }
         } // end tokio::select!
     } // end loop
