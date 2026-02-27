@@ -1,3 +1,7 @@
+// Suppress warnings for VB6-parity code that is declared but not yet wired up.
+// These functions, constants, and imports will be used as more features are connected.
+#![allow(dead_code, unused_variables, unused_imports, unused_assignments, dropping_references)]
+
 mod crypto;
 mod net;
 mod protocol;

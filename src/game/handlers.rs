@@ -15,6 +15,8 @@
 //   RPU — request position update
 //   ; — chat message (talk)
 
+// Many functions/constants are declared for VB6 parity but not yet wired up.
+
 use std::collections::HashMap;
 use tracing::{info, warn};
 
@@ -2030,26 +2032,16 @@ async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId, data: &st
                 state.send_to(conn_id, &msg).await;
                 return;
             }
-            // Revive the character — VB6 sets HP to 35, not full
+            // Consume the item first
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.dead = false;
-                user.min_hp = 35.min(user.max_hp);
                 user.inventory[idx].amount -= 1;
                 if user.inventory[idx].amount <= 0 {
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
             send_inventory_slot(state, conn_id, idx).await;
-            send_stats_hp(state, conn_id).await;
-            // Broadcast appearance change (alive body)
-            let cc = state.users.get(&conn_id).map(|u| u.build_cc_packet()).unwrap_or_default();
-            let (map, x, y) = match state.users.get(&conn_id) {
-                Some(u) => (u.pos_map, u.pos_x, u.pos_y),
-                None => return,
-            };
-            if !cc.is_empty() {
-                state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
-            }
+            // Use shared revive logic (restores body, head, sends CFF + CP)
+            revive_user(state, conn_id).await;
             let msg = format!("P|Has sido resucitado!{}", font_types::INFO);
             state.send_to(conn_id, &msg).await;
         }
@@ -3871,6 +3863,15 @@ async fn user_die(state: &mut GameState, conn_id: ConnectionId, killer_id: Optio
     // Send death notification
     state.send_to(conn_id, server_opcodes::YOU_DIED).await;
     send_stats_hp(state, conn_id).await;
+
+    // VB6: On PK maps, send "MUERT" packet to show death dialog (frmMuertito)
+    let map_is_pk = state.game_data.maps.get(map as usize)
+        .and_then(|m| m.as_ref())
+        .map(|m| m.info.pk)
+        .unwrap_or(false);
+    if map_is_pk {
+        state.send_to(conn_id, "MUERT").await;
+    }
 
     // Broadcast dead body model change (CP packet) to area
     let cp_pkt = format!(
