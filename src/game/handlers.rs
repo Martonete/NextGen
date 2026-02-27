@@ -922,10 +922,10 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.not_move, u.meditating),
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.not_move, u.meditating, u.navigating),
         _ => return,
     };
-    let (map, old_x, old_y, char_index, paralyzed, dead, not_move, meditating) = user_data;
+    let (map, old_x, old_y, char_index, paralyzed, dead, not_move, meditating, navigating) = user_data;
 
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed and not_move block.
     if paralyzed || not_move {
@@ -968,7 +968,10 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let new_y = old_y + dy;
 
     // Check map bounds and blocked
-    let blocked = state.is_tile_blocked(map, new_x, new_y);
+    // VB6: When navigating (boat), water tiles (blocked=true) become passable
+    // and land tiles (blocked=false) become impassable — logic is inverted.
+    let tile_blocked = state.is_tile_blocked(map, new_x, new_y);
+    let blocked = if navigating { !tile_blocked } else { tile_blocked };
     let legal = state.world.is_legal_pos(map, new_x, new_y, blocked);
 
     // Walk movement — don't log (too frequent)
@@ -1930,19 +1933,41 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
             state.send_to(conn_id, &msg).await;
         }
         ObjType::Boat => {
-            // Equip/unequip boat
-            let user = match state.users.get(&conn_id) {
-                Some(u) if u.logged => u,
+            // Equip/unequip boat (VB6: InvUsuario.bas — Barcas)
+            let (is_navigating, user_map, user_x, user_y) = match state.users.get(&conn_id) {
+                Some(u) if u.logged => (u.navigating, u.pos_map, u.pos_x, u.pos_y),
                 _ => return,
             };
-            if user.navigating {
-                // Unequip boat
+            if is_navigating {
+                // Unequip boat — must be adjacent to land (non-blocked tile)
+                let has_land_nearby = (1..=4).any(|h| {
+                    let (dx, dy) = world::heading_to_offset(h);
+                    !state.is_tile_blocked(user_map, user_x + dx, user_y + dy)
+                });
+                if !has_land_nearby {
+                    let msg = format!("P|No puedes desembarcar aqui, no hay tierra cerca{}", font_types::INFO);
+                    state.send_to(conn_id, &msg).await;
+                    return;
+                }
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.navigating = false;
-                    u.body = 1; // Reset to default body (will be overwritten)
+                    let race = u.race.clone();
+                    let gender = u.gender.to_string();
+                    u.body = naked_body(&race, &gender);
                 }
+                // Send NAVEG toggle to client
+                state.send_to(conn_id, "NAVEG").await;
             } else {
-                // Equip boat — change body to boat ropaje
+                // Equip boat — must be adjacent to water (blocked tile = water)
+                let has_water_nearby = (1..=4).any(|h| {
+                    let (dx, dy) = world::heading_to_offset(h);
+                    state.is_tile_blocked(user_map, user_x + dx, user_y + dy)
+                });
+                if !has_water_nearby {
+                    let msg = format!("P|Necesitas estar cerca del agua para navegar{}", font_types::INFO);
+                    state.send_to(conn_id, &msg).await;
+                    return;
+                }
                 let ropaje = obj_data.num_ropaje;
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.navigating = true;
@@ -1950,14 +1975,16 @@ async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, dat
                         u.body = ropaje;
                     }
                 }
+                // Send NAVEG toggle to client
+                state.send_to(conn_id, "NAVEG").await;
             }
             // Broadcast appearance change
-            let cc = state.users.get(&conn_id).map(|u| u.build_cc_packet()).unwrap_or_default();
-            let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
-            let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
-            let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
+            let (cc, map, bx, by) = match state.users.get(&conn_id) {
+                Some(u) => (u.build_cc_packet(), u.pos_map, u.pos_x, u.pos_y),
+                None => return,
+            };
             if !cc.is_empty() {
-                state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+                state.send_data(SendTarget::ToArea { map, x: bx, y: by }, &cc).await;
             }
         }
         ObjType::Instrument => {
