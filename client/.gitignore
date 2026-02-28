@@ -1,0 +1,19 @@
+# Godot 4 generated
+.godot/
+
+# .NET / Mono build artifacts
+bin/
+obj/
+*.dll
+*.pdb
+*.cache
+*.tmp
+
+# Godot import cache (regenerated on open)
+.import/
+
+# OS junk
+.DS_Store
+Thumbs.db
+*.swp
+*~
