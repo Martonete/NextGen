@@ -315,6 +315,13 @@ public class PacketHandler
             ch.PosX = newX;
             ch.PosY = newY;
             ch.Moving = true;
+
+            // Keep viewport centered on self character
+            if (idx == _state.UserCharIndex)
+            {
+                _state.UserPosX = newX;
+                _state.UserPosY = newY;
+            }
         }
     }
 
