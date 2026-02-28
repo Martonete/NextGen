@@ -5,3 +5,4 @@
 /server/Accounts/*.act
 /server/guilds/Bancos/
 *.log
+client/.godot/

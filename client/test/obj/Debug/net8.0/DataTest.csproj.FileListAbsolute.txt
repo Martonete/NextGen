@@ -1,0 +1,15 @@
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/bin/Debug/net8.0/DataTest
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/bin/Debug/net8.0/DataTest.deps.json
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/bin/Debug/net8.0/DataTest.runtimeconfig.json
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/bin/Debug/net8.0/DataTest.dll
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/bin/Debug/net8.0/DataTest.pdb
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.GeneratedMSBuildEditorConfig.editorconfig
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.AssemblyInfoInputs.cache
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.AssemblyInfo.cs
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.csproj.CoreCompileInputs.cache
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.sourcelink.json
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.dll
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/refint/DataTest.dll
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.pdb
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/DataTest.genruntimeconfig.cache
+/workspace/Tierras-Sagradas-AO/server-rust/client/test/obj/Debug/net8.0/ref/DataTest.dll
