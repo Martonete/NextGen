@@ -7,6 +7,7 @@ mod net;
 mod protocol;
 mod config;
 mod data;
+mod db;
 mod game;
 
 use tracing::{info, error};
@@ -81,8 +82,26 @@ async fn main() {
         }
     };
 
+    // Load .env for DATABASE_URL
+    let _ = dotenvy::dotenv();
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "postgres://ao:ao_secret@localhost:5432/ao_server".to_string());
+
+    // Initialize database pool and run migrations
+    let pool = match db::init_pool(&database_url).await {
+        Ok(p) => p,
+        Err(e) => {
+            error!("Failed to initialize database: {}", e);
+            std::process::exit(1);
+        }
+    };
+
+    // Load bans and rankings from DB
+    let bans = db::bans::BanList::load(&pool).await;
+    let ranking = db::ranking::load_ranking(&pool).await;
+
     // Initialize game state
-    let mut state = GameState::new(config.clone(), base_path, game_data);
+    let mut state = GameState::new(config.clone(), base_path, game_data, pool, bans, ranking);
     info!("Game state initialized");
 
     // Spawn NPCs from map data
@@ -187,9 +206,9 @@ async fn main() {
                         &bp_pkt,
                     ).await;
 
-                    // Save full character state to .chr file
+                    // Save full character state to DB
                     if let Some(user) = state.users.get(&conn_id) {
-                        let save_data = data::charfile::CharSaveData {
+                        let save_data = db::charfile::CharSaveData {
                             head: user.head,
                             body: user.body,
                             heading: user.heading,
@@ -243,9 +262,10 @@ async fn main() {
                             puntos_torneo: user.puntos_torneo,
                             ts_points: user.ts_points,
                         };
-                        match data::charfile::save_charfile(&state.base_path, &name, &save_data) {
-                            Ok(()) => info!("[DISC] Charfile saved for '{}'", name),
-                            Err(e) => error!("[DISC] Failed to save charfile for '{}': {}", name, e),
+                        let pool = state.pool.clone();
+                        match db::charfile::save_charfile(&pool, &name, &save_data).await {
+                            Ok(()) => info!("[DISC] Character saved for '{}'", name),
+                            Err(e) => error!("[DISC] Failed to save character '{}': {}", name, e),
                         }
                     }
                 } else {

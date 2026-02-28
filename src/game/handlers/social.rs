@@ -5,7 +5,7 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{server_opcodes, font_types, fields::read_field};
-use crate::data::charfile;
+use crate::db::charfile;
 use super::common::*;
 
 
@@ -435,7 +435,7 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
     };
 
     // Validate recipient exists
-    if !charfile::character_exists(&state.base_path, recipient_name) {
+    if !charfile::character_exists(&state.pool, recipient_name).await {
         let msg = format!("{}El personaje no existe.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
         state.send_to(conn_id, &msg).await;
         return;
@@ -584,7 +584,7 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
         _ => return,
     };
 
-    if !charfile::character_exists(&state.base_path, &friend_name) {
+    if !charfile::character_exists(&state.pool, &friend_name).await {
         let msg = format!("{}El personaje no existe.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
         state.send_to(conn_id, &msg).await;
         return;

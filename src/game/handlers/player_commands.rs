@@ -6,7 +6,8 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::protocol::{server_opcodes, font_types, fields::read_field};
-use crate::data::{charfile, objects::ObjType};
+use crate::db::charfile;
+use crate::data::objects::ObjType;
 use super::common::*;
 use super::{
     warp_user, revive_user, send_inventory_slot, send_full_inventory,
@@ -387,10 +388,8 @@ pub(super) async fn handle_slash_transform(state: &mut GameState, conn_id: Conne
             None => return,
         };
         let gender_str = gender.to_string();
-        let orig_head = {
-            let base = &state.base_path;
-            charfile::load_charfile(base, &char_name).map(|c| c.head).unwrap_or(0)
-        };
+        let orig_head = charfile::load_charfile(&state.pool, &char_name).await
+            .map(|c| c.head).unwrap_or(0);
         let new_body = naked_body(&race, &gender_str);
 
         if let Some(user) = state.users.get_mut(&conn_id) {

@@ -11,6 +11,7 @@ RUN mkdir src && echo "fn main() {}" > src/main.rs \
 
 # Now copy real source and build
 COPY src/ src/
+COPY migrations/ migrations/
 RUN cargo build --release
 
 # ── Stage 2: Runtime ────────────────────────────────────────────
@@ -26,6 +27,9 @@ WORKDIR /app
 # Copy binary
 COPY --from=builder /build/target/release/ao-server /app/ao-server
 
+# Copy embedded migrations (compiled into the binary via sqlx::migrate!)
+# They are included at compile time, but we keep the dir for reference.
+
 # Copy server data (read-only game data)
 COPY server/Maps/       /app/server/Maps/
 COPY server/Dat/        /app/server/Dat/
@@ -34,14 +38,12 @@ COPY server/WorldBackUp/ /app/server/WorldBackUp/
 COPY server/Server.ini  /app/server/Server.ini
 COPY server/Configuracion.ini /app/server/Configuracion.ini
 COPY server/Facciones.ini /app/server/Facciones.ini
-COPY server/HD.ini      /app/server/HD.ini
 
-# Create stateful directories (will be mounted as volumes)
-RUN mkdir -p /app/server/charfile /app/server/Accounts /app/server/guilds /app/server/logs /app/server/Logs \
+# Create logs directory (only stateful dir remaining — DB handles the rest)
+RUN mkdir -p /app/server/logs /app/server/Logs \
     && chown -R ao:ao /app
 
-# Volumes for persistent state
-VOLUME ["/app/server/charfile", "/app/server/Accounts", "/app/server/guilds", "/app/server/logs"]
+VOLUME ["/app/server/logs"]
 
 EXPOSE 5028 7669
 

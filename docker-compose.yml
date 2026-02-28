@@ -1,21 +1,36 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: ao-postgres
+    environment:
+      POSTGRES_USER: ao
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ao_secret}
+      POSTGRES_DB: ao_server
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ao -d ao_server"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
   ao-server:
     build: .
     container_name: ao-server
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "5028:5028"
       - "7669:7669"
     volumes:
-      - charfile:/app/server/charfile
-      - accounts:/app/server/Accounts
-      - guilds:/app/server/guilds
       - logs:/app/server/logs
     environment:
-      - RUST_LOG=ao_server=info
+      DATABASE_URL: postgres://ao:${POSTGRES_PASSWORD:-ao_secret}@postgres:5432/ao_server
+      RUST_LOG: ao_server=info
     restart: unless-stopped
 
 volumes:
-  charfile:
-  accounts:
-  guilds:
+  pgdata:
   logs:

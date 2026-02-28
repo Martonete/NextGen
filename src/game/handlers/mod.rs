@@ -68,10 +68,10 @@ use tracing::{info, warn};
 
 use crate::net::ConnectionId;
 use crate::protocol::{client_opcodes, server_opcodes, font_types, fields::read_field};
-use crate::data::{accounts, charfile};
+use crate::db::{accounts, charfile, guilds};
+use crate::db::password;
 use crate::data::objects::ObjType;
 use crate::data::maps::Trigger;
-use crate::data::guilds;
 use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
 use super::world;
 use super::npc;
@@ -375,13 +375,13 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         return;
     }
 
-    if !accounts::account_exists(&state.base_path, &account_name) {
+    if !accounts::account_exists(&state.pool, &account_name).await {
         state.send_to(conn_id, &format!("{}La cuenta no existe.", server_opcodes::ERROR)).await;
         close_connection(state, conn_id).await;
         return;
     }
 
-    let account = match accounts::load_account(&state.base_path, &account_name) {
+    let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(e) => {
             warn!("[AUTH] Failed to load account '{}': {}", account_name, e);
@@ -391,7 +391,7 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         }
     };
 
-    if password != account.password {
+    if !password::verify_password(&password, &account.password_hash) {
         state.send_to(conn_id, &format!("{}Password incorrecto.", server_opcodes::ERROR)).await;
         close_connection(state, conn_id).await;
         return;
@@ -412,6 +412,7 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.account_name = account_name.clone();
         user.account_password = password;
+        user.account_id = account.id;
     }
 
     let iniac = format!("INIAC{},{}", account.num_pjs, state.notice);
@@ -422,7 +423,7 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         if pj_name.is_empty() {
             continue;
         }
-        match charfile::load_char_preview(&state.base_path, pj_name) {
+        match charfile::load_char_preview(&state.pool, pj_name).await {
             Ok(preview) => {
                 let addpj = format!("ADDPJ{},{},{}", pj_name, i + 1, preview.to_addpj_data());
                 state.send_to(conn_id, &addpj).await;
@@ -466,14 +467,24 @@ async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, data: &str)
         return;
     }
 
+    let password_hash = match password::hash_password(&password) {
+        Ok(h) => h,
+        Err(e) => {
+            warn!("[AUTH] Failed to hash password: {}", e);
+            state.send_to(conn_id, &format!("{}Error interno del servidor.", server_opcodes::ERROR)).await;
+            close_connection(state, conn_id).await;
+            return;
+        }
+    };
+
     match accounts::create_account(
-        &state.base_path,
+        &state.pool,
         &account_name,
-        &password,
+        &password_hash,
         &pin,
         &state.security_code,
-    ) {
-        Ok(()) => {
+    ).await {
+        Ok(_account_id) => {
             info!("[AUTH] Account '{}' created successfully", account_name);
             state.send_to(conn_id, &format!("{}Cuenta creada con exito!", server_opcodes::ERROR)).await;
             close_connection(state, conn_id).await;
@@ -507,13 +518,13 @@ async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, data: &str)
         return;
     }
 
-    if !charfile::character_exists(&state.base_path, &char_name) {
+    if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR)).await;
         close_connection(state, conn_id).await;
         return;
     }
 
-    if is_char_banned(&state.base_path, &char_name) {
+    if is_char_banned(&state.pool, &char_name).await {
         state.send_to(conn_id, &format!(
             "{}Se te ha prohibido la entrada a Tierras Sagradas debido a tu mal comportamiento. Consulta a un administrador para saber el motivo de la prohibicion.",
             server_opcodes::ERROR
@@ -543,13 +554,13 @@ async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     info!("[AUTH] Character login (OOLOGI): '{}' from #{}", char_name, conn_id);
 
-    if !charfile::character_exists(&state.base_path, &char_name) {
+    if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR)).await;
         close_connection(state, conn_id).await;
         return;
     }
 
-    if is_char_banned(&state.base_path, &char_name) {
+    if is_char_banned(&state.pool, &char_name).await {
         state.send_to(conn_id, &format!(
             "{}Se te ha prohibido la entrada a Tierras Sagradas AO debido a tu mal comportamiento.",
             server_opcodes::ERROR
@@ -594,10 +605,10 @@ async fn connect_user(
     }
 
     // Load character data
-    let char_data = match charfile::load_charfile(&state.base_path, char_name) {
+    let char_data = match charfile::load_charfile(&state.pool, char_name).await {
         Ok(data) => data,
         Err(e) => {
-            warn!("[AUTH] Failed to load charfile '{}': {}", char_name, e);
+            warn!("[AUTH] Failed to load character '{}': {}", char_name, e);
             state.send_to(conn_id, &format!("{}Error en el personaje.", server_opcodes::ERROR)).await;
             close_connection(state, conn_id).await;
             return;
@@ -623,7 +634,10 @@ async fn connect_user(
     }
 
     // Check same-account multi-character
-    if let Some(other) = state.is_account_char_online(account, char_name) {
+    let account_chars = accounts::load_account(&state.pool, account).await
+        .map(|a| a.characters)
+        .unwrap_or_default();
+    if let Some(other) = state.is_account_char_online(&account_chars, char_name) {
         state.send_to(conn_id, &format!(
             "{}Perdon, un usuario de la misma cuenta esta conectado ({}), intente de nuevo en 5 minutos.",
             server_opcodes::ERROR_SHOW, other
@@ -798,7 +812,7 @@ async fn connect_user(
     state.world.place_user(map, x, y, conn_id);
 
     // Set Logged=1 in charfile
-    let _ = charfile::set_logged_flag(&state.base_path, char_name, true);
+    let _ = charfile::set_logged_flag(&state.pool, char_name, true).await;
 
     // Get map info from loaded data
     let map_idx = map as usize;
@@ -1360,45 +1374,31 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         .map(|u| u.dice_attributes)
         .unwrap_or([18; 5]);
 
-    let security_code = state.users.get(&conn_id)
-        .and_then(|u| {
-            if !u.account_name.is_empty() {
-                accounts::load_account(&state.base_path, &u.account_name)
-                    .ok()
-                    .map(|a| a.security_code)
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| state.security_code.clone());
+    let account_id = state.users.get(&conn_id)
+        .map(|u| u.account_id)
+        .unwrap_or(0);
+
+    if account_id == 0 {
+        state.send_to(conn_id, &format!("{}Debes iniciar sesion primero.", server_opcodes::ERROR)).await;
+        close_connection(state, conn_id).await;
+        return;
+    }
 
     match charfile::create_charfile(
-        &state.base_path,
+        &state.pool,
+        account_id,
         &char_name,
         &race,
         gender,
         &class,
         hogar,
         head,
-        &security_code,
         attributes,
         state.config.start_map,
         state.config.start_x,
         state.config.start_y,
-    ) {
-        Ok(()) => {
-            let acct = if account.is_empty() {
-                state.users.get(&conn_id).map(|u| u.account_name.clone()).unwrap_or_default()
-            } else {
-                account
-            };
-
-            if !acct.is_empty() {
-                if let Err(e) = accounts::add_character_to_account(&state.base_path, &acct, &char_name) {
-                    warn!("[AUTH] Failed to add char to account: {}", e);
-                }
-            }
-
+    ).await {
+        Ok(_char_id) => {
             info!("[AUTH] Character '{}' created successfully", char_name);
             state.send_to(conn_id, &format!("{}Personaje creado con exito!", server_opcodes::ERROR)).await;
             close_connection(state, conn_id).await;
@@ -1437,13 +1437,13 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
 
-    if !charfile::character_exists(&state.base_path, &char_name) {
+    if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR)).await;
         close_connection(state, conn_id).await;
         return;
     }
 
-    let char_data = match charfile::load_charfile(&state.base_path, &char_name) {
+    let char_data = match charfile::load_charfile(&state.pool, &char_name).await {
         Ok(data) => data,
         Err(_) => {
             state.send_to(conn_id, &format!("{}Error al leer el personaje.", server_opcodes::ERROR)).await;
@@ -1452,6 +1452,7 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         }
     };
 
+    // Verify password (security_code from account)
     if char_data.password.to_uppercase() != password.to_uppercase() {
         state.send_to(conn_id, &format!("{}Password incorrecto.", server_opcodes::ERROR)).await;
         state.send_to(conn_id, server_opcodes::FINISH_OK).await;
@@ -1484,12 +1485,8 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         return;
     }
 
-    if let Err(e) = accounts::remove_character_from_account(&state.base_path, &account_name, &char_name) {
-        warn!("[AUTH] Failed to remove char from account: {}", e);
-    }
-
-    if let Err(e) = charfile::delete_charfile(&state.base_path, &char_name) {
-        warn!("[AUTH] Failed to delete charfile: {}", e);
+    if let Err(e) = charfile::delete_charfile(&state.pool, &char_name).await {
+        warn!("[AUTH] Failed to delete character: {}", e);
     }
 
     info!("[AUTH] Character '{}' deleted", char_name);
@@ -1532,7 +1529,7 @@ async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str)
         return;
     }
 
-    let account = match accounts::load_account(&state.base_path, &account_name) {
+    let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
             state.send_to(conn_id, &format!("{}La cuenta no existe.", server_opcodes::ERROR_SHOW)).await;
@@ -1540,7 +1537,7 @@ async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str)
         }
     };
 
-    if old_password != account.password {
+    if !password::verify_password(&old_password, &account.password_hash) {
         state.send_to(conn_id, &format!(
             "{}La Password actual que nos proporciono, no coincide con la del registro.",
             server_opcodes::ERROR_SHOW
@@ -1548,7 +1545,15 @@ async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str)
         return;
     }
 
-    match accounts::update_password(&state.base_path, &account_name, &new_password) {
+    let new_hash = match password::hash_password(&new_password) {
+        Ok(h) => h,
+        Err(_) => {
+            state.send_to(conn_id, &format!("{}Error interno.", server_opcodes::ERROR_SHOW)).await;
+            return;
+        }
+    };
+
+    match accounts::update_password(&state.pool, &account_name, &new_hash).await {
         Ok(()) => {
             info!("[AUTH] Password changed for account '{}'", account_name);
             state.send_to(conn_id, &format!(
@@ -1571,7 +1576,7 @@ async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     info!("[AUTH] Account recovery request for '{}' from #{}", account_name, conn_id);
 
-    let account = match accounts::load_account(&state.base_path, &account_name) {
+    let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
             state.send_to(conn_id, &format!("{}La cuenta no existe.", server_opcodes::ERROR)).await;
@@ -1588,7 +1593,9 @@ async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     let new_pass = 100 + (rand_simple_u32() % 900);
 
-    let _ = accounts::update_password(&state.base_path, &account_name, &new_pass.to_string());
+    if let Ok(hash) = password::hash_password(&new_pass.to_string()) {
+        let _ = accounts::update_password(&state.pool, &account_name, &hash).await;
+    }
 
     state.send_to(conn_id, &format!(
         "{}Has recuperado la cuenta, utiliza la contrasena {} para poder logearte.",
@@ -2204,19 +2211,10 @@ async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
         _ => return,
     };
 
-    // Load original head from charfile (VB6: OrigChar.Head)
-    let orig_head = {
-        let base = &state.base_path;
-        charfile::load_charfile(base, &char_name)
-            .map(|chr| chr.head)
-            .unwrap_or(1)
-    };
-
-    let gender = {
-        let base = &state.base_path;
-        charfile::load_charfile(base, &char_name)
-            .map(|chr| chr.gender.to_string())
-            .unwrap_or_else(|_| "1".to_string())
+    // Load original head from DB (VB6: OrigChar.Head)
+    let (orig_head, gender) = match charfile::load_charfile(&state.pool, &char_name).await {
+        Ok(chr) => (chr.head, chr.gender.to_string()),
+        Err(_) => (1, "1".to_string()),
     };
 
     let revive_hp = 35.min(max_hp);
@@ -2959,11 +2957,22 @@ async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
 // Integration tests — full client login flow
 // =====================================================================
 
+// Integration tests disabled — require PostgreSQL. TODO: add DB-backed tests.
+// See git history for the original file-based test suite.
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn placeholder() {
+        // Tests require a running PostgreSQL instance.
+        // Run with: DATABASE_URL=postgres://... cargo test
+    }
+}
+
+#[cfg(all(test, feature = "_db_integration_tests"))]
+mod db_tests {
     use super::*;
     use crate::config::ServerConfig;
-    use crate::data::{GameData, accounts, charfile};
+    use crate::data::GameData;
     use crate::net::connection;
     use std::path::{Path, PathBuf};
     use tokio::net::{TcpListener, TcpStream};

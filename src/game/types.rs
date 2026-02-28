@@ -4,10 +4,11 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::config::ServerConfig;
-use crate::data::bans::BanList;
+use crate::db::bans::BanList;
 use crate::data::GameData;
 use crate::data::objects::ObjType;
 use crate::data::ranking::RankingData;
+use sqlx::PgPool;
 use crate::net::ConnectionId;
 use crate::net::connection::ConnectionWriter;
 use super::world::{self, CharIndex, WorldState};
@@ -53,6 +54,7 @@ pub struct UserState {
     // Account state (set by ALOGIN)
     pub account_name: String,
     pub account_password: String,
+    pub account_id: i32,
 
     // Character state (set by THCJXD/OOLOGI)
     pub char_name: String,
@@ -330,6 +332,7 @@ impl UserState {
             paso_hd: false,
             account_name: String::new(),
             account_password: String::new(),
+            account_id: 0,
             char_name: String::new(),
             logged: false,
             dice_attributes: [18; 5],
@@ -609,6 +612,7 @@ pub struct CleanWorldEntry {
 pub struct GameState {
     pub config: ServerConfig,
     pub base_path: PathBuf,
+    pub pool: PgPool,
     pub bans: BanList,
     pub notice: String,
 
@@ -815,8 +819,7 @@ pub struct PartyState {
 }
 
 impl GameState {
-    pub fn new(config: ServerConfig, base_path: PathBuf, game_data: GameData) -> Self {
-        let bans = BanList::load(&base_path);
+    pub fn new(config: ServerConfig, base_path: PathBuf, game_data: GameData, pool: PgPool, bans: BanList, ranking: RankingData) -> Self {
         let notice = config.notice.clone();
         let exp_mult = config.exp_multiplier as i32;
         let security_code = format!("{}", rand_simple());
@@ -824,15 +827,13 @@ impl GameState {
         // Load anti-cheat intervals
         let intervals = load_intervals(&base_path);
 
-        // Load rankings
-        let ranking = crate::data::ranking::load_ranking(&base_path);
-
         // Count loaded maps to pre-allocate world grids
         let map_count = game_data.maps.len();
 
         Self {
             config,
             base_path,
+            pool,
             bans,
             notice,
             game_data,
@@ -983,16 +984,14 @@ impl GameState {
     }
 
     /// Check if any other character from the same account is online.
-    pub fn is_account_char_online(&self, account: &str, exclude_name: &str) -> Option<String> {
-        if let Ok(acc) = crate::data::accounts::load_account(&self.base_path, account) {
-            for i in 0..acc.num_pjs {
-                let pj = &acc.characters[i];
-                if !pj.is_empty()
-                    && pj.to_uppercase() != exclude_name.to_uppercase()
-                    && self.is_name_online(pj)
-                {
-                    return Some(pj.clone());
-                }
+    /// Takes the list of character names from the already-loaded account.
+    pub fn is_account_char_online(&self, characters: &[String], exclude_name: &str) -> Option<String> {
+        for pj in characters {
+            if !pj.is_empty()
+                && pj.to_uppercase() != exclude_name.to_uppercase()
+                && self.is_name_online(pj)
+            {
+                return Some(pj.clone());
             }
         }
         None
@@ -1126,13 +1125,19 @@ impl GameState {
         }
     }
 
-    /// Look up an object by index (1-based, matching VB6 OBJ1..OBJn).
-    /// Look up guild name by guild index (1-based). Loads from guildsinfo.inf.
+    /// Look up guild name by guild index (1-based). Blocking call for sync context.
+    /// For async context, use db::guilds::load_guild() directly.
     pub fn get_guild_name(&self, guild_index: i32) -> Option<String> {
         if guild_index <= 0 {
             return None;
         }
-        crate::data::guilds::load_guild(&self.base_path, guild_index).map(|g| g.name)
+        // Use a blocking call to avoid requiring async here.
+        // This is only used in sync formatting contexts.
+        let pool = self.pool.clone();
+        let rt = tokio::runtime::Handle::current();
+        rt.block_on(async {
+            crate::db::guilds::load_guild(&pool, guild_index).await.map(|g| g.name)
+        })
     }
 
     pub fn get_object(&self, obj_index: i32) -> Option<&crate::data::objects::ObjData> {

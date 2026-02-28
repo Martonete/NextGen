@@ -7,7 +7,7 @@ use tracing::{info, error};
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
 use crate::data::npcs::NpcType;
-use crate::data::charfile;
+use crate::db::charfile;
 use crate::game::npc;
 use super::common::*;
 use super::world;
@@ -1166,13 +1166,13 @@ pub async fn tick_player_passive(state: &mut GameState) {
     state.auto_save_counter -= 1;
     if state.auto_save_counter <= 0 {
         state.auto_save_counter = 60;
-        auto_save_all_users(state);
+        auto_save_all_users(state).await;
     }
 }
 
-/// Save all logged-in users to disk (periodic auto-save).
-pub(super) fn auto_save_all_users(state: &GameState) {
-    let base = state.base_path.clone();
+/// Save all logged-in users to DB (periodic auto-save).
+pub(super) async fn auto_save_all_users(state: &GameState) {
+    let pool = state.pool.clone();
     let mut saved = 0;
     for (_conn_id, user) in state.users.iter() {
         if !user.logged || user.char_name.is_empty() { continue; }
@@ -1237,7 +1237,7 @@ pub(super) fn auto_save_all_users(state: &GameState) {
             puntos_torneo: user.puntos_torneo,
             ts_points: user.ts_points,
         };
-        if charfile::save_charfile(&base, &user.char_name, &data).is_ok() {
+        if charfile::save_charfile(&pool, &user.char_name, &data).await.is_ok() {
             saved += 1;
         }
     }

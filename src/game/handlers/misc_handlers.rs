@@ -8,7 +8,8 @@ use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_IN
 use crate::game::world;
 use crate::protocol::{server_opcodes, font_types, fields::read_field};
 use crate::data::objects::{ObjData, ObjType};
-use crate::data::{guilds, charfile, ranking};
+use crate::db::guilds;
+use crate::data::ranking;
 use super::common::*;
 use super::{
     warp_user, revive_user, send_inventory_slot, send_full_inventory,
@@ -495,12 +496,8 @@ pub(super) async fn handle_vlkg(state: &mut GameState, conn_id: ConnectionId, da
         };
         state.send_to(conn_id, &format!("KHEKD{},{}", can_obj, can_gold)).await;
     } else {
-        // Offline — read from charfile
-        let chr_path = crate::data::charfile::charfile_path(&state.base_path, &nick);
-        let chr_str = chr_path.to_str().unwrap_or("");
-        let can_obj: i32 = crate::config::get_var(chr_str, "FLAGS", "PuedeRetirarObj").parse().unwrap_or(0);
-        let can_gold: i32 = crate::config::get_var(chr_str, "FLAGS", "PuedeRetirarOro").parse().unwrap_or(0);
-        state.send_to(conn_id, &format!("KHEKD{},{}", can_obj, can_gold)).await;
+        // Offline — not tracked in DB (runtime-only flags), return defaults
+        state.send_to(conn_id, &format!("KHEKD{},{}", 0, 0)).await;
     }
 }
 
@@ -520,7 +517,7 @@ pub(super) async fn handle_bovc(state: &mut GameState, conn_id: ConnectionId, da
         Some(u) if u.logged && u.guild_index > 0 => (u.char_name.clone(), u.guild_index),
         _ => return,
     };
-    let guild = match crate::data::guilds::load_guild(&state.base_path, guild_index) {
+    let guild = match crate::db::guilds::load_guild(&state.pool, guild_index).await {
         Some(g) => g,
         None => return,
     };
@@ -539,11 +536,7 @@ pub(super) async fn handle_bovc(state: &mut GameState, conn_id: ConnectionId, da
             u.puede_retirar_oro = can_gold;
         }
     } else {
-        // Offline — write to charfile
-        let chr_path = crate::data::charfile::charfile_path(&state.base_path, nick);
-        let chr_str = chr_path.to_str().unwrap_or("");
-        let _ = crate::config::write_var(chr_str, "FLAGS", "PuedeRetirarObj", if can_obj { "1" } else { "0" });
-        let _ = crate::config::write_var(chr_str, "FLAGS", "PuedeRetirarOro", if can_gold { "1" } else { "0" });
+        // Offline — these flags are runtime-only, not persisted
     }
 }
 
@@ -2259,7 +2252,7 @@ pub(super) async fn handle_slash_sicv(state: &mut GameState, conn_id: Connection
     }
 
     // Validate caller is leader of target guild
-    let my_guild = guilds::load_guild(&state.base_path, guild_idx);
+    let my_guild = guilds::load_guild(&state.pool, guild_idx).await;
     let is_leader = match &my_guild {
         Some(g) => g.leader.to_uppercase() == char_name.to_uppercase(),
         None => false,
@@ -2301,7 +2294,7 @@ pub(super) async fn handle_slash_sicv(state: &mut GameState, conn_id: Connection
     clan2_members.truncate(balanced_count);
 
     // Check gold from both leaders
-    let challenger_leader_name = guilds::load_guild(&state.base_path, challenger_guild_idx)
+    let challenger_leader_name = guilds::load_guild(&state.pool, challenger_guild_idx).await
         .map(|g| g.leader.to_uppercase())
         .unwrap_or_default();
     let challenger_leader_conn = state.users.iter()

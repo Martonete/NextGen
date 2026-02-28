@@ -545,8 +545,7 @@ pub(super) async fn handle_slash_banip(state: &mut GameState, conn_id: Connectio
         return;
     }
 
-    let base = state.base_path.clone();
-    let _ = state.bans.ban_ip(&base, &ip_to_ban);
+    let _ = state.bans.ban_ip(&state.pool, &ip_to_ban).await;
     state.send_to(conn_id, &format!("{}IP {} baneada.{}", server_opcodes::CONSOLE_MSG, ip_to_ban, font_types::INFO)).await;
     info!("[GM] {} banned IP {}", admin_name, ip_to_ban);
 }
@@ -559,8 +558,7 @@ pub(super) async fn handle_slash_unbanip(state: &mut GameState, conn_id: Connect
     }
 
     let ip = ip.trim();
-    if state.bans.unban_ip(ip) {
-        state.bans.save_ips(&state.base_path);
+    if state.bans.unban_ip(&state.pool, ip).await {
         state.send_to(conn_id, &format!("||799@{}", ip)).await;
         let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
         info!("[GM] {} unbanned IP {}", admin_name, ip);
@@ -912,25 +910,14 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
                 None => return,
             };
 
-            // Read gender from charfile for naked body
-            let gender = {
-                let char_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
-                if let Ok(chr) = crate::data::charfile::load_charfile(&state.base_path, &char_name) {
-                    chr.gender.to_string()
-                } else {
-                    "1".to_string()
-                }
+            // Read gender and head from DB for naked body
+            let char_name_for_load = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
+            let (gender, orig_head) = match crate::db::charfile::load_charfile(&state.pool, &char_name_for_load).await {
+                Ok(chr) => (chr.gender.to_string(), chr.head),
+                Err(_) => ("1".to_string(), 1),
             };
 
             let new_body = naked_body(&race, &gender);
-
-            // Load original head from charfile (VB6: OrigChar.Head)
-            let orig_head = {
-                let char_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
-                crate::data::charfile::load_charfile(&state.base_path, &char_name)
-                    .map(|chr| chr.head)
-                    .unwrap_or(1)
-            };
 
             if let Some(user) = state.users.get_mut(&tc) {
                 user.dead = false;
@@ -2360,21 +2347,17 @@ pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: Connectio
 
     // Ban HD serial
     if !target_hd.is_empty() {
-        let _ = state.bans.ban_hd(&base, &target_hd);
+        let _ = state.bans.ban_hd(&state.pool, &target_hd).await;
     }
 
     // Ban IP
     if !target_ip.is_empty() {
-        let _ = state.bans.ban_ip(&base, &target_ip);
+        let _ = state.bans.ban_ip(&state.pool, &target_ip).await;
     }
 
     // Ban account
     if !target_account.is_empty() {
-        let acc_path = base.join("Accounts").join(format!("{}.act", target_account));
-        if acc_path.exists() {
-            let act = acc_path.to_str().unwrap_or("");
-            let _ = crate::config::write_var(act, &target_account, "ban", "1");
-        }
+        let _ = crate::db::accounts::set_account_banned(&state.pool, &target_account, true, "Tolerancia 0").await;
     }
 
     // Disconnect the target

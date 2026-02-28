@@ -4,7 +4,7 @@
 //! inventory management, cooldown checks, and misc helpers.
 
 use crate::net::ConnectionId;
-use crate::data::{charfile, maps::Trigger};
+use crate::data::maps::Trigger;
 use crate::protocol::{server_opcodes, fields::read_field};
 use crate::game::types::{GameState, UserState, CleanWorldEntry, MAX_INVENTORY_SLOTS};
 use crate::game::world;
@@ -263,10 +263,14 @@ pub(super) fn is_valid_name(name: &str) -> bool {
     name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ')
 }
 
-pub(super) fn is_char_banned(base: &std::path::Path, char_name: &str) -> bool {
-    charfile::load_charfile(base, char_name)
-        .map(|c| c.banned)
-        .unwrap_or(false)
+pub(super) async fn is_char_banned(pool: &sqlx::PgPool, char_name: &str) -> bool {
+    let result = sqlx::query_scalar::<_, bool>(
+        "SELECT banned FROM characters WHERE UPPER(name) = UPPER($1)"
+    )
+    .bind(char_name)
+    .fetch_optional(pool)
+    .await;
+    matches!(result, Ok(Some(true)))
 }
 
 pub(super) fn is_same_ip_online(state: &GameState, exclude_id: ConnectionId, ip: &str) -> bool {

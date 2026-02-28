@@ -4,8 +4,12 @@ docs/
 server/ao-server
 server/charfile/
 server/Accounts/
+server/guilds/
 server/logs/
 server/Logs/
+server/HD.ini
 *.md
+.env
+.env.example
 .dockerignore
 docker-compose.yml

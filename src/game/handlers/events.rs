@@ -6,7 +6,8 @@ use crate::net::ConnectionId;
 use crate::game::types::{GameState, UserState, SendTarget, privilege_level};
 use crate::game::npc;
 use crate::protocol::{server_opcodes, font_types, fields::read_field};
-use crate::data::{guilds, objects::ObjData};
+use crate::db::guilds;
+use crate::data::objects::ObjData;
 use super::common::*;
 use super::world;
 
@@ -601,14 +602,14 @@ pub(super) async fn cvc_end_battle(state: &mut GameState, winner_guild: i32) {
     state.send_data(SendTarget::ToAll, &pkt).await;
 
     // Update guild files: winner gets +1 CVCG, +75 reputation; loser gets +1 CVCP
-    if let Some(mut guild) = guilds::load_guild(&state.base_path, winner_guild) {
+    if let Some(mut guild) = guilds::load_guild(&state.pool, winner_guild).await {
         guild.cvc_wins += 1;
         guild.reputation += 75;
-        guilds::save_guild(&state.base_path, &guild);
+        guilds::save_guild(&state.pool, &guild).await;
     }
-    if let Some(mut guild) = guilds::load_guild(&state.base_path, loser_guild) {
+    if let Some(mut guild) = guilds::load_guild(&state.pool, loser_guild).await {
         guild.cvc_losses += 1;
-        guilds::save_guild(&state.base_path, &guild);
+        guilds::save_guild(&state.pool, &guild).await;
     }
 
     // Revive dead participants before warping back
@@ -710,7 +711,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
     if map == 141 { return; } // Jail
 
     // Validate caller is leader or sub-leader of their guild
-    let my_guild = guilds::load_guild(&state.base_path, guild_index);
+    let my_guild = guilds::load_guild(&state.pool, guild_index).await;
     let is_leader = match &my_guild {
         Some(g) => {
             let name_upper = char_name.to_uppercase();
@@ -727,7 +728,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
 
     // Find target guild
     let target_upper = target_clan.to_uppercase();
-    let target_guild_idx = match guilds::find_guild_by_name(&state.base_path, &target_upper) {
+    let target_guild_idx = match guilds::find_guild_by_name(&state.pool, &target_upper).await {
         Some(idx) if idx != guild_index => idx,
         _ => {
             state.send_to(conn_id, &format!("{}Clan no encontrado o es tu propio clan.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
@@ -747,7 +748,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
     }
 
     // Find the target guild's leader online to send the challenge
-    let target_guild = guilds::load_guild(&state.base_path, target_guild_idx);
+    let target_guild = guilds::load_guild(&state.pool, target_guild_idx).await;
     let target_leader_name = target_guild.as_ref().map(|g| g.leader.to_uppercase()).unwrap_or_default();
     let target_leader_conn = state.users.iter()
         .find(|(_, u)| u.logged && u.guild_index == target_guild_idx && u.char_name.to_uppercase() == target_leader_name)
