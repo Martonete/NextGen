@@ -61,7 +61,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     let x: i32 = parts[2].parse().unwrap_or(0);
     let y: i32 = parts[3].parse().unwrap_or(0);
 
-    if map < 1 || x < 1 || x > 100 || y < 1 || y > 100 {
+    if map < 1 || !crate::game::world::in_map_bounds(x, y) {
         return;
     }
 
@@ -121,6 +121,11 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
         return;
     }
 
+    if !crate::game::world::in_map_bounds(tx, ty) {
+        state.send_to(conn_id, &format!("{}Coordenadas fuera de los limites del mapa.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
     warp_user(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
     state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
@@ -147,8 +152,8 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     let x: i32 = if parts.len() >= 3 { parts[1].parse().unwrap_or(50) } else { 50 };
     let y: i32 = if parts.len() >= 3 { parts[2].parse().unwrap_or(50) } else { 50 };
 
-    if map < 1 {
-        state.send_to(conn_id, &format!("{}Mapa invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    if map < 1 || !crate::game::world::in_map_bounds(x, y) {
+        state.send_to(conn_id, &format!("{}Mapa o coordenadas invalidas.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
         return;
     }
 

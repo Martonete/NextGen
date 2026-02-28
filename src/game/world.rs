@@ -146,7 +146,7 @@ impl WorldState {
     /// Check if position is legal for walking.
     /// blocked_tiles comes from the static map data.
     pub fn is_legal_pos(&self, map: i32, x: i32, y: i32, blocked: bool) -> bool {
-        if x < 1 || x > MAP_WIDTH as i32 || y < 1 || y > MAP_HEIGHT as i32 {
+        if !in_map_bounds(x, y) {
             return false;
         }
         if blocked {
@@ -158,6 +158,19 @@ impl WorldState {
             false
         }
     }
+}
+
+/// Check if position is within VB6 map border limits.
+/// VB6: MinXBorder = XMinMapSize + (XWindow \ 2) = 1 + 8 = 9
+///      MaxXBorder = XMaxMapSize - (XWindow \ 2) = 100 - 8 = 92
+///      MinYBorder = YMinMapSize + (YWindow \ 2) = 1 + 6 = 7
+///      MaxYBorder = YMaxMapSize - (YWindow \ 2) = 100 - 6 = 94
+pub fn in_map_bounds(x: i32, y: i32) -> bool {
+    const MIN_X: i32 = 1 + (X_WINDOW / 2); // 9
+    const MAX_X: i32 = MAP_WIDTH as i32 - (X_WINDOW / 2); // 92
+    const MIN_Y: i32 = 1 + (Y_WINDOW / 2); // 7
+    const MAX_Y: i32 = MAP_HEIGHT as i32 - (Y_WINDOW / 2); // 94
+    x >= MIN_X && x <= MAX_X && y >= MIN_Y && y <= MAX_Y
 }
 
 /// Convert heading to position offset.

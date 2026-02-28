@@ -27,6 +27,11 @@ pub const AI_GUARD: i32 = 5;
 pub const AI_FOLLOW_OWNER: i32 = 8;
 pub const AI_PATHFINDING: i32 = 10;
 
+// Elemental NPC numbers (VB6: ELEMENTALAGUA/FUEGO/TIERRA in Declares.bas)
+pub const ELEMENTAL_AGUA: i32 = 92;
+pub const ELEMENTAL_FUEGO: i32 = 93;
+pub const ELEMENTAL_TIERRA: i32 = 94;
+
 /// NPC vision range for aggro detection.
 pub const NPC_VISION_X: i32 = 11;
 pub const NPC_VISION_Y: i32 = 9;
@@ -70,6 +75,7 @@ pub struct NpcState {
     pub npc_type: NpcType,
     pub can_attack: bool,
     pub target: Option<crate::net::ConnectionId>, // Player target
+    pub target_npc: usize,                         // NPC target (for pet vs NPC combat)
 
     // Stats
     pub max_hp: i32,
@@ -187,6 +193,7 @@ impl NpcState {
             npc_type: data.npc_type,
             can_attack: true,
             target: None,
+            target_npc: 0,
             max_hp: data.max_hp,
             min_hp: data.max_hp, // Start at full HP
             max_hit: data.max_hit,

@@ -242,7 +242,7 @@ async fn main() {
                             criminal: user.criminal,
                             hidden: user.hidden,
                             navigating: user.navigating,
-                            privileges: user.privileges,
+                            privileges: user.saved_privileges,
                             spells: user.spells,
                             inventory: user.inventory.iter().map(|s| (s.obj_index, s.amount, s.equipped)).collect(),
                             bank: user.bank.iter().map(|s| (s.obj_index, s.amount)).collect(),

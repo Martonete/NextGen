@@ -517,11 +517,28 @@ pub(super) async fn npc_drop_items(
 pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, target_conn: ConnectionId) {
     let npc_data = match state.get_npc(npc_idx) {
         Some(n) if n.is_alive() => {
-            (n.poder_ataque, n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.name.clone())
+            (n.poder_ataque, n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.name.clone(),
+             n.body, n.head, n.heading)
         }
         _ => return,
     };
-    let (npc_ataque, npc_min_hit, npc_max_hit, npc_char_index, map, nx, ny, npc_name) = npc_data;
+    let (npc_ataque, npc_min_hit, npc_max_hit, npc_char_index, map, nx, ny, npc_name,
+         npc_body, npc_head, _old_heading) = npc_data;
+
+    // VB6: ChangeNPCChar — update heading to face target before attacking
+    let target_pos = state.users.get(&target_conn).map(|u| (u.pos_x, u.pos_y));
+    if let Some((tx, ty)) = target_pos {
+        let new_heading = if ty < ny { world::HEADING_NORTH }
+            else if ty > ny { world::HEADING_SOUTH }
+            else if tx > nx { world::HEADING_EAST }
+            else { world::HEADING_WEST };
+        if let Some(npc) = state.get_npc_mut(npc_idx) {
+            npc.heading = new_heading;
+        }
+        // Send CP packet to area (VB6: ChangeNPCChar sends CP<charindex>,<body>,<head>,<heading>)
+        let cp_pkt = format!("CP{},{},{},{}", npc_char_index.0, npc_body, npc_head, new_heading);
+        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &cp_pkt).await;
+    }
 
     let user_data = match state.users.get(&target_conn) {
         // VB6 NpcAtacaUser: AdminInvisible=1 or Privilegios<>User → exit (no attack)
@@ -579,6 +596,9 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
             state.send_to(target_conn, &msg).await;
         }
     }
+
+    // VB6: CheckPets — user's pets react to NPC attacking their master
+    check_pets(state, npc_idx, target_conn, true);
 
     // Update HP
     send_stats_hp(state, target_conn).await;
@@ -648,8 +668,8 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
                 user.min_hp -= damage;
             }
 
-            // Send damage packet
-            let pkt = format!("N2,{},{}", rand_range(1, 6), damage);
+            // Send damage console message (VB6: ||830@NpcName@Damage)
+            let pkt = format!("||830@{}@{}", npc_name, damage);
             state.send_to(target_conn, &pkt).await;
             send_stats_hp(state, target_conn).await;
 
@@ -668,7 +688,7 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
             user.paralyzed = true;
             user.counter_paralisis = state.config.intervalo_paralizado;
         }
-        state.send_to(target_conn, "PARAL").await;
+        state.send_to(target_conn, "PARADOK").await;
     }
 }
 
@@ -684,7 +704,7 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> b
     let new_y = y + dy;
 
     // Check bounds and blocked
-    if new_x < 1 || new_x > 100 || new_y < 1 || new_y > 100 {
+    if !world::in_map_bounds(new_x, new_y) {
         return false;
     }
     if state.is_tile_blocked(map, new_x, new_y) {
@@ -719,4 +739,62 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> b
     }
 
     true
+}
+
+/// VB6: CheckPets — When an NPC attacks a user, the user's pets react by targeting that NPC.
+/// Water Elemental (NPC 92) is excluded from auto-aggression when check_elementals=true.
+pub(super) fn check_pets(state: &mut GameState, attacker_npc_idx: usize, victim_conn: ConnectionId, check_elementals: bool) {
+    let pets = match state.users.get(&victim_conn) {
+        Some(u) => u.mascotas_index,
+        None => return,
+    };
+
+    for i in 0..3 {
+        let pet_idx = pets[i];
+        if pet_idx == 0 || pet_idx == attacker_npc_idx { continue; }
+
+        let pet_data = match state.get_npc(pet_idx) {
+            Some(n) if n.is_alive() => (n.npc_number as i32, n.target_npc),
+            _ => continue,
+        };
+        let (pet_number, existing_target) = pet_data;
+
+        // VB6: Water Elemental excluded from auto-aggression when check_elementals=true
+        if check_elementals && pet_number == npc::ELEMENTAL_AGUA {
+            continue;
+        }
+
+        // Only set target if pet doesn't already have one
+        if existing_target == 0 {
+            if let Some(pet) = state.get_npc_mut(pet_idx) {
+                pet.target_npc = attacker_npc_idx;
+            }
+        }
+    }
+}
+
+/// VB6: Fire Elemental reaction — when a user attacks the master, the Fire Elemental
+/// enters DEFENSE mode and becomes hostile, chasing the attacker.
+pub(super) fn fire_elemental_react(state: &mut GameState, master_conn: ConnectionId, attacker_name: &str) {
+    let pets = match state.users.get(&master_conn) {
+        Some(u) => u.mascotas_index,
+        None => return,
+    };
+
+    for i in 0..3 {
+        let pet_idx = pets[i];
+        if pet_idx == 0 { continue; }
+
+        let is_fire = state.get_npc(pet_idx)
+            .map(|n| n.npc_number as i32 == npc::ELEMENTAL_FUEGO && n.is_alive())
+            .unwrap_or(false);
+
+        if is_fire {
+            if let Some(pet) = state.get_npc_mut(pet_idx) {
+                pet.attacked_by = attacker_name.to_string();
+                pet.movement = npc::AI_DEFENSE;
+                pet.hostile = true;
+            }
+        }
+    }
 }

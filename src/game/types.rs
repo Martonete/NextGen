@@ -77,6 +77,8 @@ pub struct UserState {
     pub shield_anim: i32,
     pub casco_anim: i32,
     pub privileges: i32,
+    /// Original privileges from DB — runtime /PJ changes are temporary, this is what gets saved
+    pub saved_privileges: i32,
 
     // Stats
     pub class: String,
@@ -193,6 +195,11 @@ pub struct UserState {
     pub nro_mascotas: i32,              // Active pet count (max 3)
     pub mascotas_index: [usize; 3],     // NPC runtime indices of pets
     pub mascotas_type: [i32; 3],        // NPC type numbers of pets
+
+    // Druid Elementals (VB6: flags.EleDeFuego/EleDeAgua/EleDeTierra)
+    pub ele_de_fuego: bool,             // Has active Fire Elemental (NPC 93)
+    pub ele_de_agua: bool,              // Has active Water Elemental (NPC 92)
+    pub ele_de_tierra: bool,            // Has active Earth Elemental (NPC 94)
 
     // Buff/Potion system
     pub duracion_efecto: i32,           // Buff ticks remaining (0 = no buff)
@@ -348,6 +355,7 @@ impl UserState {
             shield_anim: 0,
             casco_anim: 0,
             privileges: 0,
+            saved_privileges: 0,
             class: String::new(),
             race: String::new(),
             level: 1,
@@ -434,6 +442,9 @@ impl UserState {
             nro_mascotas: 0,
             mascotas_index: [0; 3],
             mascotas_type: [0; 3],
+            ele_de_fuego: false,
+            ele_de_agua: false,
+            ele_de_tierra: false,
             duracion_efecto: 0,
             tomo_pocion: false,
             attributes_backup: [0; 5],

@@ -483,10 +483,21 @@ pub(super) async fn apply_spell_properties_npc(
 /// VB6: HechizoEstadoNPC in modHechizos.bas
 pub(super) async fn apply_spell_status_npc(
     state: &mut GameState,
-    _caster_id: ConnectionId,
+    caster_id: ConnectionId,
     npc_idx: usize,
     spell: &crate::data::spells::SpellData,
 ) {
+    use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
+
+    // VB6: Elementals are immune to paralysis/immobilize (modHechizos.bas line 993)
+    if spell.paraliza {
+        let npc_num = state.get_npc(npc_idx).map(|n| n.npc_number as i32).unwrap_or(0);
+        if npc_num == ELEMENTAL_AGUA || npc_num == ELEMENTAL_FUEGO || npc_num == ELEMENTAL_TIERRA {
+            state.send_to(caster_id, "||846").await; // Immune
+            return;
+        }
+    }
+
     let paralisis_interval = state.config.intervalo_paralizado;
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         if spell.envenena {
@@ -737,6 +748,28 @@ pub(super) async fn apply_spell_invocation(
         return;
     }
 
+    // VB6: Elemental singleton checks — can only have one of each type
+    {
+        use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
+        if let Some(user) = state.users.get(&caster_id) {
+            match npc_num {
+                ELEMENTAL_AGUA if user.ele_de_agua => {
+                    state.send_to(caster_id, "||23").await; // Ya tienes un Elemental de Agua
+                    return;
+                }
+                ELEMENTAL_FUEGO if user.ele_de_fuego => {
+                    state.send_to(caster_id, "||24").await; // Ya tienes un Elemental de Fuego
+                    return;
+                }
+                ELEMENTAL_TIERRA if user.ele_de_tierra => {
+                    state.send_to(caster_id, "||22").await; // Ya tienes un Elemental de Tierra
+                    return;
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Spawn up to `cant` NPCs (limited by MAXMASCOTAS)
     for _ in 0..cant {
         let current_pets = state.users.get(&caster_id).map(|u| u.nro_mascotas).unwrap_or(MAX_MASCOTAS);
@@ -755,6 +788,14 @@ pub(super) async fn apply_spell_invocation(
                         user.nro_mascotas += 1;
                         break;
                     }
+                }
+                // Set elemental flags
+                use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
+                match npc_num {
+                    ELEMENTAL_AGUA => user.ele_de_agua = true,
+                    ELEMENTAL_FUEGO => user.ele_de_fuego = true,
+                    ELEMENTAL_TIERRA => user.ele_de_tierra = true,
+                    _ => {}
                 }
             }
 

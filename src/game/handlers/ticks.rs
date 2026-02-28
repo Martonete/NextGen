@@ -77,7 +77,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
             npc::AI_STATIC => {
                 // No movement, but attack adjacent if hostile
                 if hostile && can_attack {
-                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -90,7 +90,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // Random movement (1/12 chance per tick)
                 // Guards with AI_RANDOM also chase their targets
                 if hostile && can_attack {
-                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -115,7 +115,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 // First: check adjacent tiles for attack
                 if can_attack {
-                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
                         npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
@@ -275,7 +275,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 // First check adjacent for attack
                 if can_attack {
-                    if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
                         let should_attack = if is_royal {
                             state.users.get(&target_conn).map(|u| u.criminal).unwrap_or(false)
                         } else {
@@ -396,9 +396,11 @@ pub async fn tick_npc_ai(state: &mut GameState) {
             }
 
             npc::AI_FOLLOW_OWNER => {
-                // Pet AI — follow master and attack master's target NPC
-                let master_id = state.get_npc(npc_idx)
-                    .and_then(|n| n.maestro_user);
+                // Pet AI — follow master, attack assigned target NPC or master's target
+                let (master_id, pet_target_npc) = match state.get_npc(npc_idx) {
+                    Some(n) => (n.maestro_user, n.target_npc),
+                    None => (None, 0),
+                };
                 if let Some(master_conn) = master_id {
                     let master_pos = state.users.get(&master_conn)
                         .filter(|u| u.logged && !u.dead && u.pos_map == map)
@@ -407,18 +409,31 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     if let Some((mx, my, master_target_npc)) = master_pos {
                         let dist = (x - mx).abs() + (y - my).abs();
 
-                        // If master has a target NPC, attack it
-                        if master_target_npc > 0 && can_attack {
-                            let target_npc_alive = state.get_npc(master_target_npc)
+                        // Priority: pet's own target (from check_pets) > master's target
+                        let effective_target = if pet_target_npc > 0 {
+                            // Validate pet target is still alive
+                            if state.get_npc(pet_target_npc).map(|n| n.is_alive()).unwrap_or(false) {
+                                pet_target_npc
+                            } else {
+                                // Target dead — clear it
+                                if let Some(n) = state.get_npc_mut(npc_idx) { n.target_npc = 0; }
+                                master_target_npc
+                            }
+                        } else {
+                            master_target_npc
+                        };
+
+                        if effective_target > 0 && can_attack {
+                            let target_npc_alive = state.get_npc(effective_target)
                                 .map(|n| n.is_alive())
                                 .unwrap_or(false);
                             if target_npc_alive {
-                                let target_npc_pos = state.get_npc(master_target_npc)
+                                let target_npc_pos = state.get_npc(effective_target)
                                     .map(|n| (n.x, n.y));
                                 if let Some((tnx, tny)) = target_npc_pos {
                                     let tdist = (x - tnx).abs() + (y - tny).abs();
                                     if tdist <= 1 {
-                                        npc_attack_npc(state, npc_idx, master_target_npc).await;
+                                        npc_attack_npc(state, npc_idx, effective_target).await;
                                         if let Some(n) = state.get_npc_mut(npc_idx) {
                                             n.can_attack = false;
                                         }
@@ -429,6 +444,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                         }
                                     }
                                 }
+                            } else {
+                                // Target dead — clear
+                                if let Some(n) = state.get_npc_mut(npc_idx) { n.target_npc = 0; }
                             }
                         } else if dist > 3 {
                             // Too far from master — follow
@@ -643,7 +661,8 @@ pub(super) async fn check_update_needed_npc(state: &mut GameState, npc_idx: usiz
 }
 
 /// Find an adjacent player (1 tile away in any cardinal direction).
-pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
+/// Returns (ConnectionId, heading_toward_target) if a valid player is adjacent.
+pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) -> Option<(ConnectionId, i32)> {
     for heading in 1..=4 {
         let (dx, dy) = world::heading_to_offset(heading);
         let tx = x + dx;
@@ -654,7 +673,7 @@ pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) 
                     // Check if player is alive, logged, and NOT a GM (VB6: Privilegios = User)
                     if let Some(user) = state.users.get(&conn) {
                         if user.logged && !user.dead && user.privileges == 0 && !user.admin_invisible {
-                            return Some(conn);
+                            return Some((conn, heading));
                         }
                     }
                 }
@@ -885,6 +904,9 @@ pub(super) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
 
 /// Remove a pet NPC from its owner's mascotas array.
 pub(super) fn remove_pet_from_owner(state: &mut GameState, owner_conn: ConnectionId, npc_idx: usize) {
+    // Get NPC number before removing (for elemental flag cleanup)
+    let npc_number = state.get_npc(npc_idx).map(|n| n.npc_number as i32).unwrap_or(0);
+
     if let Some(user) = state.users.get_mut(&owner_conn) {
         for i in 0..3 {
             if user.mascotas_index[i] == npc_idx {
@@ -893,6 +915,14 @@ pub(super) fn remove_pet_from_owner(state: &mut GameState, owner_conn: Connectio
                 user.nro_mascotas = (user.nro_mascotas - 1).max(0);
                 break;
             }
+        }
+        // VB6: Clear elemental flags when elemental dies/is removed
+        use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
+        match npc_number {
+            ELEMENTAL_AGUA => user.ele_de_agua = false,
+            ELEMENTAL_FUEGO => user.ele_de_fuego = false,
+            ELEMENTAL_TIERRA => user.ele_de_tierra = false,
+            _ => {}
         }
     }
 }
@@ -1215,7 +1245,7 @@ pub(super) async fn auto_save_all_users(state: &GameState) {
             paralyzed: user.paralyzed,
             hidden: user.hidden,
             navigating: user.navigating,
-            privileges: user.privileges,
+            privileges: user.saved_privileges,
             attributes: user.attributes,
             skills: user.skills,
             spells: user.spells,

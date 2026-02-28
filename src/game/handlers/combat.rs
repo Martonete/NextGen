@@ -17,6 +17,7 @@ use super::{
     cvc_player_death, quest_check_player_kill,
     DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
 };
+use super::npcs::fire_elemental_react;
 use super::skills::{
     check_permanecer_oculto, calc_apunalar_damage, try_desarmar, try_level_skill,
 };
@@ -256,6 +257,9 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 state.send_to(conn_id, &msg2).await;
             }
         }
+
+        // VB6: Fire Elemental reacts to PvP — enters defense mode against attacker
+        fire_elemental_react(state, victim_id, &attacker_name);
 
         // Update victim HP
         send_stats_hp(state, victim_id).await;

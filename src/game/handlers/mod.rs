@@ -685,6 +685,7 @@ async fn connect_user(
         user.shield_anim = 2;
         user.casco_anim = 2;
         user.privileges = char_data.privileges;
+        user.saved_privileges = char_data.privileges;
         user.gender = char_data.gender;
         user.poisoned = char_data.poisoned;
         user.paralyzed = char_data.paralyzed;
@@ -2760,6 +2761,80 @@ async fn check_update_needed_user(
 
 /// Warp a user to a new map/position (map transition).
 /// Matches VB6 WarpUserChar: BKW, QDL, EraseUserChar, CM/XM/N~, MakeUserChar, PU, BKW.
+/// VB6: WarpMascotas — teleport user's pets to the new map.
+/// Persistent pets are removed from old map and respawned at master's new position.
+async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+    use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA, AI_FOLLOW_OWNER};
+
+    let pets = match state.users.get(&owner_conn) {
+        Some(u) => (u.mascotas_index, u.mascotas_type, u.nro_mascotas),
+        None => return,
+    };
+    let (pet_indices, pet_types, _nro) = pets;
+
+    // Collect pet info before mutation
+    let mut pets_to_move: Vec<(usize, i32)> = Vec::new(); // (slot_index, npc_type)
+    for i in 0..3 {
+        let idx = pet_indices[i];
+        if idx == 0 { continue; }
+        let npc_type = pet_types[i];
+        if npc_type <= 0 { continue; }
+
+        // Check if pet is alive and on the OLD map (not already on the new map)
+        let pet_alive = state.get_npc(idx).map(|n| n.is_alive() && n.map != new_map).unwrap_or(false);
+        if pet_alive {
+            pets_to_move.push((i, npc_type));
+
+            // Remove old NPC from world (send BP to area)
+            let old_data = state.get_npc(idx).map(|n| (n.char_index, n.map, n.x, n.y));
+            if let Some((ci, omap, ox, oy)) = old_data {
+                let bp = format!("BP{}", ci.0);
+                state.send_data(SendTarget::ToArea { map: omap, x: ox, y: oy }, &bp).await;
+            }
+            state.kill_npc(idx);
+
+            // Clear old slot
+            if let Some(user) = state.users.get_mut(&owner_conn) {
+                user.mascotas_index[i] = 0;
+                user.mascotas_type[i] = 0;
+                user.nro_mascotas = (user.nro_mascotas - 1).max(0);
+            }
+        }
+    }
+
+    // Respawn pets at new position
+    for (slot, npc_type) in pets_to_move {
+        if let Some(new_idx) = state.spawn_npc(npc_type as usize, new_map, new_x, new_y) {
+            // Link to owner
+            if let Some(npc) = state.get_npc_mut(new_idx) {
+                npc.maestro_user = Some(owner_conn);
+                npc.movement = AI_FOLLOW_OWNER;
+            }
+
+            // Update user tracking
+            if let Some(user) = state.users.get_mut(&owner_conn) {
+                user.mascotas_index[slot] = new_idx;
+                user.mascotas_type[slot] = npc_type;
+                user.nro_mascotas += 1;
+
+                // Restore elemental flags
+                match npc_type {
+                    ELEMENTAL_AGUA => user.ele_de_agua = true,
+                    ELEMENTAL_FUEGO => user.ele_de_fuego = true,
+                    ELEMENTAL_TIERRA => user.ele_de_tierra = true,
+                    _ => {}
+                }
+            }
+
+            // Broadcast new NPC to area
+            let cc_pkt = state.get_npc(new_idx).map(|n| n.build_cc_packet());
+            if let Some(pkt) = cc_pkt {
+                state.send_data(SendTarget::ToArea { map: new_map, x: new_x, y: new_y }, &pkt).await;
+            }
+        }
+    }
+}
+
 async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
     let old_data = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index),
@@ -2848,7 +2923,10 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // 13. BKW — fade back in (VB6 end of WarpUserChar)
     state.send_to(conn_id, "BKW").await;
 
-    // 14. Check tile exit at destination — VB6 also triggers teleports on warp arrival
+    // 14. Warp pets to new map (VB6: WarpMascotas)
+    warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
+
+    // 15. Check tile exit at destination — VB6 also triggers teleports on warp arrival
     // Use a single-level check to avoid infinite recursion (e.g. exit→exit→exit...)
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(new_map, final_x, final_y) {
         // Only warp if the exit leads somewhere different (avoid self-loops)
