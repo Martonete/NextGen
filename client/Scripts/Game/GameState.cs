@@ -1,0 +1,86 @@
+using System.Collections.Generic;
+using TierrasSagradasAO.Data;
+
+namespace TierrasSagradasAO.Game;
+
+/// <summary>
+/// Central game state: player position, characters, map, inventory, stats.
+/// Updated by PacketHandler, read by renderers.
+/// </summary>
+public class GameState
+{
+    // Login state
+    public bool IsLogged;
+    public bool Paused;
+
+    // Map
+    public int CurrentMap;
+    public string MapName = "";
+    public int MapColorR = 200, MapColorG = 200, MapColorB = 200;
+    public MapData? MapData;
+    public bool NeedMapLoad;
+
+    // User position
+    public int UserPosX;
+    public int UserPosY;
+    public int UserCharIndex;
+    public string UserName = "";
+
+    // User status flags
+    public bool UserParalyzed;
+    public bool UserNavigating;
+    public bool UserStopped;
+
+    // Characters visible in area
+    public Dictionary<int, Character> Characters = new();
+
+    // Ground objects: (x,y) → GRH index
+    public Dictionary<(int, int), int> GroundObjects = new();
+
+    // Stats
+    public int MaxHp, MinHp;
+    public int MaxMana, MinMana;
+    public int MaxSta, MinSta;
+    public int MaxAgua, MinAgua;
+    public int MaxHam, MinHam;
+    public int Gold;
+    public int Level;
+    public int Exp, ExpNext;
+    public int Reputation;
+    public int Privileges;
+    public int MusicId;
+    public int OnlineCount;
+
+    // Inventory (25 slots)
+    public InventorySlot[] Inventory = new InventorySlot[25];
+
+    // Spells (20 slots)
+    public SpellSlot[] Spells = new SpellSlot[20];
+
+    public GameState()
+    {
+        for (int i = 0; i < 25; i++)
+            Inventory[i] = new InventorySlot();
+        for (int i = 0; i < 20; i++)
+            Spells[i] = new SpellSlot();
+    }
+}
+
+public class InventorySlot
+{
+    public int ObjIndex;
+    public string Name = "";
+    public int Amount;
+    public bool Equipped;
+    public int GrhIndex;
+    public int ObjType;
+    public int MaxHit, MinHit;
+    public int MaxDef;
+    public int Value;
+}
+
+public class SpellSlot
+{
+    public int SpellId;
+    public string Name = "";
+}
