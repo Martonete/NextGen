@@ -8,3 +8,82 @@ script = ExtResource("1")
 [node name="GameWorld" type="Node2D" parent="."]
 
 [node name="Camera" type="Camera2D" parent="GameWorld"]
+
+[node name="UI" type="CanvasLayer" parent="."]
+layer = 10
+
+[node name="LoginPanel" type="PanelContainer" parent="UI"]
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -160.0
+offset_top = -140.0
+offset_right = 160.0
+offset_bottom = 140.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/LoginPanel"]
+layout_mode = 2
+theme_override_constants/separation = 12
+
+[node name="Title" type="Label" parent="UI/LoginPanel/VBox"]
+layout_mode = 2
+text = "Tierras Sagradas AO"
+horizontal_alignment = 1
+
+[node name="AccountInput" type="LineEdit" parent="UI/LoginPanel/VBox"]
+layout_mode = 2
+placeholder_text = "Cuenta"
+
+[node name="PasswordInput" type="LineEdit" parent="UI/LoginPanel/VBox"]
+layout_mode = 2
+placeholder_text = "Password"
+secret = true
+
+[node name="ConnectButton" type="Button" parent="UI/LoginPanel/VBox"]
+layout_mode = 2
+text = "Conectar"
+
+[node name="StatusLabel" type="Label" parent="UI/LoginPanel/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2
+
+[node name="CharSelectPanel" type="PanelContainer" parent="UI"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -180.0
+offset_top = -200.0
+offset_right = 180.0
+offset_bottom = 200.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="UI/CharSelectPanel"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Title" type="Label" parent="UI/CharSelectPanel/VBox"]
+layout_mode = 2
+text = "Seleccionar Personaje"
+horizontal_alignment = 1
+
+[node name="CharList" type="ItemList" parent="UI/CharSelectPanel/VBox"]
+layout_mode = 2
+custom_minimum_size = Vector2(0, 200)
+
+[node name="EnterButton" type="Button" parent="UI/CharSelectPanel/VBox"]
+layout_mode = 2
+text = "Entrar"
+
+[node name="NoticeLabel" type="Label" parent="UI/CharSelectPanel/VBox"]
+layout_mode = 2
+horizontal_alignment = 1
+autowrap_mode = 2

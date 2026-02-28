@@ -3,15 +3,31 @@ using TierrasSagradasAO.Data;
 
 namespace TierrasSagradasAO.Game;
 
+public enum Screen { Login, CharSelect, Game }
+
+public class CharacterPreview
+{
+    public string Name = "", Class = "", Race = "";
+    public int Slot, Head, Body, Level;
+    public bool Dead;
+}
+
 /// <summary>
 /// Central game state: player position, characters, map, inventory, stats.
 /// Updated by PacketHandler, read by renderers.
 /// </summary>
 public class GameState
 {
-    // Login state
+    // Login / screen state
     public bool IsLogged;
     public bool Paused;
+    public Screen CurrentScreen = Screen.Login;
+    public string AccountName = "";
+    public string SecurityCode = "";
+    public string LoginError = "";
+    public string ServerNotice = "";
+    public List<CharacterPreview> CharacterList = new();
+    public int SelectedCharIndex = -1;
 
     // Map
     public int CurrentMap;

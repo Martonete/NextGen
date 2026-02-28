@@ -27,6 +27,22 @@ public class PacketHandler
         {
             HandleLogged();
         }
+        else if (packet.StartsWith("INIAC"))
+        {
+            HandleInitCharList(packet[5..]);
+        }
+        else if (packet.StartsWith("ADDPJ"))
+        {
+            HandleAddCharPreview(packet[5..]);
+        }
+        else if (packet.StartsWith("CODEH"))
+        {
+            HandleSecurityCode(packet[5..]);
+        }
+        else if (packet.StartsWith("ERR"))
+        {
+            HandleError(packet[3..]);
+        }
         else if (packet.StartsWith("PARADOK"))
         {
             _state.UserParalyzed = !_state.UserParalyzed;
@@ -574,6 +590,52 @@ public class PacketHandler
         {
             GD.Print($"[WHISPER] {parts[0]}");
         }
+    }
+
+    private void HandleInitCharList(string data)
+    {
+        // INIAC<num_chars>,<notice>
+        _state.CharacterList.Clear();
+        var parts = data.Split(',', 2);
+        if (parts.Length >= 2)
+            _state.ServerNotice = parts[1];
+        GD.Print($"[LOGIN] INIAC received, notice: {_state.ServerNotice}");
+    }
+
+    private void HandleAddCharPreview(string data)
+    {
+        // ADDPJ<name>,<slot>,<head>,<body>,<weapon>,<shield>,<helmet>,<level>,<class>,<dead>,<race>
+        var parts = data.Split(',');
+        if (parts.Length >= 11)
+        {
+            var preview = new CharacterPreview
+            {
+                Name = parts[0],
+                Slot = ParseInt(parts[1]),
+                Head = ParseInt(parts[2]),
+                Body = ParseInt(parts[3]),
+                Level = ParseInt(parts[7]),
+                Class = parts[8],
+                Dead = ParseInt(parts[9]) != 0,
+                Race = parts[10],
+            };
+            _state.CharacterList.Add(preview);
+            GD.Print($"[LOGIN] ADDPJ: {preview.Name} Lvl {preview.Level} ({preview.Class})");
+        }
+    }
+
+    private void HandleSecurityCode(string data)
+    {
+        // CODEH<code>
+        _state.SecurityCode = data;
+        _state.CurrentScreen = Screen.CharSelect;
+        GD.Print($"[LOGIN] CODEH received, switching to char select");
+    }
+
+    private void HandleError(string data)
+    {
+        _state.LoginError = data;
+        GD.Print($"[LOGIN] ERR: {data}");
     }
 
     private static int ParseInt(string s)

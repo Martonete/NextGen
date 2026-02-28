@@ -10,13 +10,8 @@ namespace TierrasSagradasAO;
 
 public partial class Main : Node2D
 {
-    // === HARDCODED FOR TESTING — replace with UI later ===
     private const string ServerHost = "127.0.0.1";
     private const int ServerPort = 5028;
-    private const string TestAccount = "test";
-    private const string TestPassword = "test";
-    private const string TestCharName = "TestChar";
-    // =====================================================
 
     private readonly GameData _gameData = new();
     private readonly GameState _state = new();
@@ -27,11 +22,21 @@ public partial class Main : Node2D
     private GrhAnimator _animator = new();
 
     private bool _connecting;
-    private bool _loginSent;
-    private bool _charSelectSent;
-    private bool _offlineMode;
-    private double _loginTimeout;
     private int _packetCount;
+
+    // UI nodes
+    private PanelContainer? _loginPanel;
+    private PanelContainer? _charSelectPanel;
+    private LineEdit? _accountInput;
+    private LineEdit? _passwordInput;
+    private Button? _connectButton;
+    private Label? _statusLabel;
+    private ItemList? _charList;
+    private Button? _enterButton;
+    private Label? _noticeLabel;
+
+    // Track screen transitions
+    private Screen _lastScreen = Screen.Login;
 
     public override void _Ready()
     {
@@ -47,7 +52,6 @@ public partial class Main : Node2D
             );
 
         GD.Print($"[MAIN] Data path: {dataPath}");
-
         _gameData.LoadAll(dataPath);
 
         if (!_gameData.IsLoaded)
@@ -65,16 +69,50 @@ public partial class Main : Node2D
         // Setup packet handler
         _packetHandler = new PacketHandler(_state);
 
-        // Start TCP connection
+        // Grab UI nodes
+        _loginPanel = GetNode<PanelContainer>("UI/LoginPanel");
+        _charSelectPanel = GetNode<PanelContainer>("UI/CharSelectPanel");
+        _accountInput = GetNode<LineEdit>("UI/LoginPanel/VBox/AccountInput");
+        _passwordInput = GetNode<LineEdit>("UI/LoginPanel/VBox/PasswordInput");
+        _connectButton = GetNode<Button>("UI/LoginPanel/VBox/ConnectButton");
+        _statusLabel = GetNode<Label>("UI/LoginPanel/VBox/StatusLabel");
+        _charList = GetNode<ItemList>("UI/CharSelectPanel/VBox/CharList");
+        _enterButton = GetNode<Button>("UI/CharSelectPanel/VBox/EnterButton");
+        _noticeLabel = GetNode<Label>("UI/CharSelectPanel/VBox/NoticeLabel");
+
+        // Wire signals
+        _connectButton.Pressed += OnConnectPressed;
+        _enterButton.Pressed += OnEnterPressed;
+
+        // Show login screen
+        _loginPanel.Visible = true;
+        _charSelectPanel.Visible = false;
+    }
+
+    private void OnConnectPressed()
+    {
+        string account = _accountInput!.Text.Trim();
+        string password = _passwordInput!.Text.Trim();
+
+        if (string.IsNullOrEmpty(account) || string.IsNullOrEmpty(password))
+        {
+            _statusLabel!.Text = "Ingrese cuenta y password";
+            return;
+        }
+
+        _state.AccountName = account;
+        _state.LoginError = "";
+        _connectButton!.Disabled = true;
+        _statusLabel!.Text = "Conectando...";
+
         _tcp = new AoTcpClient();
         _inputHandler = new InputHandler(_tcp, _state);
         _connecting = true;
-        _loginTimeout = 5.0; // 5 second timeout for login
 
-        _ = ConnectAndLogin();
+        _ = ConnectAndLogin(account, password);
     }
 
-    private async Task ConnectAndLogin()
+    private async Task ConnectAndLogin(string account, string password)
     {
         try
         {
@@ -83,21 +121,46 @@ public partial class Main : Node2D
             _connecting = false;
             GD.Print("[MAIN] Connected! Sending login...");
 
-            await Task.Delay(100);
+            _statusLabel!.Text = "Enviando login...";
 
+            await Task.Delay(100);
             _tcp.SendPacket("KERD22");
-            GD.Print("[MAIN] Sent: KERD22");
 
             await Task.Delay(50);
-            _tcp.SendPacket($"ALOGIN{TestAccount}\n{TestPassword}");
-            _loginSent = true;
-            GD.Print("[MAIN] Sent: ALOGIN (login packet)");
+            _tcp.SendPacket($"ALOGIN{account},{password},0");
+            GD.Print("[MAIN] Sent: ALOGIN (comma-separated with version)");
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Connection failed: {ex.Message}");
             _connecting = false;
-            EnterOfflineMode();
+            _statusLabel!.Text = $"Error: {ex.Message}";
+            _connectButton!.Disabled = false;
+        }
+    }
+
+    private void OnEnterPressed()
+    {
+        if (_charList!.IsAnythingSelected())
+        {
+            int[] selected = _charList.GetSelectedItems();
+            if (selected.Length > 0 && selected[0] < _state.CharacterList.Count)
+            {
+                var charPreview = _state.CharacterList[selected[0]];
+                string charName = charPreview.Name;
+                string account = _state.AccountName;
+                string code = _state.SecurityCode;
+
+                _enterButton!.Disabled = true;
+                _noticeLabel!.Text = "Entrando al mundo...";
+
+                _tcp!.SendPacket($"OOLOGI{charName},{account},{code}");
+                GD.Print($"[MAIN] Sent: OOLOGI{charName},{account},{code}");
+            }
+        }
+        else
+        {
+            _noticeLabel!.Text = "Seleccione un personaje";
         }
     }
 
@@ -110,17 +173,30 @@ public partial class Main : Node2D
         foreach (string pkt in packets)
         {
             _packetCount++;
-            // Log first 20 packets for debugging
             if (_packetCount <= 20)
             {
                 string preview = pkt.Length > 80 ? pkt[..80] + "..." : pkt;
-                // Show hex of first 20 bytes for debugging encoding issues
                 string hex = "";
                 for (int i = 0; i < Math.Min(20, pkt.Length); i++)
                     hex += ((int)pkt[i]).ToString("X2") + " ";
                 GD.Print($"[PKT #{_packetCount}] len={pkt.Length} text=\"{preview}\" hex=[{hex.Trim()}]");
             }
             _packetHandler.HandlePacket(pkt);
+        }
+
+        // React to screen transitions driven by PacketHandler
+        if (_state.CurrentScreen != _lastScreen)
+        {
+            HandleScreenChange(_state.CurrentScreen);
+            _lastScreen = _state.CurrentScreen;
+        }
+
+        // Show login errors
+        if (!string.IsNullOrEmpty(_state.LoginError) && _state.CurrentScreen == Screen.Login)
+        {
+            _statusLabel!.Text = _state.LoginError;
+            _connectButton!.Disabled = false;
+            _state.LoginError = "";
         }
 
         // Handle map loading when requested
@@ -130,24 +206,12 @@ public partial class Main : Node2D
             LoadCurrentMap();
         }
 
-        // After LOGGED, send character select (hardcoded)
-        if (_state.IsLogged && !_charSelectSent)
+        // After LOGGED, transition to game
+        if (_state.IsLogged && _state.CurrentScreen != Screen.Game)
         {
-            _charSelectSent = true;
-            GD.Print("[MAIN] LOGGED received! Sending character select...");
-            _tcp.SendPacket($"OOLOGI{TestCharName}");
-            _tcp.SendPacket("THCJXD");
-        }
-
-        // Login timeout — if no LOGGED after 5 seconds, go offline
-        if (_loginSent && !_state.IsLogged && !_offlineMode)
-        {
-            _loginTimeout -= delta;
-            if (_loginTimeout <= 0)
-            {
-                GD.PrintErr($"[MAIN] Login timeout! Received {_packetCount} packets but no LOGGED. Entering offline mode.");
-                EnterOfflineMode();
-            }
+            _state.CurrentScreen = Screen.Game;
+            HandleScreenChange(Screen.Game);
+            _lastScreen = Screen.Game;
         }
 
         // Update animations
@@ -156,45 +220,55 @@ public partial class Main : Node2D
         // Update smooth movement
         UpdateMovement((float)delta);
 
-        if (_offlineMode)
-        {
-            ProcessOfflineInput();
-            return;
-        }
+        if (_state.CurrentScreen == Screen.Game)
+            _inputHandler?.Process(delta);
+    }
 
-        _inputHandler?.Process(delta);
+    private void HandleScreenChange(Screen newScreen)
+    {
+        GD.Print($"[MAIN] Screen → {newScreen}");
+
+        switch (newScreen)
+        {
+            case Screen.Login:
+                _loginPanel!.Visible = true;
+                _charSelectPanel!.Visible = false;
+                break;
+
+            case Screen.CharSelect:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = true;
+                PopulateCharList();
+                break;
+
+            case Screen.Game:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = false;
+                GD.Print("[MAIN] Entered game world");
+                break;
+        }
+    }
+
+    private void PopulateCharList()
+    {
+        _charList!.Clear();
+        foreach (var ch in _state.CharacterList)
+        {
+            string label = $"{ch.Name} — Lvl {ch.Level} ({ch.Class})";
+            if (ch.Dead) label += " [MUERTO]";
+            _charList.AddItem(label);
+        }
+        if (!string.IsNullOrEmpty(_state.ServerNotice))
+            _noticeLabel!.Text = _state.ServerNotice;
     }
 
     public override void _UnhandledInput(InputEvent @event)
     {
         if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
-            _inputHandler?.HandleClick(mb.Position, _state.UserPosX, _state.UserPosY);
+            if (_state.CurrentScreen == Screen.Game)
+                _inputHandler?.HandleClick(mb.Position, _state.UserPosX, _state.UserPosY);
         }
-    }
-
-    private void EnterOfflineMode()
-    {
-        _offlineMode = true;
-        GD.Print("[MAIN] === OFFLINE MODE ===");
-        GD.Print("[MAIN] Loading Mapa1 at (50,50). Use WASD to move camera.");
-
-        _state.CurrentMap = 1;
-        _state.NeedMapLoad = true;
-        _state.UserPosX = 50;
-        _state.UserPosY = 50;
-
-        var dummy = new Character
-        {
-            Body = 1,
-            Head = 1,
-            Heading = 3,
-            PosX = 50,
-            PosY = 50,
-            Name = "Offline Preview"
-        };
-        _state.UserCharIndex = 1;
-        _state.Characters[1] = dummy;
     }
 
     private void UpdateMovement(float delta)
@@ -255,35 +329,6 @@ public partial class Main : Node2D
         {
             GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
         }
-    }
-
-    private double _offlineMoveTimer;
-
-    private void ProcessOfflineInput()
-    {
-        _offlineMoveTimer -= GetProcessDeltaTime();
-        if (_offlineMoveTimer > 0) return;
-
-        int dx = 0, dy = 0;
-        if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) dy = -1;
-        if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) dy = 1;
-        if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left)) dx = -1;
-        if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) dx = 1;
-
-        if (dx == 0 && dy == 0) return;
-
-        int newX = _state.UserPosX + dx;
-        int newY = _state.UserPosY + dy;
-        if (newX < 1 || newX > 100 || newY < 1 || newY > 100) return;
-
-        _state.UserPosX = newX;
-        _state.UserPosY = newY;
-        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
-        {
-            ch.PosX = newX;
-            ch.PosY = newY;
-        }
-        _offlineMoveTimer = 0.15;
     }
 
     private const float ScrollSpeed = 6f;
