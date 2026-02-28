@@ -1,3 +1,6 @@
+mod common;
+use common::*;
+
 // Packet handlers — processes decrypted client packets.
 //
 // Pre-login flow:
@@ -3290,25 +3293,8 @@ async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, data: 
 
 /// Get the ground object index from static map data at a given position.
 /// Get the trigger type for a map tile.
-fn get_map_tile_trigger(state: &GameState, map: i32, x: i32, y: i32) -> crate::data::maps::Trigger {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].trigger;
-        }
-    }
-    crate::data::maps::Trigger::None
-}
-
-fn get_map_tile_obj(state: &GameState, map: i32, x: i32, y: i32) -> i32 {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index as i32;
-        }
-    }
-    0
-}
+// get_map_tile_trigger — moved to common.rs
+// get_map_tile_obj — moved to common.rs
 
 /// Handle door interaction (VB6: AccionParaPuerta in Acciones.bas).
 /// Opens/closes doors, handles locks, updates tile blocking and graphics.
@@ -3406,43 +3392,7 @@ async fn accion_para_puerta(state: &mut GameState, conn_id: ConnectionId, map: i
     }
 }
 
-/// Set the ground object on a map tile (runtime modification).
-fn set_map_tile_obj(state: &mut GameState, map: i32, x: i32, y: i32, new_obj: i16) {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index = new_obj;
-        }
-    }
-}
-
-/// Set the blocked status of a map tile (runtime modification for doors).
-fn set_map_tile_blocked(state: &mut GameState, map: i32, x: i32, y: i32, blocked: bool) {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].blocked = blocked;
-        }
-    }
-}
-
-/// Get a health status description based on current/max HP.
-fn health_description(current: i32, max: i32, dead: bool) -> &'static str {
-    if dead {
-        return "Muerto";
-    }
-    if max <= 0 {
-        return "Intacto";
-    }
-    let pct = (current as f64 / max as f64 * 100.0) as i32;
-    match pct {
-        p if p >= 100 => "Intacto",
-        p if p >= 75 => "Algo lastimado",
-        p if p >= 45 => "Medio herido",
-        p if p >= 20 => "Gravemente herido",
-        _ => "Agonizando",
-    }
-}
+// set_map_tile_obj, set_map_tile_blocked, health_description — moved to common.rs
 
 /// SEG — Toggle PvP safety.
 async fn handle_safe_toggle(state: &mut GameState, conn_id: ConnectionId) {
@@ -5761,45 +5711,7 @@ async fn send_full_spells(state: &mut GameState, conn_id: ConnectionId) {
 }
 
 /// Send [H] HP stats packet.
-async fn send_stats_hp(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[H]{},{}", u.max_hp, u.min_hp);
-        state.send_to(conn_id, &pkt).await;
-    }
-}
-
-/// Send [M] mana stats packet.
-async fn send_stats_mana(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[M]{},{}", u.max_mana, u.min_mana);
-        state.send_to(conn_id, &pkt).await;
-    }
-}
-
-/// Send [S] stamina stats packet.
-async fn send_stats_sta(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[S]{},{}", u.max_sta, u.min_sta);
-        state.send_to(conn_id, &pkt).await;
-    }
-}
-
-/// Send [G] gold packet.
-async fn send_stats_gold(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[G]{}", u.gold);
-        state.send_to(conn_id, &pkt).await;
-    }
-}
-
-/// Send [E] experience packet.
-async fn send_stats_exp(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(u) = state.users.get(&conn_id) {
-        let exp_next = state.exp_for_level(u.level);
-        let pkt = format!("[E]{},{}", exp_next, u.exp);
-        state.send_to(conn_id, &pkt).await;
-    }
-}
+// send_stats_hp, send_stats_mana, send_stats_sta, send_stats_gold, send_stats_exp — moved to common.rs
 
 // =====================================================================
 // Level up system
@@ -5989,27 +5901,7 @@ async fn make_user_visible(state: &mut GameState, conn_id: ConnectionId) {
     check_update_needed_user(state, conn_id, 255).await;
 }
 
-/// VB6 AreaID calculation: (x/9+1)*(y/9+1)
-/// Determines which 9x9 zone a position belongs to.
-fn area_id(x: i32, y: i32) -> i32 {
-    (x / 9 + 1) * (y / 9 + 1)
-}
-
-/// Build [CD (CharData) packet for a user.
-/// VB6 SendCharData: [CD{charindex},{color},{auraA},{auraW},{auraE},{auraR},{auraC},{levitando},{tieneRanking}
-/// For now: color=0 (default), no auras, no levitation, no ranking display.
-fn build_cd_packet(user: &super::types::UserState) -> String {
-    // Color: 0=default. Could be extended for premium/criminal status colors.
-    let color = 0;
-    // Auras: armor, weapon, shield, ring, helmet — all 0 for now
-    let (aura_a, aura_w, aura_e, aura_r, aura_c) = (0, 0, 0, 0, 0);
-    let levitando = 0;
-    let tiene_ranking = 0;
-    format!(
-        "[CD{},{},{},{},{},{},{},{},{}",
-        user.char_index.0, color, aura_a, aura_w, aura_e, aura_r, aura_c, levitando, tiene_ranking
-    )
-}
+// area_id, build_cd_packet — moved to common.rs
 
 /// CheckUpdateNeededUser — VB6 ModAreas.bas area-based visibility system.
 /// Only fires when the player crosses a 9x9 area boundary.
@@ -6313,71 +6205,9 @@ async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
 /// Find a free position near (x, y) on the given map.
 /// If (x, y) is free, returns it. Otherwise searches nearby tiles in a spiral.
 /// Matches VB6 DamePos / ClosestLegalPos.
-fn find_free_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
-    // Check if target tile is free
-    let occupied = state.world.grid(map)
-        .and_then(|g| g.tile(x, y))
-        .map(|t| t.user_conn.is_some() || t.npc_index > 0)
-        .unwrap_or(false);
-    let blocked = state.is_tile_blocked(map, x, y);
+// find_free_pos — moved to common.rs
 
-    if !occupied && !blocked {
-        return (x, y);
-    }
-
-    // Search in expanding square around target
-    for radius in 1i32..=10 {
-        for dy in -radius..=radius {
-            for dx in -radius..=radius {
-                if dx.abs() != radius && dy.abs() != radius { continue; } // Only perimeter
-                let nx = x + dx;
-                let ny = y + dy;
-                if nx < 1 || nx > 100 || ny < 1 || ny > 100 { continue; }
-                let tile_blocked = state.is_tile_blocked(map, nx, ny);
-                if tile_blocked { continue; }
-                let tile_free = state.world.grid(map)
-                    .and_then(|g| g.tile(nx, ny))
-                    .map(|t| t.user_conn.is_none() && t.npc_index == 0)
-                    .unwrap_or(false);
-                if tile_free {
-                    return (nx, ny);
-                }
-            }
-        }
-    }
-
-    // Fallback: return original position
-    (x, y)
-}
-
-/// VB6 ZonaCura (General.bas:2136) — Check if a Revividor NPC (type=1) is within the player's
-/// visible area (MinXBorder × MinYBorder) and distance < 20.
-fn zona_cura(state: &GameState, map: i32, px: i32, py: i32) -> bool {
-    let min_x = (px - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (px + world::MIN_X_BORDER - 1).min(100);
-    let min_y = (py - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (py + world::MIN_Y_BORDER - 1).min(100);
-
-    if let Some(grid) = state.world.grid(map) {
-        for cy in min_y..=max_y {
-            for cx in min_x..=max_x {
-                if let Some(tile) = grid.tile(cx, cy) {
-                    if tile.npc_index > 0 {
-                        if let Some(npc) = state.get_npc(tile.npc_index as usize) {
-                            if npc.npc_type == crate::data::npcs::NpcType::Reviver && npc.is_alive() {
-                                let dist = (px - npc.x).abs() + (py - npc.y).abs();
-                                if dist < 20 {
-                                    return true;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-    false
-}
+// zona_cura — moved to common.rs
 
 /// VB6 AutoCuraUser (General.bas:2156) — Automatic priest heal/revive/cure.
 /// Called when player moves into ZonaCura range of a Revividor NPC.
@@ -6440,93 +6270,8 @@ async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
 // =====================================================================
 
 /// Strip the opcode prefix from a packet.
-fn strip_opcode(data: &str, opcode_len: usize) -> &str {
-    if data.len() > opcode_len {
-        &data[opcode_len..]
-    } else {
-        ""
-    }
-}
-
-/// Close a connection (shutdown writer, will trigger Disconnected event).
-async fn close_connection(state: &mut GameState, conn_id: ConnectionId) {
-    if let Some(mut writer) = state.writers.remove(&conn_id) {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        writer.shutdown().await;
-    }
-}
-
-/// Validate name — only ASCII alphanumeric + some allowed chars.
-fn is_valid_name(name: &str) -> bool {
-    if name.is_empty() || name.len() > 30 {
-        return false;
-    }
-    name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == ' ')
-}
-
-/// Check if a character is banned (from charfile FLAGS section).
-fn is_char_banned(base: &std::path::Path, char_name: &str) -> bool {
-    charfile::load_charfile(base, char_name)
-        .map(|c| c.banned)
-        .unwrap_or(false)
-}
-
-/// Check if any online user has the same IP (for multi-login prevention).
-fn is_same_ip_online(state: &GameState, exclude_id: ConnectionId, ip: &str) -> bool {
-    state.users.values().any(|u| {
-        u.conn_id != exclude_id && u.logged && u.ip == ip
-    })
-}
-
-/// Simple random number generator.
-fn rand_simple_u32() -> u32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u32;
-    nanos.wrapping_mul(1103515245).wrapping_add(12345) % 1000
-}
-
-/// Get current date as dd/mm/yyyy hh:mm (VB6 Format(Now, "dd/mm/yyyy hh:nn")).
-fn chrono_like_date() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs();
-    // Simple UTC date calculation
-    let days = secs / 86400;
-    let time_of_day = secs % 86400;
-    let hours = time_of_day / 3600;
-    let minutes = (time_of_day % 3600) / 60;
-    // Days since epoch to y/m/d (simplified)
-    let mut y = 1970i64;
-    let mut remaining = days as i64;
-    loop {
-        let days_in_year = if y % 4 == 0 && (y % 100 != 0 || y % 400 == 0) { 366 } else { 365 };
-        if remaining < days_in_year { break; }
-        remaining -= days_in_year;
-        y += 1;
-    }
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut m = 0usize;
-    for i in 0..12 {
-        if remaining < month_days[i] { m = i; break; }
-        remaining -= month_days[i];
-    }
-    format!("{:02}/{:02}/{} {:02}:{:02}", remaining + 1, m + 1, y, hours, minutes)
-}
-
-/// Random number in range [min, max] (inclusive).
-fn rand_range(min: i32, max: i32) -> i32 {
-    if min >= max {
-        return min;
-    }
-    let range = (max - min + 1) as u32;
-    min + (rand_simple_u32() % range) as i32
-}
+// strip_opcode, close_connection, is_valid_name, is_char_banned,
+// is_same_ip_online, rand_simple_u32, chrono_like_date, rand_range — moved to common.rs
 
 // =====================================================================
 // NPC system — spawning, AI, combat
@@ -7018,33 +6763,7 @@ async fn npc_drop_items(
 }
 
 /// Find a free adjacent tile for item drop. Returns (dx, dy) offset.
-fn find_free_tile(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
-    let grid = match state.world.grid(map) {
-        Some(g) => g,
-        None => return (0, 0),
-    };
-
-    // Try the NPC's tile first
-    if let Some(tile) = grid.tile(x, y) {
-        if tile.ground_item.obj_index == 0 {
-            return (0, 0);
-        }
-    }
-
-    // Try adjacent tiles
-    let offsets = [(0, 1), (1, 0), (0, -1), (-1, 0), (1, 1), (-1, -1), (1, -1), (-1, 1)];
-    for (dx, dy) in &offsets {
-        let tx = x + dx;
-        let ty = y + dy;
-        if let Some(tile) = grid.tile(tx, ty) {
-            if tile.ground_item.obj_index == 0 {
-                return (*dx, *dy);
-            }
-        }
-    }
-
-    (0, 0) // Fallback to same tile
-}
+// find_free_tile — moved to common.rs
 
 /// NPC attacks a player.
 async fn npc_attack_user(state: &mut GameState, npc_idx: usize, target_conn: ConnectionId) {
@@ -8133,14 +7852,7 @@ fn remove_pet_from_owner(state: &mut GameState, owner_conn: ConnectionId, npc_id
 }
 
 /// Update map_user_counts cache (how many logged users per map).
-fn update_map_user_counts(state: &mut GameState) {
-    state.map_user_counts.clear();
-    for user in state.users.values() {
-        if user.logged && !user.dead {
-            *state.map_user_counts.entry(user.pos_map).or_insert(0) += 1;
-        }
-    }
-}
+// update_map_user_counts — moved to common.rs
 
 // =====================================================================
 // Passive regeneration / drain system
@@ -8494,15 +8206,7 @@ fn auto_save_all_users(state: &GameState) {
 
 /// Add an item to the world cleanup tracking queue.
 /// Items will be auto-removed after `tiempo` ticks.
-pub fn clean_world_add_item(state: &mut GameState, map: i32, x: i32, y: i32, tiempo: i32, obj_index: i32) {
-    for entry in state.clean_world.iter_mut() {
-        if entry.map == 0 && entry.x == 0 && entry.y == 0 && entry.tiempo == 0 {
-            *entry = CleanWorldEntry { map, x, y, tiempo, obj_index };
-            return;
-        }
-    }
-    // Queue full — ignore (VB6 silently drops)
-}
+// clean_world_add_item — moved to common.rs
 
 /// 40ms game tick — decrement anti-cheat interval counters (RestoTiempo).
 /// This matches VB6's timer interval for movement/action speed limiting.
@@ -8604,126 +8308,17 @@ pub async fn tick_clean_world(state: &mut GameState) {
 // =====================================================================
 
 /// Check if melee attack is allowed; if so, set cooldown.
-pub fn puede_pegar(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_golpe > 0 {
-        return false;
-    }
-    let golpe = state.intervals.golpe;
-    let flechas = state.intervals.flechas;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_golpe = golpe;
-        u.interval_flechas = flechas;
-    }
-    true
-}
-
-/// Check if arrow shot is allowed; if so, set cooldown.
-pub fn puede_flechear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_flechas > 0 {
-        return false;
-    }
-    let flechas = state.intervals.flechas;
-    let golpe = 25; // VB6: PuedoFlechear also sets Golpe=25
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_flechas = flechas;
-        u.interval_golpe = golpe;
-    }
-    true
-}
-
-/// Check if spell cast is allowed; if so, set cooldown.
-pub fn puede_castear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_casteo > 0 {
-        return false;
-    }
-    let hechizo = state.intervals.lanzar_hechizo;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_casteo = hechizo;
-    }
-    true
-}
-
-/// Check if potion use is allowed; if so, set cooldown.
-pub fn puede_potear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_poteo > 0 {
-        return false;
-    }
-    let poteo = state.intervals.poteo_u;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_poteo = poteo;
-    }
-    true
-}
-
-/// Check if work/skill action is allowed; if so, set cooldown.
-pub fn puede_trabajar(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_trabajar > 0 {
-        return false;
-    }
-    let work = state.intervals.work;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_trabajar = work;
-    }
-    true
-}
-
-/// Check if click action is allowed; if so, set cooldown.
-pub fn puede_clickear(state: &mut GameState, conn_id: ConnectionId) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-    if user.interval_click > 0 {
-        return false;
-    }
-    let click = state.intervals.poteo_click;
-    let poteo = state.intervals.poteo_u;
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        u.interval_click = click;
-        u.interval_poteo = poteo;
-    }
-    true
-}
+// puede_pegar, puede_flechear, puede_castear, puede_potear,
+// puede_trabajar, puede_clickear — moved to common.rs
 
 /// Send hunger and thirst stats (EHYS packet).
-async fn send_hunger_thirst(state: &mut GameState, conn_id: ConnectionId) {
-    let data = match state.users.get(&conn_id) {
-        Some(u) => format!("EHYS{},{},{},{}", u.max_agua, u.min_agua, u.max_ham, u.min_ham),
-        None => return,
-    };
-    state.send_to(conn_id, &data).await;
-}
+// send_hunger_thirst — moved to common.rs
 
 // =====================================================================
 // Commerce handlers (NPC shops — Comercio.bas)
 // =====================================================================
 
-/// Maximum items per stack (VB6: MAX_INVENTORY_OBJS = 10000).
-const MAX_INVENTORY_OBJS: i32 = 10000;
-/// Maximum gold (VB6: MAXORO = 999999999).
-const MAX_GOLD: i64 = 999_999_999;
-/// Gold item object index (VB6: iORO = 12).
-const GOLD_OBJ_INDEX: i32 = 12;
+// MAX_INVENTORY_OBJS, MAX_GOLD, GOLD_OBJ_INDEX — moved to common.rs
 /// Commerce skill index in skills array.
 const SK_COMERCIAR: usize = 11; // VB6 eSkill.Comerciar = 11
 
@@ -9753,18 +9348,7 @@ fn luck_denominator(skill: i32) -> i32 {
 }
 
 /// Simple random number in range [min, max] inclusive.
-fn random_number(min: i32, max: i32) -> i32 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    if min >= max { return min; }
-    let seed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos() as u64;
-    // Simple LCG
-    let val = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
-    let range = (max - min + 1) as u64;
-    min + (val % range) as i32
-}
+// random_number — moved to common.rs
 
 /// Try to level up a skill (VB6: SubirSkill).
 /// Returns true if skill increased.
@@ -11116,76 +10700,7 @@ async fn handle_construct_carp(state: &mut GameState, conn_id: ConnectionId, dat
 
 /// Find an inventory slot that can hold the item (stack or empty), and add it.
 /// Returns the 0-based slot index, or None if inventory is full.
-fn find_or_add_inv_slot(state: &mut GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> Option<usize> {
-    let user = state.users.get(&conn_id)?;
-
-    // Try stacking first
-    let mut stack_slot = None;
-    let mut empty_slot = None;
-    for (i, slot) in user.inventory.iter().enumerate() {
-        if slot.obj_index == obj_index && slot.amount + amount <= MAX_INVENTORY_OBJS {
-            stack_slot = Some(i);
-            break;
-        }
-        if slot.obj_index == 0 && empty_slot.is_none() {
-            empty_slot = Some(i);
-        }
-    }
-
-    let target = stack_slot.or(empty_slot)?;
-
-    let user = state.users.get_mut(&conn_id)?;
-    if user.inventory[target].obj_index == 0 {
-        user.inventory[target].obj_index = obj_index;
-        user.inventory[target].amount = amount;
-    } else {
-        user.inventory[target].amount += amount;
-    }
-    Some(target)
-}
-
-/// Check if user has enough of certain items.
-fn check_has_items(state: &GameState, conn_id: ConnectionId, items: &[(i32, i32)]) -> bool {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return false,
-    };
-
-    for &(obj_index, needed) in items {
-        if needed <= 0 { continue; }
-        let total: i32 = user.inventory.iter()
-            .filter(|s| s.obj_index == obj_index)
-            .map(|s| s.amount)
-            .sum();
-        if total < needed {
-            return false;
-        }
-    }
-    true
-}
-
-/// Remove items from user inventory.
-async fn remove_items_from_inv(state: &mut GameState, conn_id: ConnectionId, obj_index: i32, mut amount: i32) {
-    if amount <= 0 { return; }
-
-    let user = match state.users.get_mut(&conn_id) {
-        Some(u) => u,
-        None => return,
-    };
-
-    for slot in user.inventory.iter_mut() {
-        if slot.obj_index == obj_index && amount > 0 {
-            let remove = slot.amount.min(amount);
-            slot.amount -= remove;
-            amount -= remove;
-            if slot.amount <= 0 {
-                slot.obj_index = 0;
-                slot.amount = 0;
-                slot.equipped = false;
-            }
-        }
-    }
-}
+// find_or_add_inv_slot, check_has_items, remove_items_from_inv — moved to common.rs
 
 // =====================================================================
 // Guild system handlers (modGuilds.bas / clsClan.cls)
@@ -13183,19 +12698,7 @@ use crate::data::quests;
 
 /// Format a number with period separators (VB6 PonerPuntos).
 /// e.g. 200000 -> "200.000", 1500 -> "1.500"
-fn poner_puntos(num: i64) -> String {
-    let s = num.to_string();
-    let len = s.len();
-    if len <= 3 { return s; }
-    let mut result = String::new();
-    for (i, ch) in s.chars().enumerate() {
-        if i > 0 && (len - i) % 3 == 0 {
-            result.push('.');
-        }
-        result.push(ch);
-    }
-    result
-}
+// poner_puntos — moved to common.rs
 
 /// IQUEST — Request quest list + current quest progress.
 /// VB6: QTL<count>,<name1>,<name2>,...  then MQC<cantNPC>,<muereQuest>,<name>,<oro>,<ptsTorneo>,<creditos>,<ptsTS>
@@ -15945,19 +15448,7 @@ async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId, target: C
 
 /// VB6 ClosestLegalPos: find the nearest walkable tile to (x,y) on map.
 /// Searches in expanding rings: exact pos first, then ±1, ±2, etc.
-fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
-    for ring in 0..=12 {
-        for ty in (y - ring)..=(y + ring) {
-            for tx in (x - ring)..=(x + ring) {
-                if tx < 1 || tx > 100 || ty < 1 || ty > 100 { continue; }
-                if !state.is_tile_blocked(map, tx, ty) {
-                    return (tx, ty);
-                }
-            }
-        }
-    }
-    (0, 0) // No legal position found
-}
+// find_closest_legal_pos — moved to common.rs
 
 /// /ACC <npc_id> or /RACC <npc_id> — Spawn NPC at GM's position. Requires GranDios+.
 async fn handle_slash_acc(state: &mut GameState, conn_id: ConnectionId, npc_id_str: &str, with_respawn: bool) {
@@ -20359,27 +19850,7 @@ async fn handle_newd(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 }
 
 /// Helper: add item to user inventory, returns true if successful.
-fn add_item_to_user_inventory(state: &mut GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> bool {
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        // First try to stack
-        for slot in user.inventory.iter_mut() {
-            if slot.obj_index == obj_index && slot.amount > 0 {
-                slot.amount += amount;
-                return true;
-            }
-        }
-        // Find empty slot
-        for slot in user.inventory.iter_mut() {
-            if slot.obj_index <= 0 || slot.amount <= 0 {
-                slot.obj_index = obj_index;
-                slot.amount = amount;
-                slot.equipped = false;
-                return true;
-            }
-        }
-    }
-    false
-}
+// add_item_to_user_inventory — moved to common.rs
 
 // =====================================================================
 // Missing slash commands
@@ -20469,35 +19940,7 @@ async fn handle_slash_desmontar(state: &mut GameState, conn_id: ConnectionId) {
 }
 
 /// Helper: get equipped item animation GRH IDs.
-fn get_equipped_anims(state: &GameState, conn_id: ConnectionId) -> (i32, i32, i32) {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return (0, 0, 0),
-    };
-
-    let weapon = if user.equip.weapon > 0 && user.equip.weapon <= MAX_INVENTORY_SLOTS {
-        let obj_idx = user.inventory[user.equip.weapon - 1].obj_index;
-        if obj_idx > 0 && (obj_idx as usize) < state.game_data.objects.len() {
-            state.game_data.objects[obj_idx as usize].weapon_anim
-        } else { 0 }
-    } else { 0 };
-
-    let shield = if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
-        let obj_idx = user.inventory[user.equip.shield - 1].obj_index;
-        if obj_idx > 0 && (obj_idx as usize) < state.game_data.objects.len() {
-            state.game_data.objects[obj_idx as usize].shield_anim
-        } else { 0 }
-    } else { 0 };
-
-    let helmet = if user.equip.helmet > 0 && user.equip.helmet <= MAX_INVENTORY_SLOTS {
-        let obj_idx = user.inventory[user.equip.helmet - 1].obj_index;
-        if obj_idx > 0 && (obj_idx as usize) < state.game_data.objects.len() {
-            state.game_data.objects[obj_idx as usize].casco_anim
-        } else { 0 }
-    } else { 0 };
-
-    (weapon, shield, helmet)
-}
+// get_equipped_anims — moved to common.rs
 
 /// /QUITARMASCOTA — Remove pet.
 async fn handle_slash_quitarmascota(state: &mut GameState, conn_id: ConnectionId) {
@@ -21009,29 +20452,7 @@ async fn handle_slash_subastar(state: &mut GameState, conn_id: ConnectionId) {
 // =====================================================================
 
 /// Helper: get INI var using PathBuf.
-fn ini_get(path: &std::path::Path, section: &str, key: &str) -> String {
-    crate::config::get_var(path.to_str().unwrap_or(""), section, key)
-}
-
-/// Helper: write INI var using PathBuf.
-fn ini_write(path: &std::path::Path, section: &str, key: &str, value: &str) {
-    let _ = crate::config::write_var(path.to_str().unwrap_or(""), section, key, value);
-}
-
-/// Helper: check if user has at least `amount` of item `obj_index` in inventory.
-fn user_has_items(state: &GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> bool {
-    if let Some(user) = state.users.get(&conn_id) {
-        let mut total = 0i32;
-        for slot in &user.inventory {
-            if slot.obj_index == obj_index {
-                total += slot.amount;
-            }
-        }
-        total >= amount
-    } else {
-        false
-    }
-}
+// ini_get, ini_write, user_has_items — moved to common.rs
 
 /// FWO — Query house owner and price from Casas.dat.
 async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, data: &str) {
