@@ -10,7 +10,7 @@ use crate::protocol::{server_opcodes, font_types, fields::read_field};
 use crate::data::objects::{ObjData, ObjType};
 use super::common::*;
 use super::{
-    send_inventory_slot, send_lookat_user_info, user_die, do_cast_spell,
+    send_inventory_slot, user_die, do_cast_spell,
     calc_attack_power, calc_defense_power, calc_armor_absorption,
     class_damage_modifier, class_damage_modifier_from_balance,
     check_user_level, quest_check_npc_kill,
@@ -215,66 +215,20 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
             do_robar(state, conn_id, target_x, target_y).await;
         }
         skill_id::PROYECTILES => {
+            // VB6 line 1846: Call LookatTile before ranged attack
+            super::inventory::do_lookat_tile(state, conn_id, target_x, target_y).await;
             do_ranged_attack(state, conn_id, target_x, target_y).await;
         }
         skill_id::MAGIA => {
             // VB6: WLC Magia flow (TCP_HandleData1.bas line 1910-1931)
-            // 1. Check MagiaSinEfecto map flag
-            // 2. LookatTile to find target user/NPC on clicked tile
+            // 1. LookatTile (sets targets + shows info in console)
+            // 2. Anti-cheat cooldown
             // 3. Cast pending spell
 
-            // Set target coordinates
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.target_x = target_x;
-                user.target_y = target_y;
-                user.target_map = map;
-            }
-
-            // LookatTile: find user or NPC on the target tile (and y+1)
-            // VB6: LookatTile is called before LanzarHechizo — shows "Ves a..." in console
-            let mut found_target = false;
-            for check_y in [target_y, target_y + 1] {
-                if check_y < 1 || check_y > 100 { continue; }
-                // Check for user on tile
-                let tile_user = state.world.grid(map)
-                    .and_then(|g| g.tile(target_x, check_y))
-                    .and_then(|t| t.user_conn);
-                if let Some(target_conn) = tile_user {
-                    if state.users.get(&target_conn).map(|u| u.logged).unwrap_or(false) {
-                        if let Some(user) = state.users.get_mut(&conn_id) {
-                            user.target_user = target_conn;
-                            user.target_npc = 0;
-                        }
-                        // VB6: LookatTile sends "Ves a <name>" info to caster
-                        send_lookat_user_info(state, conn_id, target_conn).await;
-                        found_target = true;
-                        break;
-                    }
-                }
-                // Check for NPC on tile
-                let tile_npc = state.world.grid(map)
-                    .and_then(|g| g.tile(target_x, check_y))
-                    .map(|t| t.npc_index)
-                    .unwrap_or(0);
-                if tile_npc > 0 {
-                    if let Some(user) = state.users.get_mut(&conn_id) {
-                        user.target_npc = tile_npc as usize;
-                        user.target_user = 0;
-                    }
-                    // VB6: LookatTile sends NPC desc to caster
-                    // NPC target — VB6 does NOT call LookatTile for NPCs when casting
-                    found_target = true;
-                    break;
-                }
-            }
-
-            // If no target found, clear targets (for self-cast or terrain spells)
-            if !found_target {
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.target_user = 0;
-                    user.target_npc = 0;
-                }
-            }
+            // VB6 line 1915: Call LookatTile(userindex, Map, X, Y)
+            // This shows "Ves a <name>" for users AND NPC info (name + HP status)
+            // in console BEFORE the spell is cast.
+            super::inventory::do_lookat_tile(state, conn_id, target_x, target_y).await;
 
             // Anti-cheat cooldown
             if !puede_castear(state, conn_id) {
@@ -288,8 +242,7 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
                 send_stats_mana(state, conn_id).await;
                 send_stats_hp(state, conn_id).await;
             } else {
-                let msg = "||288".to_string(); // TEXTO288: Primero selecciona el hechizo!
-                state.send_to(conn_id, &msg).await;
+                state.send_to(conn_id, "||288").await;
             }
         }
         skill_id::OCULTARSE => {

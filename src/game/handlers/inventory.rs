@@ -1100,7 +1100,7 @@ pub(super) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
 }
 
 /// LC<x>,<y> — Left click on tile (look / inspect).
-/// VB6: LookatTile (GameLogic.bas:505-1115) — EXACT replica.
+/// VB6: LookatTile (GameLogic.bas:505-1115) — packet handler wrapper.
 pub(super) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 2);
     let x: i32 = match read_field(1, payload, ',').parse() {
@@ -1111,7 +1111,12 @@ pub(super) async fn handle_left_click(state: &mut GameState, conn_id: Connection
         Ok(v) => v,
         _ => return,
     };
+    do_lookat_tile(state, conn_id, x, y).await;
+}
 
+/// Core LookatTile logic (VB6: GameLogic.bas:505-1115).
+/// Called from LC handler and WLC Magia handler (VB6 calls LookatTile before LanzarHechizo).
+pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     let (map, user_x, user_y, my_privileges, my_survival_skill) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.privileges,
             u.skills.get(9).copied().unwrap_or(0)), // eSkill.Supervivencia = 9
@@ -1518,14 +1523,60 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
             }
         }
     }
-    // Also check adjacent tiles for doors (VB6 checks x+1, x+2, x-1)
-    for dx in [-1, 1, 2] {
+    // Also check adjacent tiles for doors (VB6: Accion() checks x-1, x-2, x+1, x+2)
+    // x-1: only for PuertaDoble or Porton doors
+    for dx in [-1i32] {
+        let ax = x + dx;
+        if ax < 1 || ax > 100 { continue; }
+        let adj_obj = get_map_tile_obj(state, map, ax, y);
+        if adj_obj > 0 {
+            if let Some(obj) = state.get_object(adj_obj) {
+                if obj.obj_type == crate::data::objects::ObjType::Door
+                    && (obj.puerta_doble == 1 || obj.porton == 1) {
+                    accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
+                    return;
+                }
+            }
+        }
+    }
+    // x-2: only for Porton doors
+    for dx in [-2i32] {
+        let ax = x + dx;
+        if ax < 1 || ax > 100 { continue; }
+        let adj_obj = get_map_tile_obj(state, map, ax, y);
+        if adj_obj > 0 {
+            if let Some(obj) = state.get_object(adj_obj) {
+                if obj.obj_type == crate::data::objects::ObjType::Door
+                    && obj.porton == 1 {
+                    accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
+                    return;
+                }
+            }
+        }
+    }
+    // x+1: any door type
+    for dx in [1i32] {
         let ax = x + dx;
         if ax < 1 || ax > 100 { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
                 if obj.obj_type == crate::data::objects::ObjType::Door {
+                    accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
+                    return;
+                }
+            }
+        }
+    }
+    // x+2: only for PuertaDoble or Porton doors (VB6 line 93-99)
+    for dx in [2i32] {
+        let ax = x + dx;
+        if ax < 1 || ax > 100 { continue; }
+        let adj_obj = get_map_tile_obj(state, map, ax, y);
+        if adj_obj > 0 {
+            if let Some(obj) = state.get_object(adj_obj) {
+                if obj.obj_type == crate::data::objects::ObjType::Door
+                    && (obj.puerta_doble == 1 || obj.porton == 1) {
                     accion_para_puerta(state, conn_id, map, ax, y, adj_obj).await;
                     return;
                 }
@@ -1758,16 +1809,16 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
 
 /// Handle door interaction (VB6: AccionParaPuerta in Acciones.bas).
 /// Opens/closes doors, handles locks, updates tile blocking and graphics.
+/// Sends BQ packets to notify clients about blocking changes.
 pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32, obj_index: i32) {
     let (user_x, user_y) = match state.users.get(&conn_id) {
         Some(u) => (u.pos_x, u.pos_y),
         None => return,
     };
 
-    // Distance check: must be within 3 tiles
+    // Distance check: must be within 3 tiles (VB6: Distance > 3)
     if (x - user_x).abs() > 3 || (y - user_y).abs() > 3 {
-        let msg = "||10".to_string(); // TEXTO10: Estas demasiado lejos
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, "||10").await;
         return;
     }
 
@@ -1776,79 +1827,124 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         None => return,
     };
 
+    // Check if door needs a key (VB6: Llave = 0 means no key needed)
+    if obj.llave == 1 {
+        // Check if user has the matching key in inventory
+        let has_key = state.users.get(&conn_id).map(|u| {
+            u.inventory.iter().any(|s| {
+                if s.obj_index <= 0 { return false; }
+                state.get_object(s.obj_index)
+                    .map(|ko| ko.obj_type == crate::data::objects::ObjType::Key && ko.clave == obj.clave)
+                    .unwrap_or(false)
+            })
+        }).unwrap_or(false);
+
+        if !has_key {
+            state.send_to(conn_id, "||652").await;
+            return;
+        }
+    }
+
     if obj.cerrada == 1 {
         // Door is CLOSED → open it
-        // Check if it needs a key
-        if obj.llave == 1 {
-            // Check if user has the key in inventory
-            let has_key = state.users.get(&conn_id).map(|u| {
-                u.inventory.iter().any(|s| {
-                    if s.obj_index <= 0 { return false; }
-                    state.get_object(s.obj_index)
-                        .map(|ko| ko.obj_type == crate::data::objects::ObjType::Key && ko.clave == obj.clave)
-                        .unwrap_or(false)
-                })
-            }).unwrap_or(false);
 
-            if !has_key {
-                let msg = "||652".to_string(); // TEXTO652: La puerta esta cerrada con llave
-                state.send_to(conn_id, &msg).await;
-                return;
-            }
+        // RejaForta (fortress gate) — guild permission check
+        if obj.reja_forta == 1 {
+            if obj_index == 1472 { return; } // Hardcoded locked gate
+            let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
+            if guild_idx <= 0 { return; }
+            // Only the guild owning the fortress can toggle (siege_guild_owner)
+            if guild_idx != state.siege_guild_owner { return; }
         }
 
-        let new_obj = obj.index_abierta;
-        if new_obj <= 0 { return; }
+        let new_obj_idx = obj.index_abierta;
+        if new_obj_idx <= 0 { return; }
 
-        // Update static map data — change object to open version
-        set_map_tile_obj(state, map, x, y, new_obj as i16);
+        // VB6: Change ObjIndex FIRST, then read the NEW object's properties
+        set_map_tile_obj(state, map, x, y, new_obj_idx as i16);
 
-        // Unblock tiles (single door: x, x-1; double: +x+1,x+2; porton: +x-2)
-        let tiles_to_unblock: Vec<i32> = if obj.porton == 1 {
+        // Send HO packet with the NEW object's graphic (VB6: after changing ObjIndex)
+        let new_grh = state.get_object(new_obj_idx).map(|o| o.grh_index).unwrap_or(0);
+        let ho_pkt = format!("HO{},{},{}", new_grh, x, y);
+        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+
+        // Read door type from the NEW object (VB6 reads after ObjIndex change)
+        let new_obj = state.get_object(new_obj_idx).cloned();
+        let is_puerta_doble = new_obj.as_ref().map(|o| o.puerta_doble == 1).unwrap_or(false);
+        let is_porton = new_obj.as_ref().map(|o| o.porton == 1).unwrap_or(false);
+
+        // Determine tiles to unblock based on door type
+        let tiles: Vec<i32> = if obj.reja_forta == 1 || is_porton {
             vec![x, x - 1, x - 2, x + 1, x + 2]
-        } else if obj.puerta_doble == 1 {
+        } else if is_puerta_doble {
             vec![x, x - 1, x + 1, x + 2]
         } else {
             vec![x, x - 1]
         };
-        for tx in &tiles_to_unblock {
+
+        // Unblock tiles and send BQ packets to entire map (VB6: Bloquear SendTarget.toMap)
+        for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, false);
+            let bq_pkt = format!("BQ{},{},{}", tx, y, 0);
+            state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
         }
 
-        // Send HO packet to area (update graphic)
-        let new_grh = state.get_object(new_obj).map(|o| o.grh_index).unwrap_or(0);
-        let ho_pkt = format!("HO{},{},{}", new_grh, x, y);
-        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
-
-        // Play door sound
-        let snd_pkt = format!("TW{}", 45); // SND_PUERTA
+        // Play door sound (VB6: SND_PUERTA)
+        let snd_pkt = format!("TW{}", 45);
         state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
     } else {
         // Door is OPEN → close it
-        let new_obj = obj.index_cerrada;
-        if new_obj <= 0 { return; }
 
-        set_map_tile_obj(state, map, x, y, new_obj as i16);
+        // RejaForta (fortress gate) — guild permission check
+        if obj.reja_forta == 1 {
+            if obj_index == 1472 { return; }
+            let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
+            if guild_idx <= 0 { return; }
+            if guild_idx != state.siege_guild_owner { return; }
+        }
 
-        // Block tiles
-        let closed_obj = state.get_object(new_obj).cloned();
-        let tiles_to_block: Vec<i32> = if closed_obj.as_ref().map(|o| o.porton).unwrap_or(0) == 1 {
+        let new_obj_idx = obj.index_cerrada;
+        if new_obj_idx <= 0 { return; }
+
+        // VB6: Change ObjIndex FIRST, then read the NEW (closed) object's properties
+        set_map_tile_obj(state, map, x, y, new_obj_idx as i16);
+
+        // Send HO packet with the NEW object's graphic
+        let closed_obj = state.get_object(new_obj_idx).cloned();
+        let new_grh = closed_obj.as_ref().map(|o| o.grh_index).unwrap_or(0);
+        let ho_pkt = format!("HO{},{},{}", new_grh, x, y);
+        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+
+        // Read door type from the NEW (closed) object
+        let is_puerta_doble = closed_obj.as_ref().map(|o| o.puerta_doble == 1).unwrap_or(false);
+        let is_porton = closed_obj.as_ref().map(|o| o.porton == 1).unwrap_or(false);
+
+        // Determine tiles to block based on door type
+        let tiles: Vec<i32> = if obj.reja_forta == 1 || is_porton {
             vec![x, x - 1, x - 2, x + 1, x + 2]
-        } else if closed_obj.as_ref().map(|o| o.puerta_doble).unwrap_or(0) == 1 {
+        } else if is_puerta_doble {
             vec![x, x - 1, x + 1, x + 2]
         } else {
             vec![x, x - 1]
         };
-        for tx in &tiles_to_block {
+
+        // Block tiles and send BQ packets to entire map
+        for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, true);
+            let bq_pkt = format!("BQ{},{},{}", tx, y, 1);
+            state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
         }
 
-        let new_grh = closed_obj.map(|o| o.grh_index).unwrap_or(0);
-        let ho_pkt = format!("HO{},{},{}", new_grh, x, y);
-        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
-
+        // Play door sound
         let snd_pkt = format!("TW{}", 45);
         state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+    }
+
+    // VB6: Set TargetObj position (after toggle)
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.target_obj_map = map;
+        user.target_obj_x = x;
+        user.target_obj_y = y;
     }
 }
 
