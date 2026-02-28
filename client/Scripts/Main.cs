@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using TierrasSagradasAO.Data;
 using TierrasSagradasAO.Game;
@@ -8,7 +9,7 @@ using TierrasSagradasAO.Rendering;
 
 namespace TierrasSagradasAO;
 
-public partial class Main : Node2D
+public partial class Main : Control
 {
     private const string ServerHost = "127.0.0.1";
     private const int ServerPort = 5028;
@@ -24,7 +25,7 @@ public partial class Main : Node2D
     private bool _connecting;
     private int _packetCount;
 
-    // UI nodes
+    // Login UI nodes
     private PanelContainer? _loginPanel;
     private PanelContainer? _charSelectPanel;
     private LineEdit? _accountInput;
@@ -34,6 +35,25 @@ public partial class Main : Node2D
     private ItemList? _charList;
     private Button? _enterButton;
     private Label? _noticeLabel;
+
+    // Game UI nodes
+    private Control? _gameUI;
+    private TextureRect? _backgroundImage;
+    private RichTextLabel? _console;
+    private LineEdit? _chatInput;
+    private ProgressBar? _hpBar;
+    private ProgressBar? _manaBar;
+    private ProgressBar? _staBar;
+    private ProgressBar? _aguaBar;
+    private ProgressBar? _hamBar;
+    private ProgressBar? _expBar;
+    private Label? _goldLabel;
+    private Label? _levelLabel;
+    private Label? _nameLabel;
+    private Label? _mapLabel;
+    private Label? _onlineLabel;
+    private Label? _coordsLabel;
+    private GridContainer? _inventoryGrid;
 
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
@@ -60,33 +80,92 @@ public partial class Main : Node2D
             return;
         }
 
-        // Setup renderer
+        // Setup renderer inside the SubViewport
         _worldRenderer = new WorldRenderer();
         _worldRenderer.Init(_state, _gameData, _animator);
-        var gameWorldNode = GetNode<Node2D>("GameWorld");
+        var gameWorldNode = GetNode<Node2D>("GameViewportContainer/GameViewport/GameWorld");
         gameWorldNode.AddChild(_worldRenderer);
 
         // Setup packet handler
         _packetHandler = new PacketHandler(_state);
 
-        // Grab UI nodes
-        _loginPanel = GetNode<PanelContainer>("UI/LoginPanel");
-        _charSelectPanel = GetNode<PanelContainer>("UI/CharSelectPanel");
-        _accountInput = GetNode<LineEdit>("UI/LoginPanel/VBox/AccountInput");
-        _passwordInput = GetNode<LineEdit>("UI/LoginPanel/VBox/PasswordInput");
-        _connectButton = GetNode<Button>("UI/LoginPanel/VBox/ConnectButton");
-        _statusLabel = GetNode<Label>("UI/LoginPanel/VBox/StatusLabel");
-        _charList = GetNode<ItemList>("UI/CharSelectPanel/VBox/CharList");
-        _enterButton = GetNode<Button>("UI/CharSelectPanel/VBox/EnterButton");
-        _noticeLabel = GetNode<Label>("UI/CharSelectPanel/VBox/NoticeLabel");
+        // Grab Login UI nodes
+        _loginPanel = GetNode<PanelContainer>("UILayer/LoginPanel");
+        _charSelectPanel = GetNode<PanelContainer>("UILayer/CharSelectPanel");
+        _accountInput = GetNode<LineEdit>("UILayer/LoginPanel/VBox/AccountInput");
+        _passwordInput = GetNode<LineEdit>("UILayer/LoginPanel/VBox/PasswordInput");
+        _connectButton = GetNode<Button>("UILayer/LoginPanel/VBox/ConnectButton");
+        _statusLabel = GetNode<Label>("UILayer/LoginPanel/VBox/StatusLabel");
+        _charList = GetNode<ItemList>("UILayer/CharSelectPanel/VBox/CharList");
+        _enterButton = GetNode<Button>("UILayer/CharSelectPanel/VBox/EnterButton");
+        _noticeLabel = GetNode<Label>("UILayer/CharSelectPanel/VBox/NoticeLabel");
+
+        // Grab Game UI nodes
+        _gameUI = GetNode<Control>("GameUI");
+        _backgroundImage = GetNode<TextureRect>("GameUI/BackgroundImage");
+        _console = GetNode<RichTextLabel>("GameUI/Console");
+        _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
+        _hpBar = GetNode<ProgressBar>("GameUI/HPBar");
+        _manaBar = GetNode<ProgressBar>("GameUI/ManaBar");
+        _staBar = GetNode<ProgressBar>("GameUI/StaBar");
+        _aguaBar = GetNode<ProgressBar>("GameUI/AguaBar");
+        _hamBar = GetNode<ProgressBar>("GameUI/HamBar");
+        _expBar = GetNode<ProgressBar>("GameUI/ExpBar");
+        _goldLabel = GetNode<Label>("GameUI/GoldLabel");
+        _levelLabel = GetNode<Label>("GameUI/LevelLabel");
+        _nameLabel = GetNode<Label>("GameUI/NameLabel");
+        _mapLabel = GetNode<Label>("GameUI/MapLabel");
+        _onlineLabel = GetNode<Label>("GameUI/OnlineLabel");
+        _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
+        _inventoryGrid = GetNode<GridContainer>("GameUI/InventoryGrid");
+
+        // Load Principal.jpg background
+        LoadBackgroundImage(dataPath);
 
         // Wire signals
         _connectButton.Pressed += OnConnectPressed;
         _enterButton.Pressed += OnEnterPressed;
+        _chatInput.TextSubmitted += OnChatSubmitted;
 
         // Show login screen
         _loginPanel.Visible = true;
         _charSelectPanel.Visible = false;
+        _gameUI.Visible = false;
+    }
+
+    private void LoadBackgroundImage(string dataPath)
+    {
+        string principalPath = System.IO.Path.Combine(dataPath, "..", "Data", "GRAFICOS", "Principal", "Principal.jpg");
+        // Try several paths
+        string[] candidates = new[]
+        {
+            System.IO.Path.Combine(dataPath, "GRAFICOS", "Principal", "Principal.jpg"),
+            System.IO.Path.Combine(dataPath, "..", "..", "Cliente", "Data", "GRAFICOS", "Principal", "Principal.jpg"),
+            // Absolute fallback
+            "/workspace/Tierras-Sagradas-AO/Cliente/Data/GRAFICOS/Principal/Principal.jpg",
+        };
+
+        foreach (string path in candidates)
+        {
+            if (System.IO.File.Exists(path))
+            {
+                try
+                {
+                    var image = new Image();
+                    image.Load(path);
+                    var tex = ImageTexture.CreateFromImage(image);
+                    _backgroundImage!.Texture = tex;
+                    GD.Print($"[MAIN] Loaded Principal.jpg from {path}");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[MAIN] Failed to load Principal.jpg: {ex.Message}");
+                }
+            }
+        }
+
+        GD.Print("[MAIN] Principal.jpg not found — using dark background");
     }
 
     private void OnConnectPressed()
@@ -164,6 +243,15 @@ public partial class Main : Node2D
         }
     }
 
+    private void OnChatSubmitted(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || _tcp == null) return;
+
+        // Send chat message to server
+        _tcp.SendPacket($";{text}");
+        _chatInput!.Text = "";
+    }
+
     public override void _Process(double delta)
     {
         if (_tcp == null || _packetHandler == null) return;
@@ -221,7 +309,11 @@ public partial class Main : Node2D
         UpdateMovement((float)delta);
 
         if (_state.CurrentScreen == Screen.Game)
+        {
             _inputHandler?.Process(delta);
+            UpdateGameUI();
+            UpdateConsoleMessages();
+        }
     }
 
     private void HandleScreenChange(Screen newScreen)
@@ -233,17 +325,20 @@ public partial class Main : Node2D
             case Screen.Login:
                 _loginPanel!.Visible = true;
                 _charSelectPanel!.Visible = false;
+                _gameUI!.Visible = false;
                 break;
 
             case Screen.CharSelect:
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = true;
+                _gameUI!.Visible = false;
                 PopulateCharList();
                 break;
 
             case Screen.Game:
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = false;
+                _gameUI!.Visible = true;
                 GD.Print("[MAIN] Entered game world");
                 break;
         }
@@ -262,12 +357,71 @@ public partial class Main : Node2D
             _noticeLabel!.Text = _state.ServerNotice;
     }
 
+    /// <summary>
+    /// Update stats bars, labels, and inventory from GameState.
+    /// </summary>
+    private void UpdateGameUI()
+    {
+        if (_hpBar == null) return;
+
+        // Stats bars
+        _hpBar.MaxValue = _state.MaxHp > 0 ? _state.MaxHp : 1;
+        _hpBar.Value = _state.MinHp;
+
+        _manaBar!.MaxValue = _state.MaxMana > 0 ? _state.MaxMana : 1;
+        _manaBar.Value = _state.MinMana;
+
+        _staBar!.MaxValue = _state.MaxSta > 0 ? _state.MaxSta : 1;
+        _staBar.Value = _state.MinSta;
+
+        _aguaBar!.MaxValue = _state.MaxAgua > 0 ? _state.MaxAgua : 1;
+        _aguaBar.Value = _state.MinAgua;
+
+        _hamBar!.MaxValue = _state.MaxHam > 0 ? _state.MaxHam : 1;
+        _hamBar.Value = _state.MinHam;
+
+        _expBar!.MaxValue = _state.ExpNext > 0 ? _state.ExpNext : 1;
+        _expBar.Value = _state.Exp;
+
+        // Labels
+        _goldLabel!.Text = $"Oro: {_state.Gold}";
+        _levelLabel!.Text = $"Lvl: {_state.Level}";
+        _nameLabel!.Text = _state.UserName;
+        _mapLabel!.Text = $"Mapa: {_state.CurrentMap} {_state.MapName}";
+        _onlineLabel!.Text = $"Online: {_state.OnlineCount}";
+        _coordsLabel!.Text = $"Pos: {_state.UserPosX},{_state.UserPosY}";
+    }
+
+    /// <summary>
+    /// Drain chat message queue and append to console RichTextLabel.
+    /// </summary>
+    private void UpdateConsoleMessages()
+    {
+        if (_console == null) return;
+
+        while (_state.ChatMessages.Count > 0)
+        {
+            var msg = _state.ChatMessages.Dequeue();
+            _console.AppendText($"[color=#{msg.Color}]{msg.Text}[/color]\n");
+        }
+    }
+
     public override void _UnhandledInput(InputEvent @event)
     {
         if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
             if (_state.CurrentScreen == Screen.Game)
-                _inputHandler?.HandleClick(mb.Position, _state.UserPosX, _state.UserPosY);
+            {
+                // Translate click position relative to the game viewport (0,124) with 534x408 size
+                float clickX = mb.Position.X;
+                float clickY = mb.Position.Y - 124;
+
+                // Only handle clicks within the game viewport area
+                if (clickX >= 0 && clickX < 534 && clickY >= 0 && clickY < 408)
+                {
+                    _inputHandler?.HandleClick(new Vector2(clickX, clickY), _state.UserPosX, _state.UserPosY);
+                }
+            }
         }
     }
 

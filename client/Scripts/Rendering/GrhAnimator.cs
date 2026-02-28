@@ -7,6 +7,7 @@ namespace TierrasSagradasAO.Rendering;
 /// <summary>
 /// Manages animation state for GRH indices.
 /// Tracks frame counters and resolves current frame.
+/// VB6 formula: FrameCounter += (elapsedMs * NumFrames / Speed) * 0.7
 /// </summary>
 public class GrhAnimator
 {
@@ -32,10 +33,14 @@ public class GrhAnimator
 
     /// <summary>
     /// Advance all animations by delta time.
+    /// VB6: FrameCounter += (elapsedMs * NumFrames / Speed) * 0.7
+    /// where Speed is in milliseconds.
     /// </summary>
     public void Update(float delta, GameData data)
     {
+        float deltaMs = delta * 1000f;
         var keys = new List<int>(_states.Keys);
+
         foreach (int key in keys)
         {
             if (key <= 0 || key >= data.Grhs.Length) continue;
@@ -45,9 +50,8 @@ public class GrhAnimator
 
             var state = _states[key];
 
-            // Speed is in VB6 ticks, normalize to ~60fps
-            float speed = grh.Speed > 0 ? grh.Speed / 1000f : 0.1f;
-            state.FrameCounter += delta / speed;
+            float speed = grh.Speed > 0 ? grh.Speed : 100f;
+            state.FrameCounter += (deltaMs * grh.NumFrames / speed) * 0.7f;
 
             if (state.FrameCounter >= grh.NumFrames)
             {

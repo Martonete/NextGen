@@ -560,7 +560,27 @@ public class PacketHandler
 
     private void HandleConsoleMessage(string data)
     {
-        GD.Print($"[CONSOLE] {data}");
+        // ||<color_code>@<source>@<text> or just ||<text>
+        string text = data;
+        string color = "00FF00"; // default green for console
+
+        int atIdx = data.IndexOf('@');
+        if (atIdx >= 0)
+        {
+            // Try to parse color code before first @
+            string possibleColor = data[..atIdx];
+            if (possibleColor.Length <= 6 && possibleColor.Length >= 1)
+            {
+                int secondAt = data.IndexOf('@', atIdx + 1);
+                if (secondAt > 0)
+                    text = data[(secondAt + 1)..];
+                else
+                    text = data[(atIdx + 1)..];
+            }
+        }
+
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+        GD.Print($"[CONSOLE] {text}");
     }
 
     private void HandleTalk(string data)
@@ -569,6 +589,17 @@ public class PacketHandler
         var parts = data.Split((char)176); // ° = ASCII 176
         if (parts.Length >= 2)
         {
+            string color = "FFFFFF"; // default white
+            if (parts.Length >= 1 && int.TryParse(parts[0], out int vbColor))
+            {
+                // VB6 color: BGR format, convert to RGB hex
+                int r = vbColor & 0xFF;
+                int g = (vbColor >> 8) & 0xFF;
+                int b = (vbColor >> 16) & 0xFF;
+                color = $"{r:X2}{g:X2}{b:X2}";
+            }
+
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[1], Color = color });
             GD.Print($"[TALK] {parts[1]}");
         }
     }
@@ -578,6 +609,16 @@ public class PacketHandler
         var parts = data.Split((char)176);
         if (parts.Length >= 2)
         {
+            string color = "FF0000"; // yell is usually red
+            if (int.TryParse(parts[0], out int vbColor))
+            {
+                int r = vbColor & 0xFF;
+                int g = (vbColor >> 8) & 0xFF;
+                int b = (vbColor >> 16) & 0xFF;
+                color = $"{r:X2}{g:X2}{b:X2}";
+            }
+
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[1], Color = color });
             GD.Print($"[YELL] {parts[1]}");
         }
     }
@@ -586,10 +627,19 @@ public class PacketHandler
     {
         // P|<text>~r~g~b~bold~italic
         var parts = data.Split('~');
-        if (parts.Length >= 1)
+        if (parts.Length >= 4)
         {
-            GD.Print($"[WHISPER] {parts[0]}");
+            int r = ParseInt(parts[1]);
+            int g = ParseInt(parts[2]);
+            int b = ParseInt(parts[3]);
+            string color = $"{r:X2}{g:X2}{b:X2}";
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[0], Color = color });
         }
+        else if (parts.Length >= 1)
+        {
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[0], Color = "00FFFF" });
+        }
+        GD.Print($"[WHISPER] {parts[0]}");
     }
 
     private void HandleInitCharList(string data)

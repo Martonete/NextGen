@@ -2,17 +2,32 @@
 
 [ext_resource type="Script" path="res://Scripts/Main.cs" id="1"]
 
-[node name="Main" type="Node2D"]
+[node name="Main" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
 script = ExtResource("1")
 
-[node name="GameWorld" type="Node2D" parent="."]
+[node name="GameViewportContainer" type="SubViewportContainer" parent="."]
+layout_mode = 0
+offset_left = 0.0
+offset_top = 124.0
+offset_right = 534.0
+offset_bottom = 532.0
+stretch = true
 
-[node name="Camera" type="Camera2D" parent="GameWorld"]
+[node name="GameViewport" type="SubViewport" parent="GameViewportContainer"]
+handle_input_locally = true
+size = Vector2i(534, 408)
+render_target_update_mode = 3
 
-[node name="UI" type="CanvasLayer" parent="."]
+[node name="GameWorld" type="Node2D" parent="GameViewportContainer/GameViewport"]
+
+[node name="UILayer" type="CanvasLayer" parent="."]
 layer = 10
 
-[node name="LoginPanel" type="PanelContainer" parent="UI"]
+[node name="LoginPanel" type="PanelContainer" parent="UILayer"]
 anchors_preset = 8
 anchor_left = 0.5
 anchor_top = 0.5
@@ -25,34 +40,34 @@ offset_bottom = 140.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="UI/LoginPanel"]
+[node name="VBox" type="VBoxContainer" parent="UILayer/LoginPanel"]
 layout_mode = 2
 theme_override_constants/separation = 12
 
-[node name="Title" type="Label" parent="UI/LoginPanel/VBox"]
+[node name="Title" type="Label" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
 text = "Tierras Sagradas AO"
 horizontal_alignment = 1
 
-[node name="AccountInput" type="LineEdit" parent="UI/LoginPanel/VBox"]
+[node name="AccountInput" type="LineEdit" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
 placeholder_text = "Cuenta"
 
-[node name="PasswordInput" type="LineEdit" parent="UI/LoginPanel/VBox"]
+[node name="PasswordInput" type="LineEdit" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
 placeholder_text = "Password"
 secret = true
 
-[node name="ConnectButton" type="Button" parent="UI/LoginPanel/VBox"]
+[node name="ConnectButton" type="Button" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
 text = "Conectar"
 
-[node name="StatusLabel" type="Label" parent="UI/LoginPanel/VBox"]
+[node name="StatusLabel" type="Label" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
 horizontal_alignment = 1
 autowrap_mode = 2
 
-[node name="CharSelectPanel" type="PanelContainer" parent="UI"]
+[node name="CharSelectPanel" type="PanelContainer" parent="UILayer"]
 visible = false
 anchors_preset = 8
 anchor_left = 0.5
@@ -66,24 +81,210 @@ offset_bottom = 200.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="UI/CharSelectPanel"]
+[node name="VBox" type="VBoxContainer" parent="UILayer/CharSelectPanel"]
 layout_mode = 2
 theme_override_constants/separation = 10
 
-[node name="Title" type="Label" parent="UI/CharSelectPanel/VBox"]
+[node name="Title" type="Label" parent="UILayer/CharSelectPanel/VBox"]
 layout_mode = 2
 text = "Seleccionar Personaje"
 horizontal_alignment = 1
 
-[node name="CharList" type="ItemList" parent="UI/CharSelectPanel/VBox"]
+[node name="CharList" type="ItemList" parent="UILayer/CharSelectPanel/VBox"]
 layout_mode = 2
 custom_minimum_size = Vector2(0, 200)
 
-[node name="EnterButton" type="Button" parent="UI/CharSelectPanel/VBox"]
+[node name="EnterButton" type="Button" parent="UILayer/CharSelectPanel/VBox"]
 layout_mode = 2
 text = "Entrar"
 
-[node name="NoticeLabel" type="Label" parent="UI/CharSelectPanel/VBox"]
+[node name="NoticeLabel" type="Label" parent="UILayer/CharSelectPanel/VBox"]
 layout_mode = 2
 horizontal_alignment = 1
 autowrap_mode = 2
+
+[node name="GameUI" type="Control" parent="."]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="BackgroundImage" type="TextureRect" parent="GameUI"]
+layout_mode = 0
+offset_right = 800.0
+offset_bottom = 600.0
+stretch_mode = 5
+
+[node name="Console" type="RichTextLabel" parent="GameUI"]
+layout_mode = 0
+offset_left = 2.0
+offset_top = 2.0
+offset_right = 396.0
+offset_bottom = 90.0
+bbcode_enabled = true
+scroll_following = true
+
+[node name="ChatInput" type="LineEdit" parent="GameUI"]
+layout_mode = 0
+offset_left = 3.0
+offset_top = 99.0
+offset_right = 507.0
+offset_bottom = 116.0
+placeholder_text = "Escribir..."
+
+[node name="HPBar" type="ProgressBar" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 30.0
+offset_right = 780.0
+offset_bottom = 44.0
+show_percentage = false
+
+[node name="HPLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 28.0
+offset_right = 578.0
+offset_bottom = 46.0
+text = "HP"
+horizontal_alignment = 2
+
+[node name="ManaBar" type="ProgressBar" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 48.0
+offset_right = 780.0
+offset_bottom = 62.0
+show_percentage = false
+
+[node name="ManaLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 46.0
+offset_right = 578.0
+offset_bottom = 64.0
+text = "Mana"
+horizontal_alignment = 2
+
+[node name="StaBar" type="ProgressBar" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 66.0
+offset_right = 780.0
+offset_bottom = 80.0
+show_percentage = false
+
+[node name="StaLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 64.0
+offset_right = 578.0
+offset_bottom = 82.0
+text = "Sta"
+horizontal_alignment = 2
+
+[node name="AguaBar" type="ProgressBar" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 84.0
+offset_right = 780.0
+offset_bottom = 98.0
+show_percentage = false
+
+[node name="AguaLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 82.0
+offset_right = 578.0
+offset_bottom = 100.0
+text = "Agua"
+horizontal_alignment = 2
+
+[node name="HamBar" type="ProgressBar" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 102.0
+offset_right = 780.0
+offset_bottom = 116.0
+show_percentage = false
+
+[node name="HamLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 100.0
+offset_right = 578.0
+offset_bottom = 118.0
+text = "Ham"
+horizontal_alignment = 2
+
+[node name="ExpBar" type="ProgressBar" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 120.0
+offset_right = 780.0
+offset_bottom = 134.0
+show_percentage = false
+
+[node name="ExpLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 118.0
+offset_right = 578.0
+offset_bottom = 136.0
+text = "Exp"
+horizontal_alignment = 2
+
+[node name="GoldLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 140.0
+offset_right = 780.0
+offset_bottom = 156.0
+text = "Oro: 0"
+
+[node name="LevelLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 680.0
+offset_top = 140.0
+offset_right = 780.0
+offset_bottom = 156.0
+text = "Lvl: 0"
+horizontal_alignment = 2
+
+[node name="NameLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 540.0
+offset_top = 5.0
+offset_right = 780.0
+offset_bottom = 25.0
+horizontal_alignment = 1
+
+[node name="InventoryGrid" type="GridContainer" parent="GameUI"]
+layout_mode = 0
+offset_left = 580.0
+offset_top = 160.0
+offset_right = 780.0
+offset_bottom = 360.0
+columns = 5
+
+[node name="MapLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 2.0
+offset_top = 534.0
+offset_right = 200.0
+offset_bottom = 552.0
+
+[node name="OnlineLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 2.0
+offset_top = 556.0
+offset_right = 200.0
+offset_bottom = 574.0
+
+[node name="CoordsLabel" type="Label" parent="GameUI"]
+layout_mode = 0
+offset_left = 2.0
+offset_top = 578.0
+offset_right = 200.0
+offset_bottom = 596.0

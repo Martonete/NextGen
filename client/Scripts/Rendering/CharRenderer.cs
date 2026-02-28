@@ -11,6 +11,8 @@ namespace TierrasSagradasAO.Rendering;
 ///   Heading 2 (E):  Escudo → Body → Head → Arma
 ///   Heading 3 (S):  Body → Head → Arma → Escudo
 ///   Heading 4 (W):  Arma → Body → Head → Escudo
+///
+/// All character components use Center=1 in VB6 (bodies are multi-tile sprites).
 /// </summary>
 public static class CharRenderer
 {
@@ -45,22 +47,22 @@ public static class CharRenderer
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos + headOffset, heading, data);
-                DrawHelmet(canvas, ch, screenPos + headOffset, heading, data);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 break;
 
             case 2: // East
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos + headOffset, heading, data);
-                DrawHelmet(canvas, ch, screenPos + headOffset, heading, data);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 break;
 
             case 3: // South (default)
                 DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos + headOffset, heading, data);
-                DrawHelmet(canvas, ch, screenPos + headOffset, heading, data);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
                 break;
@@ -68,8 +70,8 @@ public static class CharRenderer
             case 4: // West
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos + headOffset, heading, data);
-                DrawHelmet(canvas, ch, screenPos + headOffset, heading, data);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
                 break;
         }
@@ -92,9 +94,9 @@ public static class CharRenderer
         int bodyGrh = body.Walk[heading];
         int frame = ch.Moving ? animator.GetCurrentFrame(bodyGrh) : 0;
 
-        // VB6: Draw_Grh_Sombra at X-6, same Y, dark tint
+        // VB6: Draw_Grh_Sombra at X-6, same Y, dark tint, centered
         DrawGrh(canvas, data, bodyGrh, frame, pos + new Vector2(-6, 0),
-                false, new Color(0, 0, 0, 0.3f));
+                true, new Color(0, 0, 0, 0.3f));
     }
 
     private static void DrawBody(
@@ -110,40 +112,44 @@ public static class CharRenderer
         int frame = ch.Moving ? animator.GetCurrentFrame(bodyGrh) : 0;
 
         // VB6: dead characters get reduced alpha (TransparenciaBody + 45)
+        // All bodies use Center=1 in VB6
         byte alpha = ch.Dead ? (byte)100 : (byte)255;
-        DrawGrh(canvas, data, bodyGrh, frame, pos, false,
+        DrawGrh(canvas, data, bodyGrh, frame, pos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
     }
 
     private static void DrawHead(
-        Node2D canvas, Character ch, Vector2 pos, int heading,
-        GameData data)
+        Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
+        int heading, GameData data)
     {
         if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
         var head = data.Heads[ch.Head];
         if (head.Head[heading] == 0) return;
 
-        // VB6: heading 1 gets X offset -1
+        // VB6 head position:
+        // X: bodyScreenX + HeadOffset.X (minus 1 for NORTH)
+        // Y: bodyScreenY + HeadOffset.Y + 1
         float xAdj = heading == 1 ? -1f : 0f;
+        Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
         byte alpha = ch.Dead ? (byte)100 : (byte)255;
-        DrawGrh(canvas, data, head.Head[heading], 0,
-                pos + new Vector2(xAdj, 1), // VB6: +1 to Y
-                false,
+        DrawGrh(canvas, data, head.Head[heading], 0, headPos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
     }
 
     private static void DrawHelmet(
-        Node2D canvas, Character ch, Vector2 pos, int heading,
-        GameData data)
+        Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
+        int heading, GameData data)
     {
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         var casco = data.Cascos[ch.CascoAnim];
         if (casco.Head[heading] == 0) return;
 
-        // VB6: heading 1,2,3 get X offset +1
+        // VB6: helmet at same position as head, heading 1,2,3 get X offset +1
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
-        DrawGrh(canvas, data, casco.Head[heading], 0, pos + new Vector2(xAdj, 0));
+        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
+
+        DrawGrh(canvas, data, casco.Head[heading], 0, helmetPos, true);
     }
 
     private static void DrawWeapon(
@@ -158,9 +164,9 @@ public static class CharRenderer
         animator.StartAnim(weapGrh, ch.Moving);
         int frame = ch.Moving ? animator.GetCurrentFrame(weapGrh) : 0;
 
-        // VB6: weapon drawn at bodyPos + headOffset + (0, 38)
+        // VB6: weapon drawn at bodyPos + headOffset.X, headOffset.Y + 38, centered
         Vector2 pos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, weapGrh, frame, pos);
+        DrawGrh(canvas, data, weapGrh, frame, pos, true);
     }
 
     private static void DrawShield(
@@ -175,9 +181,9 @@ public static class CharRenderer
         animator.StartAnim(shldGrh, ch.Moving);
         int frame = ch.Moving ? animator.GetCurrentFrame(shldGrh) : 0;
 
-        // VB6: shield drawn at bodyPos + headOffset + (0, 38)
+        // VB6: shield drawn at bodyPos + headOffset.X, headOffset.Y + 38, centered
         Vector2 pos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, shldGrh, frame, pos);
+        DrawGrh(canvas, data, shldGrh, frame, pos, true);
     }
 
     private static void DrawFx(
@@ -196,7 +202,7 @@ public static class CharRenderer
             int frame = animator.GetCurrentFrame(fx.Animacion);
 
             Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
-            DrawGrh(canvas, data, fx.Animacion, frame, fxPos, false,
+            DrawGrh(canvas, data, fx.Animacion, frame, fxPos, true,
                     new Color(1, 1, 1, 150f / 255f)); // VB6: alpha 150
         }
     }
@@ -238,7 +244,6 @@ public static class CharRenderer
     {
         if (ch.Privileges > 0)
         {
-            // VB6: ColoresPJ by privilege level
             return ch.Privileges switch
             {
                 1 => new Color(0.0f, 0.8f, 0.8f),    // Consejero - cyan

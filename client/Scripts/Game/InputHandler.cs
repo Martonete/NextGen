@@ -62,15 +62,20 @@ public class InputHandler
 
     /// <summary>
     /// Handle mouse click → left click packet.
-    /// Called from Main._UnhandledInput.
+    /// Called from Main._UnhandledInput with position already relative to game viewport.
+    /// Game viewport is 534x408 with HalfWindowTileWidth=8, HalfWindowTileHeight=6.
     /// </summary>
-    public void HandleClick(Vector2 screenPos, int userX, int userY)
+    public void HandleClick(Vector2 viewportPos, int userX, int userY)
     {
-        // Convert screen position to tile coordinates
-        float centerX = 400; // ScreenWidth/2
-        float centerY = 300; // ScreenHeight/2
-        int tileX = userX + (int)((screenPos.X - centerX) / 32);
-        int tileY = userY + (int)((screenPos.Y - centerY) / 32);
+        // Convert viewport-relative position to tile coordinates
+        // Viewport center maps to user position
+        const int HalfTilesX = 8;
+        const int HalfTilesY = 6;
+        float centerX = HalfTilesX * 32f;
+        float centerY = HalfTilesY * 32f;
+
+        int tileX = userX + (int)((viewportPos.X - centerX) / 32);
+        int tileY = userY + (int)((viewportPos.Y - centerY) / 32);
 
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {

@@ -13,6 +13,15 @@ public class CharacterPreview
 }
 
 /// <summary>
+/// A chat/console message with color for the UI console.
+/// </summary>
+public class ChatMessage
+{
+    public string Text = "";
+    public string Color = "FFFFFF"; // hex color without #
+}
+
+/// <summary>
 /// Central game state: player position, characters, map, inventory, stats.
 /// Updated by PacketHandler, read by renderers.
 /// </summary>
@@ -72,6 +81,9 @@ public class GameState
 
     // Spells (20 slots)
     public SpellSlot[] Spells = new SpellSlot[20];
+
+    // Chat message queue — drained by Main.cs each frame
+    public Queue<ChatMessage> ChatMessages = new();
 
     public GameState()
     {
