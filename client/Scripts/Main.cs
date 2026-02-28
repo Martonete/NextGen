@@ -8,9 +8,6 @@ using TierrasSagradasAO.Rendering;
 
 namespace TierrasSagradasAO;
 
-/// <summary>
-/// Main entry point. Orchestrates: data loading → TCP connect → login → game loop.
-/// </summary>
 public partial class Main : Node2D
 {
     // === HARDCODED FOR TESTING — replace with UI later ===
@@ -33,29 +30,24 @@ public partial class Main : Node2D
     private bool _loginSent;
     private bool _charSelectSent;
     private bool _offlineMode;
+    private double _loginTimeout;
+    private int _packetCount;
 
     public override void _Ready()
     {
         GD.Print("=== Tierras Sagradas AO — Godot 4 Client ===");
 
-        // Resolve data path
         string dataPath;
         if (OS.HasFeature("editor"))
-        {
-            // Running from editor — use project-relative path
             dataPath = ProjectSettings.GlobalizePath("res://Data");
-        }
         else
-        {
             dataPath = System.IO.Path.Combine(
                 System.IO.Path.GetDirectoryName(OS.GetExecutablePath()) ?? ".",
                 "Data"
             );
-        }
 
         GD.Print($"[MAIN] Data path: {dataPath}");
 
-        // Load all game data
         _gameData.LoadAll(dataPath);
 
         if (!_gameData.IsLoaded)
@@ -77,6 +69,7 @@ public partial class Main : Node2D
         _tcp = new AoTcpClient();
         _inputHandler = new InputHandler(_tcp, _state);
         _connecting = true;
+        _loginTimeout = 5.0; // 5 second timeout for login
 
         _ = ConnectAndLogin();
     }
@@ -90,26 +83,21 @@ public partial class Main : Node2D
             _connecting = false;
             GD.Print("[MAIN] Connected! Sending login...");
 
-            // Wait a frame for the connection to stabilize
             await Task.Delay(100);
 
-            // Send KERD22 (version check) first
             _tcp.SendPacket("KERD22");
+            GD.Print("[MAIN] Sent: KERD22");
 
-            // Then send ALOGIN
             await Task.Delay(50);
             _tcp.SendPacket($"ALOGIN{TestAccount}\n{TestPassword}");
             _loginSent = true;
-
-            GD.Print("[MAIN] Login packet sent, waiting for response...");
+            GD.Print("[MAIN] Sent: ALOGIN (login packet)");
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Connection failed: {ex.Message}");
-            GD.Print("[MAIN] Starting OFFLINE mode — loading Mapa1 for preview...");
             _connecting = false;
-            _offlineMode = true;
-            StartOfflineMode();
+            EnterOfflineMode();
         }
     }
 
@@ -121,6 +109,17 @@ public partial class Main : Node2D
         var packets = _tcp.PollPackets();
         foreach (string pkt in packets)
         {
+            _packetCount++;
+            // Log first 20 packets for debugging
+            if (_packetCount <= 20)
+            {
+                string preview = pkt.Length > 80 ? pkt[..80] + "..." : pkt;
+                // Show hex of first 20 bytes for debugging encoding issues
+                string hex = "";
+                for (int i = 0; i < Math.Min(20, pkt.Length); i++)
+                    hex += ((int)pkt[i]).ToString("X2") + " ";
+                GD.Print($"[PKT #{_packetCount}] len={pkt.Length} text=\"{preview}\" hex=[{hex.Trim()}]");
+            }
             _packetHandler.HandlePacket(pkt);
         }
 
@@ -135,26 +134,34 @@ public partial class Main : Node2D
         if (_state.IsLogged && !_charSelectSent)
         {
             _charSelectSent = true;
-            GD.Print("[MAIN] Sending character select...");
-            // OOLOGI = character selection, THCJXD = final confirm
+            GD.Print("[MAIN] LOGGED received! Sending character select...");
             _tcp.SendPacket($"OOLOGI{TestCharName}");
             _tcp.SendPacket("THCJXD");
+        }
+
+        // Login timeout — if no LOGGED after 5 seconds, go offline
+        if (_loginSent && !_state.IsLogged && !_offlineMode)
+        {
+            _loginTimeout -= delta;
+            if (_loginTimeout <= 0)
+            {
+                GD.PrintErr($"[MAIN] Login timeout! Received {_packetCount} packets but no LOGGED. Entering offline mode.");
+                EnterOfflineMode();
+            }
         }
 
         // Update animations
         _animator.Update((float)delta, _gameData);
 
-        // Update smooth movement for all characters
+        // Update smooth movement
         UpdateMovement((float)delta);
 
-        // In offline mode, handle WASD to move camera locally
         if (_offlineMode)
         {
             ProcessOfflineInput();
             return;
         }
 
-        // Process input
         _inputHandler?.Process(delta);
     }
 
@@ -166,9 +173,33 @@ public partial class Main : Node2D
         }
     }
 
+    private void EnterOfflineMode()
+    {
+        _offlineMode = true;
+        GD.Print("[MAIN] === OFFLINE MODE ===");
+        GD.Print("[MAIN] Loading Mapa1 at (50,50). Use WASD to move camera.");
+
+        _state.CurrentMap = 1;
+        _state.NeedMapLoad = true;
+        _state.UserPosX = 50;
+        _state.UserPosY = 50;
+
+        var dummy = new Character
+        {
+            Body = 1,
+            Head = 1,
+            Heading = 3,
+            PosX = 50,
+            PosY = 50,
+            Name = "Offline Preview"
+        };
+        _state.UserCharIndex = 1;
+        _state.Characters[1] = dummy;
+    }
+
     private void UpdateMovement(float delta)
     {
-        float scrollPixels = ScrollSpeed * delta * 60f; // Normalize to ~60fps
+        float scrollPixels = ScrollSpeed * delta * 60f;
 
         foreach (var kvp in _state.Characters)
         {
@@ -176,7 +207,6 @@ public partial class Main : Node2D
             if (!ch.Moving && ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
                 continue;
 
-            // Interpolate move offset toward 0
             if (ch.MoveOffsetX > 0)
             {
                 ch.MoveOffsetX -= scrollPixels;
@@ -199,11 +229,8 @@ public partial class Main : Node2D
                 if (ch.MoveOffsetY > 0) ch.MoveOffsetY = 0;
             }
 
-            // Stop moving when offset is zero
             if (ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
-            {
                 ch.Moving = false;
-            }
         }
     }
 
@@ -222,7 +249,7 @@ public partial class Main : Node2D
         {
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear();
-            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded ({_state.MapName})");
+            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)
         {
@@ -256,31 +283,7 @@ public partial class Main : Node2D
             ch.PosX = newX;
             ch.PosY = newY;
         }
-        _offlineMoveTimer = 0.15; // 150ms between moves
-    }
-
-    private void StartOfflineMode()
-    {
-        // Load map 1 for preview
-        _state.CurrentMap = 1;
-        _state.NeedMapLoad = true;
-        _state.UserPosX = 50;
-        _state.UserPosY = 50;
-
-        // Create a dummy character so the camera has a reference
-        var dummy = new Character
-        {
-            Body = 1,
-            Head = 1,
-            Heading = 3,
-            PosX = 50,
-            PosY = 50,
-            Name = "Offline Preview"
-        };
-        _state.UserCharIndex = 1;
-        _state.Characters[1] = dummy;
-
-        GD.Print("[MAIN] Offline mode: Mapa1, position (50,50). Use WASD to move camera.");
+        _offlineMoveTimer = 0.15;
     }
 
     private const float ScrollSpeed = 6f;
