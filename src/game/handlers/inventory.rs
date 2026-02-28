@@ -109,6 +109,15 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
             }
         }
 
+        // VB6: Can't equip armor/shield/helmet while navigating (InvUsuario.bas)
+        let is_navigating = state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
+        if is_navigating {
+            match obj_data.obj_type {
+                ObjType::Armor | ObjType::Shield | ObjType::Helmet => return,
+                _ => {}
+            }
+        }
+
         // Two-handed weapon check: unequip shield if equipping 2h weapon
         if obj_data.obj_type == ObjType::Weapon && obj_data.dos_manos {
             let shield_slot = state.users.get(&conn_id).map(|u| u.equip.shield).unwrap_or(0);
@@ -222,7 +231,7 @@ pub(super) fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: us
         match obj_type {
             ObjType::Weapon => {
                 user.equip.weapon = 0;
-                user.weapon_anim = 0;
+                user.weapon_anim = super::common::NINGUN_ARMA;
             }
             ObjType::Armor => {
                 user.equip.armor = 0;
@@ -233,11 +242,11 @@ pub(super) fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: us
             }
             ObjType::Shield => {
                 user.equip.shield = 0;
-                user.shield_anim = 0;
+                user.shield_anim = super::common::NINGUN_ESCUDO;
             }
             ObjType::Helmet => {
                 user.equip.helmet = 0;
-                user.casco_anim = 0;
+                user.casco_anim = super::common::NINGUN_CASCO;
             }
             _ => {}
         }
@@ -489,9 +498,9 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                             // VB6: dead dismount → ghost body/head, no equipment
                             u.body = DEAD_BODY_NEUTRAL;
                             u.head = DEAD_HEAD_NEUTRAL;
-                            u.weapon_anim = 0;
-                            u.shield_anim = 0;
-                            u.casco_anim = 0;
+                            u.weapon_anim = super::common::NINGUN_ARMA;
+                            u.shield_anim = super::common::NINGUN_ESCUDO;
+                            u.casco_anim = super::common::NINGUN_CASCO;
                         }
                     }
                 }
@@ -501,9 +510,9 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.old_head = u.head;
                     u.head = 0;
-                    u.weapon_anim = 0;
-                    u.shield_anim = 0;
-                    u.casco_anim = 0;
+                    u.weapon_anim = super::common::NINGUN_ARMA;
+                    u.shield_anim = super::common::NINGUN_ESCUDO;
+                    u.casco_anim = super::common::NINGUN_CASCO;
                     u.navigating = true;
                     if ropaje > 0 {
                         u.body = ropaje;

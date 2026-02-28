@@ -10,6 +10,13 @@ use crate::game::types::{GameState, UserState, CleanWorldEntry, MAX_INVENTORY_SL
 use crate::game::world;
 
 // =====================================================================
+// VB6 "empty" animation constants (Declares.bas: NingunArma/NingunEscudo/NingunCasco = 2)
+// =====================================================================
+pub(super) const NINGUN_ARMA: i32 = 2;
+pub(super) const NINGUN_ESCUDO: i32 = 2;
+pub(super) const NINGUN_CASCO: i32 = 2;
+
+// =====================================================================
 // Map tile helpers
 // =====================================================================
 

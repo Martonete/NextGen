@@ -929,14 +929,15 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
         user.montado = true;
         user.montado_body = user.body;
         user.body = mount_body;
-        user.weapon_anim = 0;
-        user.shield_anim = 0;
-        user.casco_anim = 0;
+        user.weapon_anim = super::common::NINGUN_ARMA;
+        user.shield_anim = super::common::NINGUN_ESCUDO;
+        user.casco_anim = super::common::NINGUN_CASCO;
     }
 
     let cp = {
         let user = state.users.get(&conn_id).unwrap();
-        format!("CP{},{},{},{},{},{},{}", user.char_index.0, user.body, user.head, user.heading, 0, 0, 0)
+        format!("CP{},{},{},{},{},{},{}", user.char_index.0, user.body, user.head, user.heading,
+            super::common::NINGUN_ARMA, super::common::NINGUN_ESCUDO, super::common::NINGUN_CASCO)
     };
     state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
     state.send_to(conn_id, &format!("{}Te has montado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;

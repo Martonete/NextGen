@@ -456,9 +456,9 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         // Dead body model (neutral)
         user.body = DEAD_BODY_NEUTRAL;
         user.head = DEAD_HEAD_NEUTRAL;
-        user.weapon_anim = 0;
-        user.shield_anim = 0;
-        user.casco_anim = 0;
+        user.weapon_anim = super::common::NINGUN_ARMA;
+        user.shield_anim = super::common::NINGUN_ESCUDO;
+        user.casco_anim = super::common::NINGUN_CASCO;
         // Resurrection cooldown (20 ticks before player can be rezzed)
         user.time_revivir = 20;
     }

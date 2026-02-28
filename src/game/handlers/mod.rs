@@ -908,9 +908,9 @@ async fn connect_user(
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.navigating {
             user.head = 0;
-            user.weapon_anim = 0;
-            user.shield_anim = 0;
-            user.casco_anim = 0;
+            user.weapon_anim = common::NINGUN_ARMA;
+            user.shield_anim = common::NINGUN_ESCUDO;
+            user.casco_anim = common::NINGUN_CASCO;
             // Body should already be boat ropaje from charfile save
         }
     }
