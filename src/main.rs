@@ -166,6 +166,12 @@ async fn main() {
             }
 
             ServerEvent::Disconnected(conn_id) => {
+                // Handle CvC disconnect (counts as death for scoring)
+                let in_cvc = state.users.get(&conn_id).map(|u| u.en_cvc).unwrap_or(false);
+                if in_cvc && state.cvc_funciona {
+                    game::handlers::cvc_player_disconnect(&mut state, conn_id).await;
+                }
+
                 // Get user info and save charfile before removal
                 let user_info = state.users.get(&conn_id)
                     .filter(|u| u.logged)

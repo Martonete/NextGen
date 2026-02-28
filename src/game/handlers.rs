@@ -26,7 +26,7 @@ use crate::data::{accounts, charfile};
 use crate::data::objects::ObjType;
 use crate::data::maps::Trigger;
 use crate::data::guilds;
-use super::types::{GameState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
+use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
 use super::world;
 use super::npc;
 use crate::data::npcs::NpcType;
@@ -169,6 +169,10 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_pcwc(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::PCCC) {
         handle_pccc(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::GUILD_BANK_PERMS_QUERY) {
+        handle_vlkg(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::GUILD_BANK_PERMS_SET) {
+        handle_bovc(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CLOSE_GUILD_BANK) {
         handle_fincbn(state, conn_id).await;
     } else if data.starts_with(client_opcodes::CAST_BY_NAME) {
@@ -227,6 +231,8 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_bof(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::TRAIN_CREATURE) {
         handle_entr(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::USE_SKILL) {
+        handle_uk(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::SAFE_TOGGLE) {
         handle_safe_toggle(state, conn_id).await;
     } else if data.starts_with(client_opcodes::USE_ITEM_CLICK) {
@@ -3894,6 +3900,13 @@ async fn user_die(state: &mut GameState, conn_id: ConnectionId, killer_id: Optio
         user.time_revivir = 20;
     }
 
+    // CvC death: don't drop items, just score the death and return
+    let en_cvc = state.users.get(&conn_id).map(|u| u.en_cvc).unwrap_or(false);
+    if en_cvc && state.cvc_funciona {
+        cvc_player_death(state, conn_id).await;
+        return;
+    }
+
     // Deequip all items and drop inventory (VB6 UserDie lines 1750-1800)
     if let Some(user) = state.users.get_mut(&conn_id) {
         // Reset equipment slots
@@ -4477,7 +4490,10 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/CASTILLOS" {
         handle_slash_castillos(state, conn_id).await;
     } else if cmd_upper == "/EMOTICONS" {
-        state.send_to(conn_id, &format!("{}Emoticones toggled.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        // VB6: Toggle emoticons flag (no server response)
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.emoticons = !u.emoticons;
+        }
     } else if cmd_upper.starts_with("/VOTO ") {
         let candidate = cmd[6..].trim();
         handle_slash_voto(state, conn_id, candidate).await;
@@ -4625,11 +4641,18 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let args = &cmd[8..];
         handle_slash_talkas(state, conn_id, args).await;
     } else if cmd_upper == "/GUARDARMAPA" {
+        // VB6: Admin only. Saves current map to disk (GrabarMapa).
+        let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
+        if !is_admin { return; }
+        // Map saving not implemented (maps are loaded read-only from binary files)
         state.send_to(conn_id, &format!("{}Mapa guardado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
     } else if cmd_upper.starts_with("/SETDESC ") {
         let args = &cmd[9..];
         handle_slash_setdesc(state, conn_id, args).await;
     } else if cmd_upper == "/RELOADSINI" || cmd_upper == "/LOADOBJ" || cmd_upper == "/LOADHECHIZOS" || cmd_upper == "/LOADNPCS" || cmd_upper == "/LOADBALANCE" || cmd_upper == "/LOADQUESTS" || cmd_upper == "/LOADPREMIOS" {
+        // VB6: Admin-only reload commands. Not hot-reloadable in Rust, but acknowledge.
+        let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
+        if !is_admin { return; }
         state.send_to(conn_id, &format!("{}Datos recargados.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
     } else if cmd_upper.starts_with("/STOP ") {
         let target = cmd[6..].trim();
@@ -4637,6 +4660,12 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/STOPOFF ") {
         let target = cmd[9..].trim();
         handle_slash_stop(state, conn_id, target, false).await;
+    } else if cmd_upper.starts_with("/MODMAPINFO ") {
+        // VB6: GM command to modify map properties (PK, PART, LUZ, RGB)
+        let is_gm = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::DIOS).unwrap_or(false);
+        if !is_gm { return; }
+        let args = &cmd[12..];
+        handle_slash_modmapinfo(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/CHEAT ") {
         let target = cmd[7..].trim();
         handle_slash_cheat(state, conn_id, target).await;
@@ -10804,7 +10833,7 @@ async fn resolve_attack_user(state: &mut GameState, conn_id: ConnectionId, victi
 async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
     let (map, skill, class, char_index, already_hidden) = match state.users.get(&conn_id) {
         Some(u) if u.logged && !u.dead => {
-            (u.pos_map, u.skills.get(5).copied().unwrap_or(0), u.class.clone(), u.char_index, u.hidden)
+            (u.pos_map, u.skills.get(7).copied().unwrap_or(0), u.class.clone(), u.char_index, u.hidden)
         }
         _ => return,
     };
@@ -10848,7 +10877,7 @@ async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
         state.send_to(conn_id, "||808").await; // "Te has ocultado."
         // Skill gain
         if let Some(u) = state.users.get_mut(&conn_id) {
-            try_level_skill(u, 5); // Ocultarse = skill index 5
+            try_level_skill(u, 8); // Ocultarse = eSkill 8 (1-based)
         }
     } else {
         // Failure
@@ -10861,7 +10890,7 @@ async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
 fn check_permanecer_oculto(user: &mut super::types::UserState) -> bool {
     if !user.hidden { return false; }
 
-    let skill = user.skills.get(5).copied().unwrap_or(0);
+    let skill = user.skills.get(7).copied().unwrap_or(0); // Ocultarse = eSkill 8, 0-based = 7
     let suerte = match skill {
         0..=10 => 35,
         11..=20 => 30,
@@ -15360,6 +15389,68 @@ async fn handle_slash_stop(state: &mut GameState, conn_id: ConnectionId, target:
 }
 
 /// /CHEAT nick — Toggle god mode for user (full HP/MP/STA regen).
+/// /MODMAPINFO — Modify map properties: PK, PART, LUZ, RGB.
+/// VB6: TCP.bas /MODMAPINFO handler (Dios+ privilege).
+async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.is_empty() { return; }
+
+    let sub_cmd = parts[0].to_uppercase();
+    let map_idx = map as usize;
+
+    match sub_cmd.as_str() {
+        "PK" => {
+            // VB6: /MODMAPINFO PK <0|1> — 0 = PvP on (pk=true), 1 = Safe (pk=false)
+            let val: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(-1);
+            if val < 0 || val > 1 { return; }
+            let pk = val == 0; // VB6 inverts: 0 = PvP, 1 = safe
+            if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
+                game_map.info.pk = pk;
+            }
+            // Persist to map dat file
+            let map_dat = state.base_path.join("Maps").join(format!("mapa{}.dat", map));
+            let section = format!("Mapa{}", map);
+            let _ = crate::config::write_var(map_dat.to_str().unwrap_or(""), &section, "Pk", &val.to_string());
+        }
+        "PART" => {
+            // VB6: /MODMAPINFO PART <particle_id> — Set particle at player tile
+            let particle_id: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            if particle_id == 0 { return; }
+            let pcf = format!("PCF{},{},{},0", particle_id, x, y);
+            state.send_data(SendTarget::ToMap(map), &pcf).await;
+        }
+        "LUZ" => {
+            // VB6: /MODMAPINFO LUZ <range> <R> <G> <B>
+            let range: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            if range == 0 { return; }
+            let r: i32 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let g: i32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let b: i32 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let pcl = format!("PCL{},{},{},{},{},{}", x, y, range, r, g, b);
+            state.send_data(SendTarget::ToMap(map), &pcl).await;
+        }
+        "RGB" => {
+            // VB6: /MODMAPINFO RGB <R> <G> <B> — Set map ambient light
+            let r: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let g: i32 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
+            let b: i32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
+            if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
+                game_map.info.r = r;
+                game_map.info.g = g;  // Note: VB6 has r/b/g order bug, we keep correct r/g/b
+                game_map.info.b = b;
+            }
+            let pcr = format!("PCR{},{},{}", r, g, b);
+            state.send_data(SendTarget::ToMap(map), &pcr).await;
+        }
+        _ => {}
+    }
+}
+
 async fn handle_slash_cheat(state: &mut GameState, conn_id: ConnectionId, target: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
@@ -16248,6 +16339,27 @@ async fn handle_slash_resetvals(state: &mut GameState, conn_id: ConnectionId, va
             state.send_to(conn_id, "||588").await;
         }
         "CVC" => {
+            if state.cvc_funciona {
+                // Revive dead CvC participants before warping back
+                let dead_cvc: Vec<ConnectionId> = state.users.iter()
+                    .filter(|(_, u)| u.en_cvc && u.dead)
+                    .map(|(&cid, _)| cid)
+                    .collect();
+                for cid in dead_cvc {
+                    revive_user(state, cid).await;
+                }
+                llevar_usuarios_cvc(state).await;
+                state.cvc_funciona = false;
+                state.cvc_clan1_count = 0;
+                state.cvc_clan2_count = 0;
+                state.cvc_guild1 = 0;
+                state.cvc_guild2 = 0;
+                state.cvc_nombre1.clear();
+                state.cvc_nombre2.clear();
+            }
+            state.cvc_pending_target_guild = 0;
+            state.cvc_pending_challenger_guild = 0;
+            state.cvc_pending_challenger_name.clear();
             state.send_to(conn_id, "||589").await;
         }
         "INVOCACIONES" => {
@@ -17218,47 +17330,245 @@ async fn handle_slash_eventos(state: &mut GameState, conn_id: ConnectionId) {
     }
 }
 
+/// Restricted maps where CvC participants cannot join from
+const CVC_RESTRICTED_MAPS: [i32; 9] = [71, 78, 100, 104, 106, 108, 109, 110, 141];
+
+/// Check if a user is eligible for CvC (alive, seguro_cvc on, not on restricted map, no god items)
+fn is_cvc_eligible(user: &UserState, objects: &[crate::data::objects::ObjData]) -> bool {
+    if !user.logged || user.dead || !user.seguro_cvc { return false; }
+    if CVC_RESTRICTED_MAPS.contains(&user.pos_map) { return false; }
+    // Check for god items equipped
+    let equip_slots = [user.equip.weapon, user.equip.armor, user.equip.shield, user.equip.helmet];
+    for slot_idx in equip_slots {
+        if slot_idx > 0 && (slot_idx as usize) <= user.inventory.len() {
+            let obj_idx = user.inventory[(slot_idx - 1) as usize].obj_index;
+            if obj_idx > 0 {
+                if let Some(obj) = objects.get((obj_idx - 1) as usize) {
+                    if obj.item_dios { return false; }
+                }
+            }
+        }
+    }
+    true
+}
+
+/// Return all CvC participants to their saved positions and clear their CvC flags.
+async fn llevar_usuarios_cvc(state: &mut GameState) {
+    // Collect all en_cvc users
+    let cvc_users: Vec<(ConnectionId, i32, i32, i32)> = state.users.iter()
+        .filter(|(_, u)| u.en_cvc)
+        .map(|(&cid, u)| (cid, u.vieja_pos_map, u.vieja_pos_x, u.vieja_pos_y))
+        .collect();
+
+    for (cid, old_map, old_x, old_y) in cvc_users {
+        // Clear CvC flags
+        if let Some(u) = state.users.get_mut(&cid) {
+            u.en_cvc = false;
+            u.cvc_blue = false;
+            u.vieja_pos_map = 0;
+            u.vieja_pos_x = 0;
+            u.vieja_pos_y = 0;
+        }
+        // Warp back (if they have a valid saved position)
+        if old_map > 0 {
+            warp_user(state, cid, old_map, old_x, old_y).await;
+        }
+    }
+}
+
+/// End the CvC battle. `winner_guild` is the guild index of the winning clan.
+async fn cvc_end_battle(state: &mut GameState, winner_guild: i32) {
+    let loser_guild = if winner_guild == state.cvc_guild1 {
+        state.cvc_guild2
+    } else {
+        state.cvc_guild1
+    };
+
+    let winner_name = if winner_guild == state.cvc_guild1 {
+        state.cvc_nombre1.clone()
+    } else {
+        state.cvc_nombre2.clone()
+    };
+    let loser_name = if loser_guild == state.cvc_guild1 {
+        state.cvc_nombre1.clone()
+    } else {
+        state.cvc_nombre2.clone()
+    };
+
+    // Broadcast result: ||85@winner@loser
+    let pkt = format!("||85@{}@{}", winner_name, loser_name);
+    state.send_data(SendTarget::ToAll, &pkt).await;
+
+    // Update guild files: winner gets +1 CVCG, +75 reputation; loser gets +1 CVCP
+    if let Some(mut guild) = guilds::load_guild(&state.base_path, winner_guild) {
+        guild.cvc_wins += 1;
+        guild.reputation += 75;
+        guilds::save_guild(&state.base_path, &guild);
+    }
+    if let Some(mut guild) = guilds::load_guild(&state.base_path, loser_guild) {
+        guild.cvc_losses += 1;
+        guilds::save_guild(&state.base_path, &guild);
+    }
+
+    // Revive dead participants before warping back
+    let dead_cvc_users: Vec<ConnectionId> = state.users.iter()
+        .filter(|(_, u)| u.en_cvc && u.dead)
+        .map(|(&cid, _)| cid)
+        .collect();
+    for cid in dead_cvc_users {
+        revive_user(state, cid).await;
+    }
+
+    // Warp everyone back
+    llevar_usuarios_cvc(state).await;
+
+    // Clear all CvC state
+    state.cvc_funciona = false;
+    state.cvc_clan1_count = 0;
+    state.cvc_clan2_count = 0;
+    state.cvc_guild1 = 0;
+    state.cvc_guild2 = 0;
+    state.cvc_nombre1.clear();
+    state.cvc_nombre2.clear();
+}
+
+/// Handle CvC participant death — decrement counter, check if battle ends.
+async fn cvc_player_death(state: &mut GameState, conn_id: ConnectionId) {
+    let is_blue = state.users.get(&conn_id).map(|u| u.cvc_blue).unwrap_or(false);
+
+    if is_blue {
+        state.cvc_clan1_count -= 1;
+        if state.cvc_clan1_count <= 0 {
+            // Blue team eliminated — Red (guild2) wins
+            cvc_end_battle(state, state.cvc_guild2).await;
+            return;
+        }
+    } else {
+        state.cvc_clan2_count -= 1;
+        if state.cvc_clan2_count <= 0 {
+            // Red team eliminated — Blue (guild1) wins
+            cvc_end_battle(state, state.cvc_guild1).await;
+            return;
+        }
+    }
+
+    // Announce remaining counts
+    let msg = format!("{}CvC: {} ({}) vs {} ({}){}",
+        server_opcodes::CONSOLE_MSG,
+        state.cvc_nombre1, state.cvc_clan1_count,
+        state.cvc_nombre2, state.cvc_clan2_count,
+        font_types::INFO);
+    // Send to all CvC participants
+    let cvc_conns: Vec<ConnectionId> = state.users.iter()
+        .filter(|(_, u)| u.en_cvc)
+        .map(|(&cid, _)| cid)
+        .collect();
+    for cid in cvc_conns {
+        state.send_to(cid, &msg).await;
+    }
+}
+
+/// Handle CvC participant disconnect — same as death for scoring purposes.
+pub async fn cvc_player_disconnect(state: &mut GameState, conn_id: ConnectionId) {
+    if !state.cvc_funciona { return; }
+    let is_in_cvc = state.users.get(&conn_id).map(|u| u.en_cvc).unwrap_or(false);
+    if !is_in_cvc { return; }
+
+    cvc_player_death(state, conn_id).await;
+
+    // Clear CvC flags on the disconnecting user
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.en_cvc = false;
+        u.cvc_blue = false;
+    }
+}
+
 /// /CVC <clan_name> — Challenge another clan to CvC. Requires guild leader/sub-leader.
 async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionId, target_clan: &str) {
-    let (name, guild_index, gold, dead) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.char_name.clone(), u.guild_index, u.gold, u.dead),
+    let (char_name, guild_index, dead, map) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.char_name.clone(), u.guild_index, u.dead, u.pos_map),
         _ => return,
     };
 
-    if dead || guild_index <= 0 {
-        state.send_to(conn_id, &format!("{}No puedes iniciar CvC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    if dead {
+        state.send_to(conn_id, &format!("{}Estas muerto!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+    if guild_index <= 0 {
+        state.send_to(conn_id, "||120").await; // No guild
         return;
     }
     if state.cvc_funciona {
-        state.send_to(conn_id, &format!("{}Ya hay un CvC en curso.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_to(conn_id, "||364").await; // CvC already active
         return;
     }
-    if gold < CVC_COST {
-        state.send_to(conn_id, &format!("{}Necesitas {} de oro.{}", server_opcodes::CONSOLE_MSG, CVC_COST, font_types::INFO)).await;
+    if state.cvc_pending_target_guild > 0 {
+        state.send_to(conn_id, &format!("{}Ya hay un desafio CvC pendiente.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+    if map == 141 { return; } // Jail
+
+    // Validate caller is leader or sub-leader of their guild
+    let my_guild = guilds::load_guild(&state.base_path, guild_index);
+    let is_leader = match &my_guild {
+        Some(g) => {
+            let name_upper = char_name.to_uppercase();
+            g.leader.to_uppercase() == name_upper
+                || g.sub_lider1.to_uppercase() == name_upper
+                || g.sub_lider2.to_uppercase() == name_upper
+        }
+        None => false,
+    };
+    if !is_leader {
+        state.send_to(conn_id, &format!("{}Solo el lider o sub-lider puede desafiar a CvC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
         return;
     }
 
-    // Find target clan members online
+    // Find target guild
     let target_upper = target_clan.to_uppercase();
-    let target_guild_idx = state.users.values()
-        .find(|u| u.logged && u.guild_index > 0 && {
-            // Match guild by checking any member
-            guilds::find_guild_by_name(&state.base_path, &target_upper).unwrap_or(0) == u.guild_index
-        })
-        .map(|u| u.guild_index);
+    let target_guild_idx = match guilds::find_guild_by_name(&state.base_path, &target_upper) {
+        Some(idx) if idx != guild_index => idx,
+        _ => {
+            state.send_to(conn_id, &format!("{}Clan no encontrado o es tu propio clan.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
 
-    if target_guild_idx.is_none() || target_guild_idx == Some(guild_index) {
-        state.send_to(conn_id, &format!("{}Clan no encontrado o es tu propio clan.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    // Count eligible members from challenger's clan
+    let objects = &state.game_data.objects;
+    let my_eligible: i32 = state.users.values()
+        .filter(|u| u.guild_index == guild_index && is_cvc_eligible(u, objects))
+        .count() as i32;
+
+    if my_eligible < 1 {
+        state.send_to(conn_id, &format!("{}Tu clan no tiene miembros elegibles para CvC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
         return;
     }
 
-    // Announce
-    let pkt = format!("||413@{}", name);
-    state.send_data(SendTarget::ToAll, &pkt).await;
-    let pkt2 = format!("||414@{}", target_clan);
-    state.send_to(conn_id, &pkt2).await;
+    // Find the target guild's leader online to send the challenge
+    let target_guild = guilds::load_guild(&state.base_path, target_guild_idx);
+    let target_leader_name = target_guild.as_ref().map(|g| g.leader.to_uppercase()).unwrap_or_default();
+    let target_leader_conn = state.users.iter()
+        .find(|(_, u)| u.logged && u.guild_index == target_guild_idx && u.char_name.to_uppercase() == target_leader_name)
+        .map(|(&cid, _)| cid);
 
-    state.send_to(conn_id, &format!("{}Desafio CvC enviado a {}.{}", server_opcodes::CONSOLE_MSG, target_clan, font_types::INFO)).await;
+    if target_leader_conn.is_none() {
+        state.send_to(conn_id, &format!("{}El lider del clan {} no esta online.{}", server_opcodes::CONSOLE_MSG, target_clan, font_types::INFO)).await;
+        return;
+    }
+    let target_leader_id = target_leader_conn.unwrap();
+
+    // Store pending challenge
+    let my_guild_name = my_guild.as_ref().map(|g| g.name.clone()).unwrap_or_default();
+    state.cvc_pending_challenger_guild = guild_index;
+    state.cvc_pending_target_guild = target_guild_idx;
+    state.cvc_pending_challenger_name = my_guild_name.clone();
+
+    // Send challenge to target leader: ||413@<challenger_clan>@<eligible_count>
+    let pkt = format!("||413@{}@{}", my_guild_name, my_eligible);
+    state.send_to(target_leader_id, &pkt).await;
+
+    state.send_to(conn_id, &format!("{}Desafio CvC enviado a {}. Esperando respuesta de su lider.{}", server_opcodes::CONSOLE_MSG, target_clan, font_types::INFO)).await;
 }
 
 /// /NCVC — Disable CvC safety (opt out of auto-warp).
@@ -17266,7 +17576,7 @@ async fn handle_slash_ncvc(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.seguro_cvc = false;
     }
-    state.send_to(conn_id, "SEGCVCOFF").await;
+    state.send_to(conn_id, "||370").await;
 }
 
 /// /SCVC — Enable CvC safety (opt in for auto-warp).
@@ -17274,7 +17584,7 @@ async fn handle_slash_scvc(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.seguro_cvc = true;
     }
-    state.send_to(conn_id, "SEGCVCON").await;
+    state.send_to(conn_id, "||371").await;
 }
 
 /// /REGRESAR — Return to home city (die and respawn at home).
@@ -19467,6 +19777,49 @@ async fn handle_bof(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     state.send_to(conn_id, &format!("{}Has ganado {} puntos de vida extra!{}", server_opcodes::CONSOLE_MSG, hp_bonus, font_types::INFO)).await;
 }
 
+/// UK — Use Skill. VB6: TCP_HandleData1.bas Case "UK".
+/// Robar/Magia/Domar → sends T01<skillID> to client (opens skill tree UI).
+/// Ocultarse → checks navigating/already hidden, then calls do_ocultarse.
+async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    // Check dead
+    let (dead, navigating, hidden) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.navigating, u.hidden),
+        _ => return,
+    };
+
+    if dead {
+        state.send_to(conn_id, "||3").await;
+        return;
+    }
+
+    let payload = strip_opcode(data, 2); // "UK" is 2 chars
+    let skill_num: i32 = payload.trim().parse().unwrap_or(0);
+
+    match skill_num {
+        3 => { // Robar
+            state.send_to(conn_id, &format!("T01{}", skill_num)).await;
+        }
+        2 => { // Magia
+            state.send_to(conn_id, &format!("T01{}", skill_num)).await;
+        }
+        18 => { // Domar
+            state.send_to(conn_id, &format!("T01{}", skill_num)).await;
+        }
+        8 => { // Ocultarse
+            if navigating {
+                state.send_to(conn_id, "||233").await;
+                return;
+            }
+            if hidden {
+                state.send_to(conn_id, "||234").await;
+                return;
+            }
+            do_ocultarse(state, conn_id).await;
+        }
+        _ => {} // Unknown skill, ignore
+    }
+}
+
 /// ENTR — Train creature from trainer NPC.
 async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 4);
@@ -19591,6 +19944,72 @@ async fn handle_fincbn(state: &mut GameState, conn_id: ConnectionId) {
         user.cuenta_bancaria.clear();
     }
     state.send_to(conn_id, "FINCBNOK").await;
+}
+
+/// VLKG — Query guild bank permissions for a player.
+/// VB6: TCP_HandleData1.bas Case "VLKG". Returns KHEKD<canObj>,<canGold>.
+async fn handle_vlkg(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let nick = strip_opcode(data, 4).trim().to_string();
+    if nick.is_empty() { return; }
+
+    // Try online first
+    if let Some(target_conn) = state.find_user_by_name(&nick) {
+        let (can_obj, can_gold) = match state.users.get(&target_conn) {
+            Some(u) => (u.puede_retirar_obj as i32, u.puede_retirar_oro as i32),
+            None => (0, 0),
+        };
+        state.send_to(conn_id, &format!("KHEKD{},{}", can_obj, can_gold)).await;
+    } else {
+        // Offline — read from charfile
+        let chr_path = crate::data::charfile::charfile_path(&state.base_path, &nick);
+        let chr_str = chr_path.to_str().unwrap_or("");
+        let can_obj: i32 = crate::config::get_var(chr_str, "FLAGS", "PuedeRetirarObj").parse().unwrap_or(0);
+        let can_gold: i32 = crate::config::get_var(chr_str, "FLAGS", "PuedeRetirarOro").parse().unwrap_or(0);
+        state.send_to(conn_id, &format!("KHEKD{},{}", can_obj, can_gold)).await;
+    }
+}
+
+/// BOVC — Set guild bank permissions for a player.
+/// VB6: TCP_HandleData1.bas Case "BOVC". Format: BOVC<nick>,<permLevel>
+/// permLevel: 0=none, 1=gold only, 2=items only, 3=both
+async fn handle_bovc(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 4);
+    let parts: Vec<&str> = payload.splitn(2, ',').collect();
+    if parts.len() < 2 { return; }
+    let nick = parts[0].trim();
+    let perm: i32 = parts[1].trim().parse().unwrap_or(-1);
+    if perm < 0 || perm > 3 { return; }
+
+    // Must be guild leader
+    let (char_name, guild_index) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.char_name.clone(), u.guild_index),
+        _ => return,
+    };
+    let guild = match crate::data::guilds::load_guild(&state.base_path, guild_index) {
+        Some(g) => g,
+        None => return,
+    };
+    if guild.leader.to_uppercase() != char_name.to_uppercase() {
+        state.send_to(conn_id, "||265").await;
+        return;
+    }
+
+    let can_obj = perm == 2 || perm == 3;
+    let can_gold = perm == 1 || perm == 3;
+
+    // Try online first
+    if let Some(target_conn) = state.find_user_by_name(nick) {
+        if let Some(u) = state.users.get_mut(&target_conn) {
+            u.puede_retirar_obj = can_obj;
+            u.puede_retirar_oro = can_gold;
+        }
+    } else {
+        // Offline — write to charfile
+        let chr_path = crate::data::charfile::charfile_path(&state.base_path, nick);
+        let chr_str = chr_path.to_str().unwrap_or("");
+        let _ = crate::config::write_var(chr_str, "FLAGS", "PuedeRetirarObj", if can_obj { "1" } else { "0" });
+        let _ = crate::config::write_var(chr_str, "FLAGS", "PuedeRetirarOro", if can_gold { "1" } else { "0" });
+    }
 }
 
 /// # — Send SOS/consultation.
@@ -20290,8 +20709,21 @@ async fn handle_slash_entrenar(state: &mut GameState, conn_id: ConnectionId) {
     // VB6: NPCtype must be Entrenador (3)
     if npc_type != crate::data::npcs::NpcType::Trainer { return; }
 
-    // VB6: EnviarListaCriaturas — training system not fully implemented yet
-    state.send_to(conn_id, &format!("{}Sistema de entrenamiento no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    // VB6: EnviarListaCriaturas — sends LSTCRI<count>,<name1>,<name2>,...
+    let npc_number = match state.get_npc(target_npc) {
+        Some(npc) => npc.npc_number,
+        None => return,
+    };
+    let npc_data = match state.game_data.npcs.get(npc_number) {
+        Some(nd) => nd,
+        None => return,
+    };
+    let mut pkt = format!("LSTCRI{},", npc_data.nro_criaturas);
+    for c in &npc_data.criaturas {
+        pkt.push_str(&c.npc_name);
+        pkt.push(',');
+    }
+    state.send_to(conn_id, &pkt).await;
 }
 
 /// /CENTINELA — Anti-AFK response.
@@ -21335,24 +21767,172 @@ async fn handle_slash_pareja(state: &mut GameState, conn_id: ConnectionId, targe
     }
 }
 
-/// /SICV — Start CvC battle between two guilds.
+/// /SICV — Accept CvC challenge and start the battle.
 async fn handle_slash_sicv(state: &mut GameState, conn_id: ConnectionId) {
-    let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
+    let (char_name, guild_idx, dead) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.char_name.clone(), u.guild_index, u.dead),
+        _ => return,
+    };
+
+    if dead {
+        state.send_to(conn_id, &format!("{}Estas muerto!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
     if guild_idx < 1 {
         state.send_to(conn_id, "||120").await;
         return;
     }
-
-    let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
-    if map == 141 { return; }
-
     if state.cvc_funciona {
         state.send_to(conn_id, "||364").await;
         return;
     }
 
-    // Simplified CvC initiation — full implementation requires guild challenge state
-    state.send_to(conn_id, &format!("{}El sistema CvC requiere un desafio previo con /CVC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    // Check there is a pending challenge for this guild
+    if state.cvc_pending_target_guild != guild_idx {
+        state.send_to(conn_id, &format!("{}No hay un desafio CvC pendiente para tu clan.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Validate caller is leader of target guild
+    let my_guild = guilds::load_guild(&state.base_path, guild_idx);
+    let is_leader = match &my_guild {
+        Some(g) => g.leader.to_uppercase() == char_name.to_uppercase(),
+        None => false,
+    };
+    if !is_leader {
+        state.send_to(conn_id, &format!("{}Solo el lider puede aceptar el desafio CvC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let challenger_guild_idx = state.cvc_pending_challenger_guild;
+    let challenger_name = state.cvc_pending_challenger_name.clone();
+    let acceptor_name = my_guild.as_ref().map(|g| g.name.clone()).unwrap_or_default();
+
+    // Count eligible members from each clan
+    let objects = &state.game_data.objects;
+    let mut clan1_members: Vec<ConnectionId> = Vec::new(); // Acceptor (blue)
+    let mut clan2_members: Vec<ConnectionId> = Vec::new(); // Challenger (red)
+
+    for (&cid, user) in state.users.iter() {
+        if user.guild_index == guild_idx && is_cvc_eligible(user, objects) {
+            clan1_members.push(cid);
+        } else if user.guild_index == challenger_guild_idx && is_cvc_eligible(user, objects) {
+            clan2_members.push(cid);
+        }
+    }
+
+    if clan1_members.is_empty() || clan2_members.is_empty() {
+        state.send_to(conn_id, &format!("{}Ambos clanes necesitan al menos 1 miembro elegible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        // Clear pending
+        state.cvc_pending_target_guild = 0;
+        state.cvc_pending_challenger_guild = 0;
+        state.cvc_pending_challenger_name.clear();
+        return;
+    }
+
+    // Balance: limit each clan to the smaller count
+    let balanced_count = clan1_members.len().min(clan2_members.len());
+    clan1_members.truncate(balanced_count);
+    clan2_members.truncate(balanced_count);
+
+    // Check gold from both leaders
+    let challenger_leader_name = guilds::load_guild(&state.base_path, challenger_guild_idx)
+        .map(|g| g.leader.to_uppercase())
+        .unwrap_or_default();
+    let challenger_leader_conn = state.users.iter()
+        .find(|(_, u)| u.logged && u.guild_index == challenger_guild_idx && u.char_name.to_uppercase() == challenger_leader_name)
+        .map(|(&cid, _)| cid);
+
+    let acceptor_gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
+    let challenger_gold = challenger_leader_conn
+        .and_then(|cid| state.users.get(&cid))
+        .map(|u| u.gold)
+        .unwrap_or(0);
+
+    if acceptor_gold < CVC_COST {
+        state.send_to(conn_id, &format!("{}No tienes suficiente oro ({} requeridos).{}", server_opcodes::CONSOLE_MSG, CVC_COST, font_types::INFO)).await;
+        return;
+    }
+    if challenger_gold < CVC_COST {
+        state.send_to(conn_id, &format!("{}El lider del clan desafiante no tiene suficiente oro.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Charge both leaders
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.gold -= CVC_COST;
+    }
+    send_stats_gold(state, conn_id).await;
+
+    if let Some(cl_conn) = challenger_leader_conn {
+        if let Some(u) = state.users.get_mut(&cl_conn) {
+            u.gold -= CVC_COST;
+        }
+        send_stats_gold(state, cl_conn).await;
+    }
+
+    // Set CvC state
+    state.cvc_funciona = true;
+    state.cvc_guild1 = guild_idx;        // Blue team (acceptor)
+    state.cvc_guild2 = challenger_guild_idx; // Red team (challenger)
+    state.cvc_nombre1 = acceptor_name.clone();
+    state.cvc_nombre2 = challenger_name.clone();
+    state.cvc_clan1_count = balanced_count as i32;
+    state.cvc_clan2_count = balanced_count as i32;
+
+    // Clear pending
+    state.cvc_pending_target_guild = 0;
+    state.cvc_pending_challenger_guild = 0;
+    state.cvc_pending_challenger_name.clear();
+
+    // Prepare and warp all participants
+    // Blue team: X=37-48, Y=70-77
+    let mut blue_x = 37;
+    let mut blue_y = 70;
+    for &cid in &clan1_members {
+        // Revive if dead
+        let is_dead = state.users.get(&cid).map(|u| u.dead).unwrap_or(false);
+        if is_dead {
+            revive_user(state, cid).await;
+        }
+        // Save old position
+        if let Some(u) = state.users.get_mut(&cid) {
+            u.vieja_pos_map = u.pos_map;
+            u.vieja_pos_x = u.pos_x;
+            u.vieja_pos_y = u.pos_y;
+            u.en_cvc = true;
+            u.cvc_blue = true;
+        }
+        warp_user(state, cid, CVC_MAP, blue_x, blue_y).await;
+        blue_x += 1;
+        if blue_x > 48 { blue_x = 37; blue_y += 1; }
+        if blue_y > 77 { blue_y = 70; }
+    }
+
+    // Red team: X=75-86, Y=35-45
+    let mut red_x = 75;
+    let mut red_y = 35;
+    for &cid in &clan2_members {
+        let is_dead = state.users.get(&cid).map(|u| u.dead).unwrap_or(false);
+        if is_dead {
+            revive_user(state, cid).await;
+        }
+        if let Some(u) = state.users.get_mut(&cid) {
+            u.vieja_pos_map = u.pos_map;
+            u.vieja_pos_x = u.pos_x;
+            u.vieja_pos_y = u.pos_y;
+            u.en_cvc = true;
+            u.cvc_blue = false;
+        }
+        warp_user(state, cid, CVC_MAP, red_x, red_y).await;
+        red_x += 1;
+        if red_x > 86 { red_x = 75; red_y += 1; }
+        if red_y > 45 { red_y = 35; }
+    }
+
+    // Announce battle start
+    let pkt = format!("||85@{}@{}", acceptor_name, challenger_name);
+    state.send_data(SendTarget::ToAll, &pkt).await;
 }
 
 // =====================================================================

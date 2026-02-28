@@ -239,6 +239,7 @@ pub struct UserState {
     pub admin_invisible: bool,    // GM invisible mode (body=0, head=0)
     pub old_body: i32,            // Saved body before going invisible
     pub old_head: i32,            // Saved head before going invisible
+    pub emoticons: bool,          // Emoticons enabled (toggle via /EMOTICONS)
     pub silenced: bool,           // Muted by GM
     pub silence_timer: i32,       // Mute countdown in seconds (0 = permanent until toggled)
     pub jail_timer: i32,          // Jail countdown in seconds (0 = not jailed)
@@ -464,6 +465,7 @@ impl UserState {
             admin_invisible: false,
             old_body: 0,
             old_head: 0,
+            emoticons: false,
             silenced: false,
             silence_timer: 0,
             jail_timer: 0,
@@ -654,6 +656,13 @@ pub struct GameState {
     pub cvc_funciona: bool,
     pub cvc_clan1_count: i32,
     pub cvc_clan2_count: i32,
+    pub cvc_nombre1: String,           // Acceptor clan name (blue team)
+    pub cvc_nombre2: String,           // Challenger clan name (red team)
+    pub cvc_guild1: i32,               // Acceptor guild index (blue)
+    pub cvc_guild2: i32,               // Challenger guild index (red)
+    pub cvc_pending_target_guild: i32,  // Guild being challenged (pending acceptance)
+    pub cvc_pending_challenger_guild: i32, // Guild that sent the challenge
+    pub cvc_pending_challenger_name: String, // Challenger clan name (pending)
 
     // Arena spectators
     pub espectadores_arena1: i32,
@@ -847,6 +856,13 @@ impl GameState {
             cvc_funciona: false,
             cvc_clan1_count: 0,
             cvc_clan2_count: 0,
+            cvc_nombre1: String::new(),
+            cvc_nombre2: String::new(),
+            cvc_guild1: 0,
+            cvc_guild2: 0,
+            cvc_pending_target_guild: 0,
+            cvc_pending_challenger_guild: 0,
+            cvc_pending_challenger_name: String::new(),
             espectadores_arena1: 0,
             espectadores_arena2: 0,
             espectadores_arena3: 0,
