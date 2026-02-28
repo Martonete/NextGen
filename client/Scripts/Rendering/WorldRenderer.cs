@@ -7,15 +7,12 @@ using TierrasSagradasAO.Game;
 namespace TierrasSagradasAO.Rendering;
 
 /// <summary>
-/// Renders the game world matching VB6 RenderScreen exactly:
-/// - 534x408 viewport (VB6 PictureBox, not full 800x600 window)
-/// - 4 tile layers with correct VB6 draw order and pass separation
-/// - TileBufferSize=9 (VB6 value)
-/// - Multi-tile graphic centering (Center=1)
-/// - Tree alpha near player (VB6 EsArbol check, alpha=120)
-/// - Gradual roof fade (bTechoAB, ±6 alpha/frame)
-/// - Character position index for O(1) tile lookup
-/// - Ground objects (HO items)
+/// Renders the game world matching VB6 RenderScreen:
+/// - 534x408 viewport centered on player
+/// - 4 tile layers with correct draw order
+/// - TileBufferSize=9 for multi-tile graphics
+/// - Tree alpha near player, gradual roof fade
+/// - Character position index for O(1) lookup
 /// </summary>
 public partial class WorldRenderer : Node2D
 {
@@ -25,23 +22,26 @@ public partial class WorldRenderer : Node2D
 
     private const int TileSize = 32;
 
-    // VB6 viewport: 534x408 px (the renderer PictureBox area)
+    // VB6 viewport: 534x408 px
     private const int ViewportWidth = 534;
     private const int ViewportHeight = 408;
 
-    // VB6: 534/32 = 16.7 → 17 tiles wide, 408/32 = 12.7 → 13 tiles tall
-    // Half values: 17/2 = 8, 13/2 = 6
+    // Center of viewport in pixels
+    private const float CenterX = ViewportWidth / 2f;   // 267
+    private const float CenterY = ViewportHeight / 2f;  // 204
+
+    // How many tiles from center to edge (visible range)
     private const int HalfWindowTileWidth = 8;
     private const int HalfWindowTileHeight = 6;
 
-    // VB6: TileBufferSize = 9 (extra tiles rendered beyond visible for multi-tile graphics)
+    // VB6: TileBufferSize = 9
     private const int TileBufferSize = 9;
 
-    // VB6: bTechoAB — roof alpha, fades gradually
+    // VB6: bTechoAB — roof alpha
     private float _roofAlpha = 255f;
     private const float RoofFadeRate = 6f;
 
-    // Per-frame character position index: (tileX, tileY) → list of char indices
+    // Per-frame character position index
     private readonly Dictionary<(int, int), List<int>> _charPosIndex = new();
     private readonly List<int> _emptyCharList = new();
 
@@ -55,7 +55,6 @@ public partial class WorldRenderer : Node2D
     public override void _Process(double delta)
     {
         if (_state?.MapData == null) return;
-
         UpdateRoofFade();
         QueueRedraw();
     }
@@ -83,10 +82,6 @@ public partial class WorldRenderer : Node2D
         }
     }
 
-    /// <summary>
-    /// Build per-frame index mapping (tileX, tileY) → character indices
-    /// for O(1) lookup instead of iterating all characters per tile.
-    /// </summary>
     private void BuildCharPositionIndex()
     {
         _charPosIndex.Clear();
@@ -108,6 +103,18 @@ public partial class WorldRenderer : Node2D
         return _charPosIndex.TryGetValue((x, y), out var list) ? list : _emptyCharList;
     }
 
+    /// <summary>
+    /// Convert world tile (x,y) to screen pixel position.
+    /// Single formula used for ALL layers — centers the user's tile in the viewport.
+    /// </summary>
+    private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
+                                         float pixelOffsetX, float pixelOffsetY)
+    {
+        float px = CenterX + (tileX - userX) * TileSize - TileSize / 2f + pixelOffsetX;
+        float py = CenterY + (tileY - userY) * TileSize - TileSize / 2f + pixelOffsetY;
+        return new Vector2(px, py);
+    }
+
     public override void _Draw()
     {
         if (_state == null || _data == null || _animator == null) return;
@@ -116,36 +123,30 @@ public partial class WorldRenderer : Node2D
         int userX = _state.UserPosX;
         int userY = _state.UserPosY;
 
-        // Build character position index once per frame
         BuildCharPositionIndex();
 
-        // Find self character for smooth scroll offset
-        float moveOffX = 0, moveOffY = 0;
+        // Smooth scroll offset from self character
+        float pixelOffsetX = 0, pixelOffsetY = 0;
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfChar))
         {
-            moveOffX = selfChar.MoveOffsetX;
-            moveOffY = selfChar.MoveOffsetY;
+            pixelOffsetX = selfChar.MoveOffsetX;
+            pixelOffsetY = selfChar.MoveOffsetY;
         }
 
-        // VB6 pixel offset for smooth scrolling
-        float pixelOffsetX = moveOffX;
-        float pixelOffsetY = moveOffY;
-
-        // Visible tile range (VB6: screenMinX/Y)
+        // Visible tile range
         int screenMinX = userX - HalfWindowTileWidth;
         int screenMaxX = userX + HalfWindowTileWidth;
         int screenMinY = userY - HalfWindowTileHeight;
         int screenMaxY = userY + HalfWindowTileHeight;
 
-        // Extended bounds with tile buffer (VB6: minX/Y with TileBufferSize)
+        // Extended bounds with tile buffer
         int minX = Math.Max(1, screenMinX - TileBufferSize);
         int maxX = Math.Min(100, screenMaxX + TileBufferSize);
         int minY = Math.Max(1, screenMinY - TileBufferSize);
         int maxY = Math.Min(100, screenMaxY + TileBufferSize);
 
         // ==========================================
-        // PASS 1: Layer 1 (Ground) — visible area only, expanded by 1
-        // VB6: (screenX - 1) * 32 + PixelOffsetX
+        // PASS 1: Layer 1 (Ground) — visible area +1 tile margin
         // ==========================================
         int l1MinX = Math.Max(1, screenMinX - 1);
         int l1MaxX = Math.Min(100, screenMaxX + 1);
@@ -159,19 +160,13 @@ public partial class WorldRenderer : Node2D
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
 
-                // VB6 Layer 1 formula: (screenX - 1) * 32 + PixelOffsetX
-                int screenX = x - userX + HalfWindowTileWidth;
-                int screenY = y - userY + HalfWindowTileHeight;
-                float px = (screenX - 1) * TileSize + pixelOffsetX;
-                float py = (screenY - 1) * TileSize + pixelOffsetY;
-
-                DrawTileGrh(tile.Layer1, new Vector2(px, py));
+                Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
+                DrawTileGrh(tile.Layer1, pos);
             }
         }
 
         // ==========================================
         // PASS 2: Layer 2 — extended buffer range
-        // VB6: screenX * 32 + PixelOffsetX (different from Layer 1!)
         // ==========================================
         for (int y = minY; y <= maxY; y++)
         {
@@ -180,50 +175,37 @@ public partial class WorldRenderer : Node2D
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer2 <= 0) continue;
 
-                int screenX = x - userX + HalfWindowTileWidth;
-                int screenY = y - userY + HalfWindowTileHeight;
-                float px = screenX * TileSize + pixelOffsetX;
-                float py = screenY * TileSize + pixelOffsetY;
-
-                DrawTileGrh(tile.Layer2, new Vector2(px, py), center: true);
+                Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
+                DrawTileGrh(tile.Layer2, pos, center: true);
             }
         }
 
         // ==========================================
-        // PASS 3: Objects + Characters + Layer 3 — extended buffer range
-        // VB6: same screenX * 32 formula as Layer 2
-        // Draw order per tile: ObjGrh → characters → Layer 3
+        // PASS 3: Objects + Characters + Layer 3
         // ==========================================
         for (int y = minY; y <= maxY; y++)
         {
             for (int x = minX; x <= maxX; x++)
             {
-                int screenX = x - userX + HalfWindowTileWidth;
-                int screenY = y - userY + HalfWindowTileHeight;
-                float px = screenX * TileSize + pixelOffsetX;
-                float py = screenY * TileSize + pixelOffsetY;
-                Vector2 tileScreenPos = new Vector2(px, py);
-
+                Vector2 tilePos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects (HO items) — VB6: ObjGrh before characters
+                // Ground objects
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
-                    DrawTileGrh(objGrh, tileScreenPos, center: true);
+                    DrawTileGrh(objGrh, tilePos, center: true);
                 }
 
-                // Characters/NPCs at this tile (O(1) lookup via index)
+                // Characters/NPCs at this tile
                 var charsHere = GetCharsAt(x, y);
                 for (int ci = 0; ci < charsHere.Count; ci++)
                 {
                     if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
 
-                    // Character position includes their own smooth movement offset
-                    // relative to the tile, but the scroll offset is already in pixelOffset
-                    float charPx = px;
-                    float charPy = py;
+                    float charPx = tilePos.X;
+                    float charPy = tilePos.Y;
 
-                    // For non-self characters, add their individual movement offset
+                    // Non-self characters add their own movement offset
                     if (charsHere[ci] != _state.UserCharIndex)
                     {
                         charPx += ch.MoveOffsetX;
@@ -236,25 +218,23 @@ public partial class WorldRenderer : Node2D
                 // Layer 3 (trees/objects)
                 if (tile.Layer3 > 0)
                 {
-                    // VB6: EsArbol check — reduce alpha near player
                     bool nearPlayer = y > (userY - 2) && y < (userY + 7)
                                    && x > (userX - 4) && x < (userX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrh(tile.Layer3, tileScreenPos, center: true,
+                        DrawTileGrh(tile.Layer3, tilePos, center: true,
                                     modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrh(tile.Layer3, tileScreenPos, center: true);
+                        DrawTileGrh(tile.Layer3, tilePos, center: true);
                     }
                 }
             }
         }
 
         // ==========================================
-        // PASS 4: Layer 4 (Roof) — gradual alpha fade
-        // VB6: bTechoAB controls alpha, only renders if > 0
+        // PASS 4: Layer 4 (Roof)
         // ==========================================
         if (_roofAlpha > 0)
         {
@@ -267,20 +247,13 @@ public partial class WorldRenderer : Node2D
                     ref var tile = ref _state.MapData.Tiles[x, y];
                     if (tile.Layer4 <= 0) continue;
 
-                    int screenX = x - userX + HalfWindowTileWidth;
-                    int screenY = y - userY + HalfWindowTileHeight;
-                    float px = screenX * TileSize + pixelOffsetX;
-                    float py = screenY * TileSize + pixelOffsetY;
-
-                    DrawTileGrh(tile.Layer4, new Vector2(px, py), center: true, modulate: roofColor);
+                    Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
+                    DrawTileGrh(tile.Layer4, pos, center: true, modulate: roofColor);
                 }
             }
         }
     }
 
-    /// <summary>
-    /// Draw a tile GRH with optional centering and color modulation.
-    /// </summary>
     private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
     {
         if (_data == null || _animator == null) return;
