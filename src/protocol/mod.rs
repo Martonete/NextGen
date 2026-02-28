@@ -103,6 +103,7 @@ pub mod client_opcodes {
     pub const MOUSE_DROP: &str = "TR";         // Drop item via mouse
     pub const LEVEL_BONUS: &str = "BOF";       // Level bonus selection
     pub const TRAIN_CREATURE: &str = "ENTR";   // Train creature from trainer
+    pub const USE_SKILL: &str = "UK";          // Use skill (skill tree / hide)
     pub const SEND_POINTS: &str = "ACTPT";     // Request tournament/donation points
     pub const RANKINGS: &str = "RANKIN";       // View rankings
     pub const POSITION_UPDATE: &str = "ACTUALIZAR"; // Position re-sync

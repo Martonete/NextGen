@@ -141,6 +141,17 @@ pub struct NpcData {
     // Sound effects (VB6: SND1 = attack sound, SND3 = death sound)
     pub snd1: i32,
     pub snd3: i32,
+
+    // Trainer creature data (VB6: NroCriaturas, CI1..CIN, CN1..CNN)
+    pub nro_criaturas: i32,
+    pub criaturas: Vec<TrainerCreature>,
+}
+
+/// Trainer creature entry (VB6: tCriaturasEntrenador).
+#[derive(Debug, Clone, Default)]
+pub struct TrainerCreature {
+    pub npc_index: i32,
+    pub npc_name: String,
 }
 
 /// NPC inventory item as loaded from dat file.
@@ -175,6 +186,7 @@ impl Default for NpcData {
             crystal_min4: 0, crystal_max4: 0,
             give_pts: 0,
             snd1: 0, snd3: 0,
+            nro_criaturas: 0, criaturas: Vec::new(),
         }
     }
 }
@@ -264,6 +276,17 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         give_pts: get_int("GivePTS"),
         snd1: get_int("SND1"),
         snd3: get_int("SND3"),
+        nro_criaturas: get_int("NroCriaturas"),
+        criaturas: {
+            let nro = get_int("NroCriaturas") as usize;
+            let mut criaturas = Vec::with_capacity(nro);
+            for i in 1..=nro {
+                let ci = get_int(&format!("CI{}", i));
+                let cn = get_str(&format!("CN{}", i));
+                criaturas.push(TrainerCreature { npc_index: ci, npc_name: cn });
+            }
+            criaturas
+        },
     }
 }
 
