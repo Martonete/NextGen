@@ -4,22 +4,23 @@ using System.Text;
 namespace TierrasSagradasAO.Network;
 
 /// <summary>
-/// Base64 + Hex layers matching VB6 AoDefender encryption.
-/// Outbound: Codificar → AoDefServEncrypt(hex) → AoDefEncode(base64)
-/// Inbound: AoDefDecode(base64) → AoDefServDecrypt(hex) → DeCodificar
+/// Crypto layers matching VB6 AoDefender encryption.
+/// Outbound (client→server): Codificar(XOR) → AoDefEncode(base64)
+/// Inbound (server→client): AoDefDecode(base64) → AoDefServDecrypt(hex)
+/// Note: server outbound uses hex+base64 (no XOR), client outbound uses XOR+base64 (no hex).
 /// </summary>
 public static class AoEncryption
 {
     private const string Base64Chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
     /// <summary>
-    /// Full outbound pipeline: plaintext → XOR cipher → hex → base64
+    /// Full outbound pipeline: plaintext → XOR cipher → base64
+    /// Server expects: AoDefDecode(base64) → DeCodificar(XOR, key)
     /// </summary>
     public static byte[] EncryptOutbound(byte[] plaintext, AoCipher cipher)
     {
         byte[] xored = cipher.Codificar(plaintext);
-        byte[] hexed = AoDefServEncrypt(xored);
-        byte[] b64 = AoDefEncode(hexed);
+        byte[] b64 = AoDefEncode(xored);
         return b64;
     }
 
