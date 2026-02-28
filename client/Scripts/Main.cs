@@ -32,6 +32,7 @@ public partial class Main : Node2D
     private bool _connecting;
     private bool _loginSent;
     private bool _charSelectSent;
+    private bool _offlineMode;
 
     public override void _Ready()
     {
@@ -105,7 +106,10 @@ public partial class Main : Node2D
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Connection failed: {ex.Message}");
+            GD.Print("[MAIN] Starting OFFLINE mode — loading Mapa1 for preview...");
             _connecting = false;
+            _offlineMode = true;
+            StartOfflineMode();
         }
     }
 
@@ -142,6 +146,13 @@ public partial class Main : Node2D
 
         // Update smooth movement for all characters
         UpdateMovement((float)delta);
+
+        // In offline mode, handle WASD to move camera locally
+        if (_offlineMode)
+        {
+            ProcessOfflineInput();
+            return;
+        }
 
         // Process input
         _inputHandler?.Process(delta);
@@ -217,6 +228,59 @@ public partial class Main : Node2D
         {
             GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
         }
+    }
+
+    private double _offlineMoveTimer;
+
+    private void ProcessOfflineInput()
+    {
+        _offlineMoveTimer -= GetProcessDeltaTime();
+        if (_offlineMoveTimer > 0) return;
+
+        int dx = 0, dy = 0;
+        if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up)) dy = -1;
+        if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down)) dy = 1;
+        if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left)) dx = -1;
+        if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) dx = 1;
+
+        if (dx == 0 && dy == 0) return;
+
+        int newX = _state.UserPosX + dx;
+        int newY = _state.UserPosY + dy;
+        if (newX < 1 || newX > 100 || newY < 1 || newY > 100) return;
+
+        _state.UserPosX = newX;
+        _state.UserPosY = newY;
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
+        {
+            ch.PosX = newX;
+            ch.PosY = newY;
+        }
+        _offlineMoveTimer = 0.15; // 150ms between moves
+    }
+
+    private void StartOfflineMode()
+    {
+        // Load map 1 for preview
+        _state.CurrentMap = 1;
+        _state.NeedMapLoad = true;
+        _state.UserPosX = 50;
+        _state.UserPosY = 50;
+
+        // Create a dummy character so the camera has a reference
+        var dummy = new Character
+        {
+            Body = 1,
+            Head = 1,
+            Heading = 3,
+            PosX = 50,
+            PosY = 50,
+            Name = "Offline Preview"
+        };
+        _state.UserCharIndex = 1;
+        _state.Characters[1] = dummy;
+
+        GD.Print("[MAIN] Offline mode: Mapa1, position (50,50). Use WASD to move camera.");
     }
 
     private const float ScrollSpeed = 6f;
