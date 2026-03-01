@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using TierrasSagradasAO.Data;
 using TierrasSagradasAO.Network;
@@ -25,6 +26,12 @@ public class InputHandler
 {
     private readonly AoTcpClient _tcp;
     private readonly GameState _state;
+
+    // Meditation FX IDs — cleared when player moves
+    private static readonly HashSet<int> MeditationFxIds = new()
+    {
+        4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
+    };
 
     // Water tile GRH range (VB6: Layer1 1505-1520 with no Layer2 = water)
     private const int WaterGrhMin = 1505;
@@ -146,6 +153,17 @@ public class InputHandler
 
         if (LegalPos(newX, newY))
         {
+            // Clear meditation FX on self when moving
+            for (int i = 0; i < 3; i++)
+            {
+                if (ch.ActiveFxSlots[i] > 0 && MeditationFxIds.Contains(ch.ActiveFxSlots[i]))
+                {
+                    ch.ActiveFxSlots[i] = 0;
+                    ch.FxLoops[i] = 0;
+                    ch.FxFrameCounter[i] = 0;
+                }
+            }
+
             // Send movement packet to server
             _tcp.SendPacket($"M{heading}");
             _state.PendingMoves++;

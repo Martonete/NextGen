@@ -24,7 +24,8 @@ public static class CharRenderer
         Character ch,
         Vector2 screenPos,
         GameData data,
-        GrhAnimator animator)
+        GrhAnimator animator,
+        float deltaMs = 0f)
     {
         int heading = ch.Heading;
         if (heading < 1 || heading > 4) heading = 3;
@@ -85,7 +86,7 @@ public static class CharRenderer
         }
 
         // FX overlays (up to 3 simultaneous)
-        DrawFx(canvas, ch, screenPos, data, animator);
+        DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
 
         // Name + clan above head (VB6: uses font1 bitmap font)
         DrawName(canvas, ch, screenPos, data);
@@ -172,7 +173,7 @@ public static class CharRenderer
 
     private static void DrawFx(
         Node2D canvas, Character ch, Vector2 pos,
-        GameData data, GrhAnimator animator)
+        GameData data, GrhAnimator animator, float deltaMs)
     {
         for (int i = 0; i < 3; i++)
         {
@@ -182,10 +183,52 @@ public static class CharRenderer
             var fx = data.Fxs[fxIdx];
             if (fx.Animacion <= 0) continue;
 
-            int frame = animator.GetCurrentFrame(fx.Animacion, data);
+            // Resolve GRH to get numFrames and speed
+            int grhIndex = fx.Animacion;
+            if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) continue;
+            var grh = data.Grhs[grhIndex];
+            int numFrames = grh.NumFrames;
+            float speed = grh.Speed > 0 ? grh.Speed : 100f;
 
-            Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
-            DrawGrh(canvas, data, fx.Animacion, frame, fxPos, true,
+            if (numFrames <= 1)
+            {
+                // Static FX — just draw it
+                Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
+                DrawGrh(canvas, data, grhIndex, 0, fxPos, true,
+                        new Color(1, 1, 1, 150f / 255f));
+                continue;
+            }
+
+            // Advance per-slot frame counter
+            ch.FxFrameCounter[i] += deltaMs * numFrames / speed;
+
+            // Check for animation cycle completion
+            if (ch.FxFrameCounter[i] >= numFrames)
+            {
+                if (ch.FxLoops[i] == -1)
+                {
+                    // Infinite loop — wrap around
+                    ch.FxFrameCounter[i] %= numFrames;
+                }
+                else
+                {
+                    ch.FxLoops[i]--;
+                    if (ch.FxLoops[i] <= 0)
+                    {
+                        // Animation finished — clear slot
+                        ch.ActiveFxSlots[i] = 0;
+                        ch.FxLoops[i] = 0;
+                        ch.FxFrameCounter[i] = 0;
+                        continue;
+                    }
+                    // More loops remaining — wrap around
+                    ch.FxFrameCounter[i] %= numFrames;
+                }
+            }
+
+            int frame = (int)ch.FxFrameCounter[i];
+            Vector2 fxDrawPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
+            DrawGrh(canvas, data, grhIndex, frame, fxDrawPos, true,
                     new Color(1, 1, 1, 150f / 255f));
         }
     }

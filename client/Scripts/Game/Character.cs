@@ -37,6 +37,8 @@ public class Character
 
     // FX (VB6: up to 3 simultaneous + 1 emoticon)
     public int[] ActiveFxSlots = new int[3]; // FxData indices
+    public int[] FxLoops = new int[3];         // -1 = infinite, 0 = done
+    public float[] FxFrameCounter = new float[3]; // per-slot frame accumulator
     public int EmoticonIndex;
 
     // Dialog system (VB6: cDialogos — speech bubble above head)

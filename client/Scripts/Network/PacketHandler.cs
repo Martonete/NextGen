@@ -14,6 +14,12 @@ public class PacketHandler
 {
     private readonly GameState _state;
 
+    // Meditation FX IDs — cleared when character moves
+    private static readonly HashSet<int> MeditationFxIds = new()
+    {
+        4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
+    };
+
     public PacketHandler(GameState state)
     {
         _state = state;
@@ -99,6 +105,10 @@ public class PacketHandler
         else if (packet.StartsWith("PU"))
         {
             HandlePlayerPosition(packet[2..]);
+        }
+        else if (packet.StartsWith("CFX"))
+        {
+            HandleCharFx(packet[3..]);
         }
         else if (packet.StartsWith("CC"))
         {
@@ -231,6 +241,68 @@ public class PacketHandler
         else
         {
             GD.Print($"[PKT] Unhandled: {(packet.Length > 40 ? packet[..40] + "..." : packet)}");
+        }
+    }
+
+    /// <summary>
+    /// CFX{charindex},{fxId},{loops} — Apply FX animation to a character.
+    /// fxId=0 clears all FX. loops>=999 means infinite (-1).
+    /// </summary>
+    private void HandleCharFx(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 3) return;
+
+        int charIdx = ParseInt(parts[0]);
+        int fxId = ParseInt(parts[1]);
+        int loops = ParseInt(parts[2]);
+
+        if (!_state.Characters.TryGetValue(charIdx, out var ch))
+            return;
+
+        if (fxId == 0)
+        {
+            // Clear all FX slots
+            for (int i = 0; i < 3; i++)
+            {
+                ch.ActiveFxSlots[i] = 0;
+                ch.FxLoops[i] = 0;
+                ch.FxFrameCounter[i] = 0;
+            }
+            return;
+        }
+
+        // Find first empty slot
+        for (int i = 0; i < 3; i++)
+        {
+            if (ch.ActiveFxSlots[i] == 0)
+            {
+                ch.ActiveFxSlots[i] = fxId;
+                ch.FxLoops[i] = loops >= 999 ? -1 : loops;
+                ch.FxFrameCounter[i] = 0;
+                return;
+            }
+        }
+
+        // All slots full — overwrite slot 0 (oldest)
+        ch.ActiveFxSlots[0] = fxId;
+        ch.FxLoops[0] = loops >= 999 ? -1 : loops;
+        ch.FxFrameCounter[0] = 0;
+    }
+
+    /// <summary>
+    /// Clear meditation FX from a character (called when they move).
+    /// </summary>
+    private static void ClearMeditationFx(Character ch)
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (ch.ActiveFxSlots[i] > 0 && MeditationFxIds.Contains(ch.ActiveFxSlots[i]))
+            {
+                ch.ActiveFxSlots[i] = 0;
+                ch.FxLoops[i] = 0;
+                ch.FxFrameCounter[i] = 0;
+            }
         }
     }
 
@@ -436,6 +508,9 @@ public class PacketHandler
             return;
 
         {
+            // Clear meditation FX on movement
+            ClearMeditationFx(ch);
+
             // Other characters: VB6 Char_Move_by_Pos
             int dx = newX - ch.PosX;
             int dy = newY - ch.PosY;

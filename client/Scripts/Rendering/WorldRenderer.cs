@@ -37,6 +37,9 @@ public partial class WorldRenderer : Node2D
     private float _roofAlpha = 255f;
     private const float RoofFadeRate = 6f;
 
+    // Delta time in ms for current frame (set in _Process, used in _Draw)
+    private float _deltaMs;
+
     // Per-frame character position index
     private readonly Dictionary<(int, int), List<int>> _charPosIndex = new();
     private readonly List<int> _emptyCharList = new();
@@ -51,6 +54,7 @@ public partial class WorldRenderer : Node2D
     public override void _Process(double delta)
     {
         if (_state?.MapData == null) return;
+        _deltaMs = (float)delta * 1000f;
         UpdateRoofFade();
         UpdateAmbientLight();
         QueueRedraw();
@@ -219,7 +223,7 @@ public partial class WorldRenderer : Node2D
                     float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
                     float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
-                    CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator);
+                    CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator, _deltaMs);
                 }
 
                 // Layer 3 (trees/objects)
