@@ -633,14 +633,17 @@ public partial class Main : Control
     {
         if (_state.CurrentScreen != Screen.Game) return;
 
-        // VB6: Enter toggles chat input visibility
+        // VB6: Enter opens chat input, preserving previous text.
+        // Double-Enter (open → submit empty) clears the previous message.
         if (@event is InputEventKey key && key.Pressed && !key.Echo
             && (key.Keycode == Key.Enter || key.Keycode == Key.KpEnter)
             && _chatInput != null && !_chatInput.Visible)
         {
             _chatInput.Visible = true;
-            _chatInput.Text = "";
+            // Don't clear — VB6 preserves previous text so user can re-send or edit.
+            // Submitting empty (second Enter) clears it via OnChatSubmitted.
             _chatInput.GrabFocus();
+            _chatInput.SelectAll();
             _state.ChatActive = true;
             GetViewport().SetInputAsHandled();
             return;
