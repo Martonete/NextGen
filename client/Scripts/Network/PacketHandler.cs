@@ -779,29 +779,49 @@ public class PacketHandler
 
     private void HandleYell(string data)
     {
-        // N|<color>°<text>°<charindex>  (server may append ~r~g~b after charindex)
-        var parts = data.Split((char)176);
-        if (parts.Length < 2) return;
+        // Server uses N| for TWO formats:
+        // 1. Yell (NPC shout):  N|<vbColor>°<text>°<charindex>[~r~g~b~bold~italic]
+        // 2. Info (LC response): N|<text>~r~g~b~bold~italic  (no ° separator)
+        var parts = data.Split((char)176); // ° = ASCII 176
 
-        string color = "FF0000";
-        if (int.TryParse(parts[0], out int vbColor))
+        if (parts.Length >= 2)
         {
-            int r = vbColor & 0xFF;
-            int g = (vbColor >> 8) & 0xFF;
-            int b = (vbColor >> 16) & 0xFF;
-            color = $"{r:X2}{g:X2}{b:X2}";
+            // Format 1: yell with ° separator — color°text°charindex
+            string color = "FF0000";
+            if (int.TryParse(parts[0], out int vbColor))
+            {
+                int r = vbColor & 0xFF;
+                int g = (vbColor >> 8) & 0xFF;
+                int b = (vbColor >> 16) & 0xFF;
+                color = $"{r:X2}{g:X2}{b:X2}";
+            }
+
+            string text = parts[1];
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+
+            if (parts.Length >= 3)
+            {
+                string charIdxStr = parts[2];
+                int tildeIdx = charIdxStr.IndexOf('~');
+                if (tildeIdx >= 0) charIdxStr = charIdxStr[..tildeIdx];
+                if (int.TryParse(charIdxStr, out int charIdx))
+                    SetCharDialog(charIdx, text, color);
+            }
         }
-
-        string text = parts[1];
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
-
-        if (parts.Length >= 3)
+        else
         {
-            string charIdxStr = parts[2];
-            int tildeIdx = charIdxStr.IndexOf('~');
-            if (tildeIdx >= 0) charIdxStr = charIdxStr[..tildeIdx];
-            if (int.TryParse(charIdxStr, out int charIdx))
-                SetCharDialog(charIdx, text, color);
+            // Format 2: info text with ~r~g~b (LC response — no ° at all)
+            var tildeParts = data.Split('~');
+            string text = tildeParts[0];
+            string color = "45BE9C"; // default info teal
+            if (tildeParts.Length >= 4)
+            {
+                int r = ParseInt(tildeParts[1]);
+                int g = ParseInt(tildeParts[2]);
+                int b = ParseInt(tildeParts[3]);
+                color = $"{r:X2}{g:X2}{b:X2}";
+            }
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
         }
     }
 

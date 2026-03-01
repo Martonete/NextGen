@@ -436,7 +436,7 @@ public partial class Main : Control
 
         // VB6: Enter toggles chat input visibility
         if (@event is InputEventKey key && key.Pressed && !key.Echo
-            && key.Keycode == Key.Enter
+            && (key.Keycode == Key.Enter || key.Keycode == Key.KpEnter)
             && _chatInput != null && !_chatInput.Visible)
         {
             _chatInput.Visible = true;
