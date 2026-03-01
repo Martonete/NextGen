@@ -225,7 +225,15 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer2 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                DrawTileGrh(tile.Layer2, pos, center: false);
+                if (hasLights)
+                {
+                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrh(tile.Layer2, pos, center: false, modulate: lightColor);
+                }
+                else
+                {
+                    DrawTileGrh(tile.Layer2, pos, center: false);
+                }
             }
         }
 
@@ -239,10 +247,13 @@ public partial class WorldRenderer : Node2D
                 Vector2 tilePos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
+                // Per-tile light color for this pass
+                Color tileLight = hasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
+
                 // Ground objects
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
-                    DrawTileGrh(objGrh, tilePos, center: true);
+                    DrawTileGrh(objGrh, tilePos, center: true, modulate: tileLight);
                 }
 
                 // Characters/NPCs at this tile
@@ -267,12 +278,13 @@ public partial class WorldRenderer : Node2D
                                    && x > (userX - 4) && x < (userX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrh(tile.Layer3, tilePos, center: true,
-                                    modulate: new Color(1, 1, 1, 120f / 255f));
+                        // Combine tree alpha with tile light
+                        Color treeLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
+                        DrawTileGrh(tile.Layer3, tilePos, center: true, modulate: treeLight);
                     }
                     else
                     {
-                        DrawTileGrh(tile.Layer3, tilePos, center: true);
+                        DrawTileGrh(tile.Layer3, tilePos, center: true, modulate: tileLight);
                     }
                 }
             }
@@ -311,7 +323,7 @@ public partial class WorldRenderer : Node2D
         // ==========================================
         if (_roofAlpha > 0)
         {
-            Color roofColor = new Color(1, 1, 1, _roofAlpha / 255f);
+            float roofA = _roofAlpha / 255f;
 
             for (int y = minY; y <= maxY; y++)
             {
@@ -321,7 +333,15 @@ public partial class WorldRenderer : Node2D
                     if (tile.Layer4 <= 0) continue;
 
                     Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                    DrawTileGrh(tile.Layer4, pos, center: true, modulate: roofColor);
+                    if (hasLights)
+                    {
+                        Color tl = LightSystem.GetTileLight(_state, x, y);
+                        DrawTileGrh(tile.Layer4, pos, center: true, modulate: new Color(tl.R, tl.G, tl.B, roofA));
+                    }
+                    else
+                    {
+                        DrawTileGrh(tile.Layer4, pos, center: true, modulate: new Color(1, 1, 1, roofA));
+                    }
                 }
             }
         }
