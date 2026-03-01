@@ -83,8 +83,7 @@ public class AoFont
         }
 
         // VB6 uses D3DX_FILTER_POINT and color key 0xFF000000 (opaque black = transparent)
-        // Convert black pixels to transparent
-        MakeBlackTransparent(image);
+        ApplyColorKey(image);
 
         font.Texture = ImageTexture.CreateFromImage(image);
         GD.Print($"[FONT] Loaded: {datPath} ({font.CellWidth}x{font.CellHeight}, base={font.BaseCharOffset})");
@@ -92,16 +91,18 @@ public class AoFont
     }
 
     /// <summary>
-    /// Process font texture for proper color tinting.
-    /// VB6 color key: 0xFF000000 (pure black = transparent).
-    /// VB6 renders glyphs by multiplying grey texture × vertex color.
+    /// Apply VB6 color key: pure black (0,0,0) → transparent.
+    /// All other pixels remain unchanged (greyscale glyphs + dark borders).
     ///
-    /// For Godot modulate to work correctly, we convert greyscale glyphs
-    /// to white pixels with alpha = luminance. This way:
-    ///   white(1,1,1,lum) × modulate_color = desired_color at correct opacity.
-    /// Pure black pixels become fully transparent (color key).
+    /// VB6 renders text by multiplying texture_color × vertex_color:
+    ///   bright glyph (224,224,224) × text_color → colored text (slightly dimmed)
+    ///   dark border (4,4,4) × text_color → near-black outline (the classic AO look)
+    ///   black bg (0,0,0) → invisible (color key)
+    ///
+    /// Godot's DrawTextureRectRegion modulate does the exact same multiplication,
+    /// so keeping original pixel values gives pixel-perfect VB6 matching.
     /// </summary>
-    private static void MakeBlackTransparent(Image image)
+    private static void ApplyColorKey(Image image)
     {
         int w = image.GetWidth();
         int h = image.GetHeight();
@@ -110,17 +111,10 @@ public class AoFont
             for (int x = 0; x < w; x++)
             {
                 Color c = image.GetPixel(x, y);
-                // Greyscale luminance (font textures are always greyscale)
-                float lum = (c.R + c.G + c.B) / 3f;
-                if (lum < 0.01f)
+                // VB6 color key 0xFF000000: only exact black becomes transparent
+                if (c.R < 0.004f && c.G < 0.004f && c.B < 0.004f)
                 {
-                    // Pure black → transparent (VB6 color key)
                     image.SetPixel(x, y, new Color(0, 0, 0, 0));
-                }
-                else
-                {
-                    // Grey glyph → white with alpha = luminance
-                    image.SetPixel(x, y, new Color(1, 1, 1, lum));
                 }
             }
         }
