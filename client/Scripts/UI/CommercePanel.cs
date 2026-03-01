@@ -376,6 +376,7 @@ public partial class CommercePanel : Control
 
     private void OnBuyPressed()
     {
+        GD.Print($"[COMMERCE] Buy pressed: state={_state != null} tcp={_tcp != null} selNpc={_selectedNpcIdx} shopCount={_state?.NpcShopCount ?? 0}");
         if (_state == null || _tcp == null) return;
         if (_selectedNpcIdx < 0 || _selectedNpcIdx >= _state.NpcShopCount) return;
 
@@ -384,6 +385,7 @@ public partial class CommercePanel : Control
 
         var item = _state.NpcShopItems[_selectedNpcIdx];
         long totalCost = item.Price * qty;
+        GD.Print($"[COMMERCE] Buying: '{item.Name}' slot={item.Slot} qty={qty} unitPrice={item.Price} total={totalCost} gold={_state.Gold}");
 
         if (_state.Gold < totalCost)
         {
@@ -398,11 +400,13 @@ public partial class CommercePanel : Control
         }
 
         // VB6: SendData "COMP," & slot & "," & qty
+        GD.Print($"[COMMERCE] Sending: COMP,{item.Slot},{qty}");
         _tcp.SendPacket($"COMP,{item.Slot},{qty}");
     }
 
     private void OnSellPressed()
     {
+        GD.Print($"[COMMERCE] Sell pressed: state={_state != null} tcp={_tcp != null} selUser={_selectedUserIdx} userSlotCount={_userSlotCount}");
         if (_state == null || _tcp == null) return;
         if (_selectedUserIdx < 0 || _selectedUserIdx >= _userSlotCount) return;
 
@@ -420,6 +424,7 @@ public partial class CommercePanel : Control
         if (qty > inv.Amount) qty = inv.Amount;
 
         // VB6: SendData "VEND," & (slot+1) & "," & qty (1-indexed)
+        GD.Print($"[COMMERCE] Sending: VEND,{slotIdx + 1},{qty}");
         _tcp.SendPacket($"VEND,{slotIdx + 1},{qty}");
     }
 

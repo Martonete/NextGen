@@ -579,34 +579,25 @@ public static class CharRenderer
         int texW = texture.GetWidth();
         int texH = texture.GetHeight();
 
-        if (resolved.SX >= texW || resolved.SY >= texH ||
-            resolved.SX + resolved.PixelWidth > texW ||
-            resolved.SY + resolved.PixelHeight > texH)
-        {
-            if (frame != 0)
-            {
-                resolved = data.ResolveGrh(grhIndex, 0);
-                if (resolved == null || resolved.FileNum <= 0) return;
-                texture = data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) return;
-                texW = texture.GetWidth();
-                texH = texture.GetHeight();
-                if (resolved.SX >= texW || resolved.SY >= texH ||
-                    resolved.SX + resolved.PixelWidth > texW ||
-                    resolved.SY + resolved.PixelHeight > texH)
-                    return;
-            }
-            else
-            {
-                return;
-            }
-        }
+        // VB6/DirectX 8 doesn't bounds-check source rects — it clamps or wraps.
+        // Instead of discarding sprites that slightly exceed texture bounds,
+        // clamp the source rect to fit within the texture.
+        int sx = resolved.SX;
+        int sy = resolved.SY;
+        int pw = resolved.PixelWidth;
+        int ph = resolved.PixelHeight;
+
+        if (sx >= texW || sy >= texH) return; // fully outside — nothing to draw
+        if (sx + pw > texW) pw = texW - sx;   // clamp width
+        if (sy + ph > texH) ph = texH - sy;   // clamp height
+        if (pw <= 0 || ph <= 0) return;
 
         float drawX = pos.X;
         float drawY = pos.Y;
 
         if (center)
         {
+            // Use original pixel dimensions for centering (not clamped)
             if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
             {
                 drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
@@ -617,9 +608,8 @@ public static class CharRenderer
             }
         }
 
-        var srcRect = new Rect2(resolved.SX, resolved.SY, resolved.PixelWidth, resolved.PixelHeight);
-        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY),
-                                  resolved.PixelWidth, resolved.PixelHeight);
+        var srcRect = new Rect2(sx, sy, pw, ph);
+        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), pw, ph);
 
         Color color = modulate ?? Colors.White;
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
