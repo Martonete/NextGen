@@ -159,12 +159,15 @@ public partial class WorldRenderer : Node2D
         int maxY = Math.Min(100, screenMaxY + TileBufferSize);
 
         // ==========================================
-        // PASS 1: Layer 1 (Ground) — visible area +1 tile margin
+        // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
+        // +2 instead of +1 because during scrolling the camera pixel offset
+        // shifts up to 32px, revealing an extra tile beyond the +1 margin.
+        // Without this, you see black gaps at the scroll edges.
         // ==========================================
-        int l1MinX = Math.Max(1, screenMinX - 1);
-        int l1MaxX = Math.Min(100, screenMaxX + 1);
-        int l1MinY = Math.Max(1, screenMinY - 1);
-        int l1MaxY = Math.Min(100, screenMaxY + 1);
+        int l1MinX = Math.Max(1, screenMinX - 2);
+        int l1MaxX = Math.Min(100, screenMaxX + 2);
+        int l1MinY = Math.Max(1, screenMinY - 2);
+        int l1MaxY = Math.Min(100, screenMaxY + 2);
 
         for (int y = l1MinY; y <= l1MaxY; y++)
         {

@@ -87,16 +87,13 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, int heading,
         GameData data, GrhAnimator animator)
     {
-        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
-        var body = data.Bodies[ch.Body];
-        if (body.Walk[heading] == 0) return;
-
-        int bodyGrh = body.Walk[heading];
-        int frame = ch.Moving ? animator.GetCurrentFrame(bodyGrh) : 0;
-
-        // VB6: Draw_Grh_Sombra at X-6, same Y, dark tint, centered
-        DrawGrh(canvas, data, bodyGrh, frame, pos + new Vector2(-6, 0),
-                true, new Color(0, 0, 0, 0.3f));
+        // Simple ellipse shadow at character's feet (replaces body-clone which
+        // looked like a dark "skeleton" underneath the real body sprite).
+        // Use DrawSetTransform to squash a circle into an oval.
+        Vector2 shadowCenter = pos + new Vector2(TileSize / 2, TileSize - 4);
+        canvas.DrawSetTransform(shadowCenter, 0, new Vector2(1f, 0.45f));
+        canvas.DrawCircle(Vector2.Zero, 12f, new Color(0, 0, 0, 0.25f));
+        canvas.DrawSetTransform(Vector2.Zero); // reset transform
     }
 
     private static void DrawBody(
