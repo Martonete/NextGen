@@ -222,7 +222,22 @@ public class PacketHandler
             _state.MapColorG = ParseInt(parts[2]);
             _state.MapColorB = ParseInt(parts[3]);
             _state.NeedMapLoad = true;
-            GD.Print($"[GAME] Change map: {_state.CurrentMap}");
+
+            // Clear all characters (except self) and ground objects from previous map.
+            // The server will re-send CC packets for entities on the new map.
+            var selfIdx = _state.UserCharIndex;
+            var toRemove = new System.Collections.Generic.List<int>();
+            foreach (var kvp in _state.Characters)
+            {
+                if (kvp.Key != selfIdx)
+                    toRemove.Add(kvp.Key);
+            }
+            foreach (int key in toRemove)
+                _state.Characters.Remove(key);
+
+            _state.GroundObjects.Clear();
+
+            GD.Print($"[GAME] Change map: {_state.CurrentMap} (cleared {toRemove.Count} chars, all ground objects)");
         }
     }
 
