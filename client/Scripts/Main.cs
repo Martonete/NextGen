@@ -470,7 +470,9 @@ public partial class Main : Control
                     }
                     else if (mb.DoubleClick)
                     {
-                        // VB6 Form_DblClick → RC (interact: open doors, talk to NPC, etc.)
+                        // VB6: double-click fires Form_Click (LC) THEN Form_DblClick (RC)
+                        // Both events fire sequentially — Godot merges into one event.
+                        _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
                         _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
                     }
                     else if (_state.UsingSkill > 0)
