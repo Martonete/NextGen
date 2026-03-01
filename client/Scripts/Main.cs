@@ -45,7 +45,6 @@ public partial class Main : Control
     private Label? _goldLabel;
     private Label? _levelLabel;
     private Label? _nameLabel;
-    private Label? _mapLabel;
     private Label? _onlineLabel;
     private Label? _coordsLabel;
     private Label? _expLabel;
@@ -135,7 +134,6 @@ public partial class Main : Control
         _goldLabel = GetNode<Label>("GameUI/GoldLabel");
         _levelLabel = GetNode<Label>("GameUI/LevelLabel");
         _nameLabel = GetNode<Label>("GameUI/NameLabel");
-        _mapLabel = GetNode<Label>("GameUI/MapLabel");
         _onlineLabel = GetNode<Label>("GameUI/OnlineLabel");
         _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
         _expLabel = GetNode<Label>("GameUI/ExpLabel");
@@ -609,9 +607,9 @@ public partial class Main : Control
         _goldLabel!.Text = $"{_state.Gold}";
         _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
-        _mapLabel!.Text = $"Mapa: {_state.CurrentMap} {_state.MapName}";
         _onlineLabel!.Text = $"{_state.OnlineCount}";
-        _coordsLabel!.Text = $"({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
+        // VB6: Coord.Caption = NombreMapa & " (" & Map & "," & X & "," & Y & ")"
+        _coordsLabel!.Text = $"{_state.MapName} ({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
     }
 
     /// <summary>
