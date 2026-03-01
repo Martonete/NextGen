@@ -959,15 +959,20 @@ async fn connect_user(
         make_user_visible(state, conn_id).await;
 
         // Send BQ for tiles whose blocked state changed since map load (door persistence)
-        if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-            for ty in 0..crate::data::maps::MAP_HEIGHT {
-                for tx in 0..crate::data::maps::MAP_WIDTH {
-                    let tile = &game_map.tiles[ty][tx];
-                    if tile.blocked != tile.original_blocked {
-                        let bq_pkt = format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 });
-                        state.send_to(conn_id, &bq_pkt).await;
+        {
+            let mut bq_packets: Vec<String> = Vec::new();
+            if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+                for ty in 0..crate::data::maps::MAP_HEIGHT {
+                    for tx in 0..crate::data::maps::MAP_WIDTH {
+                        let tile = &game_map.tiles[ty][tx];
+                        if tile.blocked != tile.original_blocked {
+                            bq_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
+                        }
                     }
                 }
+            }
+            for pkt in &bq_packets {
+                state.send_to(conn_id, pkt).await;
             }
         }
 
@@ -2939,16 +2944,19 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // but the client reloads from .map files on CM, reverting all doors.
     {
         let map_idx2 = new_map as usize;
+        let mut bq_packets: Vec<String> = Vec::new();
         if let Some(Some(game_map)) = state.game_data.maps.get(map_idx2) {
             for ty in 0..crate::data::maps::MAP_HEIGHT {
                 for tx in 0..crate::data::maps::MAP_WIDTH {
                     let tile = &game_map.tiles[ty][tx];
                     if tile.blocked != tile.original_blocked {
-                        let bq_pkt = format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 });
-                        state.send_to(conn_id, &bq_pkt).await;
+                        bq_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
                     }
                 }
             }
+        }
+        for pkt in &bq_packets {
+            state.send_to(conn_id, pkt).await;
         }
     }
 
