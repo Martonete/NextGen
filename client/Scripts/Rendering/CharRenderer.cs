@@ -89,6 +89,9 @@ public static class CharRenderer
 
         // Name + clan above head
         DrawName(canvas, ch, screenPos);
+
+        // Dialog bubble (VB6: cDialogos.Render)
+        DrawDialog(canvas, ch, screenPos);
     }
 
     private static void DrawShadow(
@@ -243,6 +246,126 @@ public static class CharRenderer
             Vector2 clanPos = pos + new Vector2((TileSize - clanSize.X) / 2, nextY);
             canvas.DrawString(font, clanPos, clan, HorizontalAlignment.Left, -1, fontSize, nameColor);
         }
+    }
+
+    /// <summary>
+    /// VB6 cDialogos: draw speech bubble text above character.
+    /// Text floats up and fades out over time.
+    /// </summary>
+    private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos)
+    {
+        if (string.IsNullOrEmpty(ch.DialogText)) return;
+
+        long now = System.Environment.TickCount64;
+        long elapsed = now - ch.DialogStartMs;
+
+        // Check lifetime — start fading when expired
+        if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
+            ch.DialogFading = true;
+
+        // Float-up: VB6 decrements Sube each render tick, Y offset += Sube / 1.2
+        if (!ch.DialogFading && ch.DialogRiseCounter > 0)
+        {
+            ch.DialogRiseCounter--;
+            ch.DialogRiseOffset += ch.DialogRiseCounter / 1.2f;
+        }
+
+        // Alpha: full during lifetime, fade out after
+        float alpha;
+        if (ch.DialogFading)
+        {
+            // Fade out over ~500ms (VB6: Desvanecimiento -= 10 per tick ≈ 20 ticks)
+            long fadeElapsed = elapsed - ch.DialogDurationMs;
+            alpha = 1.0f - (fadeElapsed / 500f);
+            if (alpha <= 0f)
+            {
+                ch.DialogText = "";
+                return;
+            }
+        }
+        else
+        {
+            alpha = 1.0f;
+        }
+
+        var font = ThemeDB.FallbackFont;
+        int fontSize = 10;
+
+        // Word-wrap to 24 chars per line (VB6: MAX_LENGTH = 24)
+        var lines = WrapText(ch.DialogText, 24);
+
+        // Parse hex color
+        Color color;
+        if (ch.DialogColor.Length == 6)
+        {
+            int r = Convert.ToInt32(ch.DialogColor[..2], 16);
+            int g = Convert.ToInt32(ch.DialogColor[2..4], 16);
+            int b = Convert.ToInt32(ch.DialogColor[4..6], 16);
+            color = new Color(r / 255f, g / 255f, b / 255f, alpha);
+        }
+        else
+        {
+            color = new Color(1, 1, 1, alpha);
+        }
+
+        // Shadow color for readability
+        Color shadow = new Color(0, 0, 0, alpha * 0.7f);
+
+        // Position: above the character name, offset by rise
+        // VB6: X centered on head, Y = headOffset.Y area
+        float lineHeight = fontSize + 2;
+        float totalTextHeight = lines.Length * lineHeight;
+        float baseY = pos.Y - 10 - ch.DialogRiseOffset - totalTextHeight;
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            string line = lines[i];
+            Vector2 lineSize = font.GetStringSize(line, HorizontalAlignment.Left, -1, fontSize);
+            float lineX = pos.X + (TileSize - lineSize.X) / 2;
+            float lineY = baseY + i * lineHeight;
+            var linePos = new Vector2(lineX, lineY);
+
+            // Draw shadow first for readability
+            canvas.DrawString(font, linePos + new Vector2(1, 1), line,
+                HorizontalAlignment.Left, -1, fontSize, shadow);
+            // Draw text
+            canvas.DrawString(font, linePos, line,
+                HorizontalAlignment.Left, -1, fontSize, color);
+        }
+    }
+
+    /// <summary>
+    /// Word-wrap text to maxLen characters per line (VB6: MAX_LENGTH = 24).
+    /// </summary>
+    private static string[] WrapText(string text, int maxLen)
+    {
+        var lines = new System.Collections.Generic.List<string>();
+        string current = "";
+
+        foreach (string word in text.Split(' '))
+        {
+            if (current.Length > 0 && current.Length + 1 + word.Length > maxLen)
+            {
+                lines.Add(current);
+                current = word;
+            }
+            else
+            {
+                current = current.Length > 0 ? current + " " + word : word;
+            }
+
+            // Force-break words longer than maxLen
+            while (current.Length > maxLen)
+            {
+                lines.Add(current[..maxLen]);
+                current = current[maxLen..];
+            }
+        }
+
+        if (current.Length > 0)
+            lines.Add(current);
+
+        return lines.Count > 0 ? lines.ToArray() : new[] { text };
     }
 
     /// <summary>

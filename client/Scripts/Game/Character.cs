@@ -39,6 +39,15 @@ public class Character
     public int[] ActiveFxSlots = new int[3]; // FxData indices
     public int EmoticonIndex;
 
+    // Dialog system (VB6: cDialogos — speech bubble above head)
+    public string DialogText = "";
+    public string DialogColor = "FFFFFF";
+    public long DialogStartMs;       // Environment.TickCount64 when created
+    public long DialogDurationMs;    // 5000 + 100 * text.Length
+    public float DialogRiseOffset;   // Accumulated Y rise (text floats up)
+    public int DialogRiseCounter;    // VB6 Sube: 18→0, decrements each tick
+    public bool DialogFading;        // True when lifetime expired, fading out
+
     // Debug helper
     public bool _debugLogged;
 }

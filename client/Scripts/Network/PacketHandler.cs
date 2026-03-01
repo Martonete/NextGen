@@ -705,42 +705,70 @@ public class PacketHandler
 
     private void HandleTalk(string data)
     {
-        // T|<color>°<text>°<charindex>
-        var parts = data.Split((char)176); // ° = ASCII 176
-        if (parts.Length >= 2)
-        {
-            string color = "FFFFFF"; // default white
-            if (parts.Length >= 1 && int.TryParse(parts[0], out int vbColor))
-            {
-                // VB6 color: BGR format, convert to RGB hex
-                int r = vbColor & 0xFF;
-                int g = (vbColor >> 8) & 0xFF;
-                int b = (vbColor >> 16) & 0xFF;
-                color = $"{r:X2}{g:X2}{b:X2}";
-            }
+        // T|<color>°<text>°<charindex>  (° = ASCII 176)
+        var parts = data.Split((char)176);
+        if (parts.Length < 2) return;
 
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[1], Color = color });
-            GD.Print($"[TALK] {parts[1]}");
+        string color = "FFFFFF";
+        if (int.TryParse(parts[0], out int vbColor))
+        {
+            int r = vbColor & 0xFF;
+            int g = (vbColor >> 8) & 0xFF;
+            int b = (vbColor >> 16) & 0xFF;
+            color = $"{r:X2}{g:X2}{b:X2}";
+        }
+
+        string text = parts[1];
+
+        // Console message
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+
+        // Dialog bubble on character (VB6: Dialogos.CreateDialog)
+        if (parts.Length >= 3 && int.TryParse(parts[2], out int charIdx))
+        {
+            SetCharDialog(charIdx, text, color);
         }
     }
 
     private void HandleYell(string data)
     {
+        // N|<color>°<text>°<charindex>
         var parts = data.Split((char)176);
-        if (parts.Length >= 2)
-        {
-            string color = "FF0000"; // yell is usually red
-            if (int.TryParse(parts[0], out int vbColor))
-            {
-                int r = vbColor & 0xFF;
-                int g = (vbColor >> 8) & 0xFF;
-                int b = (vbColor >> 16) & 0xFF;
-                color = $"{r:X2}{g:X2}{b:X2}";
-            }
+        if (parts.Length < 2) return;
 
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[1], Color = color });
-            GD.Print($"[YELL] {parts[1]}");
+        string color = "FF0000";
+        if (int.TryParse(parts[0], out int vbColor))
+        {
+            int r = vbColor & 0xFF;
+            int g = (vbColor >> 8) & 0xFF;
+            int b = (vbColor >> 16) & 0xFF;
+            color = $"{r:X2}{g:X2}{b:X2}";
         }
+
+        string text = parts[1];
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+
+        if (parts.Length >= 3 && int.TryParse(parts[2], out int charIdx))
+        {
+            SetCharDialog(charIdx, text, color);
+        }
+    }
+
+    /// <summary>
+    /// VB6 Dialogos.CreateDialog: set dialog bubble on a character.
+    /// Duration = 5000 + 100 * text.Length ms.  Replaces any previous dialog.
+    /// </summary>
+    private void SetCharDialog(int charIndex, string text, string hexColor)
+    {
+        if (!_state.Characters.TryGetValue(charIndex, out var ch)) return;
+
+        ch.DialogText = text;
+        ch.DialogColor = hexColor;
+        ch.DialogStartMs = System.Environment.TickCount64;
+        ch.DialogDurationMs = 5000 + 100 * text.Length;
+        ch.DialogRiseOffset = 0f;
+        ch.DialogRiseCounter = 18;  // VB6 Sube = 18
+        ch.DialogFading = false;
     }
 
     private void HandleWhisper(string data)
