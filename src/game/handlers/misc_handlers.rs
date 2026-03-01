@@ -259,7 +259,7 @@ pub(super) async fn handle_cabezi(state: &mut GameState, conn_id: ConnectionId, 
     // Update appearance for all nearby
     send_stats_gold(state, conn_id).await;
     let cc = state.users.get(&conn_id).unwrap().build_cc_packet();
-    let cp = format!("CP{},{},{},{},{},{},{}", old_ci,
+    let cp = format!("CP{},{},{},{},{},{},0,0,{}", old_ci,
         state.users.get(&conn_id).unwrap().body,
         new_head,
         state.users.get(&conn_id).unwrap().heading,
@@ -936,7 +936,7 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
 
     let cp = {
         let user = state.users.get(&conn_id).unwrap();
-        format!("CP{},{},{},{},{},{},{}", user.char_index.0, user.body, user.head, user.heading,
+        format!("CP{},{},{},{},{},{},0,0,{}", user.char_index.0, user.body, user.head, user.heading,
             super::common::NINGUN_ARMA, super::common::NINGUN_ESCUDO, super::common::NINGUN_CASCO)
     };
     state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
@@ -971,7 +971,7 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
 
     let cp = {
         let user = state.users.get(&conn_id).unwrap();
-        format!("CP{},{},{},{},{},{},{}", user.char_index.0, user.body, user.head, user.heading, user.weapon_anim, user.shield_anim, user.casco_anim)
+        format!("CP{},{},{},{},{},{},0,0,{}", user.char_index.0, user.body, user.head, user.heading, user.weapon_anim, user.shield_anim, user.casco_anim)
     };
     state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
     state.send_to(conn_id, &format!("{}Te has desmontado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;

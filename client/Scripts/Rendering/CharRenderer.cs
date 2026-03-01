@@ -59,7 +59,11 @@ public static class CharRenderer
             {
                 bodyInfo = ch.Body <= 0 ? "body<=0" : $"body>={data.Bodies.Length} (out of range)";
             }
-            Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim} casco={ch.CascoAnim}");
+            string shieldInfo = ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length
+                ? $"grh={data.Shields[ch.ShieldAnim].Walk[heading]}" : "none";
+            string cascoInfo = ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
+                ? $"grh={data.Cascos[ch.CascoAnim].Head[heading]}" : "none";
+            Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim}({shieldInfo}) casco={ch.CascoAnim}({cascoInfo})");
         }
 
         // VB6: dead character transparency pulsing (TransparenciaBody oscillates 0→100→0)
@@ -216,7 +220,7 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data)
     {
-        if (ch.CascoAnim <= 2 || ch.CascoAnim >= data.Cascos.Length) return;
+        if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         var casco = data.Cascos[ch.CascoAnim];
         if (casco.Head[heading] == 0) return;
 

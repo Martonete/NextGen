@@ -1034,9 +1034,10 @@ public class PacketHandler
 
     private void HandleChangeChar(string data)
     {
-        // CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<casco>
+        // VB6 CP format: CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<fx>,<loops>,<casco>
+        // Some server paths send shorter 4-field (NPC heading) or 7-field variants.
         var parts = data.Split(',');
-        if (parts.Length < 7) return;
+        if (parts.Length < 4) return;
 
         int idx = ParseInt(parts[0]);
         if (_state.Characters.TryGetValue(idx, out var ch))
@@ -1048,9 +1049,11 @@ public class PacketHandler
             ch.Body = ParseInt(parts[1]);
             ch.Head = newHead;
             ch.Heading = ParseInt(parts[3]);
-            ch.WeaponAnim = ParseInt(parts[4]);
-            ch.ShieldAnim = ParseInt(parts[5]);
-            ch.CascoAnim = ParseInt(parts[6]);
+            if (parts.Length > 4) ch.WeaponAnim = ParseInt(parts[4]);
+            if (parts.Length > 5) ch.ShieldAnim = ParseInt(parts[5]);
+            // VB6: casco is at position 8 (9th field), positions 6-7 are FX/loops
+            if (parts.Length >= 9) ch.CascoAnim = ParseInt(parts[8]);
+            else if (parts.Length == 7) ch.CascoAnim = ParseInt(parts[6]); // legacy 7-field
             ch.Dead = nowDead;
 
             // Reset transparency pulsing on state change

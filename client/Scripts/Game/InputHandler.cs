@@ -51,6 +51,11 @@ public class InputHandler
     private float _refreshTimer;
     private const float RefreshCooldownMs = 2000f;
 
+    // Generic key repeat cooldown (VB6 CheckKeys runs at ~32ms tick rate)
+    // Prevent rapid-fire sends when holding a key at 60fps.
+    private const float KeyCooldownMs = 300f;
+    private float _keyCooldown;
+
     public InputHandler(AoTcpClient tcp, GameState state)
     {
         _tcp = tcp;
@@ -69,6 +74,7 @@ public class InputHandler
         // Advance cooldown timers
         if (_attackTimer > 0) _attackTimer -= deltaMs;
         if (_refreshTimer > 0) _refreshTimer -= deltaMs;
+        if (_keyCooldown > 0) _keyCooldown -= deltaMs;
 
         // VB6: paralyzed users can only change heading (every 96ms)
         // For now, block all movement when paralyzed
@@ -123,68 +129,79 @@ public class InputHandler
             }
         }
 
+        // All action keys below share a cooldown to prevent rapid-fire when held.
+        // VB6 CheckKeys only ran once per ~32ms timer tick; at 60fps we need explicit gating.
+        if (_keyCooldown > 0) return;
+
         // Pick up item (VB6: A key sends AGR — conflicts with WASD, use G instead)
         if (Input.IsKeyPressed(Key.G))
         {
             _tcp.SendPacket("AGR");
+            _keyCooldown = KeyCooldownMs;
         }
-
         // Use item from selected inventory slot (VB6: U key)
-        if (Input.IsKeyPressed(Key.U))
+        else if (Input.IsKeyPressed(Key.U))
         {
             int slot = _state.SelectedInvSlot;
             if (slot >= 0 && slot < 25)
+            {
                 _tcp.SendPacket($"USA{slot + 1}"); // 1-based
+                _keyCooldown = KeyCooldownMs;
+            }
         }
-
         // Equip item from selected inventory slot (VB6: E key)
-        if (Input.IsKeyPressed(Key.E))
+        else if (Input.IsKeyPressed(Key.E))
         {
             int slot = _state.SelectedInvSlot;
             if (slot >= 0 && slot < 25)
+            {
                 _tcp.SendPacket($"EQUI{slot + 1}"); // 1-based
+                _keyCooldown = KeyCooldownMs;
+            }
         }
-
         // Drop item from selected inventory slot (VB6: T key sends TI,<slot>,<qty>)
-        if (Input.IsKeyPressed(Key.T))
+        else if (Input.IsKeyPressed(Key.T))
         {
             int slot = _state.SelectedInvSlot;
             if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+            {
                 _tcp.SendPacket($"TI,{slot + 1},{_state.Inventory[slot].Amount}"); // 1-based
+                _keyCooldown = KeyCooldownMs;
+            }
         }
-
         // Toggle names display (VB6: N key — client-side only)
-        if (Input.IsKeyPressed(Key.N))
+        else if (Input.IsKeyPressed(Key.N))
         {
             _state.ShowNames = !_state.ShowNames;
+            _keyCooldown = KeyCooldownMs;
         }
-
         // Steal/Robo (VB6: R key sends UK<Robar>)
-        if (Input.IsKeyPressed(Key.R))
+        else if (Input.IsKeyPressed(Key.R))
         {
             _tcp.SendPacket("UK12"); // VB6 eSkill.Robar = 12
+            _keyCooldown = KeyCooldownMs;
         }
-
         // Hide/Stealth (VB6: O key sends UK<Ocultarse>)
-        if (Input.IsKeyPressed(Key.O))
+        else if (Input.IsKeyPressed(Key.O))
         {
             _tcp.SendPacket("UK9"); // VB6 eSkill.Ocultarse = 9
+            _keyCooldown = KeyCooldownMs;
         }
-
         // Refresh position (VB6: L key sends RPU)
-        if (Input.IsKeyPressed(Key.L))
+        else if (Input.IsKeyPressed(Key.L))
         {
             if (_refreshTimer <= 0)
             {
                 _tcp.SendPacket("RPU");
                 _refreshTimer = RefreshCooldownMs;
             }
+            _keyCooldown = KeyCooldownMs;
         }
-
         // Meditate (VB6: F6)
-        if (Input.IsKeyPressed(Key.F6))
+        else if (Input.IsKeyPressed(Key.F6))
         {
             _tcp.SendPacket(";/MEDITAR");
+            _keyCooldown = KeyCooldownMs;
         }
     }
 
