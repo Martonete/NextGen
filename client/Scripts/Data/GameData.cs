@@ -116,13 +116,12 @@ public class GameData
         int frameIdx = frame % grh.Frames.Length;
         int resolvedIdx = grh.Frames[frameIdx];
 
-        if (resolvedIdx <= 0 || resolvedIdx >= Grhs.Length) return null;
+        if (resolvedIdx <= 0 || resolvedIdx >= Grhs.Length) return grh;
 
         var child = Grhs[resolvedIdx];
-        // VB6: If GrhData(grh_index).FileNum = 0 Then Exit Sub
-        // If child frame wasn't loaded, return null (skip drawing) rather than
-        // falling back to parent which would freeze the animation on one frame.
-        if (child.FileNum <= 0) return null;
+        // If child frame wasn't loaded (FileNum=0), fall back to parent's
+        // first-frame data so the tile still renders (better than invisible).
+        if (child.FileNum <= 0) return grh;
         return child;
     }
 }

@@ -140,7 +140,8 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data)
     {
-        if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
+        // VB6: NingunCasco=2 means "no helmet" — Cascos[1-2] are reserved/empty
+        if (ch.CascoAnim <= 2 || ch.CascoAnim >= data.Cascos.Length) return;
         var casco = data.Cascos[ch.CascoAnim];
         if (casco.Head[heading] == 0) return;
 
@@ -155,7 +156,8 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Bodies.Length) return;
+        // VB6: NingunArma=2 means "no weapon" — Bodies[1-2] are reserved/empty
+        if (ch.WeaponAnim <= 2 || ch.WeaponAnim >= data.Bodies.Length) return;
         var weapon = data.Bodies[ch.WeaponAnim];
         if (weapon.Walk[heading] == 0) return;
 
@@ -172,7 +174,8 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Bodies.Length) return;
+        // VB6: NingunEscudo=2 means "no shield" — Bodies[1-2] are reserved/empty
+        if (ch.ShieldAnim <= 2 || ch.ShieldAnim >= data.Bodies.Length) return;
         var shield = data.Bodies[ch.ShieldAnim];
         if (shield.Walk[heading] == 0) return;
 
