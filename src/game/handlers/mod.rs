@@ -104,10 +104,13 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
     } else if data.starts_with(client_opcodes::REECUH) {
         handle_reecuh(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::COMMERCE_CLOSE) {
+        info!("[DISPATCH] #{} FINCOM", conn_id);
         handle_commerce_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::COMMERCE_BUY) {
+        info!("[DISPATCH] #{} COMP raw='{}'", conn_id, data);
         handle_commerce_buy(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::COMMERCE_SELL) {
+        info!("[DISPATCH] #{} VEND raw='{}'", conn_id, data);
         handle_commerce_sell(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::TRADE_CANCEL) {
         handle_trade_cancel(state, conn_id).await;

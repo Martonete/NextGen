@@ -180,6 +180,10 @@ async fn main() {
                 let data_str = data_str.trim().trim_end_matches(|c: char| c.is_control());
 
                 if !data_str.is_empty() {
+                    // Debug: log packets starting with COMP or VEND
+                    if data_str.starts_with("COMP") || data_str.starts_with("VEND") {
+                        tracing::info!("[RAW-PKT] #{} '{}'", conn_id, data_str);
+                    }
                     game::handlers::handle_packet(&mut state, conn_id, data_str).await;
                 }
             }
