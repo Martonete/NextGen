@@ -712,8 +712,9 @@ public class PacketHandler
         {
             HandleGmBroadcast(packet[2..]);
         }
-        else if (packet.StartsWith("+"))
+        else if (packet.StartsWith("+") || packet.StartsWith("*"))
         {
+            // + = player move, * = NPC move (VB6: both use Char_Move_by_Pos)
             HandleMoveChar(packet[1..]);
         }
         else if (packet.Length >= 1 && packet[0] == '6')
