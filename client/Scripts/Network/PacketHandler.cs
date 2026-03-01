@@ -345,6 +345,9 @@ public class PacketHandler
         };
 
         _state.Characters[charIndex] = ch;
+
+        if (ch.Body <= 0)
+            GD.PrintErr($"[CC] WARNING: char {ch.Name} (idx={charIndex}) has body=0!");
     }
 
     private void HandleChangeChar(string data)

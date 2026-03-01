@@ -556,12 +556,36 @@ public partial class Main : Control
         {
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear();
+
+            // VB6: InitGrh sets FrameCounter=1 for ALL tiles at map load time.
+            // Pre-start all animated tile GRHs so they begin synchronized.
+            // Without this, different water GRH indices (1505-1520) would start
+            // their animations at different times → visible "staircase" effect.
+            for (int y = 1; y <= 100; y++)
+            {
+                for (int x = 1; x <= 100; x++)
+                {
+                    ref var tile = ref _state.MapData.Tiles[x, y];
+                    PreStartTileAnim(tile.Layer1);
+                    PreStartTileAnim(tile.Layer2);
+                    PreStartTileAnim(tile.Layer3);
+                    PreStartTileAnim(tile.Layer4);
+                }
+            }
+
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
         }
+    }
+
+    private void PreStartTileAnim(short grhIndex)
+    {
+        if (grhIndex <= 0 || grhIndex >= _gameData.Grhs.Length) return;
+        if (_gameData.Grhs[grhIndex].NumFrames > 1)
+            _animator.StartAnim(grhIndex);
     }
 
     // VB6 movement constants

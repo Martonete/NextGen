@@ -668,13 +668,13 @@ async fn connect_user(
         user.head = char_data.head;
         user.old_head = char_data.head; // VB6 OrigChar.Head — for boat/invis restore
 
-        // Safety: if charfile has ghost body (8/500) but dead=false, restore naked body.
-        // This can happen from a bad revive that didn't restore body before saving.
-        if !user.dead && (user.body == DEAD_BODY_NEUTRAL || user.head == DEAD_HEAD_NEUTRAL) {
+        // Safety: if charfile has invalid body (0=invisible, 8=ghost) but dead=false,
+        // restore naked body. body=0 can happen if a GM disconnects while invisible.
+        if !user.dead && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
             let gender_str = char_data.gender.to_string();
             user.body = naked_body(&char_data.race, &gender_str);
-            // Head 500 is ghost head — use a default head for the race/gender
-            if user.head == DEAD_HEAD_NEUTRAL {
+            // Head 500 is ghost head, head 0 is invisible — use a default for race/gender
+            if user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL {
                 user.head = default_head_for_race(&char_data.race, char_data.gender);
             }
         }
