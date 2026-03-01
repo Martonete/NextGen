@@ -625,21 +625,65 @@ public partial class Main : Control
 
     /// <summary>
     /// VB6 chat behavior:
-    /// - Enter with text → send message, clear input, hide input
-    /// - Enter with empty → clear any leftover text, hide input (double-Enter clears)
+    /// - Enter with text → send message with mode prefix, clear input, hide input
+    /// - Enter with empty/space → send ";  " to clear text above head (VB6 carteleo behavior)
     /// Text is NOT added to console here — the server echoes it back as a T| packet.
     /// </summary>
     private void OnChatSubmitted(string text)
     {
-        if (!string.IsNullOrWhiteSpace(text) && _tcp != null)
+        if (_tcp != null)
         {
-            _tcp.SendPacket($";{text}");
+            if (text.StartsWith("/"))
+            {
+                // Slash commands go directly (no prefix)
+                _tcp.SendPacket($";{text}");
+            }
+            else if (!string.IsNullOrEmpty(text) && text.Trim().Length > 0)
+            {
+                // Normal message with current chat mode prefix
+                _tcp.SendPacket($"{_state.ChatModePrefix}{text}");
+            }
+            else
+            {
+                // Empty/whitespace: send space to clear text above head (VB6 carteleo)
+                _tcp.SendPacket("; ");
+            }
         }
         // Always hide + clear on submit (VB6: Enter closes the input)
         _chatInput!.Text = "";
         _chatInput.Visible = false;
         _chatInput.ReleaseFocus();
         _state.ChatActive = false;
+    }
+
+    /// <summary>
+    /// VB6 TalkMode(): Switch chat mode prefix.
+    /// Modes: 0=normal, 1=yell, 2=clan, 3=global, 4=party, 5=faction, 6=gm/report, 7=whisper
+    /// </summary>
+    private void SetChatMode(int mode)
+    {
+        _state.ChatMode = mode;
+        switch (mode)
+        {
+            case 0: _state.ChatModePrefix = ";"; break;        // Normal talk
+            case 1: _state.ChatModePrefix = "-"; break;        // Yell/Gritar
+            case 2: _state.ChatModePrefix = ";/cmsg "; break;  // Clan chat
+            case 3: _state.ChatModePrefix = ";/GLOBAL "; break; // Global chat
+            case 4: _state.ChatModePrefix = ";/pmsg "; break;  // Party chat
+            case 5: _state.ChatModePrefix = ";/FMSG "; break;  // Faction chat
+            case 6: _state.ChatModePrefix = ";/gmsg "; break;  // GM report
+            case 7:                                              // Whisper
+                _state.ChatModePrefix = $"\\{_state.WhisperTarget}@";
+                break;
+            default: _state.ChatModePrefix = ";"; break;
+        }
+        string[] modeNames = { "Normal", "Gritar", "Clan", "Global", "Party", "Facción", "GM", "Privado" };
+        string modeName = mode >= 0 && mode < modeNames.Length ? modeNames[mode] : "Normal";
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"Modo de habla: {modeName}",
+            Color = "00FF00"
+        });
     }
 
     public override void _Process(double delta)
@@ -1046,20 +1090,50 @@ public partial class Main : Control
     {
         if (_state.CurrentScreen != Screen.Game) return;
 
-        // VB6: Enter opens chat input, preserving previous text.
-        // Double-Enter (open → submit empty) clears the previous message.
-        if (@event is InputEventKey key && key.Pressed && !key.Echo
-            && (key.Keycode == Key.Enter || key.Keycode == Key.KpEnter)
-            && _chatInput != null && !_chatInput.Visible)
+        // Chat input handling
+        if (@event is InputEventKey key && key.Pressed && !key.Echo && _chatInput != null)
         {
-            _chatInput.Visible = true;
-            // Don't clear — VB6 preserves previous text so user can re-send or edit.
-            // Submitting empty (second Enter) clears it via OnChatSubmitted.
-            _chatInput.GrabFocus();
-            _chatInput.SelectAll();
-            _state.ChatActive = true;
-            GetViewport().SetInputAsHandled();
-            return;
+            // Escape: close chat input without sending
+            if (key.Keycode == Key.Escape && _state.ChatActive)
+            {
+                _chatInput.Text = "";
+                _chatInput.Visible = false;
+                _chatInput.ReleaseFocus();
+                _state.ChatActive = false;
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
+            // Enter: open chat input, or submit if already open (fallback for TextSubmitted)
+            if (key.Keycode == Key.Enter || key.Keycode == Key.KpEnter)
+            {
+                if (_state.ChatActive && _chatInput.Visible)
+                {
+                    // Chat already open → submit (fallback if TextSubmitted doesn't fire)
+                    OnChatSubmitted(_chatInput.Text);
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+                else if (!_chatInput.Visible)
+                {
+                    // Open chat input (VB6: preserves previous text)
+                    _chatInput.Visible = true;
+                    _chatInput.GrabFocus();
+                    _chatInput.SelectAll();
+                    _state.ChatActive = true;
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+            }
+
+            // Numpad 0-8: chat mode switching (VB6: HablaNumerico)
+            if (!_state.ChatActive && key.Keycode >= Key.Kp0 && key.Keycode <= Key.Kp8)
+            {
+                int mode = (int)key.Keycode - (int)Key.Kp0;
+                SetChatMode(mode);
+                GetViewport().SetInputAsHandled();
+                return;
+            }
         }
 
         // Mouse clicks on the game viewport area.

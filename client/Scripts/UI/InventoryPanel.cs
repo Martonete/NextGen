@@ -159,11 +159,13 @@ public partial class InventoryPanel : Control
                         {
                             // VB6: double click → QSA{slot},{picInv.Visible} (1=visible)
                             _selectedSlot = slot;
+                            _state.SelectedInvSlot = slot;
                             _tcp.SendPacket($"QSA{slot + 1},{(Visible ? 1 : 0)}");
                         }
                         else
                         {
                             _selectedSlot = slot;
+                            _state.SelectedInvSlot = slot;
 
                             // Start drag if DyD enabled
                             if (_dydEnabled && _state.Inventory[slot].ObjIndex > 0)
@@ -194,6 +196,7 @@ public partial class InventoryPanel : Control
                 if (slot >= 0 && slot < TotalSlots)
                 {
                     _selectedSlot = slot;
+                    _state.SelectedInvSlot = slot;
                     // Right click → equip/unequip
                     _tcp.SendPacket($"EQUI{slot + 1}");
                 }

@@ -115,6 +115,48 @@ public class InputHandler
             _tcp.SendPacket("AGR");
         }
 
+        // Use item from selected inventory slot (VB6: U key)
+        if (Input.IsKeyPressed(Key.U))
+        {
+            int slot = _state.SelectedInvSlot;
+            if (slot >= 0 && slot < 25)
+                _tcp.SendPacket($"USA{slot + 1}"); // 1-based
+        }
+
+        // Equip item from selected inventory slot (VB6: E key)
+        if (Input.IsKeyPressed(Key.E))
+        {
+            int slot = _state.SelectedInvSlot;
+            if (slot >= 0 && slot < 25)
+                _tcp.SendPacket($"EQI{slot + 1}"); // 1-based
+        }
+
+        // Drop item from selected inventory slot (VB6: T key sends TI,<slot>,<qty>)
+        if (Input.IsKeyPressed(Key.T))
+        {
+            int slot = _state.SelectedInvSlot;
+            if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+                _tcp.SendPacket($"TI,{slot + 1},{_state.Inventory[slot].Amount}"); // 1-based
+        }
+
+        // Toggle names display (VB6: N key — client-side only)
+        if (Input.IsKeyPressed(Key.N))
+        {
+            _state.ShowNames = !_state.ShowNames;
+        }
+
+        // Steal/Robo (VB6: R key sends UK<Robar>)
+        if (Input.IsKeyPressed(Key.R))
+        {
+            _tcp.SendPacket("UK12"); // VB6 eSkill.Robar = 12
+        }
+
+        // Hide/Stealth (VB6: O key sends UK<Ocultarse>)
+        if (Input.IsKeyPressed(Key.O))
+        {
+            _tcp.SendPacket("UK9"); // VB6 eSkill.Ocultarse = 9
+        }
+
         // Refresh position (VB6: L key sends RPU)
         if (Input.IsKeyPressed(Key.L))
         {
@@ -128,7 +170,7 @@ public class InputHandler
         // Meditate (VB6: F6)
         if (Input.IsKeyPressed(Key.F6))
         {
-            _tcp.SendPacket("/MEDITAR");
+            _tcp.SendPacket(";/MEDITAR");
         }
     }
 

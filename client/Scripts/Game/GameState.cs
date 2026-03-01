@@ -63,6 +63,10 @@ public class GameState
     public bool Trading;        // VB6: Comerciando (player-to-player trade)
     public int UsingSkill; // VB6: spell slot being targeted (0 = none)
     public bool ChatActive; // VB6: true when chat input is visible/focused
+    public string ChatModePrefix = ";"; // VB6 modoHabla: ";" normal, "-" yell, "/cmsg " clan, etc.
+    public int ChatMode;               // 0=normal, 1=yell, 2=clan, 3=global, 4=party, 5=faction, 6=gm, 7=whisper
+    public string WhisperTarget = "";   // Target name for whisper mode
+    public bool ShowNames = true;       // VB6: Nombres — toggle character names display
 
     // Camera scroll state (VB6 client-side prediction)
     public bool UserMoving;        // True while camera is scrolling between tiles
@@ -114,6 +118,7 @@ public class GameState
 
     // Inventory (25 slots)
     public InventorySlot[] Inventory = new InventorySlot[25];
+    public int SelectedInvSlot = -1; // Currently selected inventory slot (0-based, -1 = none)
 
     // Spells (20 slots)
     public SpellSlot[] Spells = new SpellSlot[20];
