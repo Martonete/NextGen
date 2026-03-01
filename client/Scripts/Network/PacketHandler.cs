@@ -91,6 +91,10 @@ public class PacketHandler
         {
             HandleChangeMap(packet[2..]);
         }
+        else if (packet.StartsWith("PT"))
+        {
+            HandlePositionRejection(packet[2..]);
+        }
         else if (packet.StartsWith("PU"))
         {
             HandlePlayerPosition(packet[2..]);
@@ -224,12 +228,64 @@ public class PacketHandler
 
     private void HandlePlayerPosition(string data)
     {
-        // PU<x>,<y>
+        // PU<x>,<y> — authoritative position set (e.g. after warp/teleport)
         var parts = data.Split(',');
         if (parts.Length >= 2)
         {
-            _state.UserPosX = ParseInt(parts[0]);
-            _state.UserPosY = ParseInt(parts[1]);
+            int x = ParseInt(parts[0]);
+            int y = ParseInt(parts[1]);
+            _state.UserPosX = x;
+            _state.UserPosY = y;
+
+            // Also snap the self character and cancel any in-progress scroll
+            if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
+            {
+                ch.PosX = x;
+                ch.PosY = y;
+                ch.MoveOffsetX = 0;
+                ch.MoveOffsetY = 0;
+                ch.Moving = false;
+                ch.ScrollDirectionX = 0;
+                ch.ScrollDirectionY = 0;
+            }
+            _state.ScreenOffsetX = 0;
+            _state.ScreenOffsetY = 0;
+            _state.AddToUserPosX = 0;
+            _state.AddToUserPosY = 0;
+            _state.UserMoving = false;
+        }
+    }
+
+    private void HandlePositionRejection(string data)
+    {
+        // PT<x>,<y> — server rejected movement, snap back to correct position
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int x = ParseInt(parts[0]);
+            int y = ParseInt(parts[1]);
+
+            GD.Print($"[MOVE] Server rejected move, snapping to ({x},{y})");
+
+            _state.UserPosX = x;
+            _state.UserPosY = y;
+
+            if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
+            {
+                ch.PosX = x;
+                ch.PosY = y;
+                ch.MoveOffsetX = 0;
+                ch.MoveOffsetY = 0;
+                ch.Moving = false;
+                ch.ScrollDirectionX = 0;
+                ch.ScrollDirectionY = 0;
+            }
+
+            _state.ScreenOffsetX = 0;
+            _state.ScreenOffsetY = 0;
+            _state.AddToUserPosX = 0;
+            _state.AddToUserPosY = 0;
+            _state.UserMoving = false;
         }
     }
 

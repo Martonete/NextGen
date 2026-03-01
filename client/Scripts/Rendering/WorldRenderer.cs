@@ -139,9 +139,12 @@ public partial class WorldRenderer : Node2D
 
         BuildCharPositionIndex();
 
-        // Camera pixel offset from GameState (set by Main.UpdateMovement)
-        float pixelOffsetX = _state.ScreenOffsetX;
-        float pixelOffsetY = _state.ScreenOffsetY;
+        // Camera pixel offset — NEGATED because ScreenOffset grows in the movement
+        // direction, but tiles must shift in the OPPOSITE direction on screen.
+        // This also makes self char's MoveOffset and camera offset cancel out perfectly,
+        // keeping the player centered while the world scrolls smoothly.
+        float pixelOffsetX = -_state.ScreenOffsetX;
+        float pixelOffsetY = -_state.ScreenOffsetY;
 
         // Visible tile range
         int screenMinX = userX - HalfWindowTileWidth;

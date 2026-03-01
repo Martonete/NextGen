@@ -454,6 +454,16 @@ public partial class Main : Control
                 _state.AddToUserPosX = 0;
                 _state.AddToUserPosY = 0;
                 _state.UserMoving = false;
+
+                // Sync: force self char's MoveOffset to complete too (avoid 1-frame glitch)
+                if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
+                {
+                    selfCh.MoveOffsetX = 0;
+                    selfCh.MoveOffsetY = 0;
+                    selfCh.Moving = false;
+                    selfCh.ScrollDirectionX = 0;
+                    selfCh.ScrollDirectionY = 0;
+                }
             }
         }
 
