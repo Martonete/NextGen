@@ -551,6 +551,7 @@ public partial class Main : Control
         _statusLabel!.Text = "Conectando...";
 
         _tcp = new AoTcpClient();
+        _packetHandler = new PacketHandler(_state);
         _inputHandler = new InputHandler(_tcp, _state);
         _connecting = true;
 
