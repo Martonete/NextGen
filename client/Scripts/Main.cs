@@ -425,40 +425,76 @@ public partial class Main : Control
         }
     }
 
+    /// <summary>
+    /// VB6-accurate movement interpolation.
+    /// timerTicksPerFrame = deltaMs * EngineBaseSpeed (0.0172)
+    /// scrollPixels = ScrollPixelsPerFrame (8) * timerTicksPerFrame
+    /// Full tile (32px) ≈ 14 frames ≈ 233ms at 60fps.
+    /// </summary>
     private void UpdateMovement(float delta)
     {
-        float scrollPixels = ScrollSpeed * delta * 60f;
+        float deltaMs = delta * 1000f;
+        float ticksPerFrame = deltaMs * EngineBaseSpeed;
+        float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
 
+        // Camera scroll (VB6 ShowNextFrame → OffsetCounterX/Y)
+        if (_state.UserMoving)
+        {
+            _state.ScreenOffsetX += ScrollPixelsPerFrame * _state.AddToUserPosX * ticksPerFrame;
+            _state.ScreenOffsetY += ScrollPixelsPerFrame * _state.AddToUserPosY * ticksPerFrame;
+
+            // Complete when offset reaches a full tile (32px)
+            bool doneX = _state.AddToUserPosX == 0 || Math.Abs(_state.ScreenOffsetX) >= 32f;
+            bool doneY = _state.AddToUserPosY == 0 || Math.Abs(_state.ScreenOffsetY) >= 32f;
+
+            if (doneX && doneY)
+            {
+                _state.ScreenOffsetX = 0;
+                _state.ScreenOffsetY = 0;
+                _state.AddToUserPosX = 0;
+                _state.AddToUserPosY = 0;
+                _state.UserMoving = false;
+            }
+        }
+
+        // Character sprite interpolation
         foreach (var kvp in _state.Characters)
         {
             var ch = kvp.Value;
             if (!ch.Moving && ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
                 continue;
 
-            if (ch.MoveOffsetX > 0)
+            // Interpolate X using ScrollDirection
+            if (ch.MoveOffsetX != 0)
             {
-                ch.MoveOffsetX -= scrollPixels;
-                if (ch.MoveOffsetX < 0) ch.MoveOffsetX = 0;
-            }
-            else if (ch.MoveOffsetX < 0)
-            {
-                ch.MoveOffsetX += scrollPixels;
-                if (ch.MoveOffsetX > 0) ch.MoveOffsetX = 0;
+                ch.MoveOffsetX += scrollPixels * ch.ScrollDirectionX;
+                // Complete when offset crosses zero (moved past destination)
+                if ((ch.ScrollDirectionX > 0 && ch.MoveOffsetX >= 0) ||
+                    (ch.ScrollDirectionX < 0 && ch.MoveOffsetX <= 0) ||
+                    ch.ScrollDirectionX == 0)
+                {
+                    ch.MoveOffsetX = 0;
+                }
             }
 
-            if (ch.MoveOffsetY > 0)
+            // Interpolate Y using ScrollDirection
+            if (ch.MoveOffsetY != 0)
             {
-                ch.MoveOffsetY -= scrollPixels;
-                if (ch.MoveOffsetY < 0) ch.MoveOffsetY = 0;
-            }
-            else if (ch.MoveOffsetY < 0)
-            {
-                ch.MoveOffsetY += scrollPixels;
-                if (ch.MoveOffsetY > 0) ch.MoveOffsetY = 0;
+                ch.MoveOffsetY += scrollPixels * ch.ScrollDirectionY;
+                if ((ch.ScrollDirectionY > 0 && ch.MoveOffsetY >= 0) ||
+                    (ch.ScrollDirectionY < 0 && ch.MoveOffsetY <= 0) ||
+                    ch.ScrollDirectionY == 0)
+                {
+                    ch.MoveOffsetY = 0;
+                }
             }
 
             if (ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
+            {
                 ch.Moving = false;
+                ch.ScrollDirectionX = 0;
+                ch.ScrollDirectionY = 0;
+            }
         }
     }
 
@@ -485,7 +521,9 @@ public partial class Main : Control
         }
     }
 
-    private const float ScrollSpeed = 6f;
+    // VB6 movement constants
+    private const float EngineBaseSpeed = 0.0172f;   // VB6 timerTicksPerFrame = deltaMs * 0.0172
+    private const float ScrollPixelsPerFrame = 8f;   // VB6 ScrollPixelsPerFrameX/Y
 
     public override void _ExitTree()
     {

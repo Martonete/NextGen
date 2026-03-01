@@ -132,18 +132,16 @@ public partial class WorldRenderer : Node2D
         if (_state == null || _data == null || _animator == null) return;
         if (_state.MapData == null || _state.Paused) return;
 
-        int userX = _state.UserPosX;
-        int userY = _state.UserPosY;
+        // VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
+        // During scroll, camera center stays at the old tile while offset accumulates
+        int userX = _state.UserPosX - _state.AddToUserPosX;
+        int userY = _state.UserPosY - _state.AddToUserPosY;
 
         BuildCharPositionIndex();
 
-        // Smooth scroll offset from self character
-        float pixelOffsetX = 0, pixelOffsetY = 0;
-        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfChar))
-        {
-            pixelOffsetX = selfChar.MoveOffsetX;
-            pixelOffsetY = selfChar.MoveOffsetY;
-        }
+        // Camera pixel offset from GameState (set by Main.UpdateMovement)
+        float pixelOffsetX = _state.ScreenOffsetX;
+        float pixelOffsetY = _state.ScreenOffsetY;
 
         // Visible tile range
         int screenMinX = userX - HalfWindowTileWidth;
@@ -214,15 +212,8 @@ public partial class WorldRenderer : Node2D
                 {
                     if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
 
-                    float charPx = tilePos.X;
-                    float charPy = tilePos.Y;
-
-                    // Non-self characters add their own movement offset
-                    if (charsHere[ci] != _state.UserCharIndex)
-                    {
-                        charPx += ch.MoveOffsetX;
-                        charPy += ch.MoveOffsetY;
-                    }
+                    float charPx = tilePos.X + ch.MoveOffsetX;
+                    float charPy = tilePos.Y + ch.MoveOffsetY;
 
                     CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator);
                 }

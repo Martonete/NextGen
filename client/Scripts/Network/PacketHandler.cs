@@ -299,11 +299,41 @@ public class PacketHandler
         int newX = ParseInt(parts[1]);
         int newY = ParseInt(parts[2]);
 
-        if (_state.Characters.TryGetValue(idx, out var ch))
+        if (!_state.Characters.TryGetValue(idx, out var ch))
+            return;
+
+        if (idx == _state.UserCharIndex)
         {
-            // Calculate heading from delta
+            // Self character: client already predicted this move.
+            // Verify position matches. If server disagrees, snap to correct position.
+            if (ch.PosX != newX || ch.PosY != newY)
+            {
+                GD.Print($"[MOVE] Server correction: predicted ({ch.PosX},{ch.PosY}) → server ({newX},{newY})");
+                ch.PosX = newX;
+                ch.PosY = newY;
+                ch.MoveOffsetX = 0;
+                ch.MoveOffsetY = 0;
+                ch.Moving = false;
+                ch.ScrollDirectionX = 0;
+                ch.ScrollDirectionY = 0;
+
+                _state.UserPosX = newX;
+                _state.UserPosY = newY;
+                _state.ScreenOffsetX = 0;
+                _state.ScreenOffsetY = 0;
+                _state.AddToUserPosX = 0;
+                _state.AddToUserPosY = 0;
+                _state.UserMoving = false;
+            }
+            // If matches, do nothing — prediction was correct
+        }
+        else
+        {
+            // Other characters: VB6 Char_Move_by_Pos
             int dx = newX - ch.PosX;
             int dy = newY - ch.PosY;
+
+            // Calculate heading from delta
             if (dy < 0) ch.Heading = 1;      // North
             else if (dx > 0) ch.Heading = 2;  // East
             else if (dy > 0) ch.Heading = 3;  // South
@@ -312,16 +342,11 @@ public class PacketHandler
             // Start smooth move
             ch.MoveOffsetX = -(dx * 32);
             ch.MoveOffsetY = -(dy * 32);
+            ch.ScrollDirectionX = dx != 0 ? Math.Sign(dx) : 0;
+            ch.ScrollDirectionY = dy != 0 ? Math.Sign(dy) : 0;
             ch.PosX = newX;
             ch.PosY = newY;
             ch.Moving = true;
-
-            // Keep viewport centered on self character
-            if (idx == _state.UserCharIndex)
-            {
-                _state.UserPosX = newX;
-                _state.UserPosY = newY;
-            }
         }
     }
 

@@ -56,6 +56,13 @@ public class GameState
     public bool UserNavigating;
     public bool UserStopped;
 
+    // Camera scroll state (VB6 client-side prediction)
+    public bool UserMoving;        // True while camera is scrolling between tiles
+    public int AddToUserPosX;      // Camera scroll direction: -1, 0, or +1
+    public int AddToUserPosY;
+    public float ScreenOffsetX;    // Camera pixel offset accumulator
+    public float ScreenOffsetY;
+
     // Characters visible in area
     public Dictionary<int, Character> Characters = new();
 
