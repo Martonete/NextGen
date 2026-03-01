@@ -42,12 +42,6 @@ public partial class Main : Control
     private TextureRect? _backgroundImage;
     private RichTextLabel? _console;
     private LineEdit? _chatInput;
-    private ProgressBar? _hpBar;
-    private ProgressBar? _manaBar;
-    private ProgressBar? _staBar;
-    private ProgressBar? _aguaBar;
-    private ProgressBar? _hamBar;
-    private ProgressBar? _expBar;
     private Label? _goldLabel;
     private Label? _levelLabel;
     private Label? _nameLabel;
@@ -55,11 +49,14 @@ public partial class Main : Control
     private Label? _onlineLabel;
     private Label? _coordsLabel;
     private Label? _expLabel;
-    private Label? _hpLabel;
-    private Label? _manaLabel;
-    private Label? _staLabel;
-    private Label? _aguaLabel;
-    private Label? _hamLabel;
+
+    // Custom stat bar overlay (draws colored fill rects at VB6 positions)
+    private StatBarOverlay? _statBarOverlay;
+
+    // InvEqu panel background (CentroNuevoInventario / CentronuevoHechizos)
+    private TextureRect? _invEquImage;
+    private ImageTexture? _invEquInvTexture;
+    private ImageTexture? _invEquSpellTexture;
 
     // Inventory & Spells UI (VB6-accurate positions)
     private InventoryPanel? _inventoryPanel;
@@ -67,7 +64,7 @@ public partial class Main : Control
     private Button? _invTabButton;
     private Button? _spellTabButton;
     private Label? _itemNameLabel;
-    private CheckButton? _dydToggle;
+    private Button? _dydToggle;
     private Button? _lanzarButton;
     private Button? _infoButton;
     private Button? _spellUpButton;
@@ -135,12 +132,6 @@ public partial class Main : Control
         _chatInput.AddThemeStyleboxOverride("normal", chatBox);
         _chatInput.AddThemeStyleboxOverride("focus", chatBox);
         _chatInput.AddThemeStyleboxOverride("read_only", chatBox);
-        _hpBar = GetNode<ProgressBar>("GameUI/HPBar");
-        _manaBar = GetNode<ProgressBar>("GameUI/ManaBar");
-        _staBar = GetNode<ProgressBar>("GameUI/StaBar");
-        _aguaBar = GetNode<ProgressBar>("GameUI/AguaBar");
-        _hamBar = GetNode<ProgressBar>("GameUI/HamBar");
-        _expBar = GetNode<ProgressBar>("GameUI/ExpBar");
         _goldLabel = GetNode<Label>("GameUI/GoldLabel");
         _levelLabel = GetNode<Label>("GameUI/LevelLabel");
         _nameLabel = GetNode<Label>("GameUI/NameLabel");
@@ -148,20 +139,30 @@ public partial class Main : Control
         _onlineLabel = GetNode<Label>("GameUI/OnlineLabel");
         _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
         _expLabel = GetNode<Label>("GameUI/ExpLabel");
-        _hpLabel = GetNode<Label>("GameUI/HPLabel");
-        _manaLabel = GetNode<Label>("GameUI/ManaLabel");
-        _staLabel = GetNode<Label>("GameUI/StaLabel");
-        _aguaLabel = GetNode<Label>("GameUI/AguaLabel");
-        _hamLabel = GetNode<Label>("GameUI/HamLabel");
+
+        // Custom stat bar overlay — draws colored fill rects at VB6 positions
+        _statBarOverlay = new StatBarOverlay();
+        _statBarOverlay.Position = Vector2.Zero;
+        _statBarOverlay.Size = new Vector2(800, 600);
+        _statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _gameUI.AddChild(_statBarOverlay);
 
         // === Inventory & Spells UI (VB6-exact pixel positions, twips÷15) ===
 
-        // Tab labels — VB6: Label4 "Inventario" at (536,120,131,29), Label7 "Hechizos" at (672,120,125,30)
-        _invTabButton = CreateButton("Inventario", 536, 120, 131, 29);
+        // InvEqu panel background — VB6: InvEqu at (535,123,264,246)
+        _invEquImage = new TextureRect();
+        _invEquImage.Position = new Vector2(535, 123);
+        _invEquImage.Size = new Vector2(264, 246);
+        _invEquImage.StretchMode = TextureRect.StretchModeEnum.Scale;
+        _invEquImage.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _gameUI.AddChild(_invEquImage);
+
+        // Tab buttons — invisible flat (VB6 visuals are in Principal.jpg)
+        _invTabButton = CreateInvisibleButton(536, 120, 131, 29);
         _gameUI.AddChild(_invTabButton);
         _invTabButton.Pressed += OnInventoryTabPressed;
 
-        _spellTabButton = CreateButton("Hechizos", 672, 120, 125, 30);
+        _spellTabButton = CreateInvisibleButton(672, 120, 125, 30);
         _gameUI.AddChild(_spellTabButton);
         _spellTabButton.Pressed += OnSpellTabPressed;
 
@@ -182,12 +183,11 @@ public partial class Main : Control
         _gameUI.AddChild(_itemNameLabel);
         _inventoryPanel.TooltipLabel = _itemNameLabel;
 
-        // DyD toggle — VB6: DyD at (541,338,21,21)
-        _dydToggle = new CheckButton();
-        _dydToggle.Position = new Vector2(541, 338);
-        _dydToggle.Size = new Vector2(21, 21);
-        _dydToggle.Text = "";
-        _dydToggle.Toggled += (toggled) => { _inventoryPanel.DyDEnabled = toggled; };
+        // DyD toggle — VB6: DyD at (541,338,21,21) — invisible, visual is in background
+        _dydToggle = CreateInvisibleButton(541, 338, 21, 21);
+        _dydToggle.Pressed += () => {
+            _inventoryPanel!.DyDEnabled = !_inventoryPanel.DyDEnabled;
+        };
         _gameUI.AddChild(_dydToggle);
 
         // Spell panel — VB6: hlst at (585,165,164,159), initially hidden
@@ -198,25 +198,25 @@ public partial class Main : Control
         _spellPanel.Visible = false;
         _gameUI.AddChild(_spellPanel);
 
-        // LANZAR button — VB6: CmdLanzar at (536,327,142,40), hidden initially
-        _lanzarButton = CreateButton("LANZAR", 536, 370, 142, 30);
+        // LANZAR button — VB6: CmdLanzar at (536,327,142,40) — invisible, visual in background
+        _lanzarButton = CreateInvisibleButton(536, 327, 142, 40);
         _lanzarButton.Visible = false;
         _gameUI.AddChild(_lanzarButton);
         _lanzarButton.Pressed += OnLanzarPressed;
 
-        // INFO button — VB6: cmdInfo at (720,336,57,27), hidden initially
-        _infoButton = CreateButton("INFO", 690, 370, 57, 30);
+        // INFO button — VB6: cmdInfo at (720,336,57,27) — invisible
+        _infoButton = CreateInvisibleButton(720, 336, 57, 27);
         _infoButton.Visible = false;
         _gameUI.AddChild(_infoButton);
         _infoButton.Pressed += () => _spellPanel.InfoSelected();
 
         // Spell move arrows — VB6: cmdMoverHechi[0] up at (766,222,15,25), [1] down at (766,247,15,25)
-        _spellUpButton = CreateButton("^", 766, 222, 15, 25);
+        _spellUpButton = CreateInvisibleButton(766, 222, 15, 25);
         _spellUpButton.Visible = false;
         _gameUI.AddChild(_spellUpButton);
         _spellUpButton.Pressed += () => _spellPanel.MoveSpell(1);
 
-        _spellDownButton = CreateButton("v", 766, 247, 15, 25);
+        _spellDownButton = CreateInvisibleButton(766, 247, 15, 25);
         _spellDownButton.Visible = false;
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
@@ -236,37 +236,21 @@ public partial class Main : Control
     }
 
     /// <summary>
-    /// Create a styled button at VB6-exact pixel position.
+    /// Create a fully invisible button (flat, no text, empty styleboxes).
+    /// VB6 visuals are baked into Principal.jpg — this is just a hit-detect area.
     /// </summary>
-    private static Button CreateButton(string text, float x, float y, float w, float h)
+    private static Button CreateInvisibleButton(float x, float y, float w, float h)
     {
         var btn = new Button();
         btn.Position = new Vector2(x, y);
         btn.Size = new Vector2(w, h);
-        btn.Text = text;
-        btn.AddThemeFontSizeOverride("font_size", 9);
-
-        var style = new StyleBoxFlat();
-        style.BgColor = new Color(0.15f, 0.15f, 0.2f, 0.9f);
-        style.BorderColor = new Color(0.5f, 0.5f, 0.5f, 0.8f);
-        style.SetBorderWidthAll(1);
-        style.SetContentMarginAll(1);
-        btn.AddThemeStyleboxOverride("normal", style);
-
-        var hover = new StyleBoxFlat();
-        hover.BgColor = new Color(0.25f, 0.25f, 0.35f, 0.9f);
-        hover.BorderColor = new Color(0.7f, 0.7f, 0.7f, 0.8f);
-        hover.SetBorderWidthAll(1);
-        hover.SetContentMarginAll(1);
-        btn.AddThemeStyleboxOverride("hover", hover);
-
-        var pressed = new StyleBoxFlat();
-        pressed.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.9f);
-        pressed.BorderColor = new Color(0.5f, 0.5f, 0.5f, 0.8f);
-        pressed.SetBorderWidthAll(1);
-        pressed.SetContentMarginAll(1);
-        btn.AddThemeStyleboxOverride("pressed", pressed);
-
+        btn.Flat = true;
+        btn.Text = "";
+        var empty = new StyleBoxEmpty();
+        btn.AddThemeStyleboxOverride("normal", empty);
+        btn.AddThemeStyleboxOverride("hover", empty);
+        btn.AddThemeStyleboxOverride("pressed", empty);
+        btn.AddThemeStyleboxOverride("focus", empty);
         return btn;
     }
 
@@ -281,6 +265,9 @@ public partial class Main : Control
         _infoButton!.Visible = false;
         _spellUpButton!.Visible = false;
         _spellDownButton!.Visible = false;
+        // Swap InvEqu background to inventory
+        if (_invEquImage != null && _invEquInvTexture != null)
+            _invEquImage.Texture = _invEquInvTexture;
     }
 
     private void OnSpellTabPressed()
@@ -294,6 +281,9 @@ public partial class Main : Control
         _infoButton!.Visible = true;
         _spellUpButton!.Visible = true;
         _spellDownButton!.Visible = true;
+        // Swap InvEqu background to spells
+        if (_invEquImage != null && _invEquSpellTexture != null)
+            _invEquImage.Texture = _invEquSpellTexture;
     }
 
     /// <summary>
@@ -318,37 +308,67 @@ public partial class Main : Control
 
     private void LoadBackgroundImage(string dataPath)
     {
-        string principalPath = System.IO.Path.Combine(dataPath, "..", "Data", "GRAFICOS", "Principal", "Principal.jpg");
-        // Try several paths
-        string[] candidates = new[]
+        // Try several paths for the Principal directory
+        string[] principalDirs = new[]
         {
-            System.IO.Path.Combine(dataPath, "GRAFICOS", "Principal", "Principal.jpg"),
-            System.IO.Path.Combine(dataPath, "..", "..", "Cliente", "Data", "GRAFICOS", "Principal", "Principal.jpg"),
-            // Absolute fallback
-            "/workspace/Tierras-Sagradas-AO/Cliente/Data/GRAFICOS/Principal/Principal.jpg",
+            System.IO.Path.Combine(dataPath, "GRAFICOS", "Principal"),
+            System.IO.Path.Combine(dataPath, "..", "..", "Cliente", "Data", "GRAFICOS", "Principal"),
+            "/workspace/Tierras-Sagradas-AO/Cliente/Data/GRAFICOS/Principal",
         };
 
-        foreach (string path in candidates)
+        string? principalDir = null;
+        foreach (string dir in principalDirs)
         {
-            if (System.IO.File.Exists(path))
+            string candidate = System.IO.Path.Combine(dir, "Principal.jpg");
+            if (System.IO.File.Exists(candidate))
             {
-                try
-                {
-                    var image = new Image();
-                    image.Load(path);
-                    var tex = ImageTexture.CreateFromImage(image);
-                    _backgroundImage!.Texture = tex;
-                    GD.Print($"[MAIN] Loaded Principal.jpg from {path}");
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    GD.PrintErr($"[MAIN] Failed to load Principal.jpg: {ex.Message}");
-                }
+                principalDir = dir;
+                break;
             }
         }
 
-        GD.Print("[MAIN] Principal.jpg not found — using dark background");
+        if (principalDir == null)
+        {
+            GD.Print("[MAIN] Principal.jpg not found — using dark background");
+            return;
+        }
+
+        // Load Principal.jpg
+        try
+        {
+            var image = new Image();
+            image.Load(System.IO.Path.Combine(principalDir, "Principal.jpg"));
+            _backgroundImage!.Texture = ImageTexture.CreateFromImage(image);
+            GD.Print($"[MAIN] Loaded Principal.jpg from {principalDir}");
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Failed to load Principal.jpg: {ex.Message}");
+        }
+
+        // Load InvEqu textures (inventory / spells panel backgrounds)
+        _invEquInvTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroNuevoInventario.jpg"));
+        _invEquSpellTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentronuevoHechizos.jpg"));
+
+        // Default to inventory background
+        if (_invEquImage != null && _invEquInvTexture != null)
+            _invEquImage.Texture = _invEquInvTexture;
+    }
+
+    private static ImageTexture? LoadJpgTexture(string path)
+    {
+        if (!System.IO.File.Exists(path)) return null;
+        try
+        {
+            var img = new Image();
+            img.Load(path);
+            return ImageTexture.CreateFromImage(img);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Failed to load {path}: {ex.Message}");
+            return null;
+        }
     }
 
     private void OnConnectPressed()
@@ -564,43 +584,24 @@ public partial class Main : Control
     /// </summary>
     private void UpdateGameUI()
     {
-        if (_hpBar == null) return;
+        if (_statBarOverlay == null) return;
 
-        // Stats bars + labels (VB6 shows "min/max" in the label below each bar)
-        _hpBar.MaxValue = _state.MaxHp > 0 ? _state.MaxHp : 1;
-        _hpBar.Value = _state.MinHp;
-        _hpLabel!.Text = $"HP: {_state.MinHp}/{_state.MaxHp}";
+        // Push stat values to the overlay — it draws colored fill rects
+        _statBarOverlay.SetStats(
+            _state.MinHp, _state.MaxHp,
+            _state.MinMana, _state.MaxMana,
+            _state.MinSta, _state.MaxSta,
+            _state.MinAgua, _state.MaxAgua,
+            _state.MinHam, _state.MaxHam,
+            _state.Exp, _state.ExpNext
+        );
 
-        _manaBar!.MaxValue = _state.MaxMana > 0 ? _state.MaxMana : 1;
-        _manaBar.Value = _state.MinMana;
-        _manaLabel!.Text = $"Mana: {_state.MinMana}/{_state.MaxMana}";
-
-        _staBar!.MaxValue = _state.MaxSta > 0 ? _state.MaxSta : 1;
-        _staBar.Value = _state.MinSta;
-        _staLabel!.Text = $"Sta: {_state.MinSta}/{_state.MaxSta}";
-
-        _aguaBar!.MaxValue = _state.MaxAgua > 0 ? _state.MaxAgua : 1;
-        _aguaBar.Value = _state.MinAgua;
-        _aguaLabel!.Text = $"Agua: {_state.MinAgua}/{_state.MaxAgua}";
-
-        _hamBar!.MaxValue = _state.MaxHam > 0 ? _state.MaxHam : 1;
-        _hamBar.Value = _state.MinHam;
-        _hamLabel!.Text = $"Ham: {_state.MinHam}/{_state.MaxHam}";
-
-        _expBar!.MaxValue = _state.ExpNext > 0 ? _state.ExpNext : 1;
-        _expBar.Value = _state.Exp;
         _expLabel!.Text = $"Exp: {_state.Exp}/{_state.ExpNext}";
-
-        // VB6: GldLbl at (696,408), cyan — just the number
         _goldLabel!.Text = $"{_state.Gold}";
-        // VB6: LvlLbl at (580,39) — just the number
         _levelLabel!.Text = $"{_state.Level}";
-        // VB6: Label8 at (541,6) — character name, centered
         _nameLabel!.Text = _state.UserName;
         _mapLabel!.Text = $"Mapa: {_state.CurrentMap} {_state.MapName}";
-        // VB6: ONLINES at (47,547)
         _onlineLabel!.Text = $"{_state.OnlineCount}";
-        // VB6: Coord at (560,557), centered — "(map,x,y)" format
         _coordsLabel!.Text = $"({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
     }
 
