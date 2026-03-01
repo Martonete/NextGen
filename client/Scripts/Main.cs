@@ -511,6 +511,9 @@ public partial class Main : Control
         {
             GD.PrintErr($"[MAIN] Connection failed: {ex.Message}");
             _connecting = false;
+            _tcp?.Dispose();
+            _tcp = null;
+            _inputHandler = null;
             _statusLabel!.Text = $"Error: {ex.Message}";
             _connectButton!.Disabled = false;
         }
@@ -563,6 +566,13 @@ public partial class Main : Control
     public override void _Process(double delta)
     {
         if (_tcp == null || _packetHandler == null) return;
+
+        // VB6: Socket1_Disconnect — detect lost connection and return to login
+        if (!_connecting && !_tcp.IsConnected && _state.CurrentScreen != Screen.Login)
+        {
+            HandleDisconnect("Conexión perdida con el servidor.");
+            return;
+        }
 
         // Poll and process inbound packets
         var packets = _tcp.PollPackets();
@@ -659,6 +669,134 @@ public partial class Main : Control
                 GD.Print("[MAIN] Entered game world");
                 break;
         }
+    }
+
+    /// <summary>
+    /// VB6 Socket1_Disconnect: clean up everything and return to login.
+    /// Called when TCP connection is lost (server close, error, timeout).
+    /// </summary>
+    private void HandleDisconnect(string message)
+    {
+        GD.Print($"[MAIN] Disconnect: {message}");
+
+        // Clean up TCP resources (VB6: Socket1.Disconnect + Socket1.Cleanup)
+        _tcp?.Dispose();
+        _tcp = null;
+        _packetHandler = null;
+        _inputHandler = null;
+        _connecting = false;
+        _packetCount = 0;
+
+        // Reset all game state (VB6: clear logged, skills, attributes, etc.)
+        ResetGameState();
+
+        // Hide chat input if visible
+        if (_chatInput != null)
+        {
+            _chatInput.Visible = false;
+            _chatInput.Text = "";
+            _chatInput.ReleaseFocus();
+        }
+
+        // Clear console
+        _console?.Clear();
+
+        // Clear friends list UI
+        _friendsList?.Clear();
+
+        // Clear minimap
+        if (_minimapRect != null)
+            _minimapRect.Texture = null;
+
+        // Reset spell/inventory tab to default (inventory)
+        OnInventoryTabPressed();
+
+        // Switch to login screen with error message
+        _state.CurrentScreen = Screen.Login;
+        HandleScreenChange(Screen.Login);
+        _lastScreen = Screen.Login;
+        _statusLabel!.Text = message;
+        _connectButton!.Disabled = false;
+
+        // VB6: frmConnect.MousePointer = 1 (normal cursor)
+        Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+    }
+
+    /// <summary>
+    /// Reset GameState to defaults (VB6: Socket1_Disconnect cleanup).
+    /// Clears all character data, stats, inventory, spells, flags.
+    /// </summary>
+    private void ResetGameState()
+    {
+        _state.IsLogged = false;
+        _state.Paused = false;
+        _state.LoginError = "";
+        _state.ServerNotice = "";
+        _state.SecurityCode = "";
+        _state.CharacterList.Clear();
+        _state.SelectedCharIndex = -1;
+
+        // Map
+        _state.CurrentMap = 0;
+        _state.MapName = "";
+        _state.MapColorR = 200;
+        _state.MapColorG = 200;
+        _state.MapColorB = 200;
+        _state.MapData = null;
+        _state.NeedMapLoad = false;
+
+        // Position & movement
+        _state.UserPosX = 0;
+        _state.UserPosY = 0;
+        _state.UserCharIndex = 0;
+        _state.UserName = "";
+        _state.UserParalyzed = false;
+        _state.UserNavigating = false;
+        _state.UserStopped = false;
+        _state.UsingSkill = 0;
+        _state.ChatActive = false;
+        _state.UserMoving = false;
+        _state.AddToUserPosX = 0;
+        _state.AddToUserPosY = 0;
+        _state.ScreenOffsetX = 0;
+        _state.ScreenOffsetY = 0;
+        _state.PtCooldownFrames = 0;
+        _state.PendingMoves = 0;
+
+        // Characters & objects
+        _state.Characters.Clear();
+        _state.GroundObjects.Clear();
+
+        // Stats
+        _state.MaxHp = 0; _state.MinHp = 0;
+        _state.MaxMana = 0; _state.MinMana = 0;
+        _state.MaxSta = 0; _state.MinSta = 0;
+        _state.MaxAgua = 0; _state.MinAgua = 0;
+        _state.MaxHam = 0; _state.MinHam = 0;
+        _state.Gold = 0;
+        _state.Level = 0;
+        _state.Exp = 0; _state.ExpNext = 0;
+        _state.Reputation = 0;
+        _state.Privileges = 0;
+        _state.MusicId = 0;
+        _state.OnlineCount = 0;
+        _state.Strength = 0;
+        _state.Agility = 0;
+        _state.AttackMin = 0; _state.AttackMax = 0;
+        _state.DefenseMin = 0; _state.DefenseMax = 0;
+        _state.MagDefMin = 0; _state.MagDefMax = 0;
+
+        // Friends
+        _state.FriendsList.Clear();
+
+        // Inventory & spells
+        for (int i = 0; i < 25; i++)
+            _state.Inventory[i] = new InventorySlot();
+        for (int i = 0; i < 20; i++)
+            _state.Spells[i] = new SpellSlot();
+
+        // Chat queue
+        _state.ChatMessages.Clear();
     }
 
     private void PopulateCharList()

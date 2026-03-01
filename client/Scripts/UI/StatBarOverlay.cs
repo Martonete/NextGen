@@ -107,6 +107,9 @@ public partial class StatBarOverlay : Control
         // Vertically center: baseline = top + (barHeight + ascent) / 2
         float ascent = _font.GetAscent(_fontSize);
         float textY = rect.Position.Y + (rect.Size.Y + ascent) / 2f;
-        DrawString(_font, new Vector2(textX, textY), text, HorizontalAlignment.Left, -1, _fontSize, TextColor);
+        // VB6: Font.Weight=700 (Bold) — draw twice offset by 1px for faux-bold
+        var pos = new Vector2(textX, textY);
+        DrawString(_font, pos, text, HorizontalAlignment.Left, -1, _fontSize, TextColor);
+        DrawString(_font, pos + Vector2.Right, text, HorizontalAlignment.Left, -1, _fontSize, TextColor);
     }
 }
