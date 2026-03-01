@@ -26,6 +26,10 @@ public class Character
     public int ScrollDirectionX;
     public int ScrollDirectionY;
 
+    // Per-character walk animation frame counter (VB6: each char has its own FrameCounter).
+    // Only advances when Moving=true. Reset to 0 on move start.
+    public float WalkFrame;
+
     // Status
     public bool Dead;
     public bool Invisible;

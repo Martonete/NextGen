@@ -106,8 +106,8 @@ public static class CharRenderer
         if (body.Walk[heading] == 0) return;
 
         int bodyGrh = body.Walk[heading];
-        animator.StartAnim(bodyGrh, ch.Moving);
-        int frame = ch.Moving ? animator.GetCurrentFrame(bodyGrh) : 0;
+        // Use per-character WalkFrame (VB6: each char has its own FrameCounter)
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
         // VB6: dead characters get reduced alpha (TransparenciaBody + 45)
         // All bodies use Center=1 in VB6
@@ -159,8 +159,8 @@ public static class CharRenderer
         if (weapon.Walk[heading] == 0) return;
 
         int weapGrh = weapon.Walk[heading];
-        animator.StartAnim(weapGrh, ch.Moving);
-        int frame = ch.Moving ? animator.GetCurrentFrame(weapGrh) : 0;
+        // Use per-character WalkFrame (synced with body animation)
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
         // VB6: weapon drawn at bodyPos + headOffset.X, headOffset.Y + 38, centered
         Vector2 pos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
@@ -176,8 +176,8 @@ public static class CharRenderer
         if (shield.Walk[heading] == 0) return;
 
         int shldGrh = shield.Walk[heading];
-        animator.StartAnim(shldGrh, ch.Moving);
-        int frame = ch.Moving ? animator.GetCurrentFrame(shldGrh) : 0;
+        // Use per-character WalkFrame (synced with body animation)
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
         // VB6: shield drawn at bodyPos + headOffset.X, headOffset.Y + 38, centered
         Vector2 pos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);

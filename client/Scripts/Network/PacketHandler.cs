@@ -408,6 +408,7 @@ public class PacketHandler
             ch.PosX = newX;
             ch.PosY = newY;
             ch.Moving = true;
+            ch.WalkFrame = 0; // Reset walk animation on new move
         }
     }
 

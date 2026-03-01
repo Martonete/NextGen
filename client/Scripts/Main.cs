@@ -479,10 +479,30 @@ public partial class Main : Control
             }
         }
 
-        // Character sprite interpolation
+        // Character sprite interpolation + per-character walk animation
         foreach (var kvp in _state.Characters)
         {
             var ch = kvp.Value;
+
+            // Advance walk animation frame only while Moving (VB6: per-char FrameCounter)
+            if (ch.Moving && ch.Body > 0 && ch.Body < _gameData.Bodies.Length)
+            {
+                int heading = ch.Heading;
+                if (heading < 1 || heading > 4) heading = 3;
+                int walkGrh = _gameData.Bodies[ch.Body].Walk[heading];
+                if (walkGrh > 0 && walkGrh < _gameData.Grhs.Length)
+                {
+                    var grh = _gameData.Grhs[walkGrh];
+                    if (grh.NumFrames > 1)
+                    {
+                        float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                        ch.WalkFrame += (deltaMs * grh.NumFrames / speed) * 0.7f;
+                        if (ch.WalkFrame >= grh.NumFrames)
+                            ch.WalkFrame %= grh.NumFrames;
+                    }
+                }
+            }
+
             if (!ch.Moving && ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
                 continue;
 

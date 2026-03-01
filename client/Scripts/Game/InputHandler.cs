@@ -106,6 +106,7 @@ public class InputHandler
             ch.ScrollDirectionX = dx;
             ch.ScrollDirectionY = dy;
             ch.Moving = true;
+            ch.WalkFrame = 0; // Reset walk animation on new move
             ch.PosX = newX;
             ch.PosY = newY;
 
