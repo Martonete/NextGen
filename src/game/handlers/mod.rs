@@ -990,6 +990,7 @@ async fn connect_user(
                         if tile.obj.obj_index != tile.original_obj_index {
                             let oi = tile.obj.obj_index as usize;
                             let grh = if oi >= 1 { state.game_data.objects.get(oi - 1).map(|o| o.grh_index).unwrap_or(0) } else { 0 };
+                            info!("[DOOR-SYNC] tile({},{}) obj_index={} (was {}) → grh={}", tx + 1, ty + 1, tile.obj.obj_index, tile.original_obj_index, grh);
                             sync_packets.push(format!("HO{},{},{}", grh, tx + 1, ty + 1));
                         }
                     }
@@ -2977,8 +2978,9 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
                         sync_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
                     }
                     if tile.obj.obj_index != tile.original_obj_index {
-                        let grh = state.game_data.objects.get(tile.obj.obj_index as usize)
-                            .map(|o| o.grh_index).unwrap_or(0);
+                        let oi = tile.obj.obj_index as usize;
+                        let grh = if oi >= 1 { state.game_data.objects.get(oi - 1).map(|o| o.grh_index).unwrap_or(0) } else { 0 };
+                        info!("[DOOR-SYNC] warp tile({},{}) obj_index={} (was {}) → grh={}", tx + 1, ty + 1, tile.obj.obj_index, tile.original_obj_index, grh);
                         sync_packets.push(format!("HO{},{},{}", grh, tx + 1, ty + 1));
                     }
                 }
