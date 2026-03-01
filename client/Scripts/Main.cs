@@ -98,6 +98,9 @@ public partial class Main : Control
     private VaultPanel? _vaultPanel;
     private bool _lastBanqueando;
 
+    // Travel panel (frmViajar)
+    private TravelPanel? _travelPanel;
+
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
     // Track double-click to avoid sending LC on the release after a dbl-click
@@ -335,6 +338,13 @@ public partial class Main : Control
         _vaultPanel.Position = new Vector2(42, 64);
         _vaultPanel.Visible = false;
         _gameUI.AddChild(_vaultPanel);
+
+        // Travel panel (frmViajar) — centered on viewport
+        _travelPanel = new TravelPanel();
+        // Center: (534 - 450) / 2 = 42, y: 124 + (408 - 350) / 2 = 153
+        _travelPanel.Position = new Vector2(42, 153);
+        _travelPanel.Visible = false;
+        _gameUI.AddChild(_travelPanel);
 
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
@@ -738,6 +748,13 @@ public partial class Main : Control
                     _state.BovedaAbierta = false;
                 }
             }
+
+            // Travel panel state tracking
+            if (_state.ShowTravelPanel)
+            {
+                _state.ShowTravelPanel = false;
+                _travelPanel?.OpenTravel();
+            }
         }
 
         // Movement update AFTER input (VB6: ShowNextFrame after CheckKeys)
@@ -775,6 +792,7 @@ public partial class Main : Control
                     _commercePanel!.Init(_state, _gameData, _tcp);
                     _bankPanel!.Init(_state, _gameData, _tcp);
                     _vaultPanel!.Init(_state, _gameData, _tcp);
+                    _travelPanel!.Init(_state, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -818,12 +836,13 @@ public partial class Main : Control
         if (_minimapRect != null)
             _minimapRect.Texture = null;
 
-        // Close commerce and bank panels
+        // Close commerce, bank, and travel panels
         _commercePanel?.CloseShop();
         _lastComerciando = false;
         _bankPanel?.CloseBank();
         _vaultPanel?.CloseVault();
         _lastBanqueando = false;
+        _travelPanel?.CloseTravel();
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
@@ -873,6 +892,7 @@ public partial class Main : Control
         _state.UsingSkill = 0;
         _state.ChatActive = false;
         _state.Comerciando = false;
+        _state.ShowTravelPanel = false;
         _state.UserMoving = false;
         _state.AddToUserPosX = 0;
         _state.AddToUserPosY = 0;

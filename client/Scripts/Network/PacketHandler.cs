@@ -248,8 +248,8 @@ public class PacketHandler
         }
         else if (packet.StartsWith("TRAVELS"))
         {
-            // Travel portals — stub
             GD.Print("[PKT] TRAVELS: Travel portals available");
+            _state.ShowTravelPanel = true;
         }
         else if (packet.StartsWith("RESPUES"))
         {

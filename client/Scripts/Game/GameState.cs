@@ -123,6 +123,9 @@ public class GameState
     public int NpcShopCount;
     public bool Comerciando;
 
+    // Travel panel (frmViajar)
+    public bool ShowTravelPanel;
+
     // Bank (frmBanco + frmNuevoBancoObj / Bóveda)
     public BankItem[] BankItems = new BankItem[40];
     public int BankItemCount;
