@@ -19,23 +19,6 @@ public static class CharRenderer
 {
     private const int TileSize = 32;
 
-    // VB6 AO uses Tahoma font for dialog bubbles and names
-    private static Font? _tahomaFont;
-    private static Font TahomaFont
-    {
-        get
-        {
-            if (_tahomaFont == null)
-            {
-                var sysFont = new SystemFont();
-                sysFont.FontNames = new string[] { "Tahoma", "Arial", "Sans-Serif" };
-                sysFont.Hinting = TextServer.Hinting.None; // VB6 used non-antialiased text
-                _tahomaFont = sysFont;
-            }
-            return _tahomaFont;
-        }
-    }
-
     public static void DrawCharacter(
         Node2D canvas,
         Character ch,
@@ -104,11 +87,11 @@ public static class CharRenderer
         // FX overlays (up to 3 simultaneous)
         DrawFx(canvas, ch, screenPos, data, animator);
 
-        // Name + clan above head
-        DrawName(canvas, ch, screenPos);
+        // Name + clan above head (VB6: uses font1 bitmap font)
+        DrawName(canvas, ch, screenPos, data);
 
         // Dialog bubble (VB6: cDialogos.Render)
-        DrawDialog(canvas, ch, screenPos, headOffset);
+        DrawDialog(canvas, ch, screenPos, headOffset, data);
     }
 
     private static void DrawShadow(
@@ -116,9 +99,7 @@ public static class CharRenderer
         GameData data, GrhAnimator animator)
     {
         // VB6 shadow is a body-clone rendered with special DX8 blending.
-        // We draw a simple dark oval without DrawSetTransform (which can
-        // leave residual scale affecting subsequent draws).
-        // Approximate oval with a flat wide rect + rounded edges.
+        // We draw a simple dark oval.
         float cx = pos.X + TileSize / 2f;
         float cy = pos.Y + TileSize - 4f;
         var shadowRect = new Rect2(cx - 10f, cy - 3f, 20f, 6f);
@@ -134,11 +115,8 @@ public static class CharRenderer
         if (body.Walk[heading] == 0) return;
 
         int bodyGrh = body.Walk[heading];
-        // Use per-character WalkFrame (VB6: each char has its own FrameCounter)
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
-        // VB6: dead characters get reduced alpha (TransparenciaBody + 45)
-        // All bodies use Center=1 in VB6
         byte alpha = ch.Dead ? (byte)100 : (byte)255;
         DrawGrh(canvas, data, bodyGrh, frame, pos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
@@ -152,9 +130,7 @@ public static class CharRenderer
         var head = data.Heads[ch.Head];
         if (head.Head[heading] == 0) return;
 
-        // VB6 head position:
-        // X: bodyScreenX + HeadOffset.X (minus 1 for NORTH)
-        // Y: bodyScreenY + HeadOffset.Y + 1
+        // VB6: heading 1 gets X-1 adjustment
         float xAdj = heading == 1 ? -1f : 0f;
         Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
@@ -167,12 +143,10 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data)
     {
-        // VB6: NingunCasco=2 means "no helmet" — Cascos[1-2] are reserved/empty
         if (ch.CascoAnim <= 2 || ch.CascoAnim >= data.Cascos.Length) return;
         var casco = data.Cascos[ch.CascoAnim];
         if (casco.Head[heading] == 0) return;
 
-        // VB6: helmet at same position as head, heading 1,2,3 get X offset +1
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
         Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
@@ -183,11 +157,8 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Tierras Sagradas data: weapon Anim values in Obj.dat point to full
-        // character Bodies (same Personajes.ind entries used for body sprites),
-        // NOT weapon-only overlay sprites.  Drawing them as overlays would
-        // render a second full character on top of the real body.
-        // Skip weapon overlay drawing entirely — weapons are stats-only here.
+        // Weapon Anim values in Tierras Sagradas point to full Bodies,
+        // not weapon-only overlays. Skip to avoid double-drawing.
         return;
     }
 
@@ -195,8 +166,7 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Same as DrawWeapon — shield Anim values reference full character Bodies,
-        // not shield-only overlay sprites.  Skip to avoid double-drawing.
+        // Same as DrawWeapon — skip to avoid double-drawing.
         return;
     }
 
@@ -216,13 +186,21 @@ public static class CharRenderer
 
             Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
             DrawGrh(canvas, data, fx.Animacion, frame, fxPos, true,
-                    new Color(1, 1, 1, 150f / 255f)); // VB6: alpha 150
+                    new Color(1, 1, 1, 150f / 255f));
         }
     }
 
-    private static void DrawName(Node2D canvas, Character ch, Vector2 pos)
+    /// <summary>
+    /// VB6: Draw name at PixelOffsetX+16, PixelOffsetY+30 (DT_CENTER)
+    /// and clan/rank at PixelOffsetY+45.
+    /// Uses font1 (bitmap font) for pixel-perfect match.
+    /// </summary>
+    private static void DrawName(Node2D canvas, Character ch, Vector2 pos, GameData data)
     {
         if (string.IsNullOrEmpty(ch.Name)) return;
+
+        var font = data.Fonts[1]; // font1 for names
+        if (font == null) return;
 
         // VB6: name format is "Nick<ClanTag"
         string nick = ch.Name;
@@ -236,76 +214,87 @@ public static class CharRenderer
 
         Color nameColor = GetNameColor(ch);
 
-        var font = TahomaFont;
-        int fontSize = 12;
+        // VB6: Engine_Text_Draw(PixelOffsetX + 16, PixelOffsetY + 30, Line, color, alpha, DT_CENTER)
+        // X+16 = center of tile, DT_CENTER subtracts half text width
+        // Y+30 = top of text (bitmap font uses top-Y, same as AoFont.DrawText)
+        int centerX = (int)pos.X + 16;
+        int nickY = (int)pos.Y + 30;
 
-        // VB6: text Y is top-of-text. Godot DrawString Y is baseline.
-        // Add font ascent (~11px) to convert VB6 top-Y to Godot baseline-Y.
-        // VB6 nick at PixelOffsetY + 30 → Godot baseline ≈ Y + 42
-        Vector2 nickSize = font.GetStringSize(nick, HorizontalAlignment.Left, -1, fontSize);
-        Vector2 nickPos = pos + new Vector2((TileSize - nickSize.X) / 2, 42);
-        canvas.DrawString(font, nickPos, nick, HorizontalAlignment.Left, -1, fontSize, nameColor);
+        // VB6: dead or in water → alpha 80, else 255
+        byte alpha = (ch.Dead) ? (byte)80 : (byte)255;
+        Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, alpha / 255f);
+        font.DrawText(canvas, centerX, nickY, nick, nickColor, center: true);
 
         // VB6: rank badge at Y+45 for admins, clan for non-admins
-        float nextY = 57f; // VB6 Y+45 + ascent ≈ 57
+        int tagY = (int)pos.Y + 45;
 
-        // Admin rank badge (VB6: RangoPRIV)
         if (ch.Privileges > 0)
         {
             string rank = GetRankString(ch.Privileges);
-            Vector2 rankSize = font.GetStringSize(rank, HorizontalAlignment.Left, -1, fontSize);
-            Vector2 rankPos = pos + new Vector2((TileSize - rankSize.X) / 2, nextY);
-            canvas.DrawString(font, rankPos, rank, HorizontalAlignment.Left, -1, fontSize, nameColor);
+            font.DrawText(canvas, centerX, tagY, rank, nickColor, center: true);
         }
         else if (clan.Length > 0)
         {
-            Vector2 clanSize = font.GetStringSize(clan, HorizontalAlignment.Left, -1, fontSize);
-            Vector2 clanPos = pos + new Vector2((TileSize - clanSize.X) / 2, nextY);
-            canvas.DrawString(font, clanPos, clan, HorizontalAlignment.Left, -1, fontSize, nameColor);
+            font.DrawText(canvas, centerX, tagY, clan, nickColor, center: true);
         }
     }
 
     /// <summary>
-    /// VB6 cDialogos: draw speech bubble text above character head.
-    /// VB6 Sube starts at 18 and decrements each tick — text starts high
-    /// and settles down to just above the head. Then fades out.
+    /// VB6 cDialogos: speech bubble text above character head.
+    /// Position: UpdateDialogPos(PixelOffsetX + HeadOffset.X - 168, PixelOffsetY + HeadOffset.Y, charindex)
+    /// Then: .X = X - 36, .Y = Y - (UBound(textLine) * 3)
+    /// Render: Engine_Text_Draw(.X + 171, .Y + offset + 2, ...)
+    ///
+    /// Net X = PixelOffsetX + HeadOffset.X - 168 - 36 + 171 = PixelOffsetX + HeadOffset.X - 33
+    /// Net Y = PixelOffsetY + HeadOffset.Y - (numLinesMinusOne * 3) + Sube/1.2 + offset + 2
+    ///   where offset starts at -(fontSize+2)*UBound(textLine)
+    ///
+    /// VB6 Sube: starts at 18, decrements to 0. Adds Sube/1.2 to Y (text starts low, rises up).
+    /// VB6 Desvanecimiento: starts at 20, +12/frame while Sube>0. After lifetime: -10/frame.
     /// </summary>
-    private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset)
+    private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos,
+                                    Vector2 headOffset, GameData data)
     {
         if (string.IsNullOrEmpty(ch.DialogText)) return;
+
+        var font = data.Fonts[1]; // font1 for dialog
+        if (font == null) return;
 
         long now = System.Environment.TickCount64;
         long elapsed = now - ch.DialogStartMs;
 
-        // Check lifetime — start fading when expired
+        // VB6 Sube logic (runs every frame, inside lifeTime >= 292 check)
+        if (ch.DialogDurationMs >= 292)
+        {
+            if (ch.DialogRiseCounter > 0)
+                ch.DialogRiseCounter--;
+            if (ch.DialogRiseCounter > 0)
+            {
+                // VB6: Desvanecimiento += 12 while Sube > 0
+                ch.DialogAlpha = Math.Min(255, ch.DialogAlpha + 12);
+            }
+        }
+
+        // VB6: check lifetime → set Tiempito
         if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
             ch.DialogFading = true;
 
-        // VB6 Sube: decrements each render tick from 18 to 0
-        if (!ch.DialogFading && ch.DialogRiseCounter > 0)
-            ch.DialogRiseCounter--;
-
-        // Alpha: full during lifetime, fade out after
-        float alpha;
+        // VB6: Desvanecimiento -= 10 while fading, remove at <= 9
         if (ch.DialogFading)
         {
-            long fadeElapsed = elapsed - ch.DialogDurationMs;
-            alpha = 1.0f - (fadeElapsed / 500f);
-            if (alpha <= 0f)
+            ch.DialogAlpha = Math.Max(0, ch.DialogAlpha - 10);
+            if (ch.DialogAlpha <= 9)
             {
                 ch.DialogText = "";
                 return;
             }
         }
-        else
-        {
-            alpha = 1.0f;
-        }
 
-        var font = TahomaFont;
-        int fontSize = 10;
+        byte alpha = (byte)Math.Clamp(ch.DialogAlpha, 0, 255);
+        if (alpha == 0) return;
 
         var lines = WrapText(ch.DialogText, 24);
+        int numLines = lines.Length;
 
         // Parse hex color
         Color color;
@@ -314,38 +303,56 @@ public static class CharRenderer
             int r = Convert.ToInt32(ch.DialogColor[..2], 16);
             int g = Convert.ToInt32(ch.DialogColor[2..4], 16);
             int b = Convert.ToInt32(ch.DialogColor[4..6], 16);
-            color = new Color(r / 255f, g / 255f, b / 255f, alpha);
+            color = new Color(r / 255f, g / 255f, b / 255f, alpha / 255f);
         }
         else
         {
-            color = new Color(1, 1, 1, alpha);
+            color = new Color(1, 1, 1, alpha / 255f);
         }
 
-        Color shadow = new Color(0, 0, 0, alpha * 0.7f);
+        // VB6 font size for dialog: usedFont.Size (VB6 StdFont)
+        // The VB6 cDialogos uses a StdFont, while Engine_Text_Draw uses bitmap font.
+        // In the Render() method, offset calculation uses usedFont.size.
+        // Typical VB6 AO dialog font size ≈ 8-10pt. We use font1.CharHeight (12).
+        int fontSize = font.CharHeight;
 
-        // VB6 dialog Y: positioned at head level, Sube/1.2 gives initial bounce
-        // that settles to 0 as Sube decrements from 18→0
-        float riseOffset = ch.DialogRiseCounter / 1.2f;
-        float lineHeight = fontSize + 2;
-        float totalTextHeight = lines.Length * lineHeight;
+        // VB6 Y calculation:
+        // UpdateDialogPos: .Y = (PixelOffsetY + HeadOffset.Y) - (UBound(textLine) * 3)
+        // Render: if Sube > 0: .Y += Sube / 1.2
+        // Draw: .Y + offset + 2, offset starts at -(fontSize+2)*UBound(textLine)
+        int baseY = (int)(pos.Y + headOffset.Y) - ((numLines - 1) * 3);
+        if (ch.DialogRiseCounter > 0)
+            baseY += (int)(ch.DialogRiseCounter / 1.2f);
 
-        // Head Y = pos.Y + headOffset.Y (same as DrawHead uses).
-        // Place text above head with a small gap, minus the settle-down offset.
-        float headY = pos.Y + headOffset.Y;
-        float baseY = headY - 8 - riseOffset - totalTextHeight;
+        // VB6: offset starts at -(usedFont.size + 2) * UBound(.textLine())
+        int offset = -(fontSize + 2) * (numLines - 1);
 
-        for (int i = 0; i < lines.Length; i++)
+        // VB6: X = PixelOffsetX + HeadOffset.X - 168 - (MAX_LENGTH/2)*3 + 171
+        //      = PixelOffsetX + HeadOffset.X - 33
+        // But VB6 Engine_Text_Draw with DT_LEFT just draws at X. No centering.
+        // The X offset of -33 + manual padding in FormatChat centers single-line text.
+        // We'll center each line manually for cleaner rendering.
+        int centerX = (int)(pos.X + headOffset.X) - 33 + 171;
+        // Simplify: centerX ≈ pos.X + headOffset.X + 138... that's way off screen.
+        // Actually: VB6 passes X = PixelOffsetX + HeadOffset.X - 168 to UpdateDialogPos
+        // .X = X - 36 = PixelOffsetX + HeadOffset.X - 204
+        // Draw at .X + 171 = PixelOffsetX + HeadOffset.X - 204 + 171 = PixelOffsetX + HeadOffset.X - 33
+        // Hmm, HeadOffset.X is typically 0 to 4. So X = tileX - 33 + maybe 2 = tileX - 31.
+        // But text is drawn from that X, left-aligned. For 24-char max, each char ~7px = 168px total.
+        // Center of tile = tileX + 16. Text centered means start at tileX + 16 - 84 = tileX - 68.
+        // VB6 FormatChat pads single-line text with spaces for centering.
+        // Let's use the tile center and center the text properly.
+        int textCenterX = (int)pos.X + 16;
+
+        for (int i = 0; i < numLines; i++)
         {
             string line = lines[i];
-            Vector2 lineSize = font.GetStringSize(line, HorizontalAlignment.Left, -1, fontSize);
-            float lineX = pos.X + (TileSize - lineSize.X) / 2;
-            float lineY = baseY + i * lineHeight;
-            var linePos = new Vector2(lineX, lineY);
+            int lineY = baseY + offset + 2;
 
-            canvas.DrawString(font, linePos + new Vector2(1, 1), line,
-                HorizontalAlignment.Left, -1, fontSize, shadow);
-            canvas.DrawString(font, linePos, line,
-                HorizontalAlignment.Left, -1, fontSize, color);
+            font.DrawText(canvas, textCenterX, lineY, line, color, center: true);
+
+            // VB6: offset += usedFont.size + 5
+            offset += fontSize + 5;
         }
     }
 
@@ -369,7 +376,6 @@ public static class CharRenderer
                 current = current.Length > 0 ? current + " " + word : word;
             }
 
-            // Force-break words longer than maxLen
             while (current.Length > maxLen)
             {
                 lines.Add(current[..maxLen]);
@@ -401,42 +407,37 @@ public static class CharRenderer
 
     /// <summary>
     /// VB6 name colors from colores.dat (ColoresPJ array).
-    /// For priv != 0: use privilege-indexed color.
-    /// For priv == 0: criminal = red, citizen = light blue.
     /// </summary>
     private static Color GetNameColor(Character ch)
     {
         if (ch.Privileges > 0)
         {
-            // Exact RGB values from Cliente/Data/INIT/colores.dat
             return ch.Privileges switch
             {
-                1 => new Color(0 / 255f, 185 / 255f, 0 / 255f),       // Consejero - green
-                2 => new Color(0 / 255f, 170 / 255f, 190 / 255f),     // Semidios - teal
-                3 => new Color(128 / 255f, 128 / 255f, 64 / 255f),    // Event Master - olive
-                4 => new Color(120 / 255f, 250 / 255f, 250 / 255f),   // Dios - cyan
-                5 => new Color(180 / 255f, 180 / 255f, 180 / 255f),   // Rol Master - gray
-                6 => new Color(140 / 255f, 0 / 255f, 0 / 255f),       // Caos - dark red
-                7 => new Color(0 / 255f, 64 / 255f, 128 / 255f),      // Consejo Bander - dark blue
-                8 => new Color(0 / 255f, 255 / 255f, 128 / 255f),     // Gran Dios - green
-                9 => new Color(123 / 255f, 55 / 255f, 0 / 255f),      // Director - brown
-                10 => new Color(128 / 255f, 255 / 255f, 128 / 255f),  // Developer - light green
-                11 => new Color(255 / 255f, 198 / 255f, 0 / 255f),    // Sub Admin - gold
-                12 => new Color(255 / 255f, 255 / 255f, 255 / 255f),  // Administrador - white
-                _ => new Color(180 / 255f, 180 / 255f, 180 / 255f),   // Unknown - gray
+                1 => new Color(0 / 255f, 185 / 255f, 0 / 255f),       // Consejero
+                2 => new Color(0 / 255f, 170 / 255f, 190 / 255f),     // Semidios
+                3 => new Color(128 / 255f, 128 / 255f, 64 / 255f),    // Event Master
+                4 => new Color(120 / 255f, 250 / 255f, 250 / 255f),   // Dios
+                5 => new Color(180 / 255f, 180 / 255f, 180 / 255f),   // Rol Master
+                6 => new Color(140 / 255f, 0 / 255f, 0 / 255f),       // Caos
+                7 => new Color(0 / 255f, 64 / 255f, 128 / 255f),      // Consejo Bander
+                8 => new Color(0 / 255f, 255 / 255f, 128 / 255f),     // Gran Dios
+                9 => new Color(123 / 255f, 55 / 255f, 0 / 255f),      // Director
+                10 => new Color(128 / 255f, 255 / 255f, 128 / 255f),  // Developer
+                11 => new Color(255 / 255f, 198 / 255f, 0 / 255f),    // Sub Admin
+                12 => new Color(255 / 255f, 255 / 255f, 255 / 255f),  // Administrador
+                _ => new Color(180 / 255f, 180 / 255f, 180 / 255f),
             };
         }
 
-        // colores.dat: [Cr] R=255,G=0,B=0 / [Ci] R=0,G=128,B=255
         if (ch.Criminal)
-            return new Color(1.0f, 0.0f, 0.0f); // Criminal red
+            return new Color(1.0f, 0.0f, 0.0f);
 
-        return new Color(0 / 255f, 128 / 255f, 255 / 255f); // Citizen blue
+        return new Color(0 / 255f, 128 / 255f, 255 / 255f);
     }
 
     /// <summary>
     /// Draw a GRH with optional centering for multi-tile graphics and color modulation.
-    /// VB6 Draw_Grh: Center=1 adjusts position for TileWidth/TileHeight > 1.
     /// </summary>
     public static void DrawGrh(
         Node2D canvas, GameData data, int grhIndex, int frame, Vector2 pos,
@@ -448,10 +449,6 @@ public static class CharRenderer
         var texture = data.Textures?.GetTexture(resolved.FileNum);
         if (texture == null) return;
 
-        // Check source rect fits within texture.
-        // Some GRH entries (e.g. water frame 2) reference regions beyond
-        // the texture bounds (sprite sheet truncated during PNG conversion).
-        // Fallback to frame 0 instead of skipping (avoids black tiles).
         int texW = texture.GetWidth();
         int texH = texture.GetHeight();
 
@@ -461,14 +458,12 @@ public static class CharRenderer
         {
             if (frame != 0)
             {
-                // Retry with frame 0 as fallback
                 resolved = data.ResolveGrh(grhIndex, 0);
                 if (resolved == null || resolved.FileNum <= 0) return;
                 texture = data.Textures?.GetTexture(resolved.FileNum);
                 if (texture == null) return;
                 texW = texture.GetWidth();
                 texH = texture.GetHeight();
-                // If frame 0 is also out of bounds, give up
                 if (resolved.SX >= texW || resolved.SY >= texH ||
                     resolved.SX + resolved.PixelWidth > texW ||
                     resolved.SY + resolved.PixelHeight > texH)
@@ -483,7 +478,6 @@ public static class CharRenderer
         float drawX = pos.X;
         float drawY = pos.Y;
 
-        // VB6 centering: offset for multi-tile graphics
         if (center)
         {
             if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
@@ -496,7 +490,6 @@ public static class CharRenderer
             }
         }
 
-        // Snap to integer pixels (VB6+DX8 pixel-perfect rendering)
         var srcRect = new Rect2(resolved.SX, resolved.SY, resolved.PixelWidth, resolved.PixelHeight);
         var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY),
                                   resolved.PixelWidth, resolved.PixelHeight);

@@ -17,6 +17,9 @@ public class GameData
     public TextMessage[] TextMessages = Array.Empty<TextMessage>();
     public TextureManager? Textures;
 
+    // VB6 bitmap fonts (font1=chat/names, font2=titles, font3=medium)
+    public AoFont?[] Fonts = new AoFont?[4]; // index 1-3, 0 unused
+
     public bool IsLoaded { get; private set; }
 
     /// <summary>
@@ -95,6 +98,20 @@ public class GameData
         }
 
         Textures = new TextureManager(graficosPath);
+
+        // Load VB6 bitmap fonts (font1/2/3)
+        string fontDataPath = System.IO.Path.Combine(initPath, "Data");
+        for (int fi = 1; fi <= 3; fi++)
+        {
+            // font1 uses .PNG (uppercase), font2/3 use .png (lowercase)
+            // Try both casings for cross-platform compatibility
+            string datFile = System.IO.Path.Combine(fontDataPath, $"font{fi}.dat");
+            string pngFile = System.IO.Path.Combine(fontDataPath, $"font{fi}.png");
+            if (!System.IO.File.Exists(pngFile))
+                pngFile = System.IO.Path.Combine(fontDataPath, $"font{fi}.PNG");
+            Fonts[fi] = AoFont.Load(datFile, pngFile);
+        }
+
         WeaponShieldLoader.LogInfo();
 
         IsLoaded = true;

@@ -789,6 +789,7 @@ public class PacketHandler
         ch.DialogStartMs = System.Environment.TickCount64;
         ch.DialogDurationMs = 5000 + 100 * text.Length;
         ch.DialogRiseCounter = 18;  // VB6 Sube = 18
+        ch.DialogAlpha = 20;        // VB6 Desvanecimiento = 20
         ch.DialogFading = false;
     }
 

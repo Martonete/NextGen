@@ -44,8 +44,9 @@ public class Character
     public string DialogColor = "FFFFFF";
     public long DialogStartMs;       // Environment.TickCount64 when created
     public long DialogDurationMs;    // 5000 + 100 * text.Length
-    public int DialogRiseCounter;    // VB6 Sube: 18→0, decrements each tick (direct offset, not accumulated)
-    public bool DialogFading;        // True when lifetime expired, fading out
+    public int DialogRiseCounter;    // VB6 Sube: 18→0, decrements each tick
+    public int DialogAlpha;          // VB6 Desvanecimiento: starts 20, +12/frame while Sube>0, -10/frame on fade
+    public bool DialogFading;        // VB6 Tiempito: True when lifetime expired, fading out
 
     // Debug helper
     public bool _debugLogged;
