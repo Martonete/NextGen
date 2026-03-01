@@ -196,6 +196,14 @@ public class PacketHandler
         {
             HandleWhisper(packet[2..]);
         }
+        else if (packet.StartsWith("PCR"))
+        {
+            HandleAmbientColor(packet[3..]);
+        }
+        else if (packet.StartsWith("PCL"))
+        {
+            // Per-tile light effect — not yet implemented
+        }
         else if (packet.StartsWith("+"))
         {
             HandleMoveChar(packet[1..]);
@@ -239,6 +247,20 @@ public class PacketHandler
             _state.GroundObjects.Clear();
 
             GD.Print($"[GAME] Change map: {_state.CurrentMap} (cleared {toRemove.Count} chars, all ground objects)");
+        }
+    }
+
+    /// <summary>
+    /// PCR{r},{g},{b} — Runtime ambient light change (GM /MODMAPINFO RGB).
+    /// </summary>
+    private void HandleAmbientColor(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 3)
+        {
+            _state.MapColorR = ParseInt(parts[0]);
+            _state.MapColorG = ParseInt(parts[1]);
+            _state.MapColorB = ParseInt(parts[2]);
         }
     }
 
@@ -766,7 +788,6 @@ public class PacketHandler
         ch.DialogColor = hexColor;
         ch.DialogStartMs = System.Environment.TickCount64;
         ch.DialogDurationMs = 5000 + 100 * text.Length;
-        ch.DialogRiseOffset = 0f;
         ch.DialogRiseCounter = 18;  // VB6 Sube = 18
         ch.DialogFading = false;
     }

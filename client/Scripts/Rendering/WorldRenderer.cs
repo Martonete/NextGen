@@ -52,7 +52,20 @@ public partial class WorldRenderer : Node2D
     {
         if (_state?.MapData == null) return;
         UpdateRoofFade();
+        UpdateAmbientLight();
         QueueRedraw();
+    }
+
+    /// <summary>
+    /// VB6: all tiles/characters are drawn with the map's ambient RGB.
+    /// Default is 200,200,200 (slightly dimmed). Applied via Godot's Modulate.
+    /// </summary>
+    private void UpdateAmbientLight()
+    {
+        float r = _state!.MapColorR / 255f;
+        float g = _state.MapColorG / 255f;
+        float b = _state.MapColorB / 255f;
+        Modulate = new Color(r, g, b, 1f);
     }
 
     private void UpdateRoofFade()

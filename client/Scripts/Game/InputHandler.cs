@@ -217,10 +217,9 @@ public class InputHandler
     }
 
     /// <summary>
-    /// Handle mouse click → left click packet.
-    /// Called from Main._UnhandledInput with position already relative to game viewport.
+    /// Convert viewport pixel position to world tile coordinates.
     /// </summary>
-    public void HandleClick(Vector2 viewportPos, int userX, int userY)
+    private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
     {
         const int HalfTilesX = 8;
         const int HalfTilesY = 6;
@@ -229,10 +228,32 @@ public class InputHandler
 
         int tileX = userX + (int)((viewportPos.X - centerX) / 32);
         int tileY = userY + (int)((viewportPos.Y - centerY) / 32);
+        return (tileX, tileY);
+    }
 
+    /// <summary>
+    /// Handle left click → LC packet (VB6: LookatTile — inspect tile).
+    /// Called from Main._UnhandledInput with position already relative to game viewport.
+    /// </summary>
+    public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
+    {
+        var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {
             _tcp.SendPacket($"LC{tileX},{tileY}");
+        }
+    }
+
+    /// <summary>
+    /// Handle right click → RC packet (VB6: Accion — interact with doors, NPCs, users).
+    /// Called from Main._UnhandledInput with position already relative to game viewport.
+    /// </summary>
+    public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
+    {
+        var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+        if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+        {
+            _tcp.SendPacket($"RC{tileX},{tileY}");
         }
     }
 }

@@ -19,6 +19,23 @@ public static class CharRenderer
 {
     private const int TileSize = 32;
 
+    // VB6 AO uses Tahoma font for dialog bubbles and names
+    private static Font _tahomaFont;
+    private static Font TahomaFont
+    {
+        get
+        {
+            if (_tahomaFont == null)
+            {
+                var sysFont = new SystemFont();
+                sysFont.FontNames = new string[] { "Tahoma", "Arial", "Sans-Serif" };
+                sysFont.Antialiased = false; // VB6 used non-antialiased text
+                _tahomaFont = sysFont;
+            }
+            return _tahomaFont;
+        }
+    }
+
     public static void DrawCharacter(
         Node2D canvas,
         Character ch,
@@ -91,7 +108,7 @@ public static class CharRenderer
         DrawName(canvas, ch, screenPos);
 
         // Dialog bubble (VB6: cDialogos.Render)
-        DrawDialog(canvas, ch, screenPos);
+        DrawDialog(canvas, ch, screenPos, headOffset);
     }
 
     private static void DrawShadow(
@@ -219,7 +236,7 @@ public static class CharRenderer
 
         Color nameColor = GetNameColor(ch);
 
-        var font = ThemeDB.FallbackFont;
+        var font = TahomaFont;
         int fontSize = 12;
 
         // VB6: text Y is top-of-text. Godot DrawString Y is baseline.
@@ -249,10 +266,11 @@ public static class CharRenderer
     }
 
     /// <summary>
-    /// VB6 cDialogos: draw speech bubble text above character.
-    /// Text floats up and fades out over time.
+    /// VB6 cDialogos: draw speech bubble text above character head.
+    /// VB6 Sube starts at 18 and decrements each tick — text starts high
+    /// and settles down to just above the head. Then fades out.
     /// </summary>
-    private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos)
+    private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset)
     {
         if (string.IsNullOrEmpty(ch.DialogText)) return;
 
@@ -263,18 +281,14 @@ public static class CharRenderer
         if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
             ch.DialogFading = true;
 
-        // Float-up: VB6 decrements Sube each render tick, Y offset += Sube / 1.2
+        // VB6 Sube: decrements each render tick from 18 to 0
         if (!ch.DialogFading && ch.DialogRiseCounter > 0)
-        {
             ch.DialogRiseCounter--;
-            ch.DialogRiseOffset += ch.DialogRiseCounter / 1.2f;
-        }
 
         // Alpha: full during lifetime, fade out after
         float alpha;
         if (ch.DialogFading)
         {
-            // Fade out over ~500ms (VB6: Desvanecimiento -= 10 per tick ≈ 20 ticks)
             long fadeElapsed = elapsed - ch.DialogDurationMs;
             alpha = 1.0f - (fadeElapsed / 500f);
             if (alpha <= 0f)
@@ -288,10 +302,9 @@ public static class CharRenderer
             alpha = 1.0f;
         }
 
-        var font = ThemeDB.FallbackFont;
+        var font = TahomaFont;
         int fontSize = 10;
 
-        // Word-wrap to 24 chars per line (VB6: MAX_LENGTH = 24)
         var lines = WrapText(ch.DialogText, 24);
 
         // Parse hex color
@@ -308,14 +321,18 @@ public static class CharRenderer
             color = new Color(1, 1, 1, alpha);
         }
 
-        // Shadow color for readability
         Color shadow = new Color(0, 0, 0, alpha * 0.7f);
 
-        // Position: above the character name, offset by rise
-        // VB6: X centered on head, Y = headOffset.Y area
+        // VB6 dialog Y: positioned at head level, Sube/1.2 gives initial bounce
+        // that settles to 0 as Sube decrements from 18→0
+        float riseOffset = ch.DialogRiseCounter / 1.2f;
         float lineHeight = fontSize + 2;
         float totalTextHeight = lines.Length * lineHeight;
-        float baseY = pos.Y - 10 - ch.DialogRiseOffset - totalTextHeight;
+
+        // Head Y = pos.Y + headOffset.Y (same as DrawHead uses).
+        // Place text above head with a small gap, minus the settle-down offset.
+        float headY = pos.Y + headOffset.Y;
+        float baseY = headY - 8 - riseOffset - totalTextHeight;
 
         for (int i = 0; i < lines.Length; i++)
         {
@@ -325,10 +342,8 @@ public static class CharRenderer
             float lineY = baseY + i * lineHeight;
             var linePos = new Vector2(lineX, lineY);
 
-            // Draw shadow first for readability
             canvas.DrawString(font, linePos + new Vector2(1, 1), line,
                 HorizontalAlignment.Left, -1, fontSize, shadow);
-            // Draw text
             canvas.DrawString(font, linePos, line,
                 HorizontalAlignment.Left, -1, fontSize, color);
         }

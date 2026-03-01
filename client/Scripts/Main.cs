@@ -412,7 +412,7 @@ public partial class Main : Control
 
     public override void _UnhandledInput(InputEvent @event)
     {
-        if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+        if (@event is InputEventMouseButton mb && mb.Pressed)
         {
             if (_state.CurrentScreen == Screen.Game)
             {
@@ -423,7 +423,11 @@ public partial class Main : Control
                 // Only handle clicks within the game viewport area
                 if (clickX >= 0 && clickX < 534 && clickY >= 0 && clickY < 408)
                 {
-                    _inputHandler?.HandleClick(new Vector2(clickX, clickY), _state.UserPosX, _state.UserPosY);
+                    var viewPos = new Vector2(clickX, clickY);
+                    if (mb.ButtonIndex == MouseButton.Left)
+                        _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
+                    else if (mb.ButtonIndex == MouseButton.Right)
+                        _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
                 }
             }
         }
