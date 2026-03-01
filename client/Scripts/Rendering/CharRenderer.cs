@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Godot;
 using TierrasSagradasAO.Data;
 using TierrasSagradasAO.Game;
@@ -25,7 +26,8 @@ public static class CharRenderer
         Vector2 screenPos,
         GameData data,
         GrhAnimator animator,
-        float deltaMs = 0f)
+        float deltaMs = 0f,
+        GameState? state = null)
     {
         int heading = ch.Heading;
         if (heading < 1 || heading > 4) heading = 3;
@@ -87,6 +89,10 @@ public static class CharRenderer
 
         // FX overlays (up to 3 simultaneous)
         DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
+
+        // Character-attached particles
+        if (state != null)
+            DrawCharParticles(canvas, ch, screenPos, state, data);
 
         // Name + clan above head (VB6: uses font1 bitmap font)
         DrawName(canvas, ch, screenPos, data);
@@ -230,6 +236,45 @@ public static class CharRenderer
             Vector2 fxDrawPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
             DrawGrh(canvas, data, grhIndex, frame, fxDrawPos, true,
                     new Color(1, 1, 1, 150f / 255f));
+        }
+    }
+
+    /// <summary>
+    /// Render character-attached particle streams centered on the character sprite.
+    /// </summary>
+    private static void DrawCharParticles(Node2D canvas, Character ch, Vector2 pos,
+                                           GameState state, GameData data)
+    {
+        // Find char index for this character in state.Characters
+        int charIdx = -1;
+        foreach (var kvp in state.Characters)
+        {
+            if (ReferenceEquals(kvp.Value, ch))
+            {
+                charIdx = kvp.Key;
+                break;
+            }
+        }
+        if (charIdx < 0) return;
+
+        foreach (var stream in state.MapParticles)
+        {
+            if (!stream.Active || stream.CharIndex != charIdx) continue;
+            if (stream.DefIndex < 1 || stream.DefIndex >= state.ParticleDefs.Length) continue;
+
+            var def = state.ParticleDefs[stream.DefIndex];
+            // Center particles on character tile
+            Vector2 charCenter = pos + new Vector2(TileSize / 2f, TileSize / 2f);
+
+            foreach (var p in stream.Particles)
+            {
+                if (!p.Alive || p.GrhIndex <= 0) continue;
+                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                Vector2 pPos = charCenter + new Vector2(p.X, p.Y);
+
+                int frame = 0; // particles use static GRH frames
+                DrawGrh(canvas, data, p.GrhIndex, frame, pPos, true, color);
+            }
         }
     }
 

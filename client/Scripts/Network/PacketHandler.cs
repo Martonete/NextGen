@@ -150,6 +150,18 @@ public class PacketHandler
         {
             HandleOnlineCount(packet[2..]);
         }
+        else if (packet.StartsWith("NPCR"))
+        {
+            HandleNpcReset();
+        }
+        else if (packet.StartsWith("NPCI"))
+        {
+            HandleNpcItem(packet[4..]);
+        }
+        else if (packet.StartsWith("NPC|"))
+        {
+            HandleNpcSlotUpdate(packet[4..]);
+        }
         else if (packet.StartsWith("N~"))
         {
             _state.MapName = packet[2..];
@@ -189,6 +201,10 @@ public class PacketHandler
         else if (packet.StartsWith("[R]"))
         {
             _state.Reputation = ParseInt(packet[3..]);
+        }
+        else if (packet.StartsWith("[BG"))
+        {
+            HandleBankGold(packet[3..]);
         }
         else if (packet.StartsWith("[CD"))
         {
@@ -258,13 +274,21 @@ public class PacketHandler
         {
             HandleWhisper(packet[2..]);
         }
+        else if (packet.StartsWith("PCF"))
+        {
+            HandleParticleCreate(packet[3..]);
+        }
         else if (packet.StartsWith("PCR"))
         {
             HandleAmbientColor(packet[3..]);
         }
         else if (packet.StartsWith("PCL"))
         {
-            // Per-tile light effect — not yet implemented
+            HandleLightCreate(packet[3..]);
+        }
+        else if (packet.StartsWith("PCB"))
+        {
+            HandleCharParticle(packet[3..]);
         }
         else if (packet.StartsWith("MENU"))
         {
@@ -276,15 +300,37 @@ public class PacketHandler
             // SELE{type},{name},OBJ — Item selection prompt
             GD.Print($"[PKT] SELE: {packet[4..]}");
         }
+        else if (packet.StartsWith("FINCOMOK"))
+        {
+            HandleFinComOk();
+        }
+        else if (packet.StartsWith("TRANSOK"))
+        {
+            HandleTransOk(packet[7..]);
+        }
         else if (packet.StartsWith("INITCOM"))
         {
-            // Open NPC shop — UI not yet implemented
-            GD.Print("[PKT] INITCOM: NPC shop requested");
+            HandleInitCom();
+        }
+        else if (packet.StartsWith("FINBANOK"))
+        {
+            HandleFinBanOk();
+        }
+        else if (packet.StartsWith("BANCOOK"))
+        {
+            HandleBancoOk(packet[7..]);
         }
         else if (packet.StartsWith("INITBANCO"))
         {
-            // Open bank — UI not yet implemented
-            GD.Print("[PKT] INITBANCO: Bank requested");
+            HandleInitBanco();
+        }
+        else if (packet.StartsWith("SBR"))
+        {
+            HandleBankReset();
+        }
+        else if (packet.StartsWith("SBO"))
+        {
+            HandleBankSlot(packet[3..]);
         }
         else if (packet.StartsWith("+"))
         {
@@ -389,8 +435,11 @@ public class PacketHandler
                 _state.Characters.Remove(key);
 
             _state.GroundObjects.Clear();
+            _state.MapParticles.Clear();
+            _state.MapLights.Clear();
+            _state.LightsDirty = true;
 
-            GD.Print($"[GAME] Change map: {_state.CurrentMap} (cleared {toRemove.Count} chars, all ground objects)");
+            GD.Print($"[GAME] Change map: {_state.CurrentMap} (cleared {toRemove.Count} chars, all ground objects, particles, lights)");
         }
     }
 
@@ -405,6 +454,58 @@ public class PacketHandler
             _state.MapColorR = ParseInt(parts[0]);
             _state.MapColorG = ParseInt(parts[1]);
             _state.MapColorB = ParseInt(parts[2]);
+        }
+    }
+
+    /// <summary>
+    /// PCF{particleGroup},{x},{y} — Create map particle stream at tile.
+    /// </summary>
+    private void HandleParticleCreate(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 3)
+        {
+            int defIdx = ParseInt(parts[0]);
+            int x = ParseInt(parts[1]);
+            int y = ParseInt(parts[2]);
+            ParticleSystem.CreateMapStream(_state, defIdx, x, y);
+        }
+    }
+
+    /// <summary>
+    /// PCL{x},{y},{range},{r},{g},{b} — Create light at tile with color and range.
+    /// </summary>
+    private void HandleLightCreate(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 6)
+        {
+            var light = new MapLight
+            {
+                X = ParseInt(parts[0]),
+                Y = ParseInt(parts[1]),
+                Range = ParseInt(parts[2]),
+                R = (byte)Math.Clamp(ParseInt(parts[3]), 0, 255),
+                G = (byte)Math.Clamp(ParseInt(parts[4]), 0, 255),
+                B = (byte)Math.Clamp(ParseInt(parts[5]), 0, 255),
+                Active = true
+            };
+            _state.MapLights.Add(light);
+            _state.LightsDirty = true;
+        }
+    }
+
+    /// <summary>
+    /// PCB{charIndex},{particleGroup} — Attach particle to character.
+    /// </summary>
+    private void HandleCharParticle(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int charIndex = ParseInt(parts[0]);
+            int defIdx = ParseInt(parts[1]);
+            ParticleSystem.CreateCharStream(_state, defIdx, charIndex);
         }
     }
 
@@ -1185,6 +1286,142 @@ public class PacketHandler
             Text = $"{data.Trim()} se ha desconectado.",
             Color = "FF0000"
         });
+    }
+
+    // ── Bank handlers (frmBanco + frmNuevoBancoObj) ───────────────
+
+    private void HandleBankReset()
+    {
+        _state.BankItemCount = 0;
+        for (int i = 0; i < 40; i++)
+            _state.BankItems[i] = new BankItem();
+    }
+
+    private void HandleBankSlot(string data)
+    {
+        // SBO<slot>,<obj_idx>,<name>,<amount>,<grh>,<type>,<max_hit>,<min_hit>,<max_def>
+        var parts = data.Split(',');
+        if (parts.Length < 9) return;
+
+        int slotNum = ParseInt(parts[0]); // 1-based
+        int idx = _state.BankItemCount;
+        if (idx >= 40) return;
+
+        _state.BankItems[idx] = new BankItem
+        {
+            Slot = slotNum,
+            ObjIndex = ParseInt(parts[1]),
+            Name = parts[2],
+            Amount = ParseInt(parts[3]),
+            GrhIndex = ParseInt(parts[4]),
+            ObjType = ParseInt(parts[5]),
+            MaxHit = ParseInt(parts[6]),
+            MinHit = ParseInt(parts[7]),
+            MaxDef = ParseInt(parts[8]),
+        };
+        _state.BankItemCount++;
+    }
+
+    private void HandleInitBanco()
+    {
+        _state.Banqueando = true;
+        GD.Print($"[PKT] INITBANCO: Bank opened ({_state.BankItemCount} items, gold={_state.BankGold})");
+    }
+
+    private void HandleBancoOk(string data)
+    {
+        // BANCOOK<slot>,<type> — type: 0=withdraw, 1=deposit. Confirmation only.
+        GD.Print($"[PKT] BANCOOK: {data}");
+    }
+
+    private void HandleFinBanOk()
+    {
+        _state.Banqueando = false;
+        _state.BovedaAbierta = false;
+        GD.Print("[PKT] FINBANOK: Bank closed");
+    }
+
+    private void HandleBankGold(string data)
+    {
+        if (long.TryParse(data.Trim(), out long v))
+            _state.BankGold = v;
+    }
+
+    // ── NPC Commerce handlers ─────────────────────────────────────
+
+    private void HandleNpcReset()
+    {
+        _state.NpcShopCount = 0;
+        for (int i = 0; i < 50; i++)
+            _state.NpcShopItems[i] = new NpcShopItem();
+    }
+
+    private void HandleNpcItem(string data)
+    {
+        // NPCI{name},{qty},{price},{grh},{obj_idx},{type},{max_hit},{min_hit},{max_def},{slot}
+        var parts = data.Split(',');
+        if (parts.Length < 10) return;
+
+        int idx = _state.NpcShopCount;
+        if (idx >= 50) return;
+
+        _state.NpcShopItems[idx] = new NpcShopItem
+        {
+            Name = parts[0],
+            Amount = ParseInt(parts[1]),
+            Price = long.TryParse(parts[2].Trim(), out long p) ? p : 0,
+            GrhIndex = ParseInt(parts[3]),
+            ObjIndex = ParseInt(parts[4]),
+            ObjType = ParseInt(parts[5]),
+            MaxHit = ParseInt(parts[6]),
+            MinHit = ParseInt(parts[7]),
+            MaxDef = ParseInt(parts[8]),
+            Slot = ParseInt(parts[9]),
+        };
+        _state.NpcShopCount++;
+    }
+
+    private void HandleNpcSlotUpdate(string data)
+    {
+        // NPC|{slot},{name},{qty},{price},{grh},{obj_idx},{type},{max_hit},{min_hit},{max_def},{slot2}
+        var parts = data.Split(',');
+        if (parts.Length < 11) return;
+
+        int targetSlot = ParseInt(parts[0]); // 1-based from server
+        for (int i = 0; i < _state.NpcShopCount; i++)
+        {
+            if (_state.NpcShopItems[i].Slot == targetSlot)
+            {
+                _state.NpcShopItems[i].Name = parts[1];
+                _state.NpcShopItems[i].Amount = ParseInt(parts[2]);
+                _state.NpcShopItems[i].Price = long.TryParse(parts[3].Trim(), out long p) ? p : 0;
+                _state.NpcShopItems[i].GrhIndex = ParseInt(parts[4]);
+                _state.NpcShopItems[i].ObjIndex = ParseInt(parts[5]);
+                _state.NpcShopItems[i].ObjType = ParseInt(parts[6]);
+                _state.NpcShopItems[i].MaxHit = ParseInt(parts[7]);
+                _state.NpcShopItems[i].MinHit = ParseInt(parts[8]);
+                _state.NpcShopItems[i].MaxDef = ParseInt(parts[9]);
+                return;
+            }
+        }
+    }
+
+    private void HandleInitCom()
+    {
+        _state.Comerciando = true;
+        GD.Print($"[PKT] INITCOM: NPC shop opened ({_state.NpcShopCount} items)");
+    }
+
+    private void HandleTransOk(string data)
+    {
+        // TRANSOK{slot},{type} — type: 0=buy, 1=sell
+        GD.Print($"[PKT] TRANSOK: {data}");
+    }
+
+    private void HandleFinComOk()
+    {
+        _state.Comerciando = false;
+        GD.Print("[PKT] FINCOMOK: NPC shop closed");
     }
 
     private static int ParseInt(string s)

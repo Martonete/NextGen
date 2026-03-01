@@ -170,6 +170,8 @@ public partial class WorldRenderer : Node2D
         int l1MinY = Math.Max(1, screenMinY - 2);
         int l1MaxY = Math.Min(100, screenMaxY + 2);
 
+        bool hasLights = _state.MapLights.Count > 0 && _state.TileLightColors != null;
+
         for (int y = l1MinY; y <= l1MaxY; y++)
         {
             for (int x = l1MinX; x <= l1MaxX; x++)
@@ -178,7 +180,15 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer1 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                DrawTileGrh(tile.Layer1, pos, center: false);
+                if (hasLights)
+                {
+                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
+                }
+                else
+                {
+                    DrawTileGrh(tile.Layer1, pos, center: false);
+                }
             }
         }
 
@@ -223,7 +233,7 @@ public partial class WorldRenderer : Node2D
                     float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
                     float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
-                    CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator, _deltaMs);
+                    CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator, _deltaMs, _state);
                 }
 
                 // Layer 3 (trees/objects)
@@ -243,6 +253,26 @@ public partial class WorldRenderer : Node2D
                         DrawTileGrh(tile.Layer3, tilePos, center: true);
                     }
                 }
+            }
+        }
+
+        // ==========================================
+        // PASS 3b: Map-attached particles
+        // ==========================================
+        foreach (var stream in _state.MapParticles)
+        {
+            if (!stream.Active || stream.CharIndex >= 0) continue; // skip char-attached
+            if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
+
+            var def = _state.ParticleDefs[stream.DefIndex];
+            Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, userX, userY, pixelOffsetX, pixelOffsetY);
+
+            foreach (var p in stream.Particles)
+            {
+                if (!p.Alive || p.GrhIndex <= 0) continue;
+                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
+                DrawTileGrh(p.GrhIndex, pPos, center: true, modulate: color);
             }
         }
 

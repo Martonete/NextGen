@@ -22,6 +22,8 @@ public partial class Main : Control
     private InputHandler? _inputHandler;
     private WorldRenderer? _worldRenderer;
     private GrhAnimator _animator = new();
+    private ParticleSystem _particleSystem = new();
+    private LightSystem _lightSystem = new();
 
     private bool _connecting;
     private int _packetCount;
@@ -87,6 +89,15 @@ public partial class Main : Control
     private Button? _spellDownButton;
     private bool _showingSpells;
 
+    // Commerce panel (frmComerciar)
+    private CommercePanel? _commercePanel;
+    private bool _lastComerciando;
+
+    // Bank panels (frmBanco + frmNuevoBancoObj)
+    private BankPanel? _bankPanel;
+    private VaultPanel? _vaultPanel;
+    private bool _lastBanqueando;
+
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
     // Track double-click to avoid sending LC on the release after a dbl-click
@@ -108,6 +119,10 @@ public partial class Main : Control
         GD.Print($"[MAIN] Data path: {dataPath}");
         _gameData.LoadAll(dataPath);
         _state.TextMessages = _gameData.TextMessages;
+
+        // Load particle definitions
+        string particlesPath = System.IO.Path.Combine(dataPath, "INIT", "Particles.ini");
+        _particleSystem.LoadDefinitions(particlesPath, _state);
 
         if (!_gameData.IsLoaded)
         {
@@ -299,6 +314,28 @@ public partial class Main : Control
         _minimapDot.MouseFilter = Control.MouseFilterEnum.Ignore;
         _minimapRect.AddChild(_minimapDot);
 
+        // Commerce panel (frmComerciar) — centered on game viewport (534×408 at y=124)
+        _commercePanel = new CommercePanel();
+        // Center: (534 - 445) / 2 = 44.5, y offset: 124 + (408 - 486) / 2 ≈ 85
+        _commercePanel.Position = new Vector2(44, 85);
+        _commercePanel.Visible = false;
+        _gameUI.AddChild(_commercePanel);
+
+        // Bank panel (frmBanco) — centered on viewport
+        _bankPanel = new BankPanel();
+        // Center: (534 - 165) / 2 = 184, y: 124 + (408 - 196) / 2 = 230
+        _bankPanel.Position = new Vector2(184, 230);
+        _bankPanel.Visible = false;
+        _bankPanel.OnOpenVault += OnBankOpenVault;
+        _gameUI.AddChild(_bankPanel);
+
+        // Vault panel (frmNuevoBancoObj) — centered on viewport
+        _vaultPanel = new VaultPanel();
+        // Center: (534 - 450) / 2 = 42, y: 124 + (408 - 527) / 2 ≈ 64
+        _vaultPanel.Position = new Vector2(42, 64);
+        _vaultPanel.Visible = false;
+        _gameUI.AddChild(_vaultPanel);
+
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
 
@@ -358,6 +395,15 @@ public partial class Main : Control
             btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         btn.FocusMode = Control.FocusModeEnum.None; // Never steal keyboard focus
         return btn;
+    }
+
+    /// <summary>
+    /// Called when BankPanel's "Abrir Bóveda" button is clicked.
+    /// Opens VaultPanel (the item vault).
+    /// </summary>
+    private void OnBankOpenVault()
+    {
+        _vaultPanel?.OpenVault();
     }
 
     private void OnInventoryTabPressed()
@@ -645,6 +691,16 @@ public partial class Main : Control
         // Update animations
         _animator.Update((float)delta, _gameData);
 
+        // Update particle simulation
+        _particleSystem.Update((float)delta, _state);
+
+        // Recalculate lighting when dirty (lights added/removed/map changed)
+        if (_state.LightsDirty)
+        {
+            _lightSystem.RecalculateLights(_state);
+            _state.LightsDirty = false;
+        }
+
         if (_state.CurrentScreen == Screen.Game)
         {
             // VB6 order: CheckKeys BEFORE ShowNextFrame.
@@ -653,6 +709,34 @@ public partial class Main : Control
             _inputHandler?.Process(delta);
             UpdateGameUI();
             UpdateConsoleMessages();
+
+            // Commerce panel state tracking
+            if (_state.Comerciando != _lastComerciando)
+            {
+                _lastComerciando = _state.Comerciando;
+                if (_state.Comerciando)
+                    _commercePanel?.OpenShop();
+                else
+                    _commercePanel?.CloseShop();
+            }
+
+            // Bank panel state tracking
+            if (_state.Banqueando != _lastBanqueando)
+            {
+                _lastBanqueando = _state.Banqueando;
+                if (_state.Banqueando)
+                {
+                    // Only open BankPanel if vault isn't already open
+                    if (!_state.BovedaAbierta)
+                        _bankPanel?.OpenBank();
+                }
+                else
+                {
+                    _bankPanel?.CloseBank();
+                    _vaultPanel?.CloseVault();
+                    _state.BovedaAbierta = false;
+                }
+            }
         }
 
         // Movement update AFTER input (VB6: ShowNextFrame after CheckKeys)
@@ -687,6 +771,9 @@ public partial class Main : Control
                 {
                     _inventoryPanel!.Init(_state, _gameData, _tcp);
                     _spellPanel!.Init(_state, _gameData, _tcp);
+                    _commercePanel!.Init(_state, _gameData, _tcp);
+                    _bankPanel!.Init(_state, _gameData, _tcp);
+                    _vaultPanel!.Init(_state, _gameData, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -729,6 +816,13 @@ public partial class Main : Control
         // Clear minimap
         if (_minimapRect != null)
             _minimapRect.Texture = null;
+
+        // Close commerce and bank panels
+        _commercePanel?.CloseShop();
+        _lastComerciando = false;
+        _bankPanel?.CloseBank();
+        _vaultPanel?.CloseVault();
+        _lastBanqueando = false;
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
@@ -777,6 +871,7 @@ public partial class Main : Control
         _state.UserStopped = false;
         _state.UsingSkill = 0;
         _state.ChatActive = false;
+        _state.Comerciando = false;
         _state.UserMoving = false;
         _state.AddToUserPosX = 0;
         _state.AddToUserPosY = 0;
@@ -816,6 +911,19 @@ public partial class Main : Control
             _state.Inventory[i] = new InventorySlot();
         for (int i = 0; i < 20; i++)
             _state.Spells[i] = new SpellSlot();
+
+        // Commerce
+        _state.NpcShopCount = 0;
+        for (int i = 0; i < 50; i++)
+            _state.NpcShopItems[i] = new NpcShopItem();
+
+        // Bank
+        _state.BankItemCount = 0;
+        _state.BankGold = 0;
+        _state.Banqueando = false;
+        _state.BovedaAbierta = false;
+        for (int i = 0; i < 40; i++)
+            _state.BankItems[i] = new BankItem();
 
         // Chat queue
         _state.ChatMessages.Clear();

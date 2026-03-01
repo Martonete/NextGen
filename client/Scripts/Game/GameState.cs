@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Godot;
 using TierrasSagradasAO.Data;
 
 namespace TierrasSagradasAO.Game;
@@ -112,6 +113,28 @@ public class GameState
     // Spells (20 slots)
     public SpellSlot[] Spells = new SpellSlot[20];
 
+    // NPC Commerce (frmComerciar)
+    public NpcShopItem[] NpcShopItems = new NpcShopItem[50];
+    public int NpcShopCount;
+    public bool Comerciando;
+
+    // Bank (frmBanco + frmNuevoBancoObj / Bóveda)
+    public BankItem[] BankItems = new BankItem[40];
+    public int BankItemCount;
+    public long BankGold;
+    public bool Banqueando;       // frmBanco is open (gold operations)
+    public bool BovedaAbierta;    // frmNuevoBancoObj is open (item vault)
+
+    // Particle system
+    public ParticleStreamDef[] ParticleDefs = System.Array.Empty<ParticleStreamDef>();
+    public List<ParticleStream> MapParticles = new();
+
+    // Light system
+    public List<MapLight> MapLights = new();
+    public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
+    public Color[,,]? TileLightColors; // [x, y, corner(0-3)]
+    public bool LightsDirty;
+
     // Chat message queue — drained by Main.cs each frame
     public Queue<ChatMessage> ChatMessages = new();
 
@@ -124,6 +147,10 @@ public class GameState
             Inventory[i] = new InventorySlot();
         for (int i = 0; i < 20; i++)
             Spells[i] = new SpellSlot();
+        for (int i = 0; i < 50; i++)
+            NpcShopItems[i] = new NpcShopItem();
+        for (int i = 0; i < 40; i++)
+            BankItems[i] = new BankItem();
     }
 }
 
@@ -144,4 +171,95 @@ public class SpellSlot
 {
     public int SpellId;
     public string Name = "";
+}
+
+public class NpcShopItem
+{
+    public int Slot;       // 1-based server slot
+    public string Name = "";
+    public int Amount;
+    public long Price;     // Server-computed (with discount/inflation)
+    public int GrhIndex;
+    public int ObjIndex;
+    public int ObjType;    // 2=weapon, 3=armor, 16=shield, 17=helmet
+    public int MaxHit, MinHit, MaxDef;
+}
+
+public class BankItem
+{
+    public int Slot;       // 1-based server slot
+    public int ObjIndex;
+    public string Name = "";
+    public int Amount;
+    public int GrhIndex;
+    public int ObjType;
+    public int MaxHit, MinHit, MaxDef;
+}
+
+/// <summary>
+/// Particle effect definition loaded from Particles.ini (VB6: Particulas.bas).
+/// </summary>
+public class ParticleStreamDef
+{
+    public string Name = "";
+    public int NumParticles;
+    public int[] GrhList = System.Array.Empty<int>();
+    public int GrhCount;
+    public float VecX1, VecY1, VecX2, VecY2; // velocity bounds
+    public float X1, Y1, X2, Y2;             // spawn offset bounds (move_x1..move_y2)
+    public float LifeMin, LifeMax;
+    public float Friction;
+    public float Gravity;
+    public float GravStrength;
+    public float BounceStrength;
+    public float Speed;
+    public bool Spin;
+    public float SpinSpeedL, SpinSpeedH;
+    public bool AlphaBlend;
+    public bool XMove, YMove;
+    public int LifeCounter; // -1 = infinite
+    public byte ColR1, ColG1, ColB1; // ColorSet1
+    public byte ColR2, ColG2, ColB2; // ColorSet2
+    public byte ColR3, ColG3, ColB3; // ColorSet3
+    public byte ColR4, ColG4, ColB4; // ColorSet4
+}
+
+/// <summary>
+/// A single particle instance within a stream.
+/// </summary>
+public class Particle
+{
+    public float X, Y;
+    public float VelX, VelY;
+    public float Life, MaxLife;
+    public float Angle;
+    public float SpinSpeed;
+    public int GrhIndex;
+    public float Alpha;
+    public bool Alive;
+    public byte ColR, ColG, ColB; // chosen color
+}
+
+/// <summary>
+/// An active particle stream (map-attached or character-attached).
+/// </summary>
+public class ParticleStream
+{
+    public int DefIndex;
+    public int MapX, MapY;       // tile position (map-attached)
+    public int CharIndex = -1;   // character index (char-attached, -1 for map)
+    public Particle[] Particles = System.Array.Empty<Particle>();
+    public float SpawnTimer;
+    public bool Active = true;
+}
+
+/// <summary>
+/// A light source on the map (from PCL packet).
+/// </summary>
+public class MapLight
+{
+    public int X, Y;       // tile position
+    public int Range;      // radius in tiles
+    public byte R, G, B;   // light color
+    public bool Active = true;
 }
