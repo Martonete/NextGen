@@ -95,6 +95,7 @@ public class ParticleSystem
         {
             case "name": def.Name = val; break;
             case "numofparticles": int.TryParse(val, out def.NumParticles); break;
+            case "angle": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.Angle); break;
             case "x1": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.X1); break;
             case "y1": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.Y1); break;
             case "x2": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.X2); break;
@@ -121,10 +122,10 @@ public class ParticleSystem
             case "ymove": def.YMove = val == "1"; break;
             case "life_counter": int.TryParse(val, out def.LifeCounter); break;
             case "numgrhs": int.TryParse(val, out def.GrhCount); break;
-            case "move_x1": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.X1); break;
-            case "move_y1": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.Y1); break;
-            case "move_x2": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.X2); break;
-            case "move_y2": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.Y2); break;
+            case "move_x1": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.MoveX1); break;
+            case "move_y1": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.MoveY1); break;
+            case "move_x2": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.MoveX2); break;
+            case "move_y2": float.TryParse(val, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out def.MoveY2); break;
             case "grh_list":
                 var grhParts = val.Split(',', StringSplitOptions.RemoveEmptyEntries);
                 var grhList = new List<int>();
@@ -236,66 +237,72 @@ public class ParticleSystem
 
     private static void UpdateStream(ParticleStream stream, ParticleStreamDef def, float deltaMs)
     {
-        float speed = def.Speed > 0 ? def.Speed : 0.5f;
-        float spawnInterval = 1000f * speed / Math.Max(1, def.NumParticles);
-
-        // Spawn timer
+        // VB6: frame_counter += timerTicksPerFrame (delta-based).
+        // When frame_counter > frame_speed → advance physics, reset counter.
+        // frame_speed is derived from Speed field. We use the same logic.
+        float frameSpeed = (def.Speed > 0 ? def.Speed : 0.5f) * 1000f; // ms
         stream.SpawnTimer += deltaMs;
-        int toSpawn = (int)(stream.SpawnTimer / spawnInterval);
-        if (toSpawn > 0)
-            stream.SpawnTimer -= toSpawn * spawnInterval;
+        bool doMove = stream.SpawnTimer >= frameSpeed;
+        if (doMove)
+            stream.SpawnTimer -= frameSpeed;
 
-        // Spawn new particles
-        for (int i = 0; i < stream.Particles.Length && toSpawn > 0; i++)
-        {
-            if (!stream.Particles[i].Alive)
-            {
-                SpawnParticle(stream.Particles[i], def);
-                toSpawn--;
-            }
-        }
-
-        // Simulate
-        float friction = def.Friction > 0 ? 1f - (def.Friction * 0.01f) : 1f;
-        friction = Math.Clamp(friction, 0f, 1f);
+        // VB6 friction: integer division `vector_x \ friction` (truncates toward zero)
+        float friction = def.Friction > 0 ? def.Friction : 1f;
 
         for (int i = 0; i < stream.Particles.Length; i++)
         {
             var p = stream.Particles[i];
-            if (!p.Alive) continue;
 
-            // Apply velocity
-            p.X += p.VelX * deltaMs * 0.01f;
-            p.Y += p.VelY * deltaMs * 0.01f;
-
-            // Apply friction
-            p.VelX *= friction;
-            p.VelY *= friction;
-
-            // Apply gravity
-            if (def.Gravity > 0)
-                p.VelY += def.GravStrength * deltaMs * 0.01f;
-
-            // Apply spin
-            if (def.Spin)
-                p.Angle += p.SpinSpeed * deltaMs * 0.001f;
-
-            // Bounce (VB6: if Y > 0 and BounceStrength != 0)
-            if (p.Y > 0 && def.BounceStrength != 0)
+            if (!doMove)
             {
-                p.Y = 0;
-                p.VelY = def.BounceStrength;
+                // VB6: no_move = True → only draw, skip physics
+                continue;
             }
 
-            // Decrease life
-            p.Life -= deltaMs * 0.1f;
+            if (p.Alive)
+            {
+                // === Existing particle: advance physics ===
 
-            // Alpha fade based on remaining life
-            p.Alpha = p.MaxLife > 0 ? Math.Clamp(p.Life / p.MaxLife, 0f, 1f) : 0f;
+                // VB6: gravity first, then bounce
+                if (def.Gravity > 0)
+                {
+                    p.VelY += def.GravStrength;
+                    if (p.Y > 0)
+                    {
+                        // VB6: bounce — set velocity to bounce_strength
+                        p.VelY = def.BounceStrength;
+                    }
+                }
 
-            // Dead check
-            if (p.Life <= 0)
-                p.Alive = false;
+                // VB6: spin (degrees, /100)
+                if (def.Spin)
+                    p.Angle += RandRange(def.SpinSpeedL, def.SpinSpeedH) / 100f;
+
+                // VB6: XMove/YMove REPLACE velocity (not additive drift)
+                if (def.XMove)
+                    p.VelX = RandRange(def.MoveX1, def.MoveX2);
+                if (def.YMove)
+                    p.VelY = RandRange(def.MoveY1, def.MoveY2);
+
+                // VB6: position += velocity / friction (integer division)
+                p.X += (int)(p.VelX / friction);
+                p.Y += (int)(p.VelY / friction);
+
+                // VB6: decrement alive_counter by 1
+                p.Life -= 1;
+
+                // Alpha fade based on remaining life
+                p.Alpha = p.MaxLife > 0 ? Math.Clamp(p.Life / p.MaxLife, 0f, 1f) : 0f;
+
+                // Dead check
+                if (p.Life <= 0)
+                    p.Alive = false;
+            }
+            else
+            {
+                // === Dead particle: respawn ===
+                SpawnParticle(p, def);
+            }
         }
     }
 
@@ -303,20 +310,21 @@ public class ParticleSystem
     {
         p.Alive = true;
 
-        // Random position within spawn offset bounds
+        // VB6: RandomNumber(X1, X2) for spawn position
         p.X = RandRange(def.X1, def.X2);
         p.Y = RandRange(def.Y1, def.Y2);
 
-        // Random velocity within bounds
+        // VB6: RandomNumber(vecx1, vecx2) for initial velocity
         p.VelX = RandRange(def.VecX1, def.VecX2);
         p.VelY = RandRange(def.VecY1, def.VecY2);
 
-        // Random lifetime
-        p.Life = RandRange(def.LifeMin, def.LifeMax);
+        // VB6: alive_counter = RandomNumber(life1, life2) — integer steps
+        p.Life = (int)RandRange(def.LifeMin, def.LifeMax);
         p.MaxLife = p.Life;
 
-        p.Angle = 0;
-        p.SpinSpeed = def.Spin ? RandRange(def.SpinSpeedL, def.SpinSpeedH) : 0;
+        // VB6: angle from def (not random)
+        p.Angle = def.Angle;
+        p.SpinSpeed = 0; // VB6 recalculates spin per-frame via RandomNumber
         p.Alpha = 1f;
 
         // Choose random GRH from list

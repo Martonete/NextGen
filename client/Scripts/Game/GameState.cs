@@ -132,7 +132,7 @@ public class GameState
     // Light system
     public List<MapLight> MapLights = new();
     public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
-    public Color[,,]? TileLightColors; // [x, y, corner(0-3)]
+    public Color[,,]? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
     public bool LightsDirty;
 
     // Chat message queue — drained by Main.cs each frame
@@ -205,8 +205,10 @@ public class ParticleStreamDef
     public int NumParticles;
     public int[] GrhList = System.Array.Empty<int>();
     public int GrhCount;
+    public float Angle;                       // initial angle (degrees)
     public float VecX1, VecY1, VecX2, VecY2; // velocity bounds
-    public float X1, Y1, X2, Y2;             // spawn offset bounds (move_x1..move_y2)
+    public float X1, Y1, X2, Y2;             // spawn position bounds (INI: X1,Y1,X2,Y2)
+    public float MoveX1, MoveY1, MoveX2, MoveY2; // per-frame drift bounds (INI: move_x1..move_y2)
     public float LifeMin, LifeMax;
     public float Friction;
     public float Gravity;
