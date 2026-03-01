@@ -22,6 +22,8 @@ public partial class WorldRenderer : Node2D
 
     // Additive blend layer for particles (VB6: D3DBLEND_ONE/ONE)
     private Node2D? _additiveLayer;
+    // Roof layer drawn AFTER particles so roof covers them
+    private RoofLayer? _roofLayer;
 
     private const int TileSize = 32;
 
@@ -51,6 +53,9 @@ public partial class WorldRenderer : Node2D
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingMapParticleDraws = new();
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingCharParticleDraws = new();
 
+    // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
+    private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
+
     public void Init(GameState state, GameData data, GrhAnimator animator)
     {
         _state = state;
@@ -67,6 +72,12 @@ public partial class WorldRenderer : Node2D
         _additiveLayer.Material = additiveMat;
         ((AdditiveParticleLayer)_additiveLayer).SetRenderer(this);
         AddChild(_additiveLayer);
+
+        // Roof layer: drawn AFTER additive particles (child index 1 > 0)
+        _roofLayer = new RoofLayer();
+        _roofLayer.Name = "RoofLayer";
+        _roofLayer.SetRenderer(this);
+        AddChild(_roofLayer);
     }
 
     public override void _Process(double delta)
@@ -319,8 +330,9 @@ public partial class WorldRenderer : Node2D
         }
 
         // ==========================================
-        // PASS 4: Layer 4 (Roof)
+        // PASS 4: Layer 4 (Roof) — queued for RoofLayer child node (drawn AFTER particles)
         // ==========================================
+        _pendingRoofDraws.Clear();
         if (_roofAlpha > 0)
         {
             float roofA = _roofAlpha / 255f;
@@ -336,15 +348,16 @@ public partial class WorldRenderer : Node2D
                     if (hasLights)
                     {
                         Color tl = LightSystem.GetTileLight(_state, x, y);
-                        DrawTileGrh(tile.Layer4, pos, center: true, modulate: new Color(tl.R, tl.G, tl.B, roofA));
+                        _pendingRoofDraws.Add((tile.Layer4, pos, new Color(tl.R, tl.G, tl.B, roofA)));
                     }
                     else
                     {
-                        DrawTileGrh(tile.Layer4, pos, center: true, modulate: new Color(1, 1, 1, roofA));
+                        _pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
                     }
                 }
             }
         }
+        _roofLayer?.QueueRedraw();
     }
 
     /// <summary>
@@ -397,6 +410,38 @@ public partial class WorldRenderer : Node2D
     public void QueueCharParticleDraw(int grhIndex, int frame, Vector2 pos, Color color)
     {
         _pendingCharParticleDraws.Add((grhIndex, frame, pos, color));
+    }
+
+    /// <summary>
+    /// Draw all pending roof tiles on a given canvas (used by RoofLayer).
+    /// </summary>
+    public void DrawPendingRoof(CanvasItem canvas)
+    {
+        if (_data == null || _animator == null) return;
+        foreach (var (grhIndex, pos, modulate) in _pendingRoofDraws)
+        {
+            int frame = _animator.GetCurrentFrame(grhIndex, _data);
+            CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, modulate);
+        }
+    }
+}
+
+/// <summary>
+/// Child Node2D that draws Layer 4 (roof) AFTER particle layer.
+/// Godot child draw order: index 0 (particles) then index 1 (roof).
+/// </summary>
+public partial class RoofLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawPendingRoof(this);
     }
 }
 

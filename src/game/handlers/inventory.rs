@@ -1328,7 +1328,10 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
             found_something = true;
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.target_user = target;
-                user.target_npc = 0;
+                // Don't reset target_npc while in commerce (VB6: form is modal)
+                if !user.comerciando {
+                    user.target_npc = 0;
+                }
             }
         }
     }
@@ -1387,16 +1390,19 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
     }
 
     // ========== CLEANUP (VB6 lines 1085-1115) ==========
+    // Don't reset target_npc while in commerce mode (VB6: commerce form is modal,
+    // so LC packets can't arrive during commerce. Godot client is non-modal.)
+    let comerciando = state.users.get(&conn_id).map(|u| u.comerciando).unwrap_or(false);
     if found_char == 0 {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.target_npc = 0;
+            if !comerciando { user.target_npc = 0; }
             user.target_npc_idx = 0;
             user.target_user = 0;
         }
     }
     if !found_something {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.target_npc = 0;
+            if !comerciando { user.target_npc = 0; }
             user.target_npc_idx = 0;
             user.target_user = 0;
         }
