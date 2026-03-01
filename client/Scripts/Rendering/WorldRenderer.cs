@@ -26,9 +26,8 @@ public partial class WorldRenderer : Node2D
     private const int ViewportWidth = 534;
     private const int ViewportHeight = 408;
 
-    // Center of viewport in pixels
-    private const float CenterX = ViewportWidth / 2f;   // 267
-    private const float CenterY = ViewportHeight / 2f;  // 204
+    // VB6 uses ScreenX/ScreenY = (tileX - minX), with minX = userX - HalfWindowTileWidth
+    // Layer 1: draw at (ScreenX - 1) * 32, Layers 2+: draw at ScreenX * 32
 
     // How many tiles from center to edge (visible range)
     private const int HalfWindowTileWidth = 8;
@@ -104,14 +103,27 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Convert world tile (x,y) to screen pixel position.
-    /// Single formula used for ALL layers — centers the user's tile in the viewport.
+    /// Convert world tile to screen pixel position — VB6 Layer 1 formula.
+    /// VB6: ScreenX = tileX - minX, draw at (ScreenX - 1) * 32 + PixelOffsetX
+    /// Where minX = userX - HalfWindowTileWidth
+    /// </summary>
+    private static Vector2 TileToScreenL1(int tileX, int tileY, int userX, int userY,
+                                           float pixelOffsetX, float pixelOffsetY)
+    {
+        float px = (tileX - userX + HalfWindowTileWidth - 1) * TileSize + pixelOffsetX;
+        float py = (tileY - userY + HalfWindowTileHeight - 1) * TileSize + pixelOffsetY;
+        return new Vector2(px, py);
+    }
+
+    /// <summary>
+    /// Convert world tile to screen pixel position — VB6 Layers 2-4 formula.
+    /// VB6: ScreenX = tileX - minX, draw at ScreenX * 32 + PixelOffsetX
     /// </summary>
     private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
                                          float pixelOffsetX, float pixelOffsetY)
     {
-        float px = CenterX + (tileX - userX) * TileSize - TileSize / 2f + pixelOffsetX;
-        float py = CenterY + (tileY - userY) * TileSize - TileSize / 2f + pixelOffsetY;
+        float px = (tileX - userX + HalfWindowTileWidth) * TileSize + pixelOffsetX;
+        float py = (tileY - userY + HalfWindowTileHeight) * TileSize + pixelOffsetY;
         return new Vector2(px, py);
     }
 
@@ -160,7 +172,7 @@ public partial class WorldRenderer : Node2D
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
 
-                Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
+                Vector2 pos = TileToScreenL1(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
                 DrawTileGrh(tile.Layer1, pos);
             }
         }

@@ -11,7 +11,7 @@ namespace TierrasSagradasAO.Data;
 /// </summary>
 public static class MapLoader
 {
-    private const int MapHeaderSize = 271; // 2(version) + 255(desc) + 4(crc) + 4(magic) + 4+4(reserved)
+    private const int MapHeaderSize = 273; // 2(version) + 255(desc) + 4(crc) + 4(magic) + 4×Integer(8)
     private const int InfHeaderSize = 10; // 5 × Int16
 
     public static MapData Load(string mapDir, int mapNumber)
@@ -35,9 +35,9 @@ public static class MapLoader
         byte[] fileData = File.ReadAllBytes(path);
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
-        // Skip header: version(2) + MiCabecera(263) + reserved(4+4+4+4=16) = 281
-        // VB6: MapVersion(Integer=2) + MiCabecera(263) + 4 reserved Longs(16) = 281
-        reader.BaseStream.Seek(281, SeekOrigin.Begin);
+        // Skip header: version(2) + MiCabecera(263) + 4 reserved Integers(2 each = 8) = 273
+        // VB6: MapVersion(Integer=2) + MiCabecera(263) + 4 × tempint(Integer=2 bytes) = 273
+        reader.BaseStream.Seek(273, SeekOrigin.Begin);
 
         // Read tiles Y=1..100, X=1..100
         for (int y = 1; y <= 100; y++)
