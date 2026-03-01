@@ -63,7 +63,7 @@ public partial class DeathPanel : Control
             return ResourceLoader.Load<Texture2D>(path);
 
         string diskPath = ProjectSettings.GlobalizePath(path);
-        if (!FileAccess.FileExists(path) && !System.IO.File.Exists(diskPath))
+        if (!Godot.FileAccess.FileExists(path) && !System.IO.File.Exists(diskPath))
             return null;
 
         var img = new Image();
@@ -72,13 +72,13 @@ public partial class DeathPanel : Control
         return ImageTexture.CreateFromImage(img);
     }
 
-    public void Show()
+    public new void Show()
     {
         _hoveredBtn = 0;
         Visible = true;
     }
 
-    public void Hide()
+    public new void Hide()
     {
         Visible = false;
     }
