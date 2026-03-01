@@ -239,7 +239,7 @@ public partial class InventoryPanel : Control
 
         if (slot >= 0 && slot < TotalSlots)
         {
-            var inv = _state.Inventory[slot];
+            var inv = _state!.Inventory[slot];
             if (inv.ObjIndex > 0)
             {
                 TooltipLabel.Text = $"{inv.Name} - {inv.Amount}";

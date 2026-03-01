@@ -90,7 +90,7 @@ public partial class TravelPanel : Control
 
         // Fallback: try loading from absolute disk path
         string diskPath = ProjectSettings.GlobalizePath(path);
-        if (!FileAccess.FileExists(path) && !System.IO.File.Exists(diskPath))
+        if (!Godot.FileAccess.FileExists(path) && !System.IO.File.Exists(diskPath))
             return null;
 
         var img = new Image();
