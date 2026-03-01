@@ -20,7 +20,7 @@ public static class CharRenderer
     private const int TileSize = 32;
 
     // VB6 AO uses Tahoma font for dialog bubbles and names
-    private static Font _tahomaFont;
+    private static Font? _tahomaFont;
     private static Font TahomaFont
     {
         get
@@ -29,7 +29,7 @@ public static class CharRenderer
             {
                 var sysFont = new SystemFont();
                 sysFont.FontNames = new string[] { "Tahoma", "Arial", "Sans-Serif" };
-                sysFont.Antialiased = false; // VB6 used non-antialiased text
+                sysFont.Hinting = TextServer.Hinting.None; // VB6 used non-antialiased text
                 _tahomaFont = sysFont;
             }
             return _tahomaFont;
