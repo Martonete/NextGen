@@ -130,10 +130,15 @@ scroll_following = true
 
 [node name="ChatInput" type="LineEdit" parent="GameUI"]
 layout_mode = 0
-offset_left = 3.0
-offset_top = 99.0
-offset_right = 507.0
-offset_bottom = 116.0
+offset_left = 2.0
+offset_top = 92.0
+offset_right = 396.0
+offset_bottom = 108.0
+flat = true
+draw_control_chars = false
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_colors/caret_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 10
 
 [node name="HPBar" type="ProgressBar" parent="GameUI"]
 layout_mode = 0
