@@ -58,6 +58,8 @@ public class PacketHandler
         else if (packet.StartsWith("PARADOK"))
         {
             _state.UserParalyzed = !_state.UserParalyzed;
+            // VB6: TiempoParalizado = 22 on activate, 0 on deactivate
+            _state.ParalysisTimer = _state.UserParalyzed ? 22f : 0f;
         }
         else if (packet.StartsWith("TRANSOK"))
         {

@@ -100,9 +100,10 @@ public class InputHandler
         }
 
         // Attack (VB6: Ctrl key, 1000ms cooldown)
+        // VB6: blocked while resting or meditating (CheckKeys → UserDescansar / UserMeditar)
         if (Input.IsKeyPressed(Key.Space) || Input.IsKeyPressed(Key.Ctrl))
         {
-            if (_attackTimer <= 0)
+            if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating)
             {
                 _tcp.SendPacket("AT");
                 _attackTimer = AttackCooldownMs;

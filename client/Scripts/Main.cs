@@ -931,6 +931,7 @@ public partial class Main : Control
         _state.UserCharIndex = 0;
         _state.UserName = "";
         _state.UserParalyzed = false;
+        _state.ParalysisTimer = 0;
         _state.UserNavigating = false;
         _state.UserStopped = false;
         _state.UsingSkill = 0;

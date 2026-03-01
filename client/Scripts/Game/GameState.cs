@@ -54,6 +54,7 @@ public class GameState
 
     // User status flags
     public bool UserParalyzed;
+    public float ParalysisTimer;    // VB6: TiempoParalizado (counts down from 22)
     public bool UserNavigating;
     public bool UserStopped;
     public bool SafeMode;       // VB6: Seguro (PvP safety toggle)

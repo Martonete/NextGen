@@ -284,6 +284,9 @@ public partial class WorldRenderer : Node2D
                 {
                     if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
 
+                    // VB6: invisible characters are not rendered (except self for GMs)
+                    if (ch.Invisible && charsHere[ci] != _state.UserCharIndex) continue;
+
                     // Round MoveOffset to int (VB6+DX8 pixel-snapping)
                     float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
                     float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
@@ -369,6 +372,9 @@ public partial class WorldRenderer : Node2D
             }
         }
         _roofLayer?.QueueRedraw();
+
+        // Status overlay (VB6: drawCounters — paralysis/invisibility bars + status icons)
+        DrawStatusOverlay();
     }
 
     /// <summary>
@@ -385,6 +391,117 @@ public partial class WorldRenderer : Node2D
                grhIndex == 22083 || grhIndex == 22084 || grhIndex == 22085 ||
                grhIndex == 22086 ||
                grhIndex == 8489 || grhIndex == 8483;
+    }
+
+    /// <summary>
+    /// VB6 drawCounters: renders status indicators in top-left corner of game viewport.
+    /// Paralysis bar: GRH 23610 icon + yellow progress bar.
+    /// Invisibility bar: GRH 23611 icon + progress bar.
+    /// Also draws small text indicators for active statuses.
+    /// </summary>
+    private void DrawStatusOverlay()
+    {
+        if (_state == null || _data == null) return;
+
+        // Update paralysis timer (VB6: TiempoParalizado counts down from 22)
+        if (_state.UserParalyzed && _state.ParalysisTimer > 0)
+        {
+            _state.ParalysisTimer -= _deltaMs / 100f; // ~22 ticks at VB6 speed
+            if (_state.ParalysisTimer < 0) _state.ParalysisTimer = 0;
+        }
+
+        int slot = 0; // Status icon slot counter (for stacking)
+
+        // Paralysis indicator
+        if (_state.UserParalyzed)
+        {
+            DrawStatusIcon(slot, 23610, _state.ParalysisTimer, 22f, "PARALIZADO",
+                           new Color(1f, 0.2f, 0.2f));
+            slot++;
+        }
+
+        // Invisibility/stealth indicator
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
+        {
+            DrawStatusIcon(slot, 23611, -1, -1, "OCULTO",
+                           new Color(0.6f, 0.6f, 1f));
+            slot++;
+        }
+
+        // Meditation indicator
+        if (_state.Meditating)
+        {
+            DrawStatusIcon(slot, 0, -1, -1, "MEDITANDO",
+                           new Color(0.4f, 0.8f, 1f));
+            slot++;
+        }
+
+        // Resting indicator
+        if (_state.Resting)
+        {
+            DrawStatusIcon(slot, 0, -1, -1, "DESCANSANDO",
+                           new Color(0.4f, 1f, 0.4f));
+            slot++;
+        }
+
+        // Safe mode indicator
+        if (_state.SafeMode)
+        {
+            DrawStatusIcon(slot, 0, -1, -1, "SEGURO",
+                           new Color(0f, 1f, 0f));
+            slot++;
+        }
+
+        // Navigation indicator
+        if (_state.UserNavigating)
+        {
+            DrawStatusIcon(slot, 0, -1, -1, "NAVEGANDO",
+                           new Color(0.3f, 0.7f, 1f));
+            slot++;
+        }
+    }
+
+    /// <summary>
+    /// Draw a single status indicator with optional GRH icon and progress bar.
+    /// Position: top-left of viewport, stacked vertically by slot index.
+    /// </summary>
+    private void DrawStatusIcon(int slot, int grhIcon, float current, float max,
+                                 string label, Color labelColor)
+    {
+        float baseX = 10f;
+        float baseY = 5f + slot * 38f;
+
+        // Try to draw GRH icon (VB6: 23610 paralysis, 23611 invisibility)
+        if (grhIcon > 0 && _data != null)
+        {
+            CharRenderer.DrawGrh(this, _data, grhIcon, 0, new Vector2(baseX, baseY));
+        }
+
+        // Progress bar (only if max > 0)
+        if (max > 0 && current >= 0)
+        {
+            float barX = baseX + 3;
+            float barY = baseY + 35;
+            float barW = 25;
+            float barH = 6;
+
+            // Background
+            DrawRect(new Rect2(barX, barY, barW, barH),
+                     new Color(0.49f, 0.49f, 0.49f, 0.59f));
+            // Fill
+            float fill = Math.Clamp(current / max, 0f, 1f) * barW;
+            if (fill > 0)
+            {
+                DrawRect(new Rect2(barX, barY, fill, barH),
+                         new Color(1f, 1f, 0f, 0.78f));
+            }
+        }
+
+        // Text label (for statuses without GRH icons, or as complement)
+        if (grhIcon <= 0 && _data?.Fonts?[1] != null)
+        {
+            _data.Fonts[1]!.DrawText(this, (int)baseX, (int)baseY + 2, label, labelColor);
+        }
     }
 
     private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
