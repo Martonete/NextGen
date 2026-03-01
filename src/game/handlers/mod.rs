@@ -623,14 +623,33 @@ async fn connect_user(
         return;
     }
 
-    // Check if already logged in
+    // Check if already logged in — force-disconnect stale session if same account.
+    // This handles the race condition where the server hasn't processed the old
+    // Disconnected event yet when the client reconnects.
     if state.is_name_online(char_name) {
-        state.send_to(conn_id, &format!(
-            "{}Perdon, un usuario con el mismo nombre se ha logeado, intente de nuevo en 5 minutos.",
-            server_opcodes::ERROR
-        )).await;
-        close_connection(state, conn_id).await;
-        return;
+        // Find the old connection with the same char name
+        let old_conn = state.users.iter()
+            .find(|(id, u)| **id != conn_id && u.logged && u.char_name.eq_ignore_ascii_case(char_name))
+            .map(|(id, _)| *id);
+
+        if let Some(old_id) = old_conn {
+            info!("[AUTH] Force-disconnecting stale session #{} for '{}' (re-login from #{})", old_id, char_name, conn_id);
+            // Send BP to area to remove the old character
+            if let Some(old_user) = state.users.get(&old_id) {
+                let bp_pkt = format!("BP{}", old_user.char_index.0);
+                let (map, x, y) = (old_user.pos_map, old_user.pos_x, old_user.pos_y);
+                state.send_data(
+                    SendTarget::ToAreaButIndex { conn_id: old_id, map, x, y },
+                    &bp_pkt,
+                ).await;
+            }
+            // remove_connection cleans up users, writers, online_names, world grid
+            state.remove_connection(old_id);
+        } else {
+            // Name is "online" but no matching connection — stale entry, clean it up
+            info!("[AUTH] Cleaning stale online_names entry for '{}'", char_name);
+            state.online_names.remove(&char_name.to_uppercase());
+        }
     }
 
     // Check same-account multi-character
