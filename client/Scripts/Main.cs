@@ -426,12 +426,13 @@ public partial class Main : Control
         }
     }
 
-    public override void _UnhandledInput(InputEvent @event)
+    public override void _Input(InputEvent @event)
     {
+        if (_state.CurrentScreen != Screen.Game) return;
+
         // VB6: Enter toggles chat input visibility
         if (@event is InputEventKey key && key.Pressed && !key.Echo
             && key.Keycode == Key.Enter
-            && _state.CurrentScreen == Screen.Game
             && _chatInput != null && !_chatInput.Visible)
         {
             _chatInput.Visible = true;
@@ -442,23 +443,21 @@ public partial class Main : Control
             return;
         }
 
+        // Mouse clicks on the game viewport area
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
-            if (_state.CurrentScreen == Screen.Game)
-            {
-                // Translate click position relative to the game viewport (0,124) with 534x408 size
-                float clickX = mb.Position.X;
-                float clickY = mb.Position.Y - 124;
+            // Translate click position relative to the game viewport (0,124) with 534x408 size
+            float clickX = mb.Position.X;
+            float clickY = mb.Position.Y - 124;
 
-                // Only handle clicks within the game viewport area
-                if (clickX >= 0 && clickX < 534 && clickY >= 0 && clickY < 408)
-                {
-                    var viewPos = new Vector2(clickX, clickY);
-                    if (mb.ButtonIndex == MouseButton.Left)
-                        _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
-                    else if (mb.ButtonIndex == MouseButton.Right)
-                        _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
-                }
+            // Only handle clicks within the game viewport area
+            if (clickX >= 0 && clickX < 534 && clickY >= 0 && clickY < 408)
+            {
+                var viewPos = new Vector2(clickX, clickY);
+                if (mb.ButtonIndex == MouseButton.Left)
+                    _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
+                else if (mb.ButtonIndex == MouseButton.Right)
+                    _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
             }
         }
     }
