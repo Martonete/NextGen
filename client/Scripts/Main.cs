@@ -89,6 +89,8 @@ public partial class Main : Control
 
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
+    // Track double-click to avoid sending LC on the release after a dbl-click
+    private bool _dblClickHandled;
 
     public override void _Ready()
     {
@@ -931,11 +933,11 @@ public partial class Main : Control
             return;
         }
 
-        // Mouse clicks on the game viewport area
-        // VB6: renderer_Click fires on mouse RELEASE, not press.
-        // Double-click sends RC (VB6: Form_DblClick).
-        // Single right-click sends LC + RC (VB6: Form_Click with DobleClick=1).
-        if (@event is InputEventMouseButton mb && !mb.Pressed)
+        // Mouse clicks on the game viewport area.
+        // VB6: renderer_Click fires on mouse RELEASE, Form_DblClick on second click.
+        // Godot: DoubleClick flag is only set on the PRESS event, not release.
+        // So we handle double-click on press, and single-click on release.
+        if (@event is InputEventMouseButton mb)
         {
             // Translate click position relative to the game viewport (0,124) with 534x408 size
             float clickX = mb.Position.X;
@@ -945,38 +947,52 @@ public partial class Main : Control
             if (clickX >= 0 && clickX < 534 && clickY >= 0 && clickY < 408)
             {
                 var viewPos = new Vector2(clickX, clickY);
-                if (mb.ButtonIndex == MouseButton.Left)
+
+                // Double-click: Godot sets DoubleClick=true on PRESS only.
+                // VB6 Form_DblClick sends RC (interact: open/close doors, use objects).
+                if (mb.Pressed && mb.DoubleClick && mb.ButtonIndex == MouseButton.Left)
                 {
-                    if (mb.ShiftPressed && _state.Privileges >= 2)
+                    _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+                    _dblClickHandled = true;
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+
+                // On release: handle single clicks
+                if (!mb.Pressed)
+                {
+                    // Skip the release after a double-click (already handled above)
+                    if (_dblClickHandled && mb.ButtonIndex == MouseButton.Left)
                     {
-                        // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
-                        _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
+                        _dblClickHandled = false;
+                        return;
                     }
-                    else if (mb.DoubleClick)
+
+                    if (mb.ButtonIndex == MouseButton.Left)
                     {
-                        // VB6: double-click fires Form_Click (LC) THEN Form_DblClick (RC)
-                        // Both events fire sequentially — Godot merges into one event.
+                        if (mb.ShiftPressed && _state.Privileges >= 2)
+                        {
+                            // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
+                            _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
+                        }
+                        else if (_state.UsingSkill > 0)
+                        {
+                            // VB6: Form_Click when UsingSkill > 0 → WLC (spell targeting)
+                            _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY);
+                            Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+                        }
+                        else
+                        {
+                            // VB6 renderer_Click left → LC (inspect tile)
+                            _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
+                        }
+                    }
+                    else if (mb.ButtonIndex == MouseButton.Right)
+                    {
+                        // VB6: right-click sends BOTH LC + RC (DobleClick=1 path)
                         _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
                         _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
                     }
-                    else if (_state.UsingSkill > 0)
-                    {
-                        // VB6: Form_Click when UsingSkill > 0 → WLC (spell targeting)
-                        _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY);
-                        // VB6: after targeting, reset cursor to arrow
-                        Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
-                    }
-                    else
-                    {
-                        // VB6 renderer_Click left → LC (inspect tile)
-                        _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
-                    }
-                }
-                else if (mb.ButtonIndex == MouseButton.Right)
-                {
-                    // VB6: right-click sends BOTH LC + RC (DobleClick=1 path)
-                    _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
-                    _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
                 }
             }
         }
