@@ -35,6 +35,13 @@ public class Character
     public bool Invisible;
     public bool Navigating;
 
+    // VB6: dead character transparency pulsing (TransparenciaBody oscillates 0-100)
+    public int TransparenciaBody;  // 0-100, alpha = this + 45
+    public bool Llegoalatransp;    // false=increasing, true=decreasing
+
+    // VB6: EmoticonLoops countdown (separate from FX slots)
+    public int EmoticonLoops;
+
     // FX (VB6: up to 3 simultaneous + 1 emoticon)
     public int[] ActiveFxSlots = new int[3]; // FxData indices
     public int[] FxLoops = new int[3];         // -1 = infinite, 0 = done

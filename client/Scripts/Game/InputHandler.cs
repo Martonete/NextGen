@@ -64,9 +64,6 @@ public class InputHandler
         // Block all game input while in commerce/bank mode
         if (_state.Comerciando || _state.Banqueando) return;
 
-        // VB6: no keyboard input while chat input is focused
-        if (_state.ChatActive) return;
-
         float deltaMs = (float)delta * 1000f;
 
         // Advance cooldown timers
@@ -84,26 +81,42 @@ public class InputHandler
             return;
         }
 
-        // Movement — blocked while camera is still scrolling (VB6: UserMoving guard)
-        // This is the ONLY guard — no timer. Animation duration (~233ms) IS the rate limit.
-        // Also cap pending moves to prevent client from getting too far ahead of server.
+        // Movement — arrow keys ALWAYS work (even with chat open).
+        // WASD only works when chat is NOT active.
+        // VB6: CheckKeys uses key bindings; arrows are separate from typing keys.
         if (!_state.UserMoving && _state.PendingMoves < 2)
         {
-            if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up))
+            // Arrow keys: always available
+            if (Input.IsKeyPressed(Key.Up))
                 TryMove(1); // North
-            else if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right))
+            else if (Input.IsKeyPressed(Key.Right))
                 TryMove(2); // East
-            else if (Input.IsKeyPressed(Key.S) || Input.IsKeyPressed(Key.Down))
+            else if (Input.IsKeyPressed(Key.Down))
                 TryMove(3); // South
-            else if (Input.IsKeyPressed(Key.A) || Input.IsKeyPressed(Key.Left))
+            else if (Input.IsKeyPressed(Key.Left))
                 TryMove(4); // West
+            // WASD: only when chat is NOT active
+            else if (!_state.ChatActive)
+            {
+                if (Input.IsKeyPressed(Key.W))
+                    TryMove(1);
+                else if (Input.IsKeyPressed(Key.D))
+                    TryMove(2);
+                else if (Input.IsKeyPressed(Key.S))
+                    TryMove(3);
+                else if (Input.IsKeyPressed(Key.A))
+                    TryMove(4);
+            }
         }
+
+        // Everything below is blocked when chat is active (letter keys would type into chat)
+        if (_state.ChatActive) return;
 
         // Attack (VB6: Ctrl key, 1000ms cooldown)
         // VB6: blocked while resting or meditating (CheckKeys → UserDescansar / UserMeditar)
         if (Input.IsKeyPressed(Key.Space) || Input.IsKeyPressed(Key.Ctrl))
         {
-            if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating)
+            if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
             {
                 _tcp.SendPacket("AT");
                 _attackTimer = AttackCooldownMs;

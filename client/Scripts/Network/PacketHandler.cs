@@ -315,6 +315,10 @@ public class PacketHandler
         {
             HandleCharFx(packet[3..]);
         }
+        else if (packet.StartsWith("CFE"))
+        {
+            HandleCharEmoticon(packet[3..]);
+        }
         else if (packet.StartsWith("CFF"))
         {
             HandleCharFx(packet[3..]); // Same format as CFX
@@ -776,6 +780,26 @@ public class PacketHandler
     }
 
     /// <summary>
+    /// CFE — Emoticon display on character.
+    /// VB6: CFE{charindex},{fxIndex},{loops}
+    /// </summary>
+    private void HandleCharEmoticon(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 3) return;
+
+        int charIdx = ParseInt(parts[0]);
+        int fxId = ParseInt(parts[1]);
+        int loops = ParseInt(parts[2]);
+
+        if (!_state.Characters.TryGetValue(charIdx, out var ch))
+            return;
+
+        ch.EmoticonIndex = fxId;
+        ch.EmoticonLoops = loops > 0 ? loops : 0;
+    }
+
+    /// <summary>
     /// Clear meditation FX from a character (called when they move).
     /// </summary>
     private static void ClearMeditationFx(Character ch)
@@ -982,11 +1006,12 @@ public class PacketHandler
         if (parts.Length < 12) return;
 
         int charIndex = ParseInt(parts[3]);
+        int head = ParseInt(parts[1]);
         var ch = new Character
         {
             CharIndex = charIndex,
             Body = ParseInt(parts[0]),
-            Head = ParseInt(parts[1]),
+            Head = head,
             Heading = ParseInt(parts[2]),
             PosX = ParseInt(parts[4]),
             PosY = ParseInt(parts[5]),
@@ -997,6 +1022,9 @@ public class PacketHandler
             Criminal = ParseInt(parts[10]) == 2,
             Privileges = ParseInt(parts[11]),
         };
+
+        // VB6: dead characters have ghost heads (500, 501, 511, 512)
+        ch.Dead = IsDeadHead(head);
 
         _state.Characters[charIndex] = ch;
 
@@ -1013,12 +1041,39 @@ public class PacketHandler
         int idx = ParseInt(parts[0]);
         if (_state.Characters.TryGetValue(idx, out var ch))
         {
+            int newHead = ParseInt(parts[2]);
+            bool wasDead = ch.Dead;
+            bool nowDead = IsDeadHead(newHead);
+
             ch.Body = ParseInt(parts[1]);
-            ch.Head = ParseInt(parts[2]);
+            ch.Head = newHead;
             ch.Heading = ParseInt(parts[3]);
             ch.WeaponAnim = ParseInt(parts[4]);
             ch.ShieldAnim = ParseInt(parts[5]);
             ch.CascoAnim = ParseInt(parts[6]);
+            ch.Dead = nowDead;
+
+            // Reset transparency pulsing on state change
+            if (wasDead != nowDead)
+            {
+                ch.TransparenciaBody = 0;
+                ch.Llegoalatransp = false;
+            }
+
+            // If this is our character, sync _state.Dead
+            if (idx == _state.UserCharIndex)
+            {
+                if (nowDead && !wasDead)
+                {
+                    _state.Dead = true;
+                    GD.Print($"[CP] User character died (head={newHead})");
+                }
+                else if (!nowDead && wasDead)
+                {
+                    _state.Dead = false;
+                    GD.Print($"[CP] User character revived (body={ch.Body}, head={newHead})");
+                }
+            }
         }
     }
 
@@ -1987,11 +2042,14 @@ public class PacketHandler
     // ── Death & status ───────────────────────────────────────────
 
     /// <summary>
-    /// MUERT — Death dialog. VB6: shows death dialog (frmMuerto).
+    /// MUERT — Death dialog. VB6: shows frmMuertito (Continuar / Regresar).
+    /// The actual body→casper change happens via CP packet (sent separately by server).
+    /// This packet just triggers the death UI/notification.
     /// </summary>
     private void HandleDeath()
     {
         _state.Dead = true;
+        _state.ShowDeathPanel = true;
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = "¡Has muerto!",
@@ -2298,5 +2356,14 @@ public class PacketHandler
     private static int ParseInt(string s)
     {
         return int.TryParse(s.Trim(), out int v) ? v : 0;
+    }
+
+    /// <summary>
+    /// VB6: head values 500, 501, 511, 512 indicate a dead (ghost/casper) character.
+    /// TCP.bas: If charlist(charindex).Head.Walk(3).GrhIndex = 500/501/511/512 Then .Muerto = True
+    /// </summary>
+    private static bool IsDeadHead(int head)
+    {
+        return head == 500 || head == 501 || head == 511 || head == 512;
     }
 }

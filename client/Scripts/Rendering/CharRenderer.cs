@@ -62,6 +62,55 @@ public static class CharRenderer
             Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim} casco={ch.CascoAnim}");
         }
 
+        // VB6: dead character transparency pulsing (TransparenciaBody oscillates 0→100→0)
+        if (ch.Dead)
+        {
+            if (!ch.Llegoalatransp)
+            {
+                ch.TransparenciaBody++;
+                if (ch.TransparenciaBody >= 100) ch.Llegoalatransp = true;
+            }
+            else
+            {
+                ch.TransparenciaBody--;
+                if (ch.TransparenciaBody <= 0) ch.Llegoalatransp = false;
+            }
+        }
+
+        // Emoticon loop countdown (VB6: decrements each frame, clears at 0)
+        if (ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0)
+        {
+            ch.EmoticonLoops--;
+            if (ch.EmoticonLoops <= 0)
+            {
+                ch.EmoticonIndex = 0;
+                ch.EmoticonLoops = 0;
+            }
+        }
+
+        // Emoticon (VB6: rendered before body, at FxData offset, alpha 150)
+        if (ch.EmoticonIndex > 0 && ch.EmoticonIndex < data.Fxs.Length)
+        {
+            var emFx = data.Fxs[ch.EmoticonIndex];
+            if (emFx.Animacion > 0)
+            {
+                Vector2 emPos = screenPos + new Vector2(emFx.OffsetX, emFx.OffsetY);
+                int emFrame = 0;
+                if (emFx.Animacion > 0 && emFx.Animacion < data.Grhs.Length)
+                {
+                    var emGrh = data.Grhs[emFx.Animacion];
+                    if (emGrh.NumFrames > 1)
+                    {
+                        long now = System.Environment.TickCount64;
+                        float speed = emGrh.Speed > 0 ? emGrh.Speed : 100f;
+                        emFrame = (int)(now / speed % emGrh.NumFrames);
+                    }
+                }
+                DrawGrh(canvas, data, emFx.Animacion, emFrame, emPos, true,
+                        new Color(1, 1, 1, 150f / 255f));
+            }
+        }
+
         // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)
         DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
@@ -139,7 +188,8 @@ public static class CharRenderer
         int bodyGrh = body.Walk[heading];
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
-        byte alpha = ch.Dead ? (byte)100 : (byte)255;
+        // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145), alive = 255
+        byte alpha = ch.Dead ? (byte)(ch.TransparenciaBody + 45) : (byte)255;
         DrawGrh(canvas, data, bodyGrh, frame, pos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
     }
@@ -156,7 +206,8 @@ public static class CharRenderer
         float xAdj = heading == 1 ? -1f : 0f;
         Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
-        byte alpha = ch.Dead ? (byte)100 : (byte)255;
+        // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145)
+        byte alpha = ch.Dead ? (byte)(ch.TransparenciaBody + 45) : (byte)255;
         DrawGrh(canvas, data, head.Head[heading], 0, headPos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
     }
@@ -170,7 +221,7 @@ public static class CharRenderer
         if (casco.Head[heading] == 0) return;
 
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
-        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
+        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
 
         DrawGrh(canvas, data, casco.Head[heading], 0, helmetPos, true);
     }

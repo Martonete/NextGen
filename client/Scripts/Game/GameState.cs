@@ -132,6 +132,9 @@ public class GameState
     // Travel panel (frmViajar)
     public bool ShowTravelPanel;
 
+    // Death panel (frmMuertito)
+    public bool ShowDeathPanel;
+
     // Bank (frmBanco + frmNuevoBancoObj / Bóveda)
     public BankItem[] BankItems = new BankItem[40];
     public int BankItemCount;

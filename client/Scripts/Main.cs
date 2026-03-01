@@ -101,6 +101,9 @@ public partial class Main : Control
     // Travel panel (frmViajar)
     private TravelPanel? _travelPanel;
 
+    // Death panel (frmMuertito)
+    private DeathPanel? _deathPanel;
+
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
     // Track double-click to avoid sending LC on the release after a dbl-click
@@ -345,6 +348,13 @@ public partial class Main : Control
         _travelPanel.Position = new Vector2(42, 153);
         _travelPanel.Visible = false;
         _gameUI.AddChild(_travelPanel);
+
+        // Death panel (frmMuertito) — centered on viewport
+        _deathPanel = new DeathPanel();
+        // Center: (534 - 263) / 2 = 135, y: 124 + (408 - 100) / 2 = 278
+        _deathPanel.Position = new Vector2(135, 278);
+        _deathPanel.Visible = false;
+        _gameUI.AddChild(_deathPanel);
 
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
@@ -799,6 +809,17 @@ public partial class Main : Control
                 _state.ShowTravelPanel = false;
                 _travelPanel?.OpenTravel();
             }
+
+            // Death panel — show when player dies, hide on revive
+            if (_state.ShowDeathPanel)
+            {
+                _state.ShowDeathPanel = false;
+                _deathPanel?.Show();
+            }
+            if (!_state.Dead && _deathPanel != null && _deathPanel.Visible)
+            {
+                _deathPanel.Hide();
+            }
         }
 
         // Movement update AFTER input (VB6: ShowNextFrame after CheckKeys)
@@ -837,6 +858,7 @@ public partial class Main : Control
                     _bankPanel!.Init(_state, _gameData, _tcp);
                     _vaultPanel!.Init(_state, _gameData, _tcp);
                     _travelPanel!.Init(_state, _tcp);
+                    _deathPanel!.Init(_state, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -887,6 +909,7 @@ public partial class Main : Control
         _vaultPanel?.CloseVault();
         _lastBanqueando = false;
         _travelPanel?.CloseTravel();
+        _deathPanel?.Hide();
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
@@ -937,6 +960,11 @@ public partial class Main : Control
         _state.UsingSkill = 0;
         _state.ChatActive = false;
         _state.Comerciando = false;
+        _state.Dead = false;
+        _state.ShowDeathPanel = false;
+        _state.Resting = false;
+        _state.Meditating = false;
+        _state.SafeMode = false;
         _state.ShowTravelPanel = false;
         _state.UserMoving = false;
         _state.AddToUserPosX = 0;
