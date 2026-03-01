@@ -86,6 +86,8 @@ pub struct MapTile {
     pub user_index: i16,
     /// Original blocked state from .map file — used to detect door changes on map entry.
     pub original_blocked: bool,
+    /// Original object index from .inf file — used to detect door object changes on map entry.
+    pub original_obj_index: i16,
 }
 
 /// Map metadata from .dat INI file.
@@ -362,10 +364,11 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     load_map_file(&map_file, &mut tiles)?;
     load_inf_file(&inf_file, &mut tiles)?;
 
-    // Snapshot original blocked state for door persistence detection
+    // Snapshot original state for door persistence detection
     for y in 0..MAP_HEIGHT {
         for x in 0..MAP_WIDTH {
             tiles[y][x].original_blocked = tiles[y][x].blocked;
+            tiles[y][x].original_obj_index = tiles[y][x].obj.obj_index;
         }
     }
 

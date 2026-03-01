@@ -977,20 +977,25 @@ async fn connect_user(
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
 
-        // Send BQ for tiles whose blocked state changed since map load (door persistence)
+        // Send BQ/HO for tiles whose state changed since map load (door persistence)
         {
-            let mut bq_packets: Vec<String> = Vec::new();
+            let mut sync_packets: Vec<String> = Vec::new();
             if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
                 for ty in 0..crate::data::maps::MAP_HEIGHT {
                     for tx in 0..crate::data::maps::MAP_WIDTH {
                         let tile = &game_map.tiles[ty][tx];
                         if tile.blocked != tile.original_blocked {
-                            bq_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
+                            sync_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
+                        }
+                        if tile.obj.obj_index != tile.original_obj_index {
+                            let oi = tile.obj.obj_index as usize;
+                            let grh = if oi >= 1 { state.game_data.objects.get(oi - 1).map(|o| o.grh_index).unwrap_or(0) } else { 0 };
+                            sync_packets.push(format!("HO{},{},{}", grh, tx + 1, ty + 1));
                         }
                     }
                 }
             }
-            for pkt in &bq_packets {
+            for pkt in &sync_packets {
                 state.send_to(conn_id, pkt).await;
             }
         }
@@ -2958,23 +2963,28 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // 12. Warp FX is NOT sent by default — only when caller sets fx=true
     // (VB6: FX param is Optional, only DoTileEvents sets it when tile has otTeleport object)
 
-    // 12b. Send BQ packets for tiles whose blocked state differs from the original .map file.
+    // 12b. Send BQ/HO packets for tiles whose state differs from the original .map file.
     // This re-syncs door state: doors opened/closed at runtime are remembered in-memory,
     // but the client reloads from .map files on CM, reverting all doors.
     {
         let map_idx2 = new_map as usize;
-        let mut bq_packets: Vec<String> = Vec::new();
+        let mut sync_packets: Vec<String> = Vec::new();
         if let Some(Some(game_map)) = state.game_data.maps.get(map_idx2) {
             for ty in 0..crate::data::maps::MAP_HEIGHT {
                 for tx in 0..crate::data::maps::MAP_WIDTH {
                     let tile = &game_map.tiles[ty][tx];
                     if tile.blocked != tile.original_blocked {
-                        bq_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
+                        sync_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
+                    }
+                    if tile.obj.obj_index != tile.original_obj_index {
+                        let grh = state.game_data.objects.get(tile.obj.obj_index as usize)
+                            .map(|o| o.grh_index).unwrap_or(0);
+                        sync_packets.push(format!("HO{},{},{}", grh, tx + 1, ty + 1));
                     }
                 }
             }
         }
-        for pkt in &bq_packets {
+        for pkt in &sync_packets {
             state.send_to(conn_id, pkt).await;
         }
     }
