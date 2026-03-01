@@ -1853,7 +1853,13 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
         }
         "AURA" => {
             // VB6: UserList(tIndex).Char.AuraA = val(Arg2); SendUserAura
-            // TODO: implement aura field if needed
+            if let Some(user) = state.users.get_mut(&target) {
+                user.aura_a = value as i32;
+            }
+            if let Some(user) = state.users.get(&target) {
+                let au_pkt = super::common::build_aura_packet(user);
+                state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+            }
         }
         "FX" => {
             let pkt = format!("CFX{},{},20", char_index, value);

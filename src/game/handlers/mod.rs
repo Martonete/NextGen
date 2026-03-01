@@ -827,6 +827,25 @@ async fn connect_user(
                 user.casco_anim = obj.casco_anim;
             }
         }
+
+        // VB6: Initialize auras from all equipped items on login (TCP.bas lines 1703-1718)
+        for slot_idx in 0..MAX_INVENTORY_SLOTS {
+            if !user.inventory[slot_idx].equipped { continue; }
+            let oi = user.inventory[slot_idx].obj_index;
+            if oi < 1 { continue; }
+            if let Some(obj) = state.game_data.objects.get((oi - 1) as usize) {
+                if obj.crea_aura > 0 {
+                    match obj.obj_type {
+                        ObjType::Armor => user.aura_a = obj.crea_aura,
+                        ObjType::Weapon => user.aura_w = obj.crea_aura,
+                        ObjType::Shield => user.aura_e = obj.crea_aura,
+                        ObjType::Helmet => user.aura_c = obj.crea_aura,
+                        ObjType::Tool => user.aura_r = obj.crea_aura,
+                        _ => {}
+                    }
+                }
+            }
+        }
     }
     state.online_names.insert(char_name.to_uppercase(), conn_id);
     state.num_users += 1;

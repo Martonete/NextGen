@@ -80,6 +80,13 @@ pub struct UserState {
     /// Original privileges from DB — runtime /PJ changes are temporary, this is what gets saved
     pub saved_privileges: i32,
 
+    // Auras (VB6: Char.AuraA/W/E/R/C — set from equipped item CreaAura by type)
+    pub aura_a: i32,     // Armor aura
+    pub aura_w: i32,     // Weapon aura
+    pub aura_e: i32,     // Shield aura
+    pub aura_r: i32,     // Ring/Tool aura
+    pub aura_c: i32,     // Helmet aura
+
     // Stats
     pub class: String,
     pub race: String,
@@ -356,6 +363,11 @@ impl UserState {
             casco_anim: 0,
             privileges: 0,
             saved_privileges: 0,
+            aura_a: 0,
+            aura_w: 0,
+            aura_e: 0,
+            aura_r: 0,
+            aura_c: 0,
             class: String::new(),
             race: String::new(),
             level: 1,

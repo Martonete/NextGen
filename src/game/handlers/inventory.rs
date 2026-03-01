@@ -47,9 +47,14 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         None => return,
     };
 
+    let mut aura_changed = false;
+
     if currently_equipped {
         // Unequip
+        // Check if unequipping clears an aura
+        let had_aura = obj_data.crea_aura > 0;
         unequip_slot(state, conn_id, idx, &obj_data.obj_type);
+        if had_aura { aura_changed = true; }
     } else {
         // Item restriction checks (VB6: InvUsuario.bas)
         let (user_level, user_class, user_privileges, user_criminal,
@@ -168,6 +173,10 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                 ObjType::Weapon => {
                     user.equip.weapon = slot;
                     user.weapon_anim = obj_data.weapon_anim;
+                    if obj_data.crea_aura > 0 {
+                        user.aura_w = obj_data.crea_aura;
+                        aura_changed = true;
+                    }
                 }
                 ObjType::Armor => {
                     user.equip.armor = slot;
@@ -175,14 +184,32 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                     if obj_data.num_ropaje > 0 {
                         user.body = obj_data.num_ropaje;
                     }
+                    if obj_data.crea_aura > 0 {
+                        user.aura_a = obj_data.crea_aura;
+                        aura_changed = true;
+                    }
                 }
                 ObjType::Shield => {
                     user.equip.shield = slot;
                     user.shield_anim = obj_data.shield_anim;
+                    if obj_data.crea_aura > 0 {
+                        user.aura_e = obj_data.crea_aura;
+                        aura_changed = true;
+                    }
                 }
                 ObjType::Helmet => {
                     user.equip.helmet = slot;
                     user.casco_anim = obj_data.casco_anim;
+                    if obj_data.crea_aura > 0 {
+                        user.aura_c = obj_data.crea_aura;
+                        aura_changed = true;
+                    }
+                }
+                ObjType::Tool => {
+                    if obj_data.crea_aura > 0 {
+                        user.aura_r = obj_data.crea_aura;
+                        aura_changed = true;
+                    }
                 }
                 _ => {}
             }
@@ -226,31 +253,65 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         }
         _ => {}
     }
+
+    // VB6: SendUserAura — broadcast aura change when equipment with aura is changed
+    if aura_changed {
+        if let Some(user) = state.users.get(&conn_id) {
+            let au_pkt = super::common::build_aura_packet(user);
+            state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+        }
+    }
 }
 
 /// Unequip an item from a specific inventory slot.
 pub(super) fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: usize, obj_type: &ObjType) {
+    // Get the item's aura before unequipping (to clear matching aura field)
+    let item_aura = {
+        let obj_idx = state.users.get(&conn_id)
+            .map(|u| u.inventory[idx].obj_index as usize)
+            .unwrap_or(0);
+        if obj_idx >= 1 {
+            state.game_data.objects.get(obj_idx - 1).map(|o| o.crea_aura).unwrap_or(0)
+        } else { 0 }
+    };
+
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.inventory[idx].equipped = false;
         match obj_type {
             ObjType::Weapon => {
                 user.equip.weapon = 0;
                 user.weapon_anim = super::common::NINGUN_ARMA;
+                if item_aura > 0 && user.aura_w == item_aura {
+                    user.aura_w = 0;
+                }
             }
             ObjType::Armor => {
                 user.equip.armor = 0;
-                // VB6: DarCuerpoDesnudo — revert to naked body for race/gender
                 let race = user.race.clone();
                 let gender = user.gender.to_string();
                 user.body = naked_body(&race, &gender);
+                if item_aura > 0 && user.aura_a == item_aura {
+                    user.aura_a = 0;
+                }
             }
             ObjType::Shield => {
                 user.equip.shield = 0;
                 user.shield_anim = super::common::NINGUN_ESCUDO;
+                if item_aura > 0 && user.aura_e == item_aura {
+                    user.aura_e = 0;
+                }
             }
             ObjType::Helmet => {
                 user.equip.helmet = 0;
                 user.casco_anim = super::common::NINGUN_CASCO;
+                if item_aura > 0 && user.aura_c == item_aura {
+                    user.aura_c = 0;
+                }
+            }
+            ObjType::Tool => {
+                if item_aura > 0 && user.aura_r == item_aura {
+                    user.aura_r = 0;
+                }
             }
             _ => {}
         }

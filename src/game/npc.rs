@@ -179,9 +179,9 @@ impl NpcState {
             body: data.body,
             head: data.head,
             heading: if data.heading > 0 { data.heading } else { 3 }, // Default south
-            weapon_anim: 0,
-            shield_anim: 0,
-            casco_anim: 0,
+            weapon_anim: data.weapon_anim,
+            shield_anim: data.shield_anim,
+            casco_anim: data.casco_anim,
             map,
             x,
             y,

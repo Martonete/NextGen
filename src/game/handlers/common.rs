@@ -137,12 +137,20 @@ pub(super) fn area_id(x: i32, y: i32) -> i32 {
 
 pub(super) fn build_cd_packet(user: &UserState) -> String {
     let color = 0;
-    let (aura_a, aura_w, aura_e, aura_r, aura_c) = (0, 0, 0, 0, 0);
     let levitando = 0;
     let tiene_ranking = 0;
     format!(
         "[CD{},{},{},{},{},{},{},{},{}",
-        user.char_index.0, color, aura_a, aura_w, aura_e, aura_r, aura_c, levitando, tiene_ranking
+        user.char_index.0, color, user.aura_a, user.aura_w, user.aura_e, user.aura_r, user.aura_c, levitando, tiene_ranking
+    )
+}
+
+/// Build AU| packet for broadcasting aura changes to area.
+/// VB6: SendUserAura — sent when equipment with aura is equipped/unequipped.
+pub(super) fn build_aura_packet(user: &UserState) -> String {
+    format!(
+        "AU|{},{},{},{},{},{}",
+        user.char_index.0, user.aura_a, user.aura_w, user.aura_e, user.aura_r, user.aura_c
     )
 }
 

@@ -659,6 +659,11 @@ public class PacketHandler
         {
             _state.UserName = packet[3..];
         }
+        // ── AU| — Aura update broadcast ──
+        else if (packet.StartsWith("AU|"))
+        {
+            HandleAuraUpdate(packet[3..]);
+        }
         // ── Pipe opcodes |X ──
         else if (packet.StartsWith("|S1"))
         {
@@ -1693,6 +1698,25 @@ public class PacketHandler
             ch.AuraIndexR = ParseInt(parts[5]); // Ring aura
             ch.AuraIndexC = ParseInt(parts[6]); // Helmet aura
         }
+    }
+
+    /// <summary>
+    /// AU| — Aura update broadcast (when equipment with aura is equipped/unequipped).
+    /// VB6 format: AU|{charindex},{auraA},{auraW},{auraE},{auraR},{auraC}
+    /// </summary>
+    private void HandleAuraUpdate(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 6) return;
+
+        int idx = ParseInt(parts[0]);
+        if (!_state.Characters.TryGetValue(idx, out var ch)) return;
+
+        ch.AuraIndexA = ParseInt(parts[1]);
+        ch.AuraIndexW = ParseInt(parts[2]);
+        ch.AuraIndexE = ParseInt(parts[3]);
+        ch.AuraIndexR = ParseInt(parts[4]);
+        ch.AuraIndexC = ParseInt(parts[5]);
     }
 
     /// <summary>

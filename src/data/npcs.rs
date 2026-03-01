@@ -83,6 +83,9 @@ pub struct NpcData {
     pub head: i32,
     pub body: i32,
     pub heading: i32,
+    pub weapon_anim: i32,   // VB6: ArmaAnim
+    pub shield_anim: i32,   // VB6: EscudoAnim
+    pub casco_anim: i32,    // VB6: CascoAnim
 
     // Behavior
     pub movement: i32,      // AI movement type (0=static, 1=random, 2=wander, 3=chase)
@@ -169,7 +172,7 @@ impl Default for NpcData {
             name: String::new(),
             desc: String::new(),
             npc_type: NpcType::Common,
-            head: 0, body: 0, heading: 3,
+            head: 0, body: 0, heading: 3, weapon_anim: 0, shield_anim: 0, casco_anim: 0,
             movement: 0, attackable: false, hostile: false,
             respawn: false, domable: 0, comercia: false,
             min_hp: 0, max_hp: 0, min_hit: 0, max_hit: 0,
@@ -211,6 +214,9 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         head: get_int("Head"),
         body: get_int("Body"),
         heading: get_int("Heading"),
+        weapon_anim: get_int("ArmaAnim"),
+        shield_anim: get_int("EscudoAnim"),
+        casco_anim: get_int("CascoAnim"),
         movement: get_int("Movement"),
         attackable: get_bool("Attackable"),
         hostile: get_bool("Hostile"),

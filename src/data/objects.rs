@@ -218,6 +218,9 @@ pub struct ObjData {
 
     // Paralysis on hit
     pub paraliza: bool,       // Weapon paralyzes on hit
+
+    // Aura (VB6: CreaAura — aura index from Auras.dat, 0 = no aura)
+    pub crea_aura: i32,
 }
 
 impl Default for ObjData {
@@ -289,6 +292,7 @@ impl Default for ObjData {
             mult_scroll: 0,
             cant_credits: 0,
             paraliza: false,
+            crea_aura: 0,
         }
     }
 }
@@ -390,6 +394,7 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             mult_scroll: get_int("multScroll"),
             cant_credits: get_int("cantCredits"),
             paraliza: get_bool("Paraliza"),
+            crea_aura: get_int("CreaAura"),
             ..Default::default()
         };
 
