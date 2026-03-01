@@ -342,15 +342,16 @@ public class ParticleSystem
         if (def.GrhList.Length > 0)
             p.GrhIndex = def.GrhList[Rng.Next(def.GrhList.Length)];
 
-        // Choose random color from 4 color sets
-        int colorSet = Rng.Next(4);
-        switch (colorSet)
-        {
-            case 0: p.ColR = def.ColR1; p.ColG = def.ColG1; p.ColB = def.ColB1; break;
-            case 1: p.ColR = def.ColR2; p.ColG = def.ColG2; p.ColB = def.ColB2; break;
-            case 2: p.ColR = def.ColR3; p.ColG = def.ColG3; p.ColB = def.ColB3; break;
-            case 3: p.ColR = def.ColR4; p.ColG = def.ColG4; p.ColB = def.ColB4; break;
-        }
+        // VB6 quirk: particle colors use RGB() which produces 0x00BBGGRR (BGR order),
+        // but D3D vertex color interprets it as ARGB = 0xAARRGGBB.
+        // This effectively swaps R↔B. The INI color values were authored with this
+        // swap in mind, so we must replicate it: store INI's R as Blue, INI's B as Red.
+        //
+        // VB6 uses all 4 ColorSets as the 4 vertex colors of the quad (gradient).
+        // We average the 4 sets since Godot only supports a single modulate color.
+        p.ColR = (byte)((def.ColB1 + def.ColB2 + def.ColB3 + def.ColB4) / 4); // INI Blue → render Red
+        p.ColG = (byte)((def.ColG1 + def.ColG2 + def.ColG3 + def.ColG4) / 4);
+        p.ColB = (byte)((def.ColR1 + def.ColR2 + def.ColR3 + def.ColR4) / 4); // INI Red → render Blue
     }
 
     private static float RandRange(float min, float max)
