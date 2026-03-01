@@ -106,6 +106,7 @@ public partial class Main : Control
         _backgroundImage = GetNode<TextureRect>("GameUI/BackgroundImage");
         _console = GetNode<RichTextLabel>("GameUI/Console");
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
+        _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
         _hpBar = GetNode<ProgressBar>("GameUI/HPBar");
         _manaBar = GetNode<ProgressBar>("GameUI/ManaBar");
         _staBar = GetNode<ProgressBar>("GameUI/StaBar");
@@ -244,13 +245,23 @@ public partial class Main : Control
         }
     }
 
+    /// <summary>
+    /// VB6 chat behavior:
+    /// - Enter with text → send message, clear input, hide input
+    /// - Enter with empty → clear any leftover text, hide input (double-Enter clears)
+    /// Text is NOT added to console here — the server echoes it back as a T| packet.
+    /// </summary>
     private void OnChatSubmitted(string text)
     {
-        if (string.IsNullOrWhiteSpace(text) || _tcp == null) return;
-
-        // Send chat message to server
-        _tcp.SendPacket($";{text}");
+        if (!string.IsNullOrWhiteSpace(text) && _tcp != null)
+        {
+            _tcp.SendPacket($";{text}");
+        }
+        // Always hide + clear on submit (VB6: Enter closes the input)
         _chatInput!.Text = "";
+        _chatInput.Visible = false;
+        _chatInput.ReleaseFocus();
+        _state.ChatActive = false;
     }
 
     public override void _Process(double delta)
@@ -412,6 +423,20 @@ public partial class Main : Control
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        // VB6: Enter toggles chat input visibility
+        if (@event is InputEventKey key && key.Pressed && !key.Echo
+            && key.Keycode == Key.Enter
+            && _state.CurrentScreen == Screen.Game
+            && _chatInput != null && !_chatInput.Visible)
+        {
+            _chatInput.Visible = true;
+            _chatInput.Text = "";
+            _chatInput.GrabFocus();
+            _state.ChatActive = true;
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
             if (_state.CurrentScreen == Screen.Game)

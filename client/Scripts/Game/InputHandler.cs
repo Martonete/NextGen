@@ -54,6 +54,9 @@ public class InputHandler
     {
         if (!_state.IsLogged || _state.Paused) return;
 
+        // VB6: no keyboard input while chat input is focused
+        if (_state.ChatActive) return;
+
         float deltaMs = (float)delta * 1000f;
 
         // Advance cooldown timers

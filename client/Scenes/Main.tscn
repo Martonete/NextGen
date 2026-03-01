@@ -134,7 +134,6 @@ offset_left = 3.0
 offset_top = 99.0
 offset_right = 507.0
 offset_bottom = 116.0
-placeholder_text = "Escribir..."
 
 [node name="HPBar" type="ProgressBar" parent="GameUI"]
 layout_mode = 0
