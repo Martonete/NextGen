@@ -463,7 +463,12 @@ public partial class Main : Control
                 var viewPos = new Vector2(clickX, clickY);
                 if (mb.ButtonIndex == MouseButton.Left)
                 {
-                    if (mb.DoubleClick)
+                    if (mb.ShiftPressed && _state.Privileges >= 2)
+                    {
+                        // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
+                        _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
+                    }
+                    else if (mb.DoubleClick)
                     {
                         // VB6 Form_DblClick → RC (interact: open doors, talk to NPC, etc.)
                         _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);

@@ -272,4 +272,16 @@ public class InputHandler
             _state.UsingSkill = 0; // Reset after casting
         }
     }
+
+    /// <summary>
+    /// GM Shift+Click → /TELEP YO mapa,x,y (VB6: teleport to clicked tile).
+    /// </summary>
+    public void HandleGmTeleport(Vector2 viewportPos, int userX, int userY, int currentMap)
+    {
+        var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+        if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+        {
+            _tcp.SendPacket($";/TELEP YO {currentMap},{tileX},{tileY}");
+        }
+    }
 }
