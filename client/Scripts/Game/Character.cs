@@ -57,6 +57,22 @@ public class Character
     public int DialogAlpha;          // VB6 Desvanecimiento: starts 20, +12/frame while Sube>0, -10/frame on fade
     public bool DialogFading;        // VB6 Tiempito: True when lifetime expired, fading out
 
+    // Auras (VB6: 5 equipment slots + 1 NPC aura)
+    // Indices into Auras.dat (AurasPJ array). 0 = no aura.
+    public int AuraIndexA; // Armor
+    public int AuraIndexW; // Weapon
+    public int AuraIndexE; // Shield
+    public int AuraIndexR; // Ring
+    public int AuraIndexC; // Helmet
+    public int NpcAura;    // NPC-only aura
+    public float AuraAngleA;
+    public float AuraAngleW;
+    public float AuraAngleE;
+    public float AuraAngleR;
+    public float AuraAngleC;
+    public float NpcAuraAngle;
+
     // Debug helper
     public bool _debugLogged;
+    public bool _equipDebugLogged;
 }

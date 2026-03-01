@@ -617,7 +617,7 @@ public class PacketHandler
         }
         else if (packet.StartsWith("[CD"))
         {
-            // Combat data, ignore for now
+            HandleCharData(packet[3..]);
         }
         else if (packet.StartsWith("[H]"))
         {
@@ -1025,6 +1025,13 @@ public class PacketHandler
 
         // VB6: dead characters have ghost heads (500, 501, 511, 512)
         ch.Dead = IsDeadHead(head);
+
+        // NPC CC format has 15 fields: ...,,,,aura,npcnumber (fields 9-12 empty, 13=aura, 14=npcnumber)
+        // User CC format has 12 fields: ...name,status,priv
+        if (parts.Length >= 15)
+        {
+            ch.NpcAura = ParseInt(parts[13]);
+        }
 
         _state.Characters[charIndex] = ch;
 
@@ -1662,6 +1669,29 @@ public class PacketHandler
             case 'E': ch.ShieldAnim = value; break;
             case 'H': ch.Heading = value; break;
             case 'C': ch.CascoAnim = value; break;
+        }
+    }
+
+    /// <summary>
+    /// [CD — Character aura/ranking data.
+    /// VB6 format: [CD{charindex},{color},{aura_armor},{aura_weapon},{aura_shield},{aura_ring},{aura_helmet},{levitando},{ranking}
+    /// </summary>
+    private void HandleCharData(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 2) return;
+
+        int idx = ParseInt(parts[0]);
+        if (!_state.Characters.TryGetValue(idx, out var ch)) return;
+
+        // Parse aura indices (fields 2-6, 0-indexed parts 2-6)
+        if (parts.Length >= 7)
+        {
+            ch.AuraIndexA = ParseInt(parts[2]); // Armor aura
+            ch.AuraIndexW = ParseInt(parts[3]); // Weapon aura
+            ch.AuraIndexE = ParseInt(parts[4]); // Shield aura
+            ch.AuraIndexR = ParseInt(parts[5]); // Ring aura
+            ch.AuraIndexC = ParseInt(parts[6]); // Helmet aura
         }
     }
 

@@ -154,6 +154,13 @@ public static class CharRenderer
                 break;
         }
 
+        // Mark equipment debug as logged (after first full draw)
+        if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
+            ch._equipDebugLogged = true;
+
+        // Auras (VB6: drawn after all equipment, before FX)
+        DrawAuras(canvas, ch, screenPos, headOffset, data, deltaMs);
+
         // FX overlays (up to 3 simultaneous)
         DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
 
@@ -220,14 +227,35 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data)
     {
-        if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
+        if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length)
+        {
+            if (!ch._equipDebugLogged && ch.CascoAnim > 0)
+            {
+                Godot.GD.PrintErr($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} OUT OF RANGE (max={data.Cascos.Length-1})");
+            }
+            return;
+        }
         var casco = data.Cascos[ch.CascoAnim];
-        if (casco.Head[heading] == 0) return;
+        if (casco.Head == null || casco.Head[heading] == 0)
+        {
+            if (!ch._equipDebugLogged)
+                Godot.GD.PrintErr($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} Head[{heading}]=0 (no GRH)");
+            return;
+        }
+
+        int grhIdx = casco.Head[heading];
+        if (!ch._equipDebugLogged)
+        {
+            var resolved = data.ResolveGrh(grhIdx, 0);
+            bool hasTex = resolved != null && resolved.FileNum > 0 &&
+                          data.Textures?.GetTexture(resolved.FileNum) != null;
+            Godot.GD.Print($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} heading={heading} grh={grhIdx} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
+        }
 
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
         Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
 
-        DrawGrh(canvas, data, casco.Head[heading], 0, helmetPos, true);
+        DrawGrh(canvas, data, grhIdx, 0, helmetPos, true);
     }
 
     private static void DrawWeapon(
@@ -249,15 +277,133 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
+        if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length)
+        {
+            if (!ch._equipDebugLogged && ch.ShieldAnim > 0)
+                Godot.GD.PrintErr($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} OUT OF RANGE (max={data.Shields.Length-1})");
+            return;
+        }
         var shield = data.Shields[ch.ShieldAnim];
         int grhIndex = shield.Walk[heading];
-        if (grhIndex <= 0) return;
+        if (grhIndex <= 0)
+        {
+            if (!ch._equipDebugLogged)
+                Godot.GD.PrintErr($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} Walk[{heading}]=0 (no GRH)");
+            return;
+        }
+
+        if (!ch._equipDebugLogged)
+        {
+            var resolved = data.ResolveGrh(grhIndex, 0);
+            bool hasTex = resolved != null && resolved.FileNum > 0 &&
+                          data.Textures?.GetTexture(resolved.FileNum) != null;
+            Godot.GD.Print($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} heading={heading} grh={grhIndex} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
+        }
 
         // VB6: dibEsc → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
         Vector2 shieldPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
         DrawGrh(canvas, data, grhIndex, frame, shieldPos, true);
+    }
+
+    /// <summary>
+    /// VB6: Draw auras above character head. Each equipment slot can have an aura,
+    /// plus NPCs can have a dedicated NPC aura.
+    /// Position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - AurasPJ().offset
+    /// Rotation: angle += 0.004 per frame if Giratoria, wraps at 180
+    /// Color: static R,G,B or pulsing between RojoF/VerdeF/AzulF and R/G/B
+    /// </summary>
+    private static void DrawAuras(
+        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+        GameData data, float deltaMs)
+    {
+        if (data.Auras == null || data.Auras.Length <= 1) return;
+
+        // Draw each equipment aura slot + NPC aura
+        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA);
+        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW);
+        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE);
+        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR);
+        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC);
+        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle);
+    }
+
+    private static void DrawSingleAura(
+        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+        GameData data, int auraIndex, ref float angle)
+    {
+        if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
+
+        var aura = data.Auras[auraIndex];
+        if (aura.GrhIndex <= 0) return;
+
+        // VB6: Giratoria — angle += 0.004 per frame, wraps at 180
+        if (aura.Giratoria)
+        {
+            angle += 0.004f;
+            if (angle >= 180f) angle = 0f;
+        }
+
+        // VB6 position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
+        float auraX = pos.X + headOffset.X;
+        float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
+
+        // VB6 color: static R,G,B (simplified — full pulsing is cosmetic polish)
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 1f);
+
+        // Resolve animated GRH frame
+        int grhIndex = aura.GrhIndex;
+        int frame = 0;
+        if (grhIndex > 0 && grhIndex < data.Grhs.Length)
+        {
+            var grh = data.Grhs[grhIndex];
+            if (grh.NumFrames > 1)
+            {
+                long now = System.Environment.TickCount64;
+                float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                frame = (int)(now / speed % grh.NumFrames);
+            }
+        }
+
+        if (aura.Giratoria && angle != 0f)
+        {
+            // VB6: Device_Box_Textured_Render with rotation angle
+            // In Godot we use DrawSetTransform to apply rotation around the aura center
+            var resolved = data.ResolveGrh(grhIndex, frame);
+            if (resolved == null || resolved.FileNum <= 0) return;
+            var texture = data.Textures?.GetTexture(resolved.FileNum);
+            if (texture == null) return;
+
+            int sx = resolved.SX, sy = resolved.SY;
+            int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+            int texW = texture.GetWidth(), texH = texture.GetHeight();
+            if (texW > 0) sx = sx % texW;
+            if (texH > 0) sy = sy % texH;
+            if (sx + pw > texW) pw = texW - sx;
+            if (sy + ph > texH) ph = texH - sy;
+            if (pw <= 0 || ph <= 0) return;
+
+            // Center the GRH
+            float drawX = auraX;
+            float drawY = auraY;
+            if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+            if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+                drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+
+            // Apply rotation around sprite center
+            float cx = drawX + pw / 2f;
+            float cy = drawY + ph / 2f;
+            canvas.DrawSetTransform(new Vector2(cx, cy), angle);
+            var srcRect = new Rect2(sx, sy, pw, ph);
+            var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
+            canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+            canvas.DrawSetTransform(Vector2.Zero, 0f); // Reset
+        }
+        else
+        {
+            DrawGrh(canvas, data, grhIndex, frame, new Vector2(auraX, auraY), true, color);
+        }
     }
 
     private static void DrawFx(
