@@ -179,17 +179,30 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Weapon Anim values in Tierras Sagradas point to full Bodies,
-        // not weapon-only overlays. Skip to avoid double-drawing.
-        return;
+        if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Weapons.Length) return;
+        var weapon = data.Weapons[ch.WeaponAnim];
+        int grhIndex = weapon.Walk[heading];
+        if (grhIndex <= 0) return;
+
+        // VB6: dibArm → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+        Vector2 weaponPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
+        DrawGrh(canvas, data, grhIndex, frame, weaponPos, true);
     }
 
     private static void DrawShield(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Same as DrawWeapon — skip to avoid double-drawing.
-        return;
+        if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
+        var shield = data.Shields[ch.ShieldAnim];
+        int grhIndex = shield.Walk[heading];
+        if (grhIndex <= 0) return;
+
+        // VB6: dibEsc → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+        Vector2 shieldPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
+        DrawGrh(canvas, data, grhIndex, frame, shieldPos, true);
     }
 
     private static void DrawFx(

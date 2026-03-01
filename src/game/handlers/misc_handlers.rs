@@ -1151,6 +1151,20 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
     }
     send_stats_gold(state, conn_id).await;
     warp_user(state, conn_id, dest_map, dest_x, dest_y).await;
+
+    // VB6: WarpUserChar with FX=True sends warp sound + warp FX (FXWARP=1, SND_WARP=3)
+    if let Some(user) = state.users.get(&conn_id) {
+        if !user.admin_invisible {
+            let char_idx = user.char_index.0;
+            let map = user.pos_map;
+            let x = user.pos_x;
+            let y = user.pos_y;
+            let snd_pkt = "TW3".to_string(); // SND_WARP = 3
+            let fx_pkt = format!("CFX{},1,0", char_idx); // FXWARP = 1
+            state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+        }
+    }
 }
 
 /// /ENTRENAR — Open creature training list from trainer NPC.

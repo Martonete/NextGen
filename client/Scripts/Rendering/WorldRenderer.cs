@@ -261,10 +261,21 @@ public partial class WorldRenderer : Node2D
                 // Per-tile light color for this pass
                 Color tileLight = hasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
 
-                // Ground objects
+                // Ground objects (apply same tree alpha as Layer 3)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
-                    DrawTileGrh(objGrh, tilePos, center: true, modulate: tileLight);
+                    bool objNearPlayer = IsTree(objGrh)
+                                       && y > (userY - 2) && y < (userY + 7)
+                                       && x > (userX - 4) && x < (userX + 4);
+                    if (objNearPlayer)
+                    {
+                        Color objLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
+                        DrawTileGrh(objGrh, tilePos, center: true, modulate: objLight);
+                    }
+                    else
+                    {
+                        DrawTileGrh(objGrh, tilePos, center: true, modulate: tileLight);
+                    }
                 }
 
                 // Characters/NPCs at this tile

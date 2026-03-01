@@ -75,13 +75,13 @@ public partial class InventoryPanel : Control
             int col = (i - 1) % 5;
             if (col >= 1) x += col; // cases 2,7,12,17,22→+1; 3,8,13,18,23→+2; etc.
 
-            // VB6: Y = ((i-1) \ 5) * 34, then row correction with VB6's exact conditions
+            // VB6: Y = ((i-1) \ 5) * 34, then row correction.
+            // VB6 original code uses strict inequality (i < 15, i < 20 etc.) which
+            // excludes items 10/15/20/25 from the row offset, causing 1-3px misalignment.
+            // We use >= instead to include those items and make rows uniform.
             float y = ((i - 1) / 5) * SlotSize;
-            // Row correction — VB6 exact (note: items 10,15,20 intentionally excluded!)
-            if (i > 10 && i < 15) y += 2;
-            else if (i > 5 && i < 10) y += 1;
-            else if (i > 15 && i < 20) y += 3;
-            else if (i > 20) y += 4;
+            int row = (i - 1) / 5;
+            if (row >= 1) y += row;
 
             // Slot background
             DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.15f, 0.15f, 0.2f, 0.8f));

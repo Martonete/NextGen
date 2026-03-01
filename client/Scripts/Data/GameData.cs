@@ -14,6 +14,8 @@ public class GameData
     public HeadData[] Heads = Array.Empty<HeadData>();
     public HeadData[] Cascos = Array.Empty<HeadData>();
     public FxData[] Fxs = Array.Empty<FxData>();
+    public WeaponAnimDirs[] Weapons = Array.Empty<WeaponAnimDirs>();
+    public WeaponAnimDirs[] Shields = Array.Empty<WeaponAnimDirs>();
     public TextMessage[] TextMessages = Array.Empty<TextMessage>();
     public TextureManager? Textures;
 
@@ -112,7 +114,25 @@ public class GameData
             Fonts[fi] = AoFont.Load(datFile, pngFile);
         }
 
-        WeaponShieldLoader.LogInfo();
+        try
+        {
+            Weapons = WeaponShieldLoader.LoadWeapons(System.IO.Path.Combine(initPath, "Armas.dat"));
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[DATA] Failed to load weapons: {ex.Message}");
+            Weapons = new WeaponAnimDirs[] { new() };
+        }
+
+        try
+        {
+            Shields = WeaponShieldLoader.LoadShields(System.IO.Path.Combine(initPath, "Escudos.dat"));
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[DATA] Failed to load shields: {ex.Message}");
+            Shields = new WeaponAnimDirs[] { new() };
+        }
 
         IsLoaded = true;
         GD.Print("[DATA] All game data loaded successfully");

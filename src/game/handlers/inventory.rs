@@ -9,7 +9,7 @@ use crate::protocol::{server_opcodes, font_types, fields::read_field};
 use crate::data::objects::{ObjData, ObjType};
 use super::common::*;
 use super::{
-    send_inventory_slot, send_full_inventory,
+    send_inventory_slot, send_full_inventory, build_anm_packet,
     warp_user, revive_user, naked_body,
     iniciar_comercio_npc, iniciar_banco, iniciar_clan_banco,
     DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
@@ -199,6 +199,10 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         None => return,
     };
     let (map, x, y, char_index, weapon, shield, helmet) = user_data;
+
+    // Send updated equipment stats (ANM) to the user
+    let anm = build_anm_packet(state, conn_id);
+    state.send_to(conn_id, &anm).await;
 
     // Send equipment change packets to area
     match obj_data.obj_type {

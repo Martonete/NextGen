@@ -2321,7 +2321,7 @@ async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
 /// Build ANM packet (equipment hitbox stats — 20 comma-separated fields).
 /// Format: ANM<minArma>,<maxArma>,<minArmor>,<maxArmor>,<minEscudo>,<maxEscudo>,
 ///         <minCasco>,<maxCasco>,<minHerr>,<maxHerr>, then 10 magic defense fields (all 0 for now).
-fn build_anm_packet(state: &GameState, conn_id: ConnectionId) -> String {
+pub(crate) fn build_anm_packet(state: &GameState, conn_id: ConnectionId) -> String {
     let user = match state.users.get(&conn_id) {
         Some(u) => u,
         None => return "ANM0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0".into(),

@@ -128,7 +128,7 @@ public class InputHandler
         {
             int slot = _state.SelectedInvSlot;
             if (slot >= 0 && slot < 25)
-                _tcp.SendPacket($"EQI{slot + 1}"); // 1-based
+                _tcp.SendPacket($"EQUI{slot + 1}"); // 1-based
         }
 
         // Drop item from selected inventory slot (VB6: T key sends TI,<slot>,<qty>)
