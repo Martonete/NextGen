@@ -213,6 +213,10 @@ public partial class InventoryPanel : Control
 
     private int HitTestSlot(Vector2 pos)
     {
+        // Bounds check — outside the grid area
+        if (pos.X < 0 || pos.X >= Cols * SlotSize || pos.Y < 0 || pos.Y >= Rows * SlotSize)
+            return -1;
+
         // VB6: ClickItem uses X \ 34 and Y \ 34 (integer division)
         int tempX = (int)pos.X / SlotSize;
         int tempY = (int)pos.Y / SlotSize;

@@ -1142,15 +1142,18 @@ public class PacketHandler
     }
 
     /// <summary>
-    /// LDM{name1},{name2},... — Friends list.
+    /// LDM{count},name1,name2,... — Friends list.
+    /// First field is the count, remaining fields are names.
     /// </summary>
     private void HandleFriendsList(string data)
     {
         _state.FriendsList.Clear();
         if (string.IsNullOrEmpty(data)) return;
-        foreach (var name in data.Split(','))
+        var parts = data.Split(',');
+        // First field is count — skip it, take names from index 1 onward
+        for (int i = 1; i < parts.Length; i++)
         {
-            var trimmed = name.Trim();
+            var trimmed = parts[i].Trim();
             if (trimmed.Length > 0)
                 _state.FriendsList.Add(trimmed);
         }

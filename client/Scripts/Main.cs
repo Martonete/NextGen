@@ -186,6 +186,7 @@ public partial class Main : Control
         _inventoryPanel.Position = new Vector2(580, 155);
         _inventoryPanel.Size = new Vector2(174, 174);
         _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+        _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
 
         // Item name tooltip — VB6: ItemName at (584,337,161,25), cyan text, centered
@@ -210,6 +211,7 @@ public partial class Main : Control
         _spellPanel.Position = new Vector2(585, 165);
         _spellPanel.Size = new Vector2(164, 159);
         _spellPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+        _spellPanel.FocusMode = Control.FocusModeEnum.None;
         _spellPanel.Visible = false;
         _gameUI.AddChild(_spellPanel);
 
@@ -270,7 +272,7 @@ public partial class Main : Control
         friendsBg.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.9f);
         friendsBg.SetBorderWidthAll(0);
         _friendsList.AddThemeStyleboxOverride("panel", friendsBg);
-        _friendsList.MouseFilter = Control.MouseFilterEnum.Pass;
+        _friendsList.FocusMode = Control.FocusModeEnum.None; // Don't steal arrow key input
         _gameUI.AddChild(_friendsList);
 
         // Minimap
@@ -332,6 +334,7 @@ public partial class Main : Control
         btn.AddThemeStyleboxOverride("focus", empty);
         if (usePointerCursor)
             btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+        btn.FocusMode = Control.FocusModeEnum.None; // Never steal keyboard focus
         return btn;
     }
 
