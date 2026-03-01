@@ -1142,8 +1142,9 @@ public class PacketHandler
     }
 
     /// <summary>
-    /// LDM{count},name1,name2,... — Friends list.
-    /// First field is the count, remaining fields are names.
+    /// LDM{count},name1(ON),name2(OFF),... — Friends list.
+    /// First field is the count, remaining are "Name(ON)" or "Name(OFF)".
+    /// Filter out (NADIE) entries (empty slots).
     /// </summary>
     private void HandleFriendsList(string data)
     {
@@ -1153,9 +1154,12 @@ public class PacketHandler
         // First field is count — skip it, take names from index 1 onward
         for (int i = 1; i < parts.Length; i++)
         {
-            var trimmed = parts[i].Trim();
-            if (trimmed.Length > 0)
-                _state.FriendsList.Add(trimmed);
+            var entry = parts[i].Trim();
+            if (entry.Length == 0) continue;
+            // Skip empty slots: "(NADIE)(OFF)" or "(NADIE)(ON)"
+            if (entry.StartsWith("(NADIE)")) continue;
+            // Keep full entry with (ON)/(OFF) for display
+            _state.FriendsList.Add(entry);
         }
     }
 

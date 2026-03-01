@@ -155,6 +155,14 @@ public partial class Main : Control
         _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
         _expLabel = GetNode<Label>("GameUI/ExpLabel");
 
+        // VB6: all labels use Font.Weight=700 (Bold)
+        ApplyBoldFont(_goldLabel);
+        ApplyBoldFont(_levelLabel);
+        ApplyBoldFont(_nameLabel);
+        ApplyBoldFont(_onlineLabel);
+        ApplyBoldFont(_coordsLabel);
+        ApplyBoldFont(_expLabel);
+
         // Custom stat bar overlay — draws colored fill rects at VB6 positions
         _statBarOverlay = new StatBarOverlay();
         _statBarOverlay.Position = Vector2.Zero;
@@ -303,6 +311,17 @@ public partial class Main : Control
         _gameUI.Visible = false;
     }
 
+    /// <summary>
+    /// Apply bold font to a Label (VB6: all labels use Font.Weight=700).
+    /// Uses a SystemFont with weight 700 overriding the theme font.
+    /// </summary>
+    private static void ApplyBoldFont(Label label)
+    {
+        var boldFont = new SystemFont();
+        boldFont.FontWeight = 700;
+        label.AddThemeFontOverride("font", boldFont);
+    }
+
     private static Label CreateStatLabel(float x, float y, float w, float h, Color color, int fontSize)
     {
         var label = new Label();
@@ -312,6 +331,7 @@ public partial class Main : Control
         label.AddThemeColorOverride("font_color", color);
         label.AddThemeFontSizeOverride("font_size", fontSize);
         label.MouseFilter = Control.MouseFilterEnum.Ignore;
+        ApplyBoldFont(label);
         return label;
     }
 
