@@ -278,15 +278,17 @@ public class InputHandler
 
     /// <summary>
     /// Handle spell targeting click → WLC packet.
-    /// VB6: Form_Click when UsingSkill > 0 sends WLC instead of LC.
-    /// Called when a spell is selected and user clicks a target tile.
+    /// VB6: Form_Click when UsingSkill > 0 sends WLC{x},{y},{UsingSkill}.
+    /// UsingSkill is the SKILL TYPE (Magia=2), NOT the spell slot.
+    /// The spell slot is stored server-side via the LH packet.
     /// </summary>
-    public void HandleSpellClick(Vector2 viewportPos, int userX, int userY, int spellSlot)
+    public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
     {
         var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {
-            _tcp.SendPacket($"WLC{tileX},{tileY},{spellSlot}");
+            // VB6: SendData "WLC" & tX & "," & tY & "," & UsingSkill
+            _tcp.SendPacket($"WLC{tileX},{tileY},{_state.UsingSkill}");
             _state.UsingSkill = 0; // Reset after casting
         }
     }

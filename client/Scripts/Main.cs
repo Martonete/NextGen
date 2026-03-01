@@ -667,7 +667,7 @@ public partial class Main : Control
                     else if (_state.UsingSkill > 0)
                     {
                         // VB6: Form_Click when UsingSkill > 0 → WLC (spell targeting)
-                        _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY, _state.UsingSkill);
+                        _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY);
                         // VB6: after targeting, reset cursor to arrow
                         Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
                     }

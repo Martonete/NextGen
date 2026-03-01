@@ -135,7 +135,9 @@ public partial class SpellPanel : Control
             _state.Spells[_selectedSlot].SpellId > 0)
         {
             _tcp.SendPacket($"LH{_selectedSlot + 1}");
-            _state.UsingSkill = _selectedSlot + 1;
+            // VB6: UsingSkill = Magia (constant 2, the skill type ID)
+            // NOT the spell slot — the slot is stored server-side via LH packet
+            _state.UsingSkill = 2;
         }
     }
 
