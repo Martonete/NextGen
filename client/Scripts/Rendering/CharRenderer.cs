@@ -163,36 +163,21 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // VB6: NingunArma=2 means "no weapon" — Bodies[1-2] are reserved/empty
-        if (ch.WeaponAnim <= 2 || ch.WeaponAnim >= data.Bodies.Length) return;
-        var weapon = data.Bodies[ch.WeaponAnim];
-        if (weapon.Walk[heading] == 0) return;
-
-        int weapGrh = weapon.Walk[heading];
-        // Use per-character WalkFrame (synced with body animation)
-        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-
-        // VB6: weapon drawn at bodyPos + headOffset.X, headOffset.Y + 38, centered
-        Vector2 pos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, weapGrh, frame, pos, true);
+        // Tierras Sagradas data: weapon Anim values in Obj.dat point to full
+        // character Bodies (same Personajes.ind entries used for body sprites),
+        // NOT weapon-only overlay sprites.  Drawing them as overlays would
+        // render a second full character on top of the real body.
+        // Skip weapon overlay drawing entirely — weapons are stats-only here.
+        return;
     }
 
     private static void DrawShield(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // VB6: NingunEscudo=2 means "no shield" — Bodies[1-2] are reserved/empty
-        if (ch.ShieldAnim <= 2 || ch.ShieldAnim >= data.Bodies.Length) return;
-        var shield = data.Bodies[ch.ShieldAnim];
-        if (shield.Walk[heading] == 0) return;
-
-        int shldGrh = shield.Walk[heading];
-        // Use per-character WalkFrame (synced with body animation)
-        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-
-        // VB6: shield drawn at bodyPos + headOffset.X, headOffset.Y + 38, centered
-        Vector2 pos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, shldGrh, frame, pos, true);
+        // Same as DrawWeapon — shield Anim values reference full character Bodies,
+        // not shield-only overlay sprites.  Skip to avoid double-drawing.
+        return;
     }
 
     private static void DrawFx(
@@ -341,9 +326,27 @@ public static class CharRenderer
             }
         }
 
+        // Clamp source rect to actual texture dimensions.
+        // Some GRH entries (e.g. water frame 2) reference regions beyond the
+        // texture bounds (sprite sheet was truncated during PNG conversion).
+        // Skip draws that are entirely out of bounds; clamp partial overlaps.
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+
+        float srcX = resolved.SX;
+        float srcY = resolved.SY;
+        float srcW = resolved.PixelWidth;
+        float srcH = resolved.PixelHeight;
+
+        if (srcX >= texW || srcY >= texH) return; // entirely outside
+
+        if (srcX + srcW > texW) srcW = texW - srcX;
+        if (srcY + srcH > texH) srcH = texH - srcY;
+        if (srcW <= 0 || srcH <= 0) return;
+
         // Snap to integer pixels (VB6+DX8 pixel-perfect rendering)
-        var srcRect = new Rect2(resolved.SX, resolved.SY, resolved.PixelWidth, resolved.PixelHeight);
-        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), resolved.PixelWidth, resolved.PixelHeight);
+        var srcRect = new Rect2(srcX, srcY, srcW, srcH);
+        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), srcW, srcH);
 
         Color color = modulate ?? Colors.White;
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
