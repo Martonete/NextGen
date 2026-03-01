@@ -26,9 +26,6 @@ public partial class WorldRenderer : Node2D
     private const int ViewportWidth = 534;
     private const int ViewportHeight = 408;
 
-    // VB6 uses ScreenX/ScreenY = (tileX - minX), with minX = userX - HalfWindowTileWidth
-    // Layer 1: draw at (ScreenX - 1) * 32, Layers 2+: draw at ScreenX * 32
-
     // How many tiles from center to edge (visible range)
     private const int HalfWindowTileWidth = 8;
     private const int HalfWindowTileHeight = 6;
@@ -103,21 +100,9 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Convert world tile to screen pixel position — VB6 Layer 1 formula.
-    /// VB6: ScreenX = tileX - minX, draw at (ScreenX - 1) * 32 + PixelOffsetX
-    /// Where minX = userX - HalfWindowTileWidth
-    /// </summary>
-    private static Vector2 TileToScreenL1(int tileX, int tileY, int userX, int userY,
-                                           float pixelOffsetX, float pixelOffsetY)
-    {
-        float px = (tileX - userX + HalfWindowTileWidth - 1) * TileSize + pixelOffsetX;
-        float py = (tileY - userY + HalfWindowTileHeight - 1) * TileSize + pixelOffsetY;
-        return new Vector2(px, py);
-    }
-
-    /// <summary>
-    /// Convert world tile to screen pixel position — VB6 Layers 2-4 formula.
-    /// VB6: ScreenX = tileX - minX, draw at ScreenX * 32 + PixelOffsetX
+    /// Convert world tile to screen pixel position.
+    /// VB6 uses the SAME pixel formula for all layers — only the tile RANGE differs.
+    /// The -1 that appears in VB6's L1 formula cancels with the expanded range offset.
     /// </summary>
     private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
                                          float pixelOffsetX, float pixelOffsetY)
@@ -175,8 +160,8 @@ public partial class WorldRenderer : Node2D
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
 
-                Vector2 pos = TileToScreenL1(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                DrawTileGrh(tile.Layer1, pos, center: true);
+                Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
+                DrawTileGrh(tile.Layer1, pos, center: false);
             }
         }
 
@@ -191,7 +176,7 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer2 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                DrawTileGrh(tile.Layer2, pos, center: true);
+                DrawTileGrh(tile.Layer2, pos, center: false);
             }
         }
 
