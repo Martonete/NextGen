@@ -106,6 +106,11 @@ public class GameData
         int resolvedIdx = grh.Frames[frameIdx];
 
         if (resolvedIdx <= 0 || resolvedIdx >= Grhs.Length) return grh;
-        return Grhs[resolvedIdx];
+
+        var child = Grhs[resolvedIdx];
+        // Safety: if child GRH wasn't properly loaded (FileNum=0), fall back to
+        // parent's first-frame data rather than rendering garbage
+        if (child.FileNum <= 0) return grh;
+        return child;
     }
 }

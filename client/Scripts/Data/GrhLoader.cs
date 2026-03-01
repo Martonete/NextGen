@@ -95,6 +95,8 @@ public static class GrhLoader
                     grhs[grhIndex].FileNum = firstFrame.FileNum;
                     grhs[grhIndex].SX = firstFrame.SX;
                     grhs[grhIndex].SY = firstFrame.SY;
+                    grhs[grhIndex].TileWidth = firstFrame.TileWidth;
+                    grhs[grhIndex].TileHeight = firstFrame.TileHeight;
                 }
             }
             else
@@ -127,6 +129,8 @@ public static class GrhLoader
                     grhs[i].FileNum = grhs[firstIdx].FileNum;
                     grhs[i].SX = grhs[firstIdx].SX;
                     grhs[i].SY = grhs[firstIdx].SY;
+                    grhs[i].TileWidth = grhs[firstIdx].TileWidth;
+                    grhs[i].TileHeight = grhs[firstIdx].TileHeight;
                 }
             }
         }

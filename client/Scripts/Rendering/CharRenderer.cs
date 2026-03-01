@@ -88,13 +88,14 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, int heading,
         GameData data, GrhAnimator animator)
     {
-        // Simple ellipse shadow at character's feet (replaces body-clone which
-        // looked like a dark "skeleton" underneath the real body sprite).
-        // Use DrawSetTransform to squash a circle into an oval.
-        Vector2 shadowCenter = pos + new Vector2(TileSize / 2, TileSize - 4);
-        canvas.DrawSetTransform(shadowCenter, 0, new Vector2(1f, 0.45f));
-        canvas.DrawCircle(Vector2.Zero, 12f, new Color(0, 0, 0, 0.25f));
-        canvas.DrawSetTransform(Vector2.Zero); // reset transform
+        // VB6 shadow is a body-clone rendered with special DX8 blending.
+        // We draw a simple dark oval without DrawSetTransform (which can
+        // leave residual scale affecting subsequent draws).
+        // Approximate oval with a flat wide rect + rounded edges.
+        float cx = pos.X + TileSize / 2f;
+        float cy = pos.Y + TileSize - 4f;
+        var shadowRect = new Rect2(cx - 10f, cy - 3f, 20f, 6f);
+        canvas.DrawRect(shadowRect, new Color(0, 0, 0, 0.18f));
     }
 
     private static void DrawBody(
@@ -224,39 +225,81 @@ public static class CharRenderer
         var font = ThemeDB.FallbackFont;
         int fontSize = 12;
 
-        // Nick centered above character (VB6: PixelOffsetX + 16, Y + 30)
+        // VB6: text Y is top-of-text. Godot DrawString Y is baseline.
+        // Add font ascent (~11px) to convert VB6 top-Y to Godot baseline-Y.
+        // VB6 nick at PixelOffsetY + 30 → Godot baseline ≈ Y + 42
         Vector2 nickSize = font.GetStringSize(nick, HorizontalAlignment.Left, -1, fontSize);
-        Vector2 nickPos = pos + new Vector2((TileSize - nickSize.X) / 2, 30);
+        Vector2 nickPos = pos + new Vector2((TileSize - nickSize.X) / 2, 42);
         canvas.DrawString(font, nickPos, nick, HorizontalAlignment.Left, -1, fontSize, nameColor);
 
-        // Clan below nick (VB6: Y + 45)
-        if (clan.Length > 0)
+        // VB6: rank badge at Y+45 for admins, clan for non-admins
+        float nextY = 57f; // VB6 Y+45 + ascent ≈ 57
+
+        // Admin rank badge (VB6: RangoPRIV)
+        if (ch.Privileges > 0)
+        {
+            string rank = GetRankString(ch.Privileges);
+            Vector2 rankSize = font.GetStringSize(rank, HorizontalAlignment.Left, -1, fontSize);
+            Vector2 rankPos = pos + new Vector2((TileSize - rankSize.X) / 2, nextY);
+            canvas.DrawString(font, rankPos, rank, HorizontalAlignment.Left, -1, fontSize, nameColor);
+        }
+        else if (clan.Length > 0)
         {
             Vector2 clanSize = font.GetStringSize(clan, HorizontalAlignment.Left, -1, fontSize);
-            Vector2 clanPos = pos + new Vector2((TileSize - clanSize.X) / 2, 45);
+            Vector2 clanPos = pos + new Vector2((TileSize - clanSize.X) / 2, nextY);
             canvas.DrawString(font, clanPos, clan, HorizontalAlignment.Left, -1, fontSize, nameColor);
         }
     }
 
+    /// <summary>
+    /// VB6 RangoPRIV: privilege rank badge strings.
+    /// </summary>
+    private static string GetRankString(int priv)
+    {
+        return priv switch
+        {
+            >= 1 and <= 8 => "<Game Master>",
+            9 => "<Director de GMs>",
+            10 => "<Developer>",
+            11 => "<Sub Administrador>",
+            12 => "<Administrador>",
+            _ => "<GM>",
+        };
+    }
+
+    /// <summary>
+    /// VB6 name colors from colores.dat (ColoresPJ array).
+    /// For priv != 0: use privilege-indexed color.
+    /// For priv == 0: criminal = red, citizen = light blue.
+    /// </summary>
     private static Color GetNameColor(Character ch)
     {
         if (ch.Privileges > 0)
         {
+            // Exact RGB values from Cliente/Data/INIT/colores.dat
             return ch.Privileges switch
             {
-                1 => new Color(0.0f, 0.8f, 0.8f),    // Consejero - cyan
-                2 => new Color(0.6f, 0.6f, 1.0f),    // Semidios - light blue
-                3 => new Color(0.0f, 1.0f, 0.0f),    // Event Master - green
-                4 => new Color(1.0f, 1.0f, 0.0f),    // Dios - yellow
-                >= 8 => new Color(1.0f, 0.0f, 0.0f), // Admin+ - red
-                _ => new Color(0.2f, 0.8f, 1.0f),    // Other GM - blue
+                1 => new Color(0 / 255f, 185 / 255f, 0 / 255f),       // Consejero - green
+                2 => new Color(0 / 255f, 170 / 255f, 190 / 255f),     // Semidios - teal
+                3 => new Color(128 / 255f, 128 / 255f, 64 / 255f),    // Event Master - olive
+                4 => new Color(120 / 255f, 250 / 255f, 250 / 255f),   // Dios - cyan
+                5 => new Color(180 / 255f, 180 / 255f, 180 / 255f),   // Rol Master - gray
+                6 => new Color(140 / 255f, 0 / 255f, 0 / 255f),       // Caos - dark red
+                7 => new Color(0 / 255f, 64 / 255f, 128 / 255f),      // Consejo Bander - dark blue
+                8 => new Color(0 / 255f, 255 / 255f, 128 / 255f),     // Gran Dios - green
+                9 => new Color(123 / 255f, 55 / 255f, 0 / 255f),      // Director - brown
+                10 => new Color(128 / 255f, 255 / 255f, 128 / 255f),  // Developer - light green
+                11 => new Color(255 / 255f, 198 / 255f, 0 / 255f),    // Sub Admin - gold
+                12 => new Color(255 / 255f, 255 / 255f, 255 / 255f),  // Administrador - white
+                _ => new Color(180 / 255f, 180 / 255f, 180 / 255f),   // Unknown - gray
             };
         }
 
+        // colores.dat: [Cr] R=255,G=0,B=0 / [Ci] R=0,G=128,B=255
         if (ch.Criminal)
             return new Color(1.0f, 0.0f, 0.0f); // Criminal red
 
-        return new Color(0.2f, 0.5f, 1.0f); // Citizen blue
+        return new Color(0 / 255f, 128 / 255f, 255 / 255f); // Citizen blue
     }
 
     /// <summary>
