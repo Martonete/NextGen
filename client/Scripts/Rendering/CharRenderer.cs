@@ -41,11 +41,25 @@ public static class CharRenderer
             ? new Vector2(body.HeadOffsetX, body.HeadOffsetY)
             : new Vector2(0, -30);
 
-        // Debug: log character draw info once
+        // Debug: log character draw info once (with rendering diagnostics)
         if (!ch._debugLogged)
         {
             ch._debugLogged = true;
-            Godot.GD.Print($"[CHAR] {ch.Name}: body={ch.Body} head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim} casco={ch.CascoAnim}");
+            string bodyInfo = "N/A";
+            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+            {
+                var b = data.Bodies[ch.Body];
+                int walkGrh = b.Walk[heading];
+                var resolved = walkGrh > 0 ? data.ResolveGrh(walkGrh, 0) : null;
+                bool hasTex = resolved != null && resolved.FileNum > 0 &&
+                              data.Textures?.GetTexture(resolved.FileNum) != null;
+                bodyInfo = $"Walk[{heading}]={walkGrh} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}";
+            }
+            else
+            {
+                bodyInfo = ch.Body <= 0 ? "body<=0" : $"body>={data.Bodies.Length} (out of range)";
+            }
+            Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim} casco={ch.CascoAnim}");
         }
 
         // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)

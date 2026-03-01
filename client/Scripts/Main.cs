@@ -1237,6 +1237,9 @@ public partial class Main : Control
             // Load minimap image
             LoadMinimap(_state.CurrentMap);
 
+            // VB6: AgregarParticulasyLuces(MapNum) — add hardcoded map decorations
+            MapEffects.AddParticlesAndLights(_state.CurrentMap, _state);
+
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)

@@ -26,6 +26,11 @@ public class LightSystem
     private const int MapSize = 100;
     private const int TileSize = 32;
 
+    // VB6 ambient: hardcoded 160,160,160 in LightRender
+    private const float AmbR = 160f / 255f;
+    private const float AmbG = 160f / 255f;
+    private const float AmbB = 160f / 255f;
+
     /// <summary>
     /// Recalculate tile light colors for all active lights.
     /// TileLightColors[x, y, 0..3] = 4 corner colors per tile.
@@ -37,17 +42,15 @@ public class LightSystem
             state.TileLightColors = new Color[MapSize + 1, MapSize + 1, 4];
 
         var grid = state.TileLightColors;
+        var ambient = new Color(AmbR, AmbG, AmbB, 1f);
 
-        // Reset all tiles to zero (no light applied = base_light fallback)
+        // Initialize all tiles to AMBIENT (not black).
+        // In VB6, unlit tiles use base_light which is the ambient color.
+        // This prevents black tiles at light edges and discontinuities.
         for (int y = 1; y <= MapSize; y++)
             for (int x = 1; x <= MapSize; x++)
                 for (int c = 0; c < 4; c++)
-                    grid[x, y, c] = Colors.Black; // 0 = no light_value set
-
-        // VB6 ambient: hardcoded 160,160,160 in LightRender
-        float ambR = 160f / 255f;
-        float ambG = 160f / 255f;
-        float ambB = 160f / 255f;
+                    grid[x, y, c] = ambient;
 
         // Apply each active light (VB6: LightRender per light)
         foreach (var light in state.MapLights)
@@ -83,19 +86,19 @@ public class LightSystem
 
                     // Corner 1 (NW) → index 1
                     grid[tx, ty, 1] = CalcCorner(lightPxX, lightPxY, tileX, tileY,
-                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB, ambR, ambG, ambB);
+                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB);
 
                     // Corner 3 (NE) → index 3
                     grid[tx, ty, 3] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY,
-                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB, ambR, ambG, ambB);
+                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB);
 
                     // Corner 0 (SW) → index 0
                     grid[tx, ty, 0] = CalcCorner(lightPxX, lightPxY, tileX, tileY + TileSize,
-                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB, ambR, ambG, ambB);
+                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB);
 
                     // Corner 2 (SE) → index 2
                     grid[tx, ty, 2] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY + TileSize,
-                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB, ambR, ambG, ambB);
+                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB);
                 }
             }
         }
@@ -105,14 +108,14 @@ public class LightSystem
     /// VB6 LightCalculate: lerp from light color to ambient by distance factor.
     /// If dist > range, return existing value unchanged.
     /// Light center uses (lightX + 16, lightY + 16) — center of the light's tile.
+    /// Uses MAX blending: lights can only brighten above existing value.
     /// </summary>
     private static Color CalcCorner(
         float lightX, float lightY,
         float cornerX, float cornerY,
         int rangePx,
         Color existing,
-        float lightR, float lightG, float lightB,
-        float ambR, float ambG, float ambB)
+        float lightR, float lightG, float lightB)
     {
         // VB6: XDist = LightX + 16 - XCoord
         float dx = (lightX + 16f) - cornerX;
@@ -126,19 +129,22 @@ public class LightSystem
 
         // VB6: D3DXColorLerp(CurrentColor, LightColor, AmbientColor, factor)
         // Lerp from LightColor (close) to AmbientColor (far)
-        float r = lightR + (ambR - lightR) * factor;
-        float g = lightG + (ambG - lightG) * factor;
-        float b = lightB + (ambB - lightB) * factor;
+        float r = lightR + (AmbR - lightR) * factor;
+        float g = lightG + (AmbG - lightG) * factor;
+        float b = lightB + (AmbB - lightB) * factor;
 
-        // VB6: last light wins (the max check is commented out in VB6 source)
+        // MAX blending: lights can only brighten, never darken.
+        // This handles overlapping lights correctly — brightest value wins.
+        r = Math.Max(existing.R, r);
+        g = Math.Max(existing.G, g);
+        b = Math.Max(existing.B, b);
+
         return new Color(r, g, b, 1f);
     }
 
     /// <summary>
     /// Get the average light color for a tile (average of 4 corners).
-    /// If no lights have been set (all corners black), returns White to
-    /// let the existing ambient modulation handle it.
-    /// VB6: when light_value(i) == 0, the engine substitutes base_light.
+    /// When lights exist, all tiles have at least ambient color.
     /// </summary>
     public static Color GetTileLight(GameState state, int x, int y)
     {
@@ -149,12 +155,6 @@ public class LightSystem
         var c1 = state.TileLightColors[x, y, 1];
         var c2 = state.TileLightColors[x, y, 2];
         var c3 = state.TileLightColors[x, y, 3];
-
-        // If all corners are black (0), no light was set — return white (no modulation)
-        // This matches VB6 behavior: "if light_value(i) == 0 then light_value(i) = base_light"
-        bool anySet = (c0.R + c0.G + c0.B + c1.R + c1.G + c1.B +
-                       c2.R + c2.G + c2.B + c3.R + c3.G + c3.B) > 0.001f;
-        if (!anySet) return Colors.White;
 
         // Average 4 corners for single-color modulation
         float r = (c0.R + c1.R + c2.R + c3.R) * 0.25f;
