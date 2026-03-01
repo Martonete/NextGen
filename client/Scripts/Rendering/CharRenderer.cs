@@ -433,6 +433,38 @@ public static class CharRenderer
         var texture = data.Textures?.GetTexture(resolved.FileNum);
         if (texture == null) return;
 
+        // Check source rect fits within texture.
+        // Some GRH entries (e.g. water frame 2) reference regions beyond
+        // the texture bounds (sprite sheet truncated during PNG conversion).
+        // Fallback to frame 0 instead of skipping (avoids black tiles).
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+
+        if (resolved.SX >= texW || resolved.SY >= texH ||
+            resolved.SX + resolved.PixelWidth > texW ||
+            resolved.SY + resolved.PixelHeight > texH)
+        {
+            if (frame != 0)
+            {
+                // Retry with frame 0 as fallback
+                resolved = data.ResolveGrh(grhIndex, 0);
+                if (resolved == null || resolved.FileNum <= 0) return;
+                texture = data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) return;
+                texW = texture.GetWidth();
+                texH = texture.GetHeight();
+                // If frame 0 is also out of bounds, give up
+                if (resolved.SX >= texW || resolved.SY >= texH ||
+                    resolved.SX + resolved.PixelWidth > texW ||
+                    resolved.SY + resolved.PixelHeight > texH)
+                    return;
+            }
+            else
+            {
+                return;
+            }
+        }
+
         float drawX = pos.X;
         float drawY = pos.Y;
 
@@ -449,27 +481,10 @@ public static class CharRenderer
             }
         }
 
-        // Clamp source rect to actual texture dimensions.
-        // Some GRH entries (e.g. water frame 2) reference regions beyond the
-        // texture bounds (sprite sheet was truncated during PNG conversion).
-        // Skip draws that are entirely out of bounds; clamp partial overlaps.
-        int texW = texture.GetWidth();
-        int texH = texture.GetHeight();
-
-        float srcX = resolved.SX;
-        float srcY = resolved.SY;
-        float srcW = resolved.PixelWidth;
-        float srcH = resolved.PixelHeight;
-
-        if (srcX >= texW || srcY >= texH) return; // entirely outside
-
-        if (srcX + srcW > texW) srcW = texW - srcX;
-        if (srcY + srcH > texH) srcH = texH - srcY;
-        if (srcW <= 0 || srcH <= 0) return;
-
         // Snap to integer pixels (VB6+DX8 pixel-perfect rendering)
-        var srcRect = new Rect2(srcX, srcY, srcW, srcH);
-        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), srcW, srcH);
+        var srcRect = new Rect2(resolved.SX, resolved.SY, resolved.PixelWidth, resolved.PixelHeight);
+        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY),
+                                  resolved.PixelWidth, resolved.PixelHeight);
 
         Color color = modulate ?? Colors.White;
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
