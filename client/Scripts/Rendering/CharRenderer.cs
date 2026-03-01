@@ -590,23 +590,13 @@ public static class CharRenderer
         int pw = resolved.PixelWidth;
         int ph = resolved.PixelHeight;
 
-        if (sx >= texW || sy >= texH)
-        {
-            // Frame out of bounds — try frame 0 as fallback
-            if (frame != 0)
-            {
-                resolved = data.ResolveGrh(grhIndex, 0);
-                if (resolved == null || resolved.FileNum <= 0) return;
-                texture = data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) return;
-                texW = texture.GetWidth();
-                texH = texture.GetHeight();
-                sx = resolved.SX; sy = resolved.SY;
-                pw = resolved.PixelWidth; ph = resolved.PixelHeight;
-                if (sx >= texW || sy >= texH) return;
-            }
-            else return;
-        }
+        // VB6/D3D8 uses WRAP texture addressing: UVs beyond 1.0 wrap around.
+        // This means sx=32 on a 32px texture wraps to sx=0, showing the same pixels.
+        // Many map tiles rely on this behavior (e.g., 5503.png is 32x32 but GRH defs
+        // reference src positions at 32,0 and 0,32 — which wrap to 0,0).
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+
         if (sx + pw > texW) pw = texW - sx;   // clamp width
         if (sy + ph > texH) ph = texH - sy;   // clamp height
         if (pw <= 0 || ph <= 0) return;
