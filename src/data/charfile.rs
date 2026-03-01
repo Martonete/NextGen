@@ -91,6 +91,7 @@ pub struct CharData {
     pub paralyzed: bool,
     pub hidden: bool,
     pub navigating: bool,
+    pub barco_slot: i32,   // VB6 BarcoSlot — inventory slot (1-based) with equipped boat
 
     // POSITION
     pub map: i32,
@@ -238,6 +239,7 @@ pub fn load_charfile(base: &Path, char_name: &str) -> Result<CharData, String> {
         paralyzed: ini.get("FLAGS", "Paralizado").map(|s| s == "1").unwrap_or(false),
         hidden: ini.get("FLAGS", "Oculto").map(|s| s == "1").unwrap_or(false),
         navigating: ini.get("FLAGS", "Navegando").map(|s| s == "1").unwrap_or(false),
+        barco_slot: get_int("Inventory", "BarcoSlot"),
 
         map: get_int("INIT", "Map"),
         x: get_int("INIT", "X"),
@@ -633,6 +635,7 @@ pub fn save_charfile(base: &Path, char_name: &str, data: &CharSaveData) -> Resul
     lines.push(format!("EscudoEqpSlot={}", data.shield_eqp_slot));
     lines.push(format!("CascoEqpSlot={}", data.helmet_eqp_slot));
     lines.push(format!("MunicionEqpSlot={}", data.municion_eqp_slot));
+    lines.push(format!("BarcoSlot={}", data.barco_slot));
 
     // [BANCO] — bank inventory
     lines.push("[BANCO]".into());
@@ -712,6 +715,7 @@ pub struct CharSaveData {
     pub criminal: bool,
     pub hidden: bool,
     pub navigating: bool,
+    pub barco_slot: usize,
     pub privileges: i32,
     pub spells: [i32; 20],
     pub inventory: Vec<(i32, i32, bool)>, // (obj_idx, amount, equipped)

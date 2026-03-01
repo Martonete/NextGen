@@ -213,7 +213,7 @@ async fn main() {
                     // Save full character state to DB
                     if let Some(user) = state.users.get(&conn_id) {
                         let save_data = db::charfile::CharSaveData {
-                            head: user.head,
+                            head: if user.navigating { user.old_head } else { user.head },
                             body: user.body,
                             heading: user.heading,
                             weapon: user.weapon_anim,
@@ -246,6 +246,7 @@ async fn main() {
                             criminal: user.criminal,
                             hidden: user.hidden,
                             navigating: user.navigating,
+                            barco_slot: user.barco_slot,
                             privileges: user.saved_privileges,
                             spells: user.spells,
                             inventory: user.inventory.iter().map(|s| (s.obj_index, s.amount, s.equipped)).collect(),

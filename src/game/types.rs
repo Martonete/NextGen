@@ -255,8 +255,8 @@ pub struct UserState {
     pub warnings: i32,            // Warning count (advertencias)
     pub hogar: String,            // Home city (Thir, Inthak, Ruvendel, etc.)
 
-    // Navigation
-    pub navegando: bool,          // In boat/water navigation mode
+    // Navigation — barco_slot is the inventory slot (1-based) holding the equipped boat (VB6 BarcoSlot)
+    pub barco_slot: usize,
 
     // Event system flags
     pub en_evento: bool,          // In any event
@@ -485,7 +485,7 @@ impl UserState {
             jail_timer: 0,
             warnings: 0,
             hogar: String::new(),
-            navegando: false,
+            barco_slot: 0,
             en_evento: false,
             evento_tipo: 0,
             evento_equipo: 0,

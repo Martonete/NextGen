@@ -73,6 +73,7 @@ pub struct CharData {
     pub paralyzed: bool,
     pub hidden: bool,
     pub navigating: bool,
+    pub barco_slot: i32,
     pub map: i32,
     pub x: i32,
     pub y: i32,
@@ -175,7 +176,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
                 gold, bank_gold, skill_pts_libres,
                 attributes, skills, spells,
                 banned, dead, poisoned, paralyzed, hidden, navigating, criminal,
-                privileges,
+                privileges, barco_slot,
                 weapon_eqp_slot, armour_eqp_slot, shield_eqp_slot, helmet_eqp_slot, municion_eqp_slot,
                 guild_index, reputation,
                 armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
@@ -232,6 +233,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     let paralyzed: bool = row.get("paralyzed");
     let hidden: bool = row.get("hidden");
     let navigating: bool = row.get("navigating");
+    let barco_slot: i32 = row.try_get("barco_slot").unwrap_or(0);
     let criminal: bool = row.get("criminal");
     let privileges: i32 = row.get("privileges");
     let weapon_eqp_slot: i32 = row.get("weapon_eqp_slot");
@@ -311,7 +313,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         gold, bank_gold, skill_pts_libres,
         attributes: sql_array_to_5(&attributes_vec),
         skills: sql_array_to_22(&skills_vec),
-        banned, dead, poisoned, paralyzed, hidden, navigating,
+        banned, dead, poisoned, paralyzed, hidden, navigating, barco_slot,
         map, x, y, guild_index, privileges,
         inventory,
         weapon_eqp_slot: weapon_eqp_slot as usize,
@@ -517,6 +519,7 @@ pub struct CharSaveData {
     pub criminal: bool,
     pub hidden: bool,
     pub navigating: bool,
+    pub barco_slot: usize,
     pub privileges: i32,
     pub spells: [i32; 20],
     pub inventory: Vec<(i32, i32, bool)>,
@@ -569,6 +572,7 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             criminales_matados = $45, ciudadanos_matados = $46,
             armada_real = $47, fuerzas_caos = $48,
             puntos_donacion = $49, puntos_torneo = $50, ts_points = $51,
+            barco_slot = $52,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -591,6 +595,7 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(data.criminales_matados).bind(data.ciudadanos_matados)
     .bind(data.ejercito_real).bind(data.ejercito_caos)
     .bind(data.puntos_donacion).bind(data.puntos_torneo).bind(data.ts_points)
+    .bind(data.barco_slot as i32)
     .execute(pool)
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;

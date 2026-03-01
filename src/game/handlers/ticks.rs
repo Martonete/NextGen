@@ -1214,7 +1214,9 @@ pub(super) async fn auto_save_all_users(state: &GameState) {
             .map(|s| (s.obj_index, s.amount))
             .collect();
         let data = charfile::CharSaveData {
-            head: user.head,
+            // VB6: When navigating, save the REAL head (old_head), not 0.
+            // The boat body is transient — on login we reconstruct it from BarcoSlot.
+            head: if user.navigating { user.old_head } else { user.head },
             body: user.body,
             heading: user.heading,
             weapon: user.equip.weapon as i32,
@@ -1245,6 +1247,7 @@ pub(super) async fn auto_save_all_users(state: &GameState) {
             paralyzed: user.paralyzed,
             hidden: user.hidden,
             navigating: user.navigating,
+            barco_slot: user.barco_slot,
             privileges: user.saved_privileges,
             attributes: user.attributes,
             skills: user.skills,

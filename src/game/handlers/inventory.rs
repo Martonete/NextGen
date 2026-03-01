@@ -488,6 +488,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     let casco_anim = state.get_object(helmet_obj).map(|o| o.casco_anim).unwrap_or(0);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.navigating = false;
+                        u.barco_slot = 0;
                         if !dead {
                             u.head = saved_head;
                             u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
@@ -514,6 +515,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     u.shield_anim = super::common::NINGUN_ESCUDO;
                     u.casco_anim = super::common::NINGUN_CASCO;
                     u.navigating = true;
+                    u.barco_slot = idx + 1; // VB6 BarcoSlot (1-based)
                     if ropaje > 0 {
                         u.body = ropaje;
                     }

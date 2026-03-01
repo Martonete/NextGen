@@ -689,10 +689,13 @@ async fn connect_user(
         user.body = char_data.body;
         user.head = char_data.head;
         user.old_head = char_data.head; // VB6 OrigChar.Head — for boat/invis restore
+        user.navigating = char_data.navigating;
+        user.barco_slot = char_data.barco_slot as usize;
 
         // Safety: if charfile has invalid body (0=invisible, 8=ghost) but dead=false,
         // restore naked body. body=0 can happen if a GM disconnects while invisible.
-        if !user.dead && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
+        // SKIP this check if navigating — boat state has head=0, body=boat ropaje (valid).
+        if !user.dead && !char_data.navigating && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
             let gender_str = char_data.gender.to_string();
             user.body = naked_body(&char_data.race, &gender_str);
             // Head 500 is ghost head, head 0 is invisible — use a default for race/gender
@@ -923,21 +926,33 @@ async fn connect_user(
         state.send_to(conn_id, "PARADOK").await;
     }
 
-    // --- PHASE 10c: NAVEG if navigating (VB6 line 1734) ---
+    // --- PHASE 10c: NAVEG if navigating (VB6 TCP.bas lines 1515-1521, 1654) ---
+    // VB6: On login, if Navegando=1, restore boat appearance from BarcoSlot object.
     // NAVEG is a toggle — client starts with UserNavegando=False,
-    // so we send one NAVEG to set it to True if the char was navigating.
-    // VB6 TCP.bas lines 1515-1521: Also set boat appearance on login.
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        if user.navigating {
-            user.head = 0;
-            user.weapon_anim = common::NINGUN_ARMA;
-            user.shield_anim = common::NINGUN_ESCUDO;
-            user.casco_anim = common::NINGUN_CASCO;
-            // Body should already be boat ropaje from charfile save
-        }
-    }
-    if let Some(user) = state.users.get(&conn_id) {
-        if user.navigating {
+    // so we send one NAVEG to set it to True.
+    {
+        let nav_info = state.users.get(&conn_id).map(|u| (u.navigating, u.barco_slot));
+        if let Some((true, barco_slot)) = nav_info {
+            // VB6: BarcoObjIndex = Invent.Object(BarcoSlot).ObjIndex
+            // Then Body = ObjData(BarcoObjIndex).Ropaje
+            let boat_ropaje = if barco_slot >= 1 {
+                state.users.get(&conn_id)
+                    .and_then(|u| u.inventory.get(barco_slot - 1))
+                    .map(|s| s.obj_index)
+                    .and_then(|oi| if oi > 0 { state.get_object(oi) } else { None })
+                    .map(|o| o.num_ropaje)
+                    .unwrap_or(0)
+            } else { 0 };
+
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.head = 0;
+                user.weapon_anim = common::NINGUN_ARMA;
+                user.shield_anim = common::NINGUN_ESCUDO;
+                user.casco_anim = common::NINGUN_CASCO;
+                if boat_ropaje > 0 {
+                    user.body = boat_ropaje;
+                }
+            }
             state.send_to(conn_id, "NAVEG").await;
         }
     }
