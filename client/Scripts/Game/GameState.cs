@@ -56,6 +56,11 @@ public class GameState
     public bool UserParalyzed;
     public bool UserNavigating;
     public bool UserStopped;
+    public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
+    public bool Resting;        // VB6: Descansar toggle (DOK)
+    public bool Meditating;     // VB6: Meditando
+    public bool Dead;           // VB6: UserMuerto
+    public bool Trading;        // VB6: Comerciando (player-to-player trade)
     public int UsingSkill; // VB6: spell slot being targeted (0 = none)
     public bool ChatActive; // VB6: true when chat input is visible/focused
 
@@ -124,6 +129,9 @@ public class GameState
     public long BankGold;
     public bool Banqueando;       // frmBanco is open (gold operations)
     public bool BovedaAbierta;    // frmNuevoBancoObj is open (item vault)
+
+    // Arrow/projectile system (VB6: FLECHI)
+    public List<ArrowProjectile> ActiveArrows = new();
 
     // Particle system
     public ParticleStreamDef[] ParticleDefs = System.Array.Empty<ParticleStreamDef>();
@@ -263,5 +271,20 @@ public class MapLight
     public int X, Y;       // tile position
     public int Range;      // radius in tiles
     public byte R, G, B;   // light color
+    public bool Active = true;
+}
+
+/// <summary>
+/// An arrow/projectile in flight (from FLECHI packet).
+/// VB6: renders arrow GRH traveling from shooter to target.
+/// </summary>
+public class ArrowProjectile
+{
+    public int ShooterCharIndex;
+    public int TargetCharIndex;
+    public int GrhIndex;       // arrow graphic
+    public float X, Y;        // current pixel position
+    public float TargetX, TargetY; // destination pixel
+    public float Speed = 8f;  // pixels per frame
     public bool Active = true;
 }

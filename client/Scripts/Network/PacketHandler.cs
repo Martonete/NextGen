@@ -30,10 +30,83 @@ public class PacketHandler
         if (string.IsNullOrEmpty(packet)) return;
 
         // Multi-char opcodes first (longest match)
-        if (packet.StartsWith("LOGGED"))
+        // ── 9-char opcodes ──
+        if (packet.StartsWith("INITBANCO"))
+        {
+            HandleInitBanco();
+        }
+        else if (packet.StartsWith("FINCBNOK"))
+        {
+            // Guild bank close confirmation
+            _state.BovedaAbierta = false;
+            GD.Print("[PKT] FINCBNOK: Guild bank closed");
+        }
+        // ── 8-char opcodes ──
+        else if (packet.StartsWith("FINCOMOK"))
+        {
+            HandleFinComOk();
+        }
+        else if (packet.StartsWith("FINBANOK"))
+        {
+            HandleFinBanOk();
+        }
+        else if (packet.StartsWith("TRADEOK"))
+        {
+            HandleTradeOk();
+        }
+        // ── 7-char opcodes ──
+        else if (packet.StartsWith("PARADOK"))
+        {
+            _state.UserParalyzed = !_state.UserParalyzed;
+        }
+        else if (packet.StartsWith("TRANSOK"))
+        {
+            HandleTransOk(packet[7..]);
+        }
+        else if (packet.StartsWith("BANCOOK"))
+        {
+            HandleBancoOk(packet[7..]);
+        }
+        else if (packet.StartsWith("SHOWFUN"))
+        {
+            // Guild creation form — UI stub
+            GD.Print("[PKT] SHOWFUN: Guild creation form");
+        }
+        else if (packet.StartsWith("IREDAEL"))
+        {
+            // Guild info (leader view) — store for UI
+            GD.Print($"[PKT] IREDAEL: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("IREDAEK"))
+        {
+            // Guild info (member view) — store for UI
+            GD.Print($"[PKT] IREDAEK: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        // ── 6-char opcodes ──
+        else if (packet.StartsWith("LOGGED"))
         {
             HandleLogged();
         }
+        else if (packet.StartsWith("SEGOFF"))
+        {
+            _state.SafeMode = false;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = "Seguro desactivado.", Color = "FF0000" });
+        }
+        else if (packet.StartsWith("FLECHI"))
+        {
+            HandleArrow(packet[6..]);
+        }
+        else if (packet.StartsWith("CIRUJA"))
+        {
+            // Appearance change UI — stub
+            GD.Print($"[PKT] CIRUJA: {packet[6..]}");
+        }
+        else if (packet.StartsWith("LSTCRI"))
+        {
+            // Creature list (trainer) — stub
+            GD.Print($"[PKT] LSTCRI: {packet[6..]}");
+        }
+        // ── 5-char opcodes ──
         else if (packet.StartsWith("INIAC"))
         {
             HandleInitCharList(packet[5..]);
@@ -46,14 +119,6 @@ public class PacketHandler
         {
             HandleSecurityCode(packet[5..]);
         }
-        else if (packet.StartsWith("ERR"))
-        {
-            HandleError(packet[3..]);
-        }
-        else if (packet.StartsWith("PARADOK"))
-        {
-            _state.UserParalyzed = !_state.UserParalyzed;
-        }
         else if (packet.StartsWith("NAVEG"))
         {
             _state.UserNavigating = !_state.UserNavigating;
@@ -62,6 +127,46 @@ public class PacketHandler
         {
             _state.UserStopped = packet.Length > 5 && packet[5] == '1';
         }
+        else if (packet.StartsWith("SEGON"))
+        {
+            _state.SafeMode = true;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = "Seguro activado.", Color = "00FF00" });
+        }
+        else if (packet.StartsWith("NOVER"))
+        {
+            HandleCharVisibility(packet[5..]);
+        }
+        else if (packet.StartsWith("MEDOK"))
+        {
+            HandleMeditationOff();
+        }
+        else if (packet.StartsWith("MUERT"))
+        {
+            HandleDeath();
+        }
+        else if (packet.StartsWith("FINOK"))
+        {
+            HandleFinOk();
+        }
+        else if (packet.StartsWith("DADOS"))
+        {
+            HandleDados(packet[5..]);
+        }
+        else if (packet.StartsWith("KHEKD"))
+        {
+            // Guild bank permissions — stub
+            GD.Print($"[PKT] KHEKD: {packet[5..]}");
+        }
+        else if (packet.StartsWith("ENCHAT"))
+        {
+            // Start chat with friend — stub
+            GD.Print($"[PKT] ENCHAT: {packet[6..]}");
+        }
+        else if (packet.StartsWith("IRCHAT"))
+        {
+            HandleFriendChat(packet[6..]);
+        }
+        // ── 4-char opcodes ──
         else if (packet.StartsWith("EHYS"))
         {
             HandleHungerThirst(packet[4..]);
@@ -70,6 +175,100 @@ public class PacketHandler
         {
             // Inventory init, ignore
         }
+        else if (packet.StartsWith("NPCR"))
+        {
+            HandleNpcReset();
+        }
+        else if (packet.StartsWith("NPCI"))
+        {
+            HandleNpcItem(packet[4..]);
+        }
+        else if (packet.StartsWith("NPC|"))
+        {
+            HandleNpcSlotUpdate(packet[4..]);
+        }
+        else if (packet.StartsWith("MENU"))
+        {
+            // MENU{name},{privs} — User interaction menu (right-click on player)
+            GD.Print($"[PKT] MENU: {packet[4..]}");
+        }
+        else if (packet.StartsWith("SELE"))
+        {
+            // SELE{type},{name},OBJ — Item selection prompt
+            GD.Print($"[PKT] SELE: {packet[4..]}");
+        }
+        else if (packet.StartsWith("DTLC"))
+        {
+            // Guild details response — stub
+            GD.Print($"[PKT] DTLC: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("GINF"))
+        {
+            // Player info detail — stub
+            GD.Print($"[PKT] GINF: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("FEST"))
+        {
+            // Mini statistics — stub
+            GD.Print($"[PKT] FEST: {packet[4..]}");
+        }
+        else if (packet.StartsWith("ACDA"))
+        {
+            // Account data — stub
+            GD.Print($"[PKT] ACDA: {packet[4..]}");
+        }
+        else if (packet.StartsWith("MTOP"))
+        {
+            // Mountain top rankings — stub
+            GD.Print($"[PKT] MTOP: {packet[4..]}");
+        }
+        else if (packet.StartsWith("ZSOS"))
+        {
+            // SOS messages list — stub
+            GD.Print($"[PKT] ZSOS: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("IMEJ"))
+        {
+            // Item preview — stub
+            GD.Print($"[PKT] IMEJ: {packet[4..]}");
+        }
+        // ── 7+ char opcodes (before 3-char to avoid prefix collision: INITCOM vs ICO, CANCELTRADE vs CA) ──
+        else if (packet.StartsWith("CANCELTRADE"))
+        {
+            HandleTradeCancelled();
+        }
+        else if (packet.StartsWith("DAMEQUEST"))
+        {
+            // Quest NPC trigger — stub
+            GD.Print("[PKT] DAMEQUEST: Quest NPC interaction");
+        }
+        else if (packet.StartsWith("INITCOM"))
+        {
+            HandleInitCom();
+        }
+        else if (packet.StartsWith("TRAVELS"))
+        {
+            // Travel portals — stub
+            GD.Print("[PKT] TRAVELS: Travel portals available");
+        }
+        else if (packet.StartsWith("RESPUES"))
+        {
+            HandleAdminResponse(packet[7..]);
+        }
+        else if (packet.StartsWith("QTDL"))
+        {
+            HandleRemoveSelfDialog();
+        }
+        // ── 3-char opcodes ──
+        else if (packet.StartsWith("ERR"))
+        {
+            HandleError(packet[3..]);
+        }
+        else if (packet.StartsWith("ERO"))
+        {
+            // Error dialog (no disconnect)
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = packet[3..], Color = "FF0000" });
+        }
         else if (packet.StartsWith("CSI"))
         {
             HandleInventorySlot(packet[3..]);
@@ -77,6 +276,10 @@ public class PacketHandler
         else if (packet.StartsWith("SHS"))
         {
             HandleSpellSlot(packet[3..]);
+        }
+        else if (packet.StartsWith("SHI"))
+        {
+            HandleHideSpell(packet[3..]);
         }
         else if (packet.StartsWith("TIS"))
         {
@@ -90,10 +293,212 @@ public class PacketHandler
         {
             HandlePrivileges(packet[3..]);
         }
+        else if (packet.StartsWith("LDM"))
+        {
+            HandleFriendsList(packet[3..]);
+        }
+        else if (packet.StartsWith("KFM"))
+        {
+            HandleFriendOnline(packet[3..]);
+        }
+        else if (packet.StartsWith("DFM"))
+        {
+            HandleFriendOffline(packet[3..]);
+        }
         else if (packet.StartsWith("BKW"))
         {
             HandleTogglePause();
         }
+        else if (packet.StartsWith("CFX"))
+        {
+            HandleCharFx(packet[3..]);
+        }
+        else if (packet.StartsWith("CFF"))
+        {
+            HandleCharFx(packet[3..]); // Same format as CFX
+        }
+        else if (packet.StartsWith("ANM"))
+        {
+            HandleEquipmentStats(packet[3..]);
+        }
+        else if (packet.StartsWith("SBR"))
+        {
+            HandleBankReset();
+        }
+        else if (packet.StartsWith("SBO"))
+        {
+            HandleBankSlot(packet[3..]);
+        }
+        else if (packet.StartsWith("SFC"))
+        {
+            // Open carpentry UI — stub
+            GD.Print("[PKT] SFC: Carpentry UI");
+        }
+        else if (packet.StartsWith("SFH"))
+        {
+            // Open blacksmith UI — stub
+            GD.Print("[PKT] SFH: Blacksmith UI");
+        }
+        else if (packet.StartsWith("LAH"))
+        {
+            // Buildable weapons list — stub
+            GD.Print($"[PKT] LAH: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("LAR"))
+        {
+            // Buildable armors list — stub
+            GD.Print($"[PKT] LAR: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("OBR"))
+        {
+            // Buildable carpentry items — stub
+            GD.Print($"[PKT] OBR: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("ICO"))
+        {
+            HandleTradeInit();
+        }
+        else if (packet.StartsWith("IOR"))
+        {
+            HandleTradeGold(packet[3..]);
+        }
+        else if (packet.StartsWith("ICI"))
+        {
+            HandleTradeItem(packet[3..]);
+        }
+        else if (packet.StartsWith("VCC"))
+        {
+            HandleTradeChat(packet[3..]);
+        }
+        else if (packet.StartsWith("IFO"))
+        {
+            // Mail list header — stub
+            GD.Print($"[PKT] IFO: {packet[3..]}");
+        }
+        else if (packet.StartsWith("IDO"))
+        {
+            // Mail player info — stub
+            GD.Print($"[PKT] IDO: {packet[3..]}");
+        }
+        else if (packet.StartsWith("IAO"))
+        {
+            // Mail friend list — stub
+            GD.Print($"[PKT] IAO: {packet[3..]}");
+        }
+        else if (packet.StartsWith("ILO"))
+        {
+            // Mail content — stub
+            GD.Print($"[PKT] ILO: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("ITO"))
+        {
+            // Mail items — stub
+            GD.Print($"[PKT] ITO: {packet[3..]}");
+        }
+        else if (packet.StartsWith("QTL"))
+        {
+            // Quest list — stub
+            GD.Print($"[PKT] QTL: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("MQS"))
+        {
+            // Quest details — stub
+            GD.Print($"[PKT] MQS: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("MQC"))
+        {
+            // Quest progress — stub
+            GD.Print($"[PKT] MQC: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("MFC"))
+        {
+            // Property/house form — stub
+            GD.Print($"[PKT] MFC: {packet[3..]}");
+        }
+        else if (packet.StartsWith("GVN"))
+        {
+            // House owner/price — stub
+            GD.Print($"[PKT] GVN: {packet[3..]}");
+        }
+        else if (packet.StartsWith("MAR"))
+        {
+            // Market/auction — stub
+            GD.Print($"[PKT] MAR: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
+        }
+        else if (packet.StartsWith("VOT"))
+        {
+            // Voting list — stub
+            GD.Print($"[PKT] VOT: {packet[3..]}");
+        }
+        else if (packet.StartsWith("LTR"))
+        {
+            // Tournament rankings — stub
+            GD.Print($"[PKT] LTR: {packet[3..]}");
+        }
+        else if (packet.StartsWith("DRM"))
+        {
+            // Donation menu — stub
+            GD.Print($"[PKT] DRM: {packet[3..]}");
+        }
+        else if (packet.StartsWith("DNF"))
+        {
+            // Donation item info — stub
+            GD.Print($"[PKT] DNF: {packet[3..]}");
+        }
+        else if (packet.StartsWith("PRM"))
+        {
+            // Prize menu info — stub
+            GD.Print($"[PKT] PRM: {packet[3..]}");
+        }
+        else if (packet.StartsWith("INF"))
+        {
+            // Prize list — stub
+            GD.Print($"[PKT] INF: {packet[3..]}");
+        }
+        else if (packet.StartsWith("APT"))
+        {
+            // Tournament/donation points — stub
+            GD.Print($"[PKT] APT: {packet[3..]}");
+        }
+        else if (packet.StartsWith("PNT"))
+        {
+            // Party points — stub
+            GD.Print($"[PKT] PNT: {packet[3..]}");
+        }
+        else if (packet.StartsWith("DOK"))
+        {
+            _state.Resting = !_state.Resting;
+        }
+        else if (packet.StartsWith("NVG"))
+        {
+            HandleCharNavigation(packet[3..]);
+        }
+        else if (packet.StartsWith("T01"))
+        {
+            // Work skill UI — stub
+            GD.Print($"[PKT] T01: {packet[3..]}");
+        }
+        else if (packet.StartsWith("QDL"))
+        {
+            HandleRemoveDialog(packet[3..]);
+        }
+        else if (packet.StartsWith("PCF"))
+        {
+            HandleParticleCreate(packet[3..]);
+        }
+        else if (packet.StartsWith("PCR"))
+        {
+            HandleAmbientColor(packet[3..]);
+        }
+        else if (packet.StartsWith("PCL"))
+        {
+            HandleLightCreate(packet[3..]);
+        }
+        else if (packet.StartsWith("PCB"))
+        {
+            HandleCharParticle(packet[3..]);
+        }
+        // ── 2-char opcodes ──
         else if (packet.StartsWith("CM"))
         {
             HandleChangeMap(packet[2..]);
@@ -106,9 +511,9 @@ public class PacketHandler
         {
             HandlePlayerPosition(packet[2..]);
         }
-        else if (packet.StartsWith("CFX"))
+        else if (packet.StartsWith("PX"))
         {
-            HandleCharFx(packet[3..]);
+            // Status broadcast, ignore for now
         }
         else if (packet.StartsWith("CC"))
         {
@@ -150,25 +555,63 @@ public class PacketHandler
         {
             HandleOnlineCount(packet[2..]);
         }
-        else if (packet.StartsWith("NPCR"))
+        else if (packet.StartsWith("TW"))
         {
-            HandleNpcReset();
+            HandlePlaySound(packet[2..]);
         }
-        else if (packet.StartsWith("NPCI"))
+        else if (packet.StartsWith("TI"))
         {
-            HandleNpcItem(packet[4..]);
+            // Drop item echo — ignore
         }
-        else if (packet.StartsWith("NPC|"))
+        else if (packet.StartsWith("GL"))
         {
-            HandleNpcSlotUpdate(packet[4..]);
+            // Guild list — stub
+            GD.Print($"[PKT] GL: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
         }
         else if (packet.StartsWith("N~"))
         {
             _state.MapName = packet[2..];
         }
+        else if (packet.StartsWith("N4"))
+        {
+            HandlePvpDamageReceived(packet[2..]);
+        }
+        else if (packet.StartsWith("N5"))
+        {
+            HandlePvpDamageDealt(packet[2..]);
+        }
+        else if (packet.StartsWith("N2"))
+        {
+            HandleNpcDamageReceived(packet[2..]);
+        }
+        else if (packet.StartsWith("N1"))
+        {
+            HandleNpcMissed();
+        }
+        else if (packet.StartsWith("U1"))
+        {
+            HandleUserMissed();
+        }
+        else if (packet.StartsWith("U2"))
+        {
+            HandleUserDamageDealt(packet[2..]);
+        }
+        else if (packet.StartsWith("U3"))
+        {
+            HandleUserEvaded(packet[2..]);
+        }
+        // ── Bracket opcodes [X] ──
         else if (packet.StartsWith("[ES"))
         {
             HandleBulkStats(packet[3..]);
+        }
+        else if (packet.StartsWith("[BG"))
+        {
+            HandleBankGold(packet[3..]);
+        }
+        else if (packet.StartsWith("[CD"))
+        {
+            // Combat data, ignore for now
         }
         else if (packet.StartsWith("[H]"))
         {
@@ -190,6 +633,10 @@ public class PacketHandler
         {
             HandleExp(packet[3..]);
         }
+        else if (packet.StartsWith("[L]"))
+        {
+            _state.Level = ParseInt(packet[3..]);
+        }
         else if (packet.StartsWith("[F]"))
         {
             _state.Strength = ParseInt(packet[3..]);
@@ -202,33 +649,22 @@ public class PacketHandler
         {
             _state.Reputation = ParseInt(packet[3..]);
         }
-        else if (packet.StartsWith("[BG"))
+        else if (packet.StartsWith("[N]"))
         {
-            HandleBankGold(packet[3..]);
+            _state.UserName = packet[3..];
         }
-        else if (packet.StartsWith("[CD"))
+        // ── Pipe opcodes |X ──
+        else if (packet.StartsWith("|S1"))
         {
-            // Combat data, ignore for now
+            HandlePartialInvAmount(packet[3..]);
         }
-        else if (packet.StartsWith("ANM"))
+        else if (packet.StartsWith("|S2"))
         {
-            HandleEquipmentStats(packet[3..]);
+            HandlePartialInvEquip(packet[3..]);
         }
-        else if (packet.StartsWith("LDM"))
+        else if (packet.StartsWith("||"))
         {
-            HandleFriendsList(packet[3..]);
-        }
-        else if (packet.StartsWith("KFM"))
-        {
-            HandleFriendOnline(packet[3..]);
-        }
-        else if (packet.StartsWith("DFM"))
-        {
-            HandleFriendOffline(packet[3..]);
-        }
-        else if (packet.StartsWith("PX"))
-        {
-            // Status broadcast, ignore for now
+            HandleConsoleMessage(packet[2..]);
         }
         else if (packet.StartsWith("|B"))
         {
@@ -250,18 +686,7 @@ public class PacketHandler
         {
             HandleCharAppearance(packet[2..], 'C');
         }
-        else if (packet.StartsWith("|S1"))
-        {
-            HandlePartialInvAmount(packet[3..]);
-        }
-        else if (packet.StartsWith("|S2"))
-        {
-            HandlePartialInvEquip(packet[3..]);
-        }
-        else if (packet.StartsWith("||"))
-        {
-            HandleConsoleMessage(packet[2..]);
-        }
+        // ── Chat opcodes ──
         else if (packet.StartsWith("T|"))
         {
             HandleTalk(packet[2..]);
@@ -274,67 +699,26 @@ public class PacketHandler
         {
             HandleWhisper(packet[2..]);
         }
-        else if (packet.StartsWith("PCF"))
+        else if (packet.StartsWith("G|"))
         {
-            HandleParticleCreate(packet[3..]);
+            HandleGuildChat(packet[2..]);
         }
-        else if (packet.StartsWith("PCR"))
+        else if (packet.StartsWith("C|"))
         {
-            HandleAmbientColor(packet[3..]);
+            HandleClanChat(packet[2..]);
         }
-        else if (packet.StartsWith("PCL"))
+        // ── Special prefix opcodes ──
+        else if (packet.StartsWith("!!"))
         {
-            HandleLightCreate(packet[3..]);
-        }
-        else if (packet.StartsWith("PCB"))
-        {
-            HandleCharParticle(packet[3..]);
-        }
-        else if (packet.StartsWith("MENU"))
-        {
-            // MENU{name},{privs} — User interaction menu (right-click on player)
-            GD.Print($"[PKT] MENU: {packet[4..]}");
-        }
-        else if (packet.StartsWith("SELE"))
-        {
-            // SELE{type},{name},OBJ — Item selection prompt
-            GD.Print($"[PKT] SELE: {packet[4..]}");
-        }
-        else if (packet.StartsWith("FINCOMOK"))
-        {
-            HandleFinComOk();
-        }
-        else if (packet.StartsWith("TRANSOK"))
-        {
-            HandleTransOk(packet[7..]);
-        }
-        else if (packet.StartsWith("INITCOM"))
-        {
-            HandleInitCom();
-        }
-        else if (packet.StartsWith("FINBANOK"))
-        {
-            HandleFinBanOk();
-        }
-        else if (packet.StartsWith("BANCOOK"))
-        {
-            HandleBancoOk(packet[7..]);
-        }
-        else if (packet.StartsWith("INITBANCO"))
-        {
-            HandleInitBanco();
-        }
-        else if (packet.StartsWith("SBR"))
-        {
-            HandleBankReset();
-        }
-        else if (packet.StartsWith("SBO"))
-        {
-            HandleBankSlot(packet[3..]);
+            HandleGmBroadcast(packet[2..]);
         }
         else if (packet.StartsWith("+"))
         {
             HandleMoveChar(packet[1..]);
+        }
+        else if (packet.Length >= 1 && packet[0] == '6')
+        {
+            HandleNpcKilledUser();
         }
         else
         {
@@ -1422,6 +1806,482 @@ public class PacketHandler
     {
         _state.Comerciando = false;
         GD.Print("[PKT] FINCOMOK: NPC shop closed");
+    }
+
+    // ── Sound ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// TW{soundId} — Play a sound effect. The entire game audio depends on this.
+    /// Sound files are loaded from Data/Sounds/ directory.
+    /// </summary>
+    private void HandlePlaySound(string data)
+    {
+        int soundId = ParseInt(data);
+        if (soundId > 0)
+        {
+            // TODO: integrate with Godot AudioStreamPlayer when sound system is ready
+            // For now, log it so we know sounds are being received
+            GD.Print($"[SND] Play sound: {soundId}");
+        }
+    }
+
+    // ── Combat feedback ──────────────────────────────────────────
+
+    /// <summary>
+    /// N4{bodyPart},{damage},{attackerName} — PvP damage received.
+    /// </summary>
+    private void HandlePvpDamageReceived(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 3)
+        {
+            int bodyPart = ParseInt(parts[0]);
+            int damage = ParseInt(parts[1]);
+            string attacker = parts[2];
+            string bodyName = GetBodyPartName(bodyPart);
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $"{attacker} te ha golpeado en la {bodyName} por {damage} puntos de daño.",
+                Color = "FF0000"
+            });
+        }
+    }
+
+    /// <summary>
+    /// N5{bodyPart},{damage},{victimName} — PvP damage dealt.
+    /// </summary>
+    private void HandlePvpDamageDealt(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 3)
+        {
+            int bodyPart = ParseInt(parts[0]);
+            int damage = ParseInt(parts[1]);
+            string victim = parts[2];
+            string bodyName = GetBodyPartName(bodyPart);
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $"Le has golpeado a {victim} en la {bodyName} por {damage} puntos de daño.",
+                Color = "FF0000"
+            });
+        }
+    }
+
+    /// <summary>
+    /// U1 — User attack missed (swing and miss).
+    /// </summary>
+    private void HandleUserMissed()
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = "¡Le has errado!",
+            Color = "FF0000"
+        });
+    }
+
+    /// <summary>
+    /// U2{damage} — User dealt damage to NPC.
+    /// </summary>
+    private void HandleUserDamageDealt(string data)
+    {
+        int damage = ParseInt(data);
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"Le has pegado a la criatura por {damage} puntos de daño.",
+            Color = "FF0000"
+        });
+    }
+
+    /// <summary>
+    /// U3{attackerName} — User's attack was evaded/dodged.
+    /// </summary>
+    private void HandleUserEvaded(string data)
+    {
+        string attacker = data.Trim();
+        if (attacker.Length > 0)
+        {
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $"{attacker} ha esquivado tu ataque.",
+                Color = "FF0000"
+            });
+        }
+        else
+        {
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = "La criatura ha esquivado tu ataque.",
+                Color = "FF0000"
+            });
+        }
+    }
+
+    /// <summary>
+    /// N1 — NPC attack missed user.
+    /// </summary>
+    private void HandleNpcMissed()
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = "La criatura te ha errado.",
+            Color = "FF0000"
+        });
+    }
+
+    /// <summary>
+    /// N2{bodyPart},{damage} — NPC damage received by user.
+    /// </summary>
+    private void HandleNpcDamageReceived(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int bodyPart = ParseInt(parts[0]);
+            int damage = ParseInt(parts[1]);
+            string bodyName = GetBodyPartName(bodyPart);
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $"La criatura te ha golpeado en la {bodyName} por {damage} puntos de daño.",
+                Color = "FF0000"
+            });
+        }
+    }
+
+    /// <summary>
+    /// 6 — NPC killed user (death by creature).
+    /// </summary>
+    private void HandleNpcKilledUser()
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = "¡La criatura te ha matado!",
+            Color = "FF0000"
+        });
+    }
+
+    private static string GetBodyPartName(int bodyPart)
+    {
+        return bodyPart switch
+        {
+            1 => "cabeza",
+            2 => "brazo izquierdo",
+            3 => "brazo derecho",
+            4 => "pierna izquierda",
+            5 => "pierna derecha",
+            6 => "torso",
+            _ => "cabeza"
+        };
+    }
+
+    // ── Death & status ───────────────────────────────────────────
+
+    /// <summary>
+    /// MUERT — Death dialog. VB6: shows death dialog (frmMuerto).
+    /// </summary>
+    private void HandleDeath()
+    {
+        _state.Dead = true;
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = "¡Has muerto!",
+            Color = "FF0000"
+        });
+        GD.Print("[GAME] Player died — MUERT received");
+    }
+
+    /// <summary>
+    /// FINOK — Graceful logout confirmation.
+    /// </summary>
+    private void HandleFinOk()
+    {
+        GD.Print("[GAME] FINOK: Graceful logout");
+        // Client should disconnect cleanly
+    }
+
+    /// <summary>
+    /// MEDOK — Toggle meditation off.
+    /// VB6: clears meditation FX from self character.
+    /// </summary>
+    private void HandleMeditationOff()
+    {
+        _state.Meditating = false;
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
+        {
+            ClearMeditationFx(ch);
+        }
+    }
+
+    /// <summary>
+    /// NOVER{charIndex},{0|1} — Hide/reveal character.
+    /// 1=invisible (stealth), 0=visible.
+    /// </summary>
+    private void HandleCharVisibility(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int charIdx = ParseInt(parts[0]);
+            bool invisible = ParseInt(parts[1]) == 1;
+            if (_state.Characters.TryGetValue(charIdx, out var ch))
+            {
+                ch.Invisible = invisible;
+            }
+        }
+    }
+
+    /// <summary>
+    /// NVG{charIndex},{0|1} — Character navigation state (boat/walking).
+    /// </summary>
+    private void HandleCharNavigation(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int charIdx = ParseInt(parts[0]);
+            bool navigating = ParseInt(parts[1]) == 1;
+            if (_state.Characters.TryGetValue(charIdx, out var ch))
+            {
+                ch.Navigating = navigating;
+            }
+        }
+    }
+
+    // ── Arrow/projectile ─────────────────────────────────────────
+
+    /// <summary>
+    /// FLECHI{shooterCharIndex},{targetCharIndex},{arrowGrh} — Arrow projectile.
+    /// Creates a visual arrow flying from shooter to target.
+    /// </summary>
+    private void HandleArrow(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 3)
+        {
+            int shooter = ParseInt(parts[0]);
+            int target = ParseInt(parts[1]);
+            int arrowGrh = ParseInt(parts[2]);
+
+            if (_state.Characters.TryGetValue(shooter, out var shooterCh) &&
+                _state.Characters.TryGetValue(target, out var targetCh))
+            {
+                var arrow = new ArrowProjectile
+                {
+                    ShooterCharIndex = shooter,
+                    TargetCharIndex = target,
+                    GrhIndex = arrowGrh,
+                    X = shooterCh.PosX * 32f,
+                    Y = shooterCh.PosY * 32f,
+                    TargetX = targetCh.PosX * 32f,
+                    TargetY = targetCh.PosY * 32f,
+                    Active = true
+                };
+                _state.ActiveArrows.Add(arrow);
+            }
+        }
+    }
+
+    // ── Chat: Guild & Clan ───────────────────────────────────────
+
+    /// <summary>
+    /// G|{text}~r~g~b — Guild/faction chat message.
+    /// </summary>
+    private void HandleGuildChat(string data)
+    {
+        var tildeParts = data.Split('~');
+        string text = tildeParts[0];
+        string color = "00FF00"; // default green for guild
+        if (tildeParts.Length >= 4)
+        {
+            int r = ParseInt(tildeParts[1]);
+            int g = ParseInt(tildeParts[2]);
+            int b = ParseInt(tildeParts[3]);
+            color = $"{r:X2}{g:X2}{b:X2}";
+        }
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+    }
+
+    /// <summary>
+    /// C|{text} — Clan/party chat message.
+    /// </summary>
+    private void HandleClanChat(string data)
+    {
+        var tildeParts = data.Split('~');
+        string text = tildeParts[0];
+        string color = "FFFF00"; // default yellow for clan
+        if (tildeParts.Length >= 4)
+        {
+            int r = ParseInt(tildeParts[1]);
+            int g = ParseInt(tildeParts[2]);
+            int b = ParseInt(tildeParts[3]);
+            color = $"{r:X2}{g:X2}{b:X2}";
+        }
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+    }
+
+    /// <summary>
+    /// !!{text}\x1b — GM broadcast message.
+    /// </summary>
+    private void HandleGmBroadcast(string data)
+    {
+        // Strip trailing ESC char if present
+        string text = data.TrimEnd('\x1b');
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "FFFF00" });
+        GD.Print($"[GM] Broadcast: {text}");
+    }
+
+    /// <summary>
+    /// RESPUES{text}*{adminName} — Admin response to SOS.
+    /// </summary>
+    private void HandleAdminResponse(string data)
+    {
+        var parts = data.Split('*');
+        string text = parts.Length >= 2 ? $"[{parts[1]}] {parts[0]}" : data;
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "00FFFF" });
+    }
+
+    /// <summary>
+    /// IRCHAT{senderName},{text} — Incoming friend chat message.
+    /// </summary>
+    private void HandleFriendChat(string data)
+    {
+        int commaIdx = data.IndexOf(',');
+        if (commaIdx > 0)
+        {
+            string sender = data[..commaIdx];
+            string text = data[(commaIdx + 1)..];
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $"[Chat] {sender}: {text}",
+                Color = "00FFFF"
+            });
+        }
+    }
+
+    // ── Trading (player-to-player) ───────────────────────────────
+
+    /// <summary>
+    /// ICO — Trade initiated.
+    /// </summary>
+    private void HandleTradeInit()
+    {
+        _state.Trading = true;
+        GD.Print("[PKT] ICO: Trade initiated");
+    }
+
+    /// <summary>
+    /// TRADEOK — Trade completed successfully.
+    /// </summary>
+    private void HandleTradeOk()
+    {
+        _state.Trading = false;
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = "Comercio exitoso.",
+            Color = "00FF00"
+        });
+        GD.Print("[PKT] TRADEOK: Trade completed");
+    }
+
+    /// <summary>
+    /// CANCELTRADE — Trade cancelled.
+    /// </summary>
+    private void HandleTradeCancelled()
+    {
+        _state.Trading = false;
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = "Comercio cancelado.",
+            Color = "FF0000"
+        });
+        GD.Print("[PKT] CANCELTRADE: Trade cancelled");
+    }
+
+    /// <summary>
+    /// IOR{goldOffered} — Trade gold offer received.
+    /// </summary>
+    private void HandleTradeGold(string data)
+    {
+        int gold = ParseInt(data);
+        GD.Print($"[PKT] IOR: Trade gold offer: {gold}");
+    }
+
+    /// <summary>
+    /// ICI{objIndex}-{amount}-{objName} — Trade item offered.
+    /// </summary>
+    private void HandleTradeItem(string data)
+    {
+        GD.Print($"[PKT] ICI: Trade item: {data}");
+    }
+
+    /// <summary>
+    /// VCC{senderName}: {message} — Trade chat message.
+    /// </summary>
+    private void HandleTradeChat(string data)
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = data, Color = "FFFFFF" });
+    }
+
+    // ── Dialog removal ───────────────────────────────────────────
+
+    /// <summary>
+    /// QDL{charIndex} — Remove dialog from character.
+    /// </summary>
+    private void HandleRemoveDialog(string data)
+    {
+        int charIdx = ParseInt(data);
+        if (_state.Characters.TryGetValue(charIdx, out var ch))
+        {
+            ch.DialogText = "";
+            ch.DialogDurationMs = 0;
+        }
+    }
+
+    /// <summary>
+    /// QTDL — Remove self dialog.
+    /// </summary>
+    private void HandleRemoveSelfDialog()
+    {
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
+        {
+            ch.DialogText = "";
+            ch.DialogDurationMs = 0;
+        }
+    }
+
+    // ── Spells ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// SHI{slot},{spellName} — Hide/rename spell in slot.
+    /// </summary>
+    private void HandleHideSpell(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int slot = ParseInt(parts[0]);
+            if (slot >= 1 && slot <= 20)
+            {
+                _state.Spells[slot - 1] = new SpellSlot
+                {
+                    SpellId = 0,
+                    Name = parts[1],
+                };
+            }
+        }
+    }
+
+    // ── Dice ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// DADOS{result} — Dice roll result.
+    /// </summary>
+    private void HandleDados(string data)
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"Tiraste los dados: {data}",
+            Color = "FFFF00"
+        });
     }
 
     private static int ParseInt(string s)

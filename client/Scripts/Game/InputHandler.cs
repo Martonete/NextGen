@@ -61,6 +61,9 @@ public class InputHandler
     {
         if (!_state.IsLogged || _state.Paused) return;
 
+        // Block all game input while in commerce/bank mode
+        if (_state.Comerciando || _state.Banqueando) return;
+
         // VB6: no keyboard input while chat input is focused
         if (_state.ChatActive) return;
 
