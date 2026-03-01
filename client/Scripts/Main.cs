@@ -305,15 +305,18 @@ public partial class Main : Control
         // Update animations
         _animator.Update((float)delta, _gameData);
 
-        // Update smooth movement
-        UpdateMovement((float)delta);
-
         if (_state.CurrentScreen == Screen.Game)
         {
+            // VB6 order: CheckKeys BEFORE ShowNextFrame.
+            // Input runs first so there's a 1-frame gap between scroll completion
+            // and the next move — matching VB6's timer tick behavior.
             _inputHandler?.Process(delta);
             UpdateGameUI();
             UpdateConsoleMessages();
         }
+
+        // Movement update AFTER input (VB6: ShowNextFrame after CheckKeys)
+        UpdateMovement((float)delta);
     }
 
     private void HandleScreenChange(Screen newScreen)
@@ -430,10 +433,15 @@ public partial class Main : Control
     /// timerTicksPerFrame = deltaMs * EngineBaseSpeed (0.0172)
     /// scrollPixels = ScrollPixelsPerFrame (8) * timerTicksPerFrame
     /// Full tile (32px) ≈ 14 frames ≈ 233ms at 60fps.
+    ///
+    /// Delta is capped to prevent lag spikes from completing scrolls in one frame,
+    /// which would let the client send moves faster than intended.
+    /// VB6 timer was fixed ~17ms; we allow up to 50ms (3 frames) for flexibility.
     /// </summary>
     private void UpdateMovement(float delta)
     {
-        float deltaMs = delta * 1000f;
+        // Cap delta to prevent lag-spike acceleration (VB6 timer was ~17ms fixed)
+        float deltaMs = Math.Min(delta * 1000f, 50f);
         float ticksPerFrame = deltaMs * EngineBaseSpeed;
         float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
 

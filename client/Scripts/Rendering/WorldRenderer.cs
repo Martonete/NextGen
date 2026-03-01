@@ -227,7 +227,9 @@ public partial class WorldRenderer : Node2D
                 // Layer 3 (trees/objects)
                 if (tile.Layer3 > 0)
                 {
-                    bool nearPlayer = y > (userY - 2) && y < (userY + 7)
+                    // VB6: Only trees get alpha near player (EsArbol check)
+                    bool nearPlayer = IsTree(tile.Layer3)
+                                   && y > (userY - 2) && y < (userY + 7)
                                    && x > (userX - 4) && x < (userX + 4);
                     if (nearPlayer)
                     {
@@ -261,6 +263,22 @@ public partial class WorldRenderer : Node2D
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// VB6 EsArbol(): checks if a GRH index is a tree graphic.
+    /// Only trees get alpha transparency near the player.
+    /// </summary>
+    private static bool IsTree(int grhIndex)
+    {
+        return grhIndex == 7222 || grhIndex == 7223 || grhIndex == 7224 ||
+               grhIndex == 7225 || grhIndex == 7226 ||
+               grhIndex == 7000 || grhIndex == 7001 || grhIndex == 7002 ||
+               grhIndex == 22077 || grhIndex == 22078 || grhIndex == 22079 ||
+               grhIndex == 22080 || grhIndex == 22081 || grhIndex == 22082 ||
+               grhIndex == 22083 || grhIndex == 22084 || grhIndex == 22085 ||
+               grhIndex == 22086 ||
+               grhIndex == 8489 || grhIndex == 8483;
     }
 
     private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)

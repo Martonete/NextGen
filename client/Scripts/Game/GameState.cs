@@ -63,6 +63,11 @@ public class GameState
     public float ScreenOffsetX;    // Camera pixel offset accumulator
     public float ScreenOffsetY;
 
+    // PT correction cooldown: blocks new moves for N frames after a position rejection.
+    // Prevents the client from immediately re-sending moves that the server will reject
+    // (e.g., NPC on tile that client can't see), which accumulates desync.
+    public int PtCooldownFrames;
+
     // Characters visible in area
     public Dictionary<int, Character> Characters = new();
 

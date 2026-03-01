@@ -42,6 +42,13 @@ public class InputHandler
         // For now, block all movement when paralyzed
         if (_state.UserParalyzed) return;
 
+        // Decrement PT correction cooldown (blocks moves after server rejected one)
+        if (_state.PtCooldownFrames > 0)
+        {
+            _state.PtCooldownFrames--;
+            return;
+        }
+
         // Movement — blocked while camera is still scrolling (VB6: UserMoving guard)
         // This is the ONLY guard — no timer. Animation duration (~233ms) IS the rate limit.
         if (!_state.UserMoving)

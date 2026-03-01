@@ -306,6 +306,11 @@ public class PacketHandler
             _state.AddToUserPosX = 0;
             _state.AddToUserPosY = 0;
             _state.UserMoving = false;
+
+            // Block new moves for a few frames after PT correction.
+            // Prevents the client from immediately re-sending moves to a tile
+            // that the server will reject again (e.g., NPC the client can't see).
+            _state.PtCooldownFrames = 3;
         }
     }
 
@@ -421,15 +426,31 @@ public class PacketHandler
             int minLimY = (playerY / 9 - 1) * 9;
             int maxLimY = minLimY + 26;
 
-            // Erase characters outside the area
+            // Keep entities within the visible range + margin to prevent pop-in.
+            // New CCs may arrive in the next TCP read (next frame); keeping visible
+            // entities prevents the 1-frame flash where they disappear then reappear.
+            const int HalfW = 8; // HalfWindowTileWidth
+            const int HalfH = 6; // HalfWindowTileHeight
+            const int VisMargin = 3;
+            int visMinX = playerX - HalfW - VisMargin;
+            int visMaxX = playerX + HalfW + VisMargin;
+            int visMinY = playerY - HalfH - VisMargin;
+            int visMaxY = playerY + HalfH + VisMargin;
+
+            // Erase characters outside the area (but keep visible ones)
             var toRemove = new List<int>();
             foreach (var kvp in _state.Characters)
             {
                 if (kvp.Key == _state.UserCharIndex) continue;
                 var ch = kvp.Value;
+                // Outside the 27-tile area zone
                 if (ch.PosX < minLimX || ch.PosX > maxLimX ||
                     ch.PosY < minLimY || ch.PosY > maxLimY)
                 {
+                    // But keep if within visible range (prevents pop-in)
+                    if (ch.PosX >= visMinX && ch.PosX <= visMaxX &&
+                        ch.PosY >= visMinY && ch.PosY <= visMaxY)
+                        continue;
                     toRemove.Add(kvp.Key);
                 }
             }
