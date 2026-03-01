@@ -762,19 +762,22 @@ public class PacketHandler
 
         string text = parts[1];
 
-        // Console message
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
-
-        // Dialog bubble on character (VB6: Dialogos.CreateDialog)
-        // Server may append ~r~g~b~bold~italic after charindex in the same segment
+        // VB6: if charindex present → dialog bubble ONLY (no console)
+        bool bubbled = false;
         if (parts.Length >= 3)
         {
             string charIdxStr = parts[2];
             int tildeIdx = charIdxStr.IndexOf('~');
             if (tildeIdx >= 0) charIdxStr = charIdxStr[..tildeIdx];
             if (int.TryParse(charIdxStr, out int charIdx))
+            {
                 SetCharDialog(charIdx, text, color);
+                bubbled = true;
+            }
         }
+
+        if (!bubbled)
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
     }
 
     private void HandleYell(string data)
@@ -797,16 +800,23 @@ public class PacketHandler
             }
 
             string text = parts[1];
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
 
+            // VB6: if charindex present → dialog bubble ONLY (no console)
+            bool bubbled = false;
             if (parts.Length >= 3)
             {
                 string charIdxStr = parts[2];
                 int tildeIdx = charIdxStr.IndexOf('~');
                 if (tildeIdx >= 0) charIdxStr = charIdxStr[..tildeIdx];
                 if (int.TryParse(charIdxStr, out int charIdx))
+                {
                     SetCharDialog(charIdx, text, color);
+                    bubbled = true;
+                }
             }
+
+            if (!bubbled)
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
         }
         else
         {
