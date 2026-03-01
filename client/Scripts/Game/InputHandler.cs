@@ -8,6 +8,10 @@ namespace TierrasSagradasAO.Game;
 /// <summary>
 /// Translates keyboard/mouse input to server packets with VB6-accurate client-side prediction.
 /// Movement uses LegalPos check + immediate camera scroll (no server round-trip lag).
+///
+/// VB6 flow: CheckKeys() → MoveTo() → Char_Move_by_Head() + Engine_MoveScreen()
+/// Guard: UserMoving == 0 is the ONLY movement blocker (no timer).
+/// Server has NO anti-flood for movement — speed is controlled entirely by client animation.
 /// </summary>
 public class InputHandler
 {
@@ -18,6 +22,12 @@ public class InputHandler
     private const int WaterGrhMin = 1505;
     private const int WaterGrhMax = 1520;
 
+    // VB6 map borders (InMapBounds)
+    private const int MinXBorder = 9;
+    private const int MaxXBorder = 92;
+    private const int MinYBorder = 7;
+    private const int MaxYBorder = 94;
+
     public InputHandler(AoTcpClient tcp, GameState state)
     {
         _tcp = tcp;
@@ -27,9 +37,13 @@ public class InputHandler
     public void Process(double delta)
     {
         if (!_state.IsLogged || _state.Paused) return;
+
+        // VB6: paralyzed users can only change heading (every 96ms)
+        // For now, block all movement when paralyzed
         if (_state.UserParalyzed) return;
 
         // Movement — blocked while camera is still scrolling (VB6: UserMoving guard)
+        // This is the ONLY guard — no timer. Animation duration (~233ms) IS the rate limit.
         if (!_state.UserMoving)
         {
             if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up))
@@ -59,10 +73,10 @@ public class InputHandler
         int dx = 0, dy = 0;
         switch (heading)
         {
-            case 1: dy = -1; break; // North
-            case 2: dx = 1; break;  // East
-            case 3: dy = 1; break;  // South
-            case 4: dx = -1; break; // West
+            case 1: dy = -1; break;
+            case 2: dx = 1; break;
+            case 3: dy = 1; break;
+            case 4: dx = -1; break;
         }
 
         if (!_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
@@ -71,16 +85,13 @@ public class InputHandler
         int newX = ch.PosX + dx;
         int newY = ch.PosY + dy;
 
-        // Update heading regardless
-        ch.Heading = heading;
-
         if (LegalPos(newX, newY))
         {
             // Send movement packet to server
             _tcp.SendPacket($"M{heading}");
 
-            // Client-side prediction: move character immediately
-            // VB6 Char_Move_by_Head: set MoveOffset = -(delta * 32), update logical pos
+            // VB6 Char_Move_by_Head: update logical position + start animation
+            ch.Heading = heading;
             ch.MoveOffsetX = -(dx * 32);
             ch.MoveOffsetY = -(dy * 32);
             ch.ScrollDirectionX = dx;
@@ -89,54 +100,60 @@ public class InputHandler
             ch.PosX = newX;
             ch.PosY = newY;
 
-            // VB6 Engine_MoveScreen: update camera
-            _state.UserPosX = newX;
-            _state.UserPosY = newY;
+            // VB6 Engine_MoveScreen: start camera scroll
             _state.AddToUserPosX = dx;
             _state.AddToUserPosY = dy;
+            _state.UserPosX = newX;
+            _state.UserPosY = newY;
             _state.UserMoving = true;
             _state.ScreenOffsetX = 0;
             _state.ScreenOffsetY = 0;
         }
         else
         {
-            // Heading changed but can't move — notify server
-            _tcp.SendPacket($"CHEA{heading}");
+            // Blocked tile: just turn, don't move (VB6: only send CHEA if heading changed)
+            if (ch.Heading != heading)
+            {
+                _tcp.SendPacket($"CHEA{heading}");
+                ch.Heading = heading;
+            }
         }
     }
 
     /// <summary>
     /// VB6 LegalPos: checks if (x,y) is a valid destination tile.
-    /// - Out of bounds (VB6 InMapBounds: x:9-92, y:7-94)
-    /// - Tile is blocked
-    /// - Living character already on tile
-    /// - Water tile without navigating (Layer1 GRH 1505-1520, no Layer2)
+    /// Must match VB6 EXACTLY to avoid client-server desync.
     /// </summary>
     private bool LegalPos(int x, int y)
     {
-        // VB6 map bounds
-        if (x < 9 || x > 92 || y < 7 || y > 94) return false;
+        // Map bounds (VB6: MinXBorder..MaxXBorder, MinYBorder..MaxYBorder)
+        if (x < MinXBorder || x > MaxXBorder || y < MinYBorder || y > MaxYBorder)
+            return false;
 
         // Need map data for tile checks
         if (_state.MapData == null) return true;
 
         ref var tile = ref _state.MapData.Tiles[x, y];
 
-        // Blocked tile
+        // Blocked tile (VB6: MapData(X,Y).Blocked = 1 And montVol = 0)
+        // TODO: add flying mount check when mounts are implemented
         if (tile.Blocked) return false;
 
-        // Water check: Layer1 is water GRH and no Layer2 overlay
-        if (!_state.UserNavigating && tile.Layer1 >= WaterGrhMin && tile.Layer1 <= WaterGrhMax && tile.Layer2 == 0)
-            return false;
-
-        // Check for living characters on the target tile
+        // Character standing there? (VB6: MapData(X,Y).charindex > 0, check not dead)
         foreach (var kvp in _state.Characters)
         {
             if (kvp.Key == _state.UserCharIndex) continue;
             var other = kvp.Value;
-            if (other.PosX == x && other.PosY == y && !other.Dead && !other.Invisible)
+            if (other.PosX == x && other.PosY == y && !other.Dead)
                 return false;
         }
+
+        // Water checks (VB6: both directions)
+        bool isWater = tile.Layer1 >= WaterGrhMin && tile.Layer1 <= WaterGrhMax && tile.Layer2 == 0;
+        if (!_state.UserNavigating && isWater)
+            return false;  // Can't walk on water without boat
+        if (_state.UserNavigating && !isWater)
+            return false;  // Can't leave water onto land while on boat
 
         return true;
     }
@@ -144,7 +161,6 @@ public class InputHandler
     /// <summary>
     /// Handle mouse click → left click packet.
     /// Called from Main._UnhandledInput with position already relative to game viewport.
-    /// Game viewport is 534x408 with HalfWindowTileWidth=8, HalfWindowTileHeight=6.
     /// </summary>
     public void HandleClick(Vector2 viewportPos, int userX, int userY)
     {

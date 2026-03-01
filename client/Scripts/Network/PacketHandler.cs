@@ -280,7 +280,12 @@ public class PacketHandler
             int x = ParseInt(parts[0]);
             int y = ParseInt(parts[1]);
 
-            GD.Print($"[MOVE] Server rejected move, snapping to ({x},{y})");
+            // Log with detail so we can diagnose desync causes
+            int clientX = _state.UserPosX;
+            int clientY = _state.UserPosY;
+            int deltaX = clientX - x;
+            int deltaY = clientY - y;
+            GD.Print($"[MOVE] PT correction: client({clientX},{clientY}) → server({x},{y}) delta=({deltaX},{deltaY}) moving={_state.UserMoving}");
 
             _state.UserPosX = x;
             _state.UserPosY = y;
@@ -363,6 +368,8 @@ public class PacketHandler
     private void HandleMoveChar(string data)
     {
         // +<charindex>,<x>,<y>
+        // Server sends this ONLY to OTHER players (never to the mover).
+        // VB6: SendToUserAreaButindex excludes the mover (c != conn_id).
         var parts = data.Split(',');
         if (parts.Length < 3) return;
 
@@ -373,32 +380,10 @@ public class PacketHandler
         if (!_state.Characters.TryGetValue(idx, out var ch))
             return;
 
+        // Server never sends + for self, but guard against it just in case
         if (idx == _state.UserCharIndex)
-        {
-            // Self character: client already predicted this move.
-            // Verify position matches. If server disagrees, snap to correct position.
-            if (ch.PosX != newX || ch.PosY != newY)
-            {
-                GD.Print($"[MOVE] Server correction: predicted ({ch.PosX},{ch.PosY}) → server ({newX},{newY})");
-                ch.PosX = newX;
-                ch.PosY = newY;
-                ch.MoveOffsetX = 0;
-                ch.MoveOffsetY = 0;
-                ch.Moving = false;
-                ch.ScrollDirectionX = 0;
-                ch.ScrollDirectionY = 0;
+            return;
 
-                _state.UserPosX = newX;
-                _state.UserPosY = newY;
-                _state.ScreenOffsetX = 0;
-                _state.ScreenOffsetY = 0;
-                _state.AddToUserPosX = 0;
-                _state.AddToUserPosY = 0;
-                _state.UserMoving = false;
-            }
-            // If matches, do nothing — prediction was correct
-        }
-        else
         {
             // Other characters: VB6 Char_Move_by_Pos
             int dx = newX - ch.PosX;
