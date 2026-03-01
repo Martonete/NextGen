@@ -12,6 +12,14 @@ namespace TierrasSagradasAO.Game;
 /// VB6 flow: CheckKeys() → MoveTo() → Char_Move_by_Head() + Engine_MoveScreen()
 /// Guard: UserMoving == 0 is the ONLY movement blocker (no timer).
 /// Server has NO anti-flood for movement — speed is controlled entirely by client animation.
+///
+/// Key bindings match VB6 defaults (Teclas.tsao):
+///   Ctrl/Space = Attack (1000ms cooldown)
+///   Arrows/WASD = Movement
+///   L = Refresh position (RPU)
+///   T = Drop item (needs slot)
+///   U = Use item (needs slot)
+///   E = Equip item (needs slot)
 /// </summary>
 public class InputHandler
 {
@@ -28,6 +36,14 @@ public class InputHandler
     private const int MinYBorder = 7;
     private const int MaxYBorder = 94;
 
+    // VB6 attack cooldown: tAt = 1000ms
+    private const float AttackCooldownMs = 1000f;
+    private float _attackTimer;
+
+    // VB6 position refresh cooldown
+    private float _refreshTimer;
+    private const float RefreshCooldownMs = 2000f;
+
     public InputHandler(AoTcpClient tcp, GameState state)
     {
         _tcp = tcp;
@@ -37,6 +53,12 @@ public class InputHandler
     public void Process(double delta)
     {
         if (!_state.IsLogged || _state.Paused) return;
+
+        float deltaMs = (float)delta * 1000f;
+
+        // Advance cooldown timers
+        if (_attackTimer > 0) _attackTimer -= deltaMs;
+        if (_refreshTimer > 0) _refreshTimer -= deltaMs;
 
         // VB6: paralyzed users can only change heading (every 96ms)
         // For now, block all movement when paralyzed
@@ -64,10 +86,36 @@ public class InputHandler
                 TryMove(4); // West
         }
 
-        // Attack
+        // Attack (VB6: Ctrl key, 1000ms cooldown)
         if (Input.IsKeyPressed(Key.Space) || Input.IsKeyPressed(Key.Ctrl))
         {
-            _tcp.SendPacket("AT");
+            if (_attackTimer <= 0)
+            {
+                _tcp.SendPacket("AT");
+                _attackTimer = AttackCooldownMs;
+            }
+        }
+
+        // Pick up item (VB6: A key sends AGR — conflicts with WASD, use G instead)
+        if (Input.IsKeyPressed(Key.G))
+        {
+            _tcp.SendPacket("AGR");
+        }
+
+        // Refresh position (VB6: L key sends RPU)
+        if (Input.IsKeyPressed(Key.L))
+        {
+            if (_refreshTimer <= 0)
+            {
+                _tcp.SendPacket("RPU");
+                _refreshTimer = RefreshCooldownMs;
+            }
+        }
+
+        // Meditate (VB6: F6)
+        if (Input.IsKeyPressed(Key.F6))
+        {
+            _tcp.SendPacket("/MEDITAR");
         }
     }
 

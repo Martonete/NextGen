@@ -116,94 +116,160 @@ public class AoCipher
     /// Convert number to Spanish words with ZiPPy/NoPPy suffixes.
     /// Matches VB6 Numero2Letra exactly.
     /// </summary>
+    /// <summary>
+    /// Faithful port of VB6 AoDefenderConverter.cls Numero2Letra.
+    /// Must match server's numero2letra() EXACTLY or cipher desyncs.
+    /// Called as: Numero2Letra(counter, , 2, "ZiPPy", "NoPPy", 1, 0)
+    /// SexoMoneda=Masculino(sexo1="", sexo2="os")
+    /// </summary>
     public static string Numero2Letra(int n)
     {
         if (n == 0) return "cero ZiPPyes";
 
-        string result = ConvertGroup(n);
-        result = result.Trim();
-
-        // Remove trailing spaces and add suffix
-        string noSpaces = result.Replace("  ", " ").Trim();
-
-        if (n == 1)
-            return noSpaces + " ZiPPy";
-        else
-            return noSpaces + " ZiPPyes";
+        string words = UnNumero(n.ToString());
+        string moneda = (n == 1) ? " ZiPPy" : " ZiPPyes";
+        return words + moneda;
     }
 
-    private static string ConvertGroup(int n)
+    /// <summary>
+    /// Port of VB6 UnNumero — group-based digit processing.
+    /// Matches server's un_numero() exactly.
+    /// </summary>
+    private static string UnNumero(string strNum)
     {
-        if (n == 0) return "";
+        // SexoMoneda = Masculino → sexo1="", sexo2="os"
+        string sexo1 = "";
+        string sexo2 = "os";
 
-        string[] unidades = { "", "un", "dos", "tres", "cuatro", "cinco",
-                              "seis", "siete", "ocho", "nueve" };
-        string[] especiales = { "diez", "once", "doce", "trece", "catorce",
-                                "quince", "dieciseis", "diecisiete", "dieciocho", "diecinueve" };
-        string[] decenas = { "", "diez", "veinte", "treinta", "cuarenta", "cincuenta",
-                             "sesenta", "setenta", "ochenta", "noventa" };
-        string[] centenas = { "", "ciento", "doscientos", "trescientos", "cuatrocientos",
-                              "quinientos", "seiscientos", "setecientos", "ochocientos", "novecientos" };
+        string[] unidad = { "", "un", "dos", "tres", "cuatro", "cinco",
+                            "seis", "siete", "ocho", "nueve" };
+        string[] decena = { "", "diez", "veinte", "treinta", "cuarenta",
+                            "cincuenta", "sesenta", "setenta", "ochenta", "noventa" };
+        string[] centena = { "", "ciento", "doscient" + sexo2, "trescient" + sexo2,
+                             "cuatrocient" + sexo2, "quinient" + sexo2, "seiscient" + sexo2,
+                             "setecient" + sexo2, "ochocient" + sexo2, "novecient" + sexo2, "cien" };
+        string[] deci = { "", "dieci", "veinti", "treinta y ", "cuarenta y ",
+                          "cincuenta y ", "sesenta y ", "setenta y ", "ochenta y ", "noventa y " };
+        string[] otros = { "", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+                           "10", "once", "doce", "trece", "catorce", "quince" };
 
-        var sb = new StringBuilder();
+        long dblNumero = long.TryParse(strNum, out long v) ? Math.Abs(v) : 0;
+        if (dblNumero < 1) return "cero";
 
-        if (n >= 1000000)
+        bool millon = dblNumero > 999999;
+        bool millones = dblNumero > 1999999;
+
+        // Pad to 12 digits, split into groups of 3 (right to left)
+        string padded = dblNumero.ToString("D12");
+        string[] strN = new string[4];
+        for (int i = 0; i < 4; i++)
+            strN[i] = padded.Substring(12 - (i + 1) * 3, 3);
+        // strN[0] = ones group, strN[1] = thousands, strN[2] = millions, strN[3] = billions
+
+        // Find maxVez (highest non-"000" group)
+        int maxVez = 4;
+        for (int k = 3; k >= 0; k--)
         {
-            int millones = n / 1000000;
-            if (millones == 1)
-                sb.Append("un millon ");
+            if (strN[k] == "000")
+                maxVez--;
+            else
+                break;
+        }
+
+        string strB = "";
+
+        for (int vez = 0; vez < maxVez; vez++)
+        {
+            string s = strN[vez];
+            string strU = "", strD = "", strC = "";
+
+            int lastTwo = int.Parse(s.Substring(1, 2));
+            char lastOneCh = s[2];
+
+            if (lastOneCh == '0')
+            {
+                // Units digit is 0 → use decena
+                int k = lastTwo / 10;
+                strD = k < decena.Length ? decena[k] : "";
+            }
+            else if (lastTwo > 10 && lastTwo < 16)
+            {
+                // 11-15 → use otros
+                strD = lastTwo < otros.Length ? otros[lastTwo] : "";
+            }
             else
             {
-                sb.Append(ConvertGroup(millones));
-                sb.Append(" millones ");
+                // Normal: unit + deci prefix
+                int unitIdx = lastOneCh - '0';
+                strU = unitIdx < unidad.Length ? unidad[unitIdx] : "";
+                int tensDigit = s[1] - '0';
+                strD = tensDigit < deci.Length ? deci[tensDigit] : "";
             }
-            n %= 1000000;
-        }
 
-        if (n >= 1000)
-        {
-            int miles = n / 1000;
-            if (miles == 1)
-                sb.Append("mil ");
-            else
+            // Hundreds
+            int hundredsDigit = s[0] - '0';
+            if (hundredsDigit > 0)
             {
-                sb.Append(ConvertGroup(miles));
-                sb.Append(" mil ");
+                int k = hundredsDigit;
+                // Parche: if hundreds=1 and group is exactly 100, use centena[10]="cien"
+                if (k == 1)
+                {
+                    int groupVal = int.Parse(s);
+                    if (groupVal == 100) k = 10;
+                }
+                strC = (k < centena.Length ? centena[k] : "") + " ";
             }
-            n %= 1000;
-        }
 
-        if (n >= 100)
-        {
-            if (n == 100)
+            // VB6: If strU = "uno" And Left$(strB, 4) = " mil" Then strU = ""
+            if (strU == "uno" && strB.StartsWith(" mil"))
+                strU = "";
+
+            strB = strC + strD + strU + " " + strB;
+
+            // Add " mil " between groups
+            if (vez == 0 || vez == 2)
             {
-                sb.Append("cien");
-                return sb.ToString();
+                if (vez + 1 < strN.Length && strN[vez + 1] != "000")
+                    strB = " mil " + strB;
             }
-            sb.Append(centenas[n / 100]);
-            sb.Append(' ');
-            n %= 100;
-        }
-
-        if (n >= 20)
-        {
-            sb.Append(decenas[n / 10]);
-            int u = n % 10;
-            if (u > 0)
+            if (vez == 1 && millon)
             {
-                sb.Append(" y ");
-                sb.Append(unidades[u]);
+                if (millones)
+                    strB = " millones " + strB;
+                else
+                    strB = "un millon " + strB;
             }
         }
-        else if (n >= 10)
-        {
-            sb.Append(especiales[n - 10]);
-        }
-        else if (n > 0)
-        {
-            sb.Append(unidades[n]);
-        }
 
-        return sb.ToString();
+        // Trim and clean up double spaces
+        strB = strB.Trim();
+        while (strB.Contains("  "))
+            strB = strB.Replace("  ", " ");
+
+        // VB6: If Right$(strB, 3) = "uno" Then replace last "o" with sexo1
+        if (strB.EndsWith("uno"))
+            strB = strB.Substring(0, strB.Length - 1) + sexo1;
+
+        // VB6: prefix corrections
+        string prefix1 = "un" + sexo1 + " un";
+        if (strB.StartsWith(prefix1))
+            strB = strB.Substring(3 + sexo1.Length);
+        if (strB.StartsWith("un un"))
+            strB = strB.Substring(3);
+
+        string prefix2 = "un" + sexo1 + " mil ";
+        if (strB.StartsWith(prefix2))
+            strB = strB.Substring(3 + sexo1.Length);
+        string exactMil = "un" + sexo1 + " mil";
+        if (strB == exactMil)
+            strB = strB.Substring(3 + sexo1.Length);
+        if (strB.StartsWith("un mil "))
+            strB = strB.Substring(3);
+
+        // VB6: trailing "ciento" → "cien"
+        if (strB.EndsWith("ciento"))
+            strB = strB.Substring(0, strB.Length - 2);
+
+        return strB.Trim();
     }
 }
