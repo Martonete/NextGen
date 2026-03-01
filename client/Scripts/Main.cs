@@ -107,11 +107,15 @@ public partial class Main : Control
         _console = GetNode<RichTextLabel>("GameUI/Console");
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
-        // Remove all background/border styling — VB6 chat input is borderless
-        var emptyBox = new StyleBoxEmpty();
-        _chatInput.AddThemeStyleboxOverride("normal", emptyBox);
-        _chatInput.AddThemeStyleboxOverride("focus", emptyBox);
-        _chatInput.AddThemeStyleboxOverride("read_only", emptyBox);
+        // Dark background + thin border — sits below the game viewport, no overlap
+        var chatBox = new StyleBoxFlat();
+        chatBox.BgColor = new Color(0, 0, 0, 0.85f);
+        chatBox.BorderColor = new Color(0.5f, 0.5f, 0.5f, 1f);
+        chatBox.SetBorderWidthAll(1);
+        chatBox.SetContentMarginAll(2);
+        _chatInput.AddThemeStyleboxOverride("normal", chatBox);
+        _chatInput.AddThemeStyleboxOverride("focus", chatBox);
+        _chatInput.AddThemeStyleboxOverride("read_only", chatBox);
         _hpBar = GetNode<ProgressBar>("GameUI/HPBar");
         _manaBar = GetNode<ProgressBar>("GameUI/ManaBar");
         _staBar = GetNode<ProgressBar>("GameUI/StaBar");
