@@ -172,6 +172,7 @@ public class ParticleSystem
             MapY = mapY,
             CharIndex = -1,
             Active = true,
+            LifeCountdown = def.LifeCounter == 0 ? -1 : def.LifeCounter,
             Particles = new Particle[def.NumParticles]
         };
 
@@ -196,6 +197,7 @@ public class ParticleSystem
             DefIndex = defIndex,
             CharIndex = charIndex,
             Active = true,
+            LifeCountdown = def.LifeCounter == 0 ? -1 : def.LifeCounter,
             Particles = new Particle[def.NumParticles]
         };
 
@@ -237,14 +239,26 @@ public class ParticleSystem
 
     private static void UpdateStream(ParticleStream stream, ParticleStreamDef def, float deltaMs)
     {
-        // VB6: frame_counter += timerTicksPerFrame (delta-based).
-        // When frame_counter > frame_speed → advance physics, reset counter.
-        // frame_speed is derived from Speed field. We use the same logic.
-        float frameSpeed = (def.Speed > 0 ? def.Speed : 0.5f) * 1000f; // ms
-        stream.SpawnTimer += deltaMs;
-        bool doMove = stream.SpawnTimer >= frameSpeed;
+        // VB6: frame_counter += deltaMs * 0.0172 (EngineBaseSpeed).
+        // When frame_counter > Speed → advance physics, reset counter.
+        // This yields ~29ms per tick for Speed=0.5, matching VB6 exactly.
+        const float EngineBaseSpeed = 0.0172f;
+        stream.FrameCounter += deltaMs * EngineBaseSpeed;
+        float speed = def.Speed > 0 ? def.Speed : 0.5f;
+        bool doMove = stream.FrameCounter > speed;
         if (doMove)
-            stream.SpawnTimer -= frameSpeed;
+            stream.FrameCounter = 0;
+
+        // Stream lifetime countdown (VB6: life_counter per-tick decrement)
+        if (doMove && stream.LifeCountdown > 0)
+        {
+            stream.LifeCountdown--;
+            if (stream.LifeCountdown <= 0)
+            {
+                stream.Active = false;
+                return;
+            }
+        }
 
         // VB6 friction: integer division `vector_x \ friction` (truncates toward zero)
         float friction = def.Friction > 0 ? def.Friction : 1f;
@@ -259,50 +273,47 @@ public class ParticleSystem
                 continue;
             }
 
-            if (p.Alive)
+            // === Advance physics (VB6: always runs, respawns inline) ===
+
+            if (!p.Alive)
             {
-                // === Existing particle: advance physics ===
-
-                // VB6: gravity first, then bounce
-                if (def.Gravity > 0)
-                {
-                    p.VelY += def.GravStrength;
-                    if (p.Y > 0)
-                    {
-                        // VB6: bounce — set velocity to bounce_strength
-                        p.VelY = def.BounceStrength;
-                    }
-                }
-
-                // VB6: spin (degrees, /100)
-                if (def.Spin)
-                    p.Angle += RandRange(def.SpinSpeedL, def.SpinSpeedH) / 100f;
-
-                // VB6: XMove/YMove REPLACE velocity (not additive drift)
-                if (def.XMove)
-                    p.VelX = RandRange(def.MoveX1, def.MoveX2);
-                if (def.YMove)
-                    p.VelY = RandRange(def.MoveY1, def.MoveY2);
-
-                // VB6: position += velocity / friction (integer division)
-                p.X += (int)(p.VelX / friction);
-                p.Y += (int)(p.VelY / friction);
-
-                // VB6: decrement alive_counter by 1
-                p.Life -= 1;
-
-                // Alpha fade based on remaining life
-                p.Alpha = p.MaxLife > 0 ? Math.Clamp(p.Life / p.MaxLife, 0f, 1f) : 0f;
-
-                // Dead check
-                if (p.Life <= 0)
-                    p.Alive = false;
+                // First-frame spawn for dead particles
+                SpawnParticle(p, def);
+                continue;
             }
-            else
+
+            // VB6: gravity first, then bounce
+            if (def.Gravity > 0)
             {
-                // === Dead particle: respawn ===
+                p.VelY += def.GravStrength;
+                if (p.Y > 0)
+                {
+                    // VB6: bounce — set velocity to bounce_strength
+                    p.VelY = def.BounceStrength;
+                }
+            }
+
+            // VB6: spin (degrees, /100)
+            if (def.Spin)
+                p.Angle += RandRange(def.SpinSpeedL, def.SpinSpeedH) / 100f;
+
+            // VB6: XMove/YMove REPLACE velocity (not additive drift)
+            if (def.XMove)
+                p.VelX = RandRange(def.MoveX1, def.MoveX2);
+            if (def.YMove)
+                p.VelY = RandRange(def.MoveY1, def.MoveY2);
+
+            // VB6: position += velocity / friction (integer division)
+            p.X += (int)(p.VelX / friction);
+            p.Y += (int)(p.VelY / friction);
+
+            // VB6: decrement alive_counter by 1, respawn immediately when dead (no gap frame)
+            p.Life -= 1;
+            if (p.Life <= 0)
+            {
                 SpawnParticle(p, def);
             }
+            // VB6 does NOT fade alpha — particles snap in/out. Alpha stays 1f (set at spawn).
         }
     }
 

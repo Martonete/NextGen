@@ -259,7 +259,8 @@ public class ParticleStream
     public int MapX, MapY;       // tile position (map-attached)
     public int CharIndex = -1;   // character index (char-attached, -1 for map)
     public Particle[] Particles = System.Array.Empty<Particle>();
-    public float SpawnTimer;
+    public float FrameCounter;   // VB6: frame_counter accumulator (EngineBaseSpeed * deltaMs)
+    public int LifeCountdown = -1; // VB6: life_counter — -1 = infinite, >0 = ticks remaining
     public bool Active = true;
 }
 

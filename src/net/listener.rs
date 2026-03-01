@@ -1,4 +1,5 @@
 use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tracing::{info, warn, error};
@@ -40,21 +41,26 @@ impl TcpServer {
 
         let (tx, rx) = mpsc::channel::<ServerEvent>(1024);
         let next_id = AtomicU32::new(1);
+        // Track active connection count so IDs can grow unbounded
+        // without hitting max_connections prematurely.
+        let active_count = Arc::new(AtomicU32::new(0));
 
         tokio::spawn(async move {
             loop {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
-                        let conn_id = next_id.fetch_add(1, Ordering::Relaxed);
-
-                        if conn_id > max_connections {
+                        let current_active = active_count.load(Ordering::Relaxed);
+                        if current_active >= max_connections {
                             warn!(
-                                "Max connections ({}) reached, rejecting {}",
-                                max_connections, addr
+                                "Max active connections ({}/{}) reached, rejecting {}",
+                                current_active, max_connections, addr
                             );
                             drop(stream);
                             continue;
                         }
+
+                        let conn_id = next_id.fetch_add(1, Ordering::Relaxed);
+                        active_count.fetch_add(1, Ordering::Relaxed);
 
                         info!("New connection #{} from {}", conn_id, addr);
 
@@ -70,11 +76,13 @@ impl TcpServer {
                             .await
                             .is_err()
                         {
+                            active_count.fetch_sub(1, Ordering::Relaxed);
                             break; // Game loop dropped the receiver
                         }
 
                         // Spawn per-connection read loop
                         let read_tx = tx.clone();
+                        let active_clone = Arc::clone(&active_count);
                         tokio::spawn(async move {
                             loop {
                                 match reader.read_packets().await {
@@ -88,6 +96,7 @@ impl TcpServer {
                                                     .await
                                                     .is_err()
                                                 {
+                                                    active_clone.fetch_sub(1, Ordering::Relaxed);
                                                     return;
                                                 }
                                             }
@@ -95,6 +104,7 @@ impl TcpServer {
                                     }
                                     None => {
                                         info!("Connection #{} disconnected", conn_id);
+                                        active_clone.fetch_sub(1, Ordering::Relaxed);
                                         let _ = read_tx
                                             .send(ServerEvent::Disconnected(conn_id))
                                             .await;

@@ -84,6 +84,8 @@ pub struct MapTile {
 
     // Runtime state (not loaded from file)
     pub user_index: i16,
+    /// Original blocked state from .map file — used to detect door changes on map entry.
+    pub original_blocked: bool,
 }
 
 /// Map metadata from .dat INI file.
@@ -359,6 +361,13 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     // Load binary tile data
     load_map_file(&map_file, &mut tiles)?;
     load_inf_file(&inf_file, &mut tiles)?;
+
+    // Snapshot original blocked state for door persistence detection
+    for y in 0..MAP_HEIGHT {
+        for x in 0..MAP_WIDTH {
+            tiles[y][x].original_blocked = tiles[y][x].blocked;
+        }
+    }
 
     // Load metadata
     let info = load_map_dat(&dat_file, map_num);

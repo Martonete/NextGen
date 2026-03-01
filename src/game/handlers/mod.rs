@@ -957,6 +957,20 @@ async fn connect_user(
         state.send_to(conn_id, &format!("PU{},{}", x, y)).await;
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
+
+        // Send BQ for tiles whose blocked state changed since map load (door persistence)
+        if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+            for ty in 0..crate::data::maps::MAP_HEIGHT {
+                for tx in 0..crate::data::maps::MAP_WIDTH {
+                    let tile = &game_map.tiles[ty][tx];
+                    if tile.blocked != tile.original_blocked {
+                        let bq_pkt = format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 });
+                        state.send_to(conn_id, &bq_pkt).await;
+                    }
+                }
+            }
+        }
+
         // BKW again to toggle pausa back to False (VB6 WarpUserChar line 2404)
         // BKW toggles pausa — first one pauses, second one un-pauses.
         // Without this, client stays paused and CheckKeys never runs (no movement!)
@@ -2919,6 +2933,24 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
 
     // 12. Warp FX is NOT sent by default — only when caller sets fx=true
     // (VB6: FX param is Optional, only DoTileEvents sets it when tile has otTeleport object)
+
+    // 12b. Send BQ packets for tiles whose blocked state differs from the original .map file.
+    // This re-syncs door state: doors opened/closed at runtime are remembered in-memory,
+    // but the client reloads from .map files on CM, reverting all doors.
+    {
+        let map_idx2 = new_map as usize;
+        if let Some(Some(game_map)) = state.game_data.maps.get(map_idx2) {
+            for ty in 0..crate::data::maps::MAP_HEIGHT {
+                for tx in 0..crate::data::maps::MAP_WIDTH {
+                    let tile = &game_map.tiles[ty][tx];
+                    if tile.blocked != tile.original_blocked {
+                        let bq_pkt = format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 });
+                        state.send_to(conn_id, &bq_pkt).await;
+                    }
+                }
+            }
+        }
+    }
 
     // 13. BKW — fade back in (VB6 end of WarpUserChar)
     state.send_to(conn_id, "BKW").await;

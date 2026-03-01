@@ -20,6 +20,9 @@ public partial class WorldRenderer : Node2D
     private GameData? _data;
     private GrhAnimator? _animator;
 
+    // Additive blend layer for particles (VB6: D3DBLEND_ONE/ONE)
+    private Node2D? _additiveLayer;
+
     private const int TileSize = 32;
 
     // VB6 viewport: 534x408 px
@@ -44,11 +47,26 @@ public partial class WorldRenderer : Node2D
     private readonly Dictionary<(int, int), List<int>> _charPosIndex = new();
     private readonly List<int> _emptyCharList = new();
 
+    // Pending particle draws for the additive blend layer
+    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingMapParticleDraws = new();
+    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingCharParticleDraws = new();
+
     public void Init(GameState state, GameData data, GrhAnimator animator)
     {
         _state = state;
         _data = data;
         _animator = animator;
+
+        // Create additive blend layer for particles (VB6: D3DBLEND_ONE/ONE)
+        _additiveLayer = new AdditiveParticleLayer();
+        _additiveLayer.Name = "AdditiveParticles";
+        var additiveMat = new CanvasItemMaterial
+        {
+            BlendMode = CanvasItemMaterial.BlendModeEnum.Add
+        };
+        _additiveLayer.Material = additiveMat;
+        ((AdditiveParticleLayer)_additiveLayer).SetRenderer(this);
+        AddChild(_additiveLayer);
     }
 
     public override void _Process(double delta)
@@ -133,6 +151,10 @@ public partial class WorldRenderer : Node2D
     {
         if (_state == null || _data == null || _animator == null) return;
         if (_state.MapData == null || _state.Paused) return;
+
+        // Clear pending particle draws from previous frame
+        _pendingMapParticleDraws.Clear();
+        _pendingCharParticleDraws.Clear();
 
         // VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
         // During scroll, camera center stays at the old tile while offset accumulates
@@ -257,14 +279,20 @@ public partial class WorldRenderer : Node2D
         }
 
         // ==========================================
-        // PASS 3b: Map-attached particles
+        // PASS 3b: Map-attached particles (additive blend — VB6: D3DBLEND_ONE/ONE)
         // ==========================================
+        if (_additiveLayer != null)
+        {
+            // Queue redraw on additive layer so its _Draw fires
+            _additiveLayer.QueueRedraw();
+        }
+
+        // Store particle draw data for the additive layer
         foreach (var stream in _state.MapParticles)
         {
             if (!stream.Active || stream.CharIndex >= 0) continue; // skip char-attached
             if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
 
-            var def = _state.ParticleDefs[stream.DefIndex];
             Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, userX, userY, pixelOffsetX, pixelOffsetY);
 
             foreach (var p in stream.Particles)
@@ -272,7 +300,9 @@ public partial class WorldRenderer : Node2D
                 if (!p.Alive || p.GrhIndex <= 0) continue;
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
                 Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
-                DrawTileGrh(p.GrhIndex, pPos, center: true, modulate: color);
+                // Use animated GRH frame (VB6: particles use looping tile animations)
+                int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
+                _pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));
             }
         }
 
@@ -321,5 +351,50 @@ public partial class WorldRenderer : Node2D
         // Looping tile animations use the global clock — no StartAnim needed.
         int frame = _animator.GetCurrentFrame(grhIndex, _data);
         CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center, modulate);
+    }
+
+    /// <summary>
+    /// Draw all pending particle draws on a given canvas (used by AdditiveParticleLayer).
+    /// </summary>
+    public void DrawPendingParticles(CanvasItem canvas)
+    {
+        if (_data == null) return;
+
+        foreach (var (grhIndex, frame, pos, color) in _pendingMapParticleDraws)
+        {
+            CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
+        }
+        foreach (var (grhIndex, frame, pos, color) in _pendingCharParticleDraws)
+        {
+            CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
+        }
+    }
+
+    /// <summary>
+    /// Queue a character-attached particle draw for the additive blend layer.
+    /// Called by CharRenderer.DrawCharParticles.
+    /// </summary>
+    public void QueueCharParticleDraw(int grhIndex, int frame, Vector2 pos, Color color)
+    {
+        _pendingCharParticleDraws.Add((grhIndex, frame, pos, color));
+    }
+}
+
+/// <summary>
+/// Child Node2D with additive blend material. Draws particle sprites
+/// queued by WorldRenderer in _Draw().
+/// </summary>
+public partial class AdditiveParticleLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawPendingParticles(this);
     }
 }

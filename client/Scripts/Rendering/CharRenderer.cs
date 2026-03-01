@@ -241,6 +241,7 @@ public static class CharRenderer
 
     /// <summary>
     /// Render character-attached particle streams centered on the character sprite.
+    /// Particles are queued onto the additive blend layer (WorldRenderer) for proper VB6 glow.
     /// </summary>
     private static void DrawCharParticles(Node2D canvas, Character ch, Vector2 pos,
                                            GameState state, GameData data)
@@ -257,12 +258,14 @@ public static class CharRenderer
         }
         if (charIdx < 0) return;
 
+        // Get the WorldRenderer to queue additive draws
+        var worldRenderer = canvas as WorldRenderer;
+
         foreach (var stream in state.MapParticles)
         {
             if (!stream.Active || stream.CharIndex != charIdx) continue;
             if (stream.DefIndex < 1 || stream.DefIndex >= state.ParticleDefs.Length) continue;
 
-            var def = state.ParticleDefs[stream.DefIndex];
             // Center particles on character tile
             Vector2 charCenter = pos + new Vector2(TileSize / 2f, TileSize / 2f);
 
@@ -272,8 +275,30 @@ public static class CharRenderer
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
                 Vector2 pPos = charCenter + new Vector2(p.X, p.Y);
 
-                int frame = 0; // particles use static GRH frames
-                DrawGrh(canvas, data, p.GrhIndex, frame, pPos, true, color);
+                // Use animated GRH frame (VB6: particles animate)
+                int frame = 0;
+                if (data.Grhs != null && p.GrhIndex > 0 && p.GrhIndex < data.Grhs.Length)
+                {
+                    var grh = data.Grhs[p.GrhIndex];
+                    if (grh.NumFrames > 1)
+                    {
+                        // Use global animation clock
+                        long now = System.Environment.TickCount64;
+                        float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                        frame = (int)(now / speed % grh.NumFrames);
+                    }
+                }
+
+                if (worldRenderer != null)
+                {
+                    // Queue onto additive blend layer for proper glow
+                    worldRenderer.QueueCharParticleDraw(p.GrhIndex, frame, pPos, color);
+                }
+                else
+                {
+                    // Fallback: draw directly (no additive blend)
+                    DrawGrh(canvas, data, p.GrhIndex, frame, pPos, true, color);
+                }
             }
         }
     }
