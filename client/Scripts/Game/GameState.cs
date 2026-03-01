@@ -68,6 +68,12 @@ public class GameState
     // (e.g., NPC on tile that client can't see), which accumulates desync.
     public int PtCooldownFrames;
 
+    // Pending moves counter: tracks unconfirmed client-predicted moves.
+    // Caps how far ahead the client can predict (max 2 tiles).
+    // Decremented when a scroll animation completes (move assumed accepted).
+    // Reset to 0 on PT correction (server rejected and corrected position).
+    public int PendingMoves;
+
     // Characters visible in area
     public Dictionary<int, Character> Characters = new();
 

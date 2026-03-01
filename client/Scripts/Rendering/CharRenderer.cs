@@ -1,3 +1,4 @@
+using System;
 using Godot;
 using TierrasSagradasAO.Data;
 using TierrasSagradasAO.Game;
@@ -288,8 +289,9 @@ public static class CharRenderer
             }
         }
 
+        // Snap to integer pixels (VB6+DX8 pixel-perfect rendering)
         var srcRect = new Rect2(resolved.SX, resolved.SY, resolved.PixelWidth, resolved.PixelHeight);
-        var destRect = new Rect2(drawX, drawY, resolved.PixelWidth, resolved.PixelHeight);
+        var destRect = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), resolved.PixelWidth, resolved.PixelHeight);
 
         Color color = modulate ?? Colors.White;
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);

@@ -463,6 +463,10 @@ public partial class Main : Control
                 _state.AddToUserPosY = 0;
                 _state.UserMoving = false;
 
+                // Scroll completed — assume server accepted the move
+                if (_state.PendingMoves > 0)
+                    _state.PendingMoves--;
+
                 // Sync: force self char's MoveOffset to complete too (avoid 1-frame glitch)
                 if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
                 {

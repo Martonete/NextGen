@@ -51,7 +51,8 @@ public class InputHandler
 
         // Movement — blocked while camera is still scrolling (VB6: UserMoving guard)
         // This is the ONLY guard — no timer. Animation duration (~233ms) IS the rate limit.
-        if (!_state.UserMoving)
+        // Also cap pending moves to prevent client from getting too far ahead of server.
+        if (!_state.UserMoving && _state.PendingMoves < 2)
         {
             if (Input.IsKeyPressed(Key.W) || Input.IsKeyPressed(Key.Up))
                 TryMove(1); // North
@@ -96,6 +97,7 @@ public class InputHandler
         {
             // Send movement packet to server
             _tcp.SendPacket($"M{heading}");
+            _state.PendingMoves++;
 
             // VB6 Char_Move_by_Head: update logical position + start animation
             ch.Heading = heading;

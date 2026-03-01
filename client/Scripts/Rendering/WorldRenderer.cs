@@ -141,10 +141,9 @@ public partial class WorldRenderer : Node2D
 
         // Camera pixel offset — NEGATED because ScreenOffset grows in the movement
         // direction, but tiles must shift in the OPPOSITE direction on screen.
-        // This also makes self char's MoveOffset and camera offset cancel out perfectly,
-        // keeping the player centered while the world scrolls smoothly.
-        float pixelOffsetX = -_state.ScreenOffsetX;
-        float pixelOffsetY = -_state.ScreenOffsetY;
+        // Rounded to int to match VB6+DX8 pixel-snapping (prevents sub-pixel jitter).
+        float pixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
+        float pixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
 
         // Visible tile range
         int screenMinX = userX - HalfWindowTileWidth;
@@ -177,7 +176,7 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer1 <= 0) continue;
 
                 Vector2 pos = TileToScreenL1(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                DrawTileGrh(tile.Layer1, pos);
+                DrawTileGrh(tile.Layer1, pos, center: true);
             }
         }
 
@@ -218,8 +217,9 @@ public partial class WorldRenderer : Node2D
                 {
                     if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
 
-                    float charPx = tilePos.X + ch.MoveOffsetX;
-                    float charPy = tilePos.Y + ch.MoveOffsetY;
+                    // Round MoveOffset to int (VB6+DX8 pixel-snapping)
+                    float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
+                    float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
                     CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator);
                 }

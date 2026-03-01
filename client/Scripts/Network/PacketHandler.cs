@@ -268,6 +268,7 @@ public class PacketHandler
             _state.AddToUserPosX = 0;
             _state.AddToUserPosY = 0;
             _state.UserMoving = false;
+            _state.PendingMoves = 0;
         }
     }
 
@@ -307,9 +308,8 @@ public class PacketHandler
             _state.AddToUserPosY = 0;
             _state.UserMoving = false;
 
-            // Block new moves for a few frames after PT correction.
-            // Prevents the client from immediately re-sending moves to a tile
-            // that the server will reject again (e.g., NPC the client can't see).
+            // Reset pending moves counter and add cooldown.
+            _state.PendingMoves = 0;
             _state.PtCooldownFrames = 3;
         }
     }
