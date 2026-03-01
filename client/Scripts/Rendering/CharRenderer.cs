@@ -108,8 +108,9 @@ public static class CharRenderer
         if (state != null)
             DrawCharParticles(canvas, ch, screenPos, state, data);
 
-        // Name + clan above head (VB6: uses font1 bitmap font)
-        DrawName(canvas, ch, screenPos, data);
+        // Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
+        if (state == null || state.ShowNames)
+            DrawName(canvas, ch, screenPos, data);
 
         // Dialog bubble (VB6: cDialogos.Render)
         DrawDialog(canvas, ch, screenPos, headOffset, data);
