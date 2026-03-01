@@ -103,6 +103,9 @@ public class GameState
     // Chat message queue — drained by Main.cs each frame
     public Queue<ChatMessage> ChatMessages = new();
 
+    // Textos.tsao message templates — loaded once, used by PacketHandler for console messages
+    public TextMessage[] TextMessages = System.Array.Empty<TextMessage>();
+
     public GameState()
     {
         for (int i = 0; i < 25; i++)

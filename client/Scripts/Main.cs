@@ -73,6 +73,7 @@ public partial class Main : Control
 
         GD.Print($"[MAIN] Data path: {dataPath}");
         _gameData.LoadAll(dataPath);
+        _state.TextMessages = _gameData.TextMessages;
 
         if (!_gameData.IsLoaded)
         {

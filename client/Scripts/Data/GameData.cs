@@ -14,6 +14,7 @@ public class GameData
     public HeadData[] Heads = Array.Empty<HeadData>();
     public HeadData[] Cascos = Array.Empty<HeadData>();
     public FxData[] Fxs = Array.Empty<FxData>();
+    public TextMessage[] TextMessages = Array.Empty<TextMessage>();
     public TextureManager? Textures;
 
     public bool IsLoaded { get; private set; }
@@ -83,6 +84,16 @@ public class GameData
             Fxs[0] = new FxData();
         }
 
+        try
+        {
+            TextMessages = TextosLoader.Load(System.IO.Path.Combine(initPath, "Textos.tsao"));
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[DATA] Failed to load Textos: {ex.Message}");
+            TextMessages = new TextMessage[1];
+        }
+
         Textures = new TextureManager(graficosPath);
         WeaponShieldLoader.LogInfo();
 
@@ -105,12 +116,13 @@ public class GameData
         int frameIdx = frame % grh.Frames.Length;
         int resolvedIdx = grh.Frames[frameIdx];
 
-        if (resolvedIdx <= 0 || resolvedIdx >= Grhs.Length) return grh;
+        if (resolvedIdx <= 0 || resolvedIdx >= Grhs.Length) return null;
 
         var child = Grhs[resolvedIdx];
-        // Safety: if child GRH wasn't properly loaded (FileNum=0), fall back to
-        // parent's first-frame data rather than rendering garbage
-        if (child.FileNum <= 0) return grh;
+        // VB6: If GrhData(grh_index).FileNum = 0 Then Exit Sub
+        // If child frame wasn't loaded, return null (skip drawing) rather than
+        // falling back to parent which would freeze the animation on one frame.
+        if (child.FileNum <= 0) return null;
         return child;
     }
 }

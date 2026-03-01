@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using TierrasSagradasAO.Data;
 using TierrasSagradasAO.Game;
 
 namespace TierrasSagradasAO.Network;
@@ -670,27 +671,33 @@ public class PacketHandler
 
     private void HandleConsoleMessage(string data)
     {
-        // ||<color_code>@<source>@<text> or just ||<text>
-        string text = data;
-        string color = "00FF00"; // default green for console
+        // VB6 format: ||<TextID>@<param1>@<param2>@...
+        // TextID indexes into Textos.tsao. Params substitute %1, %2, ... in the message template.
+        var parts = data.Split('@');
 
-        int atIdx = data.IndexOf('@');
-        if (atIdx >= 0)
+        if (parts.Length >= 1 && int.TryParse(parts[0], out int textId)
+            && textId > 0 && textId < _state.TextMessages.Length)
         {
-            // Try to parse color code before first @
-            string possibleColor = data[..atIdx];
-            if (possibleColor.Length <= 6 && possibleColor.Length >= 1)
-            {
-                int secondAt = data.IndexOf('@', atIdx + 1);
-                if (secondAt > 0)
-                    text = data[(secondAt + 1)..];
-                else
-                    text = data[(atIdx + 1)..];
-            }
-        }
+            var tmpl = _state.TextMessages[textId];
+            string text = tmpl.Text;
 
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
-        GD.Print($"[CONSOLE] {text}");
+            // Substitute %1 through %8 with @ params
+            for (int i = 1; i < parts.Length && i <= 8; i++)
+            {
+                text = text.Replace($"%{i}", parts[i]);
+            }
+
+            string color = Data.FontTypes.GetHexColor(tmpl.FontId);
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+            GD.Print($"[CONSOLE] [{textId}] {text}");
+        }
+        else
+        {
+            // Fallback: not a valid TextID, show raw text
+            string text = parts.Length > 1 ? string.Join(" ", parts[1..]) : data;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "45BE9C" }); // INFO teal
+            GD.Print($"[CONSOLE] (raw) {text}");
+        }
     }
 
     private void HandleTalk(string data)
