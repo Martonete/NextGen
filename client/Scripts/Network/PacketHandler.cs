@@ -1277,26 +1277,34 @@ public class PacketHandler
     private void HandleInventorySlot(string data)
     {
         // CSI<slot>,<objidx>,<name>,<amt>,<equipped>,<grh>,<type>,<maxhit>,<minhit>,<maxdef>,<valor>
+        // Empty slot (VB6): CSI<slot>,0,(None),0,0 (only 5 fields)
         var parts = data.Split(',');
-        if (parts.Length >= 11)
+        if (parts.Length < 2) return;
+
+        int slot = ParseInt(parts[0]);
+        if (slot < 1 || slot > 25) return;
+
+        int objIndex = ParseInt(parts[1]);
+        if (objIndex <= 0 || parts.Length < 5)
         {
-            int slot = ParseInt(parts[0]);
-            if (slot >= 1 && slot <= 25)
+            // Empty slot — clear it
+            _state.Inventory[slot - 1] = new InventorySlot();
+        }
+        else if (parts.Length >= 11)
+        {
+            _state.Inventory[slot - 1] = new InventorySlot
             {
-                _state.Inventory[slot - 1] = new InventorySlot
-                {
-                    ObjIndex = ParseInt(parts[1]),
-                    Name = parts[2],
-                    Amount = ParseInt(parts[3]),
-                    Equipped = ParseInt(parts[4]) != 0,
-                    GrhIndex = ParseInt(parts[5]),
-                    ObjType = ParseInt(parts[6]),
-                    MaxHit = ParseInt(parts[7]),
-                    MinHit = ParseInt(parts[8]),
-                    MaxDef = ParseInt(parts[9]),
-                    Value = ParseInt(parts[10]),
-                };
-            }
+                ObjIndex = objIndex,
+                Name = parts[2],
+                Amount = ParseInt(parts[3]),
+                Equipped = ParseInt(parts[4]) != 0,
+                GrhIndex = ParseInt(parts[5]),
+                ObjType = ParseInt(parts[6]),
+                MaxHit = ParseInt(parts[7]),
+                MinHit = ParseInt(parts[8]),
+                MaxDef = ParseInt(parts[9]),
+                Value = ParseInt(parts[10]),
+            };
         }
     }
 

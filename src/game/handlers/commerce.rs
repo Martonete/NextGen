@@ -141,8 +141,9 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
     // Validate user state
     let (dead, comerciando, target_npc, user_gold, comerciar_skill) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.dead, u.comerciando, u.target_npc, u.gold, u.skills[SK_COMERCIAR]),
-        _ => return,
+        _ => { info!("[COMP] #{} user not logged or missing", conn_id); return; },
     };
+    info!("[COMP] #{} state: dead={} comerciando={} target_npc={} gold={}", conn_id, dead, comerciando, target_npc, user_gold);
 
     if dead {
         let msg = "||3".to_string(); // TEXTO3: Estás muerto
@@ -150,15 +151,16 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
         return;
     }
     if !comerciando || target_npc == 0 {
+        info!("[COMP] #{} REJECTED: comerciando={} target_npc={}", conn_id, comerciando, target_npc);
         return;
     }
 
     // Get NPC data
     let (npc_comercia, npc_inflacion) = match state.get_npc(target_npc) {
         Some(npc) => (npc.comercia, npc.inflacion),
-        None => return,
+        None => { info!("[COMP] #{} NPC {} not found", conn_id, target_npc); return; },
     };
-    if !npc_comercia { return; }
+    if !npc_comercia { info!("[COMP] #{} NPC {} not merchant", conn_id, target_npc); return; }
 
     // Get item from NPC inventory (slot is 1-based)
     let slot_idx = slot - 1;
@@ -166,9 +168,10 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
         Some(npc) if slot_idx < npc.inventory.len() => {
             (npc.inventory[slot_idx].obj_index, npc.inventory[slot_idx].amount)
         }
-        _ => return,
+        _ => { info!("[COMP] #{} NPC inv slot {} out of range", conn_id, slot_idx); return; },
     };
-    if obj_index <= 0 || npc_amount <= 0 { return; }
+    if obj_index <= 0 || npc_amount <= 0 { info!("[COMP] #{} NPC slot {} empty: obj={} amt={}", conn_id, slot_idx, obj_index, npc_amount); return; }
+    info!("[COMP] #{} NPC item: obj={} amt={} slot_idx={}", conn_id, obj_index, npc_amount, slot_idx);
 
     // Clamp quantity to NPC stock
     let cantidad = cantidad.min(npc_amount);
@@ -735,8 +738,12 @@ pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) 
     // VB6 IniciarDeposito: UpdateBanUserInv(True) → SBR + SBO items, SendUserGLD, INITBANCO, Comerciando=True
     enviar_banco_inv(state, conn_id).await;
 
-    // Send user gold (VB6 sends SendUserGLD, not bank gold separately)
+    // Send user gold
     send_stats_gold(state, conn_id).await;
+
+    // Send bank gold (VB6: SendBankGold in IniciarDeposito)
+    let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
+    state.send_to(conn_id, &format!("[BG{}", bank_gold)).await;
 
     // Set comerciando flag (VB6 sets this)
     if let Some(user) = state.users.get_mut(&conn_id) {

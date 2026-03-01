@@ -582,12 +582,30 @@ public static class CharRenderer
         // VB6/DirectX 8 doesn't bounds-check source rects — it clamps or wraps.
         // Instead of discarding sprites that slightly exceed texture bounds,
         // clamp the source rect to fit within the texture.
+        // If a specific animation frame is out of bounds, fall back to frame 0
+        // (handles water/animated tiles with sparse frames).
         int sx = resolved.SX;
         int sy = resolved.SY;
         int pw = resolved.PixelWidth;
         int ph = resolved.PixelHeight;
 
-        if (sx >= texW || sy >= texH) return; // fully outside — nothing to draw
+        if (sx >= texW || sy >= texH)
+        {
+            // Frame out of bounds — try frame 0 as fallback
+            if (frame != 0)
+            {
+                resolved = data.ResolveGrh(grhIndex, 0);
+                if (resolved == null || resolved.FileNum <= 0) return;
+                texture = data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) return;
+                texW = texture.GetWidth();
+                texH = texture.GetHeight();
+                sx = resolved.SX; sy = resolved.SY;
+                pw = resolved.PixelWidth; ph = resolved.PixelHeight;
+                if (sx >= texW || sy >= texH) return;
+            }
+            else return;
+        }
         if (sx + pw > texW) pw = texW - sx;   // clamp width
         if (sy + ph > texH) ph = texH - sy;   // clamp height
         if (pw <= 0 || ph <= 0) return;
