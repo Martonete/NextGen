@@ -204,6 +204,26 @@ public class PacketHandler
         {
             // Per-tile light effect — not yet implemented
         }
+        else if (packet.StartsWith("MENU"))
+        {
+            // MENU{name},{privs} — User interaction menu (right-click on player)
+            GD.Print($"[PKT] MENU: {packet[4..]}");
+        }
+        else if (packet.StartsWith("SELE"))
+        {
+            // SELE{type},{name},OBJ — Item selection prompt
+            GD.Print($"[PKT] SELE: {packet[4..]}");
+        }
+        else if (packet.StartsWith("INITCOM"))
+        {
+            // Open NPC shop — UI not yet implemented
+            GD.Print("[PKT] INITCOM: NPC shop requested");
+        }
+        else if (packet.StartsWith("INITBANCO"))
+        {
+            // Open bank — UI not yet implemented
+            GD.Print("[PKT] INITBANCO: Bank requested");
+        }
         else if (packet.StartsWith("+"))
         {
             HandleMoveChar(packet[1..]);
@@ -746,15 +766,20 @@ public class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
 
         // Dialog bubble on character (VB6: Dialogos.CreateDialog)
-        if (parts.Length >= 3 && int.TryParse(parts[2], out int charIdx))
+        // Server may append ~r~g~b~bold~italic after charindex in the same segment
+        if (parts.Length >= 3)
         {
-            SetCharDialog(charIdx, text, color);
+            string charIdxStr = parts[2];
+            int tildeIdx = charIdxStr.IndexOf('~');
+            if (tildeIdx >= 0) charIdxStr = charIdxStr[..tildeIdx];
+            if (int.TryParse(charIdxStr, out int charIdx))
+                SetCharDialog(charIdx, text, color);
         }
     }
 
     private void HandleYell(string data)
     {
-        // N|<color>°<text>°<charindex>
+        // N|<color>°<text>°<charindex>  (server may append ~r~g~b after charindex)
         var parts = data.Split((char)176);
         if (parts.Length < 2) return;
 
@@ -770,9 +795,13 @@ public class PacketHandler
         string text = parts[1];
         _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
 
-        if (parts.Length >= 3 && int.TryParse(parts[2], out int charIdx))
+        if (parts.Length >= 3)
         {
-            SetCharDialog(charIdx, text, color);
+            string charIdxStr = parts[2];
+            int tildeIdx = charIdxStr.IndexOf('~');
+            if (tildeIdx >= 0) charIdxStr = charIdxStr[..tildeIdx];
+            if (int.TryParse(charIdxStr, out int charIdx))
+                SetCharDialog(charIdx, text, color);
         }
     }
 

@@ -55,6 +55,7 @@ public class GameState
     public bool UserParalyzed;
     public bool UserNavigating;
     public bool UserStopped;
+    public int UsingSkill; // VB6: spell slot being targeted (0 = none)
     public bool ChatActive; // VB6: true when chat input is visible/focused
 
     // Camera scroll state (VB6 client-side prediction)

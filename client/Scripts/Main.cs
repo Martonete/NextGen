@@ -444,7 +444,10 @@ public partial class Main : Control
         }
 
         // Mouse clicks on the game viewport area
-        if (@event is InputEventMouseButton mb && mb.Pressed)
+        // VB6: renderer_Click fires on mouse RELEASE, not press.
+        // Double-click sends RC (VB6: Form_DblClick).
+        // Single right-click sends LC + RC (VB6: Form_Click with DobleClick=1).
+        if (@event is InputEventMouseButton mb && !mb.Pressed)
         {
             // Translate click position relative to the game viewport (0,124) with 534x408 size
             float clickX = mb.Position.X;
@@ -455,9 +458,29 @@ public partial class Main : Control
             {
                 var viewPos = new Vector2(clickX, clickY);
                 if (mb.ButtonIndex == MouseButton.Left)
-                    _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
+                {
+                    if (mb.DoubleClick)
+                    {
+                        // VB6 Form_DblClick → RC (interact: open doors, talk to NPC, etc.)
+                        _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+                    }
+                    else if (_state.UsingSkill > 0)
+                    {
+                        // VB6: Form_Click when UsingSkill > 0 → WLC (spell targeting)
+                        _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY, _state.UsingSkill);
+                    }
+                    else
+                    {
+                        // VB6 renderer_Click left → LC (inspect tile)
+                        _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
+                    }
+                }
                 else if (mb.ButtonIndex == MouseButton.Right)
+                {
+                    // VB6: right-click sends BOTH LC + RC (DobleClick=1 path)
+                    _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
                     _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+                }
             }
         }
     }

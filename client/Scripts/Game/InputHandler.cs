@@ -221,16 +221,14 @@ public class InputHandler
 
     /// <summary>
     /// Convert viewport pixel position to world tile coordinates.
+    /// VB6: tX = UserPos.X + mouseX \ 32 - ScaleWidth \ 64
+    /// Uses integer division throughout (\ in VB6 = truncating division).
+    /// ScaleWidth=534 \ 64 = 8, ScaleHeight=408 \ 64 = 6.
     /// </summary>
     private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
     {
-        const int HalfTilesX = 8;
-        const int HalfTilesY = 6;
-        float centerX = HalfTilesX * 32f;
-        float centerY = HalfTilesY * 32f;
-
-        int tileX = userX + (int)((viewportPos.X - centerX) / 32);
-        int tileY = userY + (int)((viewportPos.Y - centerY) / 32);
+        int tileX = userX + (int)viewportPos.X / 32 - 8;
+        int tileY = userY + (int)viewportPos.Y / 32 - 6;
         return (tileX, tileY);
     }
 
@@ -257,6 +255,21 @@ public class InputHandler
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {
             _tcp.SendPacket($"RC{tileX},{tileY}");
+        }
+    }
+
+    /// <summary>
+    /// Handle spell targeting click → WLC packet.
+    /// VB6: Form_Click when UsingSkill > 0 sends WLC instead of LC.
+    /// Called when a spell is selected and user clicks a target tile.
+    /// </summary>
+    public void HandleSpellClick(Vector2 viewportPos, int userX, int userY, int spellSlot)
+    {
+        var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
+        if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+        {
+            _tcp.SendPacket($"WLC{tileX},{tileY},{spellSlot}");
+            _state.UsingSkill = 0; // Reset after casting
         }
     }
 }
