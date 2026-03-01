@@ -100,7 +100,7 @@ public partial class Main : Control
         // Setup renderer inside the SubViewport
         _worldRenderer = new WorldRenderer();
         _worldRenderer.Init(_state, _gameData, _animator);
-        var gameWorldNode = GetNode<Node2D>("GameViewportContainer/GameViewport/GameWorld");
+        var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
         gameWorldNode.AddChild(_worldRenderer);
 
         // Setup packet handler
