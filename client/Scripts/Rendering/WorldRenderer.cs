@@ -271,11 +271,8 @@ public partial class WorldRenderer : Node2D
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-        var grh = _data.Grhs[grhIndex];
-        if (grh.NumFrames > 1)
-            _animator.StartAnim(grhIndex);
-
-        int frame = _animator.GetCurrentFrame(grhIndex);
+        // Looping tile animations use the global clock — no StartAnim needed.
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
         CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center, modulate);
     }
 }

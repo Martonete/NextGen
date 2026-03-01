@@ -5,84 +5,110 @@ using TierrasSagradasAO.Data;
 namespace TierrasSagradasAO.Rendering;
 
 /// <summary>
-/// Manages animation state for GRH indices.
-/// Tracks frame counters and resolves current frame.
+/// Manages animation frames for GRH indices.
+///
+/// Tile animations (water, etc.): Use a global clock so ALL animations
+/// with the same Speed stay perfectly synchronized — no per-GRH state needed.
+/// VB6: each tile has its own FrameCounter initialized to 1 at map load,
+/// all advance at the same rate → visually identical to a global clock.
+///
+/// One-shot FX animations: Use per-GRH accumulated counters (started on demand).
+///
 /// VB6 formula: FrameCounter += elapsedMs * NumFrames / Speed
-/// (no 0.7 multiplier — that only applies to character walk bodies via movementSpeed)
-/// VB6 uses 1-indexed frames; Godot uses 0-indexed (offset handled by array indexing).
 /// </summary>
 public class GrhAnimator
 {
-    private readonly Dictionary<int, AnimState> _states = new();
+    // Global clock in milliseconds, reset on map load.
+    // Used for looping tile animations — guarantees perfect sync.
+    private double _globalTimeMs;
+
+    // Per-GRH state only for one-shot (non-looping) animations like FX.
+    private readonly Dictionary<int, AnimState> _fxStates = new();
 
     public struct AnimState
     {
         public float FrameCounter;
-        public bool Started;
         public bool Loop;
     }
 
     /// <summary>
-    /// Start animating a GRH index. If already animating, does nothing.
+    /// Start a one-shot (FX) animation. Looping tile animations don't need this.
     /// </summary>
     public void StartAnim(int grhIndex, bool loop = true)
     {
-        if (!_states.ContainsKey(grhIndex))
+        if (!loop && !_fxStates.ContainsKey(grhIndex))
         {
-            _states[grhIndex] = new AnimState { FrameCounter = 0, Started = true, Loop = loop };
+            _fxStates[grhIndex] = new AnimState { FrameCounter = 0, Loop = false };
         }
+        // Looping anims use the global clock — no per-GRH state needed.
     }
 
     /// <summary>
-    /// Advance all animations by delta time.
-    /// VB6 Grh_Render: FrameCounter += elapsedMs * NumFrames / Speed
-    /// Loop: FrameCounter = (FrameCounter Mod NumFrames) + 1 (1-indexed)
-    /// Godot equivalent: FrameCounter %= NumFrames (0-indexed)
+    /// Advance the global clock and any one-shot FX animations.
     /// </summary>
     public void Update(float delta, GameData data)
     {
         float deltaMs = delta * 1000f;
-        var keys = new List<int>(_states.Keys);
+        _globalTimeMs += deltaMs;
 
-        foreach (int key in keys)
+        // Advance one-shot FX animations
+        if (_fxStates.Count > 0)
         {
-            if (key <= 0 || key >= data.Grhs.Length) continue;
-
-            var grh = data.Grhs[key];
-            if (grh.NumFrames <= 1) continue;
-
-            var state = _states[key];
-
-            float speed = grh.Speed > 0 ? grh.Speed : 100f;
-            state.FrameCounter += deltaMs * grh.NumFrames / speed;
-
-            if (state.FrameCounter >= grh.NumFrames)
+            var keys = new List<int>(_fxStates.Keys);
+            foreach (int key in keys)
             {
-                if (state.Loop)
-                    state.FrameCounter %= grh.NumFrames;
-                else
-                    state.FrameCounter = grh.NumFrames - 1;
-            }
+                if (key <= 0 || key >= data.Grhs.Length) continue;
+                var grh = data.Grhs[key];
+                if (grh.NumFrames <= 1) continue;
 
-            _states[key] = state;
+                var state = _fxStates[key];
+                float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                state.FrameCounter += deltaMs * grh.NumFrames / speed;
+
+                if (state.FrameCounter >= grh.NumFrames)
+                {
+                    // One-shot: stop at last frame
+                    state.FrameCounter = grh.NumFrames - 1;
+                }
+                _fxStates[key] = state;
+            }
         }
     }
 
     /// <summary>
-    /// Get current frame index for an animated GRH.
+    /// Get current frame for an animated GRH.
+    /// Looping animations use the global clock for perfect sync.
+    /// One-shot FX animations use their own accumulated counter.
     /// </summary>
-    public int GetCurrentFrame(int grhIndex)
+    public int GetCurrentFrame(int grhIndex, GameData? data = null)
     {
-        if (_states.TryGetValue(grhIndex, out var state))
+        // Check one-shot FX first
+        if (_fxStates.TryGetValue(grhIndex, out var state))
             return (int)state.FrameCounter;
+
+        // Looping tile animation: compute frame from global clock
+        if (data != null && grhIndex > 0 && grhIndex < data.Grhs.Length)
+        {
+            var grh = data.Grhs[grhIndex];
+            if (grh.NumFrames > 1)
+            {
+                float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                // Continuous: globalTime → fractional frame → integer frame (mod numFrames)
+                // This never "wraps" — modulo handles it cleanly.
+                double fractionalFrame = _globalTimeMs * grh.NumFrames / speed;
+                return (int)(fractionalFrame % grh.NumFrames);
+            }
+        }
+
         return 0;
     }
 
     /// <summary>
-    /// Clear all animation states (e.g., on map change).
+    /// Clear all state (on map change). Resets global clock.
     /// </summary>
     public void Clear()
     {
-        _states.Clear();
+        _globalTimeMs = 0;
+        _fxStates.Clear();
     }
 }

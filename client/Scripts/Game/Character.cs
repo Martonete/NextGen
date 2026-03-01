@@ -38,4 +38,7 @@ public class Character
     // FX (VB6: up to 3 simultaneous + 1 emoticon)
     public int[] ActiveFxSlots = new int[3]; // FxData indices
     public int EmoticonIndex;
+
+    // Debug helper
+    public bool _debugLogged;
 }

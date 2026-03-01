@@ -38,6 +38,13 @@ public static class CharRenderer
             ? new Vector2(body.HeadOffsetX, body.HeadOffsetY)
             : new Vector2(0, -30);
 
+        // Debug: log character draw info once
+        if (!ch._debugLogged)
+        {
+            ch._debugLogged = true;
+            Godot.GD.Print($"[CHAR] {ch.Name}: body={ch.Body} head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim} casco={ch.CascoAnim}");
+        }
+
         // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)
         DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
@@ -200,8 +207,7 @@ public static class CharRenderer
             var fx = data.Fxs[fxIdx];
             if (fx.Animacion <= 0) continue;
 
-            animator.StartAnim(fx.Animacion, true);
-            int frame = animator.GetCurrentFrame(fx.Animacion);
+            int frame = animator.GetCurrentFrame(fx.Animacion, data);
 
             Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
             DrawGrh(canvas, data, fx.Animacion, frame, fxPos, true,
