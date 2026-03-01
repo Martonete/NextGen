@@ -54,6 +54,12 @@ public partial class Main : Control
     private Label? _mapLabel;
     private Label? _onlineLabel;
     private Label? _coordsLabel;
+    private Label? _expLabel;
+    private Label? _hpLabel;
+    private Label? _manaLabel;
+    private Label? _staLabel;
+    private Label? _aguaLabel;
+    private Label? _hamLabel;
 
     // Inventory & Spells UI (VB6-accurate positions)
     private InventoryPanel? _inventoryPanel;
@@ -141,6 +147,12 @@ public partial class Main : Control
         _mapLabel = GetNode<Label>("GameUI/MapLabel");
         _onlineLabel = GetNode<Label>("GameUI/OnlineLabel");
         _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
+        _expLabel = GetNode<Label>("GameUI/ExpLabel");
+        _hpLabel = GetNode<Label>("GameUI/HPLabel");
+        _manaLabel = GetNode<Label>("GameUI/ManaLabel");
+        _staLabel = GetNode<Label>("GameUI/StaLabel");
+        _aguaLabel = GetNode<Label>("GameUI/AguaLabel");
+        _hamLabel = GetNode<Label>("GameUI/HamLabel");
 
         // === Inventory & Spells UI (VB6-exact pixel positions, twips÷15) ===
 
@@ -187,13 +199,13 @@ public partial class Main : Control
         _gameUI.AddChild(_spellPanel);
 
         // LANZAR button — VB6: CmdLanzar at (536,327,142,40), hidden initially
-        _lanzarButton = CreateButton("LANZAR", 536, 327, 142, 40);
+        _lanzarButton = CreateButton("LANZAR", 536, 370, 142, 30);
         _lanzarButton.Visible = false;
         _gameUI.AddChild(_lanzarButton);
-        _lanzarButton.Pressed += () => _spellPanel.CastSelected();
+        _lanzarButton.Pressed += OnLanzarPressed;
 
         // INFO button — VB6: cmdInfo at (720,336,57,27), hidden initially
-        _infoButton = CreateButton("INFO", 720, 336, 57, 27);
+        _infoButton = CreateButton("INFO", 690, 370, 57, 30);
         _infoButton.Visible = false;
         _gameUI.AddChild(_infoButton);
         _infoButton.Pressed += () => _spellPanel.InfoSelected();
@@ -282,6 +294,26 @@ public partial class Main : Control
         _infoButton!.Visible = true;
         _spellUpButton!.Visible = true;
         _spellDownButton!.Visible = true;
+    }
+
+    /// <summary>
+    /// VB6 CmdLanzar_Click: sends LH, sets UsingSkill, changes cursor to crosshair,
+    /// shows targeting message in console.
+    /// </summary>
+    private void OnLanzarPressed()
+    {
+        _spellPanel!.CastSelected();
+        if (_state.UsingSkill > 0)
+        {
+            // VB6: frmMain.MousePointer = 2 (crosshair cursor)
+            Input.SetDefaultCursorShape(Input.CursorShape.Cross);
+            // VB6: AddtoRichTextBox MENSAJE_TRABAJO_MAGIA
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = "Haz click en el objetivo del hechizo.",
+                Color = "6464B4" // VB6: 100,100,120 → RGB hex
+            });
+        }
     }
 
     private void LoadBackgroundImage(string dataPath)
@@ -534,32 +566,42 @@ public partial class Main : Control
     {
         if (_hpBar == null) return;
 
-        // Stats bars
+        // Stats bars + labels (VB6 shows "min/max" in the label below each bar)
         _hpBar.MaxValue = _state.MaxHp > 0 ? _state.MaxHp : 1;
         _hpBar.Value = _state.MinHp;
+        _hpLabel!.Text = $"HP: {_state.MinHp}/{_state.MaxHp}";
 
         _manaBar!.MaxValue = _state.MaxMana > 0 ? _state.MaxMana : 1;
         _manaBar.Value = _state.MinMana;
+        _manaLabel!.Text = $"Mana: {_state.MinMana}/{_state.MaxMana}";
 
         _staBar!.MaxValue = _state.MaxSta > 0 ? _state.MaxSta : 1;
         _staBar.Value = _state.MinSta;
+        _staLabel!.Text = $"Sta: {_state.MinSta}/{_state.MaxSta}";
 
         _aguaBar!.MaxValue = _state.MaxAgua > 0 ? _state.MaxAgua : 1;
         _aguaBar.Value = _state.MinAgua;
+        _aguaLabel!.Text = $"Agua: {_state.MinAgua}/{_state.MaxAgua}";
 
         _hamBar!.MaxValue = _state.MaxHam > 0 ? _state.MaxHam : 1;
         _hamBar.Value = _state.MinHam;
+        _hamLabel!.Text = $"Ham: {_state.MinHam}/{_state.MaxHam}";
 
         _expBar!.MaxValue = _state.ExpNext > 0 ? _state.ExpNext : 1;
         _expBar.Value = _state.Exp;
+        _expLabel!.Text = $"Exp: {_state.Exp}/{_state.ExpNext}";
 
-        // Labels
-        _goldLabel!.Text = $"Oro: {_state.Gold}";
-        _levelLabel!.Text = $"Lvl: {_state.Level}";
+        // VB6: GldLbl at (696,408), cyan — just the number
+        _goldLabel!.Text = $"{_state.Gold}";
+        // VB6: LvlLbl at (580,39) — just the number
+        _levelLabel!.Text = $"{_state.Level}";
+        // VB6: Label8 at (541,6) — character name, centered
         _nameLabel!.Text = _state.UserName;
         _mapLabel!.Text = $"Mapa: {_state.CurrentMap} {_state.MapName}";
-        _onlineLabel!.Text = $"Online: {_state.OnlineCount}";
-        _coordsLabel!.Text = $"Pos: {_state.UserPosX},{_state.UserPosY}";
+        // VB6: ONLINES at (47,547)
+        _onlineLabel!.Text = $"{_state.OnlineCount}";
+        // VB6: Coord at (560,557), centered — "(map,x,y)" format
+        _coordsLabel!.Text = $"({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
     }
 
     /// <summary>
@@ -626,6 +668,8 @@ public partial class Main : Control
                     {
                         // VB6: Form_Click when UsingSkill > 0 → WLC (spell targeting)
                         _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY, _state.UsingSkill);
+                        // VB6: after targeting, reset cursor to arrow
+                        Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
                     }
                     else
                     {
