@@ -49,6 +49,23 @@ public partial class Main : Control
     private Label? _coordsLabel;
     private Label? _expLabel;
 
+    // Bottom bar combat/attribute labels
+    private Label? _armaLabel;
+    private Label? _defMagLabel;
+    private Label? _defensaLabel;
+    private Label? _fuerzaLabel;
+    private Label? _agilidadLabel;
+    private Label? _repLabel;
+    private Label? _fpsLabel;
+
+    // Friends list
+    private ItemList? _friendsList;
+
+    // Minimap
+    private TextureRect? _minimapRect;
+    private ColorRect? _minimapDot;
+    private string? _principalDir; // cached for minimap loading
+
     // Custom stat bar overlay (draws colored fill rects at VB6 positions)
     private StatBarOverlay? _statBarOverlay;
 
@@ -219,6 +236,57 @@ public partial class Main : Control
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
+        // === Bottom bar stat labels (VB6: inherited Tahoma 8.25 Bold) ===
+        _armaLabel = CreateStatLabel(112, 557, 57, 13, Colors.White, 8);
+        _gameUI.AddChild(_armaLabel);
+
+        _defMagLabel = CreateStatLabel(200, 557, 57, 13, Colors.White, 8);
+        _gameUI.AddChild(_defMagLabel);
+
+        _defensaLabel = CreateStatLabel(284, 557, 57, 13, Colors.White, 8);
+        _gameUI.AddChild(_defensaLabel);
+
+        _fuerzaLabel = CreateStatLabel(384, 557, 33, 17, new Color(0, 1, 0), 8);
+        _gameUI.AddChild(_fuerzaLabel);
+
+        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(0, 1, 1), 8);
+        _gameUI.AddChild(_agilidadLabel);
+
+        // Reputation label — VB6: Cambria 8.25 Normal
+        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 8);
+        _gameUI.AddChild(_repLabel);
+
+        // FPS label — VB6: Tahoma 6pt Bold, center
+        _fpsLabel = CreateStatLabel(47, 576, 17, 10, Colors.White, 6);
+        _gameUI.AddChild(_fpsLabel);
+
+        // Friends list — VB6: ChatContacts at (396,2,137,88), Tahoma 9, light blue
+        _friendsList = new ItemList();
+        _friendsList.Position = new Vector2(396, 2);
+        _friendsList.Size = new Vector2(137, 88);
+        _friendsList.AddThemeFontSizeOverride("font_size", 9);
+        _friendsList.AddThemeColorOverride("font_color", new Color(0.753f, 0.878f, 1f)); // VB6: &H00C0E0FF&
+        var friendsBg = new StyleBoxFlat();
+        friendsBg.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.9f);
+        friendsBg.SetBorderWidthAll(0);
+        _friendsList.AddThemeStyleboxOverride("panel", friendsBg);
+        _friendsList.MouseFilter = Control.MouseFilterEnum.Pass;
+        _gameUI.AddChild(_friendsList);
+
+        // Minimap
+        _minimapRect = new TextureRect();
+        _minimapRect.Position = new Vector2(682, 424);
+        _minimapRect.Size = new Vector2(100, 100);
+        _minimapRect.StretchMode = TextureRect.StretchModeEnum.Scale;
+        _minimapRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _gameUI.AddChild(_minimapRect);
+
+        _minimapDot = new ColorRect();
+        _minimapDot.Color = new Color(1f, 0f, 0f); // VB6: red dot (BackColor=&H000000FF&)
+        _minimapDot.Size = new Vector2(6, 6);
+        _minimapDot.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _minimapRect.AddChild(_minimapDot);
+
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
 
@@ -233,11 +301,24 @@ public partial class Main : Control
         _gameUI.Visible = false;
     }
 
+    private static Label CreateStatLabel(float x, float y, float w, float h, Color color, int fontSize)
+    {
+        var label = new Label();
+        label.Position = new Vector2(x, y);
+        label.Size = new Vector2(w, h);
+        label.HorizontalAlignment = HorizontalAlignment.Center;
+        label.AddThemeColorOverride("font_color", color);
+        label.AddThemeFontSizeOverride("font_size", fontSize);
+        label.MouseFilter = Control.MouseFilterEnum.Ignore;
+        return label;
+    }
+
     /// <summary>
     /// Create a fully invisible button (flat, no text, empty styleboxes).
     /// VB6 visuals are baked into Principal.jpg — this is just a hit-detect area.
+    /// If usePointerCursor is true, shows hand cursor on hover (VB6 MousePointer=99).
     /// </summary>
-    private static Button CreateInvisibleButton(float x, float y, float w, float h)
+    private static Button CreateInvisibleButton(float x, float y, float w, float h, bool usePointerCursor = true)
     {
         var btn = new Button();
         btn.Position = new Vector2(x, y);
@@ -249,6 +330,8 @@ public partial class Main : Control
         btn.AddThemeStyleboxOverride("hover", empty);
         btn.AddThemeStyleboxOverride("pressed", empty);
         btn.AddThemeStyleboxOverride("focus", empty);
+        if (usePointerCursor)
+            btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         return btn;
     }
 
@@ -339,6 +422,8 @@ public partial class Main : Control
             GD.Print("[MAIN] Principal.jpg not found — using dark background");
             return;
         }
+
+        _principalDir = principalDir;
 
         // Load Principal.jpg
         try
@@ -603,13 +688,51 @@ public partial class Main : Control
             _state.Exp, _state.ExpNext
         );
 
-        _expLabel!.Text = $"Exp: {_state.Exp}/{_state.ExpNext}";
+        _expLabel!.Text = $"{_state.Exp}/{_state.ExpNext}";
         _goldLabel!.Text = $"{_state.Gold}";
         _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"{_state.OnlineCount}";
         // VB6: Coord.Caption = NombreMapa & " (" & Map & "," & X & "," & Y & ")"
         _coordsLabel!.Text = $"{_state.MapName} ({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
+
+        // Combat stat labels
+        _armaLabel!.Text = $"{_state.AttackMin}/{_state.AttackMax}";
+        _defMagLabel!.Text = $"{_state.MagDefMin}/{_state.MagDefMax}";
+        _defensaLabel!.Text = $"{_state.DefenseMin}/{_state.DefenseMax}";
+        _fuerzaLabel!.Text = $"{_state.Strength}";
+        _agilidadLabel!.Text = $"{_state.Agility}";
+
+        // Reputation: negative = red with "- " prefix, positive = white
+        if (_state.Reputation < 0)
+        {
+            _repLabel!.Text = $"- {Math.Abs(_state.Reputation)}";
+            _repLabel.AddThemeColorOverride("font_color", new Color(1, 0, 0));
+        }
+        else
+        {
+            _repLabel!.Text = $"{_state.Reputation}";
+            _repLabel.AddThemeColorOverride("font_color", Colors.White);
+        }
+
+        // FPS
+        _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
+
+        // Friends list — only rebuild when changed
+        if (_friendsList != null && _friendsList.ItemCount != _state.FriendsList.Count)
+        {
+            _friendsList.Clear();
+            foreach (var friend in _state.FriendsList)
+                _friendsList.AddItem(friend);
+        }
+
+        // Minimap player dot position
+        if (_minimapDot != null)
+        {
+            float dotX = _state.UserPosX / 100f * 94f;
+            float dotY = _state.UserPosY / 100f * 94f;
+            _minimapDot.Position = new Vector2(dotX, dotY);
+        }
     }
 
     /// <summary>
@@ -826,12 +949,54 @@ public partial class Main : Control
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
 
+            // Load minimap image
+            LoadMinimap(_state.CurrentMap);
+
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
         }
+    }
+
+    private void LoadMinimap(int mapNumber)
+    {
+        if (_minimapRect == null) return;
+
+        // Try multiple paths for minimap BMP
+        // _principalDir = .../GRAFICOS/Principal/ → parent = .../GRAFICOS/
+        var candidates = new List<string>();
+        if (_principalDir != null)
+        {
+            string graficosDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(_principalDir, ".."));
+            candidates.Add(System.IO.Path.Combine(graficosDir, "MiniMap", $"Mapa{mapNumber}.bmp"));
+            candidates.Add(System.IO.Path.Combine(graficosDir, "Minimap", $"Mapa{mapNumber}.bmp"));
+        }
+        // Windows fallback
+        candidates.Add($@"C:\Users\F\Desktop\Projects\Tierras-Sagradas-AO\Cliente\Data\GRAFICOS\MiniMap\Mapa{mapNumber}.bmp");
+
+        foreach (string path in candidates)
+        {
+            if (System.IO.File.Exists(path))
+            {
+                try
+                {
+                    var img = new Image();
+                    img.Load(path);
+                    _minimapRect.Texture = ImageTexture.CreateFromImage(img);
+                    GD.Print($"[MAIN] Minimap loaded: {path}");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    GD.PrintErr($"[MAIN] Failed to load minimap: {ex.Message}");
+                }
+            }
+        }
+
+        GD.Print($"[MAIN] No minimap found for map {mapNumber}");
+        _minimapRect.Texture = null;
     }
 
     // VB6 movement constants

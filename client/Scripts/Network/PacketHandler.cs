@@ -178,17 +178,61 @@ public class PacketHandler
         {
             HandleExp(packet[3..]);
         }
+        else if (packet.StartsWith("[F]"))
+        {
+            _state.Strength = ParseInt(packet[3..]);
+        }
+        else if (packet.StartsWith("[A]"))
+        {
+            _state.Agility = ParseInt(packet[3..]);
+        }
+        else if (packet.StartsWith("[R]"))
+        {
+            _state.Reputation = ParseInt(packet[3..]);
+        }
         else if (packet.StartsWith("[CD"))
         {
             // Combat data, ignore for now
         }
         else if (packet.StartsWith("ANM"))
         {
-            // Equipment stats, ignore for now
+            HandleEquipmentStats(packet[3..]);
+        }
+        else if (packet.StartsWith("LDM"))
+        {
+            HandleFriendsList(packet[3..]);
+        }
+        else if (packet.StartsWith("KFM"))
+        {
+            HandleFriendOnline(packet[3..]);
+        }
+        else if (packet.StartsWith("DFM"))
+        {
+            HandleFriendOffline(packet[3..]);
         }
         else if (packet.StartsWith("PX"))
         {
             // Status broadcast, ignore for now
+        }
+        else if (packet.StartsWith("|B"))
+        {
+            HandleCharAppearance(packet[2..], 'B');
+        }
+        else if (packet.StartsWith("|W"))
+        {
+            HandleCharAppearance(packet[2..], 'W');
+        }
+        else if (packet.StartsWith("|E"))
+        {
+            HandleCharAppearance(packet[2..], 'E');
+        }
+        else if (packet.StartsWith("|H"))
+        {
+            HandleCharAppearance(packet[2..], 'H');
+        }
+        else if (packet.StartsWith("|C"))
+        {
+            HandleCharAppearance(packet[2..], 'C');
         }
         else if (packet.StartsWith("|S1"))
         {
@@ -670,6 +714,9 @@ public class PacketHandler
             _state.ExpNext = ParseInt(parts[8]);
             _state.Exp = ParseInt(parts[9]);
             if (parts.Length > 10) _state.UserName = parts[10];
+            if (parts.Length > 11) _state.Agility = ParseInt(parts[11]);
+            if (parts.Length > 12) _state.Strength = ParseInt(parts[12]);
+            if (parts.Length > 13) _state.Reputation = ParseInt(parts[13]);
             GD.Print($"[GAME] Stats: HP {_state.MinHp}/{_state.MaxHp} Mana {_state.MinMana}/{_state.MaxMana} Lvl {_state.Level}");
         }
     }
@@ -1037,6 +1084,100 @@ public class PacketHandler
                 _state.Inventory[slot - 1].Equipped = equipped != 0;
             }
         }
+    }
+
+    /// <summary>
+    /// |X{charindex},{value} — Change a single appearance field on a character.
+    /// X = B(body), W(weapon), E(shield), H(heading), C(casco/helmet).
+    /// </summary>
+    private void HandleCharAppearance(string data, char field)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 2) return;
+
+        int idx = ParseInt(parts[0]);
+        int value = ParseInt(parts[1]);
+
+        if (!_state.Characters.TryGetValue(idx, out var ch))
+            return;
+
+        switch (field)
+        {
+            case 'B': ch.Body = value; break;
+            case 'W': ch.WeaponAnim = value; break;
+            case 'E': ch.ShieldAnim = value; break;
+            case 'H': ch.Heading = value; break;
+            case 'C': ch.CascoAnim = value; break;
+        }
+    }
+
+    /// <summary>
+    /// ANM — Equipment stats (20 comma-separated fields).
+    /// armaMin,armaMax, armorMin,armorMax, escuMin,escuMax,
+    /// cascMin,cascMax, herrMin,herrMax,
+    /// magMin,magMax, magMina,magMaxa, magMinb,magMaxb, magMinc,magMaxc, magMind,magMaxd
+    /// </summary>
+    private void HandleEquipmentStats(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 20) return;
+
+        _state.AttackMin = ParseInt(parts[0]);
+        _state.AttackMax = ParseInt(parts[1]);
+
+        int armorMin = ParseInt(parts[2]), armorMax = ParseInt(parts[3]);
+        int escuMin = ParseInt(parts[4]), escuMax = ParseInt(parts[5]);
+        int cascMin = ParseInt(parts[6]), cascMax = ParseInt(parts[7]);
+        int herrMin = ParseInt(parts[8]), herrMax = ParseInt(parts[9]);
+        _state.DefenseMin = armorMin + escuMin + cascMin + herrMin;
+        _state.DefenseMax = armorMax + escuMax + cascMax + herrMax;
+
+        int magMin = ParseInt(parts[10]), magMax = ParseInt(parts[11]);
+        int magMina = ParseInt(parts[12]), magMaxa = ParseInt(parts[13]);
+        int magMinb = ParseInt(parts[14]), magMaxb = ParseInt(parts[15]);
+        int magMinc = ParseInt(parts[16]), magMaxc = ParseInt(parts[17]);
+        int magMind = ParseInt(parts[18]), magMaxd = ParseInt(parts[19]);
+        _state.MagDefMin = magMin + magMina + magMinb + magMinc + magMind;
+        _state.MagDefMax = magMax + magMaxa + magMaxb + magMaxc + magMaxd;
+    }
+
+    /// <summary>
+    /// LDM{name1},{name2},... — Friends list.
+    /// </summary>
+    private void HandleFriendsList(string data)
+    {
+        _state.FriendsList.Clear();
+        if (string.IsNullOrEmpty(data)) return;
+        foreach (var name in data.Split(','))
+        {
+            var trimmed = name.Trim();
+            if (trimmed.Length > 0)
+                _state.FriendsList.Add(trimmed);
+        }
+    }
+
+    /// <summary>
+    /// KFM{name} — Friend came online.
+    /// </summary>
+    private void HandleFriendOnline(string data)
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"{data.Trim()} se ha conectado.",
+            Color = "00FF00"
+        });
+    }
+
+    /// <summary>
+    /// DFM{name} — Friend went offline.
+    /// </summary>
+    private void HandleFriendOffline(string data)
+    {
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"{data.Trim()} se ha desconectado.",
+            Color = "FF0000"
+        });
     }
 
     private static int ParseInt(string s)

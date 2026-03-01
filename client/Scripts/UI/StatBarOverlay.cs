@@ -34,7 +34,7 @@ public partial class StatBarOverlay : Control
     private int _exp, _expNext;
 
     private Font? _font;
-    private int _fontSize = 8;
+    private int _fontSize = 7; // VB6: Tahoma 6.75pt Bold
 
     public override void _Ready()
     {

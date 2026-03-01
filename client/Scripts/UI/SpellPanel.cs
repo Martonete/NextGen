@@ -70,15 +70,14 @@ public partial class SpellPanel : Control
                     new Color(1f, 1f, 1f, 0.1f));
             }
 
-            // Spell name
+            // Spell name — VB6 hlst shows plain name, no numbered prefix
             if (spell.SpellId > 0)
             {
-                string label = $"{slot + 1}. {spell.Name}";
-                font.DrawText(this, 4, (int)lineY + 1, label, Colors.White);
+                font.DrawText(this, 4, (int)lineY + 1, spell.Name, Colors.White);
             }
             else
             {
-                font.DrawText(this, 4, (int)lineY + 1, $"{slot + 1}. (vacio)",
+                font.DrawText(this, 4, (int)lineY + 1, "(vacio)",
                     new Color(0.4f, 0.4f, 0.4f));
             }
         }

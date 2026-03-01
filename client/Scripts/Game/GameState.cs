@@ -96,6 +96,16 @@ public class GameState
     public int MusicId;
     public int OnlineCount;
 
+    // Combat stats (from ANM packet)
+    public int Strength;
+    public int Agility;
+    public int AttackMin, AttackMax;
+    public int DefenseMin, DefenseMax;
+    public int MagDefMin, MagDefMax;
+
+    // Friends list
+    public List<string> FriendsList = new();
+
     // Inventory (25 slots)
     public InventorySlot[] Inventory = new InventorySlot[25];
 
