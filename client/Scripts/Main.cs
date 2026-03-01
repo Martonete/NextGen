@@ -6,6 +6,7 @@ using TierrasSagradasAO.Data;
 using TierrasSagradasAO.Game;
 using TierrasSagradasAO.Network;
 using TierrasSagradasAO.Rendering;
+using TierrasSagradasAO.UI;
 
 namespace TierrasSagradasAO;
 
@@ -53,7 +54,19 @@ public partial class Main : Control
     private Label? _mapLabel;
     private Label? _onlineLabel;
     private Label? _coordsLabel;
-    private GridContainer? _inventoryGrid;
+
+    // Inventory & Spells UI (VB6-accurate positions)
+    private InventoryPanel? _inventoryPanel;
+    private SpellPanel? _spellPanel;
+    private Button? _invTabButton;
+    private Button? _spellTabButton;
+    private Label? _itemNameLabel;
+    private CheckButton? _dydToggle;
+    private Button? _lanzarButton;
+    private Button? _infoButton;
+    private Button? _spellUpButton;
+    private Button? _spellDownButton;
+    private bool _showingSpells;
 
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
@@ -128,7 +141,73 @@ public partial class Main : Control
         _mapLabel = GetNode<Label>("GameUI/MapLabel");
         _onlineLabel = GetNode<Label>("GameUI/OnlineLabel");
         _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
-        _inventoryGrid = GetNode<GridContainer>("GameUI/InventoryGrid");
+
+        // === Inventory & Spells UI (VB6-exact pixel positions, twips÷15) ===
+
+        // Tab labels — VB6: Label4 "Inventario" at (536,120,131,29), Label7 "Hechizos" at (672,120,125,30)
+        _invTabButton = CreateButton("Inventario", 536, 120, 131, 29);
+        _gameUI.AddChild(_invTabButton);
+        _invTabButton.Pressed += OnInventoryTabPressed;
+
+        _spellTabButton = CreateButton("Hechizos", 672, 120, 125, 30);
+        _gameUI.AddChild(_spellTabButton);
+        _spellTabButton.Pressed += OnSpellTabPressed;
+
+        // Inventory panel — VB6: picInv at (580,155,174,174)
+        _inventoryPanel = new InventoryPanel();
+        _inventoryPanel.Position = new Vector2(580, 155);
+        _inventoryPanel.Size = new Vector2(174, 174);
+        _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+        _gameUI.AddChild(_inventoryPanel);
+
+        // Item name tooltip — VB6: ItemName at (584,337,161,25), cyan text, centered
+        _itemNameLabel = new Label();
+        _itemNameLabel.Position = new Vector2(584, 337);
+        _itemNameLabel.Size = new Vector2(161, 25);
+        _itemNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _itemNameLabel.AddThemeColorOverride("font_color", new Color(0, 1, 1)); // VB6 &H0000FFFF& = cyan
+        _itemNameLabel.AddThemeFontSizeOverride("font_size", 9);
+        _gameUI.AddChild(_itemNameLabel);
+        _inventoryPanel.TooltipLabel = _itemNameLabel;
+
+        // DyD toggle — VB6: DyD at (541,338,21,21)
+        _dydToggle = new CheckButton();
+        _dydToggle.Position = new Vector2(541, 338);
+        _dydToggle.Size = new Vector2(21, 21);
+        _dydToggle.Text = "";
+        _dydToggle.Toggled += (toggled) => { _inventoryPanel.DyDEnabled = toggled; };
+        _gameUI.AddChild(_dydToggle);
+
+        // Spell panel — VB6: hlst at (585,165,164,159), initially hidden
+        _spellPanel = new SpellPanel();
+        _spellPanel.Position = new Vector2(585, 165);
+        _spellPanel.Size = new Vector2(164, 159);
+        _spellPanel.MouseFilter = Control.MouseFilterEnum.Stop;
+        _spellPanel.Visible = false;
+        _gameUI.AddChild(_spellPanel);
+
+        // LANZAR button — VB6: CmdLanzar at (536,327,142,40), hidden initially
+        _lanzarButton = CreateButton("LANZAR", 536, 327, 142, 40);
+        _lanzarButton.Visible = false;
+        _gameUI.AddChild(_lanzarButton);
+        _lanzarButton.Pressed += () => _spellPanel.CastSelected();
+
+        // INFO button — VB6: cmdInfo at (720,336,57,27), hidden initially
+        _infoButton = CreateButton("INFO", 720, 336, 57, 27);
+        _infoButton.Visible = false;
+        _gameUI.AddChild(_infoButton);
+        _infoButton.Pressed += () => _spellPanel.InfoSelected();
+
+        // Spell move arrows — VB6: cmdMoverHechi[0] up at (766,222,15,25), [1] down at (766,247,15,25)
+        _spellUpButton = CreateButton("^", 766, 222, 15, 25);
+        _spellUpButton.Visible = false;
+        _gameUI.AddChild(_spellUpButton);
+        _spellUpButton.Pressed += () => _spellPanel.MoveSpell(1);
+
+        _spellDownButton = CreateButton("v", 766, 247, 15, 25);
+        _spellDownButton.Visible = false;
+        _gameUI.AddChild(_spellDownButton);
+        _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
@@ -142,6 +221,67 @@ public partial class Main : Control
         _loginPanel.Visible = true;
         _charSelectPanel.Visible = false;
         _gameUI.Visible = false;
+    }
+
+    /// <summary>
+    /// Create a styled button at VB6-exact pixel position.
+    /// </summary>
+    private static Button CreateButton(string text, float x, float y, float w, float h)
+    {
+        var btn = new Button();
+        btn.Position = new Vector2(x, y);
+        btn.Size = new Vector2(w, h);
+        btn.Text = text;
+        btn.AddThemeFontSizeOverride("font_size", 9);
+
+        var style = new StyleBoxFlat();
+        style.BgColor = new Color(0.15f, 0.15f, 0.2f, 0.9f);
+        style.BorderColor = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+        style.SetBorderWidthAll(1);
+        style.SetContentMarginAll(1);
+        btn.AddThemeStyleboxOverride("normal", style);
+
+        var hover = new StyleBoxFlat();
+        hover.BgColor = new Color(0.25f, 0.25f, 0.35f, 0.9f);
+        hover.BorderColor = new Color(0.7f, 0.7f, 0.7f, 0.8f);
+        hover.SetBorderWidthAll(1);
+        hover.SetContentMarginAll(1);
+        btn.AddThemeStyleboxOverride("hover", hover);
+
+        var pressed = new StyleBoxFlat();
+        pressed.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.9f);
+        pressed.BorderColor = new Color(0.5f, 0.5f, 0.5f, 0.8f);
+        pressed.SetBorderWidthAll(1);
+        pressed.SetContentMarginAll(1);
+        btn.AddThemeStyleboxOverride("pressed", pressed);
+
+        return btn;
+    }
+
+    private void OnInventoryTabPressed()
+    {
+        _showingSpells = false;
+        _inventoryPanel!.Visible = true;
+        _itemNameLabel!.Visible = true;
+        _dydToggle!.Visible = true;
+        _spellPanel!.Visible = false;
+        _lanzarButton!.Visible = false;
+        _infoButton!.Visible = false;
+        _spellUpButton!.Visible = false;
+        _spellDownButton!.Visible = false;
+    }
+
+    private void OnSpellTabPressed()
+    {
+        _showingSpells = true;
+        _inventoryPanel!.Visible = false;
+        _itemNameLabel!.Visible = false;
+        _dydToggle!.Visible = false;
+        _spellPanel!.Visible = true;
+        _lanzarButton!.Visible = true;
+        _infoButton!.Visible = true;
+        _spellUpButton!.Visible = true;
+        _spellDownButton!.Visible = true;
     }
 
     private void LoadBackgroundImage(string dataPath)
@@ -363,6 +503,12 @@ public partial class Main : Control
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = false;
                 _gameUI!.Visible = true;
+                // Initialize inventory/spell panels with TCP (only available after connect)
+                if (_tcp != null)
+                {
+                    _inventoryPanel!.Init(_state, _gameData, _tcp);
+                    _spellPanel!.Init(_state, _gameData, _tcp);
+                }
                 GD.Print("[MAIN] Entered game world");
                 break;
         }
@@ -426,7 +572,8 @@ public partial class Main : Control
         while (_state.ChatMessages.Count > 0)
         {
             var msg = _state.ChatMessages.Dequeue();
-            _console.AppendText($"[color=#{msg.Color}]{msg.Text}[/color]\n");
+            // VB6 console uses bold font (Weight=700 in RecTxt)
+            _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
         }
     }
 

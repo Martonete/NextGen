@@ -483,7 +483,7 @@ public static class CharRenderer
     /// Draw a GRH with optional centering for multi-tile graphics and color modulation.
     /// </summary>
     public static void DrawGrh(
-        Node2D canvas, GameData data, int grhIndex, int frame, Vector2 pos,
+        CanvasItem canvas, GameData data, int grhIndex, int frame, Vector2 pos,
         bool center = false, Color? modulate = null)
     {
         var resolved = data.ResolveGrh(grhIndex, frame);

@@ -190,6 +190,14 @@ public class PacketHandler
         {
             // Status broadcast, ignore for now
         }
+        else if (packet.StartsWith("|S1"))
+        {
+            HandlePartialInvAmount(packet[3..]);
+        }
+        else if (packet.StartsWith("|S2"))
+        {
+            HandlePartialInvEquip(packet[3..]);
+        }
         else if (packet.StartsWith("||"))
         {
             HandleConsoleMessage(packet[2..]);
@@ -990,6 +998,45 @@ public class PacketHandler
     {
         _state.LoginError = data;
         GD.Print($"[LOGIN] ERR: {data}");
+    }
+
+    /// <summary>
+    /// |S1{slot},{amount} — Partial inventory update: change item amount.
+    /// </summary>
+    private void HandlePartialInvAmount(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int slot = ParseInt(parts[0]);
+            int amount = ParseInt(parts[1]);
+            if (slot >= 1 && slot <= 25)
+            {
+                _state.Inventory[slot - 1].Amount = amount;
+                // If amount reaches 0, clear the slot
+                if (amount <= 0)
+                {
+                    _state.Inventory[slot - 1] = new InventorySlot();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// |S2{slot},{equipped} — Partial inventory update: change equip state.
+    /// </summary>
+    private void HandlePartialInvEquip(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length >= 2)
+        {
+            int slot = ParseInt(parts[0]);
+            int equipped = ParseInt(parts[1]);
+            if (slot >= 1 && slot <= 25)
+            {
+                _state.Inventory[slot - 1].Equipped = equipped != 0;
+            }
+        }
     }
 
     private static int ParseInt(string s)

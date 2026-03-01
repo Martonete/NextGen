@@ -292,14 +292,15 @@ public class InputHandler
     }
 
     /// <summary>
-    /// GM Shift+Click → /TELEP YO mapa,x,y (VB6: teleport to clicked tile).
+    /// GM Shift+Click → /TELEP YO mapa x y (VB6: teleport to clicked tile).
+    /// VB6 uses spaces as separators, not commas.
     /// </summary>
     public void HandleGmTeleport(Vector2 viewportPos, int userX, int userY, int currentMap)
     {
         var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {
-            _tcp.SendPacket($";/TELEP YO {currentMap},{tileX},{tileY}");
+            _tcp.SendPacket($";/TELEP YO {currentMap} {tileX} {tileY}");
         }
     }
 }

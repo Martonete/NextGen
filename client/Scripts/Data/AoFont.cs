@@ -144,7 +144,7 @@ public class AoFont
     /// for color tinting. The font texture has white glyphs on transparent
     /// background (after color key processing), so modulate = desired color.
     /// </summary>
-    public void DrawText(Node2D canvas, int x, int y, string text,
+    public void DrawText(CanvasItem canvas, int x, int y, string text,
                          Color color, bool center = false)
     {
         if (Texture == null || string.IsNullOrEmpty(text)) return;

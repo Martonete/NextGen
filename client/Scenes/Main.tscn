@@ -269,14 +269,6 @@ offset_right = 780.0
 offset_bottom = 25.0
 horizontal_alignment = 1
 
-[node name="InventoryGrid" type="GridContainer" parent="GameUI"]
-layout_mode = 0
-offset_left = 580.0
-offset_top = 160.0
-offset_right = 780.0
-offset_bottom = 360.0
-columns = 5
-
 [node name="MapLabel" type="Label" parent="GameUI"]
 layout_mode = 0
 offset_left = 2.0
