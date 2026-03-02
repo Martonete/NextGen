@@ -53,6 +53,9 @@ public partial class WorldRenderer : Node2D
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingMapParticleDraws = new();
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingCharParticleDraws = new();
 
+    // Pending aura draws for the additive blend layer (VB6: D3DBLEND_ONE/ONE)
+    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
+
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
 
@@ -163,9 +166,10 @@ public partial class WorldRenderer : Node2D
         if (_state == null || _data == null || _animator == null) return;
         if (_state.MapData == null || _state.Paused) return;
 
-        // Clear pending particle draws from previous frame
+        // Clear pending draws from previous frame
         _pendingMapParticleDraws.Clear();
         _pendingCharParticleDraws.Clear();
+        _pendingAuraDraws.Clear();
 
         // VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
         // During scroll, camera center stays at the old tile while offset accumulates
@@ -515,12 +519,56 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Draw all pending particle draws on a given canvas (used by AdditiveParticleLayer).
+    /// Draw all pending particle and aura draws on a given canvas (used by AdditiveParticleLayer).
+    /// Auras are drawn first (behind particles in additive layer).
     /// </summary>
     public void DrawPendingParticles(CanvasItem canvas)
     {
         if (_data == null) return;
 
+        // Auras first (VB6: drawn before character body, use additive blend)
+        foreach (var (grhIndex, frame, pos, color, angle) in _pendingAuraDraws)
+        {
+            if (angle != 0f)
+            {
+                // Rotating aura — use DrawSetTransform for rotation around sprite center
+                var resolved = _data.ResolveGrh(grhIndex, frame);
+                if (resolved == null || resolved.FileNum <= 0) continue;
+                var texture = _data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) continue;
+
+                int sx = resolved.SX, sy = resolved.SY;
+                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                int texW = texture.GetWidth(), texH = texture.GetHeight();
+                if (texW > 0) sx = sx % texW;
+                if (texH > 0) sy = sy % texH;
+                if (sx + pw > texW) pw = texW - sx;
+                if (sy + ph > texH) ph = texH - sy;
+                if (pw <= 0 || ph <= 0) continue;
+
+                // Center the GRH (same as CharRenderer centering logic)
+                float drawX = pos.X;
+                float drawY = pos.Y;
+                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+                if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+                    drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+
+                float cx = drawX + pw / 2f;
+                float cy = drawY + ph / 2f;
+                ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
+                var srcRect = new Rect2(sx, sy, pw, ph);
+                var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
+            }
+            else
+            {
+                CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
+            }
+        }
+
+        // Then particles (map-attached and character-attached)
         foreach (var (grhIndex, frame, pos, color) in _pendingMapParticleDraws)
         {
             CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
@@ -538,6 +586,16 @@ public partial class WorldRenderer : Node2D
     public void QueueCharParticleDraw(int grhIndex, int frame, Vector2 pos, Color color)
     {
         _pendingCharParticleDraws.Add((grhIndex, frame, pos, color));
+    }
+
+    /// <summary>
+    /// Queue an aura draw for the additive blend layer.
+    /// VB6: Draw_Aura passes Alpha=True → Device_Box_Textured_Render uses D3DBLEND_ONE/ONE.
+    /// Called by CharRenderer.DrawSingleAura.
+    /// </summary>
+    public void QueueAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle)
+    {
+        _pendingAuraDraws.Add((grhIndex, frame, pos, color, angle));
     }
 
     /// <summary>

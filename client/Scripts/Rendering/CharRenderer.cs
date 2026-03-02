@@ -118,6 +118,10 @@ public static class CharRenderer
         // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)
         DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
+        // VB6: Auras are drawn BEFORE dibujarPersonaje (behind the character body).
+        // They use additive blend (D3DBLEND_ONE/ONE), queued to WorldRenderer's additive layer.
+        DrawAuras(canvas, ch, screenPos, headOffset, data, deltaMs);
+
         // Heading-dependent draw order (VB6: dibujarPersonaje)
         switch (heading)
         {
@@ -157,9 +161,6 @@ public static class CharRenderer
         // Mark equipment debug as logged (after first full draw)
         if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
             ch._equipDebugLogged = true;
-
-        // Auras (VB6: drawn after all equipment, before FX)
-        DrawAuras(canvas, ch, screenPos, headOffset, data, deltaMs);
 
         // FX overlays (up to 3 simultaneous)
         DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
@@ -365,43 +366,18 @@ public static class CharRenderer
             }
         }
 
-        if (aura.Giratoria && angle != 0f)
+        // VB6: Draw_Aura passes Alpha=True to Device_Box_Textured_Render,
+        // which sets D3DBLEND_ONE/D3DBLEND_ONE (additive blending).
+        // Queue aura draws to WorldRenderer's additive blend layer.
+        var worldRenderer = canvas as WorldRenderer;
+        if (worldRenderer != null)
         {
-            // VB6: Device_Box_Textured_Render with rotation angle
-            // In Godot we use DrawSetTransform to apply rotation around the aura center
-            var resolved = data.ResolveGrh(grhIndex, frame);
-            if (resolved == null || resolved.FileNum <= 0) return;
-            var texture = data.Textures?.GetTexture(resolved.FileNum);
-            if (texture == null) return;
-
-            int sx = resolved.SX, sy = resolved.SY;
-            int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-            int texW = texture.GetWidth(), texH = texture.GetHeight();
-            if (texW > 0) sx = sx % texW;
-            if (texH > 0) sy = sy % texH;
-            if (sx + pw > texW) pw = texW - sx;
-            if (sy + ph > texH) ph = texH - sy;
-            if (pw <= 0 || ph <= 0) return;
-
-            // Center the GRH
-            float drawX = auraX;
-            float drawY = auraY;
-            if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-                drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-            if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-                drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
-
-            // Apply rotation around sprite center
-            float cx = drawX + pw / 2f;
-            float cy = drawY + ph / 2f;
-            canvas.DrawSetTransform(new Vector2(cx, cy), angle);
-            var srcRect = new Rect2(sx, sy, pw, ph);
-            var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
-            canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
-            canvas.DrawSetTransform(Vector2.Zero, 0f); // Reset
+            worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
+                                         aura.Giratoria ? angle : 0f);
         }
         else
         {
+            // Fallback: draw directly (no additive blend)
             DrawGrh(canvas, data, grhIndex, frame, new Vector2(auraX, auraY), true, color);
         }
     }
