@@ -65,22 +65,59 @@ make run
 
 The server reads game data from `server/` (dat/, maps/, server.ini) and listens on port `5028`.
 
-#### Makefile commands
+---
+
+## Makefile Commands
+
+All commands run from the repo root. Type `make` or `make help` to see the full list.
+
+### Server
 
 | Command | Description |
 |---------|-------------|
-| `make build` | Compile release binary and copy to `server/` |
-| `make run` | Build + run the server |
-| `make dev` | Run in dev mode (debug build, faster compile) |
-| `make test` | Run all tests |
-| `make docker-run` | Build Docker image + start with compose |
-| `make docker-stop` | Stop Docker containers |
+| `make build` | Compile Rust server (release) and copy to `server/` |
+| `make run` | Build + run server locally |
+| `make dev` | Run server in dev mode (cargo run, faster compile) |
+| `make test` | Run all server tests |
+| `make clean` | Clean all build artifacts (server + client) |
+
+### Server (Docker)
+
+| Command | Description |
+|---------|-------------|
+| `make docker-run` | Build Docker image + `docker compose up` |
+| `make docker-stop` | `docker compose down` |
+| `make docker-logs` | Follow server logs in real time |
+
+### Client
+
+| Command | Description |
+|---------|-------------|
+| `make client` | Build C# + run game (shortcut) |
+| `make client-build` | Compile C# only (`dotnet build`) |
+| `make client-run` | Build C# + run game |
+| `make client-editor` | Open Godot editor |
+| `make client-clean` | Clean C# build artifacts |
+
+### Typical workflow
+
+```bash
+# First time / after git pull:
+make docker-run       # start server
+make client           # compile + play
+
+# Just recompile after code changes:
+make client-build
+
+# Multiple targets at once:
+make docker-run client-run
+```
 
 ---
 
 ## Client Setup (Godot 4.3 + C#)
 
-The client uses **Godot 4.3 with .NET (C#) support**. You need two things:
+The client uses **Godot 4.3 with .NET (C#) support**.
 
 ### 1. Install .NET 6.0 SDK
 
@@ -102,24 +139,27 @@ Choose the `.NET` variant for your OS (Windows/macOS/Linux). The standard versio
 
 ### 3. Open and run the client
 
-```
-1. Open Godot 4.3 .NET
-2. Click "Import" → navigate to client/ → select project.godot → "Import & Edit"
-3. Wait for Godot to import assets (first time takes a minute)
-4. Godot will auto-build the C# solution on first open
-5. Press F5 (or the Play button ▶) to run
+```bash
+# Option A: From command line (recommended)
+make client           # builds + runs
+
+# Option B: From Godot editor
+make client-editor    # opens the editor, then press F5
 ```
 
 The client connects to `127.0.0.1:5028` by default — make sure the server is running first.
+
+> **Important:** You must run `make client-build` (or `make client`) every time you pull new changes or modify C# code. Without this step, Godot runs the **old** compiled code.
 
 ### Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
 | "Unable to find .NET SDK" | Install .NET 6.0 SDK, restart Godot |
-| C# build errors on first open | Build → Build Solution (or Ctrl+Shift+B) |
-| "Connection refused" | Start the server first (`make run` or `docker compose up -d`) |
+| C# build errors on first open | `make client-build` or Ctrl+Shift+B in editor |
+| "Connection refused" | Start the server first (`make docker-run`) |
 | Assets missing / white textures | Make sure `client/Data/` has INIT/, Graficos/, Maps/ folders |
+| Changes not taking effect | Run `make client-build` before launching |
 
 ---
 
