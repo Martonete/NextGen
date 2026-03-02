@@ -28,6 +28,11 @@ public partial class BankPanel : Control
     // Image1(2): Retirar — Left=360/15=24, Top=2280/15=152, Width=1770/15=118, Height=420/15=28
     // Label1: Close — Left=2085/15=139, Top=0, Width=375/15=25, Height=375/15=25
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 25;
+
     private Label? _goldLabel;
     private Button? _bovedaBtn;
     private Button? _depositarBtn;
@@ -110,6 +115,29 @@ public partial class BankPanel : Control
         if (!Visible || _state == null) return;
         _goldLabel!.Text = _state.BankGold.ToString("N0");
         QueueRedraw();
+    }
+
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb)
+        {
+            if (mb.ButtonIndex == MouseButton.Left)
+            {
+                if (mb.Pressed && mb.Position.Y <= TitleBarH)
+                {
+                    _dragging = true;
+                    _dragOffset = mb.GlobalPosition - GlobalPosition;
+                }
+                else if (!mb.Pressed)
+                    _dragging = false;
+            }
+            AcceptEvent();
+        }
+        else if (@event is InputEventMouseMotion mm && _dragging)
+        {
+            GlobalPosition = mm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+        }
     }
 
     public override void _Draw()

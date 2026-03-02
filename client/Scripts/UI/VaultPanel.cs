@@ -54,6 +54,11 @@ public partial class VaultPanel : Control
     private static readonly Color GoldInputBg = new(19f / 255f, 21f / 255f, 22f / 255f);
     private static readonly Color GoldInputFg = new(145f / 255f, 123f / 255f, 85f / 255f);
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 30;
+
     private GameState? _state;
     private GameData? _data;
     private AoTcpClient? _tcp;
@@ -303,6 +308,29 @@ public partial class VaultPanel : Control
     public override void _GuiInput(InputEvent @event)
     {
         if (_state == null || _tcp == null) return;
+
+        // Dragging by title bar
+        if (@event is InputEventMouseButton dragMb)
+        {
+            if (dragMb.ButtonIndex == MouseButton.Left)
+            {
+                if (dragMb.Pressed && dragMb.Position.Y <= TitleBarH)
+                {
+                    _dragging = true;
+                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
+                    AcceptEvent();
+                    return;
+                }
+                if (!dragMb.Pressed && _dragging)
+                    _dragging = false;
+            }
+        }
+        if (@event is InputEventMouseMotion dragMm && _dragging)
+        {
+            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+            return;
+        }
 
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {

@@ -23,6 +23,11 @@ public partial class KeyBindPanel : PanelContainer
     private Button[] _keyButtons = new Button[KeyBindings.ActionCount];
     private Label[] _actionLabels = new Label[KeyBindings.ActionCount];
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 28;
+
     // Rebinding state
     private int _rebindingIndex = -1; // which action is being rebound (-1 = none)
     private Label? _statusLabel;
@@ -180,6 +185,29 @@ public partial class KeyBindPanel : PanelContainer
         AddChild(root);
 
         Visible = false;
+    }
+
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb)
+        {
+            if (mb.ButtonIndex == MouseButton.Left)
+            {
+                if (mb.Pressed && mb.Position.Y <= TitleBarH)
+                {
+                    _dragging = true;
+                    _dragOffset = mb.GlobalPosition - GlobalPosition;
+                }
+                else if (!mb.Pressed)
+                    _dragging = false;
+            }
+            AcceptEvent();
+        }
+        else if (@event is InputEventMouseMotion mm && _dragging)
+        {
+            GlobalPosition = mm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+        }
     }
 
     // ── Open / Close ──────────────────────────────────────

@@ -5,18 +5,22 @@ namespace TierrasSagradasAO.UI;
 
 /// <summary>
 /// VB6 frmOpcionesNew — Options panel with 3 tabs: Juego, Controles, Render.
-/// Uses a temporary GameConfig copy for Cancel support.
-/// Saves to Data/INIT/Options.tsao on accept.
+/// Changes apply immediately. Draggable by title bar. X button to close.
+/// Saves to Data/INIT/Options.tsao on every change.
 /// </summary>
 public partial class OptionsPanel : PanelContainer
 {
-    private const int PanelW = 400;
+    private const int PanelW = 420;
     private const int PanelH = 480;
+    private const int TitleBarH = 28;
 
     private GameState? _state;
     private GameConfig? _config;
-    private GameConfig? _tempConfig;
     private string _dataPath = "";
+
+    // Dragging state
+    private bool _dragging;
+    private Vector2 _dragOffset;
 
     // Tab containers
     private Control? _gameTab;
@@ -50,8 +54,7 @@ public partial class OptionsPanel : PanelContainer
     private CheckBox? _chkMouseContext;
 
     // ── Render tab controls ──
-    private HSlider? _sldPerformance;
-    private Label? _lblPerformance;
+    private OptionButton? _optPerformance;
     private CheckBox? _chkAuras;
     private CheckBox? _chkParticles;
     private CheckBox? _chkShadows;
@@ -65,6 +68,9 @@ public partial class OptionsPanel : PanelContainer
     private CheckBox? _chkMinimap;
     private CheckBox? _chkMinimapPos;
     private CheckBox? _chkDeathDialog;
+
+    // Suppress initial load toggles from triggering saves
+    private bool _loading;
 
     // Callback for when config is applied (Main.cs hooks into this)
     public event System.Action? OnConfigApplied;
@@ -97,14 +103,36 @@ public partial class OptionsPanel : PanelContainer
         var root = new VBoxContainer();
         root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
-        // Title
+        // Title bar with close button
+        var titleBar = new HBoxContainer();
+        titleBar.CustomMinimumSize = new Vector2(0, TitleBarH);
+
         var title = new Label();
         title.Text = "Opciones";
         title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         title.AddThemeFontSizeOverride("font_size", 16);
         title.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.4f));
-        root.AddChild(title);
-        root.AddChild(Spacer(4));
+        titleBar.AddChild(title);
+
+        var closeBtn = new Button();
+        closeBtn.Text = "X";
+        closeBtn.CustomMinimumSize = new Vector2(28, 28);
+        closeBtn.AddThemeFontSizeOverride("font_size", 13);
+        closeBtn.FocusMode = FocusModeEnum.None;
+        var closeBtnStyle = new StyleBoxFlat();
+        closeBtnStyle.BgColor = new Color(0.6f, 0.15f, 0.15f, 0.9f);
+        closeBtnStyle.SetCornerRadiusAll(3);
+        closeBtn.AddThemeStyleboxOverride("normal", closeBtnStyle);
+        var closeBtnHover = new StyleBoxFlat();
+        closeBtnHover.BgColor = new Color(0.8f, 0.2f, 0.2f, 0.9f);
+        closeBtnHover.SetCornerRadiusAll(3);
+        closeBtn.AddThemeStyleboxOverride("hover", closeBtnHover);
+        closeBtn.Pressed += Close;
+        titleBar.AddChild(closeBtn);
+
+        root.AddChild(titleBar);
+        root.AddChild(Spacer(2));
 
         // Tab buttons row
         var tabRow = new HBoxContainer();
@@ -123,7 +151,7 @@ public partial class OptionsPanel : PanelContainer
         tabRow.AddChild(_renderTabBtn);
 
         root.AddChild(tabRow);
-        root.AddChild(Spacer(6));
+        root.AddChild(Spacer(4));
 
         // Separator
         var sep = new HSeparator();
@@ -151,31 +179,45 @@ public partial class OptionsPanel : PanelContainer
         scroll.AddChild(tabHost);
         root.AddChild(scroll);
 
-        root.AddChild(Spacer(6));
-
-        // Bottom buttons
-        var btnRow = new HBoxContainer();
-        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
-
-        var saveBtn = new Button();
-        saveBtn.Text = "Aceptar";
-        saveBtn.CustomMinimumSize = new Vector2(100, 32);
-        saveBtn.Pressed += OnAccept;
-        btnRow.AddChild(saveBtn);
-
-        btnRow.AddChild(Spacer(10, true));
-
-        var cancelBtn = new Button();
-        cancelBtn.Text = "Cancelar";
-        cancelBtn.CustomMinimumSize = new Vector2(100, 32);
-        cancelBtn.Pressed += OnCancel;
-        btnRow.AddChild(cancelBtn);
-
-        root.AddChild(btnRow);
         AddChild(root);
 
         SetTab(0);
         Visible = false;
+    }
+
+    // ── Dragging + click-through prevention ─────────────
+
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb)
+        {
+            if (mb.ButtonIndex == MouseButton.Left)
+            {
+                if (mb.Pressed)
+                {
+                    // Start drag if clicking in title bar area
+                    if (mb.Position.Y <= TitleBarH)
+                    {
+                        _dragging = true;
+                        _dragOffset = mb.GlobalPosition - GlobalPosition;
+                    }
+                }
+                else
+                {
+                    _dragging = false;
+                }
+            }
+            // Consume all mouse clicks so they don't pass through
+            AcceptEvent();
+        }
+        else if (@event is InputEventMouseMotion mm)
+        {
+            if (_dragging)
+            {
+                GlobalPosition = mm.GlobalPosition - _dragOffset;
+                AcceptEvent();
+            }
+        }
     }
 
     // ── Tab builders ──────────────────────────────────────
@@ -187,25 +229,35 @@ public partial class OptionsPanel : PanelContainer
         // -- Audio section --
         vbox.AddChild(SectionLabel("Audio"));
 
-        _chkMusic = MakeCheck("Música habilitada");
+        _chkMusic = MakeCheck("Musica habilitada");
+        _chkMusic.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkMusic);
 
         var musicVolRow = new HBoxContainer();
-        musicVolRow.AddChild(SmallLabel("Volumen música:"));
+        musicVolRow.AddChild(SmallLabel("Volumen musica:"));
         _sldMusicVol = MakeSlider(0, 100, 70);
-        _sldMusicVol.ValueChanged += v => { if (_lblMusicVol != null) _lblMusicVol.Text = $"{(int)v}%"; };
+        _sldMusicVol.ValueChanged += v =>
+        {
+            if (_lblMusicVol != null) _lblMusicVol.Text = $"{(int)v}%";
+            ApplyImmediate();
+        };
         musicVolRow.AddChild(_sldMusicVol);
         _lblMusicVol = SmallLabel("70%", 40);
         musicVolRow.AddChild(_lblMusicVol);
         vbox.AddChild(musicVolRow);
 
         _chkSfx = MakeCheck("Efectos de sonido");
+        _chkSfx.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkSfx);
 
         var sfxVolRow = new HBoxContainer();
         sfxVolRow.AddChild(SmallLabel("Volumen FX:"));
         _sldSfxVol = MakeSlider(0, 100, 100);
-        _sldSfxVol.ValueChanged += v => { if (_lblSfxVol != null) _lblSfxVol.Text = $"{(int)v}%"; };
+        _sldSfxVol.ValueChanged += v =>
+        {
+            if (_lblSfxVol != null) _lblSfxVol.Text = $"{(int)v}%";
+            ApplyImmediate();
+        };
         sfxVolRow.AddChild(_sldSfxVol);
         _lblSfxVol = SmallLabel("100%", 40);
         sfxVolRow.AddChild(_lblSfxVol);
@@ -217,21 +269,27 @@ public partial class OptionsPanel : PanelContainer
         vbox.AddChild(SectionLabel("Chat / Consola"));
 
         _chkGlobalChat = MakeCheck("Mostrar mensajes globales");
+        _chkGlobalChat.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkGlobalChat);
 
         _chkPrivateChat = MakeCheck("Mostrar mensajes privados");
+        _chkPrivateChat.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkPrivateChat);
 
         _chkBuffTimers = MakeCheck("Mostrar contadores de buffs");
+        _chkBuffTimers.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkBuffTimers);
 
-        _chkContactSignIn = MakeCheck("Notificar conexión de contactos");
+        _chkContactSignIn = MakeCheck("Notificar conexion de contactos");
+        _chkContactSignIn.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkContactSignIn);
 
-        _chkContactSignOut = MakeCheck("Notificar desconexión de contactos");
+        _chkContactSignOut = MakeCheck("Notificar desconexion de contactos");
+        _chkContactSignOut.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkContactSignOut);
 
         _chkChatSound = MakeCheck("Alerta sonora de mensajes");
+        _chkChatSound.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkChatSound);
 
         vbox.AddChild(Spacer(8));
@@ -240,19 +298,21 @@ public partial class OptionsPanel : PanelContainer
         vbox.AddChild(SectionLabel("Rendimiento"));
 
         _chkVsync = MakeCheck("V-Sync (sincronizar con monitor)");
+        _chkVsync.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkVsync);
 
         var fpsRow = new HBoxContainer();
-        fpsRow.AddChild(SmallLabel("Límite FPS:"));
+        fpsRow.AddChild(SmallLabel("Limite FPS:"));
         _optFpsLimit = new OptionButton();
         _optFpsLimit.AddItem("60 FPS", 0);
         _optFpsLimit.AddItem("120 FPS", 1);
         _optFpsLimit.AddItem("144 FPS", 2);
         _optFpsLimit.AddItem("165 FPS", 3);
         _optFpsLimit.AddItem("240 FPS", 4);
-        _optFpsLimit.AddItem("Sin límite", 5);
+        _optFpsLimit.AddItem("Sin limite", 5);
         _optFpsLimit.CustomMinimumSize = new Vector2(120, 0);
         _optFpsLimit.AddThemeFontSizeOverride("font_size", 11);
+        _optFpsLimit.ItemSelected += _ => ApplyImmediate();
         fpsRow.AddChild(_optFpsLimit);
         vbox.AddChild(fpsRow);
 
@@ -263,7 +323,7 @@ public partial class OptionsPanel : PanelContainer
     {
         var vbox = new VBoxContainer();
 
-        vbox.AddChild(SectionLabel("Configuración de Teclas"));
+        vbox.AddChild(SectionLabel("Configuracion de Teclas"));
 
         _btnKeyConfig = new Button();
         _btnKeyConfig.Text = "Configurar Teclas";
@@ -272,15 +332,18 @@ public partial class OptionsPanel : PanelContainer
         vbox.AddChild(_btnKeyConfig);
 
         vbox.AddChild(Spacer(12));
-        vbox.AddChild(SectionLabel("Ratón"));
+        vbox.AddChild(SectionLabel("Raton"));
 
         _chkMouseDClick = MakeCheck("Doble click para interactuar");
+        _chkMouseDClick.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkMouseDClick);
 
         _chkMouseRClick = MakeCheck("Click derecho como doble click");
+        _chkMouseRClick.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkMouseRClick);
 
-        _chkMouseContext = MakeCheck("Menú contextual al hacer click derecho");
+        _chkMouseContext = MakeCheck("Menu contextual al hacer click derecho");
+        _chkMouseContext.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkMouseContext);
 
         return vbox;
@@ -290,74 +353,96 @@ public partial class OptionsPanel : PanelContainer
     {
         var vbox = new VBoxContainer();
 
-        // Performance preset slider
-        vbox.AddChild(SectionLabel("Calidad Gráfica"));
+        // Performance preset as dropdown selector
+        vbox.AddChild(SectionLabel("Calidad Grafica"));
 
-        var perfRow = new HBoxContainer();
-        perfRow.AddChild(SmallLabel("Mínimo"));
-        _sldPerformance = MakeSlider(0, 4, 2);
-        _sldPerformance.Step = 1;
-        _sldPerformance.CustomMinimumSize = new Vector2(180, 0);
-        _sldPerformance.ValueChanged += OnPerformanceChanged;
-        perfRow.AddChild(_sldPerformance);
-        perfRow.AddChild(SmallLabel("Máximo"));
-        _lblPerformance = SmallLabel("Medio", 60);
-        _lblPerformance.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.4f));
-        perfRow.AddChild(_lblPerformance);
-        vbox.AddChild(perfRow);
+        var qualityRow = new HBoxContainer();
+        qualityRow.AddChild(SmallLabel("Preset:"));
+        _optPerformance = new OptionButton();
+        _optPerformance.AddItem("Minimo", 0);
+        _optPerformance.AddItem("Bajo", 1);
+        _optPerformance.AddItem("Medio", 2);
+        _optPerformance.AddItem("Alto", 3);
+        _optPerformance.AddItem("Maximo", 4);
+        _optPerformance.CustomMinimumSize = new Vector2(140, 0);
+        _optPerformance.AddThemeFontSizeOverride("font_size", 11);
+        _optPerformance.ItemSelected += OnPerformanceSelected;
+        qualityRow.AddChild(_optPerformance);
+        vbox.AddChild(qualityRow);
 
         vbox.AddChild(Spacer(8));
 
-        // -- Effects section --
+        // -- Effects section in two columns --
         vbox.AddChild(SectionLabel("Efectos Visuales"));
 
-        _chkAuras = MakeCheck("Mostrar auras");
-        vbox.AddChild(_chkAuras);
+        var cols = new HBoxContainer();
+        cols.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkParticles = MakeCheck("Mostrar partículas");
-        vbox.AddChild(_chkParticles);
+        // Left column
+        var leftCol = new VBoxContainer();
+        leftCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkShadows = MakeCheck("Sombras de personajes");
-        vbox.AddChild(_chkShadows);
+        _chkAuras = MakeCheck("Auras");
+        _chkAuras.Toggled += _ => ApplyImmediate();
+        leftCol.AddChild(_chkAuras);
 
-        _chkNpcShadows = MakeCheck("Sombras de NPCs");
-        vbox.AddChild(_chkNpcShadows);
+        _chkParticles = MakeCheck("Particulas");
+        _chkParticles.Toggled += _ => ApplyImmediate();
+        leftCol.AddChild(_chkParticles);
 
-        _chkLights = MakeCheck("Iluminación dinámica");
-        vbox.AddChild(_chkLights);
+        _chkShadows = MakeCheck("Sombras PJ");
+        _chkShadows.Toggled += _ => ApplyImmediate();
+        leftCol.AddChild(_chkShadows);
 
-        _chkReflections = MakeCheck("Reflejos en agua");
-        vbox.AddChild(_chkReflections);
+        _chkNpcShadows = MakeCheck("Sombras NPC");
+        _chkNpcShadows.Toggled += _ => ApplyImmediate();
+        leftCol.AddChild(_chkNpcShadows);
 
-        _chkDayNight = MakeCheck("Efectos día/noche");
-        vbox.AddChild(_chkDayNight);
+        _chkLights = MakeCheck("Luces");
+        _chkLights.Toggled += _ => ApplyImmediate();
+        leftCol.AddChild(_chkLights);
 
-        _chkNames = MakeCheck("Mostrar nombres de personajes");
-        vbox.AddChild(_chkNames);
+        _chkTreeTransparency = MakeCheck("Transp. arboles");
+        _chkTreeTransparency.Toggled += _ => ApplyImmediate();
+        leftCol.AddChild(_chkTreeTransparency);
 
-        vbox.AddChild(Spacer(8));
+        cols.AddChild(leftCol);
 
-        // -- Transparency section --
-        vbox.AddChild(SectionLabel("Transparencia"));
+        // Right column
+        var rightCol = new VBoxContainer();
+        rightCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkTreeTransparency = MakeCheck("Transparencia en árboles/techos");
-        vbox.AddChild(_chkTreeTransparency);
+        _chkReflections = MakeCheck("Reflejos agua");
+        _chkReflections.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(_chkReflections);
 
-        _chkDeadTransparency = MakeCheck("Transparencia en personajes muertos");
-        vbox.AddChild(_chkDeadTransparency);
+        _chkDayNight = MakeCheck("Dia/Noche");
+        _chkDayNight.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(_chkDayNight);
 
-        vbox.AddChild(Spacer(8));
+        _chkNames = MakeCheck("Nombres");
+        _chkNames.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(_chkNames);
 
-        // -- Interface section --
-        vbox.AddChild(SectionLabel("Interfaz"));
+        _chkDeadTransparency = MakeCheck("Transp. muertos");
+        _chkDeadTransparency.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(_chkDeadTransparency);
 
-        _chkMinimap = MakeCheck("Mostrar minimapa");
-        vbox.AddChild(_chkMinimap);
+        _chkMinimap = MakeCheck("Minimapa");
+        _chkMinimap.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(_chkMinimap);
 
-        _chkMinimapPos = MakeCheck("Mostrar posición en minimapa");
-        vbox.AddChild(_chkMinimapPos);
+        _chkMinimapPos = MakeCheck("Pos. minimapa");
+        _chkMinimapPos.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(_chkMinimapPos);
+
+        cols.AddChild(rightCol);
+        vbox.AddChild(cols);
+
+        vbox.AddChild(Spacer(6));
 
         _chkDeathDialog = MakeCheck("Mostrar cartel de muerte");
+        _chkDeathDialog.Toggled += _ => ApplyImmediate();
         vbox.AddChild(_chkDeathDialog);
 
         return vbox;
@@ -369,9 +454,9 @@ public partial class OptionsPanel : PanelContainer
     {
         if (_state == null || _config == null) return;
 
-        // Create temp copy for editing
-        _tempConfig = _config.Clone();
-        LoadControlsFromConfig(_tempConfig);
+        _loading = true;
+        LoadControlsFromConfig(_config);
+        _loading = false;
 
         _state.OptionsPanelOpen = true;
         Visible = true;
@@ -382,54 +467,37 @@ public partial class OptionsPanel : PanelContainer
     {
         if (_state != null)
             _state.OptionsPanelOpen = false;
-        _tempConfig = null;
         Visible = false;
     }
 
-    // ── Accept / Cancel ───────────────────────────────────
+    // ── Immediate apply on any control change ────────────
 
-    private void OnAccept()
+    private void ApplyImmediate()
     {
-        if (_config == null || _tempConfig == null) return;
+        if (_loading || _config == null) return;
 
-        // Read UI controls into temp config
-        SaveControlsToConfig(_tempConfig);
-
-        // Apply temp → permanent
-        _config.CopyFrom(_tempConfig);
+        SaveControlsToConfig(_config);
         _config.Save(_dataPath);
-
-        // Notify Main.cs to apply changes to renderers/sound
         OnConfigApplied?.Invoke();
-
-        Close();
-
-        _state?.ChatMessages.Enqueue(new ChatMessage
-        {
-            Text = "Opciones guardadas correctamente.",
-            Color = "00FF00"
-        });
-    }
-
-    private void OnCancel()
-    {
-        // Discard temp changes
-        Close();
     }
 
     // ── Performance preset ────────────────────────────────
 
-    private void OnPerformanceChanged(double value)
+    private void OnPerformanceSelected(long index)
     {
-        int level = (int)value;
-        string[] labels = { "Mínimo", "Bajo", "Medio", "Alto", "Máximo" };
-        if (_lblPerformance != null)
-            _lblPerformance.Text = labels[System.Math.Clamp(level, 0, 4)];
+        if (_loading || _config == null) return;
 
-        // Auto-configure render checkboxes when preset changes
-        if (_tempConfig == null) return;
-        _tempConfig.ApplyPerformancePreset(level);
-        LoadRenderChecks(_tempConfig);
+        int level = (int)index;
+        _config.PerformanceLevel = level;
+        _config.ApplyPerformancePreset(level);
+
+        // Reload render checkboxes to reflect preset
+        _loading = true;
+        LoadRenderChecks(_config);
+        _loading = false;
+
+        _config.Save(_dataPath);
+        OnConfigApplied?.Invoke();
     }
 
     // ── Tab switching ─────────────────────────────────────
@@ -490,7 +558,7 @@ public partial class OptionsPanel : PanelContainer
         SetCheck(_chkMouseContext, cfg.MouseContextMenu);
 
         // Render tab
-        if (_sldPerformance != null) _sldPerformance.Value = cfg.PerformanceLevel;
+        if (_optPerformance != null) _optPerformance.Selected = cfg.PerformanceLevel;
         LoadRenderChecks(cfg);
     }
 
@@ -543,7 +611,7 @@ public partial class OptionsPanel : PanelContainer
         cfg.MouseContextMenu = IsChecked(_chkMouseContext);
 
         // Render tab
-        cfg.PerformanceLevel = (int)(_sldPerformance?.Value ?? 2);
+        cfg.PerformanceLevel = _optPerformance?.Selected ?? 2;
         cfg.ShowAuras = IsChecked(_chkAuras);
         cfg.ShowParticles = IsChecked(_chkParticles);
         cfg.ShowShadows = IsChecked(_chkShadows);

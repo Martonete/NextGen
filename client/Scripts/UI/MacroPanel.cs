@@ -13,6 +13,11 @@ public partial class MacroPanel : PanelContainer
     private const int PanelW = 280;
     private const int PanelH = 380;
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 28;
+
     private GameState? _state;
     private LineEdit[] _inputs = new LineEdit[10];
     private string _macroFilePath = "";
@@ -139,6 +144,29 @@ public partial class MacroPanel : PanelContainer
         if (_state != null)
             _state.MacroPanelOpen = false;
         Visible = false;
+    }
+
+    public override void _GuiInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb)
+        {
+            if (mb.ButtonIndex == MouseButton.Left)
+            {
+                if (mb.Pressed && mb.Position.Y <= TitleBarH)
+                {
+                    _dragging = true;
+                    _dragOffset = mb.GlobalPosition - GlobalPosition;
+                }
+                else if (!mb.Pressed)
+                    _dragging = false;
+            }
+            AcceptEvent();
+        }
+        else if (@event is InputEventMouseMotion mm && _dragging)
+        {
+            GlobalPosition = mm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+        }
     }
 
     private void OnSave()

@@ -54,6 +54,10 @@ public partial class TravelPanel : Control
     private readonly Texture2D?[] _btnNormal = new Texture2D?[8];
     private readonly Texture2D?[] _btnHover = new Texture2D?[8];
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+
     // State
     private int _hoveredIdx = -1;
     private string _descText = "";
@@ -178,6 +182,29 @@ public partial class TravelPanel : Control
     public override void _GuiInput(InputEvent @event)
     {
         if (_tcp == null) return;
+
+        // Dragging by top area (close button area, ~25px)
+        if (@event is InputEventMouseButton dragMb)
+        {
+            if (dragMb.ButtonIndex == MouseButton.Left)
+            {
+                if (dragMb.Pressed && dragMb.Position.Y <= CloseH && !IsInCloseButton(dragMb.Position))
+                {
+                    _dragging = true;
+                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
+                    AcceptEvent();
+                    return;
+                }
+                if (!dragMb.Pressed && _dragging)
+                    _dragging = false;
+            }
+        }
+        if (@event is InputEventMouseMotion dragMm && _dragging)
+        {
+            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+            return;
+        }
 
         if (@event is InputEventMouseMotion mm)
         {

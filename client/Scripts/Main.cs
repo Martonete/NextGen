@@ -495,7 +495,7 @@ public partial class Main : Control
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
-        _optionsPanel.Position = new Vector2((534 - 400) / 2, 124 + (408 - 480) / 2);
+        _optionsPanel.Position = new Vector2((534 - 420) / 2, 124 + (408 - 480) / 2);
         _optionsPanel.Visible = false;
         _gameUI.AddChild(_optionsPanel);
         _optionsPanel.Init(_state, _state.Config, _dataPath);
@@ -2544,6 +2544,14 @@ public partial class Main : Control
                 return;
             }
 
+        }
+
+        // Block mouse clicks on game world when any modal panel is open
+        if (_state.Comerciando || _state.Banqueando || _state.BovedaAbierta
+            || _state.MacroPanelOpen || _state.OptionsPanelOpen || _state.KeyBindPanelOpen
+            || _state.ShowTravelPanel)
+        {
+            if (@event is InputEventMouseButton) return;
         }
 
         // Mouse clicks on the game viewport area.

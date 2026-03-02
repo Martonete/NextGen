@@ -26,6 +26,11 @@ public partial class DeathPanel : Control
     private const int Btn2X = 63;
     private const int Btn2Y = 59;
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 30;
+
     private AoTcpClient? _tcp;
     private GameState? _state;
 
@@ -103,6 +108,29 @@ public partial class DeathPanel : Control
 
     public override void _GuiInput(InputEvent @event)
     {
+        // Dragging by top area
+        if (@event is InputEventMouseButton dragMb)
+        {
+            if (dragMb.ButtonIndex == MouseButton.Left)
+            {
+                if (dragMb.Pressed && dragMb.Position.Y <= TitleBarH && HitTest(dragMb.Position) == 0)
+                {
+                    _dragging = true;
+                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
+                    AcceptEvent();
+                    return;
+                }
+                if (!dragMb.Pressed && _dragging)
+                    _dragging = false;
+            }
+        }
+        if (@event is InputEventMouseMotion dragMm && _dragging)
+        {
+            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+            return;
+        }
+
         if (@event is InputEventMouseMotion motion)
         {
             int prev = _hoveredBtn;

@@ -58,6 +58,11 @@ public partial class CommercePanel : Control
     private int[] _userSlots = new int[25]; // indices into state.Inventory
     private int _userSlotCount;
 
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 30;
+
     // Quantity input
     private LineEdit? _qtyInput;
 
@@ -299,6 +304,31 @@ public partial class CommercePanel : Control
     public override void _GuiInput(InputEvent @event)
     {
         if (_state == null || _tcp == null) return;
+
+        // Dragging by title bar
+        if (@event is InputEventMouseButton dragMb)
+        {
+            if (dragMb.ButtonIndex == MouseButton.Left)
+            {
+                if (dragMb.Pressed && dragMb.Position.Y <= TitleBarH)
+                {
+                    _dragging = true;
+                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
+                    AcceptEvent();
+                    return;
+                }
+                if (!dragMb.Pressed && _dragging)
+                {
+                    _dragging = false;
+                }
+            }
+        }
+        if (@event is InputEventMouseMotion dragMm && _dragging)
+        {
+            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
+            AcceptEvent();
+            return;
+        }
 
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
