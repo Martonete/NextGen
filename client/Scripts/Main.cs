@@ -790,15 +790,18 @@ public partial class Main : Control
     /// </summary>
     private void OnLanzarPressed()
     {
+        // VB6: dead players can't cast — server sends "Estas muerto" but client should ignore
+        if (_state.Dead) return;
+
         _spellPanel!.CastSelected();
         if (_state.UsingSkill > 0)
         {
             // VB6: frmMain.MousePointer = 2 (crosshair cursor)
             Input.SetDefaultCursorShape(Input.CursorShape.Cross);
-            // VB6: AddtoRichTextBox MENSAJE_TRABAJO_MAGIA
+            // VB6: AddtoRichTextBox MENSAJE_TRABAJO_MAGIA (Declares.bas:586)
             _state.ChatMessages.Enqueue(new ChatMessage
             {
-                Text = "Haz click en el objetivo del hechizo.",
+                Text = "Haz click sobre el objetivo...",
                 Color = "6464B4" // VB6: 100,100,120 → RGB hex
             });
         }
