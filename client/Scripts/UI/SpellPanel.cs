@@ -35,17 +35,59 @@ public partial class SpellPanel : Control
         _tcp = tcp;
     }
 
+    // Accumulated time for auto-scroll while dragging outside bounds
+    private float _dragOutTimer;
+    private const float DragScrollInterval = 0.08f; // seconds between auto-scroll ticks
+
     public override void _Notification(int what)
     {
         if (what == (int)NotificationMouseExit)
         {
             _hoveredSlot = -1;
-            _dragging = false;
+            // Don't cancel drag on mouse exit — let it continue scrolling
         }
     }
 
     public override void _Process(double delta)
     {
+        // While dragging outside the panel, auto-scroll periodically
+        if (_dragging)
+        {
+            var localMouse = GetLocalMousePosition();
+            if (localMouse.Y < 0)
+            {
+                // Cursor above panel — scroll up
+                _dragOutTimer += (float)delta;
+                if (_dragOutTimer >= DragScrollInterval)
+                {
+                    _dragOutTimer = 0;
+                    if (_scrollOffset > 0)
+                    {
+                        _scrollOffset--;
+                        _selectedSlot = _scrollOffset; // select top visible
+                    }
+                }
+            }
+            else if (localMouse.Y > Size.Y)
+            {
+                // Cursor below panel — scroll down
+                _dragOutTimer += (float)delta;
+                if (_dragOutTimer >= DragScrollInterval)
+                {
+                    _dragOutTimer = 0;
+                    if (_scrollOffset + VisibleLines < MaxSpells)
+                    {
+                        _scrollOffset++;
+                        _selectedSlot = _scrollOffset + VisibleLines - 1; // select bottom visible
+                    }
+                }
+            }
+            else
+            {
+                _dragOutTimer = 0;
+            }
+        }
+
         QueueRedraw();
     }
 
@@ -100,6 +142,17 @@ public partial class SpellPanel : Control
         if (_scrollOffset + VisibleLines < MaxSpells)
         {
             font.DrawText(this, (int)Size.X - 16, (int)Size.Y - font.CharHeight - 2, "v", Colors.Yellow);
+        }
+    }
+
+    public override void _UnhandledInput(InputEvent @event)
+    {
+        // Catch mouse release outside the panel to end drag
+        if (_dragging && @event is InputEventMouseButton mb
+            && mb.ButtonIndex == MouseButton.Left && !mb.Pressed)
+        {
+            _dragging = false;
+            _dragOutTimer = 0;
         }
     }
 
