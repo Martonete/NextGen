@@ -379,7 +379,7 @@ public static class CharRenderer
         int bodyGrh = data.Bodies[ch.Body].Walk[heading];
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y - hoY, 100f / 255f, data);
+        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y - hoY, 100f / 255f, data, true);
     }
 
     private static void DrawReflHead(
@@ -392,7 +392,7 @@ public static class CharRenderer
         float yOff = ch.Dead ? 24f : 11f;
         float headAlpha = (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
                            && data.Cascos[ch.CascoAnim].Head[heading] > 0) ? 35f / 255f : 100f / 255f;
-        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data);
+        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data, false);
     }
 
     private static void DrawReflHelmet(
@@ -402,7 +402,7 @@ public static class CharRenderer
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
         if (hGrh <= 0) return;
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data);
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data, false);
     }
 
     private static void DrawReflWeapon(
@@ -413,7 +413,7 @@ public static class CharRenderer
         int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
         if (weapGrh <= 0) return;
         DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 100f / 255f, data);
+            pos.X, pos.Y + 40, 100f / 255f, data, true);
     }
 
     private static void DrawReflShield(
@@ -424,17 +424,18 @@ public static class CharRenderer
         int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
         if (shldGrh <= 0) return;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 100f / 255f, data);
+            pos.X, pos.Y + 40, 100f / 255f, data, true);
     }
 
     /// <summary>
     /// Draw a GRH at (x, y) with center=true and Y-flipped (Invert_y).
     /// Used for water reflections. Negative dest height = Godot vertical flip.
-    /// The sprite occupies the same screen area, just rendered upside down.
+    /// anchorBottom=true: feet stay at original bottom position (for body/weapon/shield).
+    /// anchorBottom=false: sprite flips in place (for head/helmet).
     /// </summary>
     private static void DrawGrhFlippedY(
         Node2D canvas, int grhIndex, int frame,
-        float x, float y, float alpha, GameData data)
+        float x, float y, float alpha, GameData data, bool anchorBottom)
     {
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
@@ -460,8 +461,10 @@ public static class CharRenderer
             drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
         var srcRect = new Rect2(sx, sy, pw, ph);
-        // Negative dest height = Y-flip. Sprite covers drawY to drawY+ph, flipped.
-        var destRect = new Rect2(drawX, drawY + ph, pw, -ph);
+        // anchorBottom: shift down by ph so flipped feet stay at original bottom.
+        // Without it, feet jump to the top of the sprite area.
+        float destY = anchorBottom ? drawY + ph + ph : drawY + ph;
+        var destRect = new Rect2(drawX, destY, pw, -ph);
         Color color = new(1, 1, 1, alpha);
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
