@@ -66,8 +66,8 @@ public class InputHandler
     {
         if (!_state.IsLogged || _state.Paused) return;
 
-        // Block all game input while in commerce/bank mode
-        if (_state.Comerciando || _state.Banqueando) return;
+        // Block all game input while in commerce/bank/macro mode
+        if (_state.Comerciando || _state.Banqueando || _state.MacroPanelOpen) return;
 
         float deltaMs = (float)delta * 1000f;
 
@@ -230,6 +230,27 @@ public class InputHandler
         {
             _tcp.SendPacket(";/SEGR");
             _keyCooldown = KeyCooldownMs;
+        }
+        // Macro keys: 1-9, 0 (VB6: enviarMacro — top row number keys)
+        else if (!_state.MacroPanelOpen)
+        {
+            int macroIdx = -1;
+            if (Input.IsKeyPressed(Key.Key1)) macroIdx = 0;
+            else if (Input.IsKeyPressed(Key.Key2)) macroIdx = 1;
+            else if (Input.IsKeyPressed(Key.Key3)) macroIdx = 2;
+            else if (Input.IsKeyPressed(Key.Key4)) macroIdx = 3;
+            else if (Input.IsKeyPressed(Key.Key5)) macroIdx = 4;
+            else if (Input.IsKeyPressed(Key.Key6)) macroIdx = 5;
+            else if (Input.IsKeyPressed(Key.Key7)) macroIdx = 6;
+            else if (Input.IsKeyPressed(Key.Key8)) macroIdx = 7;
+            else if (Input.IsKeyPressed(Key.Key9)) macroIdx = 8;
+            else if (Input.IsKeyPressed(Key.Key0)) macroIdx = 9;
+
+            if (macroIdx >= 0)
+            {
+                ExecuteMacro(macroIdx);
+                _keyCooldown = KeyCooldownMs;
+            }
         }
     }
 
@@ -408,6 +429,29 @@ public class InputHandler
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {
             _tcp.SendPacket($";/TELEP YO {currentMap} {tileX} {tileY}");
+        }
+    }
+
+    /// <summary>
+    /// VB6 enviarMacro: execute a configured macro command.
+    /// If starts with "/", send as command (prefixed with ";").
+    /// Otherwise send as normal chat with current chat mode prefix.
+    /// </summary>
+    private void ExecuteMacro(int index)
+    {
+        if (index < 0 || index >= 10) return;
+        string cmd = _state.Macros[index];
+        if (string.IsNullOrEmpty(cmd)) return;
+
+        if (cmd.StartsWith("/"))
+        {
+            // Slash command: send with ";" prefix (VB6: SendData ";" & macro)
+            _tcp.SendPacket($";{cmd}");
+        }
+        else
+        {
+            // Normal chat: send with current chat mode prefix
+            _tcp.SendPacket($"{_state.ChatModePrefix}{cmd}");
         }
     }
 }

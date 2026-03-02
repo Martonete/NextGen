@@ -67,6 +67,7 @@ public partial class Main : Control
     private TextureRect? _minimapRect;
     private ColorRect? _minimapDot;
     private string? _principalDir; // cached for minimap loading
+    private string _dataPath = ""; // cached for macro file I/O
 
     // Custom stat bar overlay (draws colored fill rects at VB6 positions)
     private StatBarOverlay? _statBarOverlay;
@@ -103,6 +104,9 @@ public partial class Main : Control
 
     // Death panel (frmMuertito)
     private DeathPanel? _deathPanel;
+
+    // Macro panel (frmMakro)
+    private MacroPanel? _macroPanel;
 
     // Drop quantity dialog (VB6: frmCantidad)
     private PanelContainer? _dropDialog;
@@ -160,6 +164,7 @@ public partial class Main : Control
             );
 
         GD.Print($"[MAIN] Data path: {dataPath}");
+        _dataPath = dataPath;
         _gameData.LoadAll(dataPath);
         _state.TextMessages = _gameData.TextMessages;
 
@@ -402,6 +407,13 @@ public partial class Main : Control
         _deathPanel.Position = new Vector2(135, 278);
         _deathPanel.Visible = false;
         _gameUI.AddChild(_deathPanel);
+
+        // Macro panel (frmMakro) — centered on viewport
+        _macroPanel = new MacroPanel();
+        _macroPanel.Position = new Vector2((534 - 280) / 2, 124 + (408 - 380) / 2);
+        _macroPanel.Visible = false;
+        _gameUI.AddChild(_macroPanel);
+        _macroPanel.Init(_state, _dataPath);
 
         // Drop quantity dialog (VB6: frmCantidad)
         CreateDropDialog();
@@ -2136,6 +2148,12 @@ public partial class Main : Control
             // Escape: close dialogs or chat input
             if (key.Keycode == Key.Escape)
             {
+                if (_state.MacroPanelOpen)
+                {
+                    _macroPanel?.Close();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.AddFriendDialogOpen)
                 {
                     CloseAddFriendDialog();
@@ -2204,6 +2222,21 @@ public partial class Main : Control
                 GetViewport().SetInputAsHandled();
                 return;
             }
+
+            // F9: toggle macro panel (VB6: frmMakro)
+            if (key.Keycode == Key.F9 && !_state.ChatActive)
+            {
+                if (_macroPanel != null)
+                {
+                    if (_state.MacroPanelOpen)
+                        _macroPanel.Close();
+                    else
+                        _macroPanel.Open();
+                }
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
         }
 
         // Mouse clicks on the game viewport area.

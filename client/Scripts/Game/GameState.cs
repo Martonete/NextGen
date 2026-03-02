@@ -91,6 +91,10 @@ public class GameState
     public string WhisperTarget = "";   // Target name for whisper mode
     public bool ShowNames = true;       // VB6: Nombres — toggle character names display
 
+    // Macro system (VB6: frmMakro — 10 configurable commands for keys 1-0)
+    public string[] Macros = new string[10];
+    public bool MacroPanelOpen;
+
     // Camera scroll state (VB6 client-side prediction)
     public bool UserMoving;        // True while camera is scrolling between tiles
     public int AddToUserPosX;      // Camera scroll direction: -1, 0, or +1
@@ -195,6 +199,18 @@ public class GameState
             NpcShopItems[i] = new NpcShopItem();
         for (int i = 0; i < 40; i++)
             BankItems[i] = new BankItem();
+
+        // VB6 default macros (frmMakro defaults from Macro.tsao)
+        Macros[0] = "/COMERCIAR";
+        Macros[1] = "/RESUCITAR";
+        Macros[2] = "/CURAR";
+        Macros[3] = "/ONLINE";
+        Macros[4] = "/GM";
+        Macros[5] = "/TORNEO";
+        Macros[6] = "/PARTY";
+        Macros[7] = "/EST";
+        Macros[8] = "";
+        Macros[9] = "";
     }
 }
 
