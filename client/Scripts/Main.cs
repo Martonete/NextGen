@@ -299,7 +299,7 @@ public partial class Main : Control
         // Item name tooltip — VB6: ItemName at (584,337,161,25)
         // Palatino Linotype 6.75pt Normal (400), ForeColor &H0000FFFF& = RGB(255,255,0) yellow
         _itemNameLabel = new Label();
-        _itemNameLabel.Position = new Vector2(584, 337);
+        _itemNameLabel.Position = new Vector2(584, 339);
         _itemNameLabel.Size = new Vector2(161, 25);
         _itemNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _itemNameLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0f)); // Yellow
@@ -2118,7 +2118,7 @@ public partial class Main : Control
         );
 
         _expLabel!.Text = $"{_state.Exp}/{_state.ExpNext}";
-        _goldLabel!.Text = $"{_state.Gold}";
+        _goldLabel!.Text = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
         _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"{_state.OnlineCount}";
