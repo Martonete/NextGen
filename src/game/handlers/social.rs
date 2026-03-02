@@ -657,7 +657,10 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
 
     // Load friend list from account file
     let base = state.base_path.clone();
-    let act_path = base.join("Accounts").join(format!("{}.act", account_name));
+    let accounts_dir = base.join("Accounts");
+    // Ensure Accounts directory exists
+    let _ = std::fs::create_dir_all(&accounts_dir);
+    let act_path = accounts_dir.join(format!("{}.act", account_name));
     let act = act_path.to_str().unwrap_or("");
 
     let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
@@ -700,7 +703,9 @@ pub(super) async fn handle_friend_remove(state: &mut GameState, conn_id: Connect
     };
 
     let base = state.base_path.clone();
-    let act_path = base.join("Accounts").join(format!("{}.act", account_name));
+    let accounts_dir = base.join("Accounts");
+    let _ = std::fs::create_dir_all(&accounts_dir);
+    let act_path = accounts_dir.join(format!("{}.act", account_name));
     let act = act_path.to_str().unwrap_or("");
 
     let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
@@ -726,7 +731,9 @@ pub(super) async fn send_friend_list(state: &mut GameState, conn_id: ConnectionI
     };
 
     let base = state.base_path.clone();
-    let act_path = base.join("Accounts").join(format!("{}.act", account_name));
+    let accounts_dir = base.join("Accounts");
+    let _ = std::fs::create_dir_all(&accounts_dir);
+    let act_path = accounts_dir.join(format!("{}.act", account_name));
     let act = act_path.to_str().unwrap_or("");
 
     let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
