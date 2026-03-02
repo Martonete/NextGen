@@ -1050,7 +1050,7 @@ public partial class Main : Control
         bg.BorderColor = new Color(0.55f, 0.45f, 0.3f);
         bg.SetBorderWidthAll(2);
         bg.SetContentMarginAll(14);
-        bg.CornerRadius = 4;
+        bg.SetCornerRadiusAll(4);
         _mensajeDialog.AddThemeStyleboxOverride("panel", bg);
 
         var vbox = new VBoxContainer();
