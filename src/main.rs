@@ -277,6 +277,9 @@ async fn main() {
                     info!("[DISC] #{} disconnected", conn_id);
                 }
 
+                // Notify friends that this user went offline
+                game::handlers::broadcast_friend_disconnect(&mut state, conn_id).await;
+
                 // Decrement IP connection count
                 if let Some(user) = state.users.get(&conn_id) {
                     let ip = user.ip.clone();

@@ -575,6 +575,71 @@ pub(super) async fn send_mail_list(state: &mut GameState, conn_id: ConnectionId,
 // Friend list handlers
 // =====================================================================
 
+/// Broadcast KFM + updated LDM to all online users who have `char_name` in their friend list.
+/// Called after a user finishes logging in.
+pub(super) async fn broadcast_friend_connect(state: &mut GameState, conn_id: ConnectionId) {
+    let char_name = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+
+    // Collect all other logged users' conn_ids and account names
+    let others: Vec<(ConnectionId, String)> = state.users.iter()
+        .filter(|&(&cid, ref u)| cid != conn_id && u.logged)
+        .map(|(&cid, u)| (cid, u.account_name.clone()))
+        .collect();
+
+    for (other_conn, account) in others {
+        if is_friend_of_account(&base, &account, &char_name) {
+            // Send KFM notification
+            let kfm = format!("KFM{}", char_name);
+            state.send_to(other_conn, &kfm).await;
+            // Send updated friend list so their ON/OFF status refreshes
+            send_friend_list(state, other_conn).await;
+        }
+    }
+}
+
+/// Broadcast DFM + updated LDM to all online users who have `name` in their friend list.
+/// Called before a user is removed on disconnect.
+pub async fn broadcast_friend_disconnect(state: &mut GameState, conn_id: ConnectionId) {
+    let char_name = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+
+    let others: Vec<(ConnectionId, String)> = state.users.iter()
+        .filter(|&(&cid, ref u)| cid != conn_id && u.logged)
+        .map(|(&cid, u)| (cid, u.account_name.clone()))
+        .collect();
+
+    for (other_conn, account) in others {
+        if is_friend_of_account(&base, &account, &char_name) {
+            let dfm = format!("DFM{}", char_name);
+            state.send_to(other_conn, &dfm).await;
+            send_friend_list(state, other_conn).await;
+        }
+    }
+}
+
+/// Check if `name` is in the friend list of the account file for `account_name`.
+fn is_friend_of_account(base: &std::path::Path, account_name: &str, name: &str) -> bool {
+    let act_path = base.join("Accounts").join(format!("{}.act", account_name));
+    let act = act_path.to_str().unwrap_or("");
+    let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
+    for i in 1..=count {
+        let friend = crate::config::get_var(act, "AMIGOS", &format!("A{}", i));
+        if friend.to_uppercase() == name.to_uppercase() {
+            return true;
+        }
+    }
+    false
+}
+
 /// ADDCON<name> — Add friend.
 pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let friend_name = strip_opcode(data, 6).trim().to_string();

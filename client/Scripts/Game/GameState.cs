@@ -4,7 +4,7 @@ using TierrasSagradasAO.Data;
 
 namespace TierrasSagradasAO.Game;
 
-public enum Screen { Login, CharSelect, Game }
+public enum Screen { Login, CharSelect, CharCreate, Game }
 
 public class CharacterPreview
 {
@@ -38,6 +38,16 @@ public class GameState
     public string ServerNotice = "";
     public List<CharacterPreview> CharacterList = new();
     public int SelectedCharIndex = -1;
+
+    // Character creation state (CharCreate screen)
+    public string CreateCharName = "";
+    public int CreateCharRace = 1;    // 1=Humano, 2=Elfo, 3=Elfo Oscuro, 4=Enano, 5=Gnomo
+    public int CreateCharGender = 1;  // 1=Hombre, 2=Mujer
+    public int CreateCharClass = 1;   // 1-8
+    public int CreateCharFaction = 1; // 1=Armada Real, 2=Fuerzas del Caos
+    public int CreateCharHead;
+    public int CreateCharHeadMin;
+    public int CreateCharHeadMax;
 
     // Map
     public int CurrentMap;
@@ -121,6 +131,8 @@ public class GameState
 
     // Friends list
     public List<string> FriendsList = new();
+    public bool FriendsListDirty;      // triggers UI rebuild when LDM received
+    public bool AddFriendDialogOpen;   // true when add-friend input dialog is visible
 
     // Inventory (25 slots)
     public InventorySlot[] Inventory = new InventorySlot[25];

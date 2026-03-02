@@ -1779,18 +1779,21 @@ public class PacketHandler
     private void HandleFriendsList(string data)
     {
         _state.FriendsList.Clear();
-        if (string.IsNullOrEmpty(data)) return;
-        var parts = data.Split(',');
-        // First field is count — skip it, take names from index 1 onward
-        for (int i = 1; i < parts.Length; i++)
+        if (!string.IsNullOrEmpty(data))
         {
-            var entry = parts[i].Trim();
-            if (entry.Length == 0) continue;
-            // Skip empty slots: "(NADIE)(OFF)" or "(NADIE)(ON)"
-            if (entry.StartsWith("(NADIE)")) continue;
-            // Keep full entry with (ON)/(OFF) for display
-            _state.FriendsList.Add(entry);
+            var parts = data.Split(',');
+            // First field is count — skip it, take names from index 1 onward
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var entry = parts[i].Trim();
+                if (entry.Length == 0) continue;
+                _state.FriendsList.Add(entry);
+            }
         }
+        // VB6: always show 20 slots — pad with (NADIE)(OFF)
+        while (_state.FriendsList.Count < 20)
+            _state.FriendsList.Add("(NADIE)(OFF)");
+        _state.FriendsListDirty = true;
     }
 
     /// <summary>

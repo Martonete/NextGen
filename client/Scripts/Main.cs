@@ -112,6 +112,23 @@ public partial class Main : Control
     private Button? _dropDialogAll;
     private Button? _dropDialogCancel;
 
+    // Add friend dialog
+    private PanelContainer? _addFriendDialog;
+    private LineEdit? _addFriendInput;
+
+    // Character creation panel
+    private PanelContainer? _charCreatePanel;
+    private LineEdit? _charCreateNameInput;
+    private Button[]? _raceButtons;
+    private Button[]? _genderButtons;
+    private Button[]? _classButtons;
+    private Button[]? _factionButtons;
+    private Label? _charCreateHeadLabel;
+    private Node2D? _charCreateHeadPreview;
+    private Label? _charCreateError;
+    private Button? _charCreateCreateBtn;
+    private Button? _charSelectCreateBtn; // "Crear Personaje" on CharSelect screen
+
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
     // Track double-click to avoid sending LC on the release after a dbl-click
@@ -320,6 +337,8 @@ public partial class Main : Control
         friendsBg.SetBorderWidthAll(0);
         _friendsList.AddThemeStyleboxOverride("panel", friendsBg);
         _friendsList.FocusMode = Control.FocusModeEnum.None; // Don't steal arrow key input
+        _friendsList.AllowRmbSelect = true; // Enable right-click selection
+        _friendsList.ItemClicked += OnFriendsListClicked;
         _gameUI.AddChild(_friendsList);
 
         // Minimap
@@ -375,6 +394,20 @@ public partial class Main : Control
         // Drop quantity dialog (VB6: frmCantidad)
         CreateDropDialog();
 
+        // Add friend dialog
+        CreateAddFriendDialog();
+
+        // "Crear Personaje" button on CharSelect screen
+        _charSelectCreateBtn = new Button();
+        _charSelectCreateBtn.Text = "Crear Personaje";
+        _charSelectCreateBtn.CustomMinimumSize = new Vector2(0, 32);
+        _charSelectCreateBtn.Pressed += OnCharSelectCreatePressed;
+        var charSelectVBox = _charList!.GetParent();
+        charSelectVBox.AddChild(_charSelectCreateBtn);
+
+        // Character creation panel
+        CreateCharCreatePanel();
+
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
 
@@ -386,6 +419,7 @@ public partial class Main : Control
         // Show login screen
         _loginPanel.Visible = true;
         _charSelectPanel.Visible = false;
+        _charCreatePanel!.Visible = false;
         _gameUI.Visible = false;
     }
 
@@ -820,6 +854,477 @@ public partial class Main : Control
             _dropDialog.Visible = false;
     }
 
+    /// <summary>
+    /// Create the add friend dialog (input popup).
+    /// </summary>
+    private void CreateAddFriendDialog()
+    {
+        _addFriendDialog = new PanelContainer();
+        _addFriendDialog.Size = new Vector2(200, 90);
+        _addFriendDialog.Position = new Vector2(167, 273);
+        _addFriendDialog.Visible = false;
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.12f, 0.12f, 0.18f, 0.95f);
+        bg.SetBorderWidthAll(1);
+        bg.BorderColor = new Color(0.4f, 0.6f, 0.9f);
+        _addFriendDialog.AddThemeStyleboxOverride("panel", bg);
+        var vbox = new VBoxContainer();
+        _addFriendDialog.AddChild(vbox);
+
+        var label = new Label();
+        label.Text = "Nombre del amigo:";
+        label.HorizontalAlignment = HorizontalAlignment.Center;
+        label.AddThemeColorOverride("font_color", Colors.White);
+        label.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(label);
+
+        _addFriendInput = new LineEdit();
+        _addFriendInput.PlaceholderText = "Nombre";
+        _addFriendInput.Alignment = HorizontalAlignment.Center;
+        _addFriendInput.FocusMode = Control.FocusModeEnum.Click;
+        _addFriendInput.AddThemeFontSizeOverride("font_size", 12);
+        _addFriendInput.TextSubmitted += (_) => OnAddFriendOk();
+        vbox.AddChild(_addFriendInput);
+
+        var hbox = new HBoxContainer();
+        hbox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(hbox);
+
+        var okBtn = new Button();
+        okBtn.Text = "Agregar";
+        okBtn.CustomMinimumSize = new Vector2(70, 24);
+        okBtn.AddThemeFontSizeOverride("font_size", 11);
+        okBtn.Pressed += OnAddFriendOk;
+        hbox.AddChild(okBtn);
+
+        var cancelBtn = new Button();
+        cancelBtn.Text = "X";
+        cancelBtn.CustomMinimumSize = new Vector2(30, 24);
+        cancelBtn.AddThemeFontSizeOverride("font_size", 11);
+        cancelBtn.Pressed += CloseAddFriendDialog;
+        hbox.AddChild(cancelBtn);
+
+        _gameUI!.AddChild(_addFriendDialog);
+    }
+
+    private void OnAddFriendOk()
+    {
+        if (_addFriendInput == null || _tcp == null) return;
+        var name = _addFriendInput.Text.Trim();
+        if (name.Length > 0)
+            _tcp.SendData($"ADDCON{name}");
+        CloseAddFriendDialog();
+    }
+
+    private void CloseAddFriendDialog()
+    {
+        _state.AddFriendDialogOpen = false;
+        if (_addFriendDialog != null)
+            _addFriendDialog.Visible = false;
+    }
+
+    // =====================================================================
+    // Character Creation Panel
+    // =====================================================================
+
+    private static readonly string[] RaceNames = { "Humano", "Elfo", "Elfo Oscuro", "Enano", "Gnomo" };
+    private static readonly string[] GenderNames = { "Hombre", "Mujer" };
+    private static readonly string[] ClassNames = { "Mago", "Clerigo", "Guerrero", "Asesino", "Bardo", "Druida", "Paladin", "Cazador" };
+    private static readonly string[] FactionNames = { "Armada Real", "Fuerzas del Caos" };
+
+    // Head ranges per race (1-5) and gender (1=M, 2=F) from VB6 DameOpciones
+    private static (int min, int max) GetHeadRange(int race, int gender)
+    {
+        return (race, gender) switch
+        {
+            (1, 1) => (1, 30),     // Humano Male
+            (1, 2) => (70, 76),    // Humano Female
+            (2, 1) => (101, 113),  // Elfo Male
+            (2, 2) => (170, 176),  // Elfo Female
+            (3, 1) => (202, 209),  // Elfo Oscuro Male
+            (3, 2) => (270, 280),  // Elfo Oscuro Female
+            (4, 1) => (301, 305),  // Enano Male
+            (4, 2) => (370, 373),  // Enano Female
+            (5, 1) => (401, 406),  // Gnomo Male
+            (5, 2) => (470, 474),  // Gnomo Female
+            _ => (1, 30),
+        };
+    }
+
+    private void CreateCharCreatePanel()
+    {
+        _charCreatePanel = new PanelContainer();
+        _charCreatePanel.Size = new Vector2(420, 520);
+        // Center on screen (assume 800x600 base)
+        _charCreatePanel.Position = new Vector2(190, 40);
+        _charCreatePanel.Visible = false;
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.08f, 0.08f, 0.14f, 0.95f);
+        bg.BorderColor = new Color(0.4f, 0.35f, 0.2f);
+        bg.SetBorderWidthAll(2);
+        bg.SetContentMarginAll(12);
+        _charCreatePanel.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 6);
+        _charCreatePanel.AddChild(vbox);
+
+        // Title
+        var title = new Label();
+        title.Text = "Crear Personaje";
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.4f));
+        title.AddThemeFontSizeOverride("font_size", 16);
+        ApplyBoldFont(title);
+        vbox.AddChild(title);
+
+        // Name input
+        var nameLabel = new Label();
+        nameLabel.Text = "Nombre:";
+        nameLabel.AddThemeColorOverride("font_color", Colors.White);
+        nameLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(nameLabel);
+
+        _charCreateNameInput = new LineEdit();
+        _charCreateNameInput.PlaceholderText = "4-15 caracteres";
+        _charCreateNameInput.MaxLength = 15;
+        _charCreateNameInput.CustomMinimumSize = new Vector2(0, 28);
+        _charCreateNameInput.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_charCreateNameInput);
+
+        // Race selector
+        AddSectionLabel(vbox, "Raza:");
+        var raceBox = new HBoxContainer();
+        raceBox.AddThemeConstantOverride("separation", 3);
+        vbox.AddChild(raceBox);
+        _raceButtons = CreateToggleGroup(raceBox, RaceNames, OnRaceSelected);
+
+        // Gender selector
+        AddSectionLabel(vbox, "Genero:");
+        var genderBox = new HBoxContainer();
+        genderBox.AddThemeConstantOverride("separation", 3);
+        vbox.AddChild(genderBox);
+        _genderButtons = CreateToggleGroup(genderBox, GenderNames, OnGenderSelected);
+
+        // Class selector (2 rows of 4)
+        AddSectionLabel(vbox, "Clase:");
+        var classGrid = new GridContainer();
+        classGrid.Columns = 4;
+        classGrid.AddThemeConstantOverride("h_separation", 3);
+        classGrid.AddThemeConstantOverride("v_separation", 3);
+        vbox.AddChild(classGrid);
+        _classButtons = CreateToggleGroup(classGrid, ClassNames, OnClassSelected);
+
+        // Faction selector
+        AddSectionLabel(vbox, "Faccion:");
+        var factionBox = new HBoxContainer();
+        factionBox.AddThemeConstantOverride("separation", 3);
+        vbox.AddChild(factionBox);
+        _factionButtons = CreateToggleGroup(factionBox, FactionNames, OnFactionSelected);
+
+        // Head selector with preview
+        AddSectionLabel(vbox, "Cabeza:");
+        var headRow = new HBoxContainer();
+        headRow.AddThemeConstantOverride("separation", 6);
+        headRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(headRow);
+
+        var headLeftBtn = new Button();
+        headLeftBtn.Text = "<";
+        headLeftBtn.CustomMinimumSize = new Vector2(32, 32);
+        headLeftBtn.Pressed += OnHeadPrev;
+        headRow.AddChild(headLeftBtn);
+
+        // Head preview area — a SubViewportContainer with a small Node2D canvas
+        var headPreviewContainer = new SubViewportContainer();
+        headPreviewContainer.CustomMinimumSize = new Vector2(64, 64);
+        headPreviewContainer.Stretch = true;
+        headRow.AddChild(headPreviewContainer);
+
+        var headViewport = new SubViewport();
+        headViewport.Size = new Vector2I(64, 64);
+        headViewport.TransparentBg = true;
+        headViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+        headPreviewContainer.AddChild(headViewport);
+
+        _charCreateHeadPreview = new Node2D();
+        _charCreateHeadPreview.Draw += DrawCharCreateHead;
+        headViewport.AddChild(_charCreateHeadPreview);
+
+        var headRightBtn = new Button();
+        headRightBtn.Text = ">";
+        headRightBtn.CustomMinimumSize = new Vector2(32, 32);
+        headRightBtn.Pressed += OnHeadNext;
+        headRow.AddChild(headRightBtn);
+
+        _charCreateHeadLabel = new Label();
+        _charCreateHeadLabel.Text = "1";
+        _charCreateHeadLabel.AddThemeColorOverride("font_color", Colors.White);
+        _charCreateHeadLabel.AddThemeFontSizeOverride("font_size", 11);
+        headRow.AddChild(_charCreateHeadLabel);
+
+        // Error label
+        _charCreateError = new Label();
+        _charCreateError.Text = "";
+        _charCreateError.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
+        _charCreateError.AddThemeFontSizeOverride("font_size", 11);
+        _charCreateError.HorizontalAlignment = HorizontalAlignment.Center;
+        _charCreateError.AutowrapMode = TextServer.AutowrapMode.Word;
+        vbox.AddChild(_charCreateError);
+
+        // Buttons row
+        var btnRow = new HBoxContainer();
+        btnRow.AddThemeConstantOverride("separation", 8);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
+
+        _charCreateCreateBtn = new Button();
+        _charCreateCreateBtn.Text = "Crear";
+        _charCreateCreateBtn.CustomMinimumSize = new Vector2(100, 32);
+        _charCreateCreateBtn.Pressed += OnCharCreateConfirm;
+        btnRow.AddChild(_charCreateCreateBtn);
+
+        var backBtn = new Button();
+        backBtn.Text = "Volver";
+        backBtn.CustomMinimumSize = new Vector2(100, 32);
+        backBtn.Pressed += OnCharCreateBack;
+        btnRow.AddChild(backBtn);
+
+        GetNode<Control>("UILayer").AddChild(_charCreatePanel);
+    }
+
+    private static void AddSectionLabel(VBoxContainer vbox, string text)
+    {
+        var label = new Label();
+        label.Text = text;
+        label.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+        label.AddThemeFontSizeOverride("font_size", 10);
+        vbox.AddChild(label);
+    }
+
+    private static Button[] CreateToggleGroup(Container parent, string[] labels, Action<int> onSelected)
+    {
+        var buttons = new Button[labels.Length];
+        for (int i = 0; i < labels.Length; i++)
+        {
+            int idx = i;
+            var btn = new Button();
+            btn.Text = labels[i];
+            btn.ToggleMode = true;
+            btn.CustomMinimumSize = new Vector2(0, 26);
+            btn.AddThemeFontSizeOverride("font_size", 10);
+            btn.Pressed += () => onSelected(idx);
+            parent.AddChild(btn);
+            buttons[i] = btn;
+        }
+        return buttons;
+    }
+
+    private static void SetToggleSelection(Button[] buttons, int selectedIndex)
+    {
+        for (int i = 0; i < buttons.Length; i++)
+            buttons[i].ButtonPressed = (i == selectedIndex);
+    }
+
+    private void ResetCharCreateForm()
+    {
+        _state.CreateCharName = "";
+        _state.CreateCharRace = 1;
+        _state.CreateCharGender = 1;
+        _state.CreateCharClass = 1;
+        _state.CreateCharFaction = 1;
+        _charCreateNameInput!.Text = "";
+        _charCreateError!.Text = "";
+        SetToggleSelection(_raceButtons!, 0);
+        SetToggleSelection(_genderButtons!, 0);
+        SetToggleSelection(_classButtons!, 0);
+        SetToggleSelection(_factionButtons!, 0);
+        UpdateHeadRange();
+    }
+
+    private void UpdateHeadRange()
+    {
+        var (min, max) = GetHeadRange(_state.CreateCharRace, _state.CreateCharGender);
+        _state.CreateCharHeadMin = min;
+        _state.CreateCharHeadMax = max;
+        _state.CreateCharHead = min;
+        UpdateHeadPreview();
+    }
+
+    private void UpdateHeadPreview()
+    {
+        if (_charCreateHeadLabel != null)
+            _charCreateHeadLabel.Text = _state.CreateCharHead.ToString();
+
+        // Render head sprite in preview
+        if (_charCreateHeadPreview == null || _gameData == null) return;
+
+        // Clear previous draw by queuing redraw (Node2D uses _Draw)
+        _charCreateHeadPreview.QueueRedraw();
+    }
+
+    /// <summary>
+    /// Called every frame to draw the head preview in the char create panel.
+    /// We connect to _charCreateHeadPreview's Draw signal instead.
+    /// </summary>
+    private void DrawCharCreateHead()
+    {
+        if (_charCreateHeadPreview == null) return;
+        int headIdx = _state.CreateCharHead;
+        if (headIdx <= 0 || headIdx >= _gameData.Heads.Length) return;
+
+        var head = _gameData.Heads[headIdx];
+        // Draw south-facing (heading 3)
+        if (head.Head[3] == 0) return;
+
+        // Draw centered in 64x64 viewport
+        CharRenderer.DrawGrh(_charCreateHeadPreview, _gameData, head.Head[3], 0,
+            new Vector2(32, 32), true);
+    }
+
+    private void OnRaceSelected(int idx)
+    {
+        _state.CreateCharRace = idx + 1;
+        SetToggleSelection(_raceButtons!, idx);
+        UpdateHeadRange();
+    }
+
+    private void OnGenderSelected(int idx)
+    {
+        _state.CreateCharGender = idx + 1;
+        SetToggleSelection(_genderButtons!, idx);
+        UpdateHeadRange();
+    }
+
+    private void OnClassSelected(int idx)
+    {
+        _state.CreateCharClass = idx + 1;
+        SetToggleSelection(_classButtons!, idx);
+    }
+
+    private void OnFactionSelected(int idx)
+    {
+        _state.CreateCharFaction = idx + 1;
+        SetToggleSelection(_factionButtons!, idx);
+    }
+
+    private void OnHeadPrev()
+    {
+        if (_state.CreateCharHead > _state.CreateCharHeadMin)
+            _state.CreateCharHead--;
+        else
+            _state.CreateCharHead = _state.CreateCharHeadMax;
+        UpdateHeadPreview();
+    }
+
+    private void OnHeadNext()
+    {
+        if (_state.CreateCharHead < _state.CreateCharHeadMax)
+            _state.CreateCharHead++;
+        else
+            _state.CreateCharHead = _state.CreateCharHeadMin;
+        UpdateHeadPreview();
+    }
+
+    private void OnCharSelectCreatePressed()
+    {
+        _state.CurrentScreen = Screen.CharCreate;
+        HandleScreenChange(Screen.CharCreate);
+        _lastScreen = Screen.CharCreate;
+    }
+
+    private void OnCharCreateBack()
+    {
+        _state.CurrentScreen = Screen.CharSelect;
+        HandleScreenChange(Screen.CharSelect);
+        _lastScreen = Screen.CharSelect;
+    }
+
+    private void OnCharCreateConfirm()
+    {
+        // Validate name
+        string name = _charCreateNameInput!.Text.Trim();
+        if (name.Length < 4 || name.Length > 15)
+        {
+            _charCreateError!.Text = "El nombre debe tener entre 4 y 15 caracteres.";
+            return;
+        }
+
+        // Only letters and single spaces
+        bool lastWasSpace = false;
+        foreach (char c in name)
+        {
+            if (c == ' ')
+            {
+                if (lastWasSpace)
+                {
+                    _charCreateError!.Text = "El nombre no puede tener espacios consecutivos.";
+                    return;
+                }
+                lastWasSpace = true;
+            }
+            else if (!char.IsLetter(c))
+            {
+                _charCreateError!.Text = "El nombre solo puede contener letras y espacios.";
+                return;
+            }
+            else
+            {
+                lastWasSpace = false;
+            }
+        }
+
+        if (name.StartsWith(' ') || name.EndsWith(' '))
+        {
+            _charCreateError!.Text = "El nombre no puede empezar o terminar con espacio.";
+            return;
+        }
+
+        _charCreateError!.Text = "";
+        _charCreateCreateBtn!.Disabled = true;
+
+        // Build NLOGIN packet: NLOGIN{name},{race},{gender},{gender},{class},1,{account},{head},{faction}
+        string raceName = RaceNames[_state.CreateCharRace - 1];
+        string genderName = GenderNames[_state.CreateCharGender - 1];
+        string className = ClassNames[_state.CreateCharClass - 1];
+        int head = _state.CreateCharHead;
+        string account = _state.AccountName;
+
+        string packet = $"NLOGIN{name},{raceName},{genderName},{genderName},{className},1,{account},{head},{_state.CreateCharFaction}";
+        _tcp!.SendPacket(packet);
+        GD.Print($"[MAIN] Sent: {packet}");
+    }
+
+    /// <summary>
+    /// Right-click on friend list: (NADIE) → add friend, existing friend → remove.
+    /// </summary>
+    private void OnFriendsListClicked(long index, Vector2 atPosition, long mouseButtonIndex)
+    {
+        // Only handle right-click (button index 2)
+        if (mouseButtonIndex != 2 || _tcp == null) return;
+        int idx = (int)index;
+        if (idx < 0 || idx >= _state.FriendsList.Count) return;
+
+        var entry = _state.FriendsList[idx];
+        if (entry.StartsWith("(NADIE)"))
+        {
+            // Show add friend dialog
+            _state.AddFriendDialogOpen = true;
+            if (_addFriendDialog != null)
+            {
+                _addFriendInput!.Text = "";
+                _addFriendDialog.Visible = true;
+                _addFriendInput.GrabFocus();
+            }
+        }
+        else
+        {
+            // Remove friend — send 1-based slot index
+            _tcp.SendData($"BORRAC{idx + 1}");
+        }
+    }
+
     public override void _Process(double delta)
     {
         if (_tcp == null || _packetHandler == null) return;
@@ -855,10 +1360,18 @@ public partial class Main : Control
         }
 
         // Show login errors
-        if (!string.IsNullOrEmpty(_state.LoginError) && _state.CurrentScreen == Screen.Login)
+        if (!string.IsNullOrEmpty(_state.LoginError))
         {
-            _statusLabel!.Text = _state.LoginError;
-            _connectButton!.Disabled = false;
+            if (_state.CurrentScreen == Screen.Login)
+            {
+                _statusLabel!.Text = _state.LoginError;
+                _connectButton!.Disabled = false;
+            }
+            else if (_state.CurrentScreen == Screen.CharCreate)
+            {
+                _charCreateError!.Text = _state.LoginError;
+                _charCreateCreateBtn!.Disabled = false;
+            }
             _state.LoginError = "";
         }
 
@@ -967,21 +1480,32 @@ public partial class Main : Control
             case Screen.Login:
                 _loginPanel!.Visible = true;
                 _charSelectPanel!.Visible = false;
+                _charCreatePanel!.Visible = false;
                 _gameUI!.Visible = false;
                 break;
 
             case Screen.CharSelect:
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = true;
+                _charCreatePanel!.Visible = false;
                 _gameUI!.Visible = false;
                 _enterButton!.Disabled = false;
                 _noticeLabel!.Text = "";
                 PopulateCharList();
                 break;
 
+            case Screen.CharCreate:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = false;
+                _charCreatePanel!.Visible = true;
+                _gameUI!.Visible = false;
+                ResetCharCreateForm();
+                break;
+
             case Screen.Game:
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = false;
+                _charCreatePanel!.Visible = false;
                 _gameUI!.Visible = true;
                 // Initialize inventory/spell panels with TCP (only available after connect)
                 if (_tcp != null)
@@ -1045,6 +1569,11 @@ public partial class Main : Control
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();
         CloseDropDialog();
+        CloseAddFriendDialog();
+
+        // Reset char create button state
+        if (_charCreateCreateBtn != null)
+            _charCreateCreateBtn.Disabled = false;
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
@@ -1103,6 +1632,8 @@ public partial class Main : Control
         _state.ItemSafety = true; // Re-enable on reconnect (VB6: ISItem starts true)
         _state.SeguroResu = false;
         _state.DropDialogOpen = false;
+        _state.AddFriendDialogOpen = false;
+        _state.FriendsListDirty = false;
         _state.ShowTravelPanel = false;
         _state.UserMoving = false;
         _state.AddToUserPosX = 0;
@@ -1221,9 +1752,10 @@ public partial class Main : Control
         // FPS
         _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
 
-        // Friends list — only rebuild when changed
-        if (_friendsList != null && _friendsList.ItemCount != _state.FriendsList.Count)
+        // Friends list — rebuild when dirty (LDM received or KFM/DFM changed status)
+        if (_friendsList != null && _state.FriendsListDirty)
         {
+            _state.FriendsListDirty = false;
             _friendsList.Clear();
             foreach (var friend in _state.FriendsList)
                 _friendsList.AddItem(friend);
@@ -1272,9 +1804,15 @@ public partial class Main : Control
         // Chat input handling
         if (@event is InputEventKey key && key.Pressed && !key.Echo && _chatInput != null)
         {
-            // Escape: close drop dialog or chat input
+            // Escape: close dialogs or chat input
             if (key.Keycode == Key.Escape)
             {
+                if (_state.AddFriendDialogOpen)
+                {
+                    CloseAddFriendDialog();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.DropDialogOpen)
                 {
                     CloseDropDialog();

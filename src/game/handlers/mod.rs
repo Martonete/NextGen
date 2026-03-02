@@ -30,6 +30,8 @@ use misc_handlers::*;
 use inventory::*;
 // Re-export quest/party functions called from other modules
 pub use quests_party::{quest_check_npc_kill, quest_check_player_kill, party_share_exp};
+// Re-export friend broadcast called from main.rs disconnect handler
+pub use social::broadcast_friend_disconnect;
 // Re-export tick functions called from main.rs
 pub use ticks::{
     tick_npc_ai, tick_npc_respawn, tick_player_passive,
@@ -911,6 +913,8 @@ async fn connect_user(
 
     // --- PHASE 6: Friend list (VB6 line 1685) ---
     send_friend_list(state, conn_id).await;
+    // Notify other users who have this player as a friend
+    broadcast_friend_connect(state, conn_id).await;
 
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
@@ -1411,7 +1415,9 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     let char_name = read_field(1, payload, ',');
     let race = read_field(2, payload, ',');
-    let gender: i32 = read_field(4, payload, ',').parse().unwrap_or(1);
+    // VB6 client sends gender as string ("Hombre"/"Mujer"), not integer
+    let gender_str = read_field(4, payload, ',');
+    let gender: i32 = if gender_str.to_lowercase().contains("ombre") { 1 } else { 2 };
     let class = read_field(5, payload, ',');
     let hogar: i32 = read_field(6, payload, ',').parse().unwrap_or(1);
     let account = read_field(7, payload, ',');
@@ -1463,9 +1469,9 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         state.config.start_y,
     ).await {
         Ok(_char_id) => {
-            info!("[AUTH] Character '{}' created successfully", char_name);
-            state.send_to(conn_id, &format!("{}Personaje creado con exito!", server_opcodes::ERROR)).await;
-            close_connection(state, conn_id).await;
+            info!("[AUTH] Character '{}' created successfully — auto-logging in", char_name);
+            // Auto-login after creation (VB6 behavior: enter game directly)
+            connect_user(state, conn_id, &char_name, &account, "").await;
         }
         Err(e) => {
             state.send_to(conn_id, &format!("{}{}", server_opcodes::ERROR, e)).await;
