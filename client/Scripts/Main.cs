@@ -560,35 +560,13 @@ public partial class Main : Control
 
     private void LoadBackgroundImage(string dataPath)
     {
-        // Try several paths for the Principal directory.
-        // dataPath = res://Data (inside client project). Principal.jpg lives in the
-        // VB6 client tree: <repo>/Cliente/Data/GRAFICOS/Principal/
-        // From dataPath (server-rust/client/Data) we go ../../.. to reach repo root.
-        string repoRoot = System.IO.Path.GetFullPath(System.IO.Path.Combine(dataPath, "..", "..", ".."));
-        string[] principalDirs = new[]
-        {
-            System.IO.Path.Combine(dataPath, "GRAFICOS", "Principal"),
-            System.IO.Path.Combine(repoRoot, "Cliente", "Data", "GRAFICOS", "Principal"),
-            System.IO.Path.Combine(dataPath, "..", "..", "Cliente", "Data", "GRAFICOS", "Principal"),
-            // Windows absolute fallback — user's known project path
-            @"C:\Users\F\Desktop\Projects\Tierras-Sagradas-AO\Cliente\Data\GRAFICOS\Principal",
-        };
-        GD.Print($"[MAIN] Looking for Principal.jpg, repoRoot={repoRoot}");
+        // All Principal assets live in the Godot client's own Data/Graficos/Principal/
+        string principalDir = System.IO.Path.Combine(dataPath, "Graficos", "Principal");
+        string principalPath = System.IO.Path.Combine(principalDir, "Principal.jpg");
 
-        string? principalDir = null;
-        foreach (string dir in principalDirs)
-        {
-            string candidate = System.IO.Path.Combine(dir, "Principal.jpg");
-            string fullCandidate = System.IO.Path.GetFullPath(candidate);
-            GD.Print($"[MAIN] Trying: {fullCandidate} exists={System.IO.File.Exists(fullCandidate)}");
-            if (System.IO.File.Exists(fullCandidate))
-            {
-                principalDir = System.IO.Path.GetDirectoryName(fullCandidate)!;
-                break;
-            }
-        }
+        GD.Print($"[MAIN] Looking for Principal.jpg at {principalPath}");
 
-        if (principalDir == null)
+        if (!System.IO.File.Exists(principalPath))
         {
             GD.Print("[MAIN] Principal.jpg not found — using dark background");
             return;
@@ -600,7 +578,7 @@ public partial class Main : Control
         try
         {
             var image = new Image();
-            image.Load(System.IO.Path.Combine(principalDir, "Principal.jpg"));
+            image.Load(principalPath);
             _backgroundImage!.Texture = ImageTexture.CreateFromImage(image);
             GD.Print($"[MAIN] Loaded Principal.jpg from {principalDir}");
         }
