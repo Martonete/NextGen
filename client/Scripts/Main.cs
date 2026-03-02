@@ -2005,7 +2005,8 @@ public partial class Main : Control
             if (_state.ShowDeathPanel)
             {
                 _state.ShowDeathPanel = false;
-                _deathPanel?.Show();
+                if (_state.Config?.ShowDeathDialog ?? true)
+                    _deathPanel?.Show();
             }
             if (!_state.Dead && _deathPanel != null && _deathPanel.Visible)
             {
@@ -2119,6 +2120,14 @@ public partial class Main : Control
 
         // Apply FPS limit
         Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
+
+        // Minimap visibility
+        if (_minimapRect != null)
+        {
+            _minimapRect.Visible = cfg.ShowMinimap;
+            if (_minimapDot != null)
+                _minimapDot.Visible = cfg.ShowMinimap && cfg.ShowMinimapPosition;
+        }
 
         GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Auras={cfg.ShowAuras}, Particles={cfg.ShowParticles}, Shadows={cfg.ShowShadows}");
     }

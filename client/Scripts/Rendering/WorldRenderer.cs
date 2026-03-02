@@ -398,7 +398,8 @@ public partial class WorldRenderer : Node2D
                 // Ground objects (apply same tree alpha as Layer 3)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
-                    bool objNearPlayer = IsTree(objGrh)
+                    bool objNearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
+                                       && IsTree(objGrh)
                                        && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
@@ -425,13 +426,15 @@ public partial class WorldRenderer : Node2D
 
                     // Pass 'this' as worldRenderer so CharRenderer can queue particle draws
                     CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
-                                               _data, _animator, _deltaMs, _state, this);
+                                               _data, _animator, _deltaMs, _state, this,
+                                               charTileX: x, charTileY: y);
                 }
 
                 // Layer 3 (trees/objects)
                 if (tile.Layer3 > 0)
                 {
-                    bool nearPlayer = IsTree(tile.Layer3)
+                    bool nearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
+                                   && IsTree(tile.Layer3)
                                    && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
@@ -449,6 +452,17 @@ public partial class WorldRenderer : Node2D
 
         // Status overlay (VB6: drawCounters — paralysis/invisibility bars + status icons)
         DrawStatusOverlayTo(canvas);
+    }
+
+    /// <summary>
+    /// VB6 HayAgua(): checks if a tile is water (Layer1 GRH 1505-1520 and Layer2 == 0).
+    /// </summary>
+    public static bool IsWater(MapData? mapData, int x, int y)
+    {
+        if (mapData == null || x < 1 || x > 100 || y < 1 || y > 100) return false;
+        ref var tile = ref mapData.Tiles[x, y];
+        int grh = tile.Layer1;
+        return grh >= 1505 && grh <= 1520 && tile.Layer2 <= 0;
     }
 
     /// <summary>

@@ -28,7 +28,9 @@ public static class CharRenderer
         GrhAnimator animator,
         float deltaMs = 0f,
         GameState? state = null,
-        WorldRenderer? worldRenderer = null)
+        WorldRenderer? worldRenderer = null,
+        int charTileX = 0,
+        int charTileY = 0)
     {
         int heading = ch.Heading;
         if (heading < 1 || heading > 4) heading = 3;
@@ -117,6 +119,13 @@ public static class CharRenderer
             }
         }
 
+        // Water reflection (VB6: HayAgua check, body/head flipped vertically with alpha)
+        if ((state?.Config?.ShowReflections ?? true) && charTileY > 0 && state?.MapData != null)
+        {
+            if (WorldRenderer.IsWater(state.MapData, charTileX, charTileY + 1))
+                DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator);
+        }
+
         // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)
         // Respects Config.ShowShadows / ShowNpcShadows
         bool drawShadow = true;
@@ -138,22 +147,22 @@ public static class CharRenderer
             case 1: // North
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
                 DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 break;
 
             case 2: // East
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
                 DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 break;
 
             case 3: // South (default)
-                DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
                 DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
@@ -161,8 +170,8 @@ public static class CharRenderer
 
             case 4: // West
                 DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawBody(canvas, ch, screenPos, heading, data, animator);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data);
+                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
+                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
                 DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
                 DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
                 break;
@@ -191,17 +200,140 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, int heading,
         GameData data, GrhAnimator animator)
     {
-        // VB6 shadow is a body-clone rendered with special DX8 blending.
-        // We draw a simple dark oval.
-        float cx = pos.X + TileSize / 2f;
-        float cy = pos.Y + TileSize - 4f;
-        var shadowRect = new Rect2(cx - 10f, cy - 3f, 20f, 6f);
-        canvas.DrawRect(shadowRect, new Color(0, 0, 0, 0.18f));
+        // VB6 Draw_Grh_Sombra: draws the body walk GRH squashed as a dark silhouette.
+        // Scale: width/1.4, height/1.6, offset X-6 Y+8, dark alpha blend.
+        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
+        var body = data.Bodies[ch.Body];
+        int bodyGrh = body.Walk[heading];
+        if (bodyGrh <= 0) return;
+
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+        var resolved = data.ResolveGrh(bodyGrh, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        // Center using same logic as DrawGrh with center=true
+        float drawX = pos.X;
+        float drawY = pos.Y;
+        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+
+        // VB6: shadow is squashed (height*0.35) and placed at character feet
+        float shadowW = pw;
+        float shadowH = ph * 0.35f;
+        float shadowX = drawX - 6f;
+        float shadowY = drawY + ph - shadowH + 8f;
+
+        var srcRect = new Rect2(sx, sy, pw, ph);
+        var destRect = new Rect2((float)Math.Round(shadowX), (float)Math.Round(shadowY),
+                                  shadowW, shadowH);
+        canvas.DrawTextureRectRegion(texture, destRect, srcRect, new Color(0, 0, 0, 0.25f));
+    }
+
+    /// <summary>
+    /// VB6: water reflection — body and head drawn flipped vertically below character
+    /// when there's water at (tileX, tileY+1). Alpha ~100/255.
+    /// </summary>
+    private static void DrawReflection(
+        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+        int heading, GameData data, GrhAnimator animator)
+    {
+        Color reflColor = new Color(1, 1, 1, 100f / 255f);
+        float reflY = pos.Y + TileSize; // one tile below character position
+
+        // Body reflection (flipped vertically)
+        if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+        {
+            var body = data.Bodies[ch.Body];
+            int bodyGrh = body.Walk[heading];
+            if (bodyGrh > 0)
+            {
+                int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+                var resolved = data.ResolveGrh(bodyGrh, frame);
+                if (resolved != null && resolved.FileNum > 0)
+                {
+                    var texture = data.Textures?.GetTexture(resolved.FileNum);
+                    if (texture != null)
+                    {
+                        int texW = texture.GetWidth(), texH = texture.GetHeight();
+                        int sx = resolved.SX, sy = resolved.SY;
+                        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                        if (texW > 0) sx = sx % texW;
+                        if (texH > 0) sy = sy % texH;
+                        if (sx + pw > texW) pw = texW - sx;
+                        if (sy + ph > texH) ph = texH - sy;
+                        if (pw > 0 && ph > 0)
+                        {
+                            float drawX = pos.X;
+                            if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                                drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+
+                            var srcRect = new Rect2(sx, sy, pw, ph);
+                            // Negative height flips vertically
+                            var destRect = new Rect2((float)Math.Round(drawX),
+                                                      (float)Math.Round(reflY), pw, -ph);
+                            canvas.DrawTextureRectRegion(texture, destRect, srcRect, reflColor);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Head reflection (flipped vertically)
+        if (ch.Head > 0 && ch.Head < data.Heads.Length)
+        {
+            var head = data.Heads[ch.Head];
+            int headGrh = head.Head[heading];
+            if (headGrh > 0)
+            {
+                var resolved = data.ResolveGrh(headGrh, 0);
+                if (resolved != null && resolved.FileNum > 0)
+                {
+                    var texture = data.Textures?.GetTexture(resolved.FileNum);
+                    if (texture != null)
+                    {
+                        int texW = texture.GetWidth(), texH = texture.GetHeight();
+                        int sx = resolved.SX, sy = resolved.SY;
+                        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                        if (texW > 0) sx = sx % texW;
+                        if (texH > 0) sy = sy % texH;
+                        if (sx + pw > texW) pw = texW - sx;
+                        if (sy + ph > texH) ph = texH - sy;
+                        if (pw > 0 && ph > 0)
+                        {
+                            float xAdj = heading == 1 ? -1f : 0f;
+                            float drawX = pos.X + headOffset.X + xAdj;
+                            // Head reflection: invert the head offset Y relative to reflection base
+                            float headReflY = reflY - headOffset.Y - 1;
+
+                            var srcRect = new Rect2(sx, sy, pw, ph);
+                            var destRect = new Rect2((float)Math.Round(drawX),
+                                                      (float)Math.Round(headReflY), pw, -ph);
+                            canvas.DrawTextureRectRegion(texture, destRect, srcRect, reflColor);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private static void DrawBody(
         Node2D canvas, Character ch, Vector2 pos, int heading,
-        GameData data, GrhAnimator animator)
+        GameData data, GrhAnimator animator, GameState? state = null)
     {
         if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
         var body = data.Bodies[ch.Body];
@@ -211,14 +343,16 @@ public static class CharRenderer
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
         // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145), alive = 255
-        byte alpha = ch.Dead ? (byte)(ch.TransparenciaBody + 45) : (byte)255;
+        // Only pulse when DeadCharTransparency config is enabled
+        byte alpha = (ch.Dead && (state?.Config?.DeadCharTransparency ?? true))
+            ? (byte)(ch.TransparenciaBody + 45) : (byte)255;
         DrawGrh(canvas, data, bodyGrh, frame, pos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
     }
 
     private static void DrawHead(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
-        int heading, GameData data)
+        int heading, GameData data, GameState? state = null)
     {
         if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
         var head = data.Heads[ch.Head];
@@ -229,7 +363,9 @@ public static class CharRenderer
         Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
         // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145)
-        byte alpha = ch.Dead ? (byte)(ch.TransparenciaBody + 45) : (byte)255;
+        // Only pulse when DeadCharTransparency config is enabled
+        byte alpha = (ch.Dead && (state?.Config?.DeadCharTransparency ?? true))
+            ? (byte)(ch.TransparenciaBody + 45) : (byte)255;
         DrawGrh(canvas, data, head.Head[heading], 0, headPos, true,
                 alpha < 255 ? new Color(1, 1, 1, alpha / 255f) : Colors.White);
     }
