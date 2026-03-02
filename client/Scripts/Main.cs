@@ -123,6 +123,7 @@ public partial class Main : Control
 
     // Saved window mode before minimize (to restore fullscreen properly)
     private DisplayServer.WindowMode _preMiniMode;
+    private bool _restoringFullscreen;
 
     // Escape menu (in-game)
     private PanelContainer? _escapeMenu;
@@ -1318,6 +1319,7 @@ public partial class Main : Control
     private void OnMinimizePressed()
     {
         _preMiniMode = DisplayServer.WindowGetMode();
+        _restoringFullscreen = false;
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Minimized);
     }
 
@@ -1325,11 +1327,14 @@ public partial class Main : Control
     {
         // When the window is restored from minimize, re-apply fullscreen after
         // a short delay so the window manager finishes its restore animation.
+        // Guard against re-entrancy: fullscreen transition itself fires focus events.
         if (what == NotificationWMWindowFocusIn
             && _preMiniMode == DisplayServer.WindowMode.Fullscreen
-            && DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen)
+            && DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen
+            && !_restoringFullscreen)
         {
-            GetTree().CreateTimer(0.15).Timeout += RestoreFullscreen;
+            _restoringFullscreen = true;
+            GetTree().CreateTimer(0.3).Timeout += RestoreFullscreen;
         }
     }
 
@@ -1340,6 +1345,8 @@ public partial class Main : Control
             ? Window.ContentScaleAspectEnum.Keep
             : Window.ContentScaleAspectEnum.Ignore;
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        // Reset after a short settle so future minimizes work
+        GetTree().CreateTimer(0.5).Timeout += () => _restoringFullscreen = false;
     }
 
     private void ShowEscapeMenu()
