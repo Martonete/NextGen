@@ -842,6 +842,8 @@ public partial class Main : Control
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = true;
                 _gameUI!.Visible = false;
+                _enterButton!.Disabled = false;
+                _noticeLabel!.Text = "";
                 PopulateCharList();
                 break;
 
