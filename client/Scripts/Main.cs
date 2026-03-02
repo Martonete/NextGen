@@ -121,6 +121,9 @@ public partial class Main : Control
     // Window mode startup dialog
     private PanelContainer? _windowModeDialog;
 
+    // Saved window mode before minimize (to restore fullscreen properly)
+    private DisplayServer.WindowMode _preMiniMode;
+
     // Escape menu (in-game)
     private PanelContainer? _escapeMenu;
 
@@ -471,8 +474,7 @@ public partial class Main : Control
         // Minimize button — VB6: Image5 at (768, 0, 19, 17)
         var minimizeButton = CreateInvisibleButton(768, 0, 19, 17);
         _gameUI.AddChild(minimizeButton);
-        minimizeButton.Pressed += () =>
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Minimized);
+        minimizeButton.Pressed += OnMinimizePressed;
 
         // Close/Menu button — VB6: Image4 at (784, 0, 18, 17)
         var closeMenuButton = CreateInvisibleButton(784, 0, 18, 17);
@@ -1311,6 +1313,35 @@ public partial class Main : Control
         vbox.AddChild(backBtn);
 
         AddChild(_escapeMenu);
+    }
+
+    private void OnMinimizePressed()
+    {
+        _preMiniMode = DisplayServer.WindowGetMode();
+        DisplayServer.WindowSetMode(DisplayServer.WindowMode.Minimized);
+    }
+
+    public override void _Notification(int what)
+    {
+        // When the window is restored from minimize, re-apply the previous mode
+        if (what == NotificationWMWindowFocusIn)
+        {
+            if (DisplayServer.WindowGetMode() != _preMiniMode
+                && _preMiniMode == DisplayServer.WindowMode.Fullscreen)
+            {
+                // Defer to next frame so the WM finishes restoring first
+                CallDeferred(MethodName.RestoreFullscreen);
+            }
+        }
+    }
+
+    private void RestoreFullscreen()
+    {
+        var cfg = _state.Config;
+        GetTree().Root.ContentScaleAspect = cfg.AspectRatioMode == 1
+            ? Window.ContentScaleAspectEnum.Keep
+            : Window.ContentScaleAspectEnum.Ignore;
+        DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
     }
 
     private void ShowEscapeMenu()
