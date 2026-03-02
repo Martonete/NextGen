@@ -1595,27 +1595,75 @@ public partial class Main : Control
         if (!System.IO.File.Exists(path)) return false;
         try
         {
+            // Try Godot's built-in loader first (works for 24bpp BMP)
             var img = new Image();
             var err = img.Load(path);
-            if (err != Error.Ok)
+            if (err == Error.Ok && img.GetWidth() > 0 && img.GetHeight() > 0)
             {
-                GD.PrintErr($"[MAIN] Minimap load error ({err}): {path}");
-                return false;
+                _minimapRect.Texture = ImageTexture.CreateFromImage(img);
+                return true;
             }
-            if (img.GetWidth() == 0 || img.GetHeight() == 0)
+
+            // Fallback: manual BMP parser for 32bpp BMPs (maps 92+ use BGRA)
+            img = LoadBmpManual(path);
+            if (img != null)
             {
-                GD.PrintErr($"[MAIN] Minimap empty image: {path}");
-                return false;
+                _minimapRect.Texture = ImageTexture.CreateFromImage(img);
+                return true;
             }
-            _minimapRect.Texture = ImageTexture.CreateFromImage(img);
-            GD.Print($"[MAIN] Minimap loaded: {path}");
-            return true;
+
+            GD.PrintErr($"[MAIN] Minimap unsupported format: {path}");
+            return false;
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Failed to load minimap: {ex.Message}");
             return false;
         }
+    }
+
+    /// <summary>
+    /// Manual BMP loader supporting 24bpp and 32bpp uncompressed BMPs.
+    /// Godot's Image.Load doesn't handle 32bpp BMP files (maps 92+).
+    /// BMP stores rows bottom-to-top with BGR/BGRA byte order.
+    /// </summary>
+    private static Image? LoadBmpManual(string path)
+    {
+        byte[] data = System.IO.File.ReadAllBytes(path);
+        if (data.Length < 54 || data[0] != 0x42 || data[1] != 0x4D) return null; // "BM" magic
+
+        int pixelOffset = BitConverter.ToInt32(data, 10);
+        int width = BitConverter.ToInt32(data, 18);
+        int height = BitConverter.ToInt32(data, 22);
+        int bpp = BitConverter.ToInt16(data, 28);
+        int compression = BitConverter.ToInt32(data, 30);
+
+        if (compression != 0 || (bpp != 24 && bpp != 32)) return null;
+        if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return null;
+
+        bool bottomUp = height > 0;
+        int absHeight = Math.Abs(height);
+        int bytesPerPixel = bpp / 8;
+        int rowStride = (width * bytesPerPixel + 3) & ~3; // BMP rows are 4-byte aligned
+
+        byte[] rgb = new byte[width * absHeight * 3];
+        for (int y = 0; y < absHeight; y++)
+        {
+            int srcRow = bottomUp ? (absHeight - 1 - y) : y;
+            int srcOffset = pixelOffset + srcRow * rowStride;
+            for (int x = 0; x < width; x++)
+            {
+                int si = srcOffset + x * bytesPerPixel;
+                int di = (y * width + x) * 3;
+                if (si + 2 >= data.Length) continue;
+                rgb[di] = data[si + 2];     // R (BMP stores BGR)
+                rgb[di + 1] = data[si + 1]; // G
+                rgb[di + 2] = data[si];     // B
+            }
+        }
+
+        var img = Image.CreateFromData(width, absHeight, false, Image.Format.Rgb8, rgb);
+        return img;
     }
 
     // VB6 movement constants
