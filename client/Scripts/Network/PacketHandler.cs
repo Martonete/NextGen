@@ -2052,10 +2052,10 @@ public class PacketHandler
             int bodyPart = ParseInt(parts[0]);
             int damage = ParseInt(parts[1]);
             string attacker = parts[2];
-            string bodyName = GetBodyPartName(bodyPart);
+            string bodyName = GetPvpReceivedBodyPartText(bodyPart);
             _state.ChatMessages.Enqueue(new ChatMessage
             {
-                Text = $"{attacker} te ha golpeado en la {bodyName} por {damage} puntos de daño.",
+                Text = $"{attacker}{bodyName}{damage}",
                 Color = "FF0000"
             });
         }
@@ -2072,10 +2072,10 @@ public class PacketHandler
             int bodyPart = ParseInt(parts[0]);
             int damage = ParseInt(parts[1]);
             string victim = parts[2];
-            string bodyName = GetBodyPartName(bodyPart);
+            string bodyName = GetPvpDealtBodyPartText(bodyPart);
             _state.ChatMessages.Enqueue(new ChatMessage
             {
-                Text = $"Le has golpeado a {victim} en la {bodyName} por {damage} puntos de daño.",
+                Text = $"Le has pegado a {victim}{bodyName}{damage}",
                 Color = "FF0000"
             });
         }
@@ -2088,7 +2088,7 @@ public class PacketHandler
     {
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = "¡Le has errado!",
+            Text = "Has fallado el golpe!!!",
             Color = "FF0000"
         });
     }
@@ -2101,7 +2101,7 @@ public class PacketHandler
         int damage = ParseInt(data);
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = $"Le has pegado a la criatura por {damage} puntos de daño.",
+            Text = $"Le has pegado a la criatura por {damage}!!",
             Color = "FF0000"
         });
     }
@@ -2112,22 +2112,11 @@ public class PacketHandler
     private void HandleUserEvaded(string data)
     {
         string attacker = data.Trim();
-        if (attacker.Length > 0)
+        _state.ChatMessages.Enqueue(new ChatMessage
         {
-            _state.ChatMessages.Enqueue(new ChatMessage
-            {
-                Text = $"{attacker} ha esquivado tu ataque.",
-                Color = "FF0000"
-            });
-        }
-        else
-        {
-            _state.ChatMessages.Enqueue(new ChatMessage
-            {
-                Text = "La criatura ha esquivado tu ataque.",
-                Color = "FF0000"
-            });
-        }
+            Text = $"{attacker} te ataco y fallo!!",
+            Color = "FF0000"
+        });
     }
 
     /// <summary>
@@ -2137,7 +2126,7 @@ public class PacketHandler
     {
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = "La criatura te ha errado.",
+            Text = "La criatura fallo el golpe!!!",
             Color = "FF0000"
         });
     }
@@ -2152,10 +2141,10 @@ public class PacketHandler
         {
             int bodyPart = ParseInt(parts[0]);
             int damage = ParseInt(parts[1]);
-            string bodyName = GetBodyPartName(bodyPart);
+            string bodyName = GetNpcHitBodyPartText(bodyPart);
             _state.ChatMessages.Enqueue(new ChatMessage
             {
-                Text = $"La criatura te ha golpeado en la {bodyName} por {damage} puntos de daño.",
+                Text = $"{bodyName}{damage}",
                 Color = "FF0000"
             });
         }
@@ -2168,22 +2157,53 @@ public class PacketHandler
     {
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = "¡La criatura te ha matado!",
+            Text = "La criatura te ha matado!!!",
             Color = "FF0000"
         });
     }
 
-    private static string GetBodyPartName(int bodyPart)
+    /// <summary>VB6: MENSAJE_GOLPE_* — NPC hit text by body part.</summary>
+    private static string GetNpcHitBodyPartText(int bodyPart)
     {
         return bodyPart switch
         {
-            1 => "cabeza",
-            2 => "brazo izquierdo",
-            3 => "brazo derecho",
-            4 => "pierna izquierda",
-            5 => "pierna derecha",
-            6 => "torso",
-            _ => "cabeza"
+            1 => "La criatura te ha pegado en la cabeza por ",
+            2 => "La criatura te ha pegado el brazo izquierdo por ",
+            3 => "La criatura te ha pegado el brazo derecho por ",
+            4 => "La criatura te ha pegado la pierna izquierda por ",
+            5 => "La criatura te ha pegado la pierna derecha por ",
+            6 => "La criatura te ha pegado en el torso por ",
+            _ => "La criatura te ha pegado en la cabeza por "
+        };
+    }
+
+    /// <summary>VB6: MENSAJE_RECIVE_IMPACTO_* — PvP received hit text by body part.</summary>
+    private static string GetPvpReceivedBodyPartText(int bodyPart)
+    {
+        return bodyPart switch
+        {
+            1 => " te ha pegado en la cabeza por ",
+            2 => " te ha pegado el brazo izquierdo por ",
+            3 => " te ha pegado el brazo derecho por ",
+            4 => " te ha pegado la pierna izquierda por ",
+            5 => " te ha pegado la pierna derecha por ",
+            6 => " te ha pegado en el torso por ",
+            _ => " te ha pegado en la cabeza por "
+        };
+    }
+
+    /// <summary>VB6: MENSAJE_PRODUCE_IMPACTO_* — PvP dealt hit text by body part.</summary>
+    private static string GetPvpDealtBodyPartText(int bodyPart)
+    {
+        return bodyPart switch
+        {
+            1 => " en la cabeza por ",
+            2 => " en el brazo izquierdo por ",
+            3 => " en el brazo derecho por ",
+            4 => " en la pierna izquierda por ",
+            5 => " en la pierna derecha por ",
+            6 => " en el torso por ",
+            _ => " en la cabeza por "
         };
     }
 
