@@ -105,32 +105,33 @@ public class KeyBindings
     }
 
     /// <summary>
-    /// Set WASD-friendly defaults (differs from VB6 where A/S/D were action keys).
+    /// VB6-accurate defaults (from clsCustomKeys.cls LoadDefaults).
+    /// Arrow keys for movement, letter keys match original AO bindings.
     /// </summary>
     public void SetDefaults()
     {
-        Binds[(int)GameAction.Attack]      = new KeyBind(Key.Ctrl, "Control");
-        Binds[(int)GameAction.PickUp]      = new KeyBind(Key.G, "G");
-        Binds[(int)GameAction.Drop]        = new KeyBind(Key.T, "T");
-        Binds[(int)GameAction.UseItem]     = new KeyBind(Key.U, "U");
-        Binds[(int)GameAction.EquipItem]   = new KeyBind(Key.Q, "Q");
-        Binds[(int)GameAction.SafetyToggle]= new KeyBind(Key.F7, "F7");
-        Binds[(int)GameAction.ShowNames]   = new KeyBind(Key.N, "N");
-        Binds[(int)GameAction.ResSafety]   = new KeyBind(Key.F8, "F8");
-        Binds[(int)GameAction.Steal]       = new KeyBind(Key.R, "R");
-        Binds[(int)GameAction.RefreshPos]  = new KeyBind(Key.L, "L");
-        Binds[(int)GameAction.Hide]        = new KeyBind(Key.O, "O");
-        Binds[(int)GameAction.CombatMode]  = new KeyBind(Key.C, "C");
-        Binds[(int)GameAction.Screenshot]  = new KeyBind(Key.F, "F");
-        Binds[(int)GameAction.MoveUp]      = new KeyBind(Key.W, "W");
-        Binds[(int)GameAction.MoveDown]    = new KeyBind(Key.S, "S");
-        Binds[(int)GameAction.MoveLeft]    = new KeyBind(Key.A, "A");
-        Binds[(int)GameAction.MoveRight]   = new KeyBind(Key.D, "D");
-        Binds[(int)GameAction.Emoticons]   = new KeyBind(Key.H, "H");
-        Binds[(int)GameAction.ToggleMusic] = new KeyBind(Key.P, "P");
-        Binds[(int)GameAction.ShowMap]     = new KeyBind(Key.M, "M");
-        Binds[(int)GameAction.ItemSafety]  = new KeyBind(Key.KpMultiply, "Numpad *");
-        Binds[(int)GameAction.Meditate]    = new KeyBind(Key.F6, "F6");
+        Binds[(int)GameAction.Attack]      = new KeyBind(Key.Ctrl, "Control");      // VB6: mKeyAttack = vbKeyControl
+        Binds[(int)GameAction.PickUp]      = new KeyBind(Key.A, "A");               // VB6: mKeyGetObject = vbKeyA
+        Binds[(int)GameAction.Drop]        = new KeyBind(Key.T, "T");               // VB6: mKeyDropObject = vbKeyT
+        Binds[(int)GameAction.UseItem]     = new KeyBind(Key.U, "U");               // VB6: mKeyUseObject = vbKeyU
+        Binds[(int)GameAction.EquipItem]   = new KeyBind(Key.E, "E");               // VB6: mKeyEquipObject = vbKeyE
+        Binds[(int)GameAction.SafetyToggle]= new KeyBind(Key.Q, "Q");               // Seguro PvP
+        Binds[(int)GameAction.ShowNames]   = new KeyBind(Key.N, "N");               // VB6: mKeyToggleNames = vbKeyN
+        Binds[(int)GameAction.ResSafety]   = new KeyBind(Key.S, "S");               // VB6: mKeySeg = vbKeyS
+        Binds[(int)GameAction.Steal]       = new KeyBind(Key.R, "R");               // VB6: mKeySteal = vbKeyR
+        Binds[(int)GameAction.RefreshPos]  = new KeyBind(Key.L, "L");               // VB6: mKeyRequestRefresh = vbKeyL
+        Binds[(int)GameAction.Hide]        = new KeyBind(Key.O, "O");               // VB6: mKeyHide = vbKeyO
+        Binds[(int)GameAction.CombatMode]  = new KeyBind(Key.C, "C");               // (no VB6 equivalent, kept)
+        Binds[(int)GameAction.Screenshot]  = new KeyBind(Key.F, "F");               // VB6: mKeyFoto = vbKeyF
+        Binds[(int)GameAction.MoveUp]      = new KeyBind(Key.Up, "Arriba");         // VB6: mKeyUp = vbKeyUp
+        Binds[(int)GameAction.MoveDown]    = new KeyBind(Key.Down, "Abajo");        // VB6: mKeyDown = vbKeyDown
+        Binds[(int)GameAction.MoveLeft]    = new KeyBind(Key.Left, "Izquierda");    // VB6: mKeyLeft = vbKeyLeft
+        Binds[(int)GameAction.MoveRight]   = new KeyBind(Key.Right, "Derecha");     // VB6: mKeyRight = vbKeyRight
+        Binds[(int)GameAction.Emoticons]   = new KeyBind(Key.H, "H");               // VB6: mKeyToggleMap = vbKeyH
+        Binds[(int)GameAction.ToggleMusic] = new KeyBind(Key.M, "M");               // VB6: mKeyToggleMusic = vbKeyM
+        Binds[(int)GameAction.ShowMap]     = new KeyBind(Key.F7, "F7");              // VB6: mKeyCastSpellMacro = vbKeyF7
+        Binds[(int)GameAction.ItemSafety]  = new KeyBind(Key.KpMultiply, "Numpad *"); // (no VB6 equivalent, kept)
+        Binds[(int)GameAction.Meditate]    = new KeyBind(Key.F6, "F6");              // VB6: mKeyMeditate = vbKeyF6
     }
 
     /// <summary>
