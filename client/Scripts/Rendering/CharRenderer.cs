@@ -228,9 +228,9 @@ public static class CharRenderer
                 // Head is offset from body position
                 var headPos = new Vector2(
                     screenPos.X + (ch.Body > 0 && ch.Body < data.Bodies.Length
-                        ? data.Bodies[ch.Body].HeadOffset.X : 0),
+                        ? data.Bodies[ch.Body].HeadOffsetX : 0),
                     screenPos.Y + (ch.Body > 0 && ch.Body < data.Bodies.Length
-                        ? data.Bodies[ch.Body].HeadOffset.Y : 0));
+                        ? data.Bodies[ch.Body].HeadOffsetY : 0));
                 DrawShadowQuad(canvas, headGrh, 0, headPos, shearFactor, flatFactor, shadowColor, data);
             }
         }
