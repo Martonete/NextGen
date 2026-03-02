@@ -1018,29 +1018,7 @@ async fn connect_user(
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
 
-        // Send BQ/HO for tiles whose state changed since map load (door persistence)
-        {
-            let mut sync_packets: Vec<String> = Vec::new();
-            if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-                for ty in 0..crate::data::maps::MAP_HEIGHT {
-                    for tx in 0..crate::data::maps::MAP_WIDTH {
-                        let tile = &game_map.tiles[ty][tx];
-                        if tile.blocked != tile.original_blocked {
-                            sync_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
-                        }
-                        if tile.obj.obj_index != tile.original_obj_index {
-                            let oi = tile.obj.obj_index as usize;
-                            let grh = if oi >= 1 { state.game_data.objects.get(oi - 1).map(|o| o.grh_index).unwrap_or(0) } else { 0 };
-                            info!("[DOOR-SYNC] tile({},{}) obj_index={} (was {}) → grh={}", tx + 1, ty + 1, tile.obj.obj_index, tile.original_obj_index, grh);
-                            sync_packets.push(format!("HO{},{},{}", grh, tx + 1, ty + 1));
-                        }
-                    }
-                }
-            }
-            for pkt in &sync_packets {
-                state.send_to(conn_id, pkt).await;
-            }
-        }
+        // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
         // BKW again to toggle pausa back to False (VB6 WarpUserChar line 2404)
         // BKW toggles pausa — first one pauses, second one un-pauses.
@@ -2738,6 +2716,7 @@ async fn check_update_needed_user(
     let mut new_users: Vec<ConnectionId> = Vec::new();
     let mut new_npcs: Vec<usize> = Vec::new();
     let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
+    let mut new_door_bqs: Vec<String> = Vec::new(); // BQ packets for door blocked state
     let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
     let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
 
@@ -2784,6 +2763,36 @@ async fn check_update_needed_user(
                         if let Some(obj) = state.game_data.objects.get(oi - 1) {
                             if obj.grh_index > 0 {
                                 new_items.push((obj.grh_index, sx, sy));
+                            }
+
+                            // VB6 ModAreas.bas:273-300 — send BQ for door tiles + adjacent tiles
+                            // This ensures correct blocked state regardless of what .map file says
+                            if obj.obj_type == crate::data::objects::ObjType::Door {
+                                let blocked_at = |ty: i32, tx: i32| -> i32 {
+                                    if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
+                                        if game_map.tiles[(ty - 1) as usize][(tx - 1) as usize].blocked { 1 } else { 0 }
+                                    } else { 0 }
+                                };
+
+                                // Always send BQ for door tile + x-1 (single door minimum)
+                                new_door_bqs.push(format!("BQ{},{},{}", sx, sy, blocked_at(sy, sx)));
+                                new_door_bqs.push(format!("BQ{},{},{}", sx - 1, sy, blocked_at(sy, sx - 1)));
+
+                                if obj.puerta_doble == 1 {
+                                    new_door_bqs.push(format!("BQ{},{},{}", sx + 1, sy, blocked_at(sy, sx + 1)));
+                                    new_door_bqs.push(format!("BQ{},{},{}", sx + 2, sy, blocked_at(sy, sx + 2)));
+                                } else if obj.porton == 1 || obj.reja_forta == 1 {
+                                    for dx in [-2i32, -1, 0, 1, 2] {
+                                        new_door_bqs.push(format!("BQ{},{},{}", sx + dx, sy, blocked_at(sy, sx + dx)));
+                                    }
+                                }
+
+                                // Special objects 1472/1470: always force unblocked (VB6 line 292-298)
+                                if oi == 1472 || oi == 1470 {
+                                    for dx in [-2i32, -1, 0, 1, 2] {
+                                        new_door_bqs.push(format!("BQ{},{},0", sx + dx, sy));
+                                    }
+                                }
                             }
                         }
                     }
@@ -2841,6 +2850,11 @@ async fn check_update_needed_user(
     // Send ground items (HO packet) — VB6 ModAreas.bas line 264
     for (grh, ix, iy) in new_items {
         state.send_to(conn_id, &format!("HO{},{},{}", grh, ix, iy)).await;
+    }
+
+    // Send door BQ packets — VB6 ModAreas.bas lines 273-300
+    for bq in new_door_bqs {
+        state.send_to(conn_id, &bq).await;
     }
 
     // Send particle effects (PCF) — VB6 ModAreas.bas line 255
@@ -3015,32 +3029,7 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // 12. Warp FX is NOT sent by default — only when caller sets fx=true
     // (VB6: FX param is Optional, only DoTileEvents sets it when tile has otTeleport object)
 
-    // 12b. Send BQ/HO packets for tiles whose state differs from the original .map file.
-    // This re-syncs door state: doors opened/closed at runtime are remembered in-memory,
-    // but the client reloads from .map files on CM, reverting all doors.
-    {
-        let map_idx2 = new_map as usize;
-        let mut sync_packets: Vec<String> = Vec::new();
-        if let Some(Some(game_map)) = state.game_data.maps.get(map_idx2) {
-            for ty in 0..crate::data::maps::MAP_HEIGHT {
-                for tx in 0..crate::data::maps::MAP_WIDTH {
-                    let tile = &game_map.tiles[ty][tx];
-                    if tile.blocked != tile.original_blocked {
-                        sync_packets.push(format!("BQ{},{},{}", tx + 1, ty + 1, if tile.blocked { 1 } else { 0 }));
-                    }
-                    if tile.obj.obj_index != tile.original_obj_index {
-                        let oi = tile.obj.obj_index as usize;
-                        let grh = if oi >= 1 { state.game_data.objects.get(oi - 1).map(|o| o.grh_index).unwrap_or(0) } else { 0 };
-                        info!("[DOOR-SYNC] warp tile({},{}) obj_index={} (was {}) → grh={}", tx + 1, ty + 1, tile.obj.obj_index, tile.original_obj_index, grh);
-                        sync_packets.push(format!("HO{},{},{}", grh, tx + 1, ty + 1));
-                    }
-                }
-            }
-        }
-        for pkt in &sync_packets {
-            state.send_to(conn_id, pkt).await;
-        }
-    }
+    // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
     // 13. BKW — fade back in (VB6 end of WarpUserChar)
     state.send_to(conn_id, "BKW").await;
