@@ -1141,8 +1141,9 @@ public partial class Main : Control
         acceptBtn.Pressed += OnMensajeAccept;
         vbox.AddChild(acceptBtn);
 
-        // Add to root so it's visible on ALL screens (login, charselect, game, etc.)
-        AddChild(_mensajeDialog);
+        // Add to UILayer (CanvasLayer 10) so it renders above everything,
+        // including LoginPanel and CharSelectPanel which are also on UILayer.
+        GetNode<CanvasLayer>("UILayer").AddChild(_mensajeDialog);
     }
 
     private void ShowMensaje(string text)
