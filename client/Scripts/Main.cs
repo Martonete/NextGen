@@ -185,6 +185,9 @@ public partial class Main : Control
         // Load user configuration (Options.tsao)
         _state.Config = GameConfig.Load(dataPath);
         _state.ShowNames = _state.Config.ShowNames;
+        // Apply V-Sync
+        DisplayServer.WindowSetVsyncMode(
+            _state.Config.VsyncEnabled ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
         if (_state.Config.FpsLimit > 0)
             Engine.MaxFps = _state.Config.FpsLimit;
 
@@ -432,6 +435,20 @@ public partial class Main : Control
         _minimapDot.Size = new Vector2(6, 6);
         _minimapDot.MouseFilter = Control.MouseFilterEnum.Ignore;
         _minimapRect.AddChild(_minimapDot);
+
+        // Menu General button — VB6: imgMenuGral at (616, 372, 105, 30)
+        var menuGralButton = CreateInvisibleButton(616, 372, 105, 30);
+        _gameUI.AddChild(menuGralButton);
+        menuGralButton.Pressed += () =>
+        {
+            if (_optionsPanel != null)
+            {
+                if (_state.OptionsPanelOpen)
+                    _optionsPanel.Close();
+                else
+                    _optionsPanel.Open();
+            }
+        };
 
         // Commerce panel (frmComerciar) — centered on game viewport (534×408 at y=124)
         _commercePanel = new CommercePanel();
@@ -2096,13 +2113,14 @@ public partial class Main : Control
             _soundManager.SetSfxVolume(cfg.SfxVolume);
         }
 
-        // Apply FPS limit
-        if (cfg.FpsLimit > 0)
-            Engine.MaxFps = cfg.FpsLimit;
-        else
-            Engine.MaxFps = 0; // unlimited
+        // Apply V-Sync
+        DisplayServer.WindowSetVsyncMode(
+            cfg.VsyncEnabled ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
 
-        GD.Print($"[CFG] Applied config: FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Auras={cfg.ShowAuras}, Particles={cfg.ShowParticles}, Shadows={cfg.ShowShadows}");
+        // Apply FPS limit
+        Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
+
+        GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Auras={cfg.ShowAuras}, Particles={cfg.ShowParticles}, Shadows={cfg.ShowShadows}");
     }
 
     /// <summary>

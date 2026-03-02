@@ -36,7 +36,8 @@ public class GameConfig
 
     // ── Performance ───────────────────────────────────────
     public int PerformanceLevel = 2;        // VB6: Performance_Level (0=Min,1=Low,2=Med,3=High,4=Max)
-    public int FpsLimit = 65;               // VB6: General_Limit_FPS (0=unlimited, 18, 32, 65)
+    public bool VsyncEnabled = true;        // V-Sync on by default (syncs to monitor refresh rate)
+    public int FpsLimit;                     // 0=unlimited, 60, 120, 144, 165, 240
 
     // ── Interface ─────────────────────────────────────────
     public bool ShowMinimap = true;         // VB6: MiniMap_Activate
@@ -91,6 +92,7 @@ public class GameConfig
         DeadCharTransparency = other.DeadCharTransparency;
 
         PerformanceLevel = other.PerformanceLevel;
+        VsyncEnabled = other.VsyncEnabled;
         FpsLimit = other.FpsLimit;
 
         ShowMinimap = other.ShowMinimap;
@@ -177,6 +179,7 @@ public class GameConfig
 
                     // Performance
                     case "PerformanceLevel": if (int.TryParse(val, out int pl)) cfg.PerformanceLevel = Math.Clamp(pl, 0, 4); break;
+                    case "VsyncEnabled": cfg.VsyncEnabled = val == "1"; break;
                     case "FpsLimit": if (int.TryParse(val, out int fps)) cfg.FpsLimit = fps; break;
 
                     // Interface
@@ -251,6 +254,7 @@ public class GameConfig
 
             // Performance
             sb.AppendLine($"PerformanceLevel={PerformanceLevel}");
+            sb.AppendLine($"VsyncEnabled={(VsyncEnabled ? "1" : "0")}");
             sb.AppendLine($"FpsLimit={FpsLimit}");
 
             // Interface

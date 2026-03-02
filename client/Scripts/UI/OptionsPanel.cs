@@ -40,6 +40,7 @@ public partial class OptionsPanel : PanelContainer
     private CheckBox? _chkContactSignIn;
     private CheckBox? _chkContactSignOut;
     private CheckBox? _chkChatSound;
+    private CheckBox? _chkVsync;
     private OptionButton? _optFpsLimit;
 
     // ── Controls tab controls ──
@@ -235,16 +236,21 @@ public partial class OptionsPanel : PanelContainer
 
         vbox.AddChild(Spacer(8));
 
-        // -- FPS section --
+        // -- Performance section --
         vbox.AddChild(SectionLabel("Rendimiento"));
+
+        _chkVsync = MakeCheck("V-Sync (sincronizar con monitor)");
+        vbox.AddChild(_chkVsync);
 
         var fpsRow = new HBoxContainer();
         fpsRow.AddChild(SmallLabel("Límite FPS:"));
         _optFpsLimit = new OptionButton();
-        _optFpsLimit.AddItem("18 FPS", 0);
-        _optFpsLimit.AddItem("32 FPS", 1);
-        _optFpsLimit.AddItem("65 FPS", 2);
-        _optFpsLimit.AddItem("Sin límite", 3);
+        _optFpsLimit.AddItem("60 FPS", 0);
+        _optFpsLimit.AddItem("120 FPS", 1);
+        _optFpsLimit.AddItem("144 FPS", 2);
+        _optFpsLimit.AddItem("165 FPS", 3);
+        _optFpsLimit.AddItem("240 FPS", 4);
+        _optFpsLimit.AddItem("Sin límite", 5);
         _optFpsLimit.CustomMinimumSize = new Vector2(120, 0);
         _optFpsLimit.AddThemeFontSizeOverride("font_size", 11);
         fpsRow.AddChild(_optFpsLimit);
@@ -462,15 +468,18 @@ public partial class OptionsPanel : PanelContainer
         SetCheck(_chkContactSignOut, cfg.ContactSignOut);
         SetCheck(_chkChatSound, cfg.ChatSoundAlert);
 
-        // FPS dropdown
+        // V-Sync & FPS
+        SetCheck(_chkVsync, cfg.VsyncEnabled);
         if (_optFpsLimit != null)
         {
             int sel = cfg.FpsLimit switch
             {
-                18 => 0,
-                32 => 1,
-                65 => 2,
-                _ => 3 // unlimited
+                60 => 0,
+                120 => 1,
+                144 => 2,
+                165 => 3,
+                240 => 4,
+                _ => 5 // unlimited
             };
             _optFpsLimit.Selected = sel;
         }
@@ -517,11 +526,14 @@ public partial class OptionsPanel : PanelContainer
         cfg.ContactSignOut = IsChecked(_chkContactSignOut);
         cfg.ChatSoundAlert = IsChecked(_chkChatSound);
 
-        cfg.FpsLimit = (_optFpsLimit?.Selected ?? 2) switch
+        cfg.VsyncEnabled = IsChecked(_chkVsync);
+        cfg.FpsLimit = (_optFpsLimit?.Selected ?? 5) switch
         {
-            0 => 18,
-            1 => 32,
-            2 => 65,
+            0 => 60,
+            1 => 120,
+            2 => 144,
+            3 => 165,
+            4 => 240,
             _ => 0
         };
 
