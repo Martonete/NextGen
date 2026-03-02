@@ -1311,6 +1311,18 @@ impl GameState {
         self.npcs.get_mut(npc_idx).and_then(|n| n.as_mut())
     }
 
+    /// Get the guild that owns a castle on the given map.
+    /// VB6: CastilloNorte/Sur/Este/Oeste/Fortaleza correspond to different maps.
+    /// Currently uses single siege_guild_owner for the siege map.
+    pub fn get_castle_owner_guild(&self, map: i32) -> Option<i32> {
+        // Only the siege map has an owner
+        if map == self.siege_map && self.siege_guild_owner > 0 {
+            Some(self.siege_guild_owner)
+        } else {
+            None
+        }
+    }
+
     /// Remove an NPC from the world (death). Does NOT deallocate — for respawn.
     pub fn kill_npc(&mut self, npc_idx: NpcIndex) {
         if let Some(npc) = self.npcs.get_mut(npc_idx).and_then(|n| n.as_mut()) {

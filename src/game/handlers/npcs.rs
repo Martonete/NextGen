@@ -84,6 +84,103 @@ pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: Conne
     }
 }
 
+/// VB6 PuedeAtacarNPC — validate whether a player can attack this NPC.
+/// Returns true if attack is allowed, false if blocked (sends feedback to player).
+pub(super) async fn puede_atacar_npc(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    npc_idx: usize,
+) -> bool {
+    let npc = match state.get_npc(npc_idx) {
+        Some(n) => n,
+        None => return false,
+    };
+
+    // NPC must be alive
+    if !npc.is_alive() {
+        return false;
+    }
+
+    // NPC must be attackable (VB6: Attackable flag in NPCs.dat)
+    if !npc.attackable {
+        state.send_to(conn_id, "||140").await; // "No puedes atacar a este NPC"
+        return false;
+    }
+
+    let npc_number = npc.npc_number as i32;
+    let npc_map = npc.map;
+    let npc_type = npc.npc_type;
+
+    // Get attacker data
+    let user = match state.users.get(&conn_id) {
+        Some(u) => u,
+        None => return false,
+    };
+
+    // VB6: Dead users can't attack
+    if user.dead {
+        state.send_to(conn_id, "||3").await; // "Estas muerto"
+        return false;
+    }
+
+    // VB6: Counselors can't attack (Privilegios > User && Privilegios <= GranDios)
+    // privileges > 0 means GM/admin/counselor
+    if user.privileges > 0 {
+        return false;
+    }
+
+    let is_horda = user.fuerzas_caos;
+    let is_alianza = user.armada_real;
+    let user_guild_index = user.guild_index;
+
+    // VB6: Horde faction can't attack NPCs 617 and 948 (faction-aligned NPCs)
+    if (npc_number == 617 || npc_number == 948) && is_horda {
+        state.send_to(conn_id, "||167").await; // "No puedes atacar a un NPC de tu facción"
+        return false;
+    }
+
+    // VB6: Alliance faction can't attack NPCs 618 and 947
+    if (npc_number == 618 || npc_number == 947) && is_alianza {
+        state.send_to(conn_id, "||167").await;
+        return false;
+    }
+
+    // VB6: ARAM team restrictions (NPC 963 = blue tower, 964 = red tower)
+    // Can't attack your own team's tower
+    // TODO: when ARAM event team field is added to UserState, check:
+    //   if npc_number == 963 && user.aram_team == ARAM_RED { block }
+    //   if npc_number == 964 && user.aram_team == ARAM_BLUE { block }
+
+    // VB6: Mithrandir status restrictions (NPCs 966/967)
+    // TODO: when Mithrandir system is implemented, check:
+    //   if npc_number == 966 && (user.status_mith == 1 || is_alianza) { block }
+    //   if npc_number == 967 && (user.status_mith == 2 || is_horda) { block }
+
+    // VB6: King's guards protection (Map 123, NPC 937, GuardiasRey <= 3)
+    // TODO: when GuardiasRey system is implemented, check:
+    //   if npc_map == 123 && npc_number == 937 && state.guardias_rey <= 3 { block ||168 }
+
+    // VB6: Castle King / NPC 615 — guild ownership checks
+    if npc_type == crate::data::npcs::NpcType::CastleKing || npc_number == 615 {
+        // Must be in a guild to attack castle kings
+        if user_guild_index <= 0 {
+            state.send_to(conn_id, "||120").await; // "Necesitas pertenecer a un clan"
+            return false;
+        }
+
+        // Can't attack your own guild's castle king
+        // Check if this NPC's map belongs to a castle owned by the attacker's guild
+        if let Some(castle_owner_guild) = state.get_castle_owner_guild(npc_map) {
+            if castle_owner_guild == user_guild_index {
+                state.send_to(conn_id, "||169").await; // "No puedes atacar al rey de tu propio castillo"
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
 /// Player attacks an NPC (PvE melee combat).
 #[allow(clippy::too_many_arguments)]
 pub(super) async fn user_attack_npc(
@@ -102,12 +199,15 @@ pub(super) async fn user_attack_npc(
     attacker_name: &str,
     class: &str,
 ) {
-    // Get NPC data
+    // VB6 PuedeAtacarNPC — full validation
+    if !puede_atacar_npc(state, conn_id, npc_idx).await {
+        return;
+    }
+
+    // Get NPC data (safe after puede_atacar_npc validated alive + attackable)
     let npc_data = match state.get_npc(npc_idx) {
-        Some(n) if n.is_alive() && n.attackable => {
-            (n.poder_evasion, n.char_index, n.name.clone(), n.give_exp, n.max_hp)
-        }
-        _ => return,
+        Some(n) => (n.poder_evasion, n.char_index, n.name.clone(), n.give_exp, n.max_hp),
+        None => return,
     };
     let (npc_evasion, npc_char_index, npc_name, npc_give_exp, npc_max_hp) = npc_data;
 

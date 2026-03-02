@@ -241,6 +241,13 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         // ===== NPC TARGET =====
         let npc_idx = target_npc.unwrap();
 
+        // VB6: PuedeAtacarNPC — validate offensive spells on NPC targets
+        if is_offensive {
+            if !super::npcs::puede_atacar_npc(state, conn_id, npc_idx).await {
+                return;
+            }
+        }
+
         // VB6: InfoHechizo — FX + messages (sent BEFORE mana consumption)
         send_spell_info_npc(state, conn_id, npc_idx, &spell, char_index).await;
 
