@@ -6,6 +6,7 @@
 /server/guilds/Bancos/
 *.log
 client/.godot/
+*.import
 
 # .NET / C# build artifacts
 **/bin/
