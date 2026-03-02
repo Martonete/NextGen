@@ -1111,8 +1111,7 @@ public partial class Main : Control
         _acctBackButton.Pressed += OnAccountCreateBack;
         btnBox.AddChild(_acctBackButton);
 
-        var uiLayer = GetNode<Control>("UILayer");
-        uiLayer.AddChild(_accountCreatePanel);
+        GetNode("UILayer").AddChild(_accountCreatePanel);
     }
 
     private void OnAccountCreatePressed()
