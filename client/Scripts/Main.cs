@@ -1091,7 +1091,7 @@ public partial class Main : Control
         backBtn.Pressed += OnCharCreateBack;
         btnRow.AddChild(backBtn);
 
-        GetNode<Control>("UILayer").AddChild(_charCreatePanel);
+        GetNode("UILayer").AddChild(_charCreatePanel);
     }
 
     private static void AddSectionLabel(VBoxContainer vbox, string text)
