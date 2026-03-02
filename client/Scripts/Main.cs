@@ -1130,7 +1130,6 @@ public partial class Main : Control
         _mensajeLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _mensajeLabel.AddThemeColorOverride("font_color", Colors.White);
         _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
-        _mensajeLabel.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         vbox.AddChild(_mensajeLabel);
 
         var acceptBtn = new Button();
@@ -1160,15 +1159,17 @@ public partial class Main : Control
         else
             _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
 
-        // Resize height based on text length
+        // Fixed size based on text length — reset anchors to prevent stretch
         int height = text.Length > 120 ? 200 : (text.Length > 75 ? 180 : 160);
+        _mensajeDialog.ResetSize();
+        _mensajeDialog.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
         _mensajeDialog.Size = new Vector2(340, height);
 
         // Center on screen
         var screenSize = GetViewportRect().Size;
         _mensajeDialog.Position = new Vector2(
-            (screenSize.X - _mensajeDialog.Size.X) / 2,
-            (screenSize.Y - _mensajeDialog.Size.Y) / 2
+            (screenSize.X - 340) / 2,
+            (screenSize.Y - height) / 2
         );
 
         _mensajeDialog.Visible = true;
