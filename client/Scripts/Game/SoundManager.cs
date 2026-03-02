@@ -221,13 +221,13 @@ public partial class SoundManager : Node
     /// </summary>
     private static AudioStream? TryLoadFromFile(string absPath)
     {
-        if (!FileAccess.FileExists(absPath)) return null;
+        if (!Godot.FileAccess.FileExists(absPath)) return null;
 
         try
         {
             if (absPath.EndsWith(".mp3", System.StringComparison.OrdinalIgnoreCase))
             {
-                var file = FileAccess.Open(absPath, FileAccess.ModeFlags.Read);
+                var file = Godot.FileAccess.Open(absPath, Godot.FileAccess.ModeFlags.Read);
                 if (file == null) return null;
                 var bytes = file.GetBuffer((long)file.GetLength());
                 file.Close();

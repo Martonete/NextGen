@@ -239,7 +239,7 @@ public partial class Main : Control
         // VB6 frmMain.frm exact fonts per label:
         // GldLbl: Tahoma 6pt Bold, ForeColor &H0080FFFF& = RGB(255,255,128) light yellow
         ApplyFont(_goldLabel, "Tahoma", 700);
-        _goldLabel.AddThemeFontSizeOverride("font_size", 6);
+        _goldLabel.AddThemeFontSizeOverride("font_size", 7);
         _goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
         // LvlLbl: Cambria 8.25pt Bold, White
@@ -250,11 +250,11 @@ public partial class Main : Control
 
         // ONLINES: Tahoma 6pt Bold, White
         ApplyFont(_onlineLabel, "Tahoma", 700);
-        _onlineLabel.AddThemeFontSizeOverride("font_size", 6);
+        _onlineLabel.AddThemeFontSizeOverride("font_size", 7);
 
         // Coord: Tahoma 5.25pt Bold, White
         ApplyFont(_coordsLabel, "Tahoma", 700);
-        _coordsLabel.AddThemeFontSizeOverride("font_size", 5);
+        _coordsLabel.AddThemeFontSizeOverride("font_size", 6);
 
         // exp: Cambria 8.25pt Bold, White (VB6: &H8000000B& system color → white on dark UI)
         ApplyFont(_expLabel, "Cambria", 700);
@@ -347,29 +347,29 @@ public partial class Main : Control
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
         // === Bottom bar stat labels (VB6: inherited form font Tahoma 8.25 Bold) ===
-        _armaLabel = CreateStatLabel(112, 557, 57, 13, Colors.White, 8);
+        _armaLabel = CreateStatLabel(112, 557, 57, 13, Colors.White, 10);
         _gameUI.AddChild(_armaLabel);
 
-        _defMagLabel = CreateStatLabel(200, 557, 57, 13, Colors.White, 8);
+        _defMagLabel = CreateStatLabel(200, 557, 57, 13, Colors.White, 10);
         _gameUI.AddChild(_defMagLabel);
 
-        _defensaLabel = CreateStatLabel(284, 557, 57, 13, Colors.White, 8);
+        _defensaLabel = CreateStatLabel(284, 557, 57, 13, Colors.White, 10);
         _gameUI.AddChild(_defensaLabel);
 
         // Fuerza: VB6 ForeColor &H0000FF00& = RGB(0,255,0) Green
-        _fuerzaLabel = CreateStatLabel(384, 557, 33, 17, new Color(0, 1, 0), 8);
+        _fuerzaLabel = CreateStatLabel(384, 557, 33, 17, new Color(0, 1, 0), 10);
         _gameUI.AddChild(_fuerzaLabel);
 
         // Agilidad: VB6 ForeColor &H0000FFFF& = RGB(255,255,0) Yellow
-        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(1f, 1f, 0f), 8);
+        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(1f, 1f, 0f), 10);
         _gameUI.AddChild(_agilidadLabel);
 
         // Reputation: VB6 Cambria 8.25 Normal (Weight=400, NOT bold), White
-        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 8, "Cambria", 400);
+        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 10, "Cambria", 400);
         _gameUI.AddChild(_repLabel);
 
         // FPS: VB6 Tahoma 6pt Bold, center, White
-        _fpsLabel = CreateStatLabel(47, 576, 17, 10, Colors.White, 6);
+        _fpsLabel = CreateStatLabel(47, 576, 17, 10, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Friends list — VB6: ChatContacts at (396,2,137,88), Tahoma 9, light blue
