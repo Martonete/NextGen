@@ -386,7 +386,8 @@ public static class CharRenderer
 
     /// <summary>
     /// Draw a GRH at (x, y) with center=true and Y-flipped (Invert_y).
-    /// Used for water reflections. Flipping is done via negative height in destRect.
+    /// Used for water reflections. VB6 Invert_y flips texture UVs only,
+    /// the draw position stays the same. We flip the source rect vertically.
     /// </summary>
     private static void DrawGrhFlippedY(
         Node2D canvas, int grhIndex, int frame,
@@ -415,9 +416,9 @@ public static class CharRenderer
         if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
             drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
-        var srcRect = new Rect2(sx, sy, pw, ph);
-        // Negative height = Y-flipped. Draw from drawY+ph upward (visually flipped).
-        var destRect = new Rect2(drawX, drawY + ph, pw, -ph);
+        // Flip source rect vertically (VB6 Invert_y = flip UVs, not position)
+        var srcRect = new Rect2(sx, sy + ph, pw, -ph);
+        var destRect = new Rect2(drawX, drawY, pw, ph);
         Color color = new(1, 1, 1, alpha);
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
