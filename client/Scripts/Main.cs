@@ -1323,15 +1323,13 @@ public partial class Main : Control
 
     public override void _Notification(int what)
     {
-        // When the window is restored from minimize, re-apply the previous mode
-        if (what == NotificationWMWindowFocusIn)
+        // When the window is restored from minimize, re-apply fullscreen after
+        // a short delay so the window manager finishes its restore animation.
+        if (what == NotificationWMWindowFocusIn
+            && _preMiniMode == DisplayServer.WindowMode.Fullscreen
+            && DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen)
         {
-            if (DisplayServer.WindowGetMode() != _preMiniMode
-                && _preMiniMode == DisplayServer.WindowMode.Fullscreen)
-            {
-                // Defer to next frame so the WM finishes restoring first
-                CallDeferred(MethodName.RestoreFullscreen);
-            }
+            GetTree().CreateTimer(0.15).Timeout += RestoreFullscreen;
         }
     }
 
