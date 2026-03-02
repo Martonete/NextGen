@@ -95,6 +95,7 @@ public class GameState
     // User configuration (loaded from Options.tsao, applied to renderers/audio)
     public GameConfig Config = new();
     public bool OptionsPanelOpen;
+    public bool EscapeMenuOpen;
 
     // Key bindings (loaded from Teclas.tsao, used by InputHandler)
     public KeyBindings Keys = new();

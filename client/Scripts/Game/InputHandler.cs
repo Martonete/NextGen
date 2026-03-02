@@ -66,7 +66,7 @@ public class InputHandler
         if (!_state.IsLogged || _state.Paused) return;
 
         // Block all game input while in commerce/bank/macro/options/keybind mode
-        if (_state.Comerciando || _state.Banqueando || _state.MacroPanelOpen
+        if (_state.EscapeMenuOpen || _state.Comerciando || _state.Banqueando || _state.MacroPanelOpen
             || _state.OptionsPanelOpen || _state.KeyBindPanelOpen) return;
 
         float deltaMs = (float)delta * 1000f;

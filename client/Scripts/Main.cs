@@ -118,6 +118,12 @@ public partial class Main : Control
     // Key binding panel (frmTeclas)
     private KeyBindPanel? _keyBindPanel;
 
+    // Window mode startup dialog
+    private PanelContainer? _windowModeDialog;
+
+    // Escape menu (in-game)
+    private PanelContainer? _escapeMenu;
+
     // Message dialog (VB6: Mensaje form — modal error/info dialog)
     private PanelContainer? _mensajeDialog;
     private Label? _mensajeLabel;
@@ -530,6 +536,12 @@ public partial class Main : Control
             }
         };
 
+        // Window mode startup dialog
+        CreateWindowModeDialog();
+
+        // Escape menu (in-game)
+        CreateEscapeMenu();
+
         // Message dialog (VB6: Mensaje form)
         CreateMensajeDialog();
 
@@ -593,8 +605,8 @@ public partial class Main : Control
         _accountInput.TextSubmitted += (_) => OnConnectPressed();
         _passwordInput.TextSubmitted += (_) => OnConnectPressed();
 
-        // Show login screen
-        _loginPanel.Visible = true;
+        // Show window mode dialog first — login panel hidden until choice is made
+        _loginPanel.Visible = false;
         _charSelectPanel.Visible = false;
         _charCreatePanel!.Visible = false;
         _accountCreatePanel!.Visible = false;
@@ -603,8 +615,22 @@ public partial class Main : Control
         // Load remembered account (XOR-encrypted file)
         LoadRememberedAccount();
 
-        // Auto-focus account input (deferred so UI is ready)
-        CallDeferred(MethodName.FocusAccountInput);
+        // Show window mode dialog (centered after layout settles)
+        if (_windowModeDialog != null)
+        {
+            _windowModeDialog.Visible = true;
+            CallDeferred(MethodName.CenterWindowModeDialog);
+        }
+    }
+
+    private void CenterWindowModeDialog()
+    {
+        if (_windowModeDialog == null) return;
+        var screenSize = GetViewportRect().Size;
+        _windowModeDialog.Position = new Vector2(
+            (screenSize.X - _windowModeDialog.Size.X) / 2,
+            (screenSize.Y - _windowModeDialog.Size.Y) / 2
+        );
     }
 
     private void FocusAccountInput()
@@ -1113,6 +1139,155 @@ public partial class Main : Control
     {
         if (_mensajeDialog != null)
             _mensajeDialog.Visible = false;
+    }
+
+    /// <summary>
+    /// Creates the startup dialog asking "windowed or fullscreen?"
+    /// Shown before login panel; login is hidden until a choice is made.
+    /// </summary>
+    private void CreateWindowModeDialog()
+    {
+        _windowModeDialog = new PanelContainer();
+        _windowModeDialog.Size = new Vector2(360, 140);
+        _windowModeDialog.Visible = false;
+        _windowModeDialog.ZIndex = 200;
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.97f);
+        bg.BorderColor = new Color(0.55f, 0.45f, 0.3f);
+        bg.SetBorderWidthAll(2);
+        bg.SetContentMarginAll(14);
+        bg.SetCornerRadiusAll(4);
+        _windowModeDialog.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 12);
+        _windowModeDialog.AddChild(vbox);
+
+        var label = new Label();
+        label.Text = "¿Deseas ejecutar en modo ventana?";
+        label.HorizontalAlignment = HorizontalAlignment.Center;
+        label.AddThemeColorOverride("font_color", Colors.White);
+        label.AddThemeFontSizeOverride("font_size", 13);
+        vbox.AddChild(label);
+
+        var btnBox = new HBoxContainer();
+        btnBox.AddThemeConstantOverride("separation", 16);
+        btnBox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnBox);
+
+        var yesBtn = new Button();
+        yesBtn.Text = "Sí (Ventana)";
+        yesBtn.CustomMinimumSize = new Vector2(130, 34);
+        yesBtn.AddThemeFontSizeOverride("font_size", 12);
+        yesBtn.Pressed += () => OnWindowModeChosen(true);
+        btnBox.AddChild(yesBtn);
+
+        var noBtn = new Button();
+        noBtn.Text = "No (Pantalla Completa)";
+        noBtn.CustomMinimumSize = new Vector2(160, 34);
+        noBtn.AddThemeFontSizeOverride("font_size", 12);
+        noBtn.Pressed += () => OnWindowModeChosen(false);
+        btnBox.AddChild(noBtn);
+
+        AddChild(_windowModeDialog);
+    }
+
+    private void OnWindowModeChosen(bool windowed)
+    {
+        if (!windowed)
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+
+        if (_windowModeDialog != null)
+            _windowModeDialog.Visible = false;
+
+        // Now show the login panel
+        if (_loginPanel != null)
+            _loginPanel.Visible = true;
+
+        CallDeferred(MethodName.FocusAccountInput);
+    }
+
+    /// <summary>
+    /// Creates the in-game escape menu with Cerrar Sesión / Salir / Volver.
+    /// </summary>
+    private void CreateEscapeMenu()
+    {
+        _escapeMenu = new PanelContainer();
+        _escapeMenu.Size = new Vector2(260, 200);
+        _escapeMenu.Visible = false;
+        _escapeMenu.ZIndex = 200;
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.97f);
+        bg.BorderColor = new Color(0.55f, 0.45f, 0.3f);
+        bg.SetBorderWidthAll(2);
+        bg.SetContentMarginAll(14);
+        bg.SetCornerRadiusAll(4);
+        _escapeMenu.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 10);
+        _escapeMenu.AddChild(vbox);
+
+        var title = new Label();
+        title.Text = "Menú";
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.AddThemeColorOverride("font_color", Colors.White);
+        title.AddThemeFontSizeOverride("font_size", 15);
+        vbox.AddChild(title);
+
+        var sep = new HSeparator();
+        vbox.AddChild(sep);
+
+        var logoutBtn = new Button();
+        logoutBtn.Text = "Cerrar Sesión";
+        logoutBtn.CustomMinimumSize = new Vector2(0, 34);
+        logoutBtn.AddThemeFontSizeOverride("font_size", 12);
+        logoutBtn.Pressed += OnEscapeMenuLogout;
+        vbox.AddChild(logoutBtn);
+
+        var quitBtn = new Button();
+        quitBtn.Text = "Salir del Juego";
+        quitBtn.CustomMinimumSize = new Vector2(0, 34);
+        quitBtn.AddThemeFontSizeOverride("font_size", 12);
+        quitBtn.Pressed += () => GetTree().Quit();
+        vbox.AddChild(quitBtn);
+
+        var backBtn = new Button();
+        backBtn.Text = "Volver";
+        backBtn.CustomMinimumSize = new Vector2(0, 34);
+        backBtn.AddThemeFontSizeOverride("font_size", 12);
+        backBtn.Pressed += HideEscapeMenu;
+        vbox.AddChild(backBtn);
+
+        AddChild(_escapeMenu);
+    }
+
+    private void ShowEscapeMenu()
+    {
+        if (_escapeMenu == null) return;
+        var screenSize = GetViewportRect().Size;
+        _escapeMenu.Position = new Vector2(
+            (screenSize.X - _escapeMenu.Size.X) / 2,
+            (screenSize.Y - _escapeMenu.Size.Y) / 2
+        );
+        _escapeMenu.Visible = true;
+        _state.EscapeMenuOpen = true;
+    }
+
+    private void HideEscapeMenu()
+    {
+        if (_escapeMenu != null)
+            _escapeMenu.Visible = false;
+        _state.EscapeMenuOpen = false;
+    }
+
+    private void OnEscapeMenuLogout()
+    {
+        HideEscapeMenu();
+        _tcp?.SendPacket(";/salir");
+        HandleDisconnect("");
     }
 
     /// <summary>
@@ -2404,6 +2579,9 @@ public partial class Main : Control
         if (_minimapRect != null)
             _minimapRect.Texture = null;
 
+        // Close escape menu
+        HideEscapeMenu();
+
         // Close commerce, bank, and travel panels
         _commercePanel?.CloseShop();
         _lastComerciando = false;
@@ -2716,6 +2894,12 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
+                if (_state.EscapeMenuOpen)
+                {
+                    HideEscapeMenu();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.ChatActive)
                 {
                     _chatInput.Text = "";
@@ -2725,8 +2909,8 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
-                // No dialog open → disconnect and return to login (VB6: Escape in-game)
-                HandleDisconnect("");
+                // No dialog open → show escape menu
+                ShowEscapeMenu();
                 GetViewport().SetInputAsHandled();
                 return;
             }
