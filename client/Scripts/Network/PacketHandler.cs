@@ -1161,7 +1161,7 @@ public class PacketHandler
             ch.PosX = newX;
             ch.PosY = newY;
             ch.Moving = true;
-            ch.WalkFrame = 0; // Reset walk animation on new move
+            // VB6: FrameCounter NOT reset on consecutive moves — flows smoothly across tiles
         }
     }
 

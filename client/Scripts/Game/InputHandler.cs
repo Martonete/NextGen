@@ -284,7 +284,8 @@ public class InputHandler
             ch.ScrollDirectionX = dx;
             ch.ScrollDirectionY = dy;
             ch.Moving = true;
-            ch.WalkFrame = 0; // Reset walk animation on new move
+            // VB6: Char_Move_by_Head does NOT reset FrameCounter on consecutive moves.
+            // Only reset when starting from standstill to avoid animation stutter at tile boundaries.
             ch.PosX = newX;
             ch.PosY = newY;
 
