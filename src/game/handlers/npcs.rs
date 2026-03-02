@@ -683,7 +683,9 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
             user.paralyzed = true;
             user.counter_paralisis = state.config.intervalo_paralizado;
         }
-        state.send_to(target_conn, "PARADOK").await;
+        let duration_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i32;
+        let pkt = format!("PARADOK{}", duration_secs);
+        state.send_to(target_conn, &pkt).await;
     }
 }
 
@@ -703,6 +705,24 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> b
         return false;
     }
     if state.is_tile_blocked(map, new_x, new_y) {
+        return false;
+    }
+
+    // VB6 LegalPosNPC: water + trigger checks
+    let agua_valida = state.get_npc(npc_idx).map(|n| n.agua_valida).unwrap_or(false);
+    let tierra_invalida = state.get_npc(npc_idx).map(|n| n.tierra_invalida).unwrap_or(false);
+    let has_water = state.hay_agua(map, new_x, new_y);
+
+    if !agua_valida && has_water {
+        return false;
+    }
+    if tierra_invalida && !has_water {
+        return false;
+    }
+
+    // VB6: trigger <> eTrigger.POSINVALIDA (InvalidPos=3)
+    let trigger = get_map_tile_trigger(state, map, new_x, new_y);
+    if trigger == crate::data::maps::Trigger::InvalidPos {
         return false;
     }
 

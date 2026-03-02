@@ -461,7 +461,8 @@ public partial class WorldRenderer : Node2D
 
         if (_state.UserParalyzed && _state.ParalysisTimer > 0)
         {
-            _state.ParalysisTimer -= _deltaMs / 100f;
+            // Decrement in real seconds (deltaMs is in milliseconds)
+            _state.ParalysisTimer -= _deltaMs / 1000f;
             if (_state.ParalysisTimer < 0) _state.ParalysisTimer = 0;
         }
 
@@ -469,7 +470,7 @@ public partial class WorldRenderer : Node2D
 
         if (_state.UserParalyzed)
         {
-            DrawStatusIconTo(canvas, slot, 23610, _state.ParalysisTimer, 22f, "PARALIZADO",
+            DrawStatusIconTo(canvas, slot, 23610, _state.ParalysisTimer, _state.ParalysisMaxTimer, "PARALIZADO",
                            new Color(1f, 0.2f, 0.2f));
             slot++;
         }

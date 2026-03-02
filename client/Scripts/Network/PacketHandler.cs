@@ -62,9 +62,21 @@ public class PacketHandler
         // ── 7-char opcodes ──
         else if (packet.StartsWith("PARADOK"))
         {
-            _state.UserParalyzed = !_state.UserParalyzed;
-            // VB6: TiempoParalizado = 22 on activate, 0 on deactivate
-            _state.ParalysisTimer = _state.UserParalyzed ? 22f : 0f;
+            var payload = packet[7..]; // After "PARADOK"
+            if (payload.Length > 0 && int.TryParse(payload, out int durationSecs))
+            {
+                // Server sent duration → activate paralysis
+                _state.UserParalyzed = true;
+                _state.ParalysisTimer = durationSecs;
+                _state.ParalysisMaxTimer = durationSecs;
+            }
+            else
+            {
+                // No payload → deactivate paralysis
+                _state.UserParalyzed = false;
+                _state.ParalysisTimer = 0f;
+                _state.ParalysisMaxTimer = 0f;
+            }
         }
         else if (packet.StartsWith("TRANSOK"))
         {

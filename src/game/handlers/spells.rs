@@ -127,18 +127,19 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             let spell_id = u.spells[slot - 1];
             (
                 u.pos_map, u.pos_x, u.pos_y, u.char_index,
-                u.dead, u.paralyzed, u.min_mana,
+                u.dead, u.min_mana,
                 spell_id, u.level, u.target_x, u.target_y, u.target_map,
                 u.target_user, u.target_npc as usize, u.privileges,
             )
         }
         _ => return,
     };
-    let (map, x, y, char_index, dead, paralyzed, min_mana,
+    let (map, x, y, char_index, dead, min_mana,
          spell_id, _level, target_x, target_y, _target_map,
          target_user_conn, target_npc_idx, privileges) = user_data;
 
-    if dead || paralyzed || spell_id == 0 {
+    // VB6: PuedeLanzar does NOT check paralysis — paralyzed users CAN cast spells
+    if dead || spell_id == 0 {
         return;
     }
 
@@ -226,7 +227,14 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     let is_offensive = spell.sube_hp == 2 || spell.paraliza || spell.inmoviliza
         || spell.envenena || spell.maldicion;
 
-    // ===== STEP 4: Specific spell validations (inside HandleHechizo) =====
+    // ===== STEP 4: Safe zone check for offensive spells (VB6: PuedeAtacar) =====
+    if is_offensive {
+        let attacker_trigger = get_map_tile_trigger(state, map, x, y);
+        if attacker_trigger == crate::data::maps::Trigger::SafeZone {
+            state.send_to(conn_id, "||164").await; // Can't attack in safe zone
+            return;
+        }
+    }
 
     // Route to NPC or User handling
     if has_npc_target && !has_user_target {
@@ -257,6 +265,30 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         if is_offensive && target_id == conn_id {
             state.send_to(conn_id, "||31").await; // Can't attack yourself
             return; // NO mana consumed, NO FX
+        }
+
+        // VB6: Safe zone check — victim in safe zone blocks offensive spells
+        if is_offensive && target_id != conn_id {
+            let victim_pos = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
+            let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
+            if victim_trigger == crate::data::maps::Trigger::SafeZone {
+                state.send_to(conn_id, "||164").await;
+                return;
+            }
+        }
+
+        // VB6: Can't cast offensive spells on dead users or administrators
+        if is_offensive && target_id != conn_id {
+            let (t_dead, t_privs) = state.users.get(&target_id)
+                .map(|u| (u.dead, u.privileges))
+                .unwrap_or((false, 0));
+            if t_dead {
+                return;
+            }
+            if t_privs > 0 {
+                state.send_to(conn_id, "||155").await;
+                return;
+            }
         }
 
         // VB6: Healing full HP check (||145)
@@ -629,7 +661,10 @@ pub(super) async fn apply_spell_status(
 
     // Send PARADOK + PU outside borrow scope (VB6: lines 759-760)
     if send_paradok_on {
-        state.send_to(target_id, "PARADOK").await;
+        // Send duration in seconds so client can show accurate countdown
+        let duration_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i32;
+        let pkt = format!("PARADOK{}", duration_secs);
+        state.send_to(target_id, &pkt).await;
         // PU forces client position to server-known position (prevents ghost movement)
         let pu = state.users.get(&target_id)
             .map(|u| format!("PU{},{}", u.pos_x, u.pos_y));

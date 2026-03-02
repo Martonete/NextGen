@@ -108,6 +108,10 @@ pub struct NpcState {
     pub name: String,
     pub desc: String,
 
+    // Movement constraints (VB6: LegalPosNPC)
+    pub agua_valida: bool,      // Can walk on water tiles
+    pub tierra_invalida: bool,  // Can ONLY walk on water tiles
+
     // Status effects
     pub veneno: bool,   // Poisons on hit
     pub paralyzed: bool,
@@ -225,6 +229,8 @@ impl NpcState {
             attackable: data.attackable,
             name: data.name.clone(),
             desc: data.desc.clone(),
+            agua_valida: data.agua_valida,
+            tierra_invalida: data.tierra_invalida,
             veneno: data.veneno,
             paralyzed: false,
             counter_paralisis: 0,

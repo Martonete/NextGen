@@ -76,42 +76,37 @@ public class InputHandler
         if (_refreshTimer > 0) _refreshTimer -= deltaMs;
         if (_keyCooldown > 0) _keyCooldown -= deltaMs;
 
-        // VB6: paralyzed users can only change heading (every 96ms)
-        // For now, block all movement when paralyzed
-        if (_state.UserParalyzed) return;
-
-        // Decrement PT correction cooldown (blocks moves after server rejected one)
-        if (_state.PtCooldownFrames > 0)
+        // VB6: paralyzed users can attack and cast spells, only movement is blocked
+        if (!_state.UserParalyzed)
         {
-            _state.PtCooldownFrames--;
-            return;
-        }
-
-        // Movement — arrow keys ALWAYS work (even with chat open).
-        // WASD only works when chat is NOT active.
-        // VB6: CheckKeys uses key bindings; arrows are separate from typing keys.
-        if (!_state.UserMoving && _state.PendingMoves < 2)
-        {
-            // Arrow keys: always available
-            if (Input.IsKeyPressed(Key.Up))
-                TryMove(1); // North
-            else if (Input.IsKeyPressed(Key.Right))
-                TryMove(2); // East
-            else if (Input.IsKeyPressed(Key.Down))
-                TryMove(3); // South
-            else if (Input.IsKeyPressed(Key.Left))
-                TryMove(4); // West
-            // WASD: only when chat is NOT active
-            else if (!_state.ChatActive)
+            // Decrement PT correction cooldown (blocks moves after server rejected one)
+            if (_state.PtCooldownFrames > 0)
             {
-                if (Input.IsKeyPressed(Key.W))
-                    TryMove(1);
-                else if (Input.IsKeyPressed(Key.D))
-                    TryMove(2);
-                else if (Input.IsKeyPressed(Key.S))
-                    TryMove(3);
-                else if (Input.IsKeyPressed(Key.A))
-                    TryMove(4);
+                _state.PtCooldownFrames--;
+            }
+            else if (!_state.UserMoving && _state.PendingMoves < 2)
+            {
+                // Arrow keys: always available
+                if (Input.IsKeyPressed(Key.Up))
+                    TryMove(1); // North
+                else if (Input.IsKeyPressed(Key.Right))
+                    TryMove(2); // East
+                else if (Input.IsKeyPressed(Key.Down))
+                    TryMove(3); // South
+                else if (Input.IsKeyPressed(Key.Left))
+                    TryMove(4); // West
+                // WASD: only when chat is NOT active
+                else if (!_state.ChatActive)
+                {
+                    if (Input.IsKeyPressed(Key.W))
+                        TryMove(1);
+                    else if (Input.IsKeyPressed(Key.D))
+                        TryMove(2);
+                    else if (Input.IsKeyPressed(Key.S))
+                        TryMove(3);
+                    else if (Input.IsKeyPressed(Key.A))
+                        TryMove(4);
+                }
             }
         }
 

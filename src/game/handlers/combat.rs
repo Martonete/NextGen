@@ -31,7 +31,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (
             u.pos_map, u.pos_x, u.pos_y, u.heading, u.char_index,
-            u.dead, u.paralyzed, u.safe_toggle, u.level,
+            u.dead, u.safe_toggle, u.level,
             u.attributes[0], // Strength
             u.attributes[1], // Agility
             u.min_hit, u.max_hit,
@@ -41,10 +41,11 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         ),
         _ => return,
     };
-    let (map, x, y, heading, char_index, dead, paralyzed, safe_on, level,
+    let (map, x, y, heading, char_index, dead, safe_on, level,
          strength, agility, min_hit, max_hit, skill_armas, attacker_name, class) = user_data;
 
-    if dead || paralyzed {
+    // VB6: Paralysis only blocks MOVEMENT, not attacks
+    if dead {
         return;
     }
 
@@ -119,10 +120,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
              v_max_hp, v_min_hp, v_class, v_heading) = victim_data;
 
         if v_dead {
+            state.send_to(conn_id, "||154").await; // Target is dead
             return;
         }
         if v_privs > 0 {
-            return; // Can't attack GMs
+            state.send_to(conn_id, "||155").await; // Can't attack GMs
+            return;
         }
 
         // Hit/miss calculation
@@ -270,6 +273,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             user_die(state, victim_id, Some(conn_id)).await;
         }
     } else {
+        // Safe zone check for NPC attacks too
+        let attacker_trigger = get_map_tile_trigger(state, map, x, y);
+        if attacker_trigger == crate::data::maps::Trigger::SafeZone {
+            state.send_to(conn_id, "||164").await;
+            return;
+        }
+
         // Check for NPC on target tile
         let target_npc = state.world.grid(map)
             .and_then(|g| g.tile(target_x, target_y))
@@ -459,6 +469,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         user.weapon_anim = super::common::NINGUN_ARMA;
         user.shield_anim = super::common::NINGUN_ESCUDO;
         user.casco_anim = super::common::NINGUN_CASCO;
+        // Clear auras (VB6 parity: death removes all aura effects)
+        user.aura_a = 0;
+        user.aura_w = 0;
+        user.aura_e = 0;
+        user.aura_r = 0;
+        user.aura_c = 0;
         // Resurrection cooldown (20 ticks before player can be rezzed)
         user.time_revivir = 20;
     }
@@ -559,6 +575,9 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         }
     }
 
+    // Bug 3: Send full inventory update so client clears equipped markers
+    send_full_inventory(state, conn_id).await;
+
     // Send death notification
     state.send_to(conn_id, server_opcodes::YOU_DIED).await;
     send_stats_hp(state, conn_id).await;
@@ -580,6 +599,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         0, 0, 0  // weapon, shield, casco = 0
     );
     state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+
+    // Bug 4: Broadcast zeroed auras to area
+    if let Some(user) = state.users.get(&conn_id) {
+        let au_pkt = build_aura_packet(user);
+        state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+    }
 
     // Notify area
     let msg = format!("T|12632256\u{00B0}{} ha muerto\u{00B0}{}", victim_name, char_index.0);

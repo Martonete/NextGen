@@ -73,6 +73,9 @@ pub struct UserState {
     // Character appearance (for CC packet)
     pub body: i32,
     pub head: i32,
+    /// VB6: OrigChar.Head — original head from charfile, never modified at runtime.
+    /// Used to restore head on revive (since `head` gets set to dead head 500 on death).
+    pub orig_head: i32,
     pub weapon_anim: i32,
     pub shield_anim: i32,
     pub casco_anim: i32,
@@ -358,6 +361,7 @@ impl UserState {
             char_index: CharIndex(0),
             body: 0,
             head: 0,
+            orig_head: 0,
             weapon_anim: 0,
             shield_anim: 0,
             casco_anim: 0,

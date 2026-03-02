@@ -706,6 +706,15 @@ async fn connect_user(
             }
         }
 
+        // VB6: OrigChar.Head — immutable original head for revive.
+        // If DB has dead head (500/501/511/512), use a default for the race/gender instead.
+        let saved_head = char_data.head;
+        user.orig_head = if saved_head == 500 || saved_head == 501 || saved_head == 511 || saved_head == 512 || saved_head <= 0 {
+            default_head_for_race(&char_data.race, char_data.gender)
+        } else {
+            saved_head
+        };
+
         // Animation IDs: resolve from equipped items (VB6 TCP.bas lines 1511-1513)
         // Default 2 = "empty" animation (NingunArma/NingunEscudo/NingunCasco)
         user.weapon_anim = 2;
@@ -950,7 +959,12 @@ async fn connect_user(
     // PARADOK is a toggle — client starts with UserParalizado=False,
     // so we send one PARADOK to set it to True if the char is paralyzed.
     if char_data.paralyzed {
-        state.send_to(conn_id, "PARADOK").await;
+        // Send remaining duration
+        let remaining_secs = state.users.get(&conn_id)
+            .map(|u| (u.counter_paralisis as f32 * 0.04) as i32)
+            .unwrap_or(20);
+        let pkt = format!("PARADOK{}", remaining_secs.max(1));
+        state.send_to(conn_id, &pkt).await;
     }
 
     // --- PHASE 10c: NAVEG if navigating (VB6 TCP.bas lines 1515-1521, 1654) ---
@@ -2275,19 +2289,14 @@ async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
 /// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
 /// VB6: RevivirUsuario() — sets dead=false, HP=35, DarCuerpoDesnudo, ChangeUserChar(OrigChar.Head).
 async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
-    let (char_name, race, max_hp) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.dead => (u.char_name.clone(), u.race.clone(), u.max_hp),
+    let (race, gender, max_hp, orig_head) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.dead => (u.race.clone(), u.gender, u.max_hp, u.orig_head),
         _ => return,
     };
 
-    // Load original head from DB (VB6: OrigChar.Head)
-    let (orig_head, gender) = match charfile::load_charfile(&state.pool, &char_name).await {
-        Ok(chr) => (chr.head, chr.gender.to_string()),
-        Err(_) => (1, "1".to_string()),
-    };
-
     let revive_hp = 35.min(max_hp);
-    let new_body = naked_body(&race, &gender);
+    let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
+    let new_body = naked_body(&race, gender_str);
 
     // Update user state: revive + restore living appearance
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -2522,6 +2531,58 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                 name, new_level
             );
             state.send_data(SendTarget::ToAll, &announce).await;
+        }
+
+        // VB6 parity: Level 10 — warp to Tanaris, clear inventory, naked body, give torch
+        if new_level == 10 {
+            // Warp to Tanaris (map 28, pos 54,34)
+            warp_user(state, conn_id, 28, 54, 34).await;
+
+            // Clear entire inventory + equipment
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                for slot in user.inventory.iter_mut() {
+                    slot.obj_index = 0;
+                    slot.amount = 0;
+                    slot.equipped = false;
+                }
+                user.equip = EquipSlots::default();
+                user.weapon_anim = 0;
+                user.shield_anim = 0;
+                user.casco_anim = 0;
+            }
+
+            // Naked body based on race/gender
+            let (race, gender) = state.users.get(&conn_id)
+                .map(|u| (u.race.clone(), u.gender))
+                .unwrap_or_default();
+            let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
+            let naked = naked_body(&race, gender_str);
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.body = naked;
+            }
+
+            // Give torch (1561 for Enano/Gnomo, 1560 for others)
+            let torch = if race.eq_ignore_ascii_case("enano") || race.eq_ignore_ascii_case("gnomo") {
+                1561
+            } else {
+                1560
+            };
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                if let Some(slot) = user.inventory.iter_mut().find(|s| s.obj_index == 0) {
+                    slot.obj_index = torch;
+                    slot.amount = 1;
+                }
+            }
+
+            // Send updates
+            send_full_inventory(state, conn_id).await;
+
+            // CP packet (naked, no equipment) — re-read position after warp
+            let (m, px, py, ci, hd, head) = state.users.get(&conn_id)
+                .map(|u| (u.pos_map, u.pos_x, u.pos_y, u.char_index.0, u.heading, u.head))
+                .unwrap_or_default();
+            let cp = format!("CP{},{},{},{},0,0,0,0,0", ci, naked, head, hd);
+            state.send_data(SendTarget::ToArea { map: m, x: px, y: py }, &cp).await;
         }
 
         // VB6 level bonuses from ClassBonus.dat (levels 53, 56, 60)

@@ -120,6 +120,10 @@ pub struct NpcData {
     pub items: Vec<NpcInvItem>, // Items loaded from Obj1..ObjN
     pub alineacion: i32,    // Alignment (0=neutral, 1=good, 2=evil)
 
+    // Movement constraints (VB6: LegalPosNPC)
+    pub agua_valida: bool,      // Can walk on water tiles
+    pub tierra_invalida: bool,  // Can ONLY walk on water tiles
+
     // Status effects
     pub veneno: bool,           // Poisons on hit (VB6: Npclist.Veneno)
 
@@ -180,6 +184,7 @@ impl Default for NpcData {
             give_exp: 0, give_gld: 0, give_gld_min: 0, give_gld_max: 0,
             inflacion: 0, tipo_items: 0, inv_respawn: false,
             nro_items: 0, items: Vec::new(), alineacion: 0,
+            agua_valida: false, tierra_invalida: false,
             veneno: false,
             lanza_spells: 0, spells: Vec::new(),
             cristales: false,
@@ -257,6 +262,8 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
             items
         },
         alineacion: get_int("Alineacion"),
+        agua_valida: get_bool("AguaValida"),
+        tierra_invalida: get_bool("TierraInvalida"),
         veneno: get_bool("Veneno"),
         lanza_spells: get_int("LanzaSpells"),
         spells: {
