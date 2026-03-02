@@ -151,8 +151,9 @@ pub mod client_opcodes {
 ///
 /// These must match EXACTLY what the VB6 client expects to parse.
 pub mod server_opcodes {
-    pub const ERROR: &str = "ERR";      // Error message (disconnects)
-    pub const ERROR_SHOW: &str = "ERO"; // Error message (shows dialog)
+    pub const ERROR: &str = "ERR";      // Error message (shows dialog, server disconnects after)
+    pub const ERROR_SHOW: &str = "ERO"; // Error message (shows dialog, stays connected)
+    pub const MSG_BOX: &str = "!!";     // In-game message box (VB6: Mensaje.Escribir)
     pub const LOGGED: &str = "LOGGED";  // Login successful
     pub const DEAD: &str = "MUERT";     // Character died
     pub const CHANGE_MAP: &str = "CM";  // Switch to new map

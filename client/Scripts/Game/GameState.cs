@@ -36,6 +36,7 @@ public class GameState
     public string SecurityCode = "";
     public string LoginError = "";
     public string ServerNotice = "";
+    public string MensajeText = ""; // VB6 Mensaje form: set to show modal dialog
     public List<CharacterPreview> CharacterList = new();
     public int SelectedCharIndex = -1;
 

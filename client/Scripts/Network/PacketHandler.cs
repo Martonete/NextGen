@@ -321,8 +321,10 @@ public class PacketHandler
         }
         else if (packet.StartsWith("ERO"))
         {
-            // Error dialog (no disconnect)
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = packet[3..], Color = "FF0000" });
+            // VB6: Mensaje.Label1 = text, Mensaje.Show — modal dialog, no disconnect
+            string eroText = packet[3..];
+            _state.MensajeText = eroText;
+            GD.Print($"[GAME] ERO: {eroText}");
         }
         else if (packet.StartsWith("CSI"))
         {
@@ -1714,7 +1716,11 @@ public class PacketHandler
 
     private void HandleError(string data)
     {
+        // VB6: ERR always shows Mensaje.Escribir modal dialog + resets mouse cursor
+        // On login-related screens, LoginError is used (inline label).
+        // Additionally, always set MensajeText for the modal dialog (VB6 behavior).
         _state.LoginError = data;
+        _state.MensajeText = data;
         GD.Print($"[LOGIN] ERR: {data}");
     }
 
@@ -2375,10 +2381,10 @@ public class PacketHandler
     /// </summary>
     private void HandleGmBroadcast(string data)
     {
-        // Strip trailing ESC char if present
+        // VB6: !! packet → Mensaje.Escribir (modal message box)
         string text = data.TrimEnd('\x1b');
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "FFFF00" });
-        GD.Print($"[GM] Broadcast: {text}");
+        _state.MensajeText = text;
+        GD.Print($"[GM] Message box: {text}");
     }
 
     /// <summary>

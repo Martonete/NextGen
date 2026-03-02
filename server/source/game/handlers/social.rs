@@ -649,10 +649,25 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
         _ => return,
     };
 
-    if !charfile::character_exists(&state.pool, &friend_name).await {
-        let msg = format!("{}El personaje no existe.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+    // VB6: Can't add self
+    let self_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    if friend_name.to_uppercase() == self_name.to_uppercase() {
+        state.send_to(conn_id, &format!("{}No puedes agregarte a ti mismo.", server_opcodes::ERROR_SHOW)).await;
         return;
+    }
+
+    if !charfile::character_exists(&state.pool, &friend_name).await {
+        state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR_SHOW)).await;
+        return;
+    }
+
+    // VB6: Can't add GMs
+    // Check if the target character has privileges by loading their charfile
+    if let Ok(char_data) = charfile::load_charfile(&state.pool, &friend_name).await {
+        if char_data.privileges > 0 {
+            state.send_to(conn_id, &format!("{}No podes agregar GM's.", server_opcodes::ERROR_SHOW)).await;
+            return;
+        }
     }
 
     // Load friend list from account file
@@ -665,8 +680,7 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
 
     let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
     if count >= 20 {
-        let msg = format!("{}Lista de amigos llena.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_to(conn_id, &format!("{}Lista de amigos llena, solo puedes agregar 20.", server_opcodes::ERROR_SHOW)).await;
         return;
     }
 
@@ -674,8 +688,7 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
     for i in 1..=count {
         let existing = crate::config::get_var(act, "AMIGOS", &format!("A{}", i));
         if existing.to_uppercase() == friend_name.to_uppercase() {
-            let msg = format!("{}Ya esta en tu lista de amigos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, &format!("{}El usuario ya esta en tu lista de amigos.", server_opcodes::ERROR_SHOW)).await;
             return;
         }
     }

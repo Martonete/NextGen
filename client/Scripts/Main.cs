@@ -118,6 +118,10 @@ public partial class Main : Control
     // Key binding panel (frmTeclas)
     private KeyBindPanel? _keyBindPanel;
 
+    // Message dialog (VB6: Mensaje form — modal error/info dialog)
+    private PanelContainer? _mensajeDialog;
+    private Label? _mensajeLabel;
+
     // Drop quantity dialog (VB6: frmCantidad)
     private PanelContainer? _dropDialog;
     private Label? _dropDialogLabel;
@@ -525,6 +529,9 @@ public partial class Main : Control
                 _keyBindPanel.Open();
             }
         };
+
+        // Message dialog (VB6: Mensaje form)
+        CreateMensajeDialog();
 
         // Drop quantity dialog (VB6: frmCantidad)
         CreateDropDialog();
@@ -1023,6 +1030,86 @@ public partial class Main : Control
             Text = $"Modo de habla: {modeName}",
             Color = "FFFFFF"
         });
+    }
+
+    /// <summary>
+    /// Create the Mensaje dialog (VB6: Mensaje form).
+    /// Modal dialog with message text and "Aceptar" button. VB6 shows this for
+    /// ERR, ERO, and !! packets. Enter key also dismisses.
+    /// </summary>
+    private void CreateMensajeDialog()
+    {
+        _mensajeDialog = new PanelContainer();
+        _mensajeDialog.Size = new Vector2(340, 160);
+        // Center on window (534x408 game viewport offset at 0,124 approx)
+        _mensajeDialog.Visible = false;
+        _mensajeDialog.ZIndex = 200; // Above everything
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.97f);
+        bg.BorderColor = new Color(0.55f, 0.45f, 0.3f);
+        bg.SetBorderWidthAll(2);
+        bg.SetContentMarginAll(14);
+        bg.CornerRadius = 4;
+        _mensajeDialog.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 10);
+        _mensajeDialog.AddChild(vbox);
+
+        _mensajeLabel = new Label();
+        _mensajeLabel.Text = "";
+        _mensajeLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _mensajeLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _mensajeLabel.AddThemeColorOverride("font_color", Colors.White);
+        _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
+        _mensajeLabel.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        vbox.AddChild(_mensajeLabel);
+
+        var acceptBtn = new Button();
+        acceptBtn.Text = "Aceptar";
+        acceptBtn.CustomMinimumSize = new Vector2(100, 30);
+        acceptBtn.AddThemeFontSizeOverride("font_size", 12);
+        acceptBtn.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+        acceptBtn.Pressed += OnMensajeAccept;
+        vbox.AddChild(acceptBtn);
+
+        // Add to root so it's visible on ALL screens (login, charselect, game, etc.)
+        AddChild(_mensajeDialog);
+    }
+
+    private void ShowMensaje(string text)
+    {
+        if (_mensajeDialog == null || _mensajeLabel == null) return;
+
+        _mensajeLabel.Text = text;
+
+        // VB6: auto-adjust font size for long messages
+        if (text.Length > 120)
+            _mensajeLabel.AddThemeFontSizeOverride("font_size", 10);
+        else if (text.Length > 75)
+            _mensajeLabel.AddThemeFontSizeOverride("font_size", 11);
+        else
+            _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
+
+        // Resize height based on text length
+        int height = text.Length > 120 ? 200 : (text.Length > 75 ? 180 : 160);
+        _mensajeDialog.Size = new Vector2(340, height);
+
+        // Center on screen
+        var screenSize = GetViewportRect().Size;
+        _mensajeDialog.Position = new Vector2(
+            (screenSize.X - _mensajeDialog.Size.X) / 2,
+            (screenSize.Y - _mensajeDialog.Size.Y) / 2
+        );
+
+        _mensajeDialog.Visible = true;
+    }
+
+    private void OnMensajeAccept()
+    {
+        if (_mensajeDialog != null)
+            _mensajeDialog.Visible = false;
     }
 
     /// <summary>
@@ -2040,6 +2127,20 @@ public partial class Main : Control
                 }
             }
             _state.LoginError = "";
+        }
+
+        // Show Mensaje dialog (VB6: Mensaje form — ERR, ERO, !! packets)
+        if (!string.IsNullOrEmpty(_state.MensajeText))
+        {
+            ShowMensaje(_state.MensajeText);
+            _state.MensajeText = "";
+        }
+
+        // Dismiss Mensaje dialog with Enter key
+        if (_mensajeDialog != null && _mensajeDialog.Visible)
+        {
+            if (Input.IsActionJustPressed("ui_accept"))
+                OnMensajeAccept();
         }
 
         // Account creation success → auto-switch to login after timer
