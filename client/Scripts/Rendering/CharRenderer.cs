@@ -327,67 +327,110 @@ public static class CharRenderer
     {
         float hoX = headOffset.X, hoY = headOffset.Y;
 
-        // Body reflection: (X, Y - HeadOffset.Y)
-        if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-        {
-            int bodyGrh = data.Bodies[ch.Body].Walk[heading];
-            if (bodyGrh > 0)
-            {
-                int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-                DrawGrhFlippedY(canvas, bodyGrh, frame,
-                    pos.X, pos.Y - hoY,
-                    100f / 255f, data);
-            }
-        }
+        // VB6 offsets (clsDX8Engine.cls lines 1988-2006):
+        //   Body:   (X, Y - HeadOffset.Y)          Invert_y alpha=100
+        //   Head:   (X - hoX, Y - hoY + 11/24)     Invert_y alpha=100 (35 if helmet)
+        //   Helmet: (X - hoX + 1, Y - hoY + 14)    Invert_y alpha=150
+        //   Weapon: (X, Y + 40)                     Invert_y alpha=100
+        //   Shield: (X, Y + 40)                     Invert_y alpha=100
 
-        // Head reflection: (X - HeadOffset.X, Y - HeadOffset.Y + 11)
-        if (ch.Head > 0 && ch.Head < data.Heads.Length)
+        // Use heading-dependent draw order (same as dibujarPersonaje)
+        switch (heading)
         {
-            int headGrh = data.Heads[ch.Head].Head[heading];
-            if (headGrh > 0)
-            {
-                float yOff = ch.Dead ? 24f : 11f;
-                DrawGrhFlippedY(canvas, headGrh, 0,
-                    pos.X - hoX, pos.Y - hoY + yOff,
-                    100f / 255f, data);
-            }
-        }
+            case 1: // North
+                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
+                DrawReflShield(canvas, ch, pos, heading, data, animator);
+                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
+                break;
 
-        // Helmet reflection: (X - HeadOffset.X + 1, Y - HeadOffset.Y + 14)
-        if (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length)
-        {
-            int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
-            if (hGrh > 0)
-                DrawGrhFlippedY(canvas, hGrh, 0,
-                    pos.X - hoX + 1, pos.Y - hoY + 14,
-                    150f / 255f, data);
-        }
+            case 2: // East
+                DrawReflShield(canvas, ch, pos, heading, data, animator);
+                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
+                break;
 
-        // Weapon reflection: (X, Y + 40)
-        if (ch.WeaponAnim > 0 && ch.WeaponAnim < data.Weapons.Length)
-        {
-            int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
-            if (weapGrh > 0)
-                DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-                    pos.X, pos.Y + 40,
-                    100f / 255f, data);
-        }
+            case 3: // South
+                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
+                DrawReflShield(canvas, ch, pos, heading, data, animator);
+                break;
 
-        // Shield reflection: (X, Y + 40)
-        if (ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length)
-        {
-            int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
-            if (shldGrh > 0)
-                DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-                    pos.X, pos.Y + 40,
-                    100f / 255f, data);
+            case 4: // West
+                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
+                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflShield(canvas, ch, pos, heading, data, animator);
+                break;
         }
+    }
+
+    private static void DrawReflBody(
+        Node2D canvas, Character ch, Vector2 pos, float hoY,
+        int heading, GameData data, GrhAnimator animator)
+    {
+        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
+        int bodyGrh = data.Bodies[ch.Body].Walk[heading];
+        if (bodyGrh <= 0) return;
+        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y - hoY, 100f / 255f, data);
+    }
+
+    private static void DrawReflHead(
+        Node2D canvas, Character ch, Vector2 pos, float hoX, float hoY,
+        int heading, GameData data)
+    {
+        if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
+        int headGrh = data.Heads[ch.Head].Head[heading];
+        if (headGrh <= 0) return;
+        float yOff = ch.Dead ? 24f : 11f;
+        float headAlpha = (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
+                           && data.Cascos[ch.CascoAnim].Head[heading] > 0) ? 35f / 255f : 100f / 255f;
+        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data);
+    }
+
+    private static void DrawReflHelmet(
+        Node2D canvas, Character ch, Vector2 pos, float hoX, float hoY,
+        int heading, GameData data)
+    {
+        if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
+        int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
+        if (hGrh <= 0) return;
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data);
+    }
+
+    private static void DrawReflWeapon(
+        Node2D canvas, Character ch, Vector2 pos,
+        int heading, GameData data, GrhAnimator animator)
+    {
+        if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Weapons.Length) return;
+        int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
+        if (weapGrh <= 0) return;
+        DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
+            pos.X, pos.Y + 40, 100f / 255f, data);
+    }
+
+    private static void DrawReflShield(
+        Node2D canvas, Character ch, Vector2 pos,
+        int heading, GameData data, GrhAnimator animator)
+    {
+        if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
+        int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
+        if (shldGrh <= 0) return;
+        DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
+            pos.X, pos.Y + 40, 100f / 255f, data);
     }
 
     /// <summary>
     /// Draw a GRH at (x, y) with center=true and Y-flipped (Invert_y).
-    /// Used for water reflections. VB6 Invert_y flips texture UVs only,
-    /// the draw position stays the same. We flip the source rect vertically.
+    /// Used for water reflections. Negative dest height = Godot vertical flip.
+    /// The sprite occupies the same screen area, just rendered upside down.
     /// </summary>
     private static void DrawGrhFlippedY(
         Node2D canvas, int grhIndex, int frame,
@@ -416,9 +459,9 @@ public static class CharRenderer
         if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
             drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
-        // Flip source rect vertically (VB6 Invert_y = flip UVs, not position)
-        var srcRect = new Rect2(sx, sy + ph, pw, -ph);
-        var destRect = new Rect2(drawX, drawY, pw, ph);
+        var srcRect = new Rect2(sx, sy, pw, ph);
+        // Negative dest height = Y-flip. Sprite covers drawY to drawY+ph, flipped.
+        var destRect = new Rect2(drawX, drawY + ph, pw, -ph);
         Color color = new(1, 1, 1, alpha);
         canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
