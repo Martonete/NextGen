@@ -169,6 +169,13 @@ public partial class Main : Control
         _gameUI = GetNode<Control>("GameUI");
         _backgroundImage = GetNode<TextureRect>("GameUI/BackgroundImage");
         _console = GetNode<RichTextLabel>("GameUI/Console");
+        // Add bottom padding so text doesn't touch the edge
+        var consoleStyle = new StyleBoxEmpty();
+        consoleStyle.ContentMarginLeft = 2;
+        consoleStyle.ContentMarginRight = 2;
+        consoleStyle.ContentMarginTop = 1;
+        consoleStyle.ContentMarginBottom = 6;
+        _console.AddThemeStyleboxOverride("normal", consoleStyle);
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
         // Dark background + thin border — sits below the game viewport, no overlap
@@ -1544,6 +1551,7 @@ public partial class Main : Control
         if (_principalDir != null)
         {
             string graficosDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(_principalDir, ".."));
+            // Try exact names first, then do case-insensitive directory scan
             candidates.Add(System.IO.Path.Combine(graficosDir, "MiniMap", $"Mapa{mapNumber}.bmp"));
             candidates.Add(System.IO.Path.Combine(graficosDir, "Minimap", $"Mapa{mapNumber}.bmp"));
         }
@@ -1552,25 +1560,62 @@ public partial class Main : Control
 
         foreach (string path in candidates)
         {
-            if (System.IO.File.Exists(path))
+            if (TryLoadMinimapFile(path)) return;
+        }
+
+        // Case-insensitive fallback: scan MiniMap directory for matching filename
+        // Handles files like "mapa187.bmp" vs expected "Mapa187.bmp" (Linux is case-sensitive)
+        if (_principalDir != null)
+        {
+            string graficosDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(_principalDir, ".."));
+            string targetName = $"mapa{mapNumber}.bmp";
+            foreach (string dirName in new[] { "MiniMap", "Minimap", "minimap" })
             {
-                try
+                string dir = System.IO.Path.Combine(graficosDir, dirName);
+                if (System.IO.Directory.Exists(dir))
                 {
-                    var img = new Image();
-                    img.Load(path);
-                    _minimapRect.Texture = ImageTexture.CreateFromImage(img);
-                    GD.Print($"[MAIN] Minimap loaded: {path}");
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    GD.PrintErr($"[MAIN] Failed to load minimap: {ex.Message}");
+                    foreach (string file in System.IO.Directory.GetFiles(dir, "*.bmp"))
+                    {
+                        if (string.Equals(System.IO.Path.GetFileName(file), targetName,
+                            StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (TryLoadMinimapFile(file)) return;
+                        }
+                    }
                 }
             }
         }
 
         GD.Print($"[MAIN] No minimap found for map {mapNumber}");
         _minimapRect.Texture = null;
+    }
+
+    private bool TryLoadMinimapFile(string path)
+    {
+        if (!System.IO.File.Exists(path)) return false;
+        try
+        {
+            var img = new Image();
+            var err = img.Load(path);
+            if (err != Error.Ok)
+            {
+                GD.PrintErr($"[MAIN] Minimap load error ({err}): {path}");
+                return false;
+            }
+            if (img.GetWidth() == 0 || img.GetHeight() == 0)
+            {
+                GD.PrintErr($"[MAIN] Minimap empty image: {path}");
+                return false;
+            }
+            _minimapRect.Texture = ImageTexture.CreateFromImage(img);
+            GD.Print($"[MAIN] Minimap loaded: {path}");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Failed to load minimap: {ex.Message}");
+            return false;
+        }
     }
 
     // VB6 movement constants
