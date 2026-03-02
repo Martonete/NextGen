@@ -197,19 +197,53 @@ public static class CharRenderer
     }
 
     /// <summary>
-    /// Character shadow: body sprite projected as a flat parallelogram on the ground.
+    /// Character shadow: body + head projected as flat parallelograms on the ground.
     /// Light source from lower-left → shadow falls toward upper-right.
-    /// Anchored at character's feet, textured with body sprite silhouette.
     /// </summary>
     private static void DrawShadow(
         Node2D canvas, Character ch, Vector2 screenPos, int heading,
         GameData data, GrhAnimator animator)
     {
-        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
-        int grhIndex = data.Bodies[ch.Body].Walk[heading];
-        if (grhIndex <= 0) return;
+        Color shadowColor = new(0, 0, 0, 0.35f);
+        float shearFactor = 0.5f;
+        float flatFactor = 0.75f;
 
-        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+        // --- Body shadow ---
+        if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+        {
+            int bodyGrh = data.Bodies[ch.Body].Walk[heading];
+            if (bodyGrh > 0)
+            {
+                int frame = ch.Moving ? (int)ch.WalkFrame : 0;
+                DrawShadowQuad(canvas, bodyGrh, frame, screenPos, shearFactor, flatFactor, shadowColor, data);
+            }
+        }
+
+        // --- Head shadow ---
+        if (ch.Head > 0 && ch.Head < data.Heads.Length)
+        {
+            int headGrh = data.Heads[ch.Head].Head[heading];
+            if (headGrh > 0)
+            {
+                // Head is offset from body position
+                var headPos = new Vector2(
+                    screenPos.X + (ch.Body > 0 && ch.Body < data.Bodies.Length
+                        ? data.Bodies[ch.Body].HeadOffset.X : 0),
+                    screenPos.Y + (ch.Body > 0 && ch.Body < data.Bodies.Length
+                        ? data.Bodies[ch.Body].HeadOffset.Y : 0));
+                DrawShadowQuad(canvas, headGrh, 0, headPos, shearFactor, flatFactor, shadowColor, data);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Draw a single shadow parallelogram for a GRH (body or head).
+    /// Anchored at sprite feet, leaning upper-right.
+    /// </summary>
+    private static void DrawShadowQuad(
+        Node2D canvas, int grhIndex, int frame, Vector2 screenPos,
+        float shearFactor, float flatFactor, Color shadowColor, GameData data)
+    {
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
@@ -225,7 +259,7 @@ public static class CharRenderer
         if (sy + ph > texH) ph = texH - sy;
         if (pw <= 0 || ph <= 0) return;
 
-        // Body draw position (with centering, same as DrawGrh center=true)
+        // Sprite draw position (with centering)
         float drawX = screenPos.X;
         float drawY = screenPos.Y;
         if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
@@ -233,26 +267,20 @@ public static class CharRenderer
         if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
             drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
-        // Shadow shape: parallelogram anchored at feet, leaning upper-right
-        //   Light from lower-left → top edge shifts right
-        //   Vertically flattened to ~45% height (looks like ground projection)
-        float shearX = pw * 0.5f;    // top edge shifts right by 50% of sprite width
-        float flatH = ph * 0.75f;    // shadow height = 75% of sprite height (reaches back/head)
-        float feetY = drawY + ph;    // bottom of sprite = character feet
+        float shearX = pw * shearFactor;
+        float flatH = ph * flatFactor;
+        float feetY = drawY + ph;
 
-        // 4 vertices: BL → BR → TR → TL (counter-clockwise for DrawPolygon)
+        // Parallelogram: BL → BR → TR → TL (CCW)
         Vector2 bl = new(drawX, feetY);
         Vector2 br = new(drawX + pw, feetY);
         Vector2 tr = new(drawX + pw + shearX, feetY - flatH);
         Vector2 tl = new(drawX + shearX, feetY - flatH);
 
-        // UVs mapping sprite texture onto the shadow quad
         float u0 = (float)sx / texW;
         float u1 = (float)(sx + pw) / texW;
         float vTop = (float)sy / texH;
         float vBot = (float)(sy + ph) / texH;
-
-        Color shadowColor = new(0, 0, 0, 0.35f);
 
         canvas.DrawPolygon(
             new[] { bl, br, tr, tl },
