@@ -141,7 +141,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         if !hit {
-            // Miss
+            // Miss — VB6: SND_SWING to area
+            state.send_data(SendTarget::ToArea { map, x, y }, "TW2").await;
             let pkt = format!("U3{}", attacker_name);
             state.send_to(victim_id, &pkt).await;
             state.send_to(conn_id, "U1").await;
@@ -210,6 +211,10 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         if let Some(victim) = state.users.get_mut(&victim_id) {
             victim.min_hp -= damage;
         }
+
+        // VB6: SND_IMPACTO to area on hit
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW10").await;
+
         let n4_pkt = format!("N4{},{},{}", body_part, damage, attacker_name);
         state.send_to(victim_id, &n4_pkt).await;
 

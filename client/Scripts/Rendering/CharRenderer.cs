@@ -460,14 +460,14 @@ public static class CharRenderer
             if (!stream.Active || stream.CharIndex != charIdx) continue;
             if (stream.DefIndex < 1 || stream.DefIndex >= state.ParticleDefs.Length) continue;
 
-            // Center particles on character tile
-            Vector2 charCenter = pos + new Vector2(TileSize / 2f, TileSize / 2f);
+            // VB6: particles render at screenPos + particle offset (no centering)
+            // Particle X1/Y1/X2/Y2 in Particles.ini already define the spawn offset
 
             foreach (var p in stream.Particles)
             {
                 if (!p.Alive || p.GrhIndex <= 0) continue;
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                Vector2 pPos = charCenter + new Vector2(p.X, p.Y);
+                Vector2 pPos = pos + new Vector2(p.X, p.Y);
 
                 // Use animated GRH frame (VB6: particles animate)
                 int frame = 0;

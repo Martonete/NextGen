@@ -145,8 +145,9 @@ pub struct NpcData {
     // Points awarded on kill (VB6: GivePTS — faction points)
     pub give_pts: i32,
 
-    // Sound effects (VB6: SND1 = attack sound, SND3 = death sound)
+    // Sound effects (VB6: SND1 = attack, SND2 = hit/hurt, SND3 = death)
     pub snd1: i32,
+    pub snd2: i32,
     pub snd3: i32,
 
     // Trainer creature data (VB6: NroCriaturas, CI1..CIN, CN1..CNN)
@@ -193,7 +194,7 @@ impl Default for NpcData {
             crystal_min3: 0, crystal_max3: 0,
             crystal_min4: 0, crystal_max4: 0,
             give_pts: 0,
-            snd1: 0, snd3: 0,
+            snd1: 0, snd2: 0, snd3: 0,
             nro_criaturas: 0, criaturas: Vec::new(),
         }
     }
@@ -288,6 +289,7 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         crystal_max4: get_int("CristalMax4"),
         give_pts: get_int("GivePTS"),
         snd1: get_int("SND1"),
+        snd2: get_int("Snd2"),
         snd3: get_int("SND3"),
         nro_criaturas: get_int("NroCriaturas"),
         criaturas: {

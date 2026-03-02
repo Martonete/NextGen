@@ -246,6 +246,8 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     // Send equipment change packets to area
     match obj_data.obj_type {
         ObjType::Weapon => {
+            // VB6: SND_SACARARMA (25) — draw weapon sound
+            state.send_data(SendTarget::ToArea { map, x, y }, "TW25").await;
             let pkt = format!("|W{},{}", char_index.0, weapon);
             state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
@@ -470,6 +472,11 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // Apply potion/food effect
             apply_consumable(state, conn_id, &obj_data);
 
+            // VB6: SND_BEBER (46) — drink/eat sound
+            let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
+                .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
+            state.send_data(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, "TW46").await;
+
             // Consume one
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.inventory[idx].amount -= 1;
@@ -494,6 +501,10 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
+            // VB6: SND_BEBER (46)
+            let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
+                .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
+            state.send_data(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, "TW46").await;
             send_inventory_slot(state, conn_id, idx).await;
             send_hunger_thirst(state, conn_id).await;
         }
@@ -1983,9 +1994,8 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
             state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
         }
 
-        // Play door sound (VB6: SND_PUERTA)
-        let snd_pkt = format!("TW{}", 45);
-        state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+        // Play door sound (VB6: SND_PUERTA = 5)
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW5").await;
     } else {
         // Door is OPEN → close it
 
@@ -2029,9 +2039,8 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
             state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
         }
 
-        // Play door sound
-        let snd_pkt = format!("TW{}", 45);
-        state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+        // Play door sound (VB6: SND_PUERTA = 5)
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW5").await;
     }
 
     // VB6: Set TargetObj position (after toggle)

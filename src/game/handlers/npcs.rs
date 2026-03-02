@@ -117,7 +117,8 @@ pub(super) async fn user_attack_npc(
     let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
-        // Miss
+        // Miss — VB6: SND_SWING to area
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW2").await;
         state.send_to(conn_id, "U1").await;
         return;
     }
@@ -190,9 +191,21 @@ pub(super) async fn user_attack_npc(
     let n_pipe_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, npc_char_index.0);
     state.send_data(SendTarget::ToArea { map, x, y }, &n_pipe_pkt).await;
 
-    // Hit sound to area
-    let snd_pkt = format!("TW{}", 10); // Impact sound
-    state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+    // VB6: NPC Snd1 (attack sound) + SND_IMPACTO + Snd2 (victim hurt sound, fallback SND_IMPACTO2=12)
+    let (npc_snd1, npc_snd2) = state.get_npc(npc_idx)
+        .map(|n| (n.snd1, n.snd2))
+        .unwrap_or((0, 0));
+    if npc_snd1 > 0 {
+        let snd = format!("TW{}", npc_snd1);
+        state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+    }
+    state.send_data(SendTarget::ToArea { map, x, y }, "TW10").await;
+    if npc_snd2 > 0 {
+        let snd = format!("TW{}", npc_snd2);
+        state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+    } else {
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW12").await;
+    }
 
     // Blood FX on NPC
     let fx_pkt = format!("CFX{},{},{}", npc_char_index.0, 14, 0); // VB6: FXSANGRE = 14
@@ -552,7 +565,8 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     let hit_prob = ((50.0 + (npc_power - user_evasion) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
-        // Miss — N1 (NPC swing and miss)
+        // Miss — VB6: SND_SWING to area + N1
+        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW2").await;
         state.send_to(target_conn, "N1").await;
         return;
     }
@@ -574,9 +588,23 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     let fx_pkt = format!("CFX{},{},{}", u_char_index.0, 14, 0);
     state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &fx_pkt).await;
 
-    // Impact sound
-    let snd_pkt = format!("TW{}", 10);
-    state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd_pkt).await;
+    // VB6: NPC attack sound (Snd1) + victim hit sound (Snd2 or SND_IMPACTO2=12)
+    let (npc_snd1, npc_snd2) = state.get_npc(npc_idx)
+        .map(|n| (n.snd1, n.snd2))
+        .unwrap_or((0, 0));
+    if npc_snd1 > 0 {
+        let snd = format!("TW{}", npc_snd1);
+        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+    }
+    // SND_IMPACTO to area on hit
+    state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW10").await;
+    // Victim sound: Snd2 if defined, else SND_IMPACTO2 (12)
+    if npc_snd2 > 0 {
+        let snd = format!("TW{}", npc_snd2);
+        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+    } else {
+        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW12").await;
+    }
 
     // NPC poison on hit (VB6: If Npclist(NpcIndex).Veneno = 1 Then NpcEnvenenarUser)
     let npc_veneno = state.get_npc(npc_idx).map(|n| n.veneno).unwrap_or(false);

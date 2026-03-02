@@ -2505,6 +2505,9 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
+        // VB6: SND_NIVEL (6) — level up sound
+        state.send_data(SendTarget::ToArea { map, x, y }, "TW6").await;
+
         // Level up FX (effect 58) to area
         let fx_pkt = format!("CFF{},58,0", char_index);
         state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;

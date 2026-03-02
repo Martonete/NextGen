@@ -152,6 +152,7 @@ pub struct NpcState {
     // Points/sounds (copied from NpcData on spawn)
     pub give_pts: i32,              // Faction points on kill
     pub snd1: i32,                  // Attack sound
+    pub snd2: i32,                  // Hit/hurt sound
     pub snd3: i32,                  // Death sound
 
     // Damage tracking for proportional EXP distribution
@@ -256,6 +257,7 @@ impl NpcState {
             crystal_max4: data.crystal_max4,
             give_pts: data.give_pts,
             snd1: data.snd1,
+            snd2: data.snd2,
             snd3: data.snd3,
             damage_received: Vec::new(),
         }
