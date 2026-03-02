@@ -53,6 +53,10 @@ public partial class OptionsPanel : PanelContainer
     private CheckBox? _chkMouseRClick;
     private CheckBox? _chkMouseContext;
 
+    // ── Render tab controls (Display) ──
+    private CheckBox? _chkFullscreen;
+    private OptionButton? _optAspect;
+
     // ── Render tab controls ──
     private OptionButton? _optPerformance;
     private CheckBox? _chkAuras;
@@ -353,6 +357,26 @@ public partial class OptionsPanel : PanelContainer
     {
         var vbox = new VBoxContainer();
 
+        // -- Display section --
+        vbox.AddChild(SectionLabel("Pantalla"));
+
+        _chkFullscreen = MakeCheck("Pantalla Completa");
+        _chkFullscreen.Toggled += _ => ApplyImmediate();
+        vbox.AddChild(_chkFullscreen);
+
+        var aspectRow = new HBoxContainer();
+        aspectRow.AddChild(SmallLabel("Aspecto:"));
+        _optAspect = new OptionButton();
+        _optAspect.AddItem("Estirar (sin bordes)", 0);
+        _optAspect.AddItem("Mantener ratio (barras negras)", 1);
+        _optAspect.CustomMinimumSize = new Vector2(220, 0);
+        _optAspect.AddThemeFontSizeOverride("font_size", 11);
+        _optAspect.ItemSelected += _ => ApplyImmediate();
+        aspectRow.AddChild(_optAspect);
+        vbox.AddChild(aspectRow);
+
+        vbox.AddChild(Spacer(8));
+
         // Performance preset as dropdown selector
         vbox.AddChild(SectionLabel("Calidad Grafica"));
 
@@ -557,6 +581,10 @@ public partial class OptionsPanel : PanelContainer
         SetCheck(_chkMouseRClick, cfg.MouseRightClick);
         SetCheck(_chkMouseContext, cfg.MouseContextMenu);
 
+        // Render tab — Display
+        SetCheck(_chkFullscreen, cfg.Fullscreen);
+        if (_optAspect != null) _optAspect.Selected = cfg.AspectRatioMode;
+
         // Render tab
         if (_optPerformance != null) _optPerformance.Selected = cfg.PerformanceLevel;
         LoadRenderChecks(cfg);
@@ -609,6 +637,10 @@ public partial class OptionsPanel : PanelContainer
         cfg.MouseDoubleClick = IsChecked(_chkMouseDClick);
         cfg.MouseRightClick = IsChecked(_chkMouseRClick);
         cfg.MouseContextMenu = IsChecked(_chkMouseContext);
+
+        // Render tab — Display
+        cfg.Fullscreen = IsChecked(_chkFullscreen);
+        cfg.AspectRatioMode = _optAspect?.Selected ?? 0;
 
         // Render tab
         cfg.PerformanceLevel = _optPerformance?.Selected ?? 2;

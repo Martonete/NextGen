@@ -59,6 +59,13 @@ public class GameConfig
     public bool MouseRightClick;            // VB6: MouseActions_RClick
     public bool MouseContextMenu = true;    // VB6: MouseActions_Activate
 
+    // ── Display ──────────────────────────────────────────
+    public bool Fullscreen;                 // false=windowed, true=fullscreen
+    public int AspectRatioMode;             // 0=Stretch (no bars), 1=Keep ratio (black bars)
+
+    /// <summary>True if Options.tsao existed on disk when loaded (used to skip startup dialog).</summary>
+    [System.NonSerialized] public bool LoadedFromFile;
+
     /// <summary>
     /// Create a deep copy for temporary editing (Cancel support).
     /// </summary>
@@ -111,6 +118,9 @@ public class GameConfig
         MouseDoubleClick = other.MouseDoubleClick;
         MouseRightClick = other.MouseRightClick;
         MouseContextMenu = other.MouseContextMenu;
+
+        Fullscreen = other.Fullscreen;
+        AspectRatioMode = other.AspectRatioMode;
     }
 
     // ── Persistence ───────────────────────────────────────
@@ -131,6 +141,8 @@ public class GameConfig
             GD.Print("[CFG] No Options.tsao found, using defaults.");
             return cfg;
         }
+
+        cfg.LoadedFromFile = true;
 
         try
         {
@@ -201,6 +213,10 @@ public class GameConfig
                     case "MouseDoubleClick": cfg.MouseDoubleClick = val == "1"; break;
                     case "MouseRightClick": cfg.MouseRightClick = val == "1"; break;
                     case "MouseContextMenu": cfg.MouseContextMenu = val == "1"; break;
+
+                    // Display
+                    case "Fullscreen": cfg.Fullscreen = val == "1"; break;
+                    case "AspectRatioMode": if (int.TryParse(val, out int arm)) cfg.AspectRatioMode = Math.Clamp(arm, 0, 1); break;
                 }
             }
 
@@ -276,6 +292,10 @@ public class GameConfig
             sb.AppendLine($"MouseDoubleClick={(MouseDoubleClick ? "1" : "0")}");
             sb.AppendLine($"MouseRightClick={(MouseRightClick ? "1" : "0")}");
             sb.AppendLine($"MouseContextMenu={(MouseContextMenu ? "1" : "0")}");
+
+            // Display
+            sb.AppendLine($"Fullscreen={(Fullscreen ? "1" : "0")}");
+            sb.AppendLine($"AspectRatioMode={AspectRatioMode}");
 
             File.WriteAllText(path, sb.ToString());
             GD.Print($"[CFG] Saved options to {path}");

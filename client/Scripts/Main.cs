@@ -468,6 +468,23 @@ public partial class Main : Control
             }
         };
 
+        // Minimize button — VB6: Image5 at (768, 0, 19, 17)
+        var minimizeButton = CreateInvisibleButton(768, 0, 19, 17);
+        _gameUI.AddChild(minimizeButton);
+        minimizeButton.Pressed += () =>
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Minimized);
+
+        // Close/Menu button — VB6: Image4 at (784, 0, 18, 17)
+        var closeMenuButton = CreateInvisibleButton(784, 0, 18, 17);
+        _gameUI.AddChild(closeMenuButton);
+        closeMenuButton.Pressed += () =>
+        {
+            if (_state.EscapeMenuOpen)
+                HideEscapeMenu();
+            else
+                ShowEscapeMenu();
+        };
+
         // Commerce panel (frmComerciar) — centered on game viewport (534×408 at y=124)
         _commercePanel = new CommercePanel();
         // Center: (534 - 445) / 2 = 44.5, y offset: 124 + (408 - 486) / 2 ≈ 85
@@ -616,9 +633,24 @@ public partial class Main : Control
         // Load remembered account (XOR-encrypted file)
         LoadRememberedAccount();
 
-        // Show window mode dialog (centered after layout settles)
-        if (_windowModeDialog != null)
+        // If config was loaded from file, apply saved display preference and skip dialog
+        if (_state.Config.LoadedFromFile)
         {
+            GD.Print("[MAIN] Config loaded from file — applying saved display preference, skipping dialog");
+            if (_state.Config.Fullscreen)
+            {
+                GetTree().Root.ContentScaleAspect = _state.Config.AspectRatioMode == 1
+                    ? Window.ContentScaleAspectEnum.Keep
+                    : Window.ContentScaleAspectEnum.Ignore;
+                DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+            }
+            if (_loginPanel != null)
+                _loginPanel.Visible = true;
+            CallDeferred(MethodName.FocusAccountInput);
+        }
+        else if (_windowModeDialog != null)
+        {
+            // First launch — show window mode dialog
             _windowModeDialog.Visible = true;
             GD.Print("[MAIN] Window mode dialog shown");
             CallDeferred(MethodName.CenterWindowModeDialog);
@@ -1201,15 +1233,19 @@ public partial class Main : Control
 
     private void OnWindowModeChosen(bool windowed)
     {
+        // Save choice to config so next launch skips the dialog
+        _state.Config.Fullscreen = !windowed;
+        if (!windowed)
+            _state.Config.AspectRatioMode = 0; // default stretch
+
         if (!windowed)
         {
-            // Stretch 800x600 content to fill entire screen (no black bars).
-            // VB6 changed monitor resolution to 800x600; on modern widescreen
-            // monitors this is equivalent — slight horizontal stretch, same as
-            // any old 4:3 game on a 16:9 display.
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Ignore;
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
         }
+
+        // Persist so next launch auto-applies
+        _state.Config.Save(_dataPath);
 
         if (_windowModeDialog != null)
             _windowModeDialog.Visible = false;
@@ -2552,7 +2588,22 @@ public partial class Main : Control
                 _minimapDot.Visible = cfg.ShowMinimap && cfg.ShowMinimapPosition;
         }
 
-        GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Auras={cfg.ShowAuras}, Particles={cfg.ShowParticles}, Shadows={cfg.ShowShadows}");
+        // Apply display mode
+        if (cfg.Fullscreen)
+        {
+            GetTree().Root.ContentScaleAspect = cfg.AspectRatioMode == 1
+                ? Window.ContentScaleAspectEnum.Keep
+                : Window.ContentScaleAspectEnum.Ignore;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        }
+        else
+        {
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+            DisplayServer.WindowSetSize(new Vector2I(800, 600));
+        }
+
+        GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
     }
 
     /// <summary>
