@@ -3085,7 +3085,10 @@ public partial class Main : Control
 
                     if (mb.ButtonIndex == MouseButton.Left)
                     {
-                        if (mb.ShiftPressed && _state.Privileges >= 2)
+                        // Use Input.IsKeyPressed for Shift — on Linux/X11, modifier flags
+                        // can be lost on release events depending on the window manager.
+                        bool shiftHeld = mb.ShiftPressed || Input.IsKeyPressed(Key.Shift);
+                        if (shiftHeld && _state.Privileges >= 2)
                         {
                             // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
                             _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
