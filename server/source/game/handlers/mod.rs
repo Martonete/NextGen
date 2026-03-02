@@ -365,7 +365,7 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
     let account_name = read_field(1, payload, ',');
     let password = read_field(2, payload, ',');
 
-    info!("[AUTH] Login attempt: account='{}' from #{}", account_name, conn_id);
+    info!("[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}", account_name, password.len(), password.as_bytes(), conn_id);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
