@@ -2684,7 +2684,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         };
         if let Some(nivel) = bonus_level {
             let class_upper = class.to_uppercase();
-            let dat_path = state.base_path.join("Dat").join("ClassBonus.dat");
+            let dat_path = state.base_path.join("dat").join("ClassBonus.dat");
             let dat = dat_path.to_str().unwrap_or("");
             let opt1 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion1", nivel));
             let opt2 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion2", nivel));
@@ -3323,7 +3323,7 @@ mod db_tests {
     use std::path::{Path, PathBuf};
     use tokio::net::{TcpListener, TcpStream};
 
-    /// Real server base path (contains Dat/, Maps/ etc.)
+    /// Real server base path (contains dat/, maps/ etc.)
     const SERVER_BASE: &str = "/workspace/Tierras-Sagradas-AO/server-rust/server";
 
     /// Create a temp test directory with symlinks to real game data.
@@ -3334,7 +3334,7 @@ mod db_tests {
 
         // Symlink data directories from the real server
         let base = Path::new(SERVER_BASE);
-        for subdir in &["Dat", "Maps"] {
+        for subdir in &["dat", "maps"] {
             let src = base.join(subdir);
             let dst = dir.join(subdir);
             if src.exists() {

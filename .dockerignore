@@ -8,7 +8,7 @@ server/Accounts/
 server/guilds/
 server/logs/
 server/Logs/
-server/HD.ini
+server/hd.ini
 *.md
 .env
 .env.example

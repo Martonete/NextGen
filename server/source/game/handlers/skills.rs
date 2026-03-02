@@ -989,6 +989,9 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
 
     if rand_range(1, 100) > hit_prob {
         state.send_to(conn_id, "U1").await; // Miss
+        // VB6: floating red "¡Fallo!" above attacker
+        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", char_index.0);
+        state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
         return;
     }
 
@@ -1011,6 +1014,10 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
     // Send hit packet
     let u2_pkt = format!("U2,{},{}", damage, npc_name);
     state.send_to(conn_id, &u2_pkt).await;
+
+    // VB6: floating yellow damage number above NPC
+    let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, npc_char.0);
+    state.send_data(SendTarget::ToArea { map, x, y }, &dmg_pkt).await;
 
     if new_hp <= 0 {
         // NPC killed
@@ -1052,11 +1059,11 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
 
     let victim_data = match state.users.get(&victim_id) {
         Some(v) if v.logged && !v.dead => {
-            (v.level, v.attributes[1], v.skills[3], v.char_name.clone(), v.privileges)
+            (v.level, v.attributes[1], v.skills[3], v.char_name.clone(), v.privileges, v.char_index)
         }
         _ => return,
     };
-    let (v_level, v_agility, v_tacticas, victim_name, v_privs) = victim_data;
+    let (v_level, v_agility, v_tacticas, victim_name, v_privs, v_char_index) = victim_data;
 
     if v_privs > 0 { return; }
 
@@ -1069,6 +1076,9 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
         let pkt = format!("U3{}", attacker_name);
         state.send_to(victim_id, &pkt).await;
         state.send_to(conn_id, "U1").await;
+        // VB6: floating red "¡Fallo!" above victim
+        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", v_char_index.0);
+        state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
         return;
     }
 
@@ -1101,6 +1111,10 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
     state.send_to(victim_id, &n4_pkt).await;
     let n5_pkt = format!("N5{},{},{}", body_part, damage, victim_name);
     state.send_to(conn_id, &n5_pkt).await;
+
+    // VB6: floating yellow damage number above victim
+    let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, v_char_index.0);
+    state.send_data(SendTarget::ToArea { map, x, y }, &dmg_pkt).await;
 
     send_stats_hp(state, victim_id).await;
 

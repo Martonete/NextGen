@@ -31,7 +31,7 @@ async fn main() {
     info!("  Version 0.1.0");
     info!("==============================================");
 
-    // Determine base path (where Server.ini and data folders are)
+    // Determine base path (where server.ini and data folders are)
     // Accept optional CLI arg, default to ./server relative to CWD
     let base_path = std::env::args().nth(1)
         .map(std::path::PathBuf::from)
@@ -48,7 +48,7 @@ async fn main() {
     // Load configuration
     let config = match ServerConfig::load(&base_path) {
         Ok(cfg) => {
-            info!("Server.ini loaded successfully");
+            info!("server.ini loaded successfully");
             info!("  Port: {}", cfg.port);
             info!("  Max users: {}", cfg.max_users);
             info!("  Version: {}", cfg.version);
@@ -60,7 +60,7 @@ async fn main() {
             cfg
         }
         Err(e) => {
-            error!("Failed to load Server.ini: {}", e);
+            error!("Failed to load server.ini: {}", e);
             error!("Make sure you're running from the server directory");
             std::process::exit(1);
         }
@@ -129,7 +129,7 @@ async fn main() {
 
     // Game tick (40ms — anti-cheat interval decrements, matches VB6 TimerRestoTiempo)
     let mut game_tick = tokio::time::interval(std::time::Duration::from_millis(40));
-    // AI tick timer — VB6: TIMER_AI.Interval = IntervaloNpcAI (default 1300ms from Server.ini)
+    // AI tick timer — VB6: TIMER_AI.Interval = IntervaloNpcAI (default 1300ms from server.ini)
     let ai_interval_ms = config.npc_ai_interval_ms.max(100); // floor at 100ms
     let mut ai_tick = tokio::time::interval(std::time::Duration::from_millis(ai_interval_ms));
     info!("NPC AI interval: {}ms", ai_interval_ms);

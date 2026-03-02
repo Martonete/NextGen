@@ -1648,8 +1648,8 @@ public class PacketHandler
         ch.DialogColor = hexColor;
         ch.DialogStartMs = System.Environment.TickCount64;
         ch.DialogDurationMs = 3000 + 50 * text.Length;
-        ch.DialogRiseCounter = 18;  // VB6 Sube = 18
-        ch.DialogAlpha = 20;        // VB6 Desvanecimiento = 20
+        ch.DialogRiseCounter = 18f; // VB6 Sube = 18
+        ch.DialogAlpha = 20f;       // VB6 Desvanecimiento = 20
         ch.DialogFading = false;
     }
 

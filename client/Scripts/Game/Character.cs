@@ -52,9 +52,9 @@ public class Character
     public string DialogText = "";
     public string DialogColor = "FFFFFF";
     public long DialogStartMs;       // Environment.TickCount64 when created
-    public long DialogDurationMs;    // 5000 + 100 * text.Length
-    public int DialogRiseCounter;    // VB6 Sube: 18→0, decrements each tick
-    public int DialogAlpha;          // VB6 Desvanecimiento: starts 20, +12/frame while Sube>0, -10/frame on fade
+    public long DialogDurationMs;    // 3000 + 50 * text.Length
+    public float DialogRiseCounter;  // VB6 Sube: 18→0, delta-based (60/sec at VB6 rate)
+    public float DialogAlpha;        // VB6 Desvanecimiento: starts 20, +720/sec while rising, -600/sec on fade
     public bool DialogFading;        // VB6 Tiempito: True when lifetime expired, fading out
 
     // Auras (VB6: 5 equipment slots + 1 NPC aura)

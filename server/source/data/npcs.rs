@@ -1,4 +1,4 @@
-// NPC database loader — Dat/NPCs.dat + Dat/NPCs-HOSTILES.dat
+// NPC database loader — dat/NPCs.dat + dat/NPCs-HOSTILES.dat
 //
 // INI format. NPCs.dat has [NPC1]..[NPC206] (normal NPCs).
 // NPCs-HOSTILES.dat has [NPC500]+ (hostile monsters).
@@ -327,8 +327,8 @@ impl NpcDatabase {
 
 /// Load both NPC databases and merge them.
 pub fn load_npcs(base: &Path) -> Result<NpcDatabase, String> {
-    let normal_path = base.join("Dat").join("NPCs.dat");
-    let hostile_path = base.join("Dat").join("NPCs-HOSTILES.dat");
+    let normal_path = base.join("dat").join("NPCs.dat");
+    let hostile_path = base.join("dat").join("NPCs-HOSTILES.dat");
 
     // Start with enough capacity for index 1000+
     let mut npcs: Vec<Option<NpcData>> = vec![None; 1500];
@@ -381,7 +381,7 @@ mod tests {
     #[test]
     fn load_real_npcs() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        if !base.join("Dat").join("NPCs.dat").exists() {
+        if !base.join("dat").join("NPCs.dat").exists() {
             return;
         }
         let db = load_npcs(base).unwrap();

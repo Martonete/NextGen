@@ -1,4 +1,4 @@
-// Quest database loader — Dat/QUESTS.DAT
+// Quest database loader — dat/QUESTS.DAT
 //
 // INI format with [Init] Num=31 and [Quest1]..[Quest31] sections.
 // Two types: 1=Kill NPC, 2=Kill Players.
@@ -30,7 +30,7 @@ pub struct QuestData {
 
 /// Load quests database
 pub fn load_quests(base: &Path) -> Result<Vec<QuestData>, String> {
-    let path = base.join("Dat").join("QUESTS.DAT");
+    let path = base.join("dat").join("QUESTS.DAT");
     let ini = IniFile::load(&path)
         .map_err(|e| format!("Failed to load QUESTS.DAT: {}", e))?;
 

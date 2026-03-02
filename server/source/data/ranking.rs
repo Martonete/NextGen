@@ -1,4 +1,4 @@
-// Ranking system — Dat/Ranking.dat
+// Ranking system — dat/Ranking.dat
 //
 // Top-10 rankings across 9 categories: Frags, Torneos, Duelos, Parejas,
 // Reputacion, Rondas, CVCs, Castillos, RepuClanes.
@@ -179,11 +179,11 @@ impl RankingData {
     }
 }
 
-/// Load all rankings from Dat/Ranking.dat.
+/// Load all rankings from dat/Ranking.dat.
 pub fn load_ranking(base: &Path) -> RankingData {
     let mut data = RankingData::default();
 
-    let path = base.join("Dat").join("Ranking.dat");
+    let path = base.join("dat").join("Ranking.dat");
     let ini = match IniFile::load(&path) {
         Ok(ini) => ini,
         Err(_) => {
@@ -221,9 +221,9 @@ pub fn load_ranking(base: &Path) -> RankingData {
     data
 }
 
-/// Save a single ranking to Dat/Ranking.dat.
+/// Save a single ranking to dat/Ranking.dat.
 pub fn save_ranking(base: &Path, data: &RankingData, rank: RankingType) {
-    let path = base.join("Dat").join("Ranking.dat");
+    let path = base.join("dat").join("Ranking.dat");
     let path_str = path.to_string_lossy();
     let section = rank.section_name();
     let top = data.get(rank);
@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn load_real_ranking() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        if !base.join("Dat").join("Ranking.dat").exists() {
+        if !base.join("dat").join("Ranking.dat").exists() {
             return;
         }
         let data = load_ranking(base);

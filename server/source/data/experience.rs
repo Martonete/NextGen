@@ -1,4 +1,4 @@
-// Experience table loader — Dat/Experiencia.dat
+// Experience table loader — dat/Experiencia.dat
 //
 // Format: [EXPERIENCIA] section with Nivel1..NivelN keys.
 // Each key value is the EXP required to reach that level.
@@ -11,7 +11,7 @@ pub const MAX_LEVEL: usize = 50;
 /// Load the experience table from Experiencia.dat.
 /// Returns a Vec where index 0 = level 1 exp, index 1 = level 2 exp, etc.
 pub fn load_experience_table(base: &Path) -> Result<Vec<i64>, String> {
-    let path = base.join("Dat").join("Experiencia.dat");
+    let path = base.join("dat").join("Experiencia.dat");
     let ini = IniFile::load(&path)
         .map_err(|e| format!("Failed to load Experiencia.dat: {}", e))?;
 
@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn load_real_experience_table() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        if !base.join("Dat").join("Experiencia.dat").exists() {
+        if !base.join("dat").join("Experiencia.dat").exists() {
             return; // Skip if data files not present
         }
         let table = load_experience_table(base).unwrap();

@@ -193,7 +193,7 @@ public static class CharRenderer
             DrawName(canvas, ch, screenPos, data);
 
         // Dialog bubble (VB6: cDialogos.Render)
-        DrawDialog(canvas, ch, screenPos, headOffset, data);
+        DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs);
     }
 
     private static void DrawShadow(
@@ -716,7 +716,7 @@ public static class CharRenderer
     /// VB6 Desvanecimiento: starts at 20, +12/frame while Sube>0. After lifetime: -10/frame.
     /// </summary>
     private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos,
-                                    Vector2 headOffset, GameData data)
+                                    Vector2 headOffset, GameData data, float deltaMs)
     {
         if (string.IsNullOrEmpty(ch.DialogText)) return;
 
@@ -726,15 +726,18 @@ public static class CharRenderer
         long now = System.Environment.TickCount64;
         long elapsed = now - ch.DialogStartMs;
 
-        // VB6 Sube logic (runs every frame, inside lifeTime >= 292 check)
+        // Delta-time factor: VB6 ran at ~60fps → 16.67ms per frame.
+        // All per-frame increments are scaled by (deltaMs / 16.67).
+        float dtFactor = deltaMs / 16.667f;
+
+        // VB6 Sube logic: decrements 1 per frame (60/sec), fades in +12/frame (720/sec)
         if (ch.DialogDurationMs >= 292)
         {
             if (ch.DialogRiseCounter > 0)
-                ch.DialogRiseCounter--;
+                ch.DialogRiseCounter = Math.Max(0, ch.DialogRiseCounter - dtFactor);
             if (ch.DialogRiseCounter > 0)
             {
-                // VB6: Desvanecimiento += 12 while Sube > 0
-                ch.DialogAlpha = Math.Min(255, ch.DialogAlpha + 12);
+                ch.DialogAlpha = Math.Min(255f, ch.DialogAlpha + 12f * dtFactor);
             }
         }
 
@@ -742,18 +745,18 @@ public static class CharRenderer
         if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
             ch.DialogFading = true;
 
-        // VB6: Desvanecimiento -= 10 while fading, remove at <= 9
+        // VB6: fade-out -10/frame (600/sec), remove at <= 9
         if (ch.DialogFading)
         {
-            ch.DialogAlpha = Math.Max(0, ch.DialogAlpha - 10);
-            if (ch.DialogAlpha <= 9)
+            ch.DialogAlpha = Math.Max(0, ch.DialogAlpha - 10f * dtFactor);
+            if (ch.DialogAlpha <= 9f)
             {
                 ch.DialogText = "";
                 return;
             }
         }
 
-        byte alpha = (byte)Math.Clamp(ch.DialogAlpha, 0, 255);
+        byte alpha = (byte)Math.Clamp((int)ch.DialogAlpha, 0, 255);
         if (alpha == 0) return;
 
         var lines = WrapText(ch.DialogText, 24);

@@ -1,4 +1,4 @@
-// Map loader — Maps/MapaN.map (binary), MapaN.inf (binary), MapaN.dat (INI)
+// Map loader — maps/MapaN.map (binary), MapaN.inf (binary), MapaN.dat (INI)
 //
 // Binary .map format:
 //   Header: 273 bytes (MapVersion(2) + Desc(255) + CRC(4) + MagicWord(4) + Reserved(8))
@@ -352,11 +352,11 @@ fn resolve_map_path(maps_dir: &Path, name: &str, extensions: &[&str]) -> std::pa
 
 /// Load a single map (all 3 files: .map, .inf, .dat).
 pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
-    let maps_dir = base.join("Maps");
+    let maps_dir = base.join("maps");
     let name = format!("Mapa{}", map_num);
     let map_file = resolve_map_path(&maps_dir, &name, &["map", "Map", "MAP"]);
     let inf_file = resolve_map_path(&maps_dir, &name, &["inf", "Inf", "INF"]);
-    let dat_file = resolve_map_path(&maps_dir, &name, &["dat", "Dat", "DAT"]);
+    let dat_file = resolve_map_path(&maps_dir, &name, &["dat", "dat", "DAT"]);
 
     let mut tiles = new_tiles();
 
@@ -378,11 +378,11 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     Ok(GameMap { info, tiles })
 }
 
-/// Load all maps from the Maps/ directory.
+/// Load all maps from the maps/ directory.
 /// Returns a Vec where index 0 is unused (maps are 1-indexed).
 pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
     // Read Map.dat for total count
-    let map_dat_path = base.join("Dat").join("Map.dat");
+    let map_dat_path = base.join("dat").join("Map.dat");
     let num_maps = if let Ok(ini) = IniFile::load(&map_dat_path) {
         ini.get("INIT", "NumMaps")
             .and_then(|s| s.parse::<usize>().ok())
@@ -398,7 +398,7 @@ pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
     let mut failed = 0;
 
     for i in 1..=num_maps {
-        let maps_dir = base.join("Maps");
+        let maps_dir = base.join("maps");
         let name = format!("Mapa{}", i);
         let map_file = resolve_map_path(&maps_dir, &name, &["map", "Map", "MAP"]);
         if !map_file.exists() {
@@ -443,7 +443,7 @@ mod tests {
     #[test]
     fn load_single_map() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        let map_file = base.join("Maps").join("Mapa1.map");
+        let map_file = base.join("maps").join("Mapa1.map");
         if !map_file.exists() {
             return;
         }
@@ -469,7 +469,7 @@ mod tests {
     #[test]
     fn load_map_metadata() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        let dat_file = base.join("Maps").join("Mapa1.dat");
+        let dat_file = base.join("maps").join("Mapa1.dat");
         if !dat_file.exists() {
             return;
         }

@@ -3,12 +3,12 @@
 // Handles loading and saving of all game data:
 // - Account files (Accounts/*.act)
 // - Character files (charfile/*.chr)
-// - Ban lists (Dat/BanHds.dat, Dat/BanIps.dat)
-// - Experience table (Dat/Experiencia.dat)
-// - Objects database (Dat/Obj.dat)
-// - Spells database (Dat/Hechizos.dat)
-// - NPC database (Dat/NPCs.dat, Dat/NPCs-HOSTILES.dat)
-// - Maps (Maps/MapaN.map, .inf, .dat)
+// - Ban lists (dat/BanHds.dat, dat/BanIps.dat)
+// - Experience table (dat/Experiencia.dat)
+// - Objects database (dat/Obj.dat)
+// - Spells database (dat/Hechizos.dat)
+// - NPC database (dat/NPCs.dat, dat/NPCs-HOSTILES.dat)
+// - Maps (maps/MapaN.map, .inf, .dat)
 
 pub mod accounts;
 pub mod charfile;

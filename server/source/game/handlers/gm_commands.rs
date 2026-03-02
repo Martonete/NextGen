@@ -1579,7 +1579,7 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
                 game_map.info.pk = pk;
             }
             // Persist to map dat file
-            let map_dat = state.base_path.join("Maps").join(format!("mapa{}.dat", map));
+            let map_dat = state.base_path.join("maps").join(format!("mapa{}.dat", map));
             let section = format!("Mapa{}", map);
             let _ = crate::config::write_var(map_dat.to_str().unwrap_or(""), &section, "Pk", &val.to_string());
         }
@@ -2530,7 +2530,7 @@ pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: Conne
 
 // ── Reload configuration commands ───────────────────────────────────────────
 
-/// /RELOADSINI — reload Server.ini configuration.
+/// /RELOADSINI — reload server.ini configuration.
 pub(super) async fn handle_reload_sini(state: &mut GameState, conn_id: ConnectionId) {
     let name = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
@@ -2544,11 +2544,11 @@ pub(super) async fn handle_reload_sini(state: &mut GameState, conn_id: Connectio
             let old_port = state.config.port;
             state.config = new_config;
             state.config.port = old_port;
-            state.send_to(conn_id, &format!("{}Server.ini recargado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-            info!("[GM] {} reloaded Server.ini", name);
+            state.send_to(conn_id, &format!("{}server.ini recargado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            info!("[GM] {} reloaded server.ini", name);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando Server.ini: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_to(conn_id, &format!("{}Error recargando server.ini: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
         }
     }
 }

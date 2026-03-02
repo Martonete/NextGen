@@ -19,7 +19,7 @@ pub enum ServerEvent {
 /// TCP server that listens for incoming connections.
 ///
 /// Mirrors VB6's listening socket setup in TCP.bas:ConfigListeningSocket.
-/// Port, backlog, and buffer size are configured via Server.ini in VB6.
+/// Port, backlog, and buffer size are configured via server.ini in VB6.
 pub struct TcpServer;
 
 impl TcpServer {

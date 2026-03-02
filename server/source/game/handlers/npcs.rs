@@ -223,6 +223,10 @@ pub(super) async fn user_attack_npc(
         // Miss — VB6: SND_SWING to area
         state.send_data(SendTarget::ToArea { map, x, y }, "TW2").await;
         state.send_to(conn_id, "U1").await;
+        // VB6: floating red "¡Fallo!" above attacker (N| vbRed°¡Fallo!°charIndex)
+        let user_ci = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", user_ci);
+        state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
         return;
     }
 
@@ -689,6 +693,9 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         // Miss — VB6: SND_SWING to area + N1
         state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW2").await;
         state.send_to(target_conn, "N1").await;
+        // VB6: floating red "¡Fallo!" above user (N| vbRed°¡Fallo!°charIndex)
+        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", u_char_index.0);
+        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &miss_pkt).await;
         return;
     }
 
@@ -704,6 +711,10 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     }
     let n2_pkt = format!("N2{},{}", body_part, damage);
     state.send_to(target_conn, &n2_pkt).await;
+
+    // VB6: floating yellow damage number above user (N| vbYellow°-<damage>°charIndex)
+    let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, u_char_index.0);
+    state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &dmg_pkt).await;
 
     // Blood FX on player (VB6: FXSANGRE = 14)
     let fx_pkt = format!("CFX{},{},{}", u_char_index.0, 14, 0);

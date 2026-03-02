@@ -589,6 +589,12 @@ pub(super) async fn apply_spell_properties(
     target_id: ConnectionId,
     spell: &crate::data::spells::SpellData,
 ) {
+    // Capture target info for floating damage before mutable borrow
+    let target_info = state.users.get(&target_id)
+        .map(|u| (u.char_index.0, u.pos_map, u.pos_x, u.pos_y));
+
+    let mut damage_dealt = 0i32;
+
     if let Some(target) = state.users.get_mut(&target_id) {
         // HP effect
         if spell.sube_hp == 1 {
@@ -599,6 +605,7 @@ pub(super) async fn apply_spell_properties(
             // Damage
             let amount = rand_range(spell.min_hp, spell.max_hp);
             target.min_hp -= amount;
+            damage_dealt = amount;
         }
 
         // Mana effect
@@ -614,6 +621,14 @@ pub(super) async fn apply_spell_properties(
         }
     }
 
+    // VB6: floating yellow damage number above target for damage spells
+    if damage_dealt > 0 {
+        if let Some((ci, map, tx, ty)) = target_info {
+            let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage_dealt, ci);
+            state.send_data(SendTarget::ToArea { map, x: tx, y: ty }, &dmg_pkt).await;
+        }
+    }
+
     // Send updated stats
     send_stats_hp(state, target_id).await;
     send_stats_mana(state, target_id).await;
@@ -622,7 +637,7 @@ pub(super) async fn apply_spell_properties(
     // Check death from damage spell
     let hp = state.users.get(&target_id).map(|u| u.min_hp).unwrap_or(0);
     if hp <= 0 {
-        user_die(state, target_id, None).await;
+        user_die(state, target_id, Some(_caster_id)).await;
     }
 }
 

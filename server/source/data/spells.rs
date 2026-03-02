@@ -1,4 +1,4 @@
-// Spells database loader — Dat/Hechizos.dat
+// Spells database loader — dat/Hechizos.dat
 //
 // INI format with [INIT] NumeroHechizos and [HECHIZO1]..[HECHIZOn] sections.
 // 65 spells in the current database.
@@ -159,7 +159,7 @@ impl Default for SpellData {
 
 /// Load the complete spells database.
 pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
-    let path = base.join("Dat").join("Hechizos.dat");
+    let path = base.join("dat").join("Hechizos.dat");
     let ini = IniFile::load(&path)
         .map_err(|e| format!("Failed to load Hechizos.dat: {}", e))?;
 
@@ -251,7 +251,7 @@ mod tests {
     #[test]
     fn load_real_spells() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        if !base.join("Dat").join("Hechizos.dat").exists() {
+        if !base.join("dat").join("Hechizos.dat").exists() {
             return;
         }
         let spells = load_spells(base).unwrap();

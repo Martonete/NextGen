@@ -1,4 +1,4 @@
-// Prize database loader — Dat/Premios.dat
+// Prize database loader — dat/Premios.dat
 //
 // INI format with [INIT] NumPremios=27 and [PREMIO1]..[PREMIOnn] sections.
 // Tournament prize shop items exchanged for puntos_torneo.
@@ -26,7 +26,7 @@ pub struct PrizeData {
 
 /// Load prizes database
 pub fn load_prizes(base: &Path) -> Result<Vec<PrizeData>, String> {
-    let path = base.join("Dat").join("Premios.dat");
+    let path = base.join("dat").join("Premios.dat");
     let ini = IniFile::load(&path)
         .map_err(|e| format!("Failed to load Premios.dat: {}", e))?;
 

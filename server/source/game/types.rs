@@ -1436,9 +1436,9 @@ fn rand_simple() -> u32 {
     seed.wrapping_mul(1103515245).wrapping_add(12345) % 1000
 }
 
-/// Load anti-cheat interval settings from Dat/Intervalos.ini.
+/// Load anti-cheat interval settings from dat/Intervalos.ini.
 fn load_intervals(base: &std::path::Path) -> IntervalSettings {
-    let path = base.join("Dat").join("Intervalos.ini");
+    let path = base.join("dat").join("Intervalos.ini");
     match crate::config::IniFile::load(&path) {
         Ok(ini) => {
             let get = |key: &str, default: i32| -> i32 {

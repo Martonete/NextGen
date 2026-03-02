@@ -1,8 +1,8 @@
 // Ban system — loads and checks banned HDs and IPs.
 //
 // Files:
-//   Dat/BanHds.dat  — one HD serial per line
-//   Dat/BanIps.dat  — one IP address per line
+//   dat/BanHds.dat  — one HD serial per line
+//   dat/BanIps.dat  — one IP address per line
 
 use std::collections::HashSet;
 use std::path::Path;
@@ -15,10 +15,10 @@ pub struct BanList {
 }
 
 impl BanList {
-    /// Load ban lists from the Dat/ directory.
+    /// Load ban lists from the dat/ directory.
     pub fn load(base: &Path) -> Self {
-        let banned_hds = load_lines(&base.join("Dat").join("BanHds.dat"));
-        let banned_ips = load_lines(&base.join("Dat").join("BanIps.dat"));
+        let banned_hds = load_lines(&base.join("dat").join("BanHds.dat"));
+        let banned_ips = load_lines(&base.join("dat").join("BanIps.dat"));
 
         tracing::info!(
             "Ban lists loaded: {} HDs, {} IPs",
@@ -43,13 +43,13 @@ impl BanList {
     pub fn ban_hd(&mut self, base: &Path, hd: &str) -> Result<(), std::io::Error> {
         let hd_upper = hd.to_uppercase();
         self.banned_hds.insert(hd_upper.clone());
-        append_line(&base.join("Dat").join("BanHds.dat"), &hd_upper)
+        append_line(&base.join("dat").join("BanHds.dat"), &hd_upper)
     }
 
     /// Add an IP to the ban list and persist to disk.
     pub fn ban_ip(&mut self, base: &Path, ip: &str) -> Result<(), std::io::Error> {
         self.banned_ips.insert(ip.to_string());
-        append_line(&base.join("Dat").join("BanIps.dat"), ip)
+        append_line(&base.join("dat").join("BanIps.dat"), ip)
     }
 
     /// Remove an IP from the ban list and rewrite disk file.
@@ -59,7 +59,7 @@ impl BanList {
 
     /// Save the full IP ban list to disk (rewrites file).
     pub fn save_ips(&self, base: &Path) {
-        let path = base.join("Dat").join("BanIps.dat");
+        let path = base.join("dat").join("BanIps.dat");
         let content: String = self.banned_ips.iter()
             .map(|ip| format!("{}\n", ip))
             .collect();

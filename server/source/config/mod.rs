@@ -1,4 +1,4 @@
-/// Configuration module — loads Server.ini and related config files.
+/// Configuration module — loads server.ini and related config files.
 ///
 /// Mirrors VB6's GetVar/WriteVar functions that read Windows INI files.
 /// Uses a simple INI parser compatible with the VB6 WritePrivateProfileString format.
@@ -9,7 +9,7 @@ pub use ini::{IniFile, get_var, write_var};
 
 use std::path::Path;
 
-/// Server configuration loaded from Server.ini
+/// Server configuration loaded from server.ini
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
     pub server_ip: String,
@@ -37,11 +37,11 @@ pub struct ServerConfig {
 }
 
 impl ServerConfig {
-    /// Load configuration from Server.ini at the given base path.
+    /// Load configuration from server.ini at the given base path.
     pub fn load(base_path: &Path) -> Result<Self, String> {
-        let ini_path = base_path.join("Server.ini");
+        let ini_path = base_path.join("server.ini");
         let ini = IniFile::load(&ini_path)
-            .map_err(|e| format!("Failed to load Server.ini: {}", e))?;
+            .map_err(|e| format!("Failed to load server.ini: {}", e))?;
 
         let start_pos = ini.get("INIT", "StartPos").unwrap_or_default();
         let parts: Vec<&str> = start_pos.split('-').collect();

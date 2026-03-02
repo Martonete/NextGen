@@ -113,11 +113,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 v.max_hp, v.min_hp,
                 v.class.clone(),
                 v.heading,
+                v.char_index,
             ),
             _ => return,
         };
         let (v_dead, v_privs, victim_name, v_level, v_agility, v_tacticas,
-             v_max_hp, v_min_hp, v_class, v_heading) = victim_data;
+             v_max_hp, v_min_hp, v_class, v_heading, v_char_index) = victim_data;
 
         if v_dead {
             state.send_to(conn_id, "||154").await; // Target is dead
@@ -146,6 +147,9 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             let pkt = format!("U3{}", attacker_name);
             state.send_to(victim_id, &pkt).await;
             state.send_to(conn_id, "U1").await;
+            // VB6: floating red "¡Fallo!" above victim (N| vbRed°¡Fallo!°charIndex)
+            let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", v_char_index.0);
+            state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
             return;
         }
 
@@ -220,6 +224,10 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         let n5_pkt = format!("N5{},{},{}", body_part, damage, victim_name);
         state.send_to(conn_id, &n5_pkt).await;
+
+        // VB6: floating yellow damage number above victim (N| vbYellow°-<damage>°charIndex)
+        let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, v_char_index.0);
+        state.send_data(SendTarget::ToArea { map, x, y }, &dmg_pkt).await;
 
         // Desarmar (disarm) — VB6: Desarmar, chance to unequip victim weapon
         let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);

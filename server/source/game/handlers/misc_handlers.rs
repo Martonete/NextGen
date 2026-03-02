@@ -1782,7 +1782,7 @@ pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, dat
     let payload = strip_opcode(data, 3);
     let num_casa = read_field(1, payload, ',');
 
-    let casas_path = state.base_path.join("Dat").join("Casas.dat");
+    let casas_path = state.base_path.join("dat").join("Casas.dat");
     let section = format!("Casa{}", num_casa);
 
     let mut dueno = ini_get(&casas_path, &section, "Dueno");
@@ -1799,7 +1799,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
     let payload = strip_opcode(data, 3);
     let num_casa: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
 
-    let casas_path = state.base_path.join("Dat").join("Casas.dat");
+    let casas_path = state.base_path.join("dat").join("Casas.dat");
     let section = format!("Casa{}", num_casa);
 
     let mut dueno = ini_get(&casas_path, &section, "Dueno");
@@ -2100,7 +2100,7 @@ pub(super) async fn handle_ofdioz(state: &mut GameState, conn_id: ConnectionId, 
         let is_short = race == "ENANO" || race == "GNOMO";
         let file_suffix = if is_short { "Bajos.dat" } else { "Altos.dat" };
         let obj_key = format!("Obj{}", jerarquia);
-        let god_path = state.base_path.join("Dioses").join(&god_name).join(file_suffix);
+        let god_path = state.base_path.join("dioses").join(&god_name).join(file_suffix);
         let obj_idx_str = ini_get(&god_path, &class, &obj_key);
         if !obj_idx_str.is_empty() {
             let obj_idx: i32 = obj_idx_str.parse().unwrap_or(0);
@@ -2181,7 +2181,7 @@ pub(super) async fn handle_ftspts(state: &mut GameState, conn_id: ConnectionId, 
 /// SPH — Query upgrade item info (Mejorados.dat).
 pub(super) async fn handle_sph(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 3);
-    let mejorados_path = state.base_path.join("Dat").join("Mejorados.dat");
+    let mejorados_path = state.base_path.join("dat").join("Mejorados.dat");
 
     let numero_mejorado = ini_get(&mejorados_path, "ITEMS", payload.trim());
 
@@ -2209,7 +2209,7 @@ pub(super) async fn handle_sph(state: &mut GameState, conn_id: ConnectionId, dat
 /// SPÉ — Upgrade item (requires octarina gem 1448 + required item).
 pub(super) async fn handle_spe(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 3);
-    let mejorados_path = state.base_path.join("Dat").join("Mejorados.dat");
+    let mejorados_path = state.base_path.join("dat").join("Mejorados.dat");
 
     let numero_mejorado = ini_get(&mejorados_path, "ITEMS", payload.trim());
 

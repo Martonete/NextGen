@@ -154,6 +154,13 @@ public partial class Main : Control
     private Label? _charCreateError;
     private Button? _charCreateCreateBtn;
     private Button? _charSelectCreateBtn; // "Crear Personaje" on CharSelect screen
+    private Button? _charSelectDeleteBtn; // "Borrar Personaje" on CharSelect screen
+
+    // Delete character confirmation dialog
+    private PanelContainer? _deleteConfirmDialog;
+    private Label? _deleteConfirmLabel;
+    private LineEdit? _deleteConfirmInput;
+    private int _deleteConfirmCode;
 
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
@@ -532,6 +539,17 @@ public partial class Main : Control
         _charSelectCreateBtn.Pressed += OnCharSelectCreatePressed;
         var charSelectVBox = _charList!.GetParent();
         charSelectVBox.AddChild(_charSelectCreateBtn);
+
+        // "Borrar Personaje" button on CharSelect screen
+        _charSelectDeleteBtn = new Button();
+        _charSelectDeleteBtn.Text = "Borrar Personaje";
+        _charSelectDeleteBtn.CustomMinimumSize = new Vector2(0, 32);
+        _charSelectDeleteBtn.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
+        _charSelectDeleteBtn.Pressed += OnDeleteCharPressed;
+        charSelectVBox.AddChild(_charSelectDeleteBtn);
+
+        // Delete character confirmation dialog
+        CreateDeleteConfirmDialog();
 
         // "Desconectar" button on CharSelect screen
         var disconnectBtn = new Button();
@@ -1764,6 +1782,111 @@ public partial class Main : Control
         _lastScreen = Screen.CharSelect;
     }
 
+    private void CreateDeleteConfirmDialog()
+    {
+        _deleteConfirmDialog = new PanelContainer();
+        _deleteConfirmDialog.Size = new Vector2(280, 140);
+        _deleteConfirmDialog.Position = new Vector2(127, 258);
+        _deleteConfirmDialog.Visible = false;
+        _deleteConfirmDialog.ZIndex = 100;
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.15f, 0.08f, 0.08f, 0.95f);
+        bg.BorderColor = new Color(0.8f, 0.2f, 0.2f);
+        bg.SetBorderWidthAll(1);
+        bg.SetContentMarginAll(10);
+        _deleteConfirmDialog.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 6);
+        _deleteConfirmDialog.AddChild(vbox);
+
+        _deleteConfirmLabel = new Label();
+        _deleteConfirmLabel.Text = "";
+        _deleteConfirmLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _deleteConfirmLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _deleteConfirmLabel.AddThemeColorOverride("font_color", Colors.White);
+        _deleteConfirmLabel.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_deleteConfirmLabel);
+
+        _deleteConfirmInput = new LineEdit();
+        _deleteConfirmInput.PlaceholderText = "Codigo";
+        _deleteConfirmInput.Alignment = HorizontalAlignment.Center;
+        _deleteConfirmInput.FocusMode = Control.FocusModeEnum.Click;
+        _deleteConfirmInput.AddThemeFontSizeOverride("font_size", 12);
+        _deleteConfirmInput.TextSubmitted += (_) => OnDeleteConfirm();
+        vbox.AddChild(_deleteConfirmInput);
+
+        var hbox = new HBoxContainer();
+        hbox.AddThemeConstantOverride("separation", 6);
+        hbox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(hbox);
+
+        var confirmBtn = new Button();
+        confirmBtn.Text = "Confirmar";
+        confirmBtn.CustomMinimumSize = new Vector2(80, 28);
+        confirmBtn.AddThemeFontSizeOverride("font_size", 11);
+        confirmBtn.Pressed += OnDeleteConfirm;
+        hbox.AddChild(confirmBtn);
+
+        var cancelBtn = new Button();
+        cancelBtn.Text = "Cancelar";
+        cancelBtn.CustomMinimumSize = new Vector2(80, 28);
+        cancelBtn.AddThemeFontSizeOverride("font_size", 11);
+        cancelBtn.Pressed += OnDeleteConfirmCancel;
+        hbox.AddChild(cancelBtn);
+
+        GetNode<CanvasLayer>("UILayer").AddChild(_deleteConfirmDialog);
+    }
+
+    private void OnDeleteCharPressed()
+    {
+        if (!_charList!.IsAnythingSelected())
+        {
+            _noticeLabel!.Text = "Seleccione un personaje";
+            return;
+        }
+
+        var rng = new Random();
+        _deleteConfirmCode = rng.Next(1000, 10000);
+        _deleteConfirmLabel!.Text = $"Esta accion no podra ser revertida.\nIngresa el codigo {_deleteConfirmCode} para confirmar.";
+        _deleteConfirmInput!.Text = "";
+        _deleteConfirmDialog!.Visible = true;
+        _deleteConfirmInput.GrabFocus();
+    }
+
+    private void OnDeleteConfirm()
+    {
+        if (_deleteConfirmInput == null || _tcp == null) return;
+
+        if (!int.TryParse(_deleteConfirmInput.Text.Trim(), out int inputCode) || inputCode != _deleteConfirmCode)
+        {
+            _deleteConfirmLabel!.Text = $"Codigo incorrecto. Ingresa {_deleteConfirmCode} para confirmar.";
+            _deleteConfirmLabel.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+            _deleteConfirmInput.Text = "";
+            return;
+        }
+
+        int[] selected = _charList!.GetSelectedItems();
+        if (selected.Length == 0 || selected[0] >= _state.CharacterList.Count) return;
+
+        string charName = _state.CharacterList[selected[0]].Name;
+        string account = _state.AccountName;
+        string code = _state.SecurityCode;
+
+        _tcp.SendPacket($"TBRP{charName},{account},{code}");
+        GD.Print($"[MAIN] Sent: TBRP{charName},{account},***");
+
+        _deleteConfirmDialog!.Visible = false;
+        _noticeLabel!.Text = "Eliminando personaje...";
+    }
+
+    private void OnDeleteConfirmCancel()
+    {
+        _deleteConfirmDialog!.Visible = false;
+        _deleteConfirmLabel!.AddThemeColorOverride("font_color", Colors.White);
+    }
+
     private void OnCharCreateConfirm()
     {
         // Validate name
@@ -1895,6 +2018,10 @@ public partial class Main : Control
             {
                 _charCreateError!.Text = _state.LoginError;
                 _charCreateCreateBtn!.Disabled = false;
+            }
+            else if (_state.CurrentScreen == Screen.CharSelect)
+            {
+                _noticeLabel!.Text = _state.LoginError;
             }
             else if (_state.CurrentScreen == Screen.AccountCreate)
             {
@@ -2033,6 +2160,9 @@ public partial class Main : Control
     private void HandleScreenChange(Screen newScreen)
     {
         GD.Print($"[MAIN] Screen → {newScreen}");
+
+        // Always hide delete confirm dialog on screen change
+        if (_deleteConfirmDialog != null) _deleteConfirmDialog.Visible = false;
 
         switch (newScreen)
         {

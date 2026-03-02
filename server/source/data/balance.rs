@@ -1,4 +1,4 @@
-// Game balance data loader — Dat/Balance.dat + Dat/Vidas.dat
+// Game balance data loader — dat/Balance.dat + dat/Vidas.dat
 //
 // Balance.dat: per-class combat modifiers (attack %, defense %, evasion multiplier, etc.)
 //              plus class-vs-class AF/AM matrices.
@@ -210,7 +210,7 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
     let mut data = BalanceData::default();
 
     // --- Load Balance.dat ---
-    let balance_path = base.join("Dat").join("Balance.dat");
+    let balance_path = base.join("dat").join("Balance.dat");
     if let Ok(ini) = IniFile::load(&balance_path) {
         let get_f32 = |section: &str, key: &str| -> f32 {
             ini.get(section, key)
@@ -268,7 +268,7 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
     }
 
     // --- Load Vidas.dat ---
-    let vidas_path = base.join("Dat").join("Vidas.dat");
+    let vidas_path = base.join("dat").join("Vidas.dat");
     if let Ok(ini) = IniFile::load(&vidas_path) {
         for class_i in 0..NUM_CLASSES {
             let section = CLASS_SECTIONS[class_i];
@@ -298,7 +298,7 @@ mod tests {
     #[test]
     fn load_real_balance() {
         let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
-        if !base.join("Dat").join("Balance.dat").exists() {
+        if !base.join("dat").join("Balance.dat").exists() {
             return;
         }
         let bal = load_balance(base).unwrap();
