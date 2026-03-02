@@ -445,6 +445,11 @@ public class InputHandler
 
         if (cmd.StartsWith("/"))
         {
+            // /PING: record timestamp before sending (same as OnChatSubmitted)
+            if (cmd.Equals("/PING", System.StringComparison.OrdinalIgnoreCase))
+            {
+                _state.PingSentMs = Godot.Time.GetTicksMsec();
+            }
             // Slash command: send with ";" prefix (VB6: SendData ";" & macro)
             _tcp.SendPacket($";{cmd}");
         }
