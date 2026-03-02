@@ -73,8 +73,13 @@ public partial class SoundManager : Node
     {
         if (!_soundEnabled || soundId <= 0) return;
 
+        GD.Print($"[SND] PlaySound({soundId})");
         var stream = LoadSoundStream(soundId);
-        if (stream == null) return;
+        if (stream == null)
+        {
+            GD.Print($"[SND] PlaySound({soundId}) — stream is null, skipping");
+            return;
+        }
 
         // Find a free player (not currently playing)
         AudioStreamPlayer? player = null;
@@ -92,6 +97,7 @@ public partial class SoundManager : Node
 
         player.Stream = stream;
         player.Play();
+        GD.Print($"[SND] Playing sound {soundId} — stream: {stream.GetType().Name}");
     }
 
     /// <summary>
@@ -100,6 +106,8 @@ public partial class SoundManager : Node
     /// </summary>
     public void PlayMusic(int musicId)
     {
+        GD.Print($"[SND] PlayMusic({musicId})");
+
         if (musicId <= 0)
         {
             StopMusic();
@@ -123,6 +131,7 @@ public partial class SoundManager : Node
         {
             _musicPlayer.Stream = stream;
             _musicPlayer.Play();
+            GD.Print($"[SND] Playing music {musicId} — stream: {stream.GetType().Name}");
         }
     }
 
@@ -134,34 +143,16 @@ public partial class SoundManager : Node
 
     private AudioStream? LoadSoundStream(int soundId)
     {
-        // Try WAV via Godot resource loader (handles .import files)
-        string wavRes = $"res://Data/Sounds/WAV/{soundId}.wav";
         string cacheKey = $"sfx:{soundId}";
-
         if (_cache.TryGetValue(cacheKey, out var cached))
             return cached;
 
-        AudioStream? stream = null;
-
-        if (ResourceLoader.Exists(wavRes))
-        {
-            stream = ResourceLoader.Load<AudioStream>(wavRes);
-        }
-
-        // Fallback: MP3
-        if (stream == null)
-        {
-            string mp3Res = $"res://Data/Sounds/MP3/{soundId}.mp3";
-            if (ResourceLoader.Exists(mp3Res))
-            {
-                stream = ResourceLoader.Load<AudioStream>(mp3Res);
-            }
-        }
+        var stream = TryLoadAudio(soundId, isSfx: true);
 
         if (stream != null)
-        {
             _cache[cacheKey] = stream;
-        }
+        else
+            GD.Print($"[SND] Could not load sound {soundId}");
 
         return stream;
     }
@@ -172,30 +163,91 @@ public partial class SoundManager : Node
         if (_cache.TryGetValue(cacheKey, out var cached))
             return cached;
 
-        AudioStream? stream = null;
-
-        // Try MP3 first (Godot can't play MIDI natively)
-        string mp3Res = $"res://Data/Sounds/MP3/{musicId}.mp3";
-        if (ResourceLoader.Exists(mp3Res))
-        {
-            stream = ResourceLoader.Load<AudioStream>(mp3Res);
-        }
-
-        // Try WAV fallback for music
-        if (stream == null)
-        {
-            string wavRes = $"res://Data/Sounds/WAV/{musicId}.wav";
-            if (ResourceLoader.Exists(wavRes))
-            {
-                stream = ResourceLoader.Load<AudioStream>(wavRes);
-            }
-        }
+        // Music: try MP3 first, then WAV
+        var stream = TryLoadAudio(musicId, isSfx: false);
 
         if (stream != null)
-        {
             _cache[cacheKey] = stream;
-        }
 
         return stream;
+    }
+
+    /// <summary>
+    /// Try loading audio by ID. For SFX: WAV first, MP3 fallback.
+    /// For music: MP3 first, WAV fallback.
+    /// Handles both editor (res://) and exported (filesystem) builds.
+    /// </summary>
+    private AudioStream? TryLoadAudio(int id, bool isSfx)
+    {
+        string wavRes = $"res://Data/Sounds/WAV/{id}.wav";
+        string mp3Res = $"res://Data/Sounds/MP3/{id}.mp3";
+
+        string first = isSfx ? wavRes : mp3Res;
+        string second = isSfx ? mp3Res : wavRes;
+
+        // Try via ResourceLoader (works in editor + properly exported PCKs)
+        var stream = TryResourceLoad(first) ?? TryResourceLoad(second);
+        if (stream != null) return stream;
+
+        // Fallback: load from filesystem directly (exported builds without PCK)
+        string firstPath = isSfx
+            ? System.IO.Path.Combine(_wavPath, $"{id}.wav")
+            : System.IO.Path.Combine(_mp3Path, $"{id}.mp3");
+        string secondPath = isSfx
+            ? System.IO.Path.Combine(_mp3Path, $"{id}.mp3")
+            : System.IO.Path.Combine(_wavPath, $"{id}.wav");
+
+        stream = TryLoadFromFile(firstPath) ?? TryLoadFromFile(secondPath);
+        return stream;
+    }
+
+    private static AudioStream? TryResourceLoad(string resPath)
+    {
+        if (!ResourceLoader.Exists(resPath)) return null;
+        try
+        {
+            return ResourceLoader.Load<AudioStream>(resPath);
+        }
+        catch (System.Exception e)
+        {
+            GD.Print($"[SND] ResourceLoader failed for {resPath}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Load audio directly from disk — for exported builds where files
+    /// are alongside the executable instead of packed in a PCK.
+    /// </summary>
+    private static AudioStream? TryLoadFromFile(string absPath)
+    {
+        if (!FileAccess.FileExists(absPath)) return null;
+
+        try
+        {
+            if (absPath.EndsWith(".mp3", System.StringComparison.OrdinalIgnoreCase))
+            {
+                var file = FileAccess.Open(absPath, FileAccess.ModeFlags.Read);
+                if (file == null) return null;
+                var bytes = file.GetBuffer((long)file.GetLength());
+                file.Close();
+                var mp3 = new AudioStreamMP3();
+                mp3.Data = bytes;
+                return mp3;
+            }
+            else if (absPath.EndsWith(".wav", System.StringComparison.OrdinalIgnoreCase))
+            {
+                // For WAV, try loading via ResourceLoader with absolute path
+                var globalized = ProjectSettings.LocalizePath(absPath);
+                if (ResourceLoader.Exists(globalized))
+                    return ResourceLoader.Load<AudioStream>(globalized);
+            }
+        }
+        catch (System.Exception e)
+        {
+            GD.Print($"[SND] File load failed for {absPath}: {e.Message}");
+        }
+
+        return null;
     }
 }
