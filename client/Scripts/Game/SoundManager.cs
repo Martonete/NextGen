@@ -93,7 +93,7 @@ public partial class SoundManager : Node
 
         if (!_sfxCache.TryGetValue(soundId, out var stream))
         {
-            stream = LoadWav(soundId) ?? LoadMp3(soundId);
+            stream = LoadWav(soundId) ?? LoadWavAsMp3(soundId) ?? LoadMp3(soundId);
             _sfxCache[soundId] = stream;
             if (stream == null)
                 GD.Print($"[SND] Could not load sound {soundId}");
@@ -227,7 +227,9 @@ public partial class SoundManager : Node
 
     /// <summary>
     /// Parse a WAV file from raw bytes into an AudioStreamWav.
-    /// Handles standard PCM WAV (8/16 bit, mono/stereo).
+    /// Handles PCM WAV (8/16 bit, mono/stereo).
+    /// Non-PCM formats (ADPCM, MP3-in-WAV codec 0x55) return null
+    /// so the caller can try loading as MP3 instead.
     /// </summary>
     private static AudioStreamWav? ParseWav(byte[] raw)
     {
@@ -239,6 +241,7 @@ public partial class SoundManager : Node
         int channels = 1;
         int sampleRate = 22050;
         int bitsPerSample = 16;
+        int audioFormat = 1;
         byte[]? pcmData = null;
 
         int pos = 12;
@@ -246,12 +249,12 @@ public partial class SoundManager : Node
         {
             string chunkId = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
             int chunkSize = System.BitConverter.ToInt32(raw, pos + 4);
+            if (chunkSize < 0) break; // corrupt
             int chunkDataStart = pos + 8;
 
             if (chunkId == "fmt " && chunkSize >= 16)
             {
-                int audioFormat = System.BitConverter.ToInt16(raw, chunkDataStart);
-                if (audioFormat != 1) return null; // Only PCM supported
+                audioFormat = System.BitConverter.ToInt16(raw, chunkDataStart);
                 channels = System.BitConverter.ToInt16(raw, chunkDataStart + 2);
                 sampleRate = System.BitConverter.ToInt32(raw, chunkDataStart + 4);
                 bitsPerSample = System.BitConverter.ToInt16(raw, chunkDataStart + 14);
@@ -259,8 +262,11 @@ public partial class SoundManager : Node
             else if (chunkId == "data")
             {
                 int dataLen = System.Math.Min(chunkSize, raw.Length - chunkDataStart);
-                pcmData = new byte[dataLen];
-                System.Array.Copy(raw, chunkDataStart, pcmData, 0, dataLen);
+                if (dataLen > 0)
+                {
+                    pcmData = new byte[dataLen];
+                    System.Array.Copy(raw, chunkDataStart, pcmData, 0, dataLen);
+                }
             }
 
             pos = chunkDataStart + chunkSize;
@@ -268,7 +274,19 @@ public partial class SoundManager : Node
             if (pos % 2 != 0) pos++;
         }
 
+        // Only handle PCM (format 1). Non-PCM (ADPCM=2/17, MP3-in-WAV=0x55) not supported.
+        if (audioFormat != 1) return null;
+
         if (pcmData == null || pcmData.Length == 0) return null;
+
+        // WAV 8-bit PCM uses UNSIGNED samples (0-255, center=128).
+        // Godot AudioStreamWav Format8Bits expects SIGNED (-128 to 127, center=0).
+        // Without this conversion, 8-bit sounds are massively distorted.
+        if (bitsPerSample == 8)
+        {
+            for (int i = 0; i < pcmData.Length; i++)
+                pcmData[i] = (byte)(pcmData[i] - 128);
+        }
 
         var wav = new AudioStreamWav();
         wav.Data = pcmData;
@@ -280,5 +298,76 @@ public partial class SoundManager : Node
         wav.LoopMode = AudioStreamWav.LoopModeEnum.Disabled;
 
         return wav;
+    }
+
+    /// <summary>
+    /// Try to load a WAV file that might actually contain MP3 data (codec 0x55).
+    /// Falls back to loading the raw file as MP3.
+    /// </summary>
+    private AudioStream? LoadWavAsMp3(int id)
+    {
+        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
+        if (!System.IO.File.Exists(filePath)) return null;
+
+        try
+        {
+            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            // Check for MP3-in-WAV: RIFF header with format 0x55
+            if (raw.Length > 20 && raw[0] == 'R' && raw[1] == 'I')
+            {
+                int fmt = FindFmtFormat(raw);
+                if (fmt == 0x55 || fmt == 0x50) // MPEG Layer 3 or MPEG
+                {
+                    // Extract the data chunk and feed as MP3
+                    byte[]? dataChunk = ExtractDataChunk(raw);
+                    if (dataChunk != null && dataChunk.Length > 0)
+                    {
+                        var mp3 = new AudioStreamMP3();
+                        mp3.Data = dataChunk;
+                        return mp3;
+                    }
+                }
+            }
+        }
+        catch { /* fall through */ }
+        return null;
+    }
+
+    private static int FindFmtFormat(byte[] raw)
+    {
+        int pos = 12;
+        while (pos + 8 <= raw.Length)
+        {
+            string id = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
+            int size = System.BitConverter.ToInt32(raw, pos + 4);
+            if (size < 0) break;
+            if (id == "fmt " && size >= 2)
+                return System.BitConverter.ToInt16(raw, pos + 8);
+            pos = pos + 8 + size;
+            if (pos % 2 != 0) pos++;
+        }
+        return 0;
+    }
+
+    private static byte[]? ExtractDataChunk(byte[] raw)
+    {
+        int pos = 12;
+        while (pos + 8 <= raw.Length)
+        {
+            string id = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
+            int size = System.BitConverter.ToInt32(raw, pos + 4);
+            if (size < 0) break;
+            if (id == "data")
+            {
+                int dataLen = System.Math.Min(size, raw.Length - pos - 8);
+                if (dataLen <= 0) return null;
+                byte[] data = new byte[dataLen];
+                System.Array.Copy(raw, pos + 8, data, 0, dataLen);
+                return data;
+            }
+            pos = pos + 8 + size;
+            if (pos % 2 != 0) pos++;
+        }
+        return null;
     }
 }
