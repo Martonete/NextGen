@@ -3,6 +3,12 @@
 
 .DEFAULT_GOAL := help
 
+# Auto-detect Godot binary (override with: make client GODOT=/my/path)
+GODOT ?= $(shell command -v godot 2>/dev/null \
+         || ls /opt/godot/Godot_v*mono*linux*x86_64 2>/dev/null | head -1 \
+         || ls /opt/godot/Godot_v*linux*x86_64 2>/dev/null | head -1 \
+         || echo "")
+
 # ─── Server ───────────────────────────────────────────────────────
 
 build:
@@ -42,12 +48,14 @@ client-build:
 	cd client && dotnet build
 
 client-run: client-build
-	cd client && godot --path .
+	@test -n "$(GODOT)" || (echo "ERROR: Godot not found. Install it or run: make client-run GODOT=/path/to/godot" && exit 1)
+	cd client && "$(GODOT)" --path .
 
 client: client-run
 
 client-editor:
-	cd client && godot --path . --editor
+	@test -n "$(GODOT)" || (echo "ERROR: Godot not found. Install it or run: make client-run GODOT=/path/to/godot" && exit 1)
+	cd client && "$(GODOT)" --path . --editor
 
 client-clean:
 	cd client && dotnet clean
