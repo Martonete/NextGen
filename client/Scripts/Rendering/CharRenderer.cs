@@ -93,13 +93,14 @@ public static class CharRenderer
             }
         }
 
-        // Emoticon (VB6: rendered before body, at FxData offset, alpha 150)
-        if (ch.EmoticonIndex > 0 && ch.EmoticonIndex < data.Fxs.Length)
+        // Emoticon (VB6: rendered before body, at FxData offset above head, alpha 150)
+        if (ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0 && ch.EmoticonIndex < data.Fxs.Length)
         {
             var emFx = data.Fxs[ch.EmoticonIndex];
             if (emFx.Animacion > 0)
             {
-                Vector2 emPos = screenPos + new Vector2(emFx.OffsetX, emFx.OffsetY);
+                // Position above head: screenPos + headOffset + FxData offset
+                Vector2 emPos = screenPos + headOffset + new Vector2(emFx.OffsetX, emFx.OffsetY);
                 int emFrame = 0;
                 if (emFx.Animacion > 0 && emFx.Animacion < data.Grhs.Length)
                 {
@@ -394,7 +395,18 @@ public static class CharRenderer
 
             if (numFrames <= 1)
             {
-                // Static FX — just draw it
+                // Static FX — draw once per loop, then clear (VB6: .Started=0 after Draw_Grh)
+                if (ch.FxLoops[i] != -1)
+                {
+                    ch.FxLoops[i]--;
+                    if (ch.FxLoops[i] <= 0)
+                    {
+                        ch.ActiveFxSlots[i] = 0;
+                        ch.FxLoops[i] = 0;
+                        ch.FxFrameCounter[i] = 0;
+                        continue;
+                    }
+                }
                 Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
                 DrawGrh(canvas, data, grhIndex, 0, fxPos, true,
                         new Color(1, 1, 1, 150f / 255f));
