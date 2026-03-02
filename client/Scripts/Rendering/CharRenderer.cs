@@ -126,7 +126,7 @@ public static class CharRenderer
                 DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator);
         }
 
-        // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)
+        // Shadow (VB6: Draw_Grh_Sombra — body + head shadows drawn BEFORE body)
         // Respects Config.ShowShadows / ShowNpcShadows
         bool drawShadow = true;
         if (state?.Config != null)
@@ -135,7 +135,19 @@ public static class CharRenderer
             drawShadow = isNpc ? state.Config.ShowNpcShadows : state.Config.ShowShadows;
         }
         if (drawShadow)
-            DrawShadow(canvas, ch, screenPos, heading, data, animator);
+        {
+            // VB6: dibBody calls Draw_Grh_Sombra at (PixelOffsetX - 6, PixelOffsetY)
+            DrawShadowSkewed(canvas, ch.Body, ch.Body > 0 && ch.Body < data.Bodies.Length
+                ? data.Bodies[ch.Body].Walk[heading] : 0,
+                ch.Moving ? (int)ch.WalkFrame : 0,
+                new Vector2(screenPos.X - 6, screenPos.Y), data);
+            // VB6: dibHead calls Draw_Grh_Sombra at (PixelOffsetX + HeadOffset.X + 1, PixelOffsetY + HeadOffset.Y - 8)
+            if (ch.Head > 0 && ch.Head < data.Heads.Length)
+            {
+                DrawShadowSkewed(canvas, ch.Head, data.Heads[ch.Head].Head[heading], 0,
+                    new Vector2(screenPos.X + headOffset.X + 1, screenPos.Y + headOffset.Y - 8), data);
+            }
+        }
 
         // VB6: Auras are drawn BEFORE dibujarPersonaje (behind the character body).
         // They use additive blend (D3DBLEND_ONE/ONE). Aura draws are collected in
@@ -196,38 +208,88 @@ public static class CharRenderer
         DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs);
     }
 
-    private static void DrawShadow(
-        Node2D canvas, Character ch, Vector2 pos, int heading,
-        GameData data, GrhAnimator animator)
+    /// <summary>
+    /// VB6-accurate skewed shadow projection.
+    /// VB6 Draw_Grh_Sombra: takes the sprite, scales to 71% W / 63% H, offsets by (+5, +8),
+    /// then skews the top-left and top-right vertices diagonally (up-right) creating a
+    /// parallelogram shadow that falls to the upper-left of the character.
+    ///
+    /// Vertex layout (D3D8 triangle strip):
+    ///   v0 = bottom-left, v1 = top-left, v2 = bottom-right, v3 = top-right
+    /// Shadow transform: v1.X += W/2, v1.Y -= H/2, v3.X += W, v3.Y -= W
+    ///
+    /// Color: black with alpha 100/255 (39% opacity).
+    /// </summary>
+    private static void DrawShadowSkewed(
+        Node2D canvas, int bodyOrHeadIdx, int grhIndex, int frame,
+        Vector2 pos, GameData data)
     {
-        // VB6 Draw_Grh_Sombra: dark ellipse at character's feet.
-        // We draw a simple oval shadow — the VB6 squashed body projection
-        // doesn't translate well to 2D without D3D8 vertex transforms.
-        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
+        if (grhIndex <= 0) return;
+        var resolved = data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
 
-        // Shadow dimensions proportional to body size
-        float shadowW = 28f;
-        float shadowH = 10f;
-        // Center at tile center (pos.X + 16), at character feet (pos.Y + 28)
-        float shadowX = pos.X + 16f - shadowW / 2f;
-        float shadowY = pos.Y + 28f - shadowH / 2f;
+        var texture = data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
 
-        // Draw filled ellipse via anti-aliased arc
-        Vector2 center = new Vector2(shadowX + shadowW / 2f, shadowY + shadowH / 2f);
-        Vector2 scale = new Vector2(shadowW / 2f, shadowH / 2f);
-        Color shadowColor = new Color(0, 0, 0, 0.3f);
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
 
-        // Approximate ellipse with 16-point polygon
-        int segments = 16;
-        var points = new Vector2[segments];
-        for (int i = 0; i < segments; i++)
-        {
-            float angle = i * MathF.Tau / segments;
-            points[i] = center + new Vector2(MathF.Cos(angle) * scale.X, MathF.Sin(angle) * scale.Y);
-        }
-        var colors = new Color[segments];
-        Array.Fill(colors, shadowColor);
-        canvas.DrawPolygon(points, colors);
+        // VB6 center offset (same as DrawGrh center=true)
+        float drawX = pos.X;
+        float drawY = pos.Y;
+        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+
+        // VB6 shadow scaling: width / 1.4, height / 1.6
+        float srcW = pw / 1.4f;
+        float srcH = ph / 1.6f;
+
+        // VB6 shadow offset: +5, +8
+        float baseX = drawX + 5f;
+        float baseY = drawY + 8f;
+
+        // Build the 4 vertices of the shadow quad (before skew)
+        // v0 = bottom-left, v1 = top-left, v2 = bottom-right, v3 = top-right
+        Vector2 v0 = new Vector2(baseX, baseY + srcH);           // bottom-left
+        Vector2 v1 = new Vector2(baseX, baseY);                   // top-left
+        Vector2 v2 = new Vector2(baseX + srcW, baseY + srcH);    // bottom-right
+        Vector2 v3 = new Vector2(baseX + srcW, baseY);            // top-right
+
+        // VB6 shadow skew: move top vertices diagonally (upper-right)
+        v1.X += srcW / 2f;
+        v1.Y -= srcH / 2f;
+        v3.X += srcW;        // VB6 uses src_width here
+        v3.Y -= srcW;        // VB6 uses src_width, not src_height (intentional)
+
+        // Texture UV coordinates (normalized)
+        float u0 = (float)sx / texW;
+        float v0u = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1u = (float)(sy + ph) / texH;
+
+        // VB6: ARGB(100, 0, 0, 0) — black at 39% opacity
+        Color shadowColor = new Color(0, 0, 0, 100f / 255f);
+
+        // Draw two triangles to form the skewed quad using DrawPrimitive
+        // Triangle 1: v0, v1, v2 (bottom-left, top-left, bottom-right)
+        // Triangle 2: v1, v3, v2 (top-left, top-right, bottom-right)
+        Vector2[] points = { v0, v1, v2, v1, v3, v2 };
+        Color[] colors = { shadowColor, shadowColor, shadowColor, shadowColor, shadowColor, shadowColor };
+        Vector2[] uvs = {
+            new Vector2(u0, v1u), new Vector2(u0, v0u), new Vector2(u1, v1u),  // tri 1
+            new Vector2(u0, v0u), new Vector2(u1, v0u), new Vector2(u1, v1u)   // tri 2
+        };
+
+        canvas.DrawPrimitive(points, colors, uvs, texture);
     }
 
     /// <summary>
