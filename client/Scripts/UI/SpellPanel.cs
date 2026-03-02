@@ -24,6 +24,7 @@ public partial class SpellPanel : Control
     private int _selectedSlot = -1;
     private int _hoveredSlot = -1;
     private int _scrollOffset;
+    private bool _dragging; // VB6 ListBox: click-and-drag selects items
 
     public int SelectedSlot => _selectedSlot;
 
@@ -39,6 +40,7 @@ public partial class SpellPanel : Control
         if (what == (int)NotificationMouseExit)
         {
             _hoveredSlot = -1;
+            _dragging = false;
         }
     }
 
@@ -107,24 +109,45 @@ public partial class SpellPanel : Control
         {
             int slot = HitTestSlot(motion.Position);
             _hoveredSlot = slot;
+
+            // VB6 ListBox behavior: drag with left button held changes selection
+            if (_dragging && slot >= 0 && slot < MaxSpells)
+            {
+                _selectedSlot = slot;
+
+                // Auto-scroll when dragging near edges
+                int lineIndex = (int)((motion.Position.Y - 2) / LineHeight);
+                if (lineIndex <= 0 && _scrollOffset > 0)
+                    _scrollOffset--;
+                else if (lineIndex >= VisibleLines - 1 && _scrollOffset + VisibleLines < MaxSpells)
+                    _scrollOffset++;
+            }
         }
-        else if (@event is InputEventMouseButton mb && mb.Pressed)
+        else if (@event is InputEventMouseButton mb)
         {
             if (mb.ButtonIndex == MouseButton.Left)
             {
-                int slot = HitTestSlot(mb.Position);
-                if (slot >= 0 && slot < MaxSpells)
+                if (mb.Pressed)
                 {
-                    _selectedSlot = slot;
+                    int slot = HitTestSlot(mb.Position);
+                    if (slot >= 0 && slot < MaxSpells)
+                    {
+                        _selectedSlot = slot;
+                        _dragging = true;
+                    }
+                }
+                else
+                {
+                    _dragging = false;
                 }
                 AcceptEvent();
             }
-            else if (mb.ButtonIndex == MouseButton.WheelUp)
+            else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp)
             {
                 if (_scrollOffset > 0) _scrollOffset--;
                 AcceptEvent();
             }
-            else if (mb.ButtonIndex == MouseButton.WheelDown)
+            else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown)
             {
                 if (_scrollOffset + VisibleLines < MaxSpells) _scrollOffset++;
                 AcceptEvent();
