@@ -6,3 +6,10 @@
 /server/guilds/Bancos/
 *.log
 client/.godot/
+
+# .NET / C# build artifacts
+**/bin/
+**/obj/
+*.dll
+*.pdb
+*.cache

@@ -912,7 +912,7 @@ public partial class Main : Control
         if (_addFriendInput == null || _tcp == null) return;
         var name = _addFriendInput.Text.Trim();
         if (name.Length > 0)
-            _tcp.SendData($"ADDCON{name}");
+            _tcp.SendPacket($"ADDCON{name}");
         CloseAddFriendDialog();
     }
 
@@ -1321,7 +1321,7 @@ public partial class Main : Control
         else
         {
             // Remove friend — send 1-based slot index
-            _tcp.SendData($"BORRAC{idx + 1}");
+            _tcp.SendPacket($"BORRAC{idx + 1}");
         }
     }
 
@@ -2143,7 +2143,7 @@ public partial class Main : Control
             var err = img.Load(path);
             if (err == Error.Ok && img.GetWidth() > 0 && img.GetHeight() > 0)
             {
-                _minimapRect.Texture = ImageTexture.CreateFromImage(img);
+                _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
                 return true;
             }
 
@@ -2151,7 +2151,7 @@ public partial class Main : Control
             img = LoadBmpManual(path);
             if (img != null)
             {
-                _minimapRect.Texture = ImageTexture.CreateFromImage(img);
+                _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
                 return true;
             }
 
