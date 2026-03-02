@@ -126,9 +126,9 @@ Common commands:
 
 ---
 
-## 7. Build the Client (first time)
+## 7. Build & Run the Client
 
-Before running the client for the first time, compile the C# solution:
+### Build (required after every code change)
 
 ```bash
 cd ~/server-rust-tsao/client
@@ -136,26 +136,44 @@ dotnet build
 # Should show: "Build succeeded. 0 Warning(s) 0 Error(s)"
 ```
 
-This step is required once. After that, Godot handles recompilation automatically.
+> **Important**: You must run `dotnet build` every time you pull new changes or modify C# code. Without this step, Godot will run the **old** compiled code and your changes won't take effect. This applies to both editor and command-line execution.
+
+### Quick workflow after `git pull`
+
+```bash
+cd ~/server-rust-tsao/client
+git pull
+dotnet build && godot --path .
+```
 
 ---
 
 ## 8. Run the Client
 
-### Option A: From Godot editor
+### Option A: From command line (recommended)
 
 ```bash
-godot --path ~/server-rust-tsao/client/
+cd ~/server-rust-tsao/client
+dotnet build          # compile C# changes
+godot --path .        # run the game
 ```
+
+### Option B: From Godot editor
+
+```bash
+godot --path ~/server-rust-tsao/client/  # opens editor
+```
+
+Then press **F5** to run. The editor auto-compiles C# on build (Ctrl+Shift+B) or when you press Play.
 
 Or manually:
 1. Run `godot` in terminal
 2. Click **Import** → navigate to `~/server-rust-tsao/client/` → select `project.godot`
 3. Click **Import & Edit**
-4. Wait for C# solution to compile (first time)
+4. Press **Ctrl+Shift+B** to build the C# solution
 5. Press **F5** to run
 
-### Option B: Export as standalone binary
+### Option C: Export as standalone binary
 
 1. Open the project in Godot editor
 2. **Project → Export** → Add Linux preset
@@ -186,3 +204,5 @@ The client connects to `127.0.0.1:5028` by default. If the server runs on a diff
 | Godot C# build errors | Run **Build → Build Solution** (Ctrl+Shift+B) in the editor |
 | `Connection refused` on client | Make sure the server is running: `docker compose logs ao-server` |
 | Server crashes on startup | Check `server/server.ini` exists and `dat/`, `maps/` directories have data files |
+| Changes not taking effect | Run `dotnet build` in `client/` before launching. Godot runs pre-compiled assemblies |
+| `dotnet build` fails | Check .NET 6.0 SDK is installed: `dotnet --list-sdks`. Godot 4.3 requires .NET 6 |
