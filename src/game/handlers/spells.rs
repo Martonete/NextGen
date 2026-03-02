@@ -7,8 +7,9 @@ use crate::game::types::{GameState, SendTarget, MAX_SPELL_SLOTS};
 use crate::game::world;
 use crate::protocol::{server_opcodes, font_types, fields::read_field};
 use crate::data::objects::ObjType;
+use crate::data::experience::MAX_LEVEL;
 use super::common::*;
-use super::{user_die, npc_die, revive_user, warp_user};
+use super::{user_die, npc_die, check_user_level, revive_user, warp_user};
 
 // =====================================================================
 // Spell handler
@@ -447,9 +448,9 @@ pub(super) async fn apply_spell_properties_npc(
     // VB6: spell damage * 1.4 on NPCs
     damage = (damage as f64 * 1.4) as i32;
 
-    // Get NPC data for damage number display
-    let npc_data = state.get_npc(npc_idx).map(|n| (n.char_index.0, n.map, n.x, n.y));
-    let (npc_ci, npc_map, npc_x, npc_y) = match npc_data {
+    // Get NPC data for damage number display and exp calculation
+    let npc_data = state.get_npc(npc_idx).map(|n| (n.char_index.0, n.map, n.x, n.y, n.give_exp, n.max_hp));
+    let (npc_ci, npc_map, npc_x, npc_y, npc_give_exp, npc_max_hp) = match npc_data {
         Some(d) => d,
         None => return,
     };
@@ -465,6 +466,31 @@ pub(super) async fn apply_spell_properties_npc(
     // Apply damage to NPC
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         npc.min_hp -= damage;
+        npc.damage_received.push((caster_id, damage));
+    }
+
+    // Per-hit EXP (VB6: CalcularDarExp — proportional exp on every hit)
+    if npc_give_exp > 0 && npc_max_hp > 0 {
+        let exp_mult = state.multiplicador_exp;
+        let mut exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
+
+        let scroll_mult = state.users.get(&caster_id)
+            .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
+            .unwrap_or(1);
+        exp_award *= scroll_mult;
+
+        let can_level = state.users.get(&caster_id)
+            .map(|u| u.logged && u.level < MAX_LEVEL as i32)
+            .unwrap_or(false);
+
+        if can_level && exp_award > 0 {
+            if let Some(user) = state.users.get_mut(&caster_id) {
+                user.exp += exp_award;
+            }
+            state.send_to(caster_id, &format!("||170@{}", exp_award)).await;
+            send_stats_exp(state, caster_id).await;
+            check_user_level(state, caster_id).await;
+        }
     }
 
     // Check NPC death
