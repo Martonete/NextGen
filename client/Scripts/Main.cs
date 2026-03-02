@@ -471,6 +471,13 @@ public partial class Main : Control
         var charSelectVBox = _charList!.GetParent();
         charSelectVBox.AddChild(_charSelectCreateBtn);
 
+        // "Desconectar" button on CharSelect screen
+        var disconnectBtn = new Button();
+        disconnectBtn.Text = "Desconectar";
+        disconnectBtn.CustomMinimumSize = new Vector2(0, 32);
+        disconnectBtn.Pressed += () => HandleDisconnect("");
+        charSelectVBox.AddChild(disconnectBtn);
+
         // "Crear Cuenta" button on Login screen
         var crearCuentaBtn = new Button();
         crearCuentaBtn.Text = "Crear Cuenta";
@@ -792,6 +799,16 @@ public partial class Main : Control
             _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
         }
         _inputHandler = new InputHandler(_tcp, _state);
+        _inputHandler.OnToggleMusic = () =>
+        {
+            if (_soundManager != null)
+            {
+                _soundManager.MusicEnabled = !_soundManager.MusicEnabled;
+                // If re-enabled, resume the current map music
+                if (_soundManager.MusicEnabled && _state.MusicId > 0)
+                    _soundManager.PlayMusic(_state.MusicId);
+            }
+        };
         _connecting = true;
 
         _ = ConnectAndLogin(account, password);
@@ -2296,12 +2313,30 @@ public partial class Main : Control
 
     public override void _Input(InputEvent @event)
     {
-        // Escape on login/charselect → quit game
+        // Escape on login → quit game
         if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo
             && escKey.Keycode == Key.Escape
-            && (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.CharSelect))
+            && _state.CurrentScreen == Screen.Login)
         {
             GetTree().Quit();
+            return;
+        }
+
+        // Escape on char select → disconnect back to login
+        if (@event is InputEventKey escCharKey && escCharKey.Pressed && !escCharKey.Echo
+            && escCharKey.Keycode == Key.Escape
+            && _state.CurrentScreen == Screen.CharSelect)
+        {
+            HandleDisconnect("");
+            return;
+        }
+
+        // Enter on char select → connect with selected character
+        if (@event is InputEventKey enterCharKey && enterCharKey.Pressed && !enterCharKey.Echo
+            && (enterCharKey.Keycode == Key.Enter || enterCharKey.Keycode == Key.KpEnter)
+            && _state.CurrentScreen == Screen.CharSelect)
+        {
+            OnEnterPressed();
             return;
         }
 
@@ -2310,7 +2345,7 @@ public partial class Main : Control
         // Chat input handling
         if (@event is InputEventKey key && key.Pressed && !key.Echo && _chatInput != null)
         {
-            // Escape: close dialogs or chat input
+            // Escape: close dialogs, chat input, or disconnect to login
             if (key.Keycode == Key.Escape)
             {
                 if (_state.MacroPanelOpen)
@@ -2340,6 +2375,10 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
+                // No dialog open → disconnect and return to login (VB6: Escape in-game)
+                HandleDisconnect("");
+                GetViewport().SetInputAsHandled();
+                return;
             }
 
             // Enter: open chat input, or submit if already open (fallback for TextSubmitted)

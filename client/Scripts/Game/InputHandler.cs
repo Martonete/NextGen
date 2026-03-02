@@ -56,6 +56,9 @@ public class InputHandler
     private const float KeyCooldownMs = 300f;
     private float _keyCooldown;
 
+    /// <summary>Callback invoked when the player presses M to toggle music.</summary>
+    public Action? OnToggleMusic;
+
     public InputHandler(AoTcpClient tcp, GameState state)
     {
         _tcp = tcp;
@@ -189,6 +192,12 @@ public class InputHandler
         else if (Input.IsKeyPressed(Key.N))
         {
             _state.ShowNames = !_state.ShowNames;
+            _keyCooldown = KeyCooldownMs;
+        }
+        // Toggle music (VB6: M key — mute/unmute map music, not SFX)
+        else if (Input.IsKeyPressed(Key.M))
+        {
+            OnToggleMusic?.Invoke();
             _keyCooldown = KeyCooldownMs;
         }
         // Steal/Robo (VB6: R key sends UK<Robar>)

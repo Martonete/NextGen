@@ -473,20 +473,9 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             apply_consumable(state, conn_id, &obj_data);
 
             // VB6 sound differs by type:
-            // - otUseOnce (food): SOUND_COMIDA=7, except Manzana(1,2,467)=MORFAR_MANZANA=82
+            // - otUseOnce (food/apples): SOUND_COMIDA=7
             // - otPociones: SND_BEBER=46
-            let snd_id = if obj_data.obj_type == ObjType::UseOnce {
-                const MANZANA: i32 = 1;
-                const MANZANA2: i32 = 2;
-                const MANZANA_NEWBIE: i32 = 467;
-                if obj_index == MANZANA || obj_index == MANZANA2 || obj_index == MANZANA_NEWBIE {
-                    82 // MORFAR_MANZANA
-                } else {
-                    7  // SOUND_COMIDA
-                }
-            } else {
-                46 // SND_BEBER (potions)
-            };
+            let snd_id = if obj_data.obj_type == ObjType::UseOnce { 7 } else { 46 };
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
             state.send_data(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &format!("TW{}", snd_id)).await;
