@@ -1107,11 +1107,18 @@ public partial class Main : Control
     {
         if (_console == null) return;
 
+        bool hadMessages = false;
         while (_state.ChatMessages.Count > 0)
         {
             var msg = _state.ChatMessages.Dequeue();
             // VB6 console uses bold font (Weight=700 in RecTxt)
             _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
+            hadMessages = true;
+        }
+        // Auto-scroll to bottom when new messages arrive
+        if (hadMessages)
+        {
+            _console.ScrollFollowing = true;
         }
     }
 

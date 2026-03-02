@@ -161,7 +161,18 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
 
         if old_slot > 0 && old_slot <= MAX_INVENTORY_SLOTS {
             let old_idx = old_slot - 1;
+            // Check if old item had an aura — if so, we need to broadcast the change
+            // even if the new item has no aura (VB6: unequip always sends AU|)
+            let old_had_aura = {
+                let old_obj_idx = state.users.get(&conn_id)
+                    .map(|u| u.inventory[old_idx].obj_index as usize).unwrap_or(0);
+                if old_obj_idx >= 1 {
+                    state.game_data.objects.get(old_obj_idx - 1)
+                        .map(|o| o.crea_aura > 0).unwrap_or(false)
+                } else { false }
+            };
             unequip_slot(state, conn_id, old_idx, &obj_data.obj_type);
+            if old_had_aura { aura_changed = true; }
             // Send updated CSI for the OLD slot so client sees it as unequipped
             send_inventory_slot(state, conn_id, old_idx).await;
         }
