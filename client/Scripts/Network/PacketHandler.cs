@@ -368,7 +368,7 @@ public class PacketHandler
         }
         else if (packet.StartsWith("CFF"))
         {
-            HandleCharFx(packet[3..]); // Same format as CFX
+            HandleCharParticle(packet[3..]); // VB6: CFF = character particle stream
         }
         else if (packet.StartsWith("ANM"))
         {
@@ -829,6 +829,40 @@ public class PacketHandler
         ch.ActiveFxSlots[0] = fxId;
         ch.FxLoops[0] = loops >= 999 ? -1 : loops;
         ch.FxFrameCounter[0] = 0;
+    }
+
+    /// <summary>
+    /// CFF — Character particle stream (VB6: General_Char_Particle_Create).
+    /// Format: CFF{charIndex},{particleStreamId}[,{unused}]
+    /// particleStreamId=0 clears all character particles.
+    /// </summary>
+    private void HandleCharParticle(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 2) return;
+
+        int charIdx = ParseInt(parts[0]);
+        int streamId = ParseInt(parts[1]);
+
+        if (streamId == 0)
+        {
+            // Clear all particle streams attached to this character
+            for (int i = _state.MapParticles.Count - 1; i >= 0; i--)
+            {
+                if (_state.MapParticles[i].CharIndex == charIdx && _state.MapParticles[i].CharIndex > 0)
+                    _state.MapParticles.RemoveAt(i);
+            }
+            return;
+        }
+
+        // Remove existing char particles before creating new ones (VB6: replaces stream)
+        for (int i = _state.MapParticles.Count - 1; i >= 0; i--)
+        {
+            if (_state.MapParticles[i].CharIndex == charIdx && _state.MapParticles[i].CharIndex > 0)
+                _state.MapParticles.RemoveAt(i);
+        }
+
+        ParticleSystem.CreateCharStream(_state, streamId, charIdx);
     }
 
     /// <summary>
