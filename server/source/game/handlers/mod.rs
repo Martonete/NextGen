@@ -2225,11 +2225,26 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/SETDESC ") {
         let args = &cmd[9..];
         handle_slash_setdesc(state, conn_id, args).await;
-    } else if cmd_upper == "/RELOADSINI" || cmd_upper == "/LOADOBJ" || cmd_upper == "/LOADHECHIZOS" || cmd_upper == "/LOADNPCS" || cmd_upper == "/LOADBALANCE" || cmd_upper == "/LOADQUESTS" || cmd_upper == "/LOADPREMIOS" {
-        // VB6: Admin-only reload commands. Not hot-reloadable in Rust, but acknowledge.
+    } else if cmd_upper == "/RELOADSINI" {
+        gm_commands::handle_reload_sini(state, conn_id).await;
+    } else if cmd_upper == "/LOADOBJ" {
+        gm_commands::handle_reload_objects(state, conn_id).await;
+    } else if cmd_upper == "/LOADHECHIZOS" {
+        gm_commands::handle_reload_spells(state, conn_id).await;
+    } else if cmd_upper == "/LOADNPCS" {
+        gm_commands::handle_reload_npcs(state, conn_id).await;
+    } else if cmd_upper == "/LOADBALANCE" {
+        gm_commands::handle_reload_balance(state, conn_id).await;
+    } else if cmd_upper == "/LOADQUESTS" {
+        gm_commands::handle_reload_quests(state, conn_id).await;
+    } else if cmd_upper == "/LOADPREMIOS" {
+        // Premios.dat not implemented yet — acknowledge silently
         let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
         if !is_admin { return; }
-        state.send_to(conn_id, &format!("{}Datos recargados.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_to(conn_id, &format!("{}Sistema de premios no implementado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    } else if cmd_upper.starts_with("/LOADMAP ") {
+        let map_str = &cmd[9..];
+        gm_commands::handle_reload_map(state, conn_id, map_str).await;
     } else if cmd_upper.starts_with("/STOP ") {
         let target = cmd[6..].trim();
         handle_slash_stop(state, conn_id, target, true).await;

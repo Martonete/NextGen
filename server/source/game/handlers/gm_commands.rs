@@ -2526,3 +2526,168 @@ pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: Conne
     }
     info!("[GM] Reset vals: {}", vt);
 }
+
+// ── Reload configuration commands ───────────────────────────────────────────
+
+/// /RELOADSINI — reload Server.ini configuration.
+pub(super) async fn handle_reload_sini(state: &mut GameState, conn_id: ConnectionId) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+    match crate::config::ServerConfig::load(&base) {
+        Ok(new_config) => {
+            // Preserve port (can't rebind at runtime) but reload everything else
+            let old_port = state.config.port;
+            state.config = new_config;
+            state.config.port = old_port;
+            state.send_to(conn_id, &format!("{}Server.ini recargado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            info!("[GM] {} reloaded Server.ini", name);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando Server.ini: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+        }
+    }
+}
+
+/// /LOADOBJ — reload Obj.dat (objects database).
+pub(super) async fn handle_reload_objects(state: &mut GameState, conn_id: ConnectionId) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+    match crate::data::objects::load_objects(&base) {
+        Ok(objects) => {
+            let count = objects.len();
+            state.game_data.objects = objects;
+            state.send_to(conn_id, &format!("{}Obj.dat recargado ({} objetos).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            info!("[GM] {} reloaded Obj.dat ({} objects)", name, count);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando Obj.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+        }
+    }
+}
+
+/// /LOADHECHIZOS — reload Hechizos.dat (spells database).
+pub(super) async fn handle_reload_spells(state: &mut GameState, conn_id: ConnectionId) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+    match crate::data::spells::load_spells(&base) {
+        Ok(spells) => {
+            let count = spells.len();
+            state.game_data.spells = spells;
+            state.send_to(conn_id, &format!("{}Hechizos.dat recargado ({} hechizos).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            info!("[GM] {} reloaded Hechizos.dat ({} spells)", name, count);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando Hechizos.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+        }
+    }
+}
+
+/// /LOADNPCS — reload NPCs.dat + NPCs-HOSTILES.dat.
+pub(super) async fn handle_reload_npcs(state: &mut GameState, conn_id: ConnectionId) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+    match crate::data::npcs::load_npcs(&base) {
+        Ok(npc_db) => {
+            let count = npc_db.count();
+            state.game_data.npcs = npc_db;
+            state.send_to(conn_id, &format!("{}NPCs.dat recargado ({} NPCs).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            info!("[GM] {} reloaded NPCs.dat ({} NPCs)", name, count);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando NPCs.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+        }
+    }
+}
+
+/// /LOADBALANCE — reload ClassBonus.dat (balance data).
+pub(super) async fn handle_reload_balance(state: &mut GameState, conn_id: ConnectionId) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+    match crate::data::balance::load_balance(&base) {
+        Ok(balance) => {
+            state.game_data.balance = balance;
+            state.send_to(conn_id, &format!("{}Balance recargado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            info!("[GM] {} reloaded Balance data", name);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando Balance: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+        }
+    }
+}
+
+/// /LOADQUESTS — reload Quests.dat.
+pub(super) async fn handle_reload_quests(state: &mut GameState, conn_id: ConnectionId) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let base = state.base_path.clone();
+    match crate::data::quests::load_quests(&base) {
+        Ok(quests) => {
+            let count = quests.len();
+            state.game_data.quests = quests;
+            state.send_to(conn_id, &format!("{}Quests.dat recargado ({} quests).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            info!("[GM] {} reloaded Quests.dat ({} quests)", name, count);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando Quests.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+        }
+    }
+}
+
+/// /LOADMAP N — reload a specific map from disk.
+pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: ConnectionId, map_str: &str) {
+    let name = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
+        _ => return,
+    };
+
+    let map_num: usize = match map_str.trim().parse() {
+        Ok(n) if n >= 1 => n,
+        _ => {
+            state.send_to(conn_id, &format!("{}Uso: /LOADMAP <numero>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    let base = state.base_path.clone();
+    match crate::data::maps::load_map(&base, map_num) {
+        Ok(new_map) => {
+            // Ensure the maps vec is large enough
+            if map_num >= state.game_data.maps.len() {
+                state.game_data.maps.resize_with(map_num + 1, || None);
+            }
+            state.game_data.maps[map_num] = Some(new_map);
+
+            // Also update the world grid for this map
+            state.world.reload_map(map_num, &state.game_data.maps);
+
+            state.send_to(conn_id, &format!("{}Mapa {} recargado.{}", server_opcodes::CONSOLE_MSG, map_num, font_types::INFO)).await;
+            info!("[GM] {} reloaded map {}", name, map_num);
+        }
+        Err(e) => {
+            state.send_to(conn_id, &format!("{}Error recargando mapa {}: {}{}", server_opcodes::CONSOLE_MSG, map_num, e, font_types::INFO)).await;
+        }
+    }
+}

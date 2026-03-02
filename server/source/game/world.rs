@@ -115,6 +115,13 @@ impl WorldState {
         idx
     }
 
+    /// Ensure a grid exists for a reloaded map.
+    /// Static tile data lives in GameData.maps; this just ensures
+    /// the runtime grid (user/NPC occupancy) is present.
+    pub fn reload_map(&mut self, map_num: usize, _maps: &[Option<crate::data::maps::GameMap>]) {
+        self.grids.entry(map_num as i32).or_insert_with(MapGrid::new);
+    }
+
     /// Get grid for a map (creates if needed).
     pub fn grid(&self, map: i32) -> Option<&MapGrid> {
         self.grids.get(&map)
