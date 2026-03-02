@@ -116,6 +116,18 @@ public partial class Main : Control
     private PanelContainer? _addFriendDialog;
     private LineEdit? _addFriendInput;
 
+    // Account creation panel
+    private PanelContainer? _accountCreatePanel;
+    private LineEdit? _acctNameInput;
+    private LineEdit? _acctPasswordInput;
+    private LineEdit? _acctPasswordConfirmInput;
+    private LineEdit? _acctPinInput;
+    private LineEdit? _acctPinConfirmInput;
+    private Label? _acctErrorLabel;
+    private Button? _acctCreateButton;
+    private Button? _acctBackButton;
+    private double _acctSuccessTimer;
+
     // Character creation panel
     private PanelContainer? _charCreatePanel;
     private LineEdit? _charCreateNameInput;
@@ -405,6 +417,20 @@ public partial class Main : Control
         var charSelectVBox = _charList!.GetParent();
         charSelectVBox.AddChild(_charSelectCreateBtn);
 
+        // "Crear Cuenta" button on Login screen
+        var crearCuentaBtn = new Button();
+        crearCuentaBtn.Text = "Crear Cuenta";
+        crearCuentaBtn.CustomMinimumSize = new Vector2(0, 32);
+        crearCuentaBtn.Pressed += OnCrearCuentaPressed;
+        var loginVBox = _connectButton!.GetParent();
+        // Insert after ConnectButton, before StatusLabel
+        int connectIdx = _connectButton.GetIndex();
+        loginVBox.AddChild(crearCuentaBtn);
+        loginVBox.MoveChild(crearCuentaBtn, connectIdx + 1);
+
+        // Account creation panel
+        CreateAccountCreatePanel();
+
         // Character creation panel
         CreateCharCreatePanel();
 
@@ -420,6 +446,7 @@ public partial class Main : Control
         _loginPanel.Visible = true;
         _charSelectPanel.Visible = false;
         _charCreatePanel!.Visible = false;
+        _accountCreatePanel!.Visible = false;
         _gameUI.Visible = false;
     }
 
@@ -951,6 +978,273 @@ public partial class Main : Control
         };
     }
 
+    private void OnCrearCuentaPressed()
+    {
+        _state.CurrentScreen = Screen.AccountCreate;
+        HandleScreenChange(Screen.AccountCreate);
+        _lastScreen = Screen.AccountCreate;
+    }
+
+    private void CreateAccountCreatePanel()
+    {
+        _accountCreatePanel = new PanelContainer();
+        _accountCreatePanel.Size = new Vector2(400, 420);
+        _accountCreatePanel.Position = new Vector2(200, 90);
+        _accountCreatePanel.Visible = false;
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.08f, 0.08f, 0.14f, 0.95f);
+        bg.BorderColor = new Color(0.4f, 0.35f, 0.2f);
+        bg.SetBorderWidthAll(2);
+        bg.SetContentMarginAll(12);
+        _accountCreatePanel.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 6);
+        _accountCreatePanel.AddChild(vbox);
+
+        // Title
+        var title = new Label();
+        title.Text = "Crear Cuenta";
+        title.HorizontalAlignment = HorizontalAlignment.Center;
+        title.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.4f));
+        title.AddThemeFontSizeOverride("font_size", 16);
+        ApplyBoldFont(title);
+        vbox.AddChild(title);
+
+        // Account name
+        var nameLabel = new Label();
+        nameLabel.Text = "Nombre de cuenta:";
+        nameLabel.AddThemeColorOverride("font_color", Colors.White);
+        nameLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(nameLabel);
+
+        _acctNameInput = new LineEdit();
+        _acctNameInput.PlaceholderText = "3-15 caracteres";
+        _acctNameInput.MaxLength = 15;
+        _acctNameInput.CustomMinimumSize = new Vector2(0, 28);
+        _acctNameInput.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_acctNameInput);
+
+        // Password
+        var passLabel = new Label();
+        passLabel.Text = "Contraseña:";
+        passLabel.AddThemeColorOverride("font_color", Colors.White);
+        passLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(passLabel);
+
+        _acctPasswordInput = new LineEdit();
+        _acctPasswordInput.PlaceholderText = "4-15 caracteres";
+        _acctPasswordInput.MaxLength = 15;
+        _acctPasswordInput.Secret = true;
+        _acctPasswordInput.CustomMinimumSize = new Vector2(0, 28);
+        _acctPasswordInput.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_acctPasswordInput);
+
+        // Confirm password
+        var passConfirmLabel = new Label();
+        passConfirmLabel.Text = "Repetir contraseña:";
+        passConfirmLabel.AddThemeColorOverride("font_color", Colors.White);
+        passConfirmLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(passConfirmLabel);
+
+        _acctPasswordConfirmInput = new LineEdit();
+        _acctPasswordConfirmInput.MaxLength = 15;
+        _acctPasswordConfirmInput.Secret = true;
+        _acctPasswordConfirmInput.CustomMinimumSize = new Vector2(0, 28);
+        _acctPasswordConfirmInput.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_acctPasswordConfirmInput);
+
+        // PIN
+        var pinLabel = new Label();
+        pinLabel.Text = "PIN:";
+        pinLabel.AddThemeColorOverride("font_color", Colors.White);
+        pinLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(pinLabel);
+
+        _acctPinInput = new LineEdit();
+        _acctPinInput.PlaceholderText = "4-5 dígitos";
+        _acctPinInput.MaxLength = 5;
+        _acctPinInput.Secret = true;
+        _acctPinInput.CustomMinimumSize = new Vector2(0, 28);
+        _acctPinInput.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_acctPinInput);
+
+        // Confirm PIN
+        var pinConfirmLabel = new Label();
+        pinConfirmLabel.Text = "Repetir PIN:";
+        pinConfirmLabel.AddThemeColorOverride("font_color", Colors.White);
+        pinConfirmLabel.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(pinConfirmLabel);
+
+        _acctPinConfirmInput = new LineEdit();
+        _acctPinConfirmInput.MaxLength = 5;
+        _acctPinConfirmInput.Secret = true;
+        _acctPinConfirmInput.CustomMinimumSize = new Vector2(0, 28);
+        _acctPinConfirmInput.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_acctPinConfirmInput);
+
+        // Error/status label
+        _acctErrorLabel = new Label();
+        _acctErrorLabel.Text = "";
+        _acctErrorLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _acctErrorLabel.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+        _acctErrorLabel.AddThemeFontSizeOverride("font_size", 11);
+        _acctErrorLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        vbox.AddChild(_acctErrorLabel);
+
+        // Buttons row
+        var btnBox = new HBoxContainer();
+        btnBox.AddThemeConstantOverride("separation", 8);
+        btnBox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnBox);
+
+        _acctCreateButton = new Button();
+        _acctCreateButton.Text = "Crear Cuenta";
+        _acctCreateButton.CustomMinimumSize = new Vector2(140, 32);
+        _acctCreateButton.Pressed += OnAccountCreatePressed;
+        btnBox.AddChild(_acctCreateButton);
+
+        _acctBackButton = new Button();
+        _acctBackButton.Text = "Volver";
+        _acctBackButton.CustomMinimumSize = new Vector2(100, 32);
+        _acctBackButton.Pressed += OnAccountCreateBack;
+        btnBox.AddChild(_acctBackButton);
+
+        var uiLayer = GetNode<Control>("UILayer");
+        uiLayer.AddChild(_accountCreatePanel);
+    }
+
+    private void OnAccountCreatePressed()
+    {
+        string name = _acctNameInput!.Text.Trim();
+        string pass = _acctPasswordInput!.Text;
+        string passConfirm = _acctPasswordConfirmInput!.Text;
+        string pin = _acctPinInput!.Text;
+        string pinConfirm = _acctPinConfirmInput!.Text;
+
+        // Validate account name
+        if (name.Length < 3 || name.Length > 15)
+        {
+            _acctErrorLabel!.Text = "El nombre debe tener entre 3 y 15 caracteres.";
+            return;
+        }
+        foreach (char c in name)
+        {
+            if (!char.IsLetterOrDigit(c))
+            {
+                _acctErrorLabel!.Text = "El nombre solo puede contener letras y números.";
+                return;
+            }
+        }
+
+        // Validate password
+        if (pass.Length < 4 || pass.Length > 15)
+        {
+            _acctErrorLabel!.Text = "La contraseña debe tener entre 4 y 15 caracteres.";
+            return;
+        }
+        if (pass != passConfirm)
+        {
+            _acctErrorLabel!.Text = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        // Validate PIN
+        if (pin.Length < 4 || pin.Length > 5)
+        {
+            _acctErrorLabel!.Text = "El PIN debe tener 4 o 5 dígitos.";
+            return;
+        }
+        foreach (char c in pin)
+        {
+            if (!char.IsDigit(c))
+            {
+                _acctErrorLabel!.Text = "El PIN solo puede contener dígitos.";
+                return;
+            }
+        }
+        if (pin != pinConfirm)
+        {
+            _acctErrorLabel!.Text = "Los PINs no coinciden.";
+            return;
+        }
+
+        _acctCreateButton!.Disabled = true;
+        _acctErrorLabel!.Text = "Conectando...";
+        _acctErrorLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.8f));
+        _acctSuccessTimer = 0;
+
+        _state.CreateAccountName = name;
+        _state.CreateAccountPassword = pass;
+        _state.CreateAccountPin = pin;
+
+        _ = ConnectAndCreateAccount(name, pass, pin);
+    }
+
+    private async Task ConnectAndCreateAccount(string account, string password, string pin)
+    {
+        try
+        {
+            // Dispose any existing connection
+            _tcp?.Dispose();
+
+            _tcp = new AoTcpClient();
+            _packetHandler = new PacketHandler(_state);
+            _packetHandler.OnMapLoad = LoadCurrentMap;
+            _connecting = true;
+
+            GD.Print($"[MAIN] Connecting for account creation...");
+            await _tcp.ConnectAsync(ServerHost, ServerPort);
+            _connecting = false;
+            GD.Print("[MAIN] Connected! Sending NACCNT...");
+
+            await Task.Delay(100);
+            _tcp.SendPacket("KERD22");
+
+            await Task.Delay(50);
+            _tcp.SendPacket($"NACCNT{account},{password},{pin}");
+            GD.Print("[MAIN] Sent: NACCNT");
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Account creation connection failed: {ex.Message}");
+            _connecting = false;
+            _tcp?.Dispose();
+            _tcp = null;
+            _acctErrorLabel!.Text = $"Error: {ex.Message}";
+            _acctErrorLabel.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+            _acctCreateButton!.Disabled = false;
+        }
+    }
+
+    private void OnAccountCreateBack()
+    {
+        // Disconnect if we connected for account creation
+        _tcp?.Dispose();
+        _tcp = null;
+        _packetHandler = null;
+        _connecting = false;
+        _acctSuccessTimer = 0;
+
+        _state.CurrentScreen = Screen.Login;
+        HandleScreenChange(Screen.Login);
+        _lastScreen = Screen.Login;
+    }
+
+    private void ResetAccountCreateForm()
+    {
+        _acctNameInput!.Text = "";
+        _acctPasswordInput!.Text = "";
+        _acctPasswordConfirmInput!.Text = "";
+        _acctPinInput!.Text = "";
+        _acctPinConfirmInput!.Text = "";
+        _acctErrorLabel!.Text = "";
+        _acctErrorLabel.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+        _acctCreateButton!.Disabled = false;
+        _acctSuccessTimer = 0;
+    }
+
     private void CreateCharCreatePanel()
     {
         _charCreatePanel = new PanelContainer();
@@ -1330,7 +1624,8 @@ public partial class Main : Control
         if (_tcp == null || _packetHandler == null) return;
 
         // VB6: Socket1_Disconnect — detect lost connection and return to login
-        if (!_connecting && !_tcp.IsConnected && _state.CurrentScreen != Screen.Login)
+        if (!_connecting && !_tcp.IsConnected && _state.CurrentScreen != Screen.Login
+            && _state.CurrentScreen != Screen.AccountCreate)
         {
             HandleDisconnect("Conexión perdida con el servidor.");
             return;
@@ -1372,7 +1667,41 @@ public partial class Main : Control
                 _charCreateError!.Text = _state.LoginError;
                 _charCreateCreateBtn!.Disabled = false;
             }
+            else if (_state.CurrentScreen == Screen.AccountCreate)
+            {
+                string msg = _state.LoginError;
+                if (msg.Contains("exito", StringComparison.OrdinalIgnoreCase))
+                {
+                    _acctErrorLabel!.Text = msg;
+                    _acctErrorLabel.AddThemeColorOverride("font_color", new Color(0.4f, 1f, 0.4f));
+                    _acctSuccessTimer = 2.0;
+                }
+                else
+                {
+                    _acctErrorLabel!.Text = msg;
+                    _acctErrorLabel.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+                    _acctCreateButton!.Disabled = false;
+                }
+            }
             _state.LoginError = "";
+        }
+
+        // Account creation success → auto-switch to login after timer
+        if (_acctSuccessTimer > 0 && _state.CurrentScreen == Screen.AccountCreate)
+        {
+            _acctSuccessTimer -= delta;
+            if (_acctSuccessTimer <= 0)
+            {
+                _tcp?.Dispose();
+                _tcp = null;
+                _packetHandler = null;
+                _connecting = false;
+
+                _state.CurrentScreen = Screen.Login;
+                HandleScreenChange(Screen.Login);
+                _lastScreen = Screen.Login;
+                _statusLabel!.Text = "Cuenta creada. Ingrese sus datos.";
+            }
         }
 
         // Map loading is now handled immediately in HandleChangeMap via OnMapLoad callback.
@@ -1481,6 +1810,7 @@ public partial class Main : Control
                 _loginPanel!.Visible = true;
                 _charSelectPanel!.Visible = false;
                 _charCreatePanel!.Visible = false;
+                _accountCreatePanel!.Visible = false;
                 _gameUI!.Visible = false;
                 break;
 
@@ -1488,16 +1818,27 @@ public partial class Main : Control
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = true;
                 _charCreatePanel!.Visible = false;
+                _accountCreatePanel!.Visible = false;
                 _gameUI!.Visible = false;
                 _enterButton!.Disabled = false;
                 _noticeLabel!.Text = "";
                 PopulateCharList();
                 break;
 
+            case Screen.AccountCreate:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = false;
+                _charCreatePanel!.Visible = false;
+                _accountCreatePanel!.Visible = true;
+                _gameUI!.Visible = false;
+                ResetAccountCreateForm();
+                break;
+
             case Screen.CharCreate:
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = false;
                 _charCreatePanel!.Visible = true;
+                _accountCreatePanel!.Visible = false;
                 _gameUI!.Visible = false;
                 ResetCharCreateForm();
                 break;
@@ -1506,6 +1847,7 @@ public partial class Main : Control
                 _loginPanel!.Visible = false;
                 _charSelectPanel!.Visible = false;
                 _charCreatePanel!.Visible = false;
+                _accountCreatePanel!.Visible = false;
                 _gameUI!.Visible = true;
                 // Initialize inventory/spell panels with TCP (only available after connect)
                 if (_tcp != null)
@@ -1574,6 +1916,11 @@ public partial class Main : Control
         // Reset char create button state
         if (_charCreateCreateBtn != null)
             _charCreateCreateBtn.Disabled = false;
+
+        // Reset account create state
+        if (_acctCreateButton != null)
+            _acctCreateButton.Disabled = false;
+        _acctSuccessTimer = 0;
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();

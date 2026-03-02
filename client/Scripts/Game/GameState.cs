@@ -4,7 +4,7 @@ using TierrasSagradasAO.Data;
 
 namespace TierrasSagradasAO.Game;
 
-public enum Screen { Login, CharSelect, CharCreate, Game }
+public enum Screen { Login, CharSelect, CharCreate, AccountCreate, Game }
 
 public class CharacterPreview
 {
@@ -38,6 +38,11 @@ public class GameState
     public string ServerNotice = "";
     public List<CharacterPreview> CharacterList = new();
     public int SelectedCharIndex = -1;
+
+    // Account creation state (AccountCreate screen)
+    public string CreateAccountName = "";
+    public string CreateAccountPassword = "";
+    public string CreateAccountPin = "";
 
     // Character creation state (CharCreate screen)
     public string CreateCharName = "";
