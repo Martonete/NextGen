@@ -1348,8 +1348,14 @@ public class PacketHandler
 
     private void HandleTogglePause()
     {
+        // VB6: BKW toggles a "pausa" flag that skips rendering → black screen.
+        // In VB6 both BKW packets (on/off) always arrived in the same TCP buffer
+        // because WarpUserChar sent them synchronously.
+        // In our async server, TCP can split them across frames, causing 1+ frames
+        // of black screen (flicker). Fix: BKW only blocks input, never rendering.
+        // The map change (CM) handler already resets scroll state, so the render
+        // is always consistent.
         _state.Paused = !_state.Paused;
-        GD.Print($"[GAME] Pause toggled: {_state.Paused}");
     }
 
     private void HandleBulkStats(string data)

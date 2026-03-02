@@ -195,7 +195,7 @@ public partial class WorldRenderer : Node2D
     public override void _Draw()
     {
         if (_state == null || _data == null || _animator == null) return;
-        if (_state.MapData == null || _state.Paused) return;
+        if (_state.MapData == null) return;
 
         // Clear pending draws from previous frame
         _pendingMapParticleDraws.Clear();
