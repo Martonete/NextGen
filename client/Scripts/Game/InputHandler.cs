@@ -159,15 +159,36 @@ public class InputHandler
                 _keyCooldown = KeyCooldownMs;
             }
         }
-        // Drop item from selected inventory slot (VB6: T key sends TI,<slot>,<qty>)
+        // Drop item from selected inventory slot (VB6: T key → TirarItem)
         else if (Input.IsKeyPressed(Key.T))
         {
-            int slot = _state.SelectedInvSlot;
-            if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+            if (_state.ItemSafety)
             {
-                _tcp.SendPacket($"TI,{slot + 1},{_state.Inventory[slot].Amount}"); // 1-based
-                _keyCooldown = KeyCooldownMs;
+                _state.ChatMessages.Enqueue(new ChatMessage
+                {
+                    Text = "Desactiva el seguro de items primero con la tecla '*'",
+                    Color = "FF0000"
+                });
             }
+            else
+            {
+                int slot = _state.SelectedInvSlot;
+                if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+                {
+                    if (_state.Inventory[slot].Amount == 1)
+                    {
+                        // Single item → drop immediately (VB6: TI{slot},{qty} no comma after opcode)
+                        _tcp.SendPacket($"TI{slot + 1},1");
+                    }
+                    else if (_state.Inventory[slot].Amount > 1)
+                    {
+                        // Multiple items → open quantity dialog (VB6: frmCantidad)
+                        _state.DropDialogSlot = slot;
+                        _state.DropDialogOpen = true;
+                    }
+                }
+            }
+            _keyCooldown = KeyCooldownMs;
         }
         // Toggle names display (VB6: N key — client-side only)
         else if (Input.IsKeyPressed(Key.N))
@@ -201,6 +222,18 @@ public class InputHandler
         else if (Input.IsKeyPressed(Key.F6))
         {
             _tcp.SendPacket(";/MEDITAR");
+            _keyCooldown = KeyCooldownMs;
+        }
+        // PvP + Clan safety toggle (VB6: S key sends /SEG — we use F7 since S is WASD)
+        else if (Input.IsKeyPressed(Key.F7))
+        {
+            _tcp.SendPacket("SEG");
+            _keyCooldown = KeyCooldownMs;
+        }
+        // Resurrection safety toggle (VB6: D key sends /SEGR — we use F8 since D is WASD)
+        else if (Input.IsKeyPressed(Key.F8))
+        {
+            _tcp.SendPacket(";/SEGR");
             _keyCooldown = KeyCooldownMs;
         }
     }

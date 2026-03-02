@@ -104,6 +104,14 @@ public partial class Main : Control
     // Death panel (frmMuertito)
     private DeathPanel? _deathPanel;
 
+    // Drop quantity dialog (VB6: frmCantidad)
+    private PanelContainer? _dropDialog;
+    private Label? _dropDialogLabel;
+    private LineEdit? _dropDialogInput;
+    private Button? _dropDialogOk;
+    private Button? _dropDialogAll;
+    private Button? _dropDialogCancel;
+
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
     // Track double-click to avoid sending LC on the release after a dbl-click
@@ -356,6 +364,9 @@ public partial class Main : Control
         _deathPanel.Position = new Vector2(135, 278);
         _deathPanel.Visible = false;
         _gameUI.AddChild(_deathPanel);
+
+        // Drop quantity dialog (VB6: frmCantidad)
+        CreateDropDialog();
 
         // Load Principal.jpg background
         LoadBackgroundImage(dataPath);
@@ -698,6 +709,110 @@ public partial class Main : Control
         });
     }
 
+    /// <summary>
+    /// Create the drop quantity dialog (VB6: frmCantidad).
+    /// Centered on the game viewport. Has a numeric input, OK/All/Cancel buttons.
+    /// </summary>
+    private void CreateDropDialog()
+    {
+        _dropDialog = new PanelContainer();
+        _dropDialog.Size = new Vector2(200, 110);
+        // Center on game viewport: x=(534-200)/2=167, y=124+(408-110)/2=273
+        _dropDialog.Position = new Vector2(167, 273);
+        _dropDialog.Visible = false;
+
+        var bg = new StyleBoxFlat();
+        bg.BgColor = new Color(0.12f, 0.12f, 0.18f, 0.95f);
+        bg.BorderColor = new Color(0.4f, 0.4f, 0.6f);
+        bg.SetBorderWidthAll(1);
+        bg.SetContentMarginAll(8);
+        _dropDialog.AddThemeStyleboxOverride("panel", bg);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 6);
+        _dropDialog.AddChild(vbox);
+
+        _dropDialogLabel = new Label();
+        _dropDialogLabel.Text = "Cantidad a tirar:";
+        _dropDialogLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _dropDialogLabel.AddThemeColorOverride("font_color", Colors.White);
+        _dropDialogLabel.AddThemeFontSizeOverride("font_size", 12);
+        vbox.AddChild(_dropDialogLabel);
+
+        _dropDialogInput = new LineEdit();
+        _dropDialogInput.Text = "1";
+        _dropDialogInput.Alignment = HorizontalAlignment.Center;
+        _dropDialogInput.FocusMode = Control.FocusModeEnum.Click;
+        _dropDialogInput.AddThemeFontSizeOverride("font_size", 12);
+        _dropDialogInput.TextSubmitted += (_) => OnDropDialogOk();
+        vbox.AddChild(_dropDialogInput);
+
+        var hbox = new HBoxContainer();
+        hbox.AddThemeConstantOverride("separation", 4);
+        hbox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(hbox);
+
+        _dropDialogOk = new Button();
+        _dropDialogOk.Text = "Tirar";
+        _dropDialogOk.CustomMinimumSize = new Vector2(55, 24);
+        _dropDialogOk.AddThemeFontSizeOverride("font_size", 11);
+        _dropDialogOk.Pressed += OnDropDialogOk;
+        hbox.AddChild(_dropDialogOk);
+
+        _dropDialogAll = new Button();
+        _dropDialogAll.Text = "Todo";
+        _dropDialogAll.CustomMinimumSize = new Vector2(55, 24);
+        _dropDialogAll.AddThemeFontSizeOverride("font_size", 11);
+        _dropDialogAll.Pressed += OnDropDialogAll;
+        hbox.AddChild(_dropDialogAll);
+
+        _dropDialogCancel = new Button();
+        _dropDialogCancel.Text = "X";
+        _dropDialogCancel.CustomMinimumSize = new Vector2(30, 24);
+        _dropDialogCancel.AddThemeFontSizeOverride("font_size", 11);
+        _dropDialogCancel.Pressed += OnDropDialogCancel;
+        hbox.AddChild(_dropDialogCancel);
+
+        _gameUI!.AddChild(_dropDialog);
+    }
+
+    private void OnDropDialogOk()
+    {
+        if (_dropDialogInput == null || _tcp == null) return;
+        int qty = 0;
+        int.TryParse(_dropDialogInput.Text, out qty);
+        if (qty > 0)
+        {
+            int slot = _state.DropDialogSlot;
+            _tcp.SendPacket($"TI{slot + 1},{qty}"); // 1-based
+        }
+        CloseDropDialog();
+    }
+
+    private void OnDropDialogAll()
+    {
+        if (_tcp == null) return;
+        int slot = _state.DropDialogSlot;
+        if (slot >= 0 && slot < 25)
+        {
+            int qty = _state.Inventory[slot].Amount;
+            _tcp.SendPacket($"TI{slot + 1},{qty}"); // 1-based
+        }
+        CloseDropDialog();
+    }
+
+    private void OnDropDialogCancel()
+    {
+        CloseDropDialog();
+    }
+
+    private void CloseDropDialog()
+    {
+        _state.DropDialogOpen = false;
+        if (_dropDialog != null)
+            _dropDialog.Visible = false;
+    }
+
     public override void _Process(double delta)
     {
         if (_tcp == null || _packetHandler == null) return;
@@ -818,6 +933,18 @@ public partial class Main : Control
             {
                 _deathPanel.Hide();
             }
+
+            // Drop quantity dialog (VB6: frmCantidad)
+            if (_state.DropDialogOpen && _dropDialog != null && !_dropDialog.Visible)
+            {
+                int slot = _state.DropDialogSlot;
+                string itemName = (slot >= 0 && slot < 25) ? _state.Inventory[slot].Name : "item";
+                _dropDialogLabel!.Text = $"Tirar: {itemName}";
+                _dropDialogInput!.Text = "1";
+                _dropDialog.Visible = true;
+                _dropDialogInput.GrabFocus();
+                _dropDialogInput.SelectAll();
+            }
         }
 
         // Movement update AFTER input (VB6: ShowNextFrame after CheckKeys)
@@ -910,6 +1037,7 @@ public partial class Main : Control
         _lastBanqueando = false;
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();
+        CloseDropDialog();
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
@@ -965,6 +1093,9 @@ public partial class Main : Control
         _state.Resting = false;
         _state.Meditating = false;
         _state.SafeMode = false;
+        _state.ItemSafety = true; // Re-enable on reconnect (VB6: ISItem starts true)
+        _state.SeguroResu = false;
+        _state.DropDialogOpen = false;
         _state.ShowTravelPanel = false;
         _state.UserMoving = false;
         _state.AddToUserPosX = 0;
@@ -1129,15 +1260,24 @@ public partial class Main : Control
         // Chat input handling
         if (@event is InputEventKey key && key.Pressed && !key.Echo && _chatInput != null)
         {
-            // Escape: close chat input without sending
-            if (key.Keycode == Key.Escape && _state.ChatActive)
+            // Escape: close drop dialog or chat input
+            if (key.Keycode == Key.Escape)
             {
-                _chatInput.Text = "";
-                _chatInput.Visible = false;
-                _chatInput.ReleaseFocus();
-                _state.ChatActive = false;
-                GetViewport().SetInputAsHandled();
-                return;
+                if (_state.DropDialogOpen)
+                {
+                    CloseDropDialog();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+                if (_state.ChatActive)
+                {
+                    _chatInput.Text = "";
+                    _chatInput.Visible = false;
+                    _chatInput.ReleaseFocus();
+                    _state.ChatActive = false;
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
             }
 
             // Enter: open chat input, or submit if already open (fallback for TextSubmitted)
@@ -1160,6 +1300,21 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
+            }
+
+            // Numpad *: Toggle item safety (VB6: ISItem, BindKeys(21) = keycode 106)
+            if (!_state.ChatActive && key.Keycode == Key.KpMultiply)
+            {
+                _state.ItemSafety = !_state.ItemSafety;
+                _state.ChatMessages.Enqueue(new ChatMessage
+                {
+                    Text = _state.ItemSafety
+                        ? ">>SEGURO DE ITEMS ACTIVADO<<"
+                        : ">>SEGURO DE ITEMS DESACTIVADO<<",
+                    Color = _state.ItemSafety ? "00FF00" : "FF0000"
+                });
+                GetViewport().SetInputAsHandled();
+                return;
             }
 
             // Numpad 0-8: chat mode switching (VB6: HablaNumerico)

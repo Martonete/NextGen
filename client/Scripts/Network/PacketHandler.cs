@@ -94,10 +94,15 @@ public class PacketHandler
         {
             HandleLogged();
         }
+        else if (packet.StartsWith("SEGOFR"))
+        {
+            _state.SeguroResu = false;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO DE RESURRECCION DESACTIVADO<<", Color = "FF0000" });
+        }
         else if (packet.StartsWith("SEGOFF"))
         {
             _state.SafeMode = false;
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = "Seguro desactivado.", Color = "FF0000" });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO DESACTIVADO<<", Color = "FF0000" });
         }
         else if (packet.StartsWith("FLECHI"))
         {
@@ -134,10 +139,15 @@ public class PacketHandler
         {
             _state.UserStopped = packet.Length > 5 && packet[5] == '1';
         }
+        else if (packet.StartsWith("SEGONR"))
+        {
+            _state.SeguroResu = true;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO DE RESURRECCION ACTIVADO<<", Color = "00FF00" });
+        }
         else if (packet.StartsWith("SEGON"))
         {
             _state.SafeMode = true;
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = "Seguro activado.", Color = "00FF00" });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = ">>SEGURO ACTIVADO<<", Color = "00FF00" });
         }
         else if (packet.StartsWith("NOVER"))
         {

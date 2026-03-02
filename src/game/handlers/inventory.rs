@@ -2051,8 +2051,10 @@ pub(super) async fn handle_safe_toggle(state: &mut GameState, conn_id: Connectio
         _ => return,
     };
 
+    // VB6: Seguro AND SeguroClan toggled together
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.safe_toggle = !safe;
+        user.seguro_cvc = !safe;
     }
 
     if safe {

@@ -58,7 +58,12 @@ public class GameState
     public bool UserNavigating;
     public bool UserStopped;
     public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
+    public bool ItemSafety = true; // VB6: ISItem — client-side drop prevention (toggled with numpad *)
+    public bool SeguroResu;     // VB6: SeguroResu — resurrection safety
     public bool Resting;        // VB6: Descansar toggle (DOK)
+    // Drop quantity dialog state
+    public bool DropDialogOpen; // True when quantity dialog is visible
+    public int DropDialogSlot;  // Inventory slot pending drop (0-based)
     public bool Meditating;     // VB6: Meditando
     public bool Dead;           // VB6: UserMuerto
     public bool Trading;        // VB6: Comerciando (player-to-player trade)

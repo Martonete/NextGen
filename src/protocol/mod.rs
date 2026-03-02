@@ -200,6 +200,8 @@ pub mod server_opcodes {
     // Combat packets
     pub const SAFE_ON: &str = "SEGON";
     pub const SAFE_OFF: &str = "SEGOFF";
+    pub const SAFE_RESU_ON: &str = "SEGONR";
+    pub const SAFE_RESU_OFF: &str = "SEGOFR";
     pub const USER_SWING: &str = "U1";  // User attack missed
     pub const USER_HIT: &str = "U2";    // User dealt damage
     pub const NPC_SWING: &str = "N1";   // NPC attack missed

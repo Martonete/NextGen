@@ -1940,10 +1940,11 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/MEDITAR" {
         handle_slash_meditar(state, conn_id).await;
     } else if cmd_upper == "/SEG" {
-        // Toggle PvP safety (same as SEG opcode, but via slash command)
+        // Toggle PvP + clan safety (VB6: Seguro AND SeguroClan toggled together)
         let is_safe = state.users.get(&conn_id).map(|u| u.safe_toggle).unwrap_or(true);
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.safe_toggle = !is_safe;
+            user.seguro_cvc = !is_safe;
         }
         if !is_safe {
             state.send_to(conn_id, server_opcodes::SAFE_ON).await;
@@ -1951,17 +1952,15 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             state.send_to(conn_id, server_opcodes::SAFE_OFF).await;
         }
     } else if cmd_upper == "/SEGR" {
-        // Toggle resurrection safety — prevents others from rezzing you
+        // Toggle resurrection safety — prevents others from rezzing you (VB6: /SEGR)
         let is_safe = state.users.get(&conn_id).map(|u| u.seguro_resu).unwrap_or(false);
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.seguro_resu = !is_safe;
         }
         if !is_safe {
-            let msg = format!("{}Seguro de resurreccion activado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, server_opcodes::SAFE_RESU_ON).await;
         } else {
-            let msg = format!("{}Seguro de resurreccion desactivado{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_to(conn_id, server_opcodes::SAFE_RESU_OFF).await;
         }
     } else if cmd_upper.starts_with("/DESC ") {
         let desc = cmd[6..].trim();
