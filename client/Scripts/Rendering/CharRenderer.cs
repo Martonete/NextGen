@@ -200,62 +200,50 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, int heading,
         GameData data, GrhAnimator animator)
     {
-        // VB6 Draw_Grh_Sombra: draws the body walk GRH squashed as a dark silhouette.
-        // Scale: width/1.4, height/1.6, offset X-6 Y+8, dark alpha blend.
+        // VB6 Draw_Grh_Sombra: dark ellipse at character's feet.
+        // We draw a simple oval shadow — the VB6 squashed body projection
+        // doesn't translate well to 2D without D3D8 vertex transforms.
         if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
-        var body = data.Bodies[ch.Body];
-        int bodyGrh = body.Walk[heading];
-        if (bodyGrh <= 0) return;
 
-        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        var resolved = data.ResolveGrh(bodyGrh, frame);
-        if (resolved == null || resolved.FileNum <= 0) return;
+        // Shadow dimensions proportional to body size
+        float shadowW = 28f;
+        float shadowH = 10f;
+        // Center at tile center (pos.X + 16), at character feet (pos.Y + 28)
+        float shadowX = pos.X + 16f - shadowW / 2f;
+        float shadowY = pos.Y + 28f - shadowH / 2f;
 
-        var texture = data.Textures?.GetTexture(resolved.FileNum);
-        if (texture == null) return;
+        // Draw filled ellipse via anti-aliased arc
+        Vector2 center = new Vector2(shadowX + shadowW / 2f, shadowY + shadowH / 2f);
+        Vector2 scale = new Vector2(shadowW / 2f, shadowH / 2f);
+        Color shadowColor = new Color(0, 0, 0, 0.3f);
 
-        int texW = texture.GetWidth();
-        int texH = texture.GetHeight();
-        int sx = resolved.SX, sy = resolved.SY;
-        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-        if (texW > 0) sx = sx % texW;
-        if (texH > 0) sy = sy % texH;
-        if (sx + pw > texW) pw = texW - sx;
-        if (sy + ph > texH) ph = texH - sy;
-        if (pw <= 0 || ph <= 0) return;
-
-        // Center using same logic as DrawGrh with center=true
-        float drawX = pos.X;
-        float drawY = pos.Y;
-        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
-
-        // VB6: shadow is squashed (height*0.35) and placed at character feet
-        float shadowW = pw;
-        float shadowH = ph * 0.35f;
-        float shadowX = drawX - 6f;
-        float shadowY = drawY + ph - shadowH + 8f;
-
-        var srcRect = new Rect2(sx, sy, pw, ph);
-        var destRect = new Rect2((float)Math.Round(shadowX), (float)Math.Round(shadowY),
-                                  shadowW, shadowH);
-        canvas.DrawTextureRectRegion(texture, destRect, srcRect, new Color(0, 0, 0, 0.25f));
+        // Approximate ellipse with 16-point polygon
+        int segments = 16;
+        var points = new Vector2[segments];
+        for (int i = 0; i < segments; i++)
+        {
+            float angle = i * MathF.Tau / segments;
+            points[i] = center + new Vector2(MathF.Cos(angle) * scale.X, MathF.Sin(angle) * scale.Y);
+        }
+        var colors = new Color[segments];
+        Array.Fill(colors, shadowColor);
+        canvas.DrawPolygon(points, colors);
     }
 
     /// <summary>
     /// VB6: water reflection — body and head drawn flipped vertically below character
     /// when there's water at (tileX, tileY+1). Alpha ~100/255.
+    /// Mirror axis = pos.Y + TileSize (waterline at character feet).
+    /// Each component's normal draw-Y is mirrored: reflectedTop = 2*mirrorY - normalBottom.
     /// </summary>
     private static void DrawReflection(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
         Color reflColor = new Color(1, 1, 1, 100f / 255f);
-        float reflY = pos.Y + TileSize; // one tile below character position
+        float mirrorY = pos.Y + TileSize; // waterline at character feet
 
-        // Body reflection (flipped vertically)
+        // Body reflection (flipped vertically, below waterline)
         if (ch.Body > 0 && ch.Body < data.Bodies.Length)
         {
             var body = data.Bodies[ch.Body];
@@ -278,14 +266,22 @@ public static class CharRenderer
                         if (sy + ph > texH) ph = texH - sy;
                         if (pw > 0 && ph > 0)
                         {
+                            // Normal body draw position (same centering as DrawGrh)
                             float drawX = pos.X;
+                            float normalY = pos.Y;
                             if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
                                 drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+                            if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+                                normalY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
+                            // Mirror: reflected top = 2*mirrorY - (normalY + ph)
+                            // But we want the texture flipped, so use negative height.
+                            // Dest top = mirrorY + (mirrorY - normalY - ph)
+                            float reflTop = 2f * mirrorY - normalY - ph;
+                            // Rect2(x, y+h, w, -h) draws from y to y+h, flipped
                             var srcRect = new Rect2(sx, sy, pw, ph);
-                            // Negative height flips vertically
-                            var destRect = new Rect2((float)Math.Round(drawX),
-                                                      (float)Math.Round(reflY), pw, -ph);
+                            var destRect = new Rect2(MathF.Round(drawX),
+                                                      MathF.Round(reflTop + ph), pw, -ph);
                             canvas.DrawTextureRectRegion(texture, destRect, srcRect, reflColor);
                         }
                     }
@@ -293,7 +289,7 @@ public static class CharRenderer
             }
         }
 
-        // Head reflection (flipped vertically)
+        // Head reflection (flipped vertically, below waterline)
         if (ch.Head > 0 && ch.Head < data.Heads.Length)
         {
             var head = data.Heads[ch.Head];
@@ -317,12 +313,13 @@ public static class CharRenderer
                         {
                             float xAdj = heading == 1 ? -1f : 0f;
                             float drawX = pos.X + headOffset.X + xAdj;
-                            // Head reflection: invert the head offset Y relative to reflection base
-                            float headReflY = reflY - headOffset.Y - 1;
-
+                            // Normal head Y (same as DrawHead)
+                            float normalHeadY = pos.Y + headOffset.Y + 1;
+                            // Mirror: reflected top = 2*mirrorY - (normalHeadY + ph)
+                            float reflTop = 2f * mirrorY - normalHeadY - ph;
                             var srcRect = new Rect2(sx, sy, pw, ph);
-                            var destRect = new Rect2((float)Math.Round(drawX),
-                                                      (float)Math.Round(headReflY), pw, -ph);
+                            var destRect = new Rect2(MathF.Round(drawX),
+                                                      MathF.Round(reflTop + ph), pw, -ph);
                             canvas.DrawTextureRectRegion(texture, destRect, srcRect, reflColor);
                         }
                     }
