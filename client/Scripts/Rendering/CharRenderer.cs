@@ -311,96 +311,115 @@ public static class CharRenderer
     /// Mirror axis = pos.Y + TileSize (waterline at character feet).
     /// Each component's normal draw-Y is mirrored: reflectedTop = 2*mirrorY - normalBottom.
     /// </summary>
+    /// <summary>
+    /// VB6 water reflection: draws body, head, helmet, weapon, shield inverted (Invert_y=True).
+    /// VB6 offsets (relative to PixelOffsetX/Y):
+    ///   Body:   (X, Y - HeadOffset.Y) alpha=100
+    ///   Head:   (X - HeadOffset.X, Y - HeadOffset.Y + 11) alpha=100 (or +24 if dead)
+    ///   Casco:  (X - HeadOffset.X + 1, Y - HeadOffset.Y + 14) alpha=150
+    ///   Arma:   (X, Y + 40) alpha=100
+    ///   Escudo: (X, Y + 40) alpha=100
+    /// All drawn with Invert_y=True and center=1.
+    /// </summary>
     private static void DrawReflection(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        Color reflColor = new Color(1, 1, 1, 100f / 255f);
-        float mirrorY = pos.Y + TileSize; // waterline at character feet
+        float hoX = headOffset.X, hoY = headOffset.Y;
 
-        // Body reflection (flipped vertically, below waterline)
+        // Body reflection: (X, Y - HeadOffset.Y)
         if (ch.Body > 0 && ch.Body < data.Bodies.Length)
         {
-            var body = data.Bodies[ch.Body];
-            int bodyGrh = body.Walk[heading];
+            int bodyGrh = data.Bodies[ch.Body].Walk[heading];
             if (bodyGrh > 0)
             {
                 int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-                var resolved = data.ResolveGrh(bodyGrh, frame);
-                if (resolved != null && resolved.FileNum > 0)
-                {
-                    var texture = data.Textures?.GetTexture(resolved.FileNum);
-                    if (texture != null)
-                    {
-                        int texW = texture.GetWidth(), texH = texture.GetHeight();
-                        int sx = resolved.SX, sy = resolved.SY;
-                        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                        if (texW > 0) sx = sx % texW;
-                        if (texH > 0) sy = sy % texH;
-                        if (sx + pw > texW) pw = texW - sx;
-                        if (sy + ph > texH) ph = texH - sy;
-                        if (pw > 0 && ph > 0)
-                        {
-                            // Normal body draw position (same centering as DrawGrh)
-                            float drawX = pos.X;
-                            float normalY = pos.Y;
-                            if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-                                drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-                            if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-                                normalY -= (int)(resolved.TileHeight * TileSize) - TileSize;
-
-                            // Mirror: reflected top = 2*mirrorY - (normalY + ph)
-                            // But we want the texture flipped, so use negative height.
-                            // Dest top = mirrorY + (mirrorY - normalY - ph)
-                            float reflTop = 2f * mirrorY - normalY - ph;
-                            // Rect2(x, y+h, w, -h) draws from y to y+h, flipped
-                            var srcRect = new Rect2(sx, sy, pw, ph);
-                            var destRect = new Rect2(MathF.Round(drawX),
-                                                      MathF.Round(reflTop + ph), pw, -ph);
-                            canvas.DrawTextureRectRegion(texture, destRect, srcRect, reflColor);
-                        }
-                    }
-                }
+                DrawGrhFlippedY(canvas, bodyGrh, frame,
+                    pos.X, pos.Y - hoY,
+                    100f / 255f, data);
             }
         }
 
-        // Head reflection (flipped vertically, below waterline)
+        // Head reflection: (X - HeadOffset.X, Y - HeadOffset.Y + 11)
         if (ch.Head > 0 && ch.Head < data.Heads.Length)
         {
-            var head = data.Heads[ch.Head];
-            int headGrh = head.Head[heading];
+            int headGrh = data.Heads[ch.Head].Head[heading];
             if (headGrh > 0)
             {
-                var resolved = data.ResolveGrh(headGrh, 0);
-                if (resolved != null && resolved.FileNum > 0)
-                {
-                    var texture = data.Textures?.GetTexture(resolved.FileNum);
-                    if (texture != null)
-                    {
-                        int texW = texture.GetWidth(), texH = texture.GetHeight();
-                        int sx = resolved.SX, sy = resolved.SY;
-                        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                        if (texW > 0) sx = sx % texW;
-                        if (texH > 0) sy = sy % texH;
-                        if (sx + pw > texW) pw = texW - sx;
-                        if (sy + ph > texH) ph = texH - sy;
-                        if (pw > 0 && ph > 0)
-                        {
-                            float xAdj = heading == 1 ? -1f : 0f;
-                            float drawX = pos.X + headOffset.X + xAdj;
-                            // Normal head Y (same as DrawHead)
-                            float normalHeadY = pos.Y + headOffset.Y + 1;
-                            // Mirror: reflected top = 2*mirrorY - (normalHeadY + ph)
-                            float reflTop = 2f * mirrorY - normalHeadY - ph;
-                            var srcRect = new Rect2(sx, sy, pw, ph);
-                            var destRect = new Rect2(MathF.Round(drawX),
-                                                      MathF.Round(reflTop + ph), pw, -ph);
-                            canvas.DrawTextureRectRegion(texture, destRect, srcRect, reflColor);
-                        }
-                    }
-                }
+                float yOff = ch.Dead ? 24f : 11f;
+                DrawGrhFlippedY(canvas, headGrh, 0,
+                    pos.X - hoX, pos.Y - hoY + yOff,
+                    100f / 255f, data);
             }
         }
+
+        // Helmet reflection: (X - HeadOffset.X + 1, Y - HeadOffset.Y + 14)
+        if (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length)
+        {
+            int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
+            if (hGrh > 0)
+                DrawGrhFlippedY(canvas, hGrh, 0,
+                    pos.X - hoX + 1, pos.Y - hoY + 14,
+                    150f / 255f, data);
+        }
+
+        // Weapon reflection: (X, Y + 40)
+        if (ch.WeaponAnim > 0 && ch.WeaponAnim < data.Weapons.Length)
+        {
+            int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
+            if (weapGrh > 0)
+                DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
+                    pos.X, pos.Y + 40,
+                    100f / 255f, data);
+        }
+
+        // Shield reflection: (X, Y + 40)
+        if (ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length)
+        {
+            int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
+            if (shldGrh > 0)
+                DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
+                    pos.X, pos.Y + 40,
+                    100f / 255f, data);
+        }
+    }
+
+    /// <summary>
+    /// Draw a GRH at (x, y) with center=true and Y-flipped (Invert_y).
+    /// Used for water reflections. Flipping is done via negative height in destRect.
+    /// </summary>
+    private static void DrawGrhFlippedY(
+        Node2D canvas, int grhIndex, int frame,
+        float x, float y, float alpha, GameData data)
+    {
+        var resolved = data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth(), texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+        if (texW > 0) sx %= texW;
+        if (texH > 0) sy %= texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        // Center=true (same as DrawGrh)
+        float drawX = x;
+        float drawY = y;
+        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+
+        var srcRect = new Rect2(sx, sy, pw, ph);
+        // Negative height = Y-flipped. Draw from drawY+ph upward (visually flipped).
+        var destRect = new Rect2(drawX, drawY + ph, pw, -ph);
+        Color color = new(1, 1, 1, alpha);
+        canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
     }
 
     private static void DrawBody(
