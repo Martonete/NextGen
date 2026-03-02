@@ -1202,7 +1202,14 @@ public partial class Main : Control
     private void OnWindowModeChosen(bool windowed)
     {
         if (!windowed)
+        {
+            // Stretch 800x600 content to fill entire screen (no black bars).
+            // VB6 changed monitor resolution to 800x600; on modern widescreen
+            // monitors this is equivalent — slight horizontal stretch, same as
+            // any old 4:3 game on a 16:9 display.
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Ignore;
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        }
 
         if (_windowModeDialog != null)
             _windowModeDialog.Visible = false;
