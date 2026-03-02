@@ -8,6 +8,9 @@ description = "Tierras Sagradas AO - Game Server (Rust port)"
 name = "ao-server"
 path = "server/source/main.rs"
 
+[features]
+_db_integration_tests = []
+
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
