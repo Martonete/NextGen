@@ -720,8 +720,12 @@ async fn connect_user(
         user.weapon_anim = 2;
         user.shield_anim = 2;
         user.casco_anim = 2;
-        user.privileges = char_data.privileges;
-        user.saved_privileges = char_data.privileges;
+        // VB6: TCP.bas lines 1565-1598 — check server.ini role sections in priority order.
+        // If the character name is listed in any role section, override DB privileges.
+        let role_priv = state.role_overrides.get(&char_data.name.to_lowercase()).copied();
+        let effective_priv = role_priv.unwrap_or(char_data.privileges);
+        user.privileges = effective_priv;
+        user.saved_privileges = effective_priv;
         user.gender = char_data.gender;
         user.poisoned = char_data.poisoned;
         user.paralyzed = char_data.paralyzed;

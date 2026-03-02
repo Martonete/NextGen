@@ -7,7 +7,67 @@ mod ini;
 
 pub use ini::{IniFile, get_var, write_var};
 
+use std::collections::HashMap;
 use std::path::Path;
+
+/// Role overrides from server.ini — maps lowercase character names to privilege levels.
+/// VB6: EsAdministrador, EsDios, EsSemiDios, EsConsejero, etc. in FileIO.bas
+pub type RoleMap = HashMap<String, i32>;
+
+/// Load role assignments from server.ini sections.
+/// Each section ([Administradores], [Dioses], etc.) lists character names.
+/// Returns a map of lowercase_name → privilege_level.
+pub fn load_roles(base_path: &Path) -> RoleMap {
+    let ini_path = base_path.join("server.ini");
+    let ini = match IniFile::load(&ini_path) {
+        Ok(ini) => ini,
+        Err(_) => return HashMap::new(),
+    };
+
+    // VB6 section → key prefix → privilege level (priority order: highest first)
+    let role_sections: &[(&str, &str, i32)] = &[
+        ("Administradores",    "administrador",    super::game::types::privilege_level::ADMINISTRADOR),
+        ("SubAdministradores", "subadministrador",  super::game::types::privilege_level::SUB_ADMINISTRADOR),
+        ("Desarrolladores",    "desarrollador",     super::game::types::privilege_level::DEVELOPER),
+        ("Directores",         "director",          super::game::types::privilege_level::DIRECTOR),
+        ("GranDioses",         "grandios",          super::game::types::privilege_level::GRAN_DIOS),
+        ("Dioses",             "dios",              super::game::types::privilege_level::DIOS),
+        ("Events",             "event",             super::game::types::privilege_level::EVENT_MASTER),
+        ("SemiDioses",         "semidios",          super::game::types::privilege_level::SEMIDIOS),
+        ("Consejeros",         "consejero",         super::game::types::privilege_level::CONSEJERO),
+    ];
+
+    let mut roles = HashMap::new();
+
+    for &(section, _prefix, priv_level) in role_sections {
+        // Read the count from [INIT] section
+        let count: usize = ini.get("INIT", section)
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(0);
+
+        if count == 0 {
+            continue;
+        }
+
+        // Read all values from the section — iterate keys and extract non-empty names
+        let keys = ini.keys(section);
+        for key in &keys {
+            if let Some(name) = ini.get(section, key) {
+                let name = name.trim().to_string();
+                if !name.is_empty() {
+                    // VB6 strips leading * and + from names
+                    let clean = name.trim_start_matches('*').trim_start_matches('+').to_lowercase();
+                    if !clean.is_empty() {
+                        // First match wins (highest priority section is processed first)
+                        roles.entry(clean).or_insert(priv_level);
+                    }
+                }
+            }
+        }
+    }
+
+    roles
+}
 
 /// Server configuration loaded from server.ini
 #[derive(Debug, Clone)]

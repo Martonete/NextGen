@@ -2544,8 +2544,12 @@ pub(super) async fn handle_reload_sini(state: &mut GameState, conn_id: Connectio
             let old_port = state.config.port;
             state.config = new_config;
             state.config.port = old_port;
-            state.send_to(conn_id, &format!("{}server.ini recargado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-            info!("[GM] {} reloaded server.ini", name);
+
+            // Reload role overrides from server.ini (VB6: /RELOADSINI also reloads role lists)
+            state.role_overrides = crate::config::load_roles(&base);
+
+            state.send_to(conn_id, &format!("{}server.ini recargado ({} roles).{}", server_opcodes::CONSOLE_MSG, state.role_overrides.len(), font_types::INFO)).await;
+            info!("[GM] {} reloaded server.ini ({} role overrides)", name, state.role_overrides.len());
         }
         Err(e) => {
             state.send_to(conn_id, &format!("{}Error recargando server.ini: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;

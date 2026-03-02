@@ -839,6 +839,10 @@ pub struct GameState {
 
     // Countdown system (VB6: /CONT)
     pub countdown_seconds: i32,           // 0 = inactive
+
+    // Role overrides from server.ini (VB6: EsAdministrador, EsDios, etc.)
+    // Maps lowercase character name → privilege level. Loaded at startup, reloaded with /RELOADSINI.
+    pub role_overrides: crate::config::RoleMap,
 }
 
 /// SOS message (help request from player)
@@ -880,6 +884,9 @@ impl GameState {
 
         // Load anti-cheat intervals
         let intervals = load_intervals(&base_path);
+
+        // Load role overrides from server.ini
+        let role_overrides = crate::config::load_roles(&base_path);
 
         // Count loaded maps to pre-allocate world grids
         let map_count = game_data.maps.len();
@@ -1003,6 +1010,7 @@ impl GameState {
             auction: None,
             gran_poder_holder: 0,
             countdown_seconds: 0,
+            role_overrides,
         }
     }
 
