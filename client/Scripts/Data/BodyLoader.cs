@@ -45,7 +45,7 @@ public static class BodyLoader
 
     /// <summary>
     /// Load Cabezas.ind — head GRH per direction.
-    /// Per entry: 4×2 bytes (Head GRH per direction) = 8 bytes
+    /// Per entry: 16 bytes (4×Int16 directional GRHs + 4×Int16 extra data to skip)
     /// </summary>
     public static HeadData[] LoadHeads(string path)
     {
@@ -67,6 +67,7 @@ public static class BodyLoader
             heads[i].Head[2] = reader.ReadInt16();
             heads[i].Head[3] = reader.ReadInt16();
             heads[i].Head[4] = reader.ReadInt16();
+            reader.ReadBytes(8); // Skip extra 8 bytes (16-byte entry, only first 4 Int16 used)
         }
 
         GD.Print($"[HEAD] Loaded {count} heads");
@@ -74,7 +75,8 @@ public static class BodyLoader
     }
 
     /// <summary>
-    /// Load Cascos.ind — helmet GRH per direction. Same format as heads.
+    /// Load Cascos.ind — helmet GRH per direction.
+    /// Per entry: 16 bytes (4×Int16 directional GRHs + 4×Int16 extra data to skip)
     /// </summary>
     public static HeadData[] LoadCascos(string path)
     {
@@ -96,6 +98,7 @@ public static class BodyLoader
             cascos[i].Head[2] = reader.ReadInt16();
             cascos[i].Head[3] = reader.ReadInt16();
             cascos[i].Head[4] = reader.ReadInt16();
+            reader.ReadBytes(8); // Skip extra 8 bytes (16-byte entry, only first 4 Int16 used)
         }
 
         GD.Print($"[CASCO] Loaded {count} helmets");
