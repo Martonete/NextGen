@@ -245,7 +245,11 @@ public partial class KeyBindPanel : PanelContainer
         SetStatus($"Presiona la nueva tecla para: {KeyBindings.ActionLabels[actionIndex]}", false);
     }
 
-    public override void _UnhandledKeyInput(InputEvent @event)
+    /// <summary>
+    /// Capture key input BEFORE GUI processing (_Input runs before _GuiInput).
+    /// This prevents Space/Enter from also triggering the focused button.
+    /// </summary>
+    public override void _Input(InputEvent @event)
     {
         if (_rebindingIndex < 0 || _tempBindings == null) return;
         if (@event is not InputEventKey keyEvent || !keyEvent.Pressed) return;
@@ -288,9 +292,10 @@ public partial class KeyBindPanel : PanelContainer
         string name = KeyBindings.KeyToName(newKey);
         _tempBindings.Binds[_rebindingIndex] = new KeyBind(newKey, name);
 
-        // Update button
+        // Update button — release focus to prevent the key from re-triggering it
         _keyButtons[_rebindingIndex].Text = name;
         _keyButtons[_rebindingIndex].Modulate = Colors.White;
+        _keyButtons[_rebindingIndex].ReleaseFocus();
 
         SetStatus($"'{name}' asignada a: {KeyBindings.ActionLabels[_rebindingIndex]}", false);
         _rebindingIndex = -1;
