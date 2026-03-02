@@ -452,6 +452,7 @@ public partial class Main : Control
         // Wire signals
         _connectButton.Pressed += OnConnectPressed;
         _enterButton.Pressed += OnEnterPressed;
+        _charList.ItemActivated += OnCharListDoubleClick;
         _chatInput.TextSubmitted += OnChatSubmitted;
 
         // Show login screen
@@ -702,6 +703,14 @@ public partial class Main : Control
         {
             _noticeLabel!.Text = "Seleccione un personaje";
         }
+    }
+
+    /// <summary>
+    /// Double-click on character list → enter game (same as clicking Enter button).
+    /// </summary>
+    private void OnCharListDoubleClick(long index)
+    {
+        OnEnterPressed();
     }
 
     /// <summary>
@@ -2543,7 +2552,8 @@ public partial class Main : Control
         int bpp = BitConverter.ToInt16(data, 28);
         int compression = BitConverter.ToInt32(data, 30);
 
-        if (compression != 0 || (bpp != 24 && bpp != 32)) return null;
+        // compression: 0=BI_RGB, 3=BI_BITFIELDS (common for 32bpp BMPs like maps 92+)
+        if ((compression != 0 && compression != 3) || (bpp != 24 && bpp != 32)) return null;
         if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return null;
 
         bool bottomUp = height > 0;
@@ -2560,7 +2570,7 @@ public partial class Main : Control
             {
                 int si = srcOffset + x * bytesPerPixel;
                 int di = (y * width + x) * 3;
-                if (si + 2 >= data.Length) continue;
+                if (si + bytesPerPixel - 1 >= data.Length) continue;
                 rgb[di] = data[si + 2];     // R (BMP stores BGR)
                 rgb[di + 1] = data[si + 1]; // G
                 rgb[di + 2] = data[si];     // B
