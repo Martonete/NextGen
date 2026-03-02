@@ -24,6 +24,7 @@ public partial class Main : Control
     private GrhAnimator _animator = new();
     private ParticleSystem _particleSystem = new();
     private LightSystem _lightSystem = new();
+    private SoundManager? _soundManager;
 
     private bool _connecting;
     private int _packetCount;
@@ -187,6 +188,13 @@ public partial class Main : Control
         // Setup packet handler
         _packetHandler = new PacketHandler(_state);
         _packetHandler.OnMapLoad = LoadCurrentMap;
+
+        // Setup sound manager
+        _soundManager = new SoundManager();
+        AddChild(_soundManager);
+        _soundManager.Init(dataPath);
+        _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
+        _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
 
         // Grab Login UI nodes
         _loginPanel = GetNode<PanelContainer>("UILayer/LoginPanel");

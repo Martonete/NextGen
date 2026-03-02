@@ -19,6 +19,12 @@ public class PacketHandler
     /// are processed, so blocked state and ground objects apply to the correct MapData.
     public Action? OnMapLoad;
 
+    /// Callback to play a sound effect (WAV/MP3).
+    public Action<int>? OnPlaySound;
+
+    /// Callback to play music (MIDI/MP3).
+    public Action<int>? OnPlayMusic;
+
     // Meditation FX IDs — cleared when character moves
     private static readonly HashSet<int> MeditationFxIds = new()
     {
@@ -1476,6 +1482,7 @@ public class PacketHandler
     private void HandleMusic(string data)
     {
         _state.MusicId = ParseInt(data);
+        OnPlayMusic?.Invoke(_state.MusicId);
     }
 
     private void HandleOnlineCount(string data)
@@ -2019,9 +2026,7 @@ public class PacketHandler
         int soundId = ParseInt(data);
         if (soundId > 0)
         {
-            // TODO: integrate with Godot AudioStreamPlayer when sound system is ready
-            // For now, log it so we know sounds are being received
-            GD.Print($"[SND] Play sound: {soundId}");
+            OnPlaySound?.Invoke(soundId);
         }
     }
 
