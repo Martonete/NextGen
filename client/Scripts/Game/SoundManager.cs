@@ -10,8 +10,10 @@ namespace TierrasSagradasAO.Game;
 public partial class SoundManager : Node
 {
     private const int MaxConcurrentSounds = 8;
-    private const float DefaultSfxVolume = 0.0f;   // dB (0 = full volume)
-    private const float DefaultMusicVolume = -6.0f; // dB (slightly quieter)
+    private const float SfxHeadroomDb = -8.0f;     // headroom so stacked SFX don't clip
+    private const float MusicHeadroomDb = -6.0f;    // music headroom
+    private const float DefaultSfxVolume = SfxHeadroomDb;
+    private const float DefaultMusicVolume = MusicHeadroomDb;
 
     private readonly List<AudioStreamPlayer> _sfxPlayers = new();
     private AudioStreamPlayer? _musicPlayer;
@@ -40,20 +42,23 @@ public partial class SoundManager : Node
     }
 
     /// <summary>
-    /// Set music volume from 0-100 percentage. Maps to dB scale.
+    /// Set music volume from 0-100 percentage. Maps to dB scale with headroom.
+    /// 100% = MusicHeadroomDb (not 0 dB) to prevent clipping.
     /// </summary>
     public void SetMusicVolume(int percent)
     {
-        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f);
+        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f) + MusicHeadroomDb;
         if (_musicPlayer != null) _musicPlayer.VolumeDb = db;
     }
 
     /// <summary>
-    /// Set SFX volume from 0-100 percentage. Maps to dB scale.
+    /// Set SFX volume from 0-100 percentage. Maps to dB scale with headroom.
+    /// 100% = SfxHeadroomDb (not 0 dB) — AO WAVs are already normalized near 0 dBFS
+    /// and multiple concurrent sounds stack on the Master bus.
     /// </summary>
     public void SetSfxVolume(int percent)
     {
-        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f);
+        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f) + SfxHeadroomDb;
         foreach (var p in _sfxPlayers) p.VolumeDb = db;
     }
 
