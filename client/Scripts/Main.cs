@@ -1326,6 +1326,7 @@ public partial class Main : Control
         _accountCreatePanel.Size = new Vector2(400, 420);
         _accountCreatePanel.Position = new Vector2(200, 90);
         _accountCreatePanel.Visible = false;
+        _accountCreatePanel.ZIndex = 1;
 
         var bg = new StyleBoxFlat();
         bg.BgColor = new Color(0.08f, 0.08f, 0.14f, 0.95f);
@@ -2419,6 +2420,8 @@ public partial class Main : Control
         if (_acctCreateButton != null)
             _acctCreateButton.Disabled = false;
         _acctSuccessTimer = 0;
+        if (_accountCreatePanel != null)
+            _accountCreatePanel.Visible = false;
 
         // Reset spell/inventory tab to default (inventory)
         OnInventoryTabPressed();
