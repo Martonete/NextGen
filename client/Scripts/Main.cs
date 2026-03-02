@@ -36,6 +36,7 @@ public partial class Main : Control
     private LineEdit? _passwordInput;
     private Button? _connectButton;
     private Label? _statusLabel;
+    private CheckBox? _rememberCheck;
     private ItemList? _charList;
     private Button? _enterButton;
     private Label? _noticeLabel;
@@ -205,6 +206,7 @@ public partial class Main : Control
         _passwordInput = GetNode<LineEdit>("UILayer/LoginPanel/VBox/PasswordInput");
         _connectButton = GetNode<Button>("UILayer/LoginPanel/VBox/ConnectButton");
         _statusLabel = GetNode<Label>("UILayer/LoginPanel/VBox/StatusLabel");
+        _rememberCheck = GetNode<CheckBox>("UILayer/LoginPanel/VBox/RememberCheck");
         _charList = GetNode<ItemList>("UILayer/CharSelectPanel/VBox/CharList");
         _enterButton = GetNode<Button>("UILayer/CharSelectPanel/VBox/EnterButton");
         _noticeLabel = GetNode<Label>("UILayer/CharSelectPanel/VBox/NoticeLabel");
@@ -503,6 +505,98 @@ public partial class Main : Control
         _charCreatePanel!.Visible = false;
         _accountCreatePanel!.Visible = false;
         _gameUI.Visible = false;
+
+        // Load remembered account (XOR-encrypted file)
+        LoadRememberedAccount();
+
+        // Auto-focus account input (deferred so UI is ready)
+        CallDeferred(MethodName.FocusAccountInput);
+    }
+
+    private void FocusAccountInput()
+    {
+        if (_accountInput == null) return;
+        if (!string.IsNullOrEmpty(_accountInput.Text))
+        {
+            // Account pre-filled → focus password
+            _passwordInput?.GrabFocus();
+        }
+        else
+        {
+            _accountInput.GrabFocus();
+        }
+    }
+
+    // Simple XOR key for account remember file (not security-critical, just obfuscation)
+    private const string RememberXorKey = "TierrasSagradas2024";
+    private const string RememberFileName = "remembered.dat";
+
+    private string GetRememberFilePath()
+    {
+        return System.IO.Path.Combine(_dataPath, RememberFileName);
+    }
+
+    private void LoadRememberedAccount()
+    {
+        string path = GetRememberFilePath();
+        if (!System.IO.File.Exists(path)) return;
+
+        try
+        {
+            byte[] encrypted = System.IO.File.ReadAllBytes(path);
+            string decrypted = XorCrypt(encrypted);
+            if (!string.IsNullOrEmpty(decrypted))
+            {
+                _accountInput!.Text = decrypted;
+                _rememberCheck!.ButtonPressed = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.Print($"[MAIN] Failed to load remembered account: {ex.Message}");
+        }
+    }
+
+    private void SaveRememberedAccount(string account)
+    {
+        string path = GetRememberFilePath();
+        try
+        {
+            if (_rememberCheck != null && _rememberCheck.ButtonPressed && !string.IsNullOrEmpty(account))
+            {
+                byte[] encrypted = XorCrypt(account);
+                System.IO.File.WriteAllBytes(path, encrypted);
+            }
+            else
+            {
+                // Not remembering → delete file if exists
+                if (System.IO.File.Exists(path))
+                    System.IO.File.Delete(path);
+            }
+        }
+        catch (Exception ex)
+        {
+            GD.Print($"[MAIN] Failed to save remembered account: {ex.Message}");
+        }
+    }
+
+    private static byte[] XorCrypt(string plainText)
+    {
+        byte[] textBytes = System.Text.Encoding.UTF8.GetBytes(plainText);
+        byte[] keyBytes = System.Text.Encoding.UTF8.GetBytes(RememberXorKey);
+        byte[] result = new byte[textBytes.Length];
+        for (int i = 0; i < textBytes.Length; i++)
+            result[i] = (byte)(textBytes[i] ^ keyBytes[i % keyBytes.Length]);
+        return result;
+    }
+
+    private static string XorCrypt(byte[] encrypted)
+    {
+        byte[] keyBytes = System.Text.Encoding.UTF8.GetBytes(RememberXorKey);
+        byte[] result = new byte[encrypted.Length];
+        for (int i = 0; i < encrypted.Length; i++)
+            result[i] = (byte)(encrypted[i] ^ keyBytes[i % keyBytes.Length]);
+        return System.Text.Encoding.UTF8.GetString(result);
     }
 
     /// <summary>
@@ -681,6 +775,9 @@ public partial class Main : Control
             return;
         }
 
+        // Save or clear remembered account
+        SaveRememberedAccount(account);
+
         _state.AccountName = account;
         _state.LoginError = "";
         _connectButton!.Disabled = true;
@@ -689,6 +786,11 @@ public partial class Main : Control
         _tcp = new AoTcpClient();
         _packetHandler = new PacketHandler(_state);
         _packetHandler.OnMapLoad = LoadCurrentMap;
+        if (_soundManager != null)
+        {
+            _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
+            _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
+        }
         _inputHandler = new InputHandler(_tcp, _state);
         _connecting = true;
 
@@ -2194,6 +2296,15 @@ public partial class Main : Control
 
     public override void _Input(InputEvent @event)
     {
+        // Escape on login/charselect → quit game
+        if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo
+            && escKey.Keycode == Key.Escape
+            && (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.CharSelect))
+        {
+            GetTree().Quit();
+            return;
+        }
+
         if (_state.CurrentScreen != Screen.Game) return;
 
         // Chat input handling

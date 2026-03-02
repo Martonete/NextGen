@@ -153,7 +153,7 @@ public partial class SoundManager : Node
             catch { /* fall through */ }
         }
 
-        // Method 2: Read raw file bytes and create AudioStreamWAV manually
+        // Method 2: Read raw file bytes and create AudioStreamWav manually
         string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
         if (!System.IO.File.Exists(filePath)) return null;
 
@@ -203,10 +203,10 @@ public partial class SoundManager : Node
     }
 
     /// <summary>
-    /// Parse a WAV file from raw bytes into an AudioStreamWAV.
+    /// Parse a WAV file from raw bytes into an AudioStreamWav.
     /// Handles standard PCM WAV (8/16 bit, mono/stereo).
     /// </summary>
-    private static AudioStreamWAV? ParseWav(byte[] raw)
+    private static AudioStreamWav? ParseWav(byte[] raw)
     {
         // Minimal WAV parser: RIFF header → fmt chunk → data chunk
         if (raw.Length < 44) return null;
@@ -247,14 +247,14 @@ public partial class SoundManager : Node
 
         if (pcmData == null || pcmData.Length == 0) return null;
 
-        var wav = new AudioStreamWAV();
+        var wav = new AudioStreamWav();
         wav.Data = pcmData;
         wav.Format = bitsPerSample == 8
-            ? AudioStreamWAV.FormatEnum.Format8Bits
-            : AudioStreamWAV.FormatEnum.Format16Bits;
+            ? AudioStreamWav.FormatEnum.Format8Bits
+            : AudioStreamWav.FormatEnum.Format16Bits;
         wav.Stereo = channels >= 2;
         wav.MixRate = sampleRate;
-        wav.LoopMode = AudioStreamWAV.LoopModeEnum.Disabled;
+        wav.LoopMode = AudioStreamWav.LoopModeEnum.Disabled;
 
         return wav;
     }

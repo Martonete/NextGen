@@ -43,6 +43,10 @@ layout_mode = 2
 placeholder_text = "Password"
 secret = true
 
+[node name="RememberCheck" type="CheckBox" parent="UILayer/LoginPanel/VBox"]
+layout_mode = 2
+text = "Recordar cuenta"
+
 [node name="ConnectButton" type="Button" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
 text = "Conectar"
