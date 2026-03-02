@@ -1191,7 +1191,11 @@ public partial class Main : Control
         noBtn.Pressed += () => OnWindowModeChosen(false);
         btnBox.AddChild(noBtn);
 
-        AddChild(_windowModeDialog);
+        // Use a CanvasLayer to render above UILayer (layer 10)
+        var wmLayer = new CanvasLayer();
+        wmLayer.Layer = 20;
+        AddChild(wmLayer);
+        wmLayer.AddChild(_windowModeDialog);
     }
 
     private void OnWindowModeChosen(bool windowed)
@@ -1262,7 +1266,11 @@ public partial class Main : Control
         backBtn.Pressed += HideEscapeMenu;
         vbox.AddChild(backBtn);
 
-        AddChild(_escapeMenu);
+        // Use a CanvasLayer to render above everything
+        var escLayer = new CanvasLayer();
+        escLayer.Layer = 20;
+        AddChild(escLayer);
+        escLayer.AddChild(_escapeMenu);
     }
 
     private void ShowEscapeMenu()
