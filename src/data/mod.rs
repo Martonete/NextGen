@@ -45,7 +45,7 @@ impl GameData {
         let objects = objects::load_objects(base)?;
         let spells = spells::load_spells(base)?;
         let npcs = npcs::load_npcs(base)?;
-        let maps = maps::load_all_maps(base)?;
+        let mut maps = maps::load_all_maps(base)?;
         let quests = quests::load_quests(base).unwrap_or_default();
         let balance = balance::load_balance(base).unwrap_or_default();
 
