@@ -10,7 +10,7 @@ mod data;
 mod db;
 mod game;
 
-use tracing::{info, error};
+use tracing::{debug, info, error};
 
 use config::ServerConfig;
 use game::types::GameState;
@@ -149,7 +149,7 @@ async fn main() {
             ServerEvent::NewConnection(writer) => {
                 let id = writer.id;
                 let ip = writer.ip();
-                info!("[CONN] #{} connected from {}", id, ip);
+                debug!("[CONN] #{} connected from {}", id, ip);
 
                 // Check IP ban
                 if state.bans.is_ip_banned(&ip) {
@@ -274,7 +274,7 @@ async fn main() {
                         }
                     }
                 } else {
-                    info!("[DISC] #{} disconnected", conn_id);
+                    debug!("[DISC] #{} disconnected (no login)", conn_id);
                 }
 
                 // Notify friends that this user went offline

@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{info, warn, error};
+use tracing::{debug, info, warn, error};
 
 use super::connection::{self, ConnectionId, ConnectionWriter};
 
@@ -62,7 +62,7 @@ impl TcpServer {
                         let conn_id = next_id.fetch_add(1, Ordering::Relaxed);
                         active_count.fetch_add(1, Ordering::Relaxed);
 
-                        info!("New connection #{} from {}", conn_id, addr);
+                        debug!("New connection #{} from {}", conn_id, addr);
 
                         let (mut reader, writer) = connection::split_connection(
                             conn_id, stream, addr,
@@ -103,7 +103,7 @@ impl TcpServer {
                                         }
                                     }
                                     None => {
-                                        info!("Connection #{} disconnected", conn_id);
+                                        debug!("Connection #{} disconnected", conn_id);
                                         active_clone.fetch_sub(1, Ordering::Relaxed);
                                         let _ = read_tx
                                             .send(ServerEvent::Disconnected(conn_id))
