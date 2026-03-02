@@ -1,471 +1,343 @@
-using System;
 using System.Collections.Generic;
 using Godot;
 using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Network;
 
 namespace TierrasSagradasAO.Game;
 
-/// <summary>
-/// Translates keyboard/mouse input to server packets with VB6-accurate client-side prediction.
-/// Movement uses LegalPos check + immediate camera scroll (no server round-trip lag).
-///
-/// VB6 flow: CheckKeys() → MoveTo() → Char_Move_by_Head() + Engine_MoveScreen()
-/// Guard: UserMoving == 0 is the ONLY movement blocker (no timer).
-/// Server has NO anti-flood for movement — speed is controlled entirely by client animation.
-///
-/// Key bindings match VB6 defaults (Teclas.tsao):
-///   Ctrl/Space = Attack (1000ms cooldown)
-///   Arrows/WASD = Movement
-///   L = Refresh position (RPU)
-///   T = Drop item (needs slot)
-///   U = Use item (needs slot)
-///   E = Equip item (needs slot)
-/// </summary>
-public class InputHandler
+public enum Screen { Login, CharSelect, CharCreate, AccountCreate, Game }
+
+public class CharacterPreview
 {
-	private readonly AoTcpClient _tcp;
-	private readonly GameState _state;
+    public string Name = "", Class = "", Race = "";
+    public int Slot, Head, Body, Level;
+    public bool Dead;
+}
 
-	// Meditation FX IDs — cleared when player moves
-	private static readonly HashSet<int> MeditationFxIds = new()
-	{
-		4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
-	};
+/// <summary>
+/// A chat/console message with color for the UI console.
+/// </summary>
+public class ChatMessage
+{
+    public string Text = "";
+    public string Color = "FFFFFF"; // hex color without #
+}
 
-	// Water tile GRH range (VB6: Layer1 1505-1520 with no Layer2 = water)
-	private const int WaterGrhMin = 1505;
-	private const int WaterGrhMax = 1520;
+/// <summary>
+/// Central game state: player position, characters, map, inventory, stats.
+/// Updated by PacketHandler, read by renderers.
+/// </summary>
+public class GameState
+{
+    // Login / screen state
+    public bool IsLogged;
+    public bool Paused;
+    public Screen CurrentScreen = Screen.Login;
+    public string AccountName = "";
+    public string SecurityCode = "";
+    public string LoginError = "";
+    public string ServerNotice = "";
+    public List<CharacterPreview> CharacterList = new();
+    public int SelectedCharIndex = -1;
 
-	// VB6 map borders (InMapBounds)
-	private const int MinXBorder = 9;
-	private const int MaxXBorder = 92;
-	private const int MinYBorder = 7;
-	private const int MaxYBorder = 94;
+    // Account creation state (AccountCreate screen)
+    public string CreateAccountName = "";
+    public string CreateAccountPassword = "";
+    public string CreateAccountPin = "";
 
-	// VB6 attack cooldown: tAt = 1000ms
-	private const float AttackCooldownMs = 1000f;
-	private float _attackTimer;
+    // Character creation state (CharCreate screen)
+    public string CreateCharName = "";
+    public int CreateCharRace = 1;    // 1=Humano, 2=Elfo, 3=Elfo Oscuro, 4=Enano, 5=Gnomo
+    public int CreateCharGender = 1;  // 1=Hombre, 2=Mujer
+    public int CreateCharClass = 1;   // 1-8
+    public int CreateCharFaction = 1; // 1=Armada Real, 2=Fuerzas del Caos
+    public int CreateCharHead;
+    public int CreateCharHeadMin;
+    public int CreateCharHeadMax;
 
-	// VB6 position refresh cooldown
-	private float _refreshTimer;
-	private const float RefreshCooldownMs = 2000f;
+    // Map
+    public int CurrentMap;
+    public string MapName = "";
+    public int MapColorR = 200, MapColorG = 200, MapColorB = 200;
+    public MapData? MapData;
+    public bool NeedMapLoad;
 
-	// Generic key repeat cooldown (VB6 CheckKeys runs at ~32ms tick rate)
-	// Prevent rapid-fire sends when holding a key at 60fps.
-	private const float KeyCooldownMs = 300f;
-	private float _keyCooldown;
+    // User position
+    public int UserPosX;
+    public int UserPosY;
+    public int UserCharIndex;
+    public string UserName = "";
 
-	/// <summary>Callback invoked when the player presses M to toggle music.</summary>
-	public Action? OnToggleMusic;
+    // User status flags
+    public bool UserParalyzed;
+    public float ParalysisTimer;    // Countdown in seconds from server-provided duration
+    public float ParalysisMaxTimer; // Max duration for progress bar ratio
+    public ulong PingSentMs;       // VB6: TimerPing(1) — GetTickCount when /PING sent
+    public bool UserNavigating;
+    public bool UserStopped;
+    public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
+    public bool ItemSafety = true; // VB6: ISItem — client-side drop prevention (toggled with numpad *)
+    public bool SeguroResu;     // VB6: SeguroResu — resurrection safety
+    public bool Resting;        // VB6: Descansar toggle (DOK)
+    // Drop quantity dialog state
+    public bool DropDialogOpen; // True when quantity dialog is visible
+    public int DropDialogSlot;  // Inventory slot pending drop (0-based)
+    public bool Meditating;     // VB6: Meditando
+    public bool Dead;           // VB6: UserMuerto
+    public bool Trading;        // VB6: Comerciando (player-to-player trade)
+    public int UsingSkill; // VB6: spell slot being targeted (0 = none)
+    public bool ChatActive; // VB6: true when chat input is visible/focused
+    public string ChatModePrefix = ";"; // VB6 modoHabla: ";" normal, "-" yell, "/cmsg " clan, etc.
+    public int ChatMode;               // 0=normal, 1=yell, 2=clan, 3=global, 4=party, 5=faction, 6=gm, 7=whisper
+    public string WhisperTarget = "";   // Target name for whisper mode
+    public bool ShowNames = true;       // VB6: Nombres — toggle character names display
 
-	public InputHandler(AoTcpClient tcp, GameState state)
-	{
-		_tcp = tcp;
-		_state = state;
-	}
+    // Macro system (VB6: frmMakro — 10 configurable commands for keys 1-0)
+    public string[] Macros = new string[10];
+    public bool MacroPanelOpen;
 
-	public void Process(double delta)
-	{
-		if (!_state.IsLogged || _state.Paused) return;
+    // Camera scroll state (VB6 client-side prediction)
+    public bool UserMoving;        // True while camera is scrolling between tiles
+    public int AddToUserPosX;      // Camera scroll direction: -1, 0, or +1
+    public int AddToUserPosY;
+    public float ScreenOffsetX;    // Camera pixel offset accumulator
+    public float ScreenOffsetY;
 
-		// Block all game input while in commerce/bank/macro mode
-		if (_state.Comerciando || _state.Banqueando || _state.MacroPanelOpen) return;
+    // PT correction cooldown: blocks new moves for N frames after a position rejection.
+    // Prevents the client from immediately re-sending moves that the server will reject
+    // (e.g., NPC on tile that client can't see), which accumulates desync.
+    public int PtCooldownFrames;
 
-		float deltaMs = (float)delta * 1000f;
+    // Pending moves counter: tracks unconfirmed client-predicted moves.
+    // Caps how far ahead the client can predict (max 2 tiles).
+    // Decremented when a scroll animation completes (move assumed accepted).
+    // Reset to 0 on PT correction (server rejected and corrected position).
+    public int PendingMoves;
 
-		// Advance cooldown timers
-		if (_attackTimer > 0) _attackTimer -= deltaMs;
-		if (_refreshTimer > 0) _refreshTimer -= deltaMs;
-		if (_keyCooldown > 0) _keyCooldown -= deltaMs;
+    // Characters visible in area
+    public Dictionary<int, Character> Characters = new();
 
-		// VB6: paralyzed users can attack and cast spells, only movement is blocked
-		if (!_state.UserParalyzed)
-		{
-			// Decrement PT correction cooldown (blocks moves after server rejected one)
-			if (_state.PtCooldownFrames > 0)
-			{
-				_state.PtCooldownFrames--;
-			}
-			else if (!_state.UserMoving && _state.PendingMoves < 2)
-			{
-				// Arrow keys: always available
-				if (Input.IsKeyPressed(Key.Up))
-					TryMove(1); // North
-				else if (Input.IsKeyPressed(Key.Right))
-					TryMove(2); // East
-				else if (Input.IsKeyPressed(Key.Down))
-					TryMove(3); // South
-				else if (Input.IsKeyPressed(Key.Left))
-					TryMove(4); // West
-				// WASD: only when chat is NOT active
-				else if (!_state.ChatActive)
-				{
-					if (Input.IsKeyPressed(Key.W))
-						TryMove(1);
-					else if (Input.IsKeyPressed(Key.D))
-						TryMove(2);
-					else if (Input.IsKeyPressed(Key.S))
-						TryMove(3);
-					else if (Input.IsKeyPressed(Key.A))
-						TryMove(4);
-				}
-			}
-		}
+    // Ground objects: (x,y) → GRH index
+    public Dictionary<(int, int), int> GroundObjects = new();
 
-		// Everything below is blocked when chat is active (letter keys would type into chat)
-		if (_state.ChatActive) return;
+    // Stats
+    public int MaxHp, MinHp;
+    public int MaxMana, MinMana;
+    public int MaxSta, MinSta;
+    public int MaxAgua, MinAgua;
+    public int MaxHam, MinHam;
+    public int Gold;
+    public int Level;
+    public int Exp, ExpNext;
+    public int Reputation;
+    public int Privileges;
+    public int MusicId;
+    public int OnlineCount;
 
-		// Attack (VB6: Ctrl key, 1000ms cooldown)
-		// VB6: blocked while resting or meditating (CheckKeys → UserDescansar / UserMeditar)
-		if (Input.IsKeyPressed(Key.Space) || Input.IsKeyPressed(Key.Ctrl))
-		{
-			if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
-			{
-				_tcp.SendPacket("AT");
-				_attackTimer = AttackCooldownMs;
-			}
-		}
+    // Combat stats (from ANM packet)
+    public int Strength;
+    public int Agility;
+    public int AttackMin, AttackMax;
+    public int DefenseMin, DefenseMax;
+    public int MagDefMin, MagDefMax;
 
-		// All action keys below share a cooldown to prevent rapid-fire when held.
-		// VB6 CheckKeys only ran once per ~32ms timer tick; at 60fps we need explicit gating.
-		if (_keyCooldown > 0) return;
+    // Friends list
+    public List<string> FriendsList = new();
+    public bool FriendsListDirty;      // triggers UI rebuild when LDM received
+    public bool AddFriendDialogOpen;   // true when add-friend input dialog is visible
 
-		// Pick up item (VB6: A key sends AGR — conflicts with WASD, use G instead)
-		if (Input.IsKeyPressed(Key.G))
-		{
-			_tcp.SendPacket("AGR");
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Use item from selected inventory slot (VB6: U key)
-		else if (Input.IsKeyPressed(Key.U))
-		{
-			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < 25)
-			{
-				_tcp.SendPacket($"USA{slot + 1}"); // 1-based
-				_keyCooldown = KeyCooldownMs;
-			}
-		}
-		// Equip item from selected inventory slot (VB6: E key)
-		else if (Input.IsKeyPressed(Key.E))
-		{
-			int slot = _state.SelectedInvSlot;
-			if (slot >= 0 && slot < 25)
-			{
-				_tcp.SendPacket($"EQUI{slot + 1}"); // 1-based
-				_keyCooldown = KeyCooldownMs;
-			}
-		}
-		// Drop item from selected inventory slot (VB6: T key → TirarItem)
-		else if (Input.IsKeyPressed(Key.T))
-		{
-			if (_state.ItemSafety)
-			{
-				_state.ChatMessages.Enqueue(new ChatMessage
-				{
-					Text = "Desactiva el seguro de items primero con la tecla '*'",
-					Color = "FF0000"
-				});
-			}
-			else
-			{
-				int slot = _state.SelectedInvSlot;
-				if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
-				{
-					if (_state.Inventory[slot].Amount == 1)
-					{
-						// Single item → drop immediately (VB6: TI{slot},{qty} no comma after opcode)
-						_tcp.SendPacket($"TI{slot + 1},1");
-					}
-					else if (_state.Inventory[slot].Amount > 1)
-					{
-						// Multiple items → open quantity dialog (VB6: frmCantidad)
-						_state.DropDialogSlot = slot;
-						_state.DropDialogOpen = true;
-					}
-				}
-			}
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Toggle names display (VB6: N key — client-side only)
-		else if (Input.IsKeyPressed(Key.N))
-		{
-			_state.ShowNames = !_state.ShowNames;
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Toggle music (VB6: M key — mute/unmute map music, not SFX)
-		else if (Input.IsKeyPressed(Key.M))
-		{
-			OnToggleMusic?.Invoke();
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Steal/Robo (VB6: R key sends UK<Robar>)
-		else if (Input.IsKeyPressed(Key.R))
-		{
-			_tcp.SendPacket("UK12"); // VB6 eSkill.Robar = 12
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Hide/Stealth (VB6: O key sends UK<Ocultarse>)
-		else if (Input.IsKeyPressed(Key.O))
-		{
-			_tcp.SendPacket("UK9"); // VB6 eSkill.Ocultarse = 9
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Refresh position (VB6: L key sends RPU)
-		else if (Input.IsKeyPressed(Key.L))
-		{
-			if (_refreshTimer <= 0)
-			{
-				_tcp.SendPacket("RPU");
-				_refreshTimer = RefreshCooldownMs;
-			}
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Meditate (VB6: F6)
-		else if (Input.IsKeyPressed(Key.F6))
-		{
-			_tcp.SendPacket(";/MEDITAR");
-			_keyCooldown = KeyCooldownMs;
-		}
-		// PvP + Clan safety toggle (VB6: S key sends /SEG — we use F7 since S is WASD)
-		else if (Input.IsKeyPressed(Key.F7))
-		{
-			_tcp.SendPacket("SEG");
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Resurrection safety toggle (VB6: D key sends /SEGR — we use F8 since D is WASD)
-		else if (Input.IsKeyPressed(Key.F8))
-		{
-			_tcp.SendPacket(";/SEGR");
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Macro keys: 1-9, 0 (VB6: enviarMacro — top row number keys)
-		else if (!_state.MacroPanelOpen)
-		{
-			int macroIdx = -1;
-			if (Input.IsKeyPressed(Key.Key1)) macroIdx = 0;
-			else if (Input.IsKeyPressed(Key.Key2)) macroIdx = 1;
-			else if (Input.IsKeyPressed(Key.Key3)) macroIdx = 2;
-			else if (Input.IsKeyPressed(Key.Key4)) macroIdx = 3;
-			else if (Input.IsKeyPressed(Key.Key5)) macroIdx = 4;
-			else if (Input.IsKeyPressed(Key.Key6)) macroIdx = 5;
-			else if (Input.IsKeyPressed(Key.Key7)) macroIdx = 6;
-			else if (Input.IsKeyPressed(Key.Key8)) macroIdx = 7;
-			else if (Input.IsKeyPressed(Key.Key9)) macroIdx = 8;
-			else if (Input.IsKeyPressed(Key.Key0)) macroIdx = 9;
+    // Inventory (25 slots)
+    public InventorySlot[] Inventory = new InventorySlot[25];
+    public int SelectedInvSlot = -1; // Currently selected inventory slot (0-based, -1 = none)
 
-			if (macroIdx >= 0)
-			{
-				ExecuteMacro(macroIdx);
-				_keyCooldown = KeyCooldownMs;
-			}
-		}
-	}
+    // Spells (20 slots)
+    public SpellSlot[] Spells = new SpellSlot[20];
 
-	/// <summary>
-	/// Attempt to move in given direction with client-side prediction.
-	/// VB6: CheckKeys → MoveTo → Char_Move_by_Head + Engine_MoveScreen
-	/// </summary>
-	private void TryMove(int heading)
-	{
-		// Direction deltas: 1=N(0,-1), 2=E(1,0), 3=S(0,1), 4=W(-1,0)
-		int dx = 0, dy = 0;
-		switch (heading)
-		{
-			case 1: dy = -1; break;
-			case 2: dx = 1; break;
-			case 3: dy = 1; break;
-			case 4: dx = -1; break;
-		}
+    // NPC Commerce (frmComerciar)
+    public NpcShopItem[] NpcShopItems = new NpcShopItem[50];
+    public int NpcShopCount;
+    public bool Comerciando;
 
-		if (!_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
-			return;
+    // Travel panel (frmViajar)
+    public bool ShowTravelPanel;
 
-		int newX = ch.PosX + dx;
-		int newY = ch.PosY + dy;
+    // Death panel (frmMuertito)
+    public bool ShowDeathPanel;
 
-		if (LegalPos(newX, newY))
-		{
-			// Clear meditation FX on self when moving
-			for (int i = 0; i < 3; i++)
-			{
-				if (ch.ActiveFxSlots[i] > 0 && MeditationFxIds.Contains(ch.ActiveFxSlots[i]))
-				{
-					ch.ActiveFxSlots[i] = 0;
-					ch.FxLoops[i] = 0;
-					ch.FxFrameCounter[i] = 0;
-				}
-			}
+    // Bank (frmBanco + frmNuevoBancoObj / Bóveda)
+    public BankItem[] BankItems = new BankItem[40];
+    public int BankItemCount;
+    public long BankGold;
+    public bool Banqueando;       // frmBanco is open (gold operations)
+    public bool BovedaAbierta;    // frmNuevoBancoObj is open (item vault)
 
-			// Send movement packet to server
-			_tcp.SendPacket($"M{heading}");
-			_state.PendingMoves++;
+    // Arrow/projectile system (VB6: FLECHI)
+    public List<ArrowProjectile> ActiveArrows = new();
 
-			// VB6 Char_Move_by_Head: update logical position + start animation
-			ch.Heading = heading;
-			ch.MoveOffsetX = -(dx * 32);
-			ch.MoveOffsetY = -(dy * 32);
-			ch.ScrollDirectionX = dx;
-			ch.ScrollDirectionY = dy;
-			ch.Moving = true;
-			// VB6: Char_Move_by_Head does NOT reset FrameCounter on consecutive moves.
-			// Only reset when starting from standstill to avoid animation stutter at tile boundaries.
-			ch.PosX = newX;
-			ch.PosY = newY;
+    // Particle system
+    public ParticleStreamDef[] ParticleDefs = System.Array.Empty<ParticleStreamDef>();
+    public List<ParticleStream> MapParticles = new();
 
-			// VB6 Engine_MoveScreen: start camera scroll
-			_state.AddToUserPosX = dx;
-			_state.AddToUserPosY = dy;
-			_state.UserPosX = newX;
-			_state.UserPosY = newY;
-			_state.UserMoving = true;
-			_state.ScreenOffsetX = 0;
-			_state.ScreenOffsetY = 0;
-		}
-		else
-		{
-			// Blocked tile: just turn, don't move (VB6: only send CHEA if heading changed)
-			if (ch.Heading != heading)
-			{
-				_tcp.SendPacket($"CHEA{heading}");
-				ch.Heading = heading;
-			}
-		}
-	}
+    // Light system
+    public List<MapLight> MapLights = new();
+    public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
+    public Color[,,]? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
+    public bool LightsDirty;
 
-	/// <summary>
-	/// VB6 LegalPos: checks if (x,y) is a valid destination tile.
-	/// Must match VB6 EXACTLY to avoid client-server desync.
-	/// </summary>
-	private bool LegalPos(int x, int y)
-	{
-		// Map bounds (VB6: MinXBorder..MaxXBorder, MinYBorder..MaxYBorder)
-		if (x < MinXBorder || x > MaxXBorder || y < MinYBorder || y > MaxYBorder)
-			return false;
+    // Chat message queue — drained by Main.cs each frame
+    public Queue<ChatMessage> ChatMessages = new();
 
-		// Need map data for tile checks
-		if (_state.MapData == null) return true;
+    // Textos.tsao message templates — loaded once, used by PacketHandler for console messages
+    public TextMessage[] TextMessages = System.Array.Empty<TextMessage>();
 
-		ref var tile = ref _state.MapData.Tiles[x, y];
+    public GameState()
+    {
+        for (int i = 0; i < 25; i++)
+            Inventory[i] = new InventorySlot();
+        for (int i = 0; i < 20; i++)
+            Spells[i] = new SpellSlot();
+        for (int i = 0; i < 50; i++)
+            NpcShopItems[i] = new NpcShopItem();
+        for (int i = 0; i < 40; i++)
+            BankItems[i] = new BankItem();
 
-		// Blocked tile (VB6: MapData(X,Y).Blocked = 1 And montVol = 0)
-		// TODO: add flying mount check when mounts are implemented
-		if (tile.Blocked) return false;
+        // VB6 default macros (frmMakro defaults from Macro.tsao)
+        Macros[0] = "/COMERCIAR";
+        Macros[1] = "/RESUCITAR";
+        Macros[2] = "/CURAR";
+        Macros[3] = "/ONLINE";
+        Macros[4] = "/GM";
+        Macros[5] = "/TORNEO";
+        Macros[6] = "/PARTY";
+        Macros[7] = "/EST";
+        Macros[8] = "";
+        Macros[9] = "";
+    }
+}
 
-		// Character standing there? (VB6: MapData(X,Y).charindex > 0, check not dead)
-		foreach (var kvp in _state.Characters)
-		{
-			if (kvp.Key == _state.UserCharIndex) continue;
-			var other = kvp.Value;
-			if (other.PosX == x && other.PosY == y && !other.Dead)
-				return false;
-		}
+public class InventorySlot
+{
+    public int ObjIndex;
+    public string Name = "";
+    public int Amount;
+    public bool Equipped;
+    public int GrhIndex;
+    public int ObjType;
+    public int MaxHit, MinHit;
+    public int MaxDef;
+    public int Value;
+}
 
-		// Water checks (VB6: both directions)
-		bool isWater = tile.Layer1 >= WaterGrhMin && tile.Layer1 <= WaterGrhMax && tile.Layer2 == 0;
-		if (!_state.UserNavigating && isWater)
-			return false;  // Can't walk on water without boat
-		if (_state.UserNavigating && !isWater)
-			return false;  // Can't leave water onto land while on boat
+public class SpellSlot
+{
+    public int SpellId;
+    public string Name = "";
+}
 
-		return true;
-	}
+public class NpcShopItem
+{
+    public int Slot;       // 1-based server slot
+    public string Name = "";
+    public int Amount;
+    public long Price;     // Server-computed (with discount/inflation)
+    public int GrhIndex;
+    public int ObjIndex;
+    public int ObjType;    // 2=weapon, 3=armor, 16=shield, 17=helmet
+    public int MaxHit, MinHit, MaxDef;
+}
 
-	/// <summary>
-	/// Convert viewport pixel position to world tile coordinates.
-	/// VB6: tX = UserPos.X + mouseX \ 32 - ScaleWidth \ 64
-	/// Uses integer division throughout (\ in VB6 = truncating division).
-	/// ScaleWidth=534 \ 64 = 8, ScaleHeight=408 \ 64 = 6.
-	/// </summary>
-	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
-	{
-		int tileX = userX + (int)viewportPos.X / 32 - 8;
-		int tileY = userY + (int)viewportPos.Y / 32 - 6;
-		return (tileX, tileY);
-	}
+public class BankItem
+{
+    public int Slot;       // 1-based server slot
+    public int ObjIndex;
+    public string Name = "";
+    public int Amount;
+    public int GrhIndex;
+    public int ObjType;
+    public int MaxHit, MinHit, MaxDef;
+}
 
-	/// <summary>
-	/// Handle left click → LC packet (VB6: LookatTile — inspect tile).
-	/// Called from Main._UnhandledInput with position already relative to game viewport.
-	/// </summary>
-	public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
-	{
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-		{
-			_tcp.SendPacket($"LC{tileX},{tileY}");
-		}
-	}
+/// <summary>
+/// Particle effect definition loaded from Particles.ini (VB6: Particulas.bas).
+/// </summary>
+public class ParticleStreamDef
+{
+    public string Name = "";
+    public int NumParticles;
+    public int[] GrhList = System.Array.Empty<int>();
+    public int GrhCount;
+    public float Angle;                       // initial angle (degrees)
+    public float VecX1, VecY1, VecX2, VecY2; // velocity bounds
+    public float X1, Y1, X2, Y2;             // spawn position bounds (INI: X1,Y1,X2,Y2)
+    public float MoveX1, MoveY1, MoveX2, MoveY2; // per-frame drift bounds (INI: move_x1..move_y2)
+    public float LifeMin, LifeMax;
+    public float Friction;
+    public float Gravity;
+    public float GravStrength;
+    public float BounceStrength;
+    public float Speed;
+    public bool Spin;
+    public float SpinSpeedL, SpinSpeedH;
+    public bool AlphaBlend;
+    public bool XMove, YMove;
+    public int LifeCounter; // -1 = infinite
+    public byte ColR1, ColG1, ColB1; // ColorSet1
+    public byte ColR2, ColG2, ColB2; // ColorSet2
+    public byte ColR3, ColG3, ColB3; // ColorSet3
+    public byte ColR4, ColG4, ColB4; // ColorSet4
+}
 
-	/// <summary>
-	/// Handle right click → RC packet (VB6: Accion — interact with doors, NPCs, users).
-	/// Called from Main._UnhandledInput with position already relative to game viewport.
-	/// </summary>
-	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
-	{
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-		{
-			_tcp.SendPacket($"RC{tileX},{tileY}");
-		}
-	}
+/// <summary>
+/// A single particle instance within a stream.
+/// </summary>
+public class Particle
+{
+    public float X, Y;
+    public float VelX, VelY;
+    public float Life, MaxLife;
+    public float Angle;
+    public float SpinSpeed;
+    public int GrhIndex;
+    public float Alpha;
+    public bool Alive;
+    public byte ColR, ColG, ColB; // chosen color
+}
 
-	/// <summary>
-	/// Handle spell targeting click → WLC packet.
-	/// VB6: Form_Click when UsingSkill > 0 sends WLC{x},{y},{UsingSkill}.
-	/// UsingSkill is the SKILL TYPE (Magia=2), NOT the spell slot.
-	/// The spell slot is stored server-side via the LH packet.
-	/// </summary>
-	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
-	{
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-		{
-			// VB6: SendData "WLC" & tX & "," & tY & "," & UsingSkill
-			_tcp.SendPacket($"WLC{tileX},{tileY},{_state.UsingSkill}");
-			_state.UsingSkill = 0; // Reset after casting
-		}
-	}
+/// <summary>
+/// An active particle stream (map-attached or character-attached).
+/// </summary>
+public class ParticleStream
+{
+    public int DefIndex;
+    public int MapX, MapY;       // tile position (map-attached)
+    public int CharIndex = -1;   // character index (char-attached, -1 for map)
+    public Particle[] Particles = System.Array.Empty<Particle>();
+    public float FrameCounter;   // VB6: frame_counter accumulator (EngineBaseSpeed * deltaMs)
+    public int LifeCountdown = -1; // VB6: life_counter — -1 = infinite, >0 = ticks remaining
+    public bool Active = true;
+}
 
-	/// <summary>
-	/// GM Shift+Click → /TELEP YO mapa x y (VB6: teleport to clicked tile).
-	/// VB6 uses spaces as separators, not commas.
-	/// </summary>
-	public void HandleGmTeleport(Vector2 viewportPos, int userX, int userY, int currentMap)
-	{
-		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-		{
-			_tcp.SendPacket($";/TELEP YO {currentMap} {tileX} {tileY}");
-		}
-	}
+/// <summary>
+/// A light source on the map (from PCL packet).
+/// </summary>
+public class MapLight
+{
+    public int X, Y;       // tile position
+    public int Range;      // radius in tiles
+    public byte R, G, B;   // light color
+    public bool Active = true;
+}
 
-	/// <summary>
-	/// VB6 enviarMacro: execute a configured macro command.
-	/// If starts with "/", send as command (prefixed with ";").
-	/// Otherwise send as normal chat with current chat mode prefix.
-	/// </summary>
-	private void ExecuteMacro(int index)
-	{
-		if (index < 0 || index >= 10) return;
-		string cmd = _state.Macros[index];
-		if (string.IsNullOrEmpty(cmd)) return;
-
-		if (cmd.StartsWith("/"))
-		{
-			// /PING: record timestamp before sending (same as OnChatSubmitted)
-			if (cmd.Equals("/PING", System.StringComparison.OrdinalIgnoreCase))
-			{
-				_state.PingSentMs = Godot.Time.GetTicksMsec();
-			}
-			// Slash command: send with ";" prefix (VB6: SendData ";" & macro)
-			_tcp.SendPacket($";{cmd}");
-		}
-		else
-		{
-			// Normal chat: send with current chat mode prefix
-			_tcp.SendPacket($"{_state.ChatModePrefix}{cmd}");
-		}
-	}
+/// <summary>
+/// An arrow/projectile in flight (from FLECHI packet).
+/// VB6: renders arrow GRH traveling from shooter to target.
+/// </summary>
+public class ArrowProjectile
+{
+    public int ShooterCharIndex;
+    public int TargetCharIndex;
+    public int GrhIndex;       // arrow graphic
+    public float X, Y;        // current pixel position
+    public float TargetX, TargetY; // destination pixel
+    public float Speed = 8f;  // pixels per frame
+    public bool Active = true;
 }
