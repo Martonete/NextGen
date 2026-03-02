@@ -620,6 +620,7 @@ public partial class Main : Control
         if (_windowModeDialog != null)
         {
             _windowModeDialog.Visible = true;
+            GD.Print("[MAIN] Window mode dialog shown");
             CallDeferred(MethodName.CenterWindowModeDialog);
         }
     }
@@ -632,6 +633,7 @@ public partial class Main : Control
             (screenSize.X - _windowModeDialog.Size.X) / 2,
             (screenSize.Y - _windowModeDialog.Size.Y) / 2
         );
+        GD.Print($"[MAIN] Window mode dialog centered at {_windowModeDialog.Position}, screen={screenSize}");
     }
 
     private void FocusAccountInput()
@@ -1191,11 +1193,10 @@ public partial class Main : Control
         noBtn.Pressed += () => OnWindowModeChosen(false);
         btnBox.AddChild(noBtn);
 
-        // Use a CanvasLayer to render above UILayer (layer 10)
-        var wmLayer = new CanvasLayer();
-        wmLayer.Layer = 20;
-        AddChild(wmLayer);
-        wmLayer.AddChild(_windowModeDialog);
+        // Add to UILayer (CanvasLayer 10) so it renders above game background
+        // and is on the same layer as LoginPanel (which starts hidden).
+        var uiLayer = GetNode<CanvasLayer>("UILayer");
+        uiLayer.AddChild(_windowModeDialog);
     }
 
     private void OnWindowModeChosen(bool windowed)
@@ -1266,11 +1267,7 @@ public partial class Main : Control
         backBtn.Pressed += HideEscapeMenu;
         vbox.AddChild(backBtn);
 
-        // Use a CanvasLayer to render above everything
-        var escLayer = new CanvasLayer();
-        escLayer.Layer = 20;
-        AddChild(escLayer);
-        escLayer.AddChild(_escapeMenu);
+        AddChild(_escapeMenu);
     }
 
     private void ShowEscapeMenu()
