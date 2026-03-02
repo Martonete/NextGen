@@ -185,13 +185,15 @@ pub fn heading_to_offset(heading: i32) -> (i32, i32) {
 }
 
 /// Get all user connections in the area around (center_x, center_y) on a map.
-/// Area is the client viewport: ±8 X, ±6 Y.
+/// Area matches the full client viewport: ±8 X, ±6 Y (17×13 tiles).
+/// This ensures players see FX/sounds for anything visible on their screen,
+/// including characters on the very edge of the viewport.
 pub fn get_users_in_area(grid: &MapGrid, center_x: i32, center_y: i32) -> Vec<ConnectionId> {
     let mut users = Vec::new();
-    let min_y = (center_y - MIN_Y_BORDER + 1).max(1);
-    let max_y = (center_y + MIN_Y_BORDER - 1).min(MAP_HEIGHT as i32);
-    let min_x = (center_x - MIN_X_BORDER + 1).max(1);
-    let max_x = (center_x + MIN_X_BORDER - 1).min(MAP_WIDTH as i32);
+    let min_y = (center_y - MIN_Y_BORDER).max(1);
+    let max_y = (center_y + MIN_Y_BORDER).min(MAP_HEIGHT as i32);
+    let min_x = (center_x - MIN_X_BORDER).max(1);
+    let max_x = (center_x + MIN_X_BORDER).min(MAP_WIDTH as i32);
 
     for y in min_y..=max_y {
         for x in min_x..=max_x {
