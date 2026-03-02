@@ -2564,10 +2564,12 @@ public partial class Main : Control
             }
 
             // Fallback: manual BMP parser for 32bpp BMPs (maps 92+ use BGRA)
+            GD.Print($"[MAIN] Godot Image.Load failed for {System.IO.Path.GetFileName(path)} (err={err}), trying manual BMP parser...");
             img = LoadBmpManual(path);
             if (img != null)
             {
                 _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
+                GD.Print($"[MAIN] Manual BMP loader OK for {System.IO.Path.GetFileName(path)}");
                 return true;
             }
 
@@ -2576,7 +2578,7 @@ public partial class Main : Control
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[MAIN] Failed to load minimap: {ex.Message}");
+            GD.PrintErr($"[MAIN] Failed to load minimap {System.IO.Path.GetFileName(path)}: {ex.Message}");
             return false;
         }
     }
