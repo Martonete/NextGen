@@ -670,11 +670,64 @@ public partial class OptionsPanel : PanelContainer
         return btn;
     }
 
+    // Shared checkbox icon textures (created once, reused for all checkboxes)
+    private static Texture2D? _checkUncheckedTex;
+    private static Texture2D? _checkCheckedTex;
+
+    private static void EnsureCheckIcons()
+    {
+        if (_checkUncheckedTex != null) return;
+
+        // Unchecked: 16x16 box with light border and dark fill
+        var uncheckedImg = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
+        var border = new Color(0.7f, 0.65f, 0.5f);       // warm light border
+        var fill = new Color(0.18f, 0.18f, 0.22f);        // dark fill (visible against panel bg)
+        uncheckedImg.Fill(fill);
+        for (int i = 0; i < 16; i++)
+        {
+            uncheckedImg.SetPixel(i, 0, border);
+            uncheckedImg.SetPixel(i, 15, border);
+            uncheckedImg.SetPixel(0, i, border);
+            uncheckedImg.SetPixel(15, i, border);
+        }
+        _checkUncheckedTex = ImageTexture.CreateFromImage(uncheckedImg);
+
+        // Checked: same box with a bright checkmark
+        var checkedImg = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
+        checkedImg.Fill(fill);
+        for (int i = 0; i < 16; i++)
+        {
+            checkedImg.SetPixel(i, 0, border);
+            checkedImg.SetPixel(i, 15, border);
+            checkedImg.SetPixel(0, i, border);
+            checkedImg.SetPixel(15, i, border);
+        }
+        // Draw checkmark (simple diagonal lines)
+        var check = new Color(1f, 0.85f, 0.3f); // gold checkmark
+        // Short stroke: (3,8)→(6,11)
+        checkedImg.SetPixel(3, 8, check); checkedImg.SetPixel(4, 9, check);
+        checkedImg.SetPixel(5, 10, check); checkedImg.SetPixel(6, 11, check);
+        // Long stroke: (6,11)→(12,5)
+        checkedImg.SetPixel(7, 10, check); checkedImg.SetPixel(8, 9, check);
+        checkedImg.SetPixel(9, 8, check); checkedImg.SetPixel(10, 7, check);
+        checkedImg.SetPixel(11, 6, check); checkedImg.SetPixel(12, 5, check);
+        // Thicken by 1px vertically
+        checkedImg.SetPixel(3, 7, check); checkedImg.SetPixel(4, 8, check);
+        checkedImg.SetPixel(5, 9, check); checkedImg.SetPixel(6, 10, check);
+        checkedImg.SetPixel(7, 9, check); checkedImg.SetPixel(8, 8, check);
+        checkedImg.SetPixel(9, 7, check); checkedImg.SetPixel(10, 6, check);
+        checkedImg.SetPixel(11, 5, check); checkedImg.SetPixel(12, 4, check);
+        _checkCheckedTex = ImageTexture.CreateFromImage(checkedImg);
+    }
+
     private static CheckBox MakeCheck(string text)
     {
+        EnsureCheckIcons();
         var cb = new CheckBox();
         cb.Text = text;
         cb.AddThemeFontSizeOverride("font_size", 11);
+        cb.AddThemeIconOverride("unchecked", _checkUncheckedTex);
+        cb.AddThemeIconOverride("checked", _checkCheckedTex);
         return cb;
     }
 
