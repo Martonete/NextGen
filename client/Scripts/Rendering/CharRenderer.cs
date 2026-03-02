@@ -279,17 +279,20 @@ public static class CharRenderer
         // VB6: ARGB(100, 0, 0, 0) — black at 39% opacity
         Color shadowColor = new Color(0, 0, 0, 100f / 255f);
 
-        // Draw two triangles to form the skewed quad using DrawPrimitive
-        // Triangle 1: v0, v1, v2 (bottom-left, top-left, bottom-right)
-        // Triangle 2: v1, v3, v2 (top-left, top-right, bottom-right)
-        Vector2[] points = { v0, v1, v2, v1, v3, v2 };
-        Color[] colors = { shadowColor, shadowColor, shadowColor, shadowColor, shadowColor, shadowColor };
-        Vector2[] uvs = {
-            new Vector2(u0, v1u), new Vector2(u0, v0u), new Vector2(u1, v1u),  // tri 1
-            new Vector2(u0, v0u), new Vector2(u1, v0u), new Vector2(u1, v1u)   // tri 2
-        };
-
-        canvas.DrawPrimitive(points, colors, uvs, texture);
+        // Godot DrawPrimitive: 3 pts = triangle, 4 pts = quad (no 6-pt support).
+        // Draw as two separate triangles.
+        // Triangle 1: v0 (BL), v1 (TL), v2 (BR)
+        canvas.DrawPrimitive(
+            new Vector2[] { v0, v1, v2 },
+            new Color[] { shadowColor, shadowColor, shadowColor },
+            new Vector2[] { new(u0, v1u), new(u0, v0u), new(u1, v1u) },
+            texture);
+        // Triangle 2: v1 (TL), v3 (TR), v2 (BR)
+        canvas.DrawPrimitive(
+            new Vector2[] { v1, v3, v2 },
+            new Color[] { shadowColor, shadowColor, shadowColor },
+            new Vector2[] { new(u0, v0u), new(u1, v0u), new(u1, v1u) },
+            texture);
     }
 
     /// <summary>
