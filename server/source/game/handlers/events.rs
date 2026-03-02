@@ -2480,28 +2480,33 @@ pub async fn tick_ancalagon(state: &mut GameState) {
         // Broadcast warning
         state.send_data(SendTarget::ToAll, "||471").await;
 
-        // Spawn 4 guardians (NPC 938) at map 123
-        let guardian_positions = [(50, 45), (52, 45), (50, 47), (52, 47)];
+        // Spawn pre-dragon (NPC 937) at map 123, (50,18) — VB6: frmMain.frm line 1157-1159
         state.ancalagon_guardians = 0;
-        for (gx, gy) in &guardian_positions {
-            if state.spawn_npc(938, 123, *gx, *gy).is_some() {
-                state.ancalagon_guardians += 1;
+        if let Some(idx) = state.spawn_npc(937, 123, 50, 18) {
+            state.ancalagon_pre_dragon = true;
+            state.ancalagon_pre_dragon_idx = idx;
+            // VB6: Npclist(IndexReyAncalagon).Char.AuraA = 3
+            if let Some(npc) = state.get_npc_mut(idx) {
+                npc.aura = 3;
+                let cc = npc.build_cc_packet();
+                state.send_data(SendTarget::ToMap(123), &cc).await;
             }
         }
 
-        // Spawn pre-dragon (NPC 937) at map 123
-        if state.spawn_npc(937, 123, 51, 46).is_some() {
-            state.ancalagon_pre_dragon = true;
+        // Spawn 4 guardians (NPC 938) — VB6 positions from frmMain.frm lines 1136-1150
+        let guardian_positions = [(50, 17), (49, 18), (51, 18), (50, 19)];
+        for (gx, gy) in &guardian_positions {
+            state.spawn_npc(938, 123, *gx, *gy);
         }
     }
 
 }
 
-/// Check if pre-dragon was killed and spawn real dragon.
-/// Called from npc_die when NPC 937 dies.
-pub(super) async fn try_spawn_ancalagon_dragon(state: &mut GameState) {
+/// Check if pre-dragon was killed and spawn real dragon at pre-dragon's death position.
+/// Called from npc_die when NPC 937 dies. VB6: SpawnNpc(936, MiNPC.Pos, ...)
+pub(super) async fn try_spawn_ancalagon_dragon(state: &mut GameState, death_x: i32, death_y: i32) {
     if !state.ancalagon_alive && !state.ancalagon_pre_dragon {
-        if let Some(_) = state.spawn_npc(936, 123, 51, 46) {
+        if let Some(_) = state.spawn_npc(936, 123, death_x, death_y) {
             state.ancalagon_alive = true;
             let msg = "T|¡El Ancalagon ha aparecido!~255~0~0~1~0";
             state.send_data(SendTarget::ToAll, msg).await;

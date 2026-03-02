@@ -821,6 +821,7 @@ pub struct GameState {
     pub ancalagon_alive: bool,            // Is the dragon (NPC 936) currently alive?
     pub ancalagon_guardians: i32,         // Number of guardian NPCs (938) still alive
     pub ancalagon_pre_dragon: bool,       // Is the pre-dragon (937) spawned?
+    pub ancalagon_pre_dragon_idx: NpcIndex, // Runtime index of pre-dragon NPC (for aura removal)
     pub ancalagon_minutes: i32,           // Minutes since dragon death (counts to 60)
     pub ancalagon_seconds: i32,           // Seconds counter (0-59)
 
@@ -994,6 +995,7 @@ impl GameState {
             ancalagon_alive: false,
             ancalagon_guardians: 0,
             ancalagon_pre_dragon: false,
+            ancalagon_pre_dragon_idx: 0,
             ancalagon_minutes: 0,
             ancalagon_seconds: 0,
             npc_can_attack_counter: 0,

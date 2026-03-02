@@ -121,6 +121,9 @@ pub struct NpcState {
     pub lanza_spells: i32,
     pub spells: Vec<i32>,
 
+    // Aura (VB6: Char.AuraA — dynamically set, e.g. pre-dragon 937 gets aura 3)
+    pub aura: i32,
+
     // Pet/summon owner
     pub maestro_user: Option<crate::net::ConnectionId>,
 
@@ -237,6 +240,7 @@ impl NpcState {
             counter_paralisis: 0,
             lanza_spells: data.lanza_spells,
             spells: data.spells.clone(),
+            aura: 0,
             maestro_user: None,
             area_id: 0,
             area_min_x: 0,
@@ -278,7 +282,7 @@ impl NpcState {
             self.weapon_anim,
             self.shield_anim,
             self.casco_anim,
-            0, // AuraA
+            self.aura,
             self.npc_number,
         )
     }

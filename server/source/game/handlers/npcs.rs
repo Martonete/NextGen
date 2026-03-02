@@ -157,8 +157,11 @@ pub(super) async fn puede_atacar_npc(
     //   if npc_number == 967 && (user.status_mith == 2 || is_horda) { block }
 
     // VB6: King's guards protection (Map 123, NPC 937, GuardiasRey <= 3)
-    // TODO: when GuardiasRey system is implemented, check:
-    //   if npc_map == 123 && npc_number == 937 && state.guardias_rey <= 3 { block ||168 }
+    // Can't attack pre-dragon while guardians are still alive
+    if npc_map == 123 && npc_number == 937 && state.ancalagon_guardians < 4 {
+        state.send_to(conn_id, "||168").await;
+        return false;
+    }
 
     // VB6: Castle King / NPC 615 — guild ownership checks
     if npc_type == crate::data::npcs::NpcType::CastleKing || npc_number == 615 {
@@ -399,9 +402,12 @@ pub(super) async fn npc_die(
     // 4) Ancalagon boss system
     match npc_number {
         936 => {
-            // Dragon killed — broadcast ||54, award points
+            // Dragon killed — broadcast ||54, award points, reset all state
+            // VB6: ReyON = 0, IndexReyAncalagon = 0, GuardiasRey = 0
             state.send_data(SendTarget::ToAll, "||54").await;
             state.ancalagon_alive = false;
+            state.ancalagon_pre_dragon_idx = 0;
+            state.ancalagon_guardians = 0;
             state.ancalagon_minutes = 0;
             state.ancalagon_seconds = 0;
             if let Some(user) = state.users.get_mut(&killer_id) {
@@ -413,13 +419,28 @@ pub(super) async fn npc_die(
             }
         }
         937 => {
-            // Pre-dragon killed → spawn real dragon (936) at same location
+            // Pre-dragon killed → spawn real dragon (936) at pre-dragon's death position
+            // VB6: PosicionD = MiNPC.Pos; SpawnNpc(936, PosicionD, ...)
             state.ancalagon_pre_dragon = false;
-            try_spawn_ancalagon_dragon(state).await;
+            state.ancalagon_pre_dragon_idx = 0;
+            try_spawn_ancalagon_dragon(state, x, y).await;
         }
         938 => {
-            // Guardian killed → decrement guardian count
-            state.ancalagon_guardians = (state.ancalagon_guardians - 1).max(0);
+            // Guardian killed → increment count (VB6: GuardiasRey = GuardiasRey + 1)
+            if state.ancalagon_guardians < 4 {
+                state.ancalagon_guardians += 1;
+            }
+            // When all 4 guards dead: broadcast ||699 + remove aura from pre-dragon
+            if state.ancalagon_guardians == 4 {
+                state.send_data(SendTarget::ToArea { map, x, y }, "||699").await;
+                // VB6: Npclist(IndexReyAncalagon).Char.AuraA = 0 + MakeNPCChar
+                let pre_idx = state.ancalagon_pre_dragon_idx;
+                if let Some(npc) = state.get_npc_mut(pre_idx) {
+                    npc.aura = 0;
+                    let cc = npc.build_cc_packet();
+                    state.send_data(SendTarget::ToMap(123), &cc).await;
+                }
+            }
         }
         _ => {}
     }
