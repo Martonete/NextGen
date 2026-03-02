@@ -9,6 +9,7 @@ use crate::protocol::{server_opcodes, font_types, fields::read_field};
 use crate::db::charfile;
 use crate::data::objects::ObjType;
 use super::common::*;
+use crate::game::types::InventorySlot;
 use super::{
     warp_user, revive_user, send_inventory_slot, send_full_inventory,
     iniciar_comercio_npc, iniciar_comercio_usuario, iniciar_banco, enviar_banco_inv,
@@ -453,4 +454,130 @@ pub(super) async fn handle_slash_pmsg(state: &mut GameState, conn_id: Connection
 
     let pkt = format!("G|[Party] {}> {}{}", name, text, font_types::GUILD);
     send_to_party(state, party_idx, &pkt).await;
+}
+
+// =====================================================================
+// Missing VB6 player commands — Parity audit
+// =====================================================================
+
+/// /ONLINEGM — List online GMs. VB6 TCP.bas:3794
+/// Hides Dios+ from non-Dios users. Sends N| packet with green color.
+pub(super) async fn handle_slash_onlinegm(state: &mut GameState, conn_id: ConnectionId) {
+    let my_priv = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.privileges,
+        _ => return,
+    };
+
+    let mut names = Vec::new();
+    for u in state.users.values() {
+        if !u.logged || u.privileges <= privilege_level::USER { continue; }
+        // VB6: Hide Dios+ from non-Dios users
+        if u.privileges >= privilege_level::DIOS && my_priv < privilege_level::DIOS {
+            continue;
+        }
+        names.push(u.char_name.clone());
+    }
+
+    if names.is_empty() {
+        state.send_to(conn_id, &format!("{}No hay GMs online.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    } else {
+        // VB6 sends via N| packet (green text, one name per line)
+        let msg = format!("{}GMs online: {}{}", server_opcodes::CONSOLE_MSG, names.join(", "), font_types::SYSTEM);
+        state.send_to(conn_id, &msg).await;
+    }
+}
+
+/// /ONLINEMAP — List online players on same map. VB6 TCP.bas:3811
+/// Hides Dios+ from non-Dios users. Sends ||750@names.
+pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: ConnectionId) {
+    let (my_priv, my_map) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.privileges, u.pos_map),
+        _ => return,
+    };
+
+    let mut names = Vec::new();
+    for u in state.users.values() {
+        if !u.logged || u.pos_map != my_map { continue; }
+        // VB6: Hide Dios+ from non-Dios users
+        if u.privileges >= privilege_level::DIOS && my_priv < privilege_level::DIOS {
+            continue;
+        }
+        names.push(u.char_name.clone());
+    }
+
+    let list = names.join(", ");
+    let pkt = format!("||750@{}", list);
+    state.send_to(conn_id, &pkt).await;
+}
+
+/// /ITEMNOBLE <type> — Exchange noble items. VB6 TCP_HandleData3.bas:560
+/// Types: DIADEMA(1), ESPADA(2), ARMADURA(3), ANILLO(4)
+/// Each requires specific items in inventory, gives a noble item in return.
+pub(super) async fn handle_slash_itemnoble(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let user = match state.users.get(&conn_id) {
+        Some(u) if u.logged && !u.dead => u,
+        _ => return,
+    };
+
+    if !user.es_noble {
+        state.send_to(conn_id, &format!("{}Debes ser noble para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let tipo = args.trim().to_uppercase();
+
+    // Noble item exchange table (VB6: ItemsNoble.dat)
+    // Format: (required_items: [(obj_idx, qty)], reward_obj_idx)
+    let (required, reward): (&[(i32, i32)], i32) = match tipo.as_str() {
+        "DIADEMA" | "1" => (&[(848, 1), (849, 1), (850, 1)], 851),  // Noble diadem
+        "ESPADA" | "2" => (&[(852, 1), (853, 1), (854, 1)], 855),   // Noble sword
+        "ARMADURA" | "3" => (&[(856, 1), (857, 1), (858, 1)], 859), // Noble armor
+        "ANILLO" | "4" => (&[(860, 1), (861, 1), (862, 1)], 863),   // Noble ring
+        _ => {
+            state.send_to(conn_id, &format!("{}Uso: /ITEMNOBLE DIADEMA|ESPADA|ARMADURA|ANILLO{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Check all required items are in inventory
+    for &(obj_idx, qty) in required {
+        let has = state.users.get(&conn_id)
+            .map(|u| u.inventory.iter().filter(|s| s.obj_index == obj_idx).map(|s| s.amount).sum::<i32>())
+            .unwrap_or(0);
+        if has < qty {
+            state.send_to(conn_id, &format!("{}No tenes los items necesarios.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    }
+
+    // Remove required items
+    for &(obj_idx, mut qty_needed) in required {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            for slot in user.inventory.iter_mut() {
+                if slot.obj_index == obj_idx && qty_needed > 0 {
+                    let take = slot.amount.min(qty_needed);
+                    slot.amount -= take;
+                    qty_needed -= take;
+                    if slot.amount <= 0 {
+                        slot.obj_index = 0;
+                        slot.amount = 0;
+                    }
+                }
+            }
+        }
+    }
+
+    // Add reward item
+    let empty_slot = state.users.get(&conn_id)
+        .and_then(|u| u.inventory.iter().position(|s| s.obj_index == 0));
+
+    if let Some(slot_idx) = empty_slot {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.inventory[slot_idx] = InventorySlot { obj_index: reward, amount: 1, equipped: false };
+        }
+        send_full_inventory(state, conn_id).await;
+        state.send_to(conn_id, &format!("{}Has obtenido tu item noble!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    } else {
+        state.send_to(conn_id, &format!("{}No tenes espacio en el inventario.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    }
 }

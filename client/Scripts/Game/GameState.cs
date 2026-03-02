@@ -91,6 +91,14 @@ public class GameState
     public string WhisperTarget = "";   // Target name for whisper mode
     public bool ShowNames = true;       // VB6: Nombres — toggle character names display
 
+    // User configuration (loaded from Options.tsao, applied to renderers/audio)
+    public GameConfig Config = new();
+    public bool OptionsPanelOpen;
+
+    // Key bindings (loaded from Teclas.tsao, used by InputHandler)
+    public KeyBindings Keys = new();
+    public bool KeyBindPanelOpen;
+
     // Macro system (VB6: frmMakro — 10 configurable commands for keys 1-0)
     public string[] Macros = new string[10];
     public bool MacroPanelOpen;

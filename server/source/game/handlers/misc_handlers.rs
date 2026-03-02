@@ -648,23 +648,121 @@ pub(super) async fn handle_drx(state: &mut GameState, conn_id: ConnectionId, dat
 }
 
 /// CCANJE — Tournament prize menu.
+/// Sends PRM<count>,<name1>,...,<nameN>,<torneo_pts>,<ts_pts>
 pub(super) async fn handle_ccanje(state: &mut GameState, conn_id: ConnectionId) {
-    let info = if let Some(user) = state.users.get(&conn_id) {
-        format!("PRM0,{},{}", user.puntos_torneo, user.ts_points)
-    } else {
-        return;
+    let (torneo_pts, ts_pts) = match state.users.get(&conn_id) {
+        Some(user) => (user.puntos_torneo, user.ts_points),
+        None => return,
     };
-    state.send_to(conn_id, &info).await;
+
+    let prizes = &state.game_data.prizes;
+    let count = prizes.len();
+    // Build: PRM<count>,<name1>,<name2>,...,<nameN>,<torneo_pts>,<ts_pts>
+    let mut pkt = format!("PRM{}", count);
+    for prize in prizes {
+        pkt.push(',');
+        pkt.push_str(&prize.name);
+    }
+    pkt.push_str(&format!(",{},{}", torneo_pts, ts_pts));
+    state.send_to(conn_id, &pkt).await;
 }
 
-/// IPX — Prize item info.
-pub(super) async fn handle_ipx(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
-    state.send_to(conn_id, "INF0,0,0,0,0,0,0,0,0,Sin premios disponibles").await;
+/// IPX — Prize item info request.
+/// Client sends IPX<n> (1-indexed). Server responds with:
+/// INF<require>,<atkMax>,<atkMin>,<defMax>,<defMin>,<atkMagMax>,<atkMagMin>,<defMagMax>,<defMagMin>,<desc>,<player_pts>,<grhindex>
+pub(super) async fn handle_ipx(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 3); // Strip "IPX"
+    let idx: usize = payload.parse().unwrap_or(0);
+
+    let player_pts = match state.users.get(&conn_id) {
+        Some(user) => user.puntos_torneo,
+        None => return,
+    };
+
+    let prizes = &state.game_data.prizes;
+    if idx < 1 || idx > prizes.len() {
+        state.send_to(conn_id, "INF0,0,0,0,0,0,0,0,0,Premio invalido.,0,0").await;
+        return;
+    }
+
+    let prize = &prizes[idx - 1];
+
+    // Look up GrhIndex from ObjData
+    let grh_index = if prize.obj_index >= 1 {
+        state.game_data.objects.get((prize.obj_index - 1) as usize)
+            .map(|o| o.grh_index).unwrap_or(0)
+    } else {
+        0
+    };
+
+    let pkt = format!(
+        "INF{},{},{},{},{},{},{},{},{},{},{},{}",
+        prize.require,
+        prize.atk_max, prize.atk_min,
+        prize.def_max, prize.def_min,
+        prize.atk_mag_max, prize.atk_mag_min,
+        prize.def_mag_max, prize.def_mag_min,
+        prize.description,
+        player_pts,
+        grh_index,
+    );
+    state.send_to(conn_id, &pkt).await;
 }
 
 /// SPX — Buy tournament prize.
-pub(super) async fn handle_spx(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
-    state.send_to(conn_id, &format!("{}No hay premios disponibles.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+/// Client sends SPX<n>,<qty> where n is 1-indexed prize and qty is amount.
+pub(super) async fn handle_spx(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 3); // Strip "SPX"
+    let idx: usize = read_field(1, payload, ',').parse().unwrap_or(0);
+    let qty: i32 = read_field(2, payload, ',').parse().unwrap_or(1);
+
+    if qty < 1 { return; }
+
+    let prizes = &state.game_data.prizes;
+    if idx < 1 || idx > prizes.len() {
+        state.send_to(conn_id, &format!("{}Premio invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let prize_name = prizes[idx - 1].name.clone();
+    let prize_obj_index = prizes[idx - 1].obj_index;
+    let prize_require = prizes[idx - 1].require as i64;
+    let total_cost = prize_require * qty as i64;
+
+    // Check player has enough points
+    let user_pts = match state.users.get(&conn_id) {
+        Some(user) => user.puntos_torneo,
+        None => return,
+    };
+
+    if user_pts < total_cost {
+        // ||245@<qty>@<item_name> — insufficient points
+        state.send_to(conn_id, &format!("||245@{}@{}", qty, prize_name)).await;
+        return;
+    }
+
+    // Try to add item to inventory
+    if !add_item_to_user_inventory(state, conn_id, prize_obj_index, qty) {
+        state.send_to(conn_id, "||108").await; // No inventory space
+        return;
+    }
+
+    // Deduct points
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.puntos_torneo -= total_cost;
+    }
+
+    // Send updated inventory
+    send_full_inventory(state, conn_id).await;
+
+    // ||232@<qty>@<item_name> — purchase success
+    state.send_to(conn_id, &format!("||232@{}@{}", qty, prize_name)).await;
+
+    // Send updated points (APT packet)
+    if let Some(user) = state.users.get(&conn_id) {
+        let pkt = format!("APT{},{},{}", user.puntos_torneo, user.puntos_donacion, user.ts_points);
+        state.send_to(conn_id, &pkt).await;
+    }
 }
 
 /// INCHAT — Init chat with friend.
@@ -1493,14 +1591,183 @@ pub(super) async fn handle_slash_botix(state: &mut GameState, conn_id: Connectio
     state.send_to(conn_id, &format!("{}Sistema de bots no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
 }
 
-/// /INFOSUB — Auction info.
+/// /INFOSUB — Show current auction info. VB6 TCP_HandleData2.bas
 pub(super) async fn handle_slash_infosub(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}No hay subasta activa.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    match &state.auction {
+        Some(auction) => {
+            let obj_name = state.get_object(auction.obj_index)
+                .map(|o| o.name.clone())
+                .unwrap_or_else(|| format!("obj#{}", auction.obj_index));
+            let msg = format!(
+                "{}Subasta: {} x{} | Puja minima: {} | Puja actual: {} ({}) | Tiempo: {}s{}",
+                server_opcodes::CONSOLE_MSG, obj_name, auction.amount,
+                auction.min_gold, auction.current_bid,
+                if auction.bidder_name.is_empty() { "nadie" } else { &auction.bidder_name },
+                auction.timer, font_types::INFO
+            );
+            state.send_to(conn_id, &msg).await;
+        }
+        None => {
+            state.send_to(conn_id, &format!("{}No hay subasta activa.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        }
+    }
 }
 
-/// /SUBASTAR — Start auction.
+/// /SUBASTAR — Check if auction active, send INITSUB to open auction UI. VB6 TCP_HandleData2.bas:279
 pub(super) async fn handle_slash_subastar(state: &mut GameState, conn_id: ConnectionId) {
-    state.send_to(conn_id, &format!("{}Sistema de subastas no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    if state.auction.is_some() {
+        // VB6: Send ||314 (there's already an auction)
+        state.send_to(conn_id, "||314").await;
+    } else {
+        // VB6: Send INITSUB packet to open the auction creation UI
+        state.send_to(conn_id, "INITSUB").await;
+    }
+}
+
+/// /INISUB <item>@<qty>@<gold> — Start auction. VB6 TCP_HandleData3.bas:425
+/// Removes item from inventory, broadcasts auction to all. 4-min timer.
+pub(super) async fn handle_slash_inisub(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    if state.auction.is_some() {
+        state.send_to(conn_id, "||314").await; // Already an auction active
+        return;
+    }
+
+    let parts: Vec<&str> = args.split('@').collect();
+    if parts.len() < 3 {
+        state.send_to(conn_id, &format!("{}Uso: /INISUB slot@cantidad@oro_minimo{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let slot: usize = parts[0].trim().parse().unwrap_or(0);
+    let qty: i32 = parts[1].trim().parse().unwrap_or(0);
+    let min_gold: i64 = parts[2].trim().parse().unwrap_or(0);
+
+    if slot < 1 || slot > MAX_INVENTORY_SLOTS || qty < 1 || min_gold < 1000 {
+        state.send_to(conn_id, &format!("{}Parametros invalidos. Oro minimo: 1000.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let (dead, logged) = match state.users.get(&conn_id) {
+        Some(u) => (u.dead, u.logged),
+        None => return,
+    };
+    if dead || !logged { return; }
+
+    // Validate item in slot
+    let (obj_idx, obj_amount) = match state.users.get(&conn_id) {
+        Some(u) => {
+            let s = &u.inventory[slot - 1];
+            (s.obj_index, s.amount)
+        }
+        None => return,
+    };
+
+    if obj_idx <= 0 || obj_amount < qty {
+        state.send_to(conn_id, &format!("{}No tenes suficientes items en ese slot.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Remove items from inventory
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.inventory[slot - 1].amount -= qty;
+        if u.inventory[slot - 1].amount <= 0 {
+            u.inventory[slot - 1].obj_index = 0;
+            u.inventory[slot - 1].amount = 0;
+        }
+    }
+    send_inventory_slot(state, conn_id, slot).await;
+
+    let char_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+
+    // Create auction state
+    state.auction = Some(crate::game::types::AuctionState {
+        auctioneer: conn_id,
+        obj_index: obj_idx,
+        amount: qty,
+        min_gold,
+        current_bid: 0,
+        bidder: 0,
+        bidder_name: String::new(),
+        timer: 240, // 4 minutes
+    });
+
+    // Broadcast auction start: ||528@name@obj@qty@gold
+    let obj_name = state.get_object(obj_idx)
+        .map(|o| o.name.clone())
+        .unwrap_or_else(|| format!("obj#{}", obj_idx));
+    let pkt = format!("||528@{}@{}@{}@{}", char_name, obj_name, qty, min_gold);
+    state.send_data(SendTarget::ToAll, &pkt).await;
+}
+
+/// /OFRECER <amount> — Bid on active auction. VB6 TCP_HandleData3.bas:489
+pub(super) async fn handle_slash_ofrecer(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let bid: i64 = args.trim().parse().unwrap_or(0);
+    if bid < 1 {
+        state.send_to(conn_id, &format!("{}Uso: /OFRECER cantidad{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let auction = match &state.auction {
+        Some(a) => a.clone(),
+        None => {
+            state.send_to(conn_id, &format!("{}No hay subasta activa.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // VB6: Can't bid on own auction
+    if auction.auctioneer == conn_id {
+        state.send_to(conn_id, &format!("{}No podes pujar en tu propia subasta.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // VB6: Can't bid if you're already the highest bidder
+    if auction.bidder == conn_id {
+        state.send_to(conn_id, &format!("{}Ya sos el mayor postor.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Must exceed current bid (or minimum if no bids)
+    let min_required = if auction.current_bid > 0 { auction.current_bid + 1 } else { auction.min_gold };
+    if bid < min_required {
+        state.send_to(conn_id, &format!("{}La puja minima es {}.{}", server_opcodes::CONSOLE_MSG, min_required, font_types::INFO)).await;
+        return;
+    }
+
+    // Check gold
+    let my_gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
+    if my_gold < bid {
+        state.send_to(conn_id, &format!("{}No tenes suficiente oro.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Refund previous bidder
+    if auction.bidder > 0 && auction.current_bid > 0 {
+        if let Some(u) = state.users.get_mut(&auction.bidder) {
+            u.gold += auction.current_bid;
+        }
+        send_stats_gold(state, auction.bidder).await;
+        state.send_to(auction.bidder, &format!("{}Tu puja fue superada. Se te devolvieron {} monedas.{}", server_opcodes::CONSOLE_MSG, auction.current_bid, font_types::INFO)).await;
+    }
+
+    // Deduct gold from new bidder
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.gold -= bid;
+    }
+    send_stats_gold(state, conn_id).await;
+
+    let bidder_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+
+    // Update auction
+    if let Some(a) = state.auction.as_mut() {
+        a.current_bid = bid;
+        a.bidder = conn_id;
+        a.bidder_name = bidder_name.clone();
+    }
+
+    // Broadcast new bid: ||534@name@amount
+    let pkt = format!("||534@{}@{}", bidder_name, bid);
+    state.send_data(SendTarget::ToAll, &pkt).await;
 }
 
 // =====================================================================
@@ -2410,6 +2677,170 @@ pub(super) async fn handle_slash_sicv(state: &mut GameState, conn_id: Connection
     // Announce battle start
     let pkt = format!("||85@{}@{}", acceptor_name, challenger_name);
     state.send_data(SendTarget::ToAll, &pkt).await;
+}
+
+// =====================================================================
+// Marriage system — VB6 TCP_HandleData3.bas
+// =====================================================================
+
+/// /CASAR <name> — Marry another player. VB6 TCP_HandleData3.bas:1195
+/// Both must be online, neither married, distance <= 3 tiles.
+pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+    let (my_name, my_map, my_x, my_y, my_pareja, my_dead) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.char_name.clone(), u.pos_map, u.pos_x, u.pos_y, u.pareja.clone(), u.dead),
+        _ => return,
+    };
+
+    if my_dead {
+        state.send_to(conn_id, "||3").await; // Can't do this while dead
+        return;
+    }
+
+    if !my_pareja.is_empty() {
+        state.send_to(conn_id, &format!("{}Ya estas casado/a con {}.{}", server_opcodes::CONSOLE_MSG, my_pareja, font_types::INFO)).await;
+        return;
+    }
+
+    let target_id = match state.find_user_by_name(target_name) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, "||196").await; // User not found
+            return;
+        }
+    };
+
+    if target_id == conn_id {
+        state.send_to(conn_id, &format!("{}No podes casarte con vos mismo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let (t_pareja, t_map, t_x, t_y, t_dead, t_name) = match state.users.get(&target_id) {
+        Some(u) if u.logged => (u.pareja.clone(), u.pos_map, u.pos_x, u.pos_y, u.dead, u.char_name.clone()),
+        _ => {
+            state.send_to(conn_id, "||196").await;
+            return;
+        }
+    };
+
+    if t_dead {
+        state.send_to(conn_id, &format!("{}El jugador esta muerto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    if !t_pareja.is_empty() {
+        state.send_to(conn_id, &format!("{}{} ya esta casado/a.{}", server_opcodes::CONSOLE_MSG, t_name, font_types::INFO)).await;
+        return;
+    }
+
+    // VB6: Distance check <= 3
+    if my_map != t_map || (my_x - t_x).abs() > 3 || (my_y - t_y).abs() > 3 {
+        state.send_to(conn_id, &format!("{}Debes estar cerca del jugador (3 tiles).{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Marry both
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.pareja = t_name.clone();
+    }
+    if let Some(u) = state.users.get_mut(&target_id) {
+        u.pareja = my_name.clone();
+    }
+
+    // Broadcast marriage announcement
+    let pkt = format!("||526@{}@{}", my_name, t_name);
+    state.send_data(SendTarget::ToAll, &pkt).await;
+
+    state.send_to(conn_id, &format!("{}Te has casado con {}!{}", server_opcodes::CONSOLE_MSG, t_name, font_types::INFO)).await;
+    state.send_to(target_id, &format!("{}Te has casado con {}!{}", server_opcodes::CONSOLE_MSG, my_name, font_types::INFO)).await;
+}
+
+/// /DIVORCIARSE — Divorce from spouse. VB6 TCP_HandleData3.bas:1262
+pub(super) async fn handle_slash_divorciarse(state: &mut GameState, conn_id: ConnectionId) {
+    let (my_name, my_pareja) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.char_name.clone(), u.pareja.clone()),
+        _ => return,
+    };
+
+    if my_pareja.is_empty() {
+        state.send_to(conn_id, &format!("{}No estas casado/a.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Clear our marriage
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.pareja.clear();
+    }
+
+    // Clear spouse's marriage (if online)
+    if let Some(spouse_id) = state.find_user_by_name(&my_pareja) {
+        if let Some(u) = state.users.get_mut(&spouse_id) {
+            u.pareja.clear();
+        }
+        state.send_to(spouse_id, &format!("{}{} se ha divorciado de ti.{}", server_opcodes::CONSOLE_MSG, my_name, font_types::INFO)).await;
+    }
+
+    // Broadcast divorce
+    let pkt = format!("||527@{}@{}", my_name, my_pareja);
+    state.send_data(SendTarget::ToAll, &pkt).await;
+
+    state.send_to(conn_id, &format!("{}Te has divorciado de {}.{}", server_opcodes::CONSOLE_MSG, my_pareja, font_types::INFO)).await;
+}
+
+// =====================================================================
+// Gran Poder system — VB6 modGranPoder
+// =====================================================================
+
+/// /PODER — Check/assign Gran Poder. VB6 TCP_HandleData2.bas:1074
+/// If nobody has it, assigns to a random eligible player in PK zone.
+/// If someone has it, shows who and where.
+pub(super) async fn handle_slash_poder(state: &mut GameState, conn_id: ConnectionId) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged => {}
+        _ => return,
+    }
+
+    if state.gran_poder_holder > 0 {
+        // Someone has it — show who
+        let (holder_name, holder_map) = match state.users.get(&state.gran_poder_holder) {
+            Some(u) if u.logged => (u.char_name.clone(), u.pos_map),
+            _ => {
+                // Holder disconnected, clear it
+                state.gran_poder_holder = 0;
+                state.send_to(conn_id, &format!("{}Nadie tiene el Gran Poder.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                return;
+            }
+        };
+
+        // VB6: ||362@name or ||363@name@map
+        let pkt = format!("||362@{}@{}", holder_name, holder_map);
+        state.send_to(conn_id, &pkt).await;
+    } else {
+        // Nobody has it — try to assign to a random eligible player
+        // VB6: OtorgarGranPoder — picks random player in PK zone (map with PK enabled)
+        let eligible: Vec<ConnectionId> = state.users.values()
+            .filter(|u| u.logged && !u.dead && u.privileges == privilege_level::USER)
+            .map(|u| u.conn_id)
+            .collect();
+
+        if eligible.is_empty() {
+            state.send_to(conn_id, &format!("{}Nadie tiene el Gran Poder y no hay jugadores elegibles.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+
+        // Simple random selection
+        let idx = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as usize) % eligible.len();
+        let chosen = eligible[idx];
+        state.gran_poder_holder = chosen;
+
+        let chosen_name = state.users.get(&chosen).map(|u| u.char_name.clone()).unwrap_or_default();
+
+        // Broadcast: ||363@name
+        let pkt = format!("||363@{}", chosen_name);
+        state.send_data(SendTarget::ToAll, &pkt).await;
+    }
 }
 
 // =====================================================================

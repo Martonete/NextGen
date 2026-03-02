@@ -127,7 +127,13 @@ public partial class WorldRenderer : Node2D
     /// </summary>
     private void UpdateAmbientLight()
     {
-        float r = _state!.MapColorR / 255f;
+        // When day/night is disabled, force full brightness
+        if (!(_state!.Config?.ShowDayNight ?? true))
+        {
+            Modulate = Colors.White;
+            return;
+        }
+        float r = _state.MapColorR / 255f;
         float g = _state.MapColorG / 255f;
         float b = _state.MapColorB / 255f;
         Modulate = new Color(r, g, b, 1f);
@@ -226,7 +232,8 @@ public partial class WorldRenderer : Node2D
         _frameMinY = Math.Max(1, screenMinY - TileBufferSize);
         _frameMaxY = Math.Min(100, screenMaxY + TileBufferSize);
 
-        _frameHasLights = _state.MapLights.Count > 0 && _state.TileLightColors != null;
+        _frameHasLights = (_state.Config?.ShowLights ?? true)
+                          && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
@@ -310,25 +317,29 @@ public partial class WorldRenderer : Node2D
             }
 
             // Collect aura draws (updates angle state + queues to _pendingAuraDraws)
-            CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
+            if (_state.Config?.ShowAuras ?? true)
+                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
         }
 
-        // Collect map particle draws for the additive layer
-        foreach (var stream in _state.MapParticles)
+        // Collect map particle draws for the additive layer (respects Config.ShowParticles)
+        if (_state.Config?.ShowParticles ?? true)
         {
-            if (!stream.Active || stream.CharIndex >= 0) continue;
-            if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
-
-            Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, _frameUserX, _frameUserY,
-                                              _framePixelOffsetX, _framePixelOffsetY);
-
-            foreach (var p in stream.Particles)
+            foreach (var stream in _state.MapParticles)
             {
-                if (!p.Alive || p.GrhIndex <= 0) continue;
-                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
-                int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
-                _pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));
+                if (!stream.Active || stream.CharIndex >= 0) continue;
+                if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
+
+                Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, _frameUserX, _frameUserY,
+                                                  _framePixelOffsetX, _framePixelOffsetY);
+
+                foreach (var p in stream.Particles)
+                {
+                    if (!p.Alive || p.GrhIndex <= 0) continue;
+                    var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                    Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
+                    int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
+                    _pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));
+                }
             }
         }
 

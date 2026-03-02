@@ -1131,6 +1131,7 @@ public class PacketHandler
         if (parts.Length >= 15)
         {
             ch.NpcAura = ParseInt(parts[13]);
+            ch.NpcNumber = ParseInt(parts[14]);
         }
 
         _state.Characters[charIndex] = ch;

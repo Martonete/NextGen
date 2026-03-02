@@ -118,7 +118,15 @@ public static class CharRenderer
         }
 
         // Shadow beneath character (VB6: Draw_Grh_Sombra, offset X-6)
-        DrawShadow(canvas, ch, screenPos, heading, data, animator);
+        // Respects Config.ShowShadows / ShowNpcShadows
+        bool drawShadow = true;
+        if (state?.Config != null)
+        {
+            bool isNpc = ch.CharIndex != state.UserCharIndex && ch.NpcNumber > 0;
+            drawShadow = isNpc ? state.Config.ShowNpcShadows : state.Config.ShowShadows;
+        }
+        if (drawShadow)
+            DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
         // VB6: Auras are drawn BEFORE dibujarPersonaje (behind the character body).
         // They use additive blend (D3DBLEND_ONE/ONE). Aura draws are collected in
@@ -168,7 +176,7 @@ public static class CharRenderer
         DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
 
         // Character-attached particles (queued to WorldRenderer's additive layer)
-        if (state != null)
+        if (state != null && (state.Config?.ShowParticles ?? true))
             DrawCharParticles(canvas, ch, screenPos, state, data, worldRenderer);
 
         // Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)

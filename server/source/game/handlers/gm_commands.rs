@@ -14,6 +14,7 @@ use super::world;
 use super::{
     warp_user, send_warp_fx, user_die, revive_user, check_user_level,
     naked_body, send_inventory_slot, send_full_inventory, llevar_usuarios_cvc,
+    spawn_npc_at,
 };
 
 pub(super) async fn handle_slash_gmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
@@ -2690,4 +2691,594 @@ pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: Connection
             state.send_to(conn_id, &format!("{}Error recargando mapa {}: {}{}", server_opcodes::CONSOLE_MSG, map_num, e, font_types::INFO)).await;
         }
     }
+}
+
+// =====================================================================
+// Missing GM commands — VB6 parity audit
+// =====================================================================
+
+/// /BLOQ — Toggle tile blocked state at GM position. VB6 TCP.bas:5134
+/// Requires Semidios+. Broadcasts BQ packet to map.
+pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: ConnectionId) {
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    let map_idx = map as usize;
+    // Toggle blocked state and capture result
+    let toggle_result = if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
+        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
+            let tile = &mut game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+            tile.blocked = !tile.blocked;
+            Some(tile.blocked)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    if let Some(is_blocked) = toggle_result {
+        let blocked_val = if is_blocked { 1 } else { 0 };
+
+        // Broadcast BQ packet to everyone on the map
+        let bq_pkt = format!("BQ{},{},{}", x, y, blocked_val);
+        state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
+
+        let status = if is_blocked { "bloqueado" } else { "desbloqueado" };
+        state.send_to(conn_id, &format!("{}Tile ({},{}) {}.{}", server_opcodes::CONSOLE_MSG, x, y, status, font_types::INFO)).await;
+    }
+}
+
+/// /DAMEBANCO <name> — Transfer all items from player's bank to GM's inventory. VB6 TCP.bas:3880
+/// Requires GranDios+.
+pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::GRAN_DIOS => {}
+        _ => return,
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Collect bank items from target
+    let bank_items: Vec<InventorySlot> = match state.users.get(&target_id) {
+        Some(u) => u.bank.iter().filter(|s| s.obj_index > 0).cloned().collect(),
+        None => return,
+    };
+
+    if bank_items.is_empty() {
+        state.send_to(conn_id, &format!("{}El banco del jugador esta vacio.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Clear target's bank
+    if let Some(u) = state.users.get_mut(&target_id) {
+        for slot in u.bank.iter_mut() {
+            *slot = InventorySlot::default();
+        }
+    }
+
+    // Add to GM's inventory
+    let mut added = 0;
+    for item in &bank_items {
+        let empty_slot = state.users.get(&conn_id)
+            .and_then(|u| u.inventory.iter().position(|s| s.obj_index == 0));
+        if let Some(slot_idx) = empty_slot {
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.inventory[slot_idx] = item.clone();
+                added += 1;
+            }
+        }
+    }
+
+    send_full_inventory(state, conn_id).await;
+    state.send_to(conn_id, &format!("{}Transferidos {} items del banco de '{}'.{}", server_opcodes::CONSOLE_MSG, added, target, font_types::INFO)).await;
+}
+
+/// /DV <name> — Devolver: warp player back to previous map position. VB6 TCP.bas:4190
+/// Used for prison release / arena exit. Requires Semidios+.
+pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Get saved previous position
+    let (prev_map, prev_x, prev_y) = match state.users.get(&target_id) {
+        Some(u) if u.mapa_anterior > 0 => (u.mapa_anterior, u.x_anterior, u.y_anterior),
+        _ => {
+            state.send_to(conn_id, &format!("{}El jugador no tiene posicion anterior guardada.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Clear saved position
+    if let Some(u) = state.users.get_mut(&target_id) {
+        u.mapa_anterior = 0;
+        u.x_anterior = 0;
+        u.y_anterior = 0;
+        u.jail_timer = 0; // Release from jail if applicable
+    }
+
+    warp_user(state, target_id, prev_map, prev_x, prev_y).await;
+    send_warp_fx(state, target_id).await;
+    state.send_to(target_id, &format!("{}Un GM te ha devuelto a tu posicion anterior.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_to(conn_id, &format!("{}Jugador '{}' devuelto.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+}
+
+/// /CONT <seconds> — Start countdown broadcast. VB6 TCP.bas:3470
+/// 0 = cancel. 1-60 = start countdown. Requires Semidios+.
+pub(super) async fn handle_slash_cont(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let seconds: i32 = args.trim().parse().unwrap_or(-1);
+    if seconds < 0 || seconds > 60 {
+        state.send_to(conn_id, &format!("{}Uso: /CONT 0-60 (0 = cancelar){}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    if seconds == 0 {
+        state.countdown_seconds = 0;
+        state.send_to(conn_id, &format!("{}Cuenta regresiva cancelada.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    } else {
+        state.countdown_seconds = seconds;
+        // VB6: broadcasts ||739@seconds
+        let pkt = format!("||739@{}", seconds);
+        state.send_data(SendTarget::ToAll, &pkt).await;
+        state.send_to(conn_id, &format!("{}Cuenta regresiva iniciada: {} segundos.{}", server_opcodes::CONSOLE_MSG, seconds, font_types::INFO)).await;
+    }
+}
+
+/// /INFO <name> — View detailed player info. VB6 TCP.bas:3716
+/// Requires GranDios+. Shows class, level, gold, stats, IP, map, etc.
+pub(super) async fn handle_slash_info(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::GRAN_DIOS => {}
+        _ => return,
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no esta online.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    let info_lines = match state.users.get(&target_id) {
+        Some(u) => {
+            vec![
+                format!("--- Info de {} ---", u.char_name),
+                format!("Clase: {} | Raza: {} | Nivel: {}", u.class, u.race, u.level),
+                format!("HP: {}/{} | Mana: {}/{} | Sta: {}/{}", u.min_hp, u.max_hp, u.min_mana, u.max_mana, u.min_sta, u.max_sta),
+                format!("Fuerza: {} | Agilidad: {} | Inteligencia: {} | Carisma: {} | Constitucion: {}",
+                    u.attributes[0], u.attributes[1], u.attributes[2], u.attributes[3], u.attributes[4]),
+                format!("Oro: {} | Banco: {} | Exp: {}", u.gold, u.bank_gold, u.exp),
+                format!("Mapa: {} ({},{}) | IP: {}", u.pos_map, u.pos_x, u.pos_y, u.ip),
+                format!("Criminal: {} | Muerto: {} | Privilegios: {}", u.criminal, u.dead, u.privileges),
+                format!("Guild: {} | Pareja: {}", u.guild_index, u.pareja),
+            ]
+        }
+        None => return,
+    };
+
+    for line in info_lines {
+        state.send_to(conn_id, &format!("{}{}{}", server_opcodes::CONSOLE_MSG, line, font_types::INFO)).await;
+    }
+}
+
+/// /EDIT <name>@<levels> — Give player N level-ups. VB6 TCP.bas:3692
+/// Requires GranDios+. Sets exp=ELU repeatedly to trigger level_up.
+pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::GRAN_DIOS => {}
+        _ => return,
+    }
+
+    let parts: Vec<&str> = args.splitn(2, '@').collect();
+    if parts.len() < 2 {
+        state.send_to(conn_id, &format!("{}Uso: /EDIT nombre@niveles{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let target_name = parts[0].trim();
+    let levels: i32 = parts[1].trim().parse().unwrap_or(0);
+    if levels < 1 || levels > 50 {
+        state.send_to(conn_id, &format!("{}Niveles debe ser entre 1 y 50.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let target_id = match state.find_user_by_name(target_name) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target_name, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // VB6: Set exp = ELU for each level, then call CheckUserLevel
+    for _ in 0..levels {
+        let level = match state.users.get(&target_id) {
+            Some(u) => u.level,
+            None => return,
+        };
+        if level >= 50 { break; } // Max level cap
+
+        // Get ELU for current level and set exp to trigger level-up
+        let elu = state.exp_for_level(level);
+        if elu <= 0 { break; }
+        if let Some(u) = state.users.get_mut(&target_id) {
+            u.exp = elu;
+        }
+        check_user_level(state, target_id).await;
+    }
+
+    send_stats_exp(state, target_id).await;
+    let final_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(0);
+    state.send_to(conn_id, &format!("{}Jugador '{}' ahora es nivel {}.{}", server_opcodes::CONSOLE_MSG, target_name, final_level, font_types::INFO)).await;
+    state.send_to(target_id, &format!("{}Un GM te ha subido de nivel!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+}
+
+/// /PREMIAR <name> <item_id> — Give prize item to player. VB6 TCP.bas:4237
+/// Requires GranDios+.
+pub(super) async fn handle_slash_premiar(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::GRAN_DIOS => {}
+        _ => return,
+    }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 2 {
+        state.send_to(conn_id, &format!("{}Uso: /PREMIAR nombre item_id{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let target_name = parts[0];
+    let item_id: i32 = parts[1].parse().unwrap_or(0);
+    if item_id < 1 {
+        state.send_to(conn_id, &format!("{}Item invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    give_item_to_player(state, conn_id, target_name, item_id, 1).await;
+}
+
+/// /PREMIARTS <name> <item_id> — Give TS-specific prize. VB6 TCP.bas:4262
+/// Requires Developer+.
+pub(super) async fn handle_slash_premiarts(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DEVELOPER => {}
+        _ => return,
+    }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 2 {
+        state.send_to(conn_id, &format!("{}Uso: /PREMIARTS nombre item_id{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let target_name = parts[0];
+    let item_id: i32 = parts[1].parse().unwrap_or(0);
+    if item_id < 1 { return; }
+
+    give_item_to_player(state, conn_id, target_name, item_id, 1).await;
+}
+
+/// Helper: Give an item to a player by name, notify GM.
+async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_name: &str, item_id: i32, amount: i32) {
+    let target_id = match state.find_user_by_name(target_name) {
+        Some(id) => id,
+        None => {
+            state.send_to(gm_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target_name, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Verify object exists
+    if state.get_object(item_id).is_none() {
+        state.send_to(gm_id, &format!("{}Objeto {} no existe.{}", server_opcodes::CONSOLE_MSG, item_id, font_types::INFO)).await;
+        return;
+    }
+
+    let empty_slot = state.users.get(&target_id)
+        .and_then(|u| u.inventory.iter().position(|s| s.obj_index == 0));
+
+    if let Some(slot_idx) = empty_slot {
+        if let Some(user) = state.users.get_mut(&target_id) {
+            user.inventory[slot_idx] = InventorySlot { obj_index: item_id, amount, equipped: false };
+        }
+        send_inventory_slot(state, target_id, slot_idx + 1).await;
+        state.send_to(gm_id, &format!("{}Item {} dado a '{}'.{}", server_opcodes::CONSOLE_MSG, item_id, target_name, font_types::INFO)).await;
+        state.send_to(target_id, &format!("{}Has recibido un premio!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    } else {
+        state.send_to(gm_id, &format!("{}El jugador no tiene espacio en el inventario.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    }
+}
+
+/// /PLATA <name> — Give silver trophy (obj 896) + update tournament points. VB6 TCP.bas:3114
+/// Requires Semidios+.
+pub(super) async fn handle_slash_plata(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // VB6: Give silver trophy (obj 896) and add tournament points
+    if let Some(u) = state.users.get_mut(&target_id) {
+        u.puntos_torneo += 2;
+    }
+    give_item_to_player(state, conn_id, target, 896, 1).await;
+
+    let pkt = format!("||520@{}", target); // Announce silver medal
+    state.send_data(SendTarget::ToAll, &pkt).await;
+}
+
+/// /BRONCE <name> — Give bronze trophy (obj 897) + update tournament points. VB6 TCP.bas:3147
+/// Requires Semidios+.
+pub(super) async fn handle_slash_bronce(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    if let Some(u) = state.users.get_mut(&target_id) {
+        u.puntos_torneo += 1;
+    }
+    give_item_to_player(state, conn_id, target, 897, 1).await;
+
+    let pkt = format!("||521@{}", target); // Announce bronze medal
+    state.send_data(SendTarget::ToAll, &pkt).await;
+}
+
+/// /MEDALLA <name> — Give gold medal (obj 1025) + update tournament points. VB6 TCP.bas:3179
+/// Requires Semidios+.
+pub(super) async fn handle_slash_medalla(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    if let Some(u) = state.users.get_mut(&target_id) {
+        u.puntos_torneo += 3;
+    }
+    give_item_to_player(state, conn_id, target, 1025, 1).await;
+
+    let pkt = format!("||519@{}", target); // Announce gold medal
+    state.send_data(SendTarget::ToAll, &pkt).await;
+}
+
+/// /DESCALIFICAR <name> — Remove player from tournament. VB6 TCP.bas:3088
+/// Requires Semidios+.
+pub(super) async fn handle_slash_descalificar(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    if !state.hay_torneo {
+        state.send_to(conn_id, &format!("{}No hay torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    let en_torneo = state.users.get(&target_id).map(|u| u.en_torneo).unwrap_or(false);
+    if !en_torneo {
+        state.send_to(conn_id, &format!("{}El jugador no esta en el torneo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Remove from tournament
+    if let Some(u) = state.users.get_mut(&target_id) {
+        u.en_torneo = false;
+        u.num_torneo = 0;
+    }
+    state.usuarios_en_torneo = (state.usuarios_en_torneo - 1).max(0);
+
+    // Remove from participants list
+    let name_upper = target.to_uppercase();
+    state.cronologia_participantes.retain(|n| n.to_uppercase() != name_upper);
+
+    // Renumber remaining participants
+    for (i, name) in state.cronologia_participantes.iter().enumerate() {
+        if let Some(id) = state.find_user_by_name(name) {
+            if let Some(u) = state.users.get_mut(&id) {
+                u.num_torneo = (i + 1) as i32;
+            }
+        }
+    }
+
+    let pkt = format!("||522@{}", target); // Announce disqualification
+    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_to(conn_id, &format!("{}Jugador '{}' descalificado del torneo.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+}
+
+/// /MVP <npc>@<map>@<x>@<y> — Spawn MVP NPC at location. VB6 TCP.bas:3214
+/// Requires Semidios+.
+pub(super) async fn handle_slash_mvp(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let parts: Vec<&str> = args.split('@').collect();
+    if parts.len() < 4 {
+        state.send_to(conn_id, &format!("{}Uso: /MVP npc@mapa@x@y{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let npc_num: i32 = parts[0].trim().parse().unwrap_or(0);
+    let map: i32 = parts[1].trim().parse().unwrap_or(0);
+    let x: i32 = parts[2].trim().parse().unwrap_or(0);
+    let y: i32 = parts[3].trim().parse().unwrap_or(0);
+
+    if npc_num < 1 || map < 1 || !crate::game::world::in_map_bounds(x, y) {
+        state.send_to(conn_id, &format!("{}Parametros invalidos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Verify NPC exists
+    if state.game_data.npcs.get(npc_num as usize).is_none() {
+        state.send_to(conn_id, &format!("{}NPC {} no existe.{}", server_opcodes::CONSOLE_MSG, npc_num, font_types::INFO)).await;
+        return;
+    }
+
+    // Use spawn_npc_at from events module
+    super::spawn_npc_at(state, npc_num as usize, map, x, y).await;
+    state.send_to(conn_id, &format!("{}NPC {} (MVP) spawneado en mapa {} ({},{}).{}", server_opcodes::CONSOLE_MSG, npc_num, map, x, y, font_types::INFO)).await;
+
+    // Announce MVP spawn
+    let pkt = format!("||523@{}", map);
+    state.send_data(SendTarget::ToAll, &pkt).await;
+}
+
+/// /DOTORNEO <modality> — Start tournament. VB6 TCP.bas:4053
+/// Modality: 1=1v1, 2=2v2, 3=3v3, 4=FFA, 5=special. Requires Semidios+.
+pub(super) async fn handle_slash_dotorneo(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    if state.hay_torneo {
+        state.send_to(conn_id, &format!("{}Ya hay un torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let modality: i32 = args.trim().parse().unwrap_or(0);
+    if modality < 1 || modality > 5 {
+        state.send_to(conn_id, &format!("{}Uso: /DOTORNEO 1-5 (1=1v1, 2=2v2, 3=3v3, 4=FFA, 5=especial){}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    state.hay_torneo = true;
+    state.usuarios_en_torneo = 0;
+    state.cronologia_participantes.clear();
+
+    // Broadcast tournament start announcement
+    let pkt = format!("||524@{}", modality);
+    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_to(conn_id, &format!("{}Torneo modalidad {} iniciado. Jugadores usen /TORNEO para inscribirse.{}", server_opcodes::CONSOLE_MSG, modality, font_types::INFO)).await;
+}
+
+/// /CANCELARTORNEO — Cancel active tournament. VB6 TCP.bas:4397
+/// Requires Semidios+.
+pub(super) async fn handle_slash_cancelartorneo(state: &mut GameState, conn_id: ConnectionId) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    if !state.hay_torneo {
+        state.send_to(conn_id, &format!("{}No hay torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Remove all players from tournament
+    let participants: Vec<String> = state.cronologia_participantes.clone();
+    for name in &participants {
+        if let Some(id) = state.find_user_by_name(name) {
+            if let Some(u) = state.users.get_mut(&id) {
+                u.en_torneo = false;
+                u.num_torneo = 0;
+            }
+        }
+    }
+
+    state.hay_torneo = false;
+    state.usuarios_en_torneo = 0;
+    state.cronologia_participantes.clear();
+
+    let pkt = "||525"; // Announce tournament cancelled
+    state.send_data(SendTarget::ToAll, pkt).await;
+    state.send_to(conn_id, &format!("{}Torneo cancelado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+}
+
+/// /TSUM <from>@<to> — Teleport tournament players (numbered from-to) to GM's position. VB6 TCP.bas:4215
+/// Requires Semidios+.
+pub(super) async fn handle_slash_tsum(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let (gm_map, gm_x, gm_y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    if !state.hay_torneo {
+        state.send_to(conn_id, &format!("{}No hay torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let parts: Vec<&str> = args.split('@').collect();
+    if parts.len() < 2 {
+        state.send_to(conn_id, &format!("{}Uso: /TSUM desde@hasta{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let from: usize = parts[0].trim().parse().unwrap_or(0);
+    let to: usize = parts[1].trim().parse().unwrap_or(0);
+
+    if from < 1 || to < from {
+        state.send_to(conn_id, &format!("{}Rango invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let participants = state.cronologia_participantes.clone();
+    let mut warped = 0;
+    for i in from..=to {
+        if i > participants.len() { break; }
+        if let Some(id) = state.find_user_by_name(&participants[i - 1]) {
+            warp_user(state, id, gm_map, gm_x, gm_y).await;
+            send_warp_fx(state, id).await;
+            warped += 1;
+        }
+    }
+
+    state.send_to(conn_id, &format!("{}Invocados {} participantes del torneo.{}", server_opcodes::CONSOLE_MSG, warped, font_types::INFO)).await;
 }

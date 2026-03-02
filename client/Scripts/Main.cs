@@ -112,6 +112,12 @@ public partial class Main : Control
     // Macro panel (frmMakro)
     private MacroPanel? _macroPanel;
 
+    // Options panel (frmOpcionesNew)
+    private OptionsPanel? _optionsPanel;
+
+    // Key binding panel (frmTeclas)
+    private KeyBindPanel? _keyBindPanel;
+
     // Drop quantity dialog (VB6: frmCantidad)
     private PanelContainer? _dropDialog;
     private Label? _dropDialogLabel;
@@ -176,6 +182,15 @@ public partial class Main : Control
         string particlesPath = System.IO.Path.Combine(dataPath, "INIT", "Particles.ini");
         _particleSystem.LoadDefinitions(particlesPath, _state);
 
+        // Load user configuration (Options.tsao)
+        _state.Config = GameConfig.Load(dataPath);
+        _state.ShowNames = _state.Config.ShowNames;
+        if (_state.Config.FpsLimit > 0)
+            Engine.MaxFps = _state.Config.FpsLimit;
+
+        // Load key bindings (Teclas.tsao)
+        _state.Keys = KeyBindings.Load(dataPath);
+
         if (!_gameData.IsLoaded)
         {
             GD.PrintErr("[MAIN] Failed to load game data — aborting");
@@ -196,6 +211,10 @@ public partial class Main : Control
         _soundManager = new SoundManager();
         AddChild(_soundManager);
         _soundManager.Init(dataPath);
+        _soundManager.MusicEnabled = _state.Config.MusicEnabled;
+        _soundManager.SoundEnabled = _state.Config.SfxEnabled;
+        _soundManager.SetMusicVolume(_state.Config.MusicVolume);
+        _soundManager.SetSfxVolume(_state.Config.SfxVolume);
         _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
         _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
 
@@ -456,6 +475,32 @@ public partial class Main : Control
         _macroPanel.Visible = false;
         _gameUI.AddChild(_macroPanel);
         _macroPanel.Init(_state, _dataPath);
+
+        // Options panel (frmOpcionesNew) — centered on viewport
+        _optionsPanel = new OptionsPanel();
+        _optionsPanel.Position = new Vector2((534 - 400) / 2, 124 + (408 - 480) / 2);
+        _optionsPanel.Visible = false;
+        _gameUI.AddChild(_optionsPanel);
+        _optionsPanel.Init(_state, _state.Config, _dataPath);
+        _optionsPanel.OnConfigApplied += ApplyConfigToSystems;
+
+        // Key binding panel (frmTeclas) — centered on viewport
+        _keyBindPanel = new KeyBindPanel();
+        _keyBindPanel.Position = new Vector2((534 - 420) / 2, 124 + (408 - 500) / 2);
+        _keyBindPanel.Visible = false;
+        _gameUI.AddChild(_keyBindPanel);
+        _keyBindPanel.Init(_state, _state.Keys, _dataPath);
+
+        // Wire the "Configurar Teclas" button in OptionsPanel to open KeyBindPanel
+        _optionsPanel.OnOpenKeyBinds += () =>
+        {
+            _optionsPanel.Close();
+            if (_keyBindPanel != null && !_state.KeyBindPanelOpen)
+            {
+                _state.KeyBindPanelOpen = true;
+                _keyBindPanel.Open();
+            }
+        };
 
         // Drop quantity dialog (VB6: frmCantidad)
         CreateDropDialog();
@@ -798,7 +843,7 @@ public partial class Main : Control
             _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
             _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
         }
-        _inputHandler = new InputHandler(_tcp, _state);
+        _inputHandler = new InputHandler(_tcp, _state, _state.Keys);
         _inputHandler.OnToggleMusic = () =>
         {
             if (_soundManager != null)
@@ -2033,6 +2078,34 @@ public partial class Main : Control
     }
 
     /// <summary>
+    /// Apply GameConfig values to all subsystems (called after options are saved).
+    /// </summary>
+    private void ApplyConfigToSystems()
+    {
+        var cfg = _state.Config;
+
+        // Sync ShowNames to GameState (used by CharRenderer directly)
+        _state.ShowNames = cfg.ShowNames;
+
+        // Apply audio settings
+        if (_soundManager != null)
+        {
+            _soundManager.MusicEnabled = cfg.MusicEnabled;
+            _soundManager.SoundEnabled = cfg.SfxEnabled;
+            _soundManager.SetMusicVolume(cfg.MusicVolume);
+            _soundManager.SetSfxVolume(cfg.SfxVolume);
+        }
+
+        // Apply FPS limit
+        if (cfg.FpsLimit > 0)
+            Engine.MaxFps = cfg.FpsLimit;
+        else
+            Engine.MaxFps = 0; // unlimited
+
+        GD.Print($"[CFG] Applied config: FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Auras={cfg.ShowAuras}, Particles={cfg.ShowParticles}, Shadows={cfg.ShowShadows}");
+    }
+
+    /// <summary>
     /// VB6 Socket1_Disconnect: clean up everything and return to login.
     /// Called when TCP connection is lost (server close, error, timeout).
     /// </summary>
@@ -2348,6 +2421,19 @@ public partial class Main : Control
             // Escape: close dialogs, chat input, or disconnect to login
             if (key.Keycode == Key.Escape)
             {
+                if (_state.KeyBindPanelOpen)
+                {
+                    _keyBindPanel?.Close();
+                    _state.KeyBindPanelOpen = false;
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+                if (_state.OptionsPanelOpen)
+                {
+                    _optionsPanel?.Close();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.MacroPanelOpen)
                 {
                     _macroPanel?.Close();
@@ -2403,21 +2489,6 @@ public partial class Main : Control
                 }
             }
 
-            // Numpad *: Toggle item safety (VB6: ISItem, BindKeys(21) = keycode 106)
-            if (!_state.ChatActive && key.Keycode == Key.KpMultiply)
-            {
-                _state.ItemSafety = !_state.ItemSafety;
-                _state.ChatMessages.Enqueue(new ChatMessage
-                {
-                    Text = _state.ItemSafety
-                        ? ">>SEGURO DE ITEMS ACTIVADO<<"
-                        : ">>SEGURO DE ITEMS DESACTIVADO<<",
-                    Color = _state.ItemSafety ? "00FF00" : "FF0000"
-                });
-                GetViewport().SetInputAsHandled();
-                return;
-            }
-
             // Numpad 0-8: chat mode switching (VB6: HablaNumerico)
             if (!_state.ChatActive && key.Keycode >= Key.Kp0 && key.Keycode <= Key.Kp8)
             {
@@ -2436,6 +2507,20 @@ public partial class Main : Control
                         _macroPanel.Close();
                     else
                         _macroPanel.Open();
+                }
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
+            // F10: toggle options panel (VB6: frmOpcionesNew)
+            if (key.Keycode == Key.F10 && !_state.ChatActive)
+            {
+                if (_optionsPanel != null)
+                {
+                    if (_state.OptionsPanelOpen)
+                        _optionsPanel.Close();
+                    else
+                        _optionsPanel.Open();
                 }
                 GetViewport().SetInputAsHandled();
                 return;

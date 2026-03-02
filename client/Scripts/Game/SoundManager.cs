@@ -39,6 +39,24 @@ public partial class SoundManager : Node
         }
     }
 
+    /// <summary>
+    /// Set music volume from 0-100 percentage. Maps to dB scale.
+    /// </summary>
+    public void SetMusicVolume(int percent)
+    {
+        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f);
+        if (_musicPlayer != null) _musicPlayer.VolumeDb = db;
+    }
+
+    /// <summary>
+    /// Set SFX volume from 0-100 percentage. Maps to dB scale.
+    /// </summary>
+    public void SetSfxVolume(int percent)
+    {
+        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f);
+        foreach (var p in _sfxPlayers) p.VolumeDb = db;
+    }
+
     public void Init(string dataPath)
     {
         _dataPath = dataPath;

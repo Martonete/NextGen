@@ -64,6 +64,7 @@ public class Character
     public int AuraIndexE; // Shield
     public int AuraIndexR; // Ring
     public int AuraIndexC; // Helmet
+    public int NpcNumber;  // >0 if this is an NPC (from CC packet field 15)
     public int NpcAura;    // NPC-only aura
     public float AuraAngleA;
     public float AuraAngleW;

@@ -1802,6 +1802,19 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_global(state, conn_id, text).await;
     } else if cmd_upper == "/EST" || cmd_upper == "/STATS" {
         handle_slash_stats(state, conn_id).await;
+    } else if cmd_upper == "/ONLINEGM" {
+        handle_slash_onlinegm(state, conn_id).await;
+    } else if cmd_upper == "/ONLINEMAP" {
+        handle_slash_onlinemap(state, conn_id).await;
+    } else if cmd_upper.starts_with("/ITEMNOBLE ") {
+        let args = cmd[11..].trim();
+        handle_slash_itemnoble(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/OFRECER ") {
+        let args = cmd[9..].trim();
+        handle_slash_ofrecer(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/INISUB ") {
+        let args = &cmd[8..];
+        handle_slash_inisub(state, conn_id, args).await;
     // =====================================================================
     // GM / Admin commands (require privileges > 0)
     // =====================================================================
@@ -1869,6 +1882,52 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/PJ ") {
         let target = cmd[4..].trim();
         handle_slash_set_privilege(state, conn_id, target, privilege_level::USER, "personaje", privilege_level::DIRECTOR).await;
+    } else if cmd_upper == "/BLOQ" {
+        handle_slash_bloq(state, conn_id).await;
+    } else if cmd_upper.starts_with("/DAMEBANCO ") {
+        let target = cmd[11..].trim();
+        handle_slash_damebanco(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/DV ") {
+        let target = cmd[4..].trim();
+        handle_slash_dv(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/CONT ") {
+        let args = cmd[6..].trim();
+        handle_slash_cont(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/INFO ") {
+        let target = cmd[6..].trim();
+        handle_slash_info(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/EDIT ") {
+        let args = &cmd[6..];
+        handle_slash_edit(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/PREMIAR ") {
+        let args = &cmd[9..];
+        handle_slash_premiar(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/PREMIARTS ") {
+        let args = &cmd[11..];
+        handle_slash_premiarts(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/PLATA ") {
+        let target = cmd[7..].trim();
+        handle_slash_plata(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/BRONCE ") {
+        let target = cmd[8..].trim();
+        handle_slash_bronce(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/MEDALLA ") {
+        let target = cmd[9..].trim();
+        handle_slash_medalla(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/DESCALIFICAR ") {
+        let target = cmd[14..].trim();
+        handle_slash_descalificar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/MVP ") {
+        let args = &cmd[5..];
+        handle_slash_mvp(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/DOTORNEO ") {
+        let args = cmd[10..].trim();
+        handle_slash_dotorneo(state, conn_id, args).await;
+    } else if cmd_upper == "/CANCELARTORNEO" {
+        handle_slash_cancelartorneo(state, conn_id).await;
+    } else if cmd_upper.starts_with("/TSUM ") {
+        let args = &cmd[6..];
+        handle_slash_tsum(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/CHANGENICK ") {
         let new_name = cmd[12..].trim();
         handle_slash_changenick(state, conn_id, new_name).await;
@@ -2060,9 +2119,10 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/SUBASTAR" {
         handle_slash_subastar(state, conn_id).await;
     } else if cmd_upper.starts_with("/CASAR ") {
-        state.send_to(conn_id, &format!("{}Sistema de matrimonio no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        let target = cmd[7..].trim();
+        handle_slash_casar(state, conn_id, target).await;
     } else if cmd_upper == "/DIVORCIARSE" {
-        state.send_to(conn_id, &format!("{}Sistema de matrimonio no disponible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        handle_slash_divorciarse(state, conn_id).await;
     } else if cmd_upper == "/CASTILLOS" {
         handle_slash_castillos(state, conn_id).await;
     } else if cmd_upper == "/EMOTICONS" {
@@ -2079,7 +2139,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/SICV" {
         handle_slash_sicv(state, conn_id).await;
     } else if cmd_upper == "/PODER" {
-        state.send_to(conn_id, &format!("{}Nadie tiene el Gran Poder.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        handle_slash_poder(state, conn_id).await;
     } else if cmd_upper.starts_with("/PMSG ") {
         // Party message
         let text = &cmd[6..];
@@ -2238,10 +2298,19 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/LOADQUESTS" {
         gm_commands::handle_reload_quests(state, conn_id).await;
     } else if cmd_upper == "/LOADPREMIOS" {
-        // Premios.dat not implemented yet — acknowledge silently
         let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
         if !is_admin { return; }
-        state.send_to(conn_id, &format!("{}Sistema de premios no implementado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        let base = state.base_path.clone();
+        match crate::data::prizes::load_prizes(&base) {
+            Ok(prizes) => {
+                let count = prizes.len();
+                state.game_data.prizes = prizes;
+                state.send_to(conn_id, &format!("{}Premios recargados: {} premios.{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            }
+            Err(e) => {
+                state.send_to(conn_id, &format!("{}Error recargando premios: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            }
+        }
     } else if cmd_upper.starts_with("/LOADMAP ") {
         let map_str = &cmd[9..];
         gm_commands::handle_reload_map(state, conn_id, map_str).await;

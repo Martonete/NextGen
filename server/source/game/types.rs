@@ -338,6 +338,9 @@ pub struct UserState {
 
     // Description
     pub desc: String,                // User description (/DESC)
+
+    // Marriage (VB6: Pareja)
+    pub pareja: String,              // Name of spouse (empty = not married)
 }
 
 impl UserState {
@@ -544,6 +547,7 @@ impl UserState {
             en_pareja: false,
             time_comandos: 0,
             desc: String::new(),
+            pareja: String::new(),
         }
     }
 
@@ -825,6 +829,15 @@ pub struct GameState {
 
     // Map user counts cache (map_number → user count, for skipping empty maps)
     pub map_user_counts: HashMap<i32, u32>,
+
+    // Auction system (VB6: modSubastas)
+    pub auction: Option<AuctionState>,
+
+    // Gran Poder system (VB6: modGranPoder)
+    pub gran_poder_holder: ConnectionId,  // 0 = nobody has it
+
+    // Countdown system (VB6: /CONT)
+    pub countdown_seconds: i32,           // 0 = inactive
 }
 
 /// SOS message (help request from player)
@@ -833,6 +846,19 @@ pub struct SosMessage {
     pub tipo: String,
     pub autor: String,
     pub contenido: String,
+}
+
+/// Auction state (VB6: modSubastas — one global auction at a time)
+#[derive(Debug, Clone)]
+pub struct AuctionState {
+    pub auctioneer: ConnectionId,  // Who started the auction
+    pub obj_index: i32,            // Object being auctioned
+    pub amount: i32,               // Quantity
+    pub min_gold: i64,             // Minimum bid
+    pub current_bid: i64,          // Current highest bid (0 = no bids yet)
+    pub bidder: ConnectionId,      // Current highest bidder (0 = none)
+    pub bidder_name: String,       // Name of highest bidder
+    pub timer: i32,                // Seconds remaining (240 = 4 min)
 }
 
 /// Party runtime state (matches VB6 tParty)
@@ -972,6 +998,9 @@ impl GameState {
             ancalagon_seconds: 0,
             npc_can_attack_counter: 0,
             map_user_counts: HashMap::new(),
+            auction: None,
+            gran_poder_holder: 0,
+            countdown_seconds: 0,
         }
     }
 
