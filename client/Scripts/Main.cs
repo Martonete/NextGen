@@ -241,7 +241,7 @@ public partial class Main : Control
         // VB6 frmMain.frm exact fonts per label:
         // GldLbl: Tahoma 6pt Bold, ForeColor &H0080FFFF& = RGB(255,255,128) light yellow
         ApplyFont(_goldLabel, "Tahoma", 700);
-        _goldLabel.AddThemeFontSizeOverride("font_size", 7);
+        _goldLabel.AddThemeFontSizeOverride("font_size", 8);
         _goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
         // LvlLbl: Cambria 8.25pt Bold, White
@@ -380,7 +380,7 @@ public partial class Main : Control
         _gameUI.AddChild(_repLabel);
 
         // FPS: VB6 Tahoma 6pt Bold, center, White
-        _fpsLabel = CreateStatLabel(47, 576, 17, 10, Colors.White, 7);
+        _fpsLabel = CreateStatLabel(37, 576, 37, 10, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Friends list — VB6: ChatContacts at (396,2,137,88), Tahoma 9, light blue
