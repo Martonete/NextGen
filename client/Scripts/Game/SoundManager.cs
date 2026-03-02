@@ -10,8 +10,8 @@ namespace TierrasSagradasAO.Game;
 public partial class SoundManager : Node
 {
     private const int MaxConcurrentSounds = 8;
-    private const float SfxHeadroomDb = -8.0f;     // headroom so stacked SFX don't clip
-    private const float MusicHeadroomDb = -6.0f;    // music headroom
+    private const float SfxHeadroomDb = -10.0f;     // headroom so stacked SFX don't clip
+    private const float MusicHeadroomDb = -14.0f;   // music headroom (AO MP3s are hot)
     private const float DefaultSfxVolume = SfxHeadroomDb;
     private const float DefaultMusicVolume = MusicHeadroomDb;
 
