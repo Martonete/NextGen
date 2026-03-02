@@ -84,7 +84,9 @@ public partial class Main : Control
     private Button? _invTabButton;
     private Button? _spellTabButton;
     private Label? _itemNameLabel;
-    private Button? _dydToggle;
+    private TextureButton? _dydToggle;
+    private Texture2D? _dydOffTex;
+    private Texture2D? _dydOnTex;
     private Button? _lanzarButton;
     private Button? _infoButton;
     private Button? _spellUpButton;
@@ -307,10 +309,19 @@ public partial class Main : Control
         _gameUI.AddChild(_itemNameLabel);
         _inventoryPanel.TooltipLabel = _itemNameLabel;
 
-        // DyD toggle — VB6: DyD at (541,338,21,21) — invisible, visual is in background
-        _dydToggle = CreateInvisibleButton(541, 338, 21, 21);
+        // DyD toggle — VB6: DyD at (541,338,21,21) — image toggles between on/off
+        _dydOffTex = ResourceLoader.Exists("res://Data/Graficos/DyD_off.jpg")
+            ? ResourceLoader.Load<Texture2D>("res://Data/Graficos/DyD_off.jpg") : null;
+        _dydOnTex = ResourceLoader.Exists("res://Data/Graficos/DyD_on.jpg")
+            ? ResourceLoader.Load<Texture2D>("res://Data/Graficos/DyD_on.jpg") : null;
+        _dydToggle = new TextureButton();
+        _dydToggle.Position = new Vector2(541, 338);
+        _dydToggle.Size = new Vector2(21, 21);
+        _dydToggle.StretchMode = TextureButton.StretchModeEnum.Scale;
+        _dydToggle.TextureNormal = _dydOffTex;
         _dydToggle.Pressed += () => {
             _inventoryPanel!.DyDEnabled = !_inventoryPanel.DyDEnabled;
+            _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
         };
         _gameUI.AddChild(_dydToggle);
 

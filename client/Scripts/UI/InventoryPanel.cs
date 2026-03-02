@@ -32,6 +32,7 @@ public partial class InventoryPanel : Control
     private bool _dydEnabled;
     private int _dragSourceSlot = -1;
     private bool _dragging;
+    private Vector2 _dragMousePos; // local mouse pos during drag
 
     // Tooltip label (set by Main.cs)
     public Label? TooltipLabel;
@@ -102,16 +103,28 @@ public partial class InventoryPanel : Control
                 DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.12f));
                 CharRenderer.DrawGrh(this, _data, GrhSelectionHighlight, 0, new Vector2(x, y));
             }
+            else if (_dragging && _dydEnabled && slot == _hoveredSlot && slot != _dragSourceSlot)
+            {
+                // Drag destination highlight — green tint
+                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0f, 1f, 0f, 0.2f));
+            }
             else if (slot == _hoveredSlot)
             {
                 // Hover highlight
                 DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.1f));
             }
 
-            // Item icon
+            // Item icon — dimmed if this is the drag source
+            bool isDragSource = _dragging && _dydEnabled && slot == _dragSourceSlot;
             var invSlot = _state.Inventory[slot];
             if (invSlot.ObjIndex > 0 && invSlot.GrhIndex > 0)
             {
+                if (isDragSource)
+                {
+                    // Dim the source slot during drag
+                    DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0f, 0f, 0f, 0.4f));
+                }
+
                 // VB6: Draw_GrhIndex at (X, Y-1) for normal items
                 var iconPos = new Vector2(x, y - 1);
                 CharRenderer.DrawGrh(this, _data, invSlot.GrhIndex, 0, iconPos);
@@ -134,6 +147,18 @@ public partial class InventoryPanel : Control
             // Slot border
             DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.4f, 0.4f, 0.5f, 0.6f), false, 1f);
         }
+
+        // VB6: Draw dragged item at cursor position (Draw_GrhInv at MouseXInv, MouseYInv)
+        if (_dragging && _dydEnabled && _dragSourceSlot >= 0 && _dragSourceSlot < TotalSlots)
+        {
+            var srcItem = _state.Inventory[_dragSourceSlot];
+            if (srcItem.GrhIndex > 0)
+            {
+                // Center the icon on cursor
+                var ghostPos = _dragMousePos - new Vector2(SlotSize / 2f, SlotSize / 2f);
+                CharRenderer.DrawGrh(this, _data, srcItem.GrhIndex, 0, ghostPos);
+            }
+        }
     }
 
     public override void _GuiInput(InputEvent @event)
@@ -149,10 +174,10 @@ public partial class InventoryPanel : Control
                 UpdateTooltip(slot);
             }
 
-            // Drag handling
+            // Drag handling — track mouse position for ghost item rendering
             if (_dragging && _dydEnabled && _dragSourceSlot >= 0)
             {
-                // Visual feedback handled by redraw
+                _dragMousePos = motion.Position;
             }
         }
         else if (@event is InputEventMouseButton mb)
