@@ -467,6 +467,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     };
     let (map, x, y, char_index, victim_name, victim_level) = user_data;
 
+    // VB6: "¡Aaaahhhh!" floating text in red (vbRed=255) above dying character
+    let death_scream = format!("N|255\u{00B0}\u{00A1}Aaaahhhh!\u{00B0}{}", char_index.0);
+    state.send_data(SendTarget::ToArea { map, x, y }, &death_scream).await;
+
     // Mark as dead, change body to dead model
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.dead = true;
