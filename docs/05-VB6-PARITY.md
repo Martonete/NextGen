@@ -213,3 +213,58 @@ Bank: 223
 - Player whispers (`P|text~r~g~b~bold~italic`) — by design, whispers use P| for custom styling
 - NPC dialog and custom server messages — no || equivalent exists
 - Some TS-specific messages with no standard text code
+
+## Floating Combat Text (N| Packet)
+
+VB6 sends `N|` area-broadcast packets during combat to display damage/miss text above characters. These are rendered as floating numbers that rise and fade (identical animation to chat dialog bubbles).
+
+### Format
+```
+N|<vbColor>°<text>°<charIndex>
+```
+- ° = ASCII 176 separator
+- `vbColor`: VB6 color integer (e.g., 65535 = yellow for damage, 255 = red for miss)
+- `text`: Display text (e.g., "-150" for damage, "¡Fallo!" for miss)
+- `charIndex`: Target character to display text above
+
+### Combat Scenarios Sending N|
+| Scenario | Color | Text | Target |
+|----------|-------|------|--------|
+| PvP melee hit | 65535 (yellow) | `-{damage}` | Victim |
+| PvP melee miss | 255 (red) | `¡Fallo!` | Victim |
+| PvP ranged hit | 65535 | `-{damage}` | Victim |
+| PvP ranged miss | 255 | `¡Fallo!` | Victim |
+| User hits NPC | 65535 | `-{damage}` | NPC |
+| User misses NPC | 255 | `¡Fallo!` | User |
+| NPC hits user | 65535 | `-{damage}` | User |
+| NPC misses user | 255 | `¡Fallo!` | User |
+| Spell damage | 65535 | `-{damage}` | Target |
+
+## Error/Message Dialog System (ERR/ERO/!!)
+
+VB6 has three modal message packet types. The Godot client renders these as a centered modal dialog with "Aceptar" button (matching VB6's `frmMensaje` form).
+
+| Packet | Behavior | Connection |
+|--------|----------|------------|
+| `ERR"message"` | Shows error dialog + sets login error | Disconnects after |
+| `ERO"message"` | Shows message dialog | Stays connected |
+| `!!"message"` | Shows GM broadcast dialog | Stays connected |
+
+### Client Behavior
+- Dialog blocks all input until "Aceptar" is pressed (or Enter key)
+- ERR: Also sets `LoginError` for screen-specific handling (Login, CharSelect, CharCreate)
+- ERO: Used for non-fatal validations (friends list errors, in-game warnings)
+- !!: Used for GM broadcasts to all players
+
+## FPS-Independent Dialog Animation
+
+VB6 ran at ~60fps with per-frame animation increments. The Godot client uses delta-time scaling:
+
+```csharp
+float dtFactor = deltaMs / 16.667f; // 16.667ms = target 60fps frame time
+ch.DialogRiseCounter -= dtFactor;     // Rise phase
+ch.DialogAlpha += 12f * dtFactor;     // Fade in
+ch.DialogAlpha -= 10f * dtFactor;     // Fade out
+```
+
+This ensures dialog bubbles and floating text animate at the same speed regardless of FPS (works correctly from 30fps to 1400+ fps).

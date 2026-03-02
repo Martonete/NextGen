@@ -115,7 +115,7 @@
 - [x] Factions — Armada Real / Fuerzas del Caos enrollment, ranking
 - [x] Tournaments — bracket system, auto-tournament events
 - [x] Events — CTF, Hunger Games, Arena, Faction War, etc.
-- [x] GM Commands — 102 commands implemented
+- [x] GM Commands — 90 handler functions (100+ commands)
 - [x] Text code system — ~80 messages migrated to ||NNN format
 - [x] Level bonuses — ClassBonus.dat at levels 53, 56, 60
 - [x] Ranking system
@@ -123,6 +123,8 @@
 - [x] Friend list
 
 ## Godot 4 Client (VB6 → Godot C#)
+
+**38 C# source files, 16,443 LOC**
 
 ### Rendering
 - [x] 4-pass tile renderer (L1 ground, L2 objects, L3 chars, L4 roofs)
@@ -133,51 +135,55 @@
 - [x] FX overlays (3 simultaneous slots + emoticons)
 - [x] Character shadows (ellipse)
 - [x] Dead character transparency pulsing
-- [x] Dialog bubbles (VB6 cDialogos: rise + fade)
+- [x] Dialog bubbles (FPS-independent delta-time animation)
+- [x] Floating combat text (N| packets: damage numbers, miss text above characters)
 - [x] Name/clan/rank labels (bitmap font)
 - [x] Particle system (Particles.ini, 105 defs)
 - [x] Light system (4-corner per-vertex, VB6 clsLight.cls parity)
 - [x] Roof alpha fade on enter
 - [x] Minimap
 
-### UI
-- [x] Login screen + character select
+### UI (34 panels/components)
+- [x] Login screen + character select + character create + account create
+- [x] Delete character button with confirmation dialog
 - [x] Full frmMain: chat console, HP/MP/STA/EXP bars, inventory, spells
 - [x] Bottom bar stats (weapon, defense, magdef, str, agi, rep, fps)
 - [x] Death panel (frmMuertito: Continuar/Regresar)
-- [x] Friends list with online status
+- [x] Friends list with online status + add friend dialog
+- [x] Commerce panel (NPC buy/sell)
+- [x] Bank panel (deposit/withdraw gold)
+- [x] Vault panel (item bank, 40 slots)
+- [x] Travel panel (city travel)
 - [x] Spell list
+- [x] Macro panel (F9: 10 configurable command slots)
+- [x] Options panel (3 tabs: Juego/Controles/Render, 30+ settings)
+- [x] Key binding panel (22 rebindable actions, conflict detection)
+- [x] Mensaje dialog (modal error/info: ERR/ERO/!! packets)
+- [x] Drop quantity dialog
+- [x] Chat mode system (normal, yell, clan, global, party, faction, GM, whisper)
 
 ### Network
 - [x] 4-layer encrypt/decrypt (VB6 parity)
-- [x] 120+ packet handlers
+- [x] 159 packet handlers
 - [x] Client-side movement prediction + PT correction
 - [x] TCP disconnect detection + reconnect to login
 - [x] Key cooldown system (300ms for action keys)
 
 ### Known Remaining (Client)
-- [ ] Commerce UI (frmComerciar)
-- [ ] Bank UI (frmBanco)
 - [ ] Guild UI (frmGuildInfo)
 - [ ] Quest UI
-- [ ] Server-side aura population (build_cd_packet sends zeros)
-- [ ] NPC aura loading from .dat files
 - [ ] Particle additive blending
 - [ ] Arrow projectile rendering
 
 ## Test Coverage
 
-**68 unit tests passing** covering:
-- Crypto roundtrip (encrypt/decrypt)
-- INI parser (UTF-8, UTF-16 LE/BE, Latin-1)
-- Packet framing
-- Field parser
-- Object/spell/NPC/map loading
-- Charfile read/write
-- Account management
-- Game state operations
-- Combat formulas
-- Area visibility
+**65 unit tests passing** across 20 modules:
+- Crypto (26 tests): AoDefEnc cipher, base64, conversion, roundtrip
+- Protocol (6 tests): Packet field parsing
+- Config (5 tests): INI parser (UTF-8, UTF-16 LE/BE, Latin-1)
+- Network (5 tests): Packet framing
+- Data (15 tests): Object/spell/NPC/map/charfile/account loaders, balance, ranking
+- Game (1 test): World state operations
 
 ## Known Remaining Work
 
@@ -221,15 +227,29 @@ make docker-run   # Build image + start
 make docker-stop  # Stop container
 ```
 
-## File Sizes
+## Codebase Size
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| handlers.rs | ~21,700 | ALL packet handlers + game logic |
-| types.rs | ~1,400 | UserState, GameState, helpers |
-| world.rs | ~260 | Map grids, area visibility |
-| npc.rs | ~280 | NPC runtime state |
-| maps.rs | ~400 | Map data loading |
-| objects.rs | ~380 | Object data loading |
-| charfile.rs | ~700 | Character file I/O |
-| Total server/source/ | ~28,000 | Complete server |
+### Server (Rust)
+| Component | Files | Lines | Purpose |
+|-----------|-------|-------|---------|
+| handlers/ | 16 | ~25,100 | All packet handlers + game logic |
+| game/ (types, world, npc) | 4 | ~20,300 | Core game state, map grids, NPC AI |
+| main.rs | 1 | ~14,400 | Entry point, event loop, timer ticks |
+| crypto/ | 5 | ~1,500 | 4-layer encryption |
+| data/ | 14 | ~3,500 | Static data loaders |
+| db/ | 7 | ~2,000 | PostgreSQL persistence |
+| net/ | 4 | ~800 | TCP networking |
+| protocol/ | 2 | ~1,200 | 228 opcode constants |
+| config/ | 2 | ~600 | INI parser + config |
+| **Total** | **55** | **~35,500** | |
+
+### Client (Godot 4 C#)
+| Component | Files | Lines | Purpose |
+|-----------|-------|-------|---------|
+| Main.cs | 1 | ~3,160 | Game loop, UI orchestration |
+| Network/ | 4 | ~3,090 | 159 packet handlers, encryption, TCP |
+| UI/ | 10 | ~4,100 | Commerce, bank, vault, options, macros |
+| Game/ | 6 | ~2,300 | State, input, config, particles, sound |
+| Rendering/ | 3 | ~1,950 | World renderer, char renderer, GRH |
+| Data/ | 10 | ~1,210 | Asset loaders (body, weapon, map, etc.) |
+| **Total** | **38** | **~16,440** | |

@@ -4,7 +4,7 @@
 
 All game data files are loaded at server startup from the `server/` directory. Most use INI format (parsed by the custom INI parser that handles UTF-8, Latin-1, and UTF-16 LE/BE encodings).
 
-## 1. Server Configuration (`Server.ini`)
+## 1. Server Configuration (`server.ini`)
 
 INI format with multiple sections:
 
@@ -29,7 +29,7 @@ Notice=Welcome to Tierras Sagradas!
 
 **Key fields**: port, max_users, version, start_map/x/y, encryption toggle, EXP multiplier, NPC AI interval.
 
-## 2. Objects Database (`Dat/Obj.dat`)
+## 2. Objects Database (`dat/Obj.dat`)
 
 UTF-16 LE encoded INI file. 1,664 object definitions.
 
@@ -76,7 +76,7 @@ Newbie=1
 37=Quest, 38=CraftMaterial
 ```
 
-## 3. Spells Database (`Dat/Hechizos.dat`)
+## 3. Spells Database (`dat/Hechizos.dat`)
 
 UTF-16 LE encoded INI file. 65 spell definitions.
 
@@ -94,7 +94,7 @@ WAV=23
 
 **Key fields**: name, mana cost, target type (1=user, 2=NPC, 3=terrain), damage/heal ranges, effects (paralysis, poison, invisibility, summon NPC number), required skill level, class restrictions.
 
-## 4. NPC Database (`Dat/NPCs.dat` + `Dat/NPCs-HOSTILES.dat`)
+## 4. NPC Database (`dat/NPCs.dat` + `dat/NPCs-HOSTILES.dat`)
 
 Two INI files, 396 NPC definitions combined.
 
@@ -125,7 +125,7 @@ Respawn=1
 
 ## 5. Map Files
 
-### Binary Map (`Maps/Mapa<N>.map`)
+### Binary Map (`maps/Mapa<N>.map`)
 
 Binary format, 100×100 tile grid:
 ```
@@ -142,7 +142,7 @@ Binary format, 100×100 tile grid:
   exit_y: i16        # Exit target Y
 ```
 
-### Binary Info (`Maps/Mapa<N>.inf`)
+### Binary Info (`maps/Mapa<N>.inf`)
 
 Per-tile overlay information:
 ```
@@ -152,7 +152,7 @@ Per-tile overlay information:
   obj_amount: i16    # Object stack amount
 ```
 
-### Map Metadata (`Maps/Mapa<N>.dat`)
+### Map Metadata (`maps/Mapa<N>.dat`)
 
 INI format:
 ```ini
@@ -270,7 +270,7 @@ Name=CharName1
 Name=CharName2
 ```
 
-## 8. Experience Table (`Dat/Experiencia.dat`)
+## 8. Experience Table (`dat/Experiencia.dat`)
 
 INI format, 50 levels:
 
@@ -287,7 +287,7 @@ Exp=900
 
 Each entry is the cumulative EXP needed to reach that level.
 
-## 9. Quest Database (`Dat/Quests.dat`)
+## 9. Quest Database (`dat/Quests.dat`)
 
 INI format with quest definitions:
 
@@ -318,7 +318,7 @@ Alignment=0
 BankGold=5000
 ```
 
-## 11. Class Balance (`Dat/ClassBonus.dat`)
+## 11. Class Balance (`dat/ClassBonus.dat`)
 
 Level-based class bonuses applied at levels 53, 56, 60:
 

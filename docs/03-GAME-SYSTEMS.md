@@ -342,7 +342,7 @@ Each quest has: description, requirements (level, items, kills), rewards (EXP, g
 
 ## 15. GM Command System
 
-102 GM commands implemented, requiring various privilege levels:
+90 GM command handlers implemented (covering 100+ commands), requiring various privilege levels:
 
 ### Common Commands
 | Command | Level | Description |

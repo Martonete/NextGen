@@ -63,7 +63,7 @@ make build
 make run
 ```
 
-The server reads game data from `server/` (Dat/, Maps/, Server.ini) and listens on port `5028`.
+The server reads game data from `server/` (dat/, maps/, server.ini) and listens on port `5028`.
 
 #### Makefile commands
 
@@ -72,7 +72,7 @@ The server reads game data from `server/` (Dat/, Maps/, Server.ini) and listens 
 | `make build` | Compile release binary and copy to `server/` |
 | `make run` | Build + run the server |
 | `make dev` | Run in dev mode (debug build, faster compile) |
-| `make test` | Run all tests (65 unit tests) |
+| `make test` | Run all tests |
 | `make docker-run` | Build Docker image + start with compose |
 | `make docker-stop` | Stop Docker containers |
 
@@ -125,7 +125,7 @@ The client connects to `127.0.0.1:5028` by default — make sure the server is r
 
 ## Server Configuration
 
-The server reads `server/Server.ini` on startup. Key settings:
+The server reads `server/server.ini` on startup. Key settings:
 
 | Setting | Default | Description |
 |---------|---------|-------------|

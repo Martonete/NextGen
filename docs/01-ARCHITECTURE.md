@@ -47,11 +47,27 @@ server/source/
 │   ├── ranking.rs         # Ranking system (top players)
 │   └── mod.rs             # GameData aggregate loader
 └── game/                # Runtime game logic
-    ├── types.rs           # UserState, GameState, SendTarget
-    ├── world.rs           # Map grids, area visibility, tile occupancy
-    ├── npc.rs             # NPC runtime state and AI constants
-    ├── handlers.rs        # ALL packet handlers + game logic (~21,700 lines)
-    └── mod.rs
+    ├── types.rs           # UserState, GameState, SendTarget (~1,470 lines)
+    ├── world.rs           # Map grids, area visibility, tile occupancy (~9,170 lines)
+    ├── npc.rs             # NPC runtime state and AI constants (~9,280 lines)
+    ├── mod.rs
+    └── handlers/          # Packet handlers + game logic (~25,100 lines, 16 files)
+        ├── mod.rs           # Packet dispatcher routing (~3,770 lines)
+        ├── gm_commands.rs   # 90 GM command implementations (~3,280 lines)
+        ├── misc_handlers.rs # Miscellaneous system handlers (~2,850 lines)
+        ├── events.rs        # Event system & world events (~2,690 lines)
+        ├── inventory.rs     # Item management & slots (~2,080 lines)
+        ├── skills.rs        # Skill casting & leveling (~1,420 lines)
+        ├── ticks.rs         # Server tick/update loop (~1,380 lines)
+        ├── guilds_handler.rs# Guild operations & diplomacy (~1,310 lines)
+        ├── spells.rs        # Spell mechanics (~1,000 lines)
+        ├── npcs.rs          # NPC interaction (~975 lines)
+        ├── commerce.rs      # Trading & shops (~960 lines)
+        ├── social.rs        # Friends, private messages (~780 lines)
+        ├── combat.rs        # Attack mechanics (~720 lines)
+        ├── common.rs        # Shared utilities (~660 lines)
+        ├── quests_party.rs  # Quests & parties (~660 lines)
+        └── player_commands.rs # /cmd handlers (~580 lines)
 ```
 
 ## Event Loop Architecture
@@ -92,13 +108,13 @@ Server → PlainText → [AoDefServEncrypt (hex)] → [AoDefEncode (base64)] →
 
 ```
 server/
-├── Server.ini           # Server configuration (port, limits, start position)
-├── Dat/                 # Static databases (objects, spells, NPCs, experience)
-├── Maps/                # Map files (.map binary + .inf binary + .dat INI)
+├── server.ini           # Server configuration (port, limits, start position)
+├── dat/                 # Static databases (objects, spells, NPCs, experience)
+├── maps/                # Map files (.map binary + .inf binary + .dat INI)
 ├── charfile/            # Character save files (.chr INI format)
 ├── Accounts/            # Account files (.act INI format)
 ├── guilds/              # Guild data files
 ├── WorldBackUp/         # Ground item persistence
-├── Dioses/              # God/admin data files
+├── dioses/              # God/admin data files
 └── logs/                # Server logs
 ```

@@ -149,13 +149,15 @@ Common delimiters:
 | `CA` | `CA` + raw bytes (x, y) | Clear area (erase entities outside range) |
 | `PU` | `PU<x>,<y>` | Player position |
 
-#### Chat
+#### Chat & Floating Text
 | Opcode | Format | Description |
 |--------|--------|-------------|
 | `T\|` | `T\|<color>°<text>°<charindex>` | Talk bubble (° = ASCII 176) |
-| `N\|` | `N\|<color>°<text>°<charindex>` | Yell |
+| `N\|` | `N\|<color>°<text>°<charindex>` | Floating combat text (damage numbers, miss text) |
 | `P\|` | `P\|<text>~<r>~<g>~<b>~<bold>~<italic>` | Console message (~ = ASCII 126) |
 | `\|\|NNN` | `\|\|NNN` or `\|\|NNN@param1@param2` | Client-side text code (from Textos.tsao) |
+| `!!` | `!!<message>` | Modal message box (in-game GM broadcast) |
+| `ERO` | `ERO<message>` | Modal error dialog (stays connected) |
 
 #### Combat
 | Opcode | Format | Description |
