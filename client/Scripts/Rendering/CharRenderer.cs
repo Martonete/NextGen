@@ -197,56 +197,78 @@ public static class CharRenderer
     }
 
     /// <summary>
-    /// Character shadow: body + head projected as flat parallelograms on the ground.
-    /// Light source from lower-left → shadow falls toward upper-right.
+    /// Character shadow: body + head projected from a shared anchor point (body feet).
+    /// Light from lower-left → shadow falls toward upper-right.
+    /// Both sprites are projected through the same transform so the head
+    /// shadow sits directly on top of the body shadow, forming a complete silhouette.
     /// </summary>
     private static void DrawShadow(
         Node2D canvas, Character ch, Vector2 screenPos, int heading,
         GameData data, GrhAnimator animator)
     {
+        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
+
+        // Shadow projection constants
+        const float ShearRatio = 0.3f;  // per pixel above feet, shift right by 0.3px
+        const float FlatRatio = 0.5f;   // per pixel above feet, compress to 0.5px
         Color shadowColor = new(0, 0, 0, 0.35f);
-        float shearFactor = 0.5f;
-        float flatFactor = 0.75f;
 
-        // --- Body shadow ---
-        if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-        {
-            int bodyGrh = data.Bodies[ch.Body].Walk[heading];
-            if (bodyGrh > 0)
-            {
-                int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-                DrawShadowQuad(canvas, bodyGrh, frame, screenPos, shearFactor, flatFactor, shadowColor, data);
-            }
-        }
+        // Resolve body to compute the shared anchor point (feetY)
+        int bodyGrh = data.Bodies[ch.Body].Walk[heading];
+        if (bodyGrh <= 0) return;
+        int bodyFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+        var bodyRes = data.ResolveGrh(bodyGrh, bodyFrame);
+        if (bodyRes == null || bodyRes.FileNum <= 0) return;
 
-        // --- Head shadow ---
+        // Body draw position (with centering)
+        float bodyDrawX = screenPos.X;
+        float bodyDrawY = screenPos.Y;
+        if (bodyRes.TileWidth != 1f && bodyRes.TileWidth > 0)
+            bodyDrawX -= (int)(bodyRes.TileWidth * (TileSize / 2)) - TileSize / 2;
+        if (bodyRes.TileHeight != 1f && bodyRes.TileHeight > 0)
+            bodyDrawY -= (int)(bodyRes.TileHeight * TileSize) - TileSize;
+
+        // Shared anchor: body feet (bottom of body sprite)
+        float feetY = bodyDrawY + bodyRes.PixelHeight;
+
+        // Draw body shadow
+        DrawShadowProjected(canvas, bodyRes, bodyDrawX, bodyDrawY, feetY,
+            ShearRatio, FlatRatio, shadowColor, data);
+
+        // Draw head shadow (projected from same feetY)
         if (ch.Head > 0 && ch.Head < data.Heads.Length)
         {
             int headGrh = data.Heads[ch.Head].Head[heading];
-            if (headGrh > 0)
-            {
-                // Head is offset from body position
-                var headPos = new Vector2(
-                    screenPos.X + (ch.Body > 0 && ch.Body < data.Bodies.Length
-                        ? data.Bodies[ch.Body].HeadOffsetX : 0),
-                    screenPos.Y + (ch.Body > 0 && ch.Body < data.Bodies.Length
-                        ? data.Bodies[ch.Body].HeadOffsetY : 0));
-                DrawShadowQuad(canvas, headGrh, 0, headPos, shearFactor, flatFactor, shadowColor, data);
-            }
+            if (headGrh <= 0) return;
+            var headRes = data.ResolveGrh(headGrh, 0);
+            if (headRes == null || headRes.FileNum <= 0) return;
+
+            // Head normal position = body position + headOffset
+            float headDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
+            float headDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY;
+            // Head centering (same logic as DrawGrh)
+            if (headRes.TileWidth != 1f && headRes.TileWidth > 0)
+                headDrawX -= (int)(headRes.TileWidth * (TileSize / 2)) - TileSize / 2;
+            if (headRes.TileHeight != 1f && headRes.TileHeight > 0)
+                headDrawY -= (int)(headRes.TileHeight * TileSize) - TileSize;
+
+            DrawShadowProjected(canvas, headRes, headDrawX, headDrawY, feetY,
+                ShearRatio, FlatRatio, shadowColor, data);
         }
     }
 
     /// <summary>
-    /// Draw a single shadow parallelogram for a GRH (body or head).
-    /// Anchored at sprite feet, leaning upper-right.
+    /// Project a sprite as a shadow parallelogram from a shared anchor (feetY).
+    /// Each corner (px, py) is transformed:
+    ///   dy = feetY - py (distance above feet)
+    ///   shadowX = px + dy * shearRatio
+    ///   shadowY = feetY - dy * flatRatio
+    /// This ensures body + head shadows form a coherent silhouette.
     /// </summary>
-    private static void DrawShadowQuad(
-        Node2D canvas, int grhIndex, int frame, Vector2 screenPos,
-        float shearFactor, float flatFactor, Color shadowColor, GameData data)
+    private static void DrawShadowProjected(
+        Node2D canvas, GrhData resolved, float drawX, float drawY, float feetY,
+        float shearRatio, float flatRatio, Color shadowColor, GameData data)
     {
-        var resolved = data.ResolveGrh(grhIndex, frame);
-        if (resolved == null || resolved.FileNum <= 0) return;
-
         var texture = data.Textures?.GetTexture(resolved.FileNum);
         if (texture == null) return;
 
@@ -259,29 +281,22 @@ public static class CharRenderer
         if (sy + ph > texH) ph = texH - sy;
         if (pw <= 0 || ph <= 0) return;
 
-        // Sprite draw position (with centering)
-        float drawX = screenPos.X;
-        float drawY = screenPos.Y;
-        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+        // Distance from feet for top and bottom edges of this sprite
+        float topDy = feetY - drawY;             // top of sprite
+        float botDy = feetY - (drawY + ph);      // bottom of sprite
 
-        float shearX = pw * shearFactor;
-        float flatH = ph * flatFactor;
-        float feetY = drawY + ph;
-
-        // Parallelogram: BL → BR → TR → TL (CCW)
-        Vector2 bl = new(drawX, feetY);
-        Vector2 br = new(drawX + pw, feetY);
-        Vector2 tr = new(drawX + pw + shearX, feetY - flatH);
-        Vector2 tl = new(drawX + shearX, feetY - flatH);
+        // Project 4 corners through the shadow transform
+        Vector2 tl = new(drawX + topDy * shearRatio, feetY - topDy * flatRatio);
+        Vector2 tr = new(drawX + pw + topDy * shearRatio, feetY - topDy * flatRatio);
+        Vector2 bl = new(drawX + botDy * shearRatio, feetY - botDy * flatRatio);
+        Vector2 br = new(drawX + pw + botDy * shearRatio, feetY - botDy * flatRatio);
 
         float u0 = (float)sx / texW;
         float u1 = (float)(sx + pw) / texW;
         float vTop = (float)sy / texH;
         float vBot = (float)(sy + ph) / texH;
 
+        // CCW: BL → BR → TR → TL
         canvas.DrawPolygon(
             new[] { bl, br, tr, tl },
             new[] { shadowColor, shadowColor, shadowColor, shadowColor },
