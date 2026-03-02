@@ -130,7 +130,6 @@ The server reads `server/Server.ini` on startup. Key settings:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `StartPort` | `5028` | Game server port |
-| `StartPortEstadisticas` | `7669` | Stats endpoint port |
 | `MaxUsers` | `400` | Max concurrent players |
 | `Encriptar` | `1` | Enable packet encryption |
 | `PuedeCrearPersonajes` | `1` | Allow character creation |
@@ -147,5 +146,4 @@ DATABASE_URL=postgres://ao:ao_secret@localhost:5432/ao_server
 | Port | Protocol | Description |
 |------|----------|-------------|
 | `5028` | TCP | Game server (client connects here) |
-| `7669` | TCP | Stats endpoint |
 | `5432` | TCP | PostgreSQL (Docker only, not exposed by default) |

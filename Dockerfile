@@ -45,7 +45,7 @@ RUN mkdir -p /app/server/logs /app/server/Logs \
 
 VOLUME ["/app/server/logs"]
 
-EXPOSE 5028 7669
+EXPOSE 5028
 
 # Health check: TCP connect to game port
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

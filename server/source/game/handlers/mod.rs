@@ -3274,7 +3274,6 @@ mod db_tests {
         ServerConfig {
             server_ip: "127.0.0.1".into(),
             port: 0,
-            stats_port: 0,
             max_users: 100,
             version: "1.0.0".into(),
             client_version: "1.0.0".into(),

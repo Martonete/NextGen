@@ -198,7 +198,6 @@
 ### Quality of Life
 - [ ] Comprehensive logging for all GM actions
 - [ ] Graceful shutdown (save all charfiles)
-- [ ] Server stats endpoint (port 7669)
 - [ ] Configuration hot-reload
 
 ## Build & Deploy

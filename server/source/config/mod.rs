@@ -14,7 +14,6 @@ use std::path::Path;
 pub struct ServerConfig {
     pub server_ip: String,
     pub port: u16,
-    pub stats_port: u16,
     pub max_users: u32,
     pub version: String,
     pub client_version: String,
@@ -52,9 +51,6 @@ impl ServerConfig {
             port: ini.get("INIT", "StartPort")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(5028),
-            stats_port: ini.get("INIT", "StartPortEstadisticas")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(7669),
             max_users: ini.get("INIT", "MaxUsers")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(400),

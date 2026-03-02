@@ -23,7 +23,6 @@ services:
         condition: service_healthy
     ports:
       - "5028:5028"
-      - "7669:7669"
     volumes:
       - logs:/app/server/logs
     environment:
