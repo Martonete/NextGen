@@ -256,7 +256,7 @@ public partial class Main : Control
 
         // Coord: Tahoma 5.25pt Bold, White
         ApplyFont(_coordsLabel, "Tahoma", 700);
-        _coordsLabel.AddThemeFontSizeOverride("font_size", 6);
+        _coordsLabel.AddThemeFontSizeOverride("font_size", 9);
 
         // exp: Cambria 8.25pt Bold, White (VB6: &H8000000B& system color → white on dark UI)
         ApplyFont(_expLabel, "Cambria", 700);
@@ -303,7 +303,7 @@ public partial class Main : Control
         _itemNameLabel.Size = new Vector2(161, 25);
         _itemNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _itemNameLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0f)); // Yellow
-        _itemNameLabel.AddThemeFontSizeOverride("font_size", 7);
+        _itemNameLabel.AddThemeFontSizeOverride("font_size", 11);
         ApplyFont(_itemNameLabel, "Palatino Linotype", 400); // Normal weight
         _itemNameLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         _gameUI.AddChild(_itemNameLabel);

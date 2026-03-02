@@ -941,6 +941,23 @@ public class PacketHandler
             _state.MapLights.Clear();
             _state.LightsDirty = true;
 
+            // Reset scroll/movement state to prevent black flash.
+            // Without this, the renderer may use stale scroll offsets from the
+            // previous map, causing tiles to be drawn outside valid range → black.
+            _state.ScreenOffsetX = 0;
+            _state.ScreenOffsetY = 0;
+            _state.AddToUserPosX = 0;
+            _state.AddToUserPosY = 0;
+            _state.UserMoving = false;
+            if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
+            {
+                selfCh.MoveOffsetX = 0;
+                selfCh.MoveOffsetY = 0;
+                selfCh.Moving = false;
+                selfCh.ScrollDirectionX = 0;
+                selfCh.ScrollDirectionY = 0;
+            }
+
             // Load the map file IMMEDIATELY so that subsequent BQ/HO packets
             // in this same batch apply to the correct (new) MapData.
             // Previously NeedMapLoad deferred this to next frame, causing BQ
