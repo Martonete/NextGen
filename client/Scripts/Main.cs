@@ -454,6 +454,8 @@ public partial class Main : Control
         _enterButton.Pressed += OnEnterPressed;
         _charList.ItemActivated += OnCharListDoubleClick;
         _chatInput.TextSubmitted += OnChatSubmitted;
+        _accountInput.TextSubmitted += (_) => OnConnectPressed();
+        _passwordInput.TextSubmitted += (_) => OnConnectPressed();
 
         // Show login screen
         _loginPanel.Visible = true;

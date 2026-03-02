@@ -241,8 +241,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         // ===== NPC TARGET =====
         let npc_idx = target_npc.unwrap();
 
-        // VB6: PuedeAtacarNPC — validate offensive spells on NPC targets
-        if is_offensive {
+        // VB6: PuedeAtacarNPC — validate DAMAGE spells on NPC targets.
+        // Status spells (paralizar, inmovilizar, envenenar) bypass this check
+        // because VB6 HandleHechizoEstadoNPC does NOT call PuedeAtacarNPC.
+        let is_damage_spell = spell.sube_hp == 2;
+        if is_damage_spell {
             if !super::npcs::puede_atacar_npc(state, conn_id, npc_idx).await {
                 return;
             }

@@ -1042,6 +1042,9 @@ async fn connect_user(
         // BKW toggles pausa — first one pauses, second one un-pauses.
         // Without this, client stays paused and CheckKeys never runs (no movement!)
         state.send_to(conn_id, "BKW").await;
+
+        // VB6: WarpUserChar(..., True) on login — send warp FX to area
+        send_warp_fx(state, conn_id).await;
     }
 
     // --- PHASE 12: Console messages (VB6 lines 1738-1747) ---
