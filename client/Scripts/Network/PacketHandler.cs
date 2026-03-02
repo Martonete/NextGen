@@ -997,20 +997,6 @@ public class PacketHandler
         }
     }
 
-    /// <summary>
-    /// PCB{charIndex},{particleGroup} — Attach particle to character.
-    /// </summary>
-    private void HandleCharParticle(string data)
-    {
-        var parts = data.Split(',');
-        if (parts.Length >= 2)
-        {
-            int charIndex = ParseInt(parts[0]);
-            int defIdx = ParseInt(parts[1]);
-            ParticleSystem.CreateCharStream(_state, defIdx, charIndex);
-        }
-    }
-
     private void HandlePlayerPosition(string data)
     {
         // PU<x>,<y> — authoritative position set (e.g. after warp/teleport)
