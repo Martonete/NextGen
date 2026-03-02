@@ -158,9 +158,9 @@ theme_override_font_sizes/font_size = 14
 
 [node name="LevelLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 575.0
-offset_top = 35.0
-offset_right = 600.0
+offset_left = 580.0
+offset_top = 39.0
+offset_right = 610.0
 offset_bottom = 58.0
 clip_text = false
 theme_override_colors/font_color = Color(1, 1, 1, 1)
