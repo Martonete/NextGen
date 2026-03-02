@@ -6,73 +6,73 @@ namespace TierrasSagradasAO.Game;
 /// </summary>
 public class Character
 {
-    public int CharIndex;
-    public int Body;
-    public int Head;
-    public int Heading; // 1=N, 2=E, 3=S, 4=W
-    public int PosX;
-    public int PosY;
-    public int WeaponAnim;
-    public int ShieldAnim;
-    public int CascoAnim;
-    public string Name = "";
-    public bool Criminal;
-    public int Privileges;
+	public int CharIndex;
+	public int Body;
+	public int Head;
+	public int Heading; // 1=N, 2=E, 3=S, 4=W
+	public int PosX;
+	public int PosY;
+	public int WeaponAnim;
+	public int ShieldAnim;
+	public int CascoAnim;
+	public string Name = "";
+	public bool Criminal;
+	public int Privileges;
 
-    // Smooth movement
-    public float MoveOffsetX;
-    public float MoveOffsetY;
-    public bool Moving;
-    public int ScrollDirectionX;
-    public int ScrollDirectionY;
+	// Smooth movement
+	public float MoveOffsetX;
+	public float MoveOffsetY;
+	public bool Moving;
+	public int ScrollDirectionX;
+	public int ScrollDirectionY;
 
-    // Per-character walk animation frame counter (VB6: each char has its own FrameCounter).
-    // Only advances when Moving=true. Reset to 0 on move start.
-    public float WalkFrame;
+	// Per-character walk animation frame counter (VB6: each char has its own FrameCounter).
+	// Only advances when Moving=true. Reset to 0 on move start.
+	public float WalkFrame;
 
-    // Status
-    public bool Dead;
-    public bool Invisible;
-    public bool Navigating;
+	// Status
+	public bool Dead;
+	public bool Invisible;
+	public bool Navigating;
 
-    // VB6: dead character transparency pulsing (TransparenciaBody oscillates 0-100)
-    public int TransparenciaBody;  // 0-100, alpha = this + 45
-    public bool Llegoalatransp;    // false=increasing, true=decreasing
+	// VB6: dead character transparency pulsing (TransparenciaBody oscillates 0-100)
+	public int TransparenciaBody;  // 0-100, alpha = this + 45
+	public bool Llegoalatransp;    // false=increasing, true=decreasing
 
-    // VB6: EmoticonLoops countdown (separate from FX slots)
-    public int EmoticonLoops;
+	// VB6: EmoticonLoops countdown (separate from FX slots)
+	public int EmoticonLoops;
 
-    // FX (VB6: up to 3 simultaneous + 1 emoticon)
-    public int[] ActiveFxSlots = new int[3]; // FxData indices
-    public int[] FxLoops = new int[3];         // -1 = infinite, 0 = done
-    public float[] FxFrameCounter = new float[3]; // per-slot frame accumulator
-    public int EmoticonIndex;
+	// FX (VB6: up to 3 simultaneous + 1 emoticon)
+	public int[] ActiveFxSlots = new int[3]; // FxData indices
+	public int[] FxLoops = new int[3];         // -1 = infinite, 0 = done
+	public float[] FxFrameCounter = new float[3]; // per-slot frame accumulator
+	public int EmoticonIndex;
 
-    // Dialog system (VB6: cDialogos — speech bubble above head)
-    public string DialogText = "";
-    public string DialogColor = "FFFFFF";
-    public long DialogStartMs;       // Environment.TickCount64 when created
-    public long DialogDurationMs;    // 5000 + 100 * text.Length
-    public int DialogRiseCounter;    // VB6 Sube: 18→0, decrements each tick
-    public int DialogAlpha;          // VB6 Desvanecimiento: starts 20, +12/frame while Sube>0, -10/frame on fade
-    public bool DialogFading;        // VB6 Tiempito: True when lifetime expired, fading out
+	// Dialog system (VB6: cDialogos — speech bubble above head)
+	public string DialogText = "";
+	public string DialogColor = "FFFFFF";
+	public long DialogStartMs;       // Environment.TickCount64 when created
+	public long DialogDurationMs;    // 5000 + 100 * text.Length
+	public int DialogRiseCounter;    // VB6 Sube: 18→0, decrements each tick
+	public int DialogAlpha;          // VB6 Desvanecimiento: starts 20, +12/frame while Sube>0, -10/frame on fade
+	public bool DialogFading;        // VB6 Tiempito: True when lifetime expired, fading out
 
-    // Auras (VB6: 5 equipment slots + 1 NPC aura)
-    // Indices into Auras.dat (AurasPJ array). 0 = no aura.
-    public int AuraIndexA; // Armor
-    public int AuraIndexW; // Weapon
-    public int AuraIndexE; // Shield
-    public int AuraIndexR; // Ring
-    public int AuraIndexC; // Helmet
-    public int NpcAura;    // NPC-only aura
-    public float AuraAngleA;
-    public float AuraAngleW;
-    public float AuraAngleE;
-    public float AuraAngleR;
-    public float AuraAngleC;
-    public float NpcAuraAngle;
+	// Auras (VB6: 5 equipment slots + 1 NPC aura)
+	// Indices into Auras.dat (AurasPJ array). 0 = no aura.
+	public int AuraIndexA; // Armor
+	public int AuraIndexW; // Weapon
+	public int AuraIndexE; // Shield
+	public int AuraIndexR; // Ring
+	public int AuraIndexC; // Helmet
+	public int NpcAura;    // NPC-only aura
+	public float AuraAngleA;
+	public float AuraAngleW;
+	public float AuraAngleE;
+	public float AuraAngleR;
+	public float AuraAngleC;
+	public float NpcAuraAngle;
 
-    // Debug helper
-    public bool _debugLogged;
-    public bool _equipDebugLogged;
+	// Debug helper
+	public bool _debugLogged;
+	public bool _equipDebugLogged;
 }
