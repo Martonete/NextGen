@@ -2665,22 +2665,39 @@ public partial class Main : Control
         if (!System.IO.File.Exists(path)) return false;
         try
         {
-            // Try Godot's built-in loader first (works for 24bpp BMP)
-            var img = new Image();
-            var err = img.Load(path);
-            if (err == Error.Ok && img.GetWidth() > 0 && img.GetHeight() > 0)
+            // 32bpp BMPs (maps 92+) have alpha=0 in all pixels.
+            // Godot's Image.Load succeeds but renders fully transparent.
+            // Detect bpp from BMP header and use manual parser for 32bpp.
+            bool use_manual = false;
+            try
             {
-                _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
-                return true;
+                var header = new byte[30];
+                using (var fs = System.IO.File.OpenRead(path))
+                    fs.Read(header, 0, 30);
+                if (header[0] == 0x42 && header[1] == 0x4D) // "BM"
+                {
+                    int bpp = BitConverter.ToInt16(header, 28);
+                    use_manual = bpp == 32;
+                }
+            }
+            catch { /* fall through to Godot loader */ }
+
+            if (!use_manual)
+            {
+                var img = new Image();
+                var err = img.Load(path);
+                if (err == Error.Ok && img.GetWidth() > 0 && img.GetHeight() > 0)
+                {
+                    _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
+                    return true;
+                }
             }
 
-            // Fallback: manual BMP parser for 32bpp BMPs (maps 92+ use BGRA)
-            GD.Print($"[MAIN] Godot Image.Load failed for {System.IO.Path.GetFileName(path)} (err={err}), trying manual BMP parser...");
-            img = LoadBmpManual(path);
-            if (img != null)
+            // Manual BMP parser: handles 32bpp (strips alpha) and 24bpp
+            var manualImg = LoadBmpManual(path);
+            if (manualImg != null)
             {
-                _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
-                GD.Print($"[MAIN] Manual BMP loader OK for {System.IO.Path.GetFileName(path)}");
+                _minimapRect!.Texture = ImageTexture.CreateFromImage(manualImg);
                 return true;
             }
 
