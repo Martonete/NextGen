@@ -46,6 +46,9 @@ public partial class StatBarOverlay : Control
     private Font? _font;
     private int _fontSize = 8; // VB6: Tahoma 6.75pt Bold (+20%)
 
+    /// <summary>Data path set by Main.cs before AddChild (so _Ready can find bar images).</summary>
+    public string DataPath = "";
+
     public override void _Ready()
     {
         var sysFont = new SystemFont();
@@ -53,28 +56,34 @@ public partial class StatBarOverlay : Control
         sysFont.FontWeight = 700;
         _font = sysFont;
 
-        // Load bar images from extracted VB6 resources
-        _hpTex   = LoadBarTexture("res://Data/Graficos/Principal/bar_hp.jpg");
-        _manaTex = LoadBarTexture("res://Data/Graficos/Principal/bar_mana.jpg");
-        _staTex  = LoadBarTexture("res://Data/Graficos/Principal/bar_sta.jpg");
-        _aguaTex = LoadBarTexture("res://Data/Graficos/Principal/bar_agua.jpg");
-        _hamTex  = LoadBarTexture("res://Data/Graficos/Principal/bar_ham.jpg");
-        _expTex  = LoadBarTexture("res://Data/Graficos/Principal/bar_exp.jpg");
+        // Load bar images from extracted VB6 resources (runtime file path, not res://)
+        string principalDir = System.IO.Path.Combine(DataPath, "Graficos", "Principal");
+        _hpTex   = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_hp.jpg"));
+        _manaTex = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_mana.jpg"));
+        _staTex  = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_sta.jpg"));
+        _aguaTex = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_agua.jpg"));
+        _hamTex  = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_ham.jpg"));
+        _expTex  = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_exp.jpg"));
     }
 
-    private static Texture2D? LoadBarTexture(string resPath)
+    private static Texture2D? LoadBarTexture(string filePath)
     {
-        if (ResourceLoader.Exists(resPath))
+        if (!System.IO.File.Exists(filePath))
         {
-            var tex = ResourceLoader.Load<Texture2D>(resPath);
-            if (tex != null)
-            {
-                GD.Print($"[UI] Loaded bar image: {resPath} ({tex.GetWidth()}x{tex.GetHeight()})");
-                return tex;
-            }
+            GD.Print($"[UI] Bar image not found: {filePath} — using color fallback");
+            return null;
         }
-        GD.Print($"[UI] Bar image not found: {resPath} — using color fallback");
-        return null;
+
+        var image = Image.LoadFromFile(filePath);
+        if (image == null)
+        {
+            GD.Print($"[UI] Bar image failed to load: {filePath} — using color fallback");
+            return null;
+        }
+
+        var tex = ImageTexture.CreateFromImage(image);
+        GD.Print($"[UI] Loaded bar image: {filePath} ({tex.GetWidth()}x{tex.GetHeight()})");
+        return tex;
     }
 
     public void SetStats(

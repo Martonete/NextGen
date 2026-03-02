@@ -305,6 +305,7 @@ public partial class Main : Control
 
         // Custom stat bar overlay — draws colored fill rects at VB6 positions
         _statBarOverlay = new StatBarOverlay();
+        _statBarOverlay.DataPath = dataPath;
         _statBarOverlay.Position = Vector2.Zero;
         _statBarOverlay.Size = new Vector2(800, 600);
         _statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;

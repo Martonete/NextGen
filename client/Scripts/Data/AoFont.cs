@@ -74,12 +74,27 @@ public class AoFont
         font.ColFactor = (float)font.CellWidth / font.BitmapWidth;
         font.RowFactor = (float)font.CellHeight / font.BitmapHeight;
 
-        // Load PNG texture with color key (black = transparent)
+        // Load image texture with color key (black = transparent)
+        // font files may be BMP with .png extension — try LoadFromFile first,
+        // then fall back to loading raw bytes as BMP if PNG parse fails.
         var image = Image.LoadFromFile(pngPath);
         if (image == null)
         {
-            GD.PrintErr($"[FONT] Failed to load PNG: {pngPath}");
-            return null;
+            // Godot's LoadFromFile detects format by magic bytes and may fail
+            // for BMP files with .png extension. Try loading as BMP explicitly.
+            var rawBytes = File.ReadAllBytes(pngPath);
+            image = new Image();
+            var err = image.LoadBmpFromBuffer(rawBytes);
+            if (err != Error.Ok)
+            {
+                // Also try as actual PNG buffer in case LoadFromFile had a path issue
+                err = image.LoadPngFromBuffer(rawBytes);
+            }
+            if (err != Error.Ok)
+            {
+                GD.PrintErr($"[FONT] Failed to load image: {pngPath}");
+                return null;
+            }
         }
 
         // VB6 uses D3DX_FILTER_POINT and color key 0xFF000000 (opaque black = transparent)
