@@ -423,7 +423,23 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
         objects.push(obj);
     }
 
-    tracing::info!("Objects loaded: {} items", objects.len());
+    // Debug: verify shield/helmet anim values were loaded correctly
+    let shields_with_anim: Vec<_> = objects.iter().enumerate()
+        .filter(|(_, o)| o.obj_type == ObjType::Shield && o.shield_anim > 0)
+        .map(|(i, o)| (i + 1, &o.name, o.shield_anim))
+        .collect();
+    let helmets_with_anim: Vec<_> = objects.iter().enumerate()
+        .filter(|(_, o)| o.obj_type == ObjType::Helmet && o.casco_anim > 0)
+        .map(|(i, o)| (i + 1, &o.name, o.casco_anim))
+        .collect();
+    tracing::info!("Objects loaded: {} items ({} shields with anim, {} helmets with anim)",
+        objects.len(), shields_with_anim.len(), helmets_with_anim.len());
+    if !shields_with_anim.is_empty() {
+        tracing::debug!("Shield anims: {:?}", &shields_with_anim[..shields_with_anim.len().min(5)]);
+    }
+    if !helmets_with_anim.is_empty() {
+        tracing::debug!("Helmet anims: {:?}", &helmets_with_anim[..helmets_with_anim.len().min(5)]);
+    }
     Ok(objects)
 }
 

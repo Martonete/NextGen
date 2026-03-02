@@ -191,6 +191,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                 }
                 ObjType::Shield => {
                     user.equip.shield = slot;
+                    tracing::info!("[EQUIP] Shield slot={} obj={} '{}' shield_anim={}", slot, obj_idx, obj_data.name, obj_data.shield_anim);
                     user.shield_anim = obj_data.shield_anim;
                     if obj_data.crea_aura > 0 {
                         user.aura_e = obj_data.crea_aura;

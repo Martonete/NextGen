@@ -819,11 +819,15 @@ async fn connect_user(
         }
         if shield_obj_idx >= 1 {
             if let Some(obj) = state.game_data.objects.get((shield_obj_idx - 1) as usize) {
+                tracing::info!("[LOGIN-EQUIP] Shield obj={} '{}' type={:?} shield_anim={}", shield_obj_idx, obj.name, obj.obj_type, obj.shield_anim);
                 user.shield_anim = obj.shield_anim;
             }
+        } else {
+            tracing::info!("[LOGIN-EQUIP] No shield equipped (equip.shield={}, shield_obj_idx={})", user.equip.shield, shield_obj_idx);
         }
         if helmet_obj_idx >= 1 {
             if let Some(obj) = state.game_data.objects.get((helmet_obj_idx - 1) as usize) {
+                tracing::info!("[LOGIN-EQUIP] Helmet obj={} '{}' type={:?} casco_anim={}", helmet_obj_idx, obj.name, obj.obj_type, obj.casco_anim);
                 user.casco_anim = obj.casco_anim;
             }
         }

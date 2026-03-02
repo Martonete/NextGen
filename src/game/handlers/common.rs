@@ -635,22 +635,25 @@ pub(super) fn get_equipped_anims(state: &GameState, conn_id: ConnectionId) -> (i
 
     let weapon = if user.equip.weapon > 0 && user.equip.weapon <= MAX_INVENTORY_SLOTS {
         let obj_idx = user.inventory[user.equip.weapon - 1].obj_index;
-        if obj_idx > 0 && (obj_idx as usize) < state.game_data.objects.len() {
-            state.game_data.objects[obj_idx as usize].weapon_anim
+        if obj_idx >= 1 {
+            state.game_data.objects.get((obj_idx - 1) as usize)
+                .map(|o| o.weapon_anim).unwrap_or(0)
         } else { 0 }
     } else { 0 };
 
     let shield = if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
         let obj_idx = user.inventory[user.equip.shield - 1].obj_index;
-        if obj_idx > 0 && (obj_idx as usize) < state.game_data.objects.len() {
-            state.game_data.objects[obj_idx as usize].shield_anim
+        if obj_idx >= 1 {
+            state.game_data.objects.get((obj_idx - 1) as usize)
+                .map(|o| o.shield_anim).unwrap_or(0)
         } else { 0 }
     } else { 0 };
 
     let helmet = if user.equip.helmet > 0 && user.equip.helmet <= MAX_INVENTORY_SLOTS {
         let obj_idx = user.inventory[user.equip.helmet - 1].obj_index;
-        if obj_idx > 0 && (obj_idx as usize) < state.game_data.objects.len() {
-            state.game_data.objects[obj_idx as usize].casco_anim
+        if obj_idx >= 1 {
+            state.game_data.objects.get((obj_idx - 1) as usize)
+                .map(|o| o.casco_anim).unwrap_or(0)
         } else { 0 }
     } else { 0 };
 

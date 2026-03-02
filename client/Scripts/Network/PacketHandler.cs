@@ -1040,6 +1040,8 @@ public class PacketHandler
 
         _state.Characters[charIndex] = ch;
 
+        GD.Print($"[CC] {ch.Name} idx={charIndex} body={ch.Body} head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim} casco={ch.CascoAnim} (raw parts[7]={parts[7]})");
+
         if (ch.Body <= 0)
             GD.PrintErr($"[CC] WARNING: char {ch.Name} (idx={charIndex}) has body=0!");
     }
