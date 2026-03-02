@@ -1,19 +1,17 @@
 //! NPC system handlers: area visibility, NPC combat, NPC death, item drops.
 //! Extracted from mod.rs to reduce file size.
 
-use std::collections::HashMap;
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::game::world;
 use crate::game::npc;
 use crate::protocol::{server_opcodes, font_types};
-use crate::data::npcs::NpcType;
 use crate::data::experience::MAX_LEVEL;
 use super::common::*;
 use super::{
     user_die, check_user_level, send_inventory_slot,
-    quest_check_npc_kill, party_share_exp,
+    quest_check_npc_kill,
     calc_attack_power, calc_defense_power, calc_armor_absorption,
     class_damage_modifier,
     pretoriano_check_death, aram_check_tower_death,
@@ -107,11 +105,11 @@ pub(super) async fn user_attack_npc(
     // Get NPC data
     let npc_data = match state.get_npc(npc_idx) {
         Some(n) if n.is_alive() && n.attackable => {
-            (n.poder_evasion, n.char_index, n.name.clone(), n.give_exp)
+            (n.poder_evasion, n.char_index, n.name.clone(), n.give_exp, n.max_hp)
         }
         _ => return,
     };
-    let (npc_evasion, npc_char_index, npc_name, _give_exp) = npc_data;
+    let (npc_evasion, npc_char_index, npc_name, npc_give_exp, npc_max_hp) = npc_data;
 
     // Hit/miss calculation
     let attack_power = calc_attack_power(skill_armas, agility, level);
@@ -129,8 +127,15 @@ pub(super) async fn user_attack_npc(
     let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
     let base_dmg = 3 * weapon_dmg + str_bonus + rand_range(min_hit, max_hit);
     let class_mod = class_damage_modifier(class);
-    let damage = ((base_dmg as f64) * class_mod) as i32;
-    let damage = damage.max(1);
+    let mut damage = ((base_dmg as f64) * class_mod) as i32;
+    damage = damage.max(1);
+
+    // Critical hit (VB6: RandomNumber(1,5) == 1 or 4 → 40% chance, double damage)
+    let crit_roll = rand_range(1, 5);
+    let is_critical = crit_roll == 1 || crit_roll == 4;
+    if is_critical {
+        damage *= 2;
+    }
 
     // Check attacker GM status BEFORE taking mutable NPC borrow
     let attacker_is_gm = state.users.get(&conn_id)
@@ -174,6 +179,17 @@ pub(super) async fn user_attack_npc(
     let u2_pkt = format!("U2{}", damage);
     state.send_to(conn_id, &u2_pkt).await;
 
+    // Critical hit notification (VB6: ||138 — "Has dado un golpe critico!")
+    if is_critical {
+        state.send_to(conn_id, "||138").await;
+    }
+
+    // N| visual damage packet (VB6: floating yellow damage number above NPC)
+    // Format: N|{vbColor}°-{damage}°{charindex} — ° = char 176
+    // VB6 yellow = 65535 (RGB 255,255,0)
+    let n_pipe_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, npc_char_index.0);
+    state.send_data(SendTarget::ToArea { map, x, y }, &n_pipe_pkt).await;
+
     // Hit sound to area
     let snd_pkt = format!("TW{}", 10); // Impact sound
     state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
@@ -181,6 +197,33 @@ pub(super) async fn user_attack_npc(
     // Blood FX on NPC
     let fx_pkt = format!("CFX{},{},{}", npc_char_index.0, 14, 0); // VB6: FXSANGRE = 14
     state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+
+    // Per-hit EXP (VB6: CalcularDarExp — gives proportional exp on EVERY hit, not just on death)
+    if npc_give_exp > 0 && npc_max_hp > 0 {
+        let exp_mult = state.multiplicador_exp;
+        let mut exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
+
+        // Scroll(0) = EXP scroll multiplier
+        let scroll_mult = state.users.get(&conn_id)
+            .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
+            .unwrap_or(1);
+        exp_award *= scroll_mult;
+
+        // Level cap check
+        let can_level = state.users.get(&conn_id)
+            .map(|u| u.logged && u.level < MAX_LEVEL as i32)
+            .unwrap_or(false);
+
+        if can_level && exp_award > 0 {
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.exp += exp_award;
+            }
+            // Send ||170@{exp} notification (VB6: "Has ganado %1 puntos de experiencia")
+            state.send_to(conn_id, &format!("||170@{}", exp_award)).await;
+            send_stats_exp(state, conn_id).await;
+            check_user_level(state, conn_id).await;
+        }
+    }
 
     if npc_dead {
         npc_die(state, npc_idx, conn_id, npc_give_exp, npc_give_gld_min, npc_give_gld_max).await;
@@ -200,17 +243,17 @@ pub(super) async fn npc_die(
 ) {
     let npc_info = match state.get_npc(npc_idx) {
         Some(n) => (n.map, n.x, n.y, n.char_index, n.name.clone(), n.npc_number,
-                    n.snd3, n.max_hp, n.give_pts, n.cristales,
+                    n.snd3, n.give_pts, n.cristales,
                     n.crystal_min1, n.crystal_max1, n.crystal_min2, n.crystal_max2,
                     n.crystal_min3, n.crystal_max3, n.crystal_min4, n.crystal_max4,
-                    n.damage_received.clone(), n.maestro_user),
+                    n.maestro_user),
         None => return,
     };
     let (map, x, y, char_index, npc_name, npc_number,
-         snd3, npc_max_hp, give_pts, has_crystals,
+         snd3, give_pts, has_crystals,
          cr_min1, cr_max1, cr_min2, cr_max2,
          cr_min3, cr_max3, cr_min4, cr_max4,
-         damage_received, is_pet_owner) = npc_info;
+         is_pet_owner) = npc_info;
 
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
@@ -323,55 +366,8 @@ pub(super) async fn npc_die(
     // Check ARAM tower death
     aram_check_tower_death(state, npc_idx).await;
 
-    // 8) Proportional EXP distribution (VB6: (give_exp / max_hp) * player_damage * mult_exp)
-    let exp_mult = state.multiplicador_exp;
-    let npc_max_hp_f = (npc_max_hp as f64).max(1.0);
-
-    if give_exp > 0 && !damage_received.is_empty() {
-        // Aggregate damage per player
-        let mut damage_per_player: HashMap<ConnectionId, i32> = HashMap::new();
-        for (conn, dmg) in &damage_received {
-            *damage_per_player.entry(*conn).or_insert(0) += dmg;
-        }
-
-        for (conn_id, player_damage) in &damage_per_player {
-            // Calculate proportional EXP: (give_exp / max_hp) * player_damage * mult_exp
-            let mut exp_award = ((give_exp as f64 / npc_max_hp_f) * (*player_damage as f64) * exp_mult as f64) as i64;
-
-            // Scroll(0) = EXP scroll multiplier
-            let scroll_mult = state.users.get(conn_id)
-                .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
-                .unwrap_or(1);
-            exp_award *= scroll_mult;
-
-            // Level cap check
-            let can_level = state.users.get(conn_id)
-                .map(|u| u.logged && u.level < MAX_LEVEL as i32)
-                .unwrap_or(false);
-
-            if can_level && exp_award > 0 {
-                if let Some(user) = state.users.get_mut(conn_id) {
-                    user.exp += exp_award;
-                }
-                send_stats_exp(state, *conn_id).await;
-                check_user_level(state, *conn_id).await;
-            }
-        }
-    } else if give_exp > 0 {
-        // Fallback: no damage tracking — give full EXP to killer (backward compat)
-        let mut exp_award = (give_exp as i64) * (exp_mult as i64);
-        let scroll_mult = state.users.get(&killer_id)
-            .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
-            .unwrap_or(1);
-        exp_award *= scroll_mult;
-        if let Some(user) = state.users.get_mut(&killer_id) {
-            if user.level < MAX_LEVEL as i32 {
-                user.exp += exp_award;
-            }
-        }
-        send_stats_exp(state, killer_id).await;
-        check_user_level(state, killer_id).await;
-    }
+    // 8) EXP is now given per-hit via CalcularDarExp in user_attack_npc().
+    // No death-time exp distribution needed (VB6 parity: exp per hit, not per kill).
 
     // 9) Gold to killer's inventory (VB6: gold goes to player, NOT floor)
     let gold_mult = state.multiplicador_oro;
@@ -408,9 +404,8 @@ pub(super) async fn npc_die(
         remove_pet_from_owner(state, owner_conn, npc_idx);
     }
 
-    // 12) Notify killer (VB6: ||50 + ||170@exp + ||56@gold)
-    state.send_to(killer_id, "||50").await; // TEXTO50: Has matado a la criatura!
-    state.send_to(killer_id, &format!("||170@{}", give_exp)).await; // TEXTO170: Has ganado %1 exp
+    // 12) Notify killer (VB6: ||50 + ||56@gold)
+    // Note: ||50 already sent at step 2. ||170 exp is now per-hit (CalcularDarExp).
     if gold_award > 0 {
         state.send_to(killer_id, &format!("||56@{}", gold_award)).await; // TEXTO56: La criatura ha dejado %1 monedas
     }

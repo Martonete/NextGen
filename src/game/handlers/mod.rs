@@ -2479,6 +2479,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.level += 1;
+            user.exp = 0; // VB6 parity: reset exp to 0 on each level up
             user.max_hp += hp_gain;
             user.min_hp += hp_gain; // Heal the gain
             user.max_mana += mana_gain;
