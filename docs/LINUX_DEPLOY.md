@@ -126,7 +126,21 @@ Common commands:
 
 ---
 
-## 7. Run the Client
+## 7. Build the Client (first time)
+
+Before running the client for the first time, compile the C# solution:
+
+```bash
+cd ~/server-rust-tsao/client
+dotnet build
+# Should show: "Build succeeded. 0 Warning(s) 0 Error(s)"
+```
+
+This step is required once. After that, Godot handles recompilation automatically.
+
+---
+
+## 8. Run the Client
 
 ### Option A: From Godot editor
 
