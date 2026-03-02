@@ -176,8 +176,8 @@ offset_top = 408.0
 offset_right = 773.0
 offset_bottom = 418.0
 horizontal_alignment = 1
-theme_override_colors/font_color = Color(0.502, 1, 1, 1)
-theme_override_font_sizes/font_size = 9
+theme_override_colors/font_color = Color(1, 1, 0.502, 1)
+theme_override_font_sizes/font_size = 6
 
 [node name="OnlineLabel" type="Label" parent="GameUI"]
 layout_mode = 0
@@ -187,7 +187,7 @@ offset_right = 64.0
 offset_bottom = 564.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 8
+theme_override_font_sizes/font_size = 6
 
 [node name="CoordsLabel" type="Label" parent="GameUI"]
 layout_mode = 0
@@ -197,5 +197,5 @@ offset_right = 773.0
 offset_bottom = 566.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
-theme_override_font_sizes/font_size = 8
+theme_override_font_sizes/font_size = 5
 

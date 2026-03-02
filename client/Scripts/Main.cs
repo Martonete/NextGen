@@ -228,13 +228,29 @@ public partial class Main : Control
         _coordsLabel = GetNode<Label>("GameUI/CoordsLabel");
         _expLabel = GetNode<Label>("GameUI/ExpLabel");
 
-        // VB6: all labels use Font.Weight=700 (Bold)
-        ApplyBoldFont(_goldLabel);
-        ApplyBoldFont(_levelLabel);
-        ApplyBoldFont(_nameLabel);
-        ApplyBoldFont(_onlineLabel);
-        ApplyBoldFont(_coordsLabel);
-        ApplyBoldFont(_expLabel);
+        // VB6 frmMain.frm exact fonts per label:
+        // GldLbl: Tahoma 6pt Bold, ForeColor &H0080FFFF& = RGB(255,255,128) light yellow
+        ApplyFont(_goldLabel, "Tahoma", 700);
+        _goldLabel.AddThemeFontSizeOverride("font_size", 6);
+        _goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
+
+        // LvlLbl: Cambria 8.25pt Bold, White
+        ApplyFont(_levelLabel, "Cambria", 700);
+
+        // NameLabel: (not in VB6 form as label — keep current Tahoma Bold)
+        ApplyFont(_nameLabel, "Tahoma", 700);
+
+        // ONLINES: Tahoma 6pt Bold, White
+        ApplyFont(_onlineLabel, "Tahoma", 700);
+        _onlineLabel.AddThemeFontSizeOverride("font_size", 6);
+
+        // Coord: Tahoma 5.25pt Bold, White
+        ApplyFont(_coordsLabel, "Tahoma", 700);
+        _coordsLabel.AddThemeFontSizeOverride("font_size", 5);
+
+        // exp: Cambria 8.25pt Bold, White (VB6: &H8000000B& system color → white on dark UI)
+        ApplyFont(_expLabel, "Cambria", 700);
+        _expLabel.AddThemeColorOverride("font_color", Colors.White);
 
         // Custom stat bar overlay — draws colored fill rects at VB6 positions
         _statBarOverlay = new StatBarOverlay();
@@ -270,13 +286,16 @@ public partial class Main : Control
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
 
-        // Item name tooltip — VB6: ItemName at (584,337,161,25), cyan text, centered
+        // Item name tooltip — VB6: ItemName at (584,337,161,25)
+        // Palatino Linotype 6.75pt Normal (400), ForeColor &H0000FFFF& = RGB(255,255,0) yellow
         _itemNameLabel = new Label();
         _itemNameLabel.Position = new Vector2(584, 337);
         _itemNameLabel.Size = new Vector2(161, 25);
         _itemNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _itemNameLabel.AddThemeColorOverride("font_color", new Color(0, 1, 1)); // VB6 &H0000FFFF& = cyan
-        _itemNameLabel.AddThemeFontSizeOverride("font_size", 9);
+        _itemNameLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0f)); // Yellow
+        _itemNameLabel.AddThemeFontSizeOverride("font_size", 7);
+        ApplyFont(_itemNameLabel, "Palatino Linotype", 400); // Normal weight
+        _itemNameLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         _gameUI.AddChild(_itemNameLabel);
         _inventoryPanel.TooltipLabel = _itemNameLabel;
 
@@ -319,7 +338,7 @@ public partial class Main : Control
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
-        // === Bottom bar stat labels (VB6: inherited Tahoma 8.25 Bold) ===
+        // === Bottom bar stat labels (VB6: inherited form font Tahoma 8.25 Bold) ===
         _armaLabel = CreateStatLabel(112, 557, 57, 13, Colors.White, 8);
         _gameUI.AddChild(_armaLabel);
 
@@ -329,17 +348,19 @@ public partial class Main : Control
         _defensaLabel = CreateStatLabel(284, 557, 57, 13, Colors.White, 8);
         _gameUI.AddChild(_defensaLabel);
 
+        // Fuerza: VB6 ForeColor &H0000FF00& = RGB(0,255,0) Green
         _fuerzaLabel = CreateStatLabel(384, 557, 33, 17, new Color(0, 1, 0), 8);
         _gameUI.AddChild(_fuerzaLabel);
 
-        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(0, 1, 1), 8);
+        // Agilidad: VB6 ForeColor &H0000FFFF& = RGB(255,255,0) Yellow
+        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(1f, 1f, 0f), 8);
         _gameUI.AddChild(_agilidadLabel);
 
-        // Reputation label — VB6: Cambria 8.25 Normal
-        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 8);
+        // Reputation: VB6 Cambria 8.25 Normal (Weight=400, NOT bold), White
+        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 8, "Cambria", 400);
         _gameUI.AddChild(_repLabel);
 
-        // FPS label — VB6: Tahoma 6pt Bold, center
+        // FPS: VB6 Tahoma 6pt Bold, center, White
         _fpsLabel = CreateStatLabel(47, 576, 17, 10, Colors.White, 6);
         _gameUI.AddChild(_fpsLabel);
 
@@ -469,14 +490,17 @@ public partial class Main : Control
     /// Apply bold font to a Label (VB6: all labels use Font.Weight=700).
     /// Uses a SystemFont with weight 700 overriding the theme font.
     /// </summary>
-    private static void ApplyBoldFont(Label label)
+    /// Apply a specific font to a label (VB6 parity: exact font family + weight).
+    private static void ApplyFont(Label label, string fontName = "Tahoma", int weight = 700)
     {
-        var boldFont = new SystemFont();
-        boldFont.FontWeight = 700;
-        label.AddThemeFontOverride("font", boldFont);
+        var font = new SystemFont();
+        font.FontNames = new string[] { fontName };
+        font.FontWeight = weight;
+        label.AddThemeFontOverride("font", font);
     }
 
-    private static Label CreateStatLabel(float x, float y, float w, float h, Color color, int fontSize)
+    private static Label CreateStatLabel(float x, float y, float w, float h, Color color, int fontSize,
+                                          string fontName = "Tahoma", int weight = 700)
     {
         var label = new Label();
         label.Position = new Vector2(x, y);
@@ -485,7 +509,7 @@ public partial class Main : Control
         label.AddThemeColorOverride("font_color", color);
         label.AddThemeFontSizeOverride("font_size", fontSize);
         label.MouseFilter = Control.MouseFilterEnum.Ignore;
-        ApplyBoldFont(label);
+        ApplyFont(label, fontName, weight);
         return label;
     }
 
@@ -1015,7 +1039,7 @@ public partial class Main : Control
         title.HorizontalAlignment = HorizontalAlignment.Center;
         title.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.4f));
         title.AddThemeFontSizeOverride("font_size", 16);
-        ApplyBoldFont(title);
+        ApplyFont(title);
         vbox.AddChild(title);
 
         // Account name
@@ -1275,7 +1299,7 @@ public partial class Main : Control
         title.HorizontalAlignment = HorizontalAlignment.Center;
         title.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.4f));
         title.AddThemeFontSizeOverride("font_size", 16);
-        ApplyBoldFont(title);
+        ApplyFont(title);
         vbox.AddChild(title);
 
         // Name input
