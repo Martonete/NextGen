@@ -7,12 +7,16 @@ using TierrasSagradasAO.Game;
 namespace TierrasSagradasAO.Rendering;
 
 /// <summary>
-/// Renders the game world matching VB6 RenderScreen:
-/// - 534x408 viewport centered on player
-/// - 4 tile layers with correct draw order
-/// - TileBufferSize=9 for multi-tile graphics
-/// - Tree alpha near player, gradual roof fade
-/// - Character position index for O(1) lookup
+/// Renders the game world matching VB6 RenderScreen.
+///
+/// Layer architecture (Godot child draw order — all children draw AFTER parent):
+///   WorldRenderer._Draw()       → PASS 1+2 (terrain layers 1+2)
+///   AuraLayer (z=0, additive)   → auras (VB6: drawn before dibujarPersonaje, D3DBLEND_ONE/ONE)
+///   ContentLayer (z=1)          → PASS 3 (ground objects + characters + layer 3) + status overlay
+///   AdditiveParticleLayer (z=2) → particles (VB6: D3DBLEND_ONE/ONE)
+///   RoofLayer (z=3)             → PASS 4 (roof with fade)
+///
+/// This ensures auras render AFTER terrain but BEFORE characters, with additive blend.
 /// </summary>
 public partial class WorldRenderer : Node2D
 {
@@ -20,9 +24,10 @@ public partial class WorldRenderer : Node2D
     private GameData? _data;
     private GrhAnimator? _animator;
 
-    // Additive blend layer for particles (VB6: D3DBLEND_ONE/ONE)
-    private Node2D? _additiveLayer;
-    // Roof layer drawn AFTER particles so roof covers them
+    // Child layers
+    private AuraAdditiveLayer? _auraLayer;
+    private ContentLayer? _contentLayer;
+    private AdditiveParticleLayer? _additiveLayer;
     private RoofLayer? _roofLayer;
 
     private const int TileSize = 32;
@@ -53,11 +58,17 @@ public partial class WorldRenderer : Node2D
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingMapParticleDraws = new();
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingCharParticleDraws = new();
 
-    // Pending aura draws for the additive blend layer (VB6: D3DBLEND_ONE/ONE)
+    // Pending aura draws for the aura additive layer (VB6: D3DBLEND_ONE/ONE)
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
 
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
+
+    // Per-frame camera data (computed in _Draw, used by child layer callbacks)
+    private int _frameUserX, _frameUserY;
+    private float _framePixelOffsetX, _framePixelOffsetY;
+    private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
+    private bool _frameHasLights;
 
     public void Init(GameState state, GameData data, GrhAnimator animator)
     {
@@ -65,20 +76,38 @@ public partial class WorldRenderer : Node2D
         _data = data;
         _animator = animator;
 
-        // Create additive blend layer for particles (VB6: D3DBLEND_ONE/ONE)
-        _additiveLayer = new AdditiveParticleLayer();
-        _additiveLayer.Name = "AdditiveParticles";
         var additiveMat = new CanvasItemMaterial
         {
             BlendMode = CanvasItemMaterial.BlendModeEnum.Add
         };
+
+        // Aura layer: additive blend, z=0 (first child after parent terrain)
+        _auraLayer = new AuraAdditiveLayer();
+        _auraLayer.Name = "AuraLayer";
+        _auraLayer.Material = additiveMat;
+        _auraLayer.ZIndex = 0;
+        _auraLayer.SetRenderer(this);
+        AddChild(_auraLayer);
+
+        // Content layer: standard blend, z=1 (characters + objects + layer 3)
+        _contentLayer = new ContentLayer();
+        _contentLayer.Name = "ContentLayer";
+        _contentLayer.ZIndex = 1;
+        _contentLayer.SetRenderer(this);
+        AddChild(_contentLayer);
+
+        // Particle layer: additive blend, z=2
+        _additiveLayer = new AdditiveParticleLayer();
+        _additiveLayer.Name = "AdditiveParticles";
         _additiveLayer.Material = additiveMat;
-        ((AdditiveParticleLayer)_additiveLayer).SetRenderer(this);
+        _additiveLayer.ZIndex = 2;
+        _additiveLayer.SetRenderer(this);
         AddChild(_additiveLayer);
 
-        // Roof layer: drawn AFTER additive particles (child index 1 > 0)
+        // Roof layer: standard blend, z=3 (on top of everything)
         _roofLayer = new RoofLayer();
         _roofLayer.Name = "RoofLayer";
+        _roofLayer.ZIndex = 3;
         _roofLayer.SetRenderer(this);
         AddChild(_roofLayer);
     }
@@ -150,8 +179,6 @@ public partial class WorldRenderer : Node2D
 
     /// <summary>
     /// Convert world tile to screen pixel position.
-    /// VB6 uses the SAME pixel formula for all layers — only the tile RANGE differs.
-    /// The -1 that appears in VB6's L1 formula cancels with the expanded range offset.
     /// </summary>
     private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
                                          float pixelOffsetX, float pixelOffsetY)
@@ -161,6 +188,10 @@ public partial class WorldRenderer : Node2D
         return new Vector2(px, py);
     }
 
+    /// <summary>
+    /// Main _Draw: renders PASS 1+2 (terrain) and computes per-frame data for child layers.
+    /// Child layers (auras, content, particles, roof) draw in their own _Draw() after this.
+    /// </summary>
     public override void _Draw()
     {
         if (_state == null || _data == null || _animator == null) return;
@@ -170,44 +201,40 @@ public partial class WorldRenderer : Node2D
         _pendingMapParticleDraws.Clear();
         _pendingCharParticleDraws.Clear();
         _pendingAuraDraws.Clear();
+        _pendingRoofDraws.Clear();
 
         // VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
-        // During scroll, camera center stays at the old tile while offset accumulates
-        int userX = _state.UserPosX - _state.AddToUserPosX;
-        int userY = _state.UserPosY - _state.AddToUserPosY;
+        _frameUserX = _state.UserPosX - _state.AddToUserPosX;
+        _frameUserY = _state.UserPosY - _state.AddToUserPosY;
 
         BuildCharPositionIndex();
 
         // Camera pixel offset — NEGATED because ScreenOffset grows in the movement
         // direction, but tiles must shift in the OPPOSITE direction on screen.
-        // Rounded to int to match VB6+DX8 pixel-snapping (prevents sub-pixel jitter).
-        float pixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
-        float pixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
+        _framePixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
+        _framePixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
 
         // Visible tile range
-        int screenMinX = userX - HalfWindowTileWidth;
-        int screenMaxX = userX + HalfWindowTileWidth;
-        int screenMinY = userY - HalfWindowTileHeight;
-        int screenMaxY = userY + HalfWindowTileHeight;
+        int screenMinX = _frameUserX - HalfWindowTileWidth;
+        int screenMaxX = _frameUserX + HalfWindowTileWidth;
+        int screenMinY = _frameUserY - HalfWindowTileHeight;
+        int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
         // Extended bounds with tile buffer
-        int minX = Math.Max(1, screenMinX - TileBufferSize);
-        int maxX = Math.Min(100, screenMaxX + TileBufferSize);
-        int minY = Math.Max(1, screenMinY - TileBufferSize);
-        int maxY = Math.Min(100, screenMaxY + TileBufferSize);
+        _frameMinX = Math.Max(1, screenMinX - TileBufferSize);
+        _frameMaxX = Math.Min(100, screenMaxX + TileBufferSize);
+        _frameMinY = Math.Max(1, screenMinY - TileBufferSize);
+        _frameMaxY = Math.Min(100, screenMaxY + TileBufferSize);
+
+        _frameHasLights = _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
-        // +2 instead of +1 because during scrolling the camera pixel offset
-        // shifts up to 32px, revealing an extra tile beyond the +1 margin.
-        // Without this, you see black gaps at the scroll edges.
         // ==========================================
         int l1MinX = Math.Max(1, screenMinX - 2);
         int l1MaxX = Math.Min(100, screenMaxX + 2);
         int l1MinY = Math.Max(1, screenMinY - 2);
         int l1MaxY = Math.Min(100, screenMaxY + 2);
-
-        bool hasLights = _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
         for (int y = l1MinY; y <= l1MaxY; y++)
         {
@@ -216,8 +243,8 @@ public partial class WorldRenderer : Node2D
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
 
-                Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                if (hasLights)
+                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+                if (_frameHasLights)
                 {
                     Color lightColor = LightSystem.GetTileLight(_state, x, y);
                     DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
@@ -232,15 +259,15 @@ public partial class WorldRenderer : Node2D
         // ==========================================
         // PASS 2: Layer 2 — extended buffer range
         // ==========================================
-        for (int y = minY; y <= maxY; y++)
+        for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
-            for (int x = minX; x <= maxX; x++)
+            for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer2 <= 0) continue;
 
-                Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                if (hasLights)
+                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+                if (_frameHasLights)
                 {
                     Color lightColor = LightSystem.GetTileLight(_state, x, y);
                     DrawTileGrh(tile.Layer2, pos, center: false, modulate: lightColor);
@@ -253,117 +280,69 @@ public partial class WorldRenderer : Node2D
         }
 
         // ==========================================
-        // PASS 3: Objects + Characters + Layer 3
+        // Pre-compute PASS 3 data for ContentLayer (characters queue aura draws)
+        // We must process characters HERE (parent _Draw runs first) so aura data
+        // is available when AuraLayer._Draw() fires.
+        // But actual character drawing goes to ContentLayer via DrawContent().
         // ==========================================
-        for (int y = minY; y <= maxY; y++)
+        // Collect aura draws by iterating characters and updating their aura state.
+        // This populates _pendingAuraDraws before AuraLayer._Draw() fires.
+        foreach (var kvp in _state.Characters)
         {
-            for (int x = minX; x <= maxX; x++)
+            var ch = kvp.Value;
+            if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
+
+            // Compute character screen position
+            var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
+                                        _framePixelOffsetX, _framePixelOffsetY);
+            float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
+            float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
+
+            // Pre-resolve head offset for aura positioning
+            Vector2 headOffset = new Vector2(0, -30);
+            if (ch.Body > 0 && ch.Body < _data.Bodies.Length)
             {
-                Vector2 tilePos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                ref var tile = ref _state.MapData.Tiles[x, y];
-
-                // Per-tile light color for this pass
-                Color tileLight = hasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
-
-                // Ground objects (apply same tree alpha as Layer 3)
-                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
-                {
-                    bool objNearPlayer = IsTree(objGrh)
-                                       && y > (userY - 2) && y < (userY + 7)
-                                       && x > (userX - 4) && x < (userX + 4);
-                    if (objNearPlayer)
-                    {
-                        Color objLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
-                        DrawTileGrh(objGrh, tilePos, center: true, modulate: objLight);
-                    }
-                    else
-                    {
-                        DrawTileGrh(objGrh, tilePos, center: true, modulate: tileLight);
-                    }
-                }
-
-                // Characters/NPCs at this tile
-                var charsHere = GetCharsAt(x, y);
-                for (int ci = 0; ci < charsHere.Count; ci++)
-                {
-                    if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
-
-                    // VB6: invisible characters are not rendered (except self for GMs)
-                    if (ch.Invisible && charsHere[ci] != _state.UserCharIndex) continue;
-
-                    // Round MoveOffset to int (VB6+DX8 pixel-snapping)
-                    float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
-                    float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
-
-                    CharRenderer.DrawCharacter(this, ch, new Vector2(charPx, charPy), _data, _animator, _deltaMs, _state);
-                }
-
-                // Layer 3 (trees/objects)
-                if (tile.Layer3 > 0)
-                {
-                    // VB6: Only trees get alpha near player (EsArbol check)
-                    bool nearPlayer = IsTree(tile.Layer3)
-                                   && y > (userY - 2) && y < (userY + 7)
-                                   && x > (userX - 4) && x < (userX + 4);
-                    if (nearPlayer)
-                    {
-                        // Combine tree alpha with tile light
-                        Color treeLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
-                        DrawTileGrh(tile.Layer3, tilePos, center: true, modulate: treeLight);
-                    }
-                    else
-                    {
-                        DrawTileGrh(tile.Layer3, tilePos, center: true, modulate: tileLight);
-                    }
-                }
+                var body = _data.Bodies[ch.Body];
+                headOffset = new Vector2(body.HeadOffsetX, body.HeadOffsetY);
             }
+
+            // Collect aura draws (updates angle state + queues to _pendingAuraDraws)
+            CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
         }
 
-        // ==========================================
-        // PASS 3b: Map-attached particles (additive blend — VB6: D3DBLEND_ONE/ONE)
-        // ==========================================
-        if (_additiveLayer != null)
-        {
-            // Queue redraw on additive layer so its _Draw fires
-            _additiveLayer.QueueRedraw();
-        }
-
-        // Store particle draw data for the additive layer
+        // Collect map particle draws for the additive layer
         foreach (var stream in _state.MapParticles)
         {
-            if (!stream.Active || stream.CharIndex >= 0) continue; // skip char-attached
+            if (!stream.Active || stream.CharIndex >= 0) continue;
             if (stream.DefIndex < 1 || stream.DefIndex >= _state.ParticleDefs.Length) continue;
 
-            Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, userX, userY, pixelOffsetX, pixelOffsetY);
+            Vector2 streamPos = TileToScreen(stream.MapX, stream.MapY, _frameUserX, _frameUserY,
+                                              _framePixelOffsetX, _framePixelOffsetY);
 
             foreach (var p in stream.Particles)
             {
                 if (!p.Alive || p.GrhIndex <= 0) continue;
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
                 Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
-                // Use animated GRH frame (VB6: particles use looping tile animations)
                 int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
                 _pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));
             }
         }
 
-        // ==========================================
-        // PASS 4: Layer 4 (Roof) — queued for RoofLayer child node (drawn AFTER particles)
-        // ==========================================
-        _pendingRoofDraws.Clear();
+        // Collect roof draws
         if (_roofAlpha > 0)
         {
             float roofA = _roofAlpha / 255f;
 
-            for (int y = minY; y <= maxY; y++)
+            for (int y = _frameMinY; y <= _frameMaxY; y++)
             {
-                for (int x = minX; x <= maxX; x++)
+                for (int x = _frameMinX; x <= _frameMaxX; x++)
                 {
                     ref var tile = ref _state.MapData.Tiles[x, y];
                     if (tile.Layer4 <= 0) continue;
 
-                    Vector2 pos = TileToScreen(x, y, userX, userY, pixelOffsetX, pixelOffsetY);
-                    if (hasLights)
+                    Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+                    if (_frameHasLights)
                     {
                         Color tl = LightSystem.GetTileLight(_state, x, y);
                         _pendingRoofDraws.Add((tile.Layer4, pos, new Color(tl.R, tl.G, tl.B, roofA)));
@@ -375,15 +354,91 @@ public partial class WorldRenderer : Node2D
                 }
             }
         }
+
+        // Trigger child layer redraws
+        _auraLayer?.QueueRedraw();
+        _contentLayer?.QueueRedraw();
+        _additiveLayer?.QueueRedraw();
         _roofLayer?.QueueRedraw();
+    }
+
+    /// <summary>
+    /// Draw PASS 3 content: ground objects, characters, layer 3, status overlay.
+    /// Called by ContentLayer._Draw().
+    /// </summary>
+    public void DrawContent(CanvasItem canvas)
+    {
+        if (_state == null || _data == null || _animator == null) return;
+        if (_state.MapData == null) return;
+
+        for (int y = _frameMinY; y <= _frameMaxY; y++)
+        {
+            for (int x = _frameMinX; x <= _frameMaxX; x++)
+            {
+                Vector2 tilePos = TileToScreen(x, y, _frameUserX, _frameUserY,
+                                                _framePixelOffsetX, _framePixelOffsetY);
+                ref var tile = ref _state.MapData.Tiles[x, y];
+
+                Color tileLight = _frameHasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
+
+                // Ground objects (apply same tree alpha as Layer 3)
+                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
+                {
+                    bool objNearPlayer = IsTree(objGrh)
+                                       && y > (_frameUserY - 2) && y < (_frameUserY + 7)
+                                       && x > (_frameUserX - 4) && x < (_frameUserX + 4);
+                    if (objNearPlayer)
+                    {
+                        Color objLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objLight);
+                    }
+                    else
+                    {
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: tileLight);
+                    }
+                }
+
+                // Characters/NPCs at this tile
+                var charsHere = GetCharsAt(x, y);
+                for (int ci = 0; ci < charsHere.Count; ci++)
+                {
+                    if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
+
+                    if (ch.Invisible && charsHere[ci] != _state.UserCharIndex) continue;
+
+                    float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
+                    float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
+
+                    // Pass 'this' as worldRenderer so CharRenderer can queue particle draws
+                    CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
+                                               _data, _animator, _deltaMs, _state, this);
+                }
+
+                // Layer 3 (trees/objects)
+                if (tile.Layer3 > 0)
+                {
+                    bool nearPlayer = IsTree(tile.Layer3)
+                                   && y > (_frameUserY - 2) && y < (_frameUserY + 7)
+                                   && x > (_frameUserX - 4) && x < (_frameUserX + 4);
+                    if (nearPlayer)
+                    {
+                        Color treeLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: treeLight);
+                    }
+                    else
+                    {
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: tileLight);
+                    }
+                }
+            }
+        }
 
         // Status overlay (VB6: drawCounters — paralysis/invisibility bars + status icons)
-        DrawStatusOverlay();
+        DrawStatusOverlayTo(canvas);
     }
 
     /// <summary>
     /// VB6 EsArbol(): checks if a GRH index is a tree graphic.
-    /// Only trees get alpha transparency near the player.
     /// </summary>
     private static bool IsTree(int grhIndex)
     {
@@ -397,91 +452,72 @@ public partial class WorldRenderer : Node2D
                grhIndex == 8489 || grhIndex == 8483;
     }
 
-    /// <summary>
-    /// VB6 drawCounters: renders status indicators in top-left corner of game viewport.
-    /// Paralysis bar: GRH 23610 icon + yellow progress bar.
-    /// Invisibility bar: GRH 23611 icon + progress bar.
-    /// Also draws small text indicators for active statuses.
-    /// </summary>
-    private void DrawStatusOverlay()
+    private void DrawStatusOverlayTo(CanvasItem canvas)
     {
         if (_state == null || _data == null) return;
 
-        // Update paralysis timer (VB6: TiempoParalizado counts down from 22)
         if (_state.UserParalyzed && _state.ParalysisTimer > 0)
         {
-            _state.ParalysisTimer -= _deltaMs / 100f; // ~22 ticks at VB6 speed
+            _state.ParalysisTimer -= _deltaMs / 100f;
             if (_state.ParalysisTimer < 0) _state.ParalysisTimer = 0;
         }
 
-        int slot = 0; // Status icon slot counter (for stacking)
+        int slot = 0;
 
-        // Paralysis indicator
         if (_state.UserParalyzed)
         {
-            DrawStatusIcon(slot, 23610, _state.ParalysisTimer, 22f, "PARALIZADO",
+            DrawStatusIconTo(canvas, slot, 23610, _state.ParalysisTimer, 22f, "PARALIZADO",
                            new Color(1f, 0.2f, 0.2f));
             slot++;
         }
 
-        // Invisibility/stealth indicator
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
-            DrawStatusIcon(slot, 23611, -1, -1, "OCULTO",
+            DrawStatusIconTo(canvas, slot, 23611, -1, -1, "OCULTO",
                            new Color(0.6f, 0.6f, 1f));
             slot++;
         }
 
-        // Meditation indicator
         if (_state.Meditating)
         {
-            DrawStatusIcon(slot, 0, -1, -1, "MEDITANDO",
+            DrawStatusIconTo(canvas, slot, 0, -1, -1, "MEDITANDO",
                            new Color(0.4f, 0.8f, 1f));
             slot++;
         }
 
-        // Resting indicator
         if (_state.Resting)
         {
-            DrawStatusIcon(slot, 0, -1, -1, "DESCANSANDO",
+            DrawStatusIconTo(canvas, slot, 0, -1, -1, "DESCANSANDO",
                            new Color(0.4f, 1f, 0.4f));
             slot++;
         }
 
-        // Safe mode indicator
         if (_state.SafeMode)
         {
-            DrawStatusIcon(slot, 0, -1, -1, "SEGURO",
+            DrawStatusIconTo(canvas, slot, 0, -1, -1, "SEGURO",
                            new Color(0f, 1f, 0f));
             slot++;
         }
 
-        // Navigation indicator
         if (_state.UserNavigating)
         {
-            DrawStatusIcon(slot, 0, -1, -1, "NAVEGANDO",
+            DrawStatusIconTo(canvas, slot, 0, -1, -1, "NAVEGANDO",
                            new Color(0.3f, 0.7f, 1f));
             slot++;
         }
     }
 
-    /// <summary>
-    /// Draw a single status indicator with optional GRH icon and progress bar.
-    /// Position: top-left of viewport, stacked vertically by slot index.
-    /// </summary>
-    private void DrawStatusIcon(int slot, int grhIcon, float current, float max,
+    private void DrawStatusIconTo(CanvasItem canvas, int slot, int grhIcon, float current, float max,
                                  string label, Color labelColor)
     {
         float baseX = 10f;
         float baseY = 5f + slot * 38f;
 
-        // Try to draw GRH icon (VB6: 23610 paralysis, 23611 invisibility)
         if (grhIcon > 0 && _data != null)
         {
-            CharRenderer.DrawGrh(this, _data, grhIcon, 0, new Vector2(baseX, baseY));
+            CharRenderer.DrawGrh(canvas, _data, grhIcon, 0, new Vector2(baseX, baseY));
         }
 
-        // Progress bar (only if max > 0)
         if (max > 0 && current >= 0)
         {
             float barX = baseX + 3;
@@ -489,44 +525,53 @@ public partial class WorldRenderer : Node2D
             float barW = 25;
             float barH = 6;
 
-            // Background
-            DrawRect(new Rect2(barX, barY, barW, barH),
+            ((Node2D)canvas).DrawRect(new Rect2(barX, barY, barW, barH),
                      new Color(0.49f, 0.49f, 0.49f, 0.59f));
-            // Fill
             float fill = Math.Clamp(current / max, 0f, 1f) * barW;
             if (fill > 0)
             {
-                DrawRect(new Rect2(barX, barY, fill, barH),
+                ((Node2D)canvas).DrawRect(new Rect2(barX, barY, fill, barH),
                          new Color(1f, 1f, 0f, 0.78f));
             }
         }
 
-        // Text label (for statuses without GRH icons, or as complement)
         if (grhIcon <= 0 && _data?.Fonts?[1] != null)
         {
-            _data.Fonts[1]!.DrawText(this, (int)baseX, (int)baseY + 2, label, labelColor);
+            _data.Fonts[1]!.DrawText(canvas, (int)baseX, (int)baseY + 2, label, labelColor);
         }
     }
 
+    /// <summary>
+    /// Draw a tile GRH on this WorldRenderer's canvas (for terrain passes).
+    /// </summary>
     private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
     {
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-        // Looping tile animations use the global clock — no StartAnim needed.
         int frame = _animator.GetCurrentFrame(grhIndex, _data);
         CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center, modulate);
     }
 
     /// <summary>
-    /// Draw all pending particle and aura draws on a given canvas (used by AdditiveParticleLayer).
-    /// Auras are drawn first (behind particles in additive layer).
+    /// Draw a tile GRH on a specific canvas (for content/roof child layers).
     /// </summary>
-    public void DrawPendingParticles(CanvasItem canvas)
+    private void DrawTileGrhTo(CanvasItem canvas, int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, center, modulate);
+    }
+
+    /// <summary>
+    /// Draw pending aura draws on a given canvas (used by AuraAdditiveLayer).
+    /// </summary>
+    public void DrawPendingAuras(CanvasItem canvas)
     {
         if (_data == null) return;
 
-        // Auras first (VB6: drawn before character body, use additive blend)
         foreach (var (grhIndex, frame, pos, color, angle) in _pendingAuraDraws)
         {
             if (angle != 0f)
@@ -546,7 +591,7 @@ public partial class WorldRenderer : Node2D
                 if (sy + ph > texH) ph = texH - sy;
                 if (pw <= 0 || ph <= 0) continue;
 
-                // Center the GRH (same as CharRenderer centering logic)
+                // Center the GRH
                 float drawX = pos.X;
                 float drawY = pos.Y;
                 if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
@@ -567,8 +612,15 @@ public partial class WorldRenderer : Node2D
                 CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
             }
         }
+    }
 
-        // Then particles (map-attached and character-attached)
+    /// <summary>
+    /// Draw all pending particle draws on a given canvas (used by AdditiveParticleLayer).
+    /// </summary>
+    public void DrawPendingParticles(CanvasItem canvas)
+    {
+        if (_data == null) return;
+
         foreach (var (grhIndex, frame, pos, color) in _pendingMapParticleDraws)
         {
             CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
@@ -589,9 +641,8 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Queue an aura draw for the additive blend layer.
-    /// VB6: Draw_Aura passes Alpha=True → Device_Box_Textured_Render uses D3DBLEND_ONE/ONE.
-    /// Called by CharRenderer.DrawSingleAura.
+    /// Queue an aura draw for the aura additive layer.
+    /// Called by CharRenderer.CollectAuraDraws.
     /// </summary>
     public void QueueAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle)
     {
@@ -613,8 +664,46 @@ public partial class WorldRenderer : Node2D
 }
 
 /// <summary>
+/// Child Node2D with additive blend material. Draws auras queued by WorldRenderer.
+/// z_index=0 — draws after terrain but before ContentLayer (z=1).
+/// </summary>
+public partial class AuraAdditiveLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawPendingAuras(this);
+    }
+}
+
+/// <summary>
+/// Child Node2D for PASS 3 content: ground objects, characters, layer 3, status.
+/// z_index=1 — draws after AuraLayer (z=0), before particles (z=2).
+/// </summary>
+public partial class ContentLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawContent(this);
+    }
+}
+
+/// <summary>
 /// Child Node2D that draws Layer 4 (roof) AFTER particle layer.
-/// Godot child draw order: index 0 (particles) then index 1 (roof).
+/// z_index=3.
 /// </summary>
 public partial class RoofLayer : Node2D
 {
@@ -632,8 +721,8 @@ public partial class RoofLayer : Node2D
 }
 
 /// <summary>
-/// Child Node2D with additive blend material. Draws particle sprites
-/// queued by WorldRenderer in _Draw().
+/// Child Node2D with additive blend material. Draws particle sprites.
+/// z_index=2.
 /// </summary>
 public partial class AdditiveParticleLayer : Node2D
 {

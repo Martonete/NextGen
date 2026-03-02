@@ -27,7 +27,8 @@ public static class CharRenderer
         GameData data,
         GrhAnimator animator,
         float deltaMs = 0f,
-        GameState? state = null)
+        GameState? state = null,
+        WorldRenderer? worldRenderer = null)
     {
         int heading = ch.Heading;
         if (heading < 1 || heading > 4) heading = 3;
@@ -119,8 +120,8 @@ public static class CharRenderer
         DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
         // VB6: Auras are drawn BEFORE dibujarPersonaje (behind the character body).
-        // They use additive blend (D3DBLEND_ONE/ONE), queued to WorldRenderer's additive layer.
-        DrawAuras(canvas, ch, screenPos, headOffset, data, deltaMs);
+        // They use additive blend (D3DBLEND_ONE/ONE). Aura draws are collected in
+        // WorldRenderer._Draw() and rendered by AuraAdditiveLayer BEFORE this ContentLayer.
 
         // Heading-dependent draw order (VB6: dibujarPersonaje)
         switch (heading)
@@ -165,9 +166,9 @@ public static class CharRenderer
         // FX overlays (up to 3 simultaneous)
         DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
 
-        // Character-attached particles
+        // Character-attached particles (queued to WorldRenderer's additive layer)
         if (state != null)
-            DrawCharParticles(canvas, ch, screenPos, state, data);
+            DrawCharParticles(canvas, ch, screenPos, state, data, worldRenderer);
 
         // Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
         if (state == null || state.ShowNames)
@@ -308,29 +309,30 @@ public static class CharRenderer
     }
 
     /// <summary>
-    /// VB6: Draw auras above character head. Each equipment slot can have an aura,
-    /// plus NPCs can have a dedicated NPC aura.
-    /// Position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - AurasPJ().offset
+    /// Collect aura draw data for a character and queue to WorldRenderer's aura layer.
+    /// Called from WorldRenderer._Draw() BEFORE characters render, so the aura additive
+    /// layer (z=0) draws before the content layer (z=1).
+    ///
+    /// VB6: auras drawn before dibujarPersonaje, using D3DBLEND_ONE/ONE (additive).
+    /// Position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
     /// Rotation: angle += 0.004 per frame if Giratoria, wraps at 180
-    /// Color: static R,G,B or pulsing between RojoF/VerdeF/AzulF and R/G/B
     /// </summary>
-    private static void DrawAuras(
-        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
-        GameData data, float deltaMs)
+    public static void CollectAuraDraws(
+        WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
+        GameData data)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
 
-        // Draw each equipment aura slot + NPC aura
-        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA);
-        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW);
-        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE);
-        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR);
-        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC);
-        DrawSingleAura(canvas, ch, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle);
     }
 
-    private static void DrawSingleAura(
-        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+    private static void CollectSingleAura(
+        WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
         GameData data, int auraIndex, ref float angle)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
@@ -366,20 +368,9 @@ public static class CharRenderer
             }
         }
 
-        // VB6: Draw_Aura passes Alpha=True to Device_Box_Textured_Render,
-        // which sets D3DBLEND_ONE/D3DBLEND_ONE (additive blending).
-        // Queue aura draws to WorldRenderer's additive blend layer.
-        var worldRenderer = canvas as WorldRenderer;
-        if (worldRenderer != null)
-        {
-            worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
-                                         aura.Giratoria ? angle : 0f);
-        }
-        else
-        {
-            // Fallback: draw directly (no additive blend)
-            DrawGrh(canvas, data, grhIndex, frame, new Vector2(auraX, auraY), true, color);
-        }
+        // Queue to WorldRenderer's aura additive layer
+        worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
+                                     aura.Giratoria ? angle : 0f);
     }
 
     private static void DrawFx(
@@ -449,7 +440,8 @@ public static class CharRenderer
     /// Particles are queued onto the additive blend layer (WorldRenderer) for proper VB6 glow.
     /// </summary>
     private static void DrawCharParticles(Node2D canvas, Character ch, Vector2 pos,
-                                           GameState state, GameData data)
+                                           GameState state, GameData data,
+                                           WorldRenderer? worldRenderer = null)
     {
         // Find char index for this character in state.Characters
         int charIdx = -1;
@@ -462,9 +454,6 @@ public static class CharRenderer
             }
         }
         if (charIdx < 0) return;
-
-        // Get the WorldRenderer to queue additive draws
-        var worldRenderer = canvas as WorldRenderer;
 
         foreach (var stream in state.MapParticles)
         {
