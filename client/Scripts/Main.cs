@@ -1253,10 +1253,15 @@ public partial class Main : Control
             _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
             hadMessages = true;
         }
-        // Auto-scroll to bottom when new messages arrive
+        // Auto-scroll to bottom when new messages arrive.
+        // ScrollFollowing alone doesn't work reliably after the user scrolls up —
+        // Godot disables it on manual scroll and re-enabling on the same frame as
+        // AppendText can miss the update. Force-scroll the VScrollBar to max.
         if (hadMessages)
         {
             _console.ScrollFollowing = true;
+            var vbar = _console.GetVScrollBar();
+            vbar.Value = vbar.MaxValue;
         }
     }
 
