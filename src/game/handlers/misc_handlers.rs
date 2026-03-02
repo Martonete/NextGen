@@ -1161,8 +1161,12 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
             let y = user.pos_y;
             let snd_pkt = "TW3".to_string(); // SND_WARP = 3
             let fx_pkt = format!("CFX{},1,0", char_idx); // FXWARP = 1
+            // Send to area (others see it) AND directly to self (ensure self always gets it)
             state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
             state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+            // Also send directly to ensure self receives it (area detection may miss self right after warp)
+            state.send_to(conn_id, &snd_pkt).await;
+            state.send_to(conn_id, &fx_pkt).await;
         }
     }
 }

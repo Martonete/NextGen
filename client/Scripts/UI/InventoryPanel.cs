@@ -51,6 +51,15 @@ public partial class InventoryPanel : Control
         QueueRedraw();
     }
 
+    public override void _Notification(int what)
+    {
+        if (what == (int)NotificationMouseExit)
+        {
+            _hoveredSlot = -1;
+            if (TooltipLabel != null) TooltipLabel.Text = "";
+        }
+    }
+
     public override void _Draw()
     {
         // VB6: Device_Box_Textured_Render(31570, 0, 0, 174, 174) — inventory background
@@ -89,12 +98,13 @@ public partial class InventoryPanel : Control
             // VB6: Draw_GrhIndex(32758, X, Y) for selected slot
             if (slot == _selectedSlot)
             {
+                // Background fill + selection GRH overlay
+                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.12f));
                 CharRenderer.DrawGrh(this, _data, GrhSelectionHighlight, 0, new Vector2(x, y));
             }
-
-            // Hover highlight
-            if (slot == _hoveredSlot && slot != _selectedSlot)
+            else if (slot == _hoveredSlot)
             {
+                // Hover highlight
                 DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.1f));
             }
 

@@ -2760,7 +2760,7 @@ async fn check_update_needed_user(
         }
     }
 
-    // Collect particles and lights from static map data
+    // Collect particles, lights, and static .inf objects from static map data
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
         for sx in min_x..=max_x {
@@ -2772,6 +2772,16 @@ async fn check_update_needed_user(
                     }
                     if tile.range_light > 0 {
                         new_lights.push((sx, sy, tile.range_light, tile.rgb_light[0], tile.rgb_light[1], tile.rgb_light[2]));
+                    }
+                    // VB6: Send HO for static .inf objects (doors, furniture, etc.)
+                    // The client can't resolve ObjIndex→GRH, so server must send HO.
+                    let oi = tile.obj.obj_index as usize;
+                    if oi >= 1 {
+                        if let Some(obj) = state.game_data.objects.get(oi - 1) {
+                            if obj.grh_index > 0 {
+                                new_items.push((obj.grh_index, sx, sy));
+                            }
+                        }
                     }
                 }
             }

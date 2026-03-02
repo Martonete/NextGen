@@ -338,14 +338,14 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             agarrable: get_bool("Agarrable"),
             min_hit: get_int("MinHIT"),
             max_hit: get_int("MaxHIT"),
-            weapon_anim: get_int("Anim"),
+            weapon_anim: 0,  // Set below based on ObjType (VB6: all use "Anim" field)
             dos_manos: get_bool("DosManos"),
             proyectil: get_bool("proyectil"),
             municion: get_int("Municion"),
             min_def: get_int("MINDEF"),
             max_def: get_int("MAXDEF"),
-            shield_anim: get_int("ShieldAnim"),
-            casco_anim: get_int("CascoAnim"),
+            shield_anim: 0,  // Set below based on ObjType
+            casco_anim: 0,   // Set below based on ObjType
             llave: get_int("llave"),
             cerrada: get_int("abierta"),  // VB6 field "abierta" maps to Cerrada (1=closed)
             puerta_doble: get_int("PuertaDoble"),
@@ -397,6 +397,20 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             crea_aura: get_int("CreaAura"),
             ..Default::default()
         };
+
+        // VB6: All equipment types use the same "Anim" field in Obj.dat,
+        // but it maps to different struct fields based on ObjType:
+        //   Weapon (2) → weapon_anim, Shield (16) → shield_anim, Helmet (17) → casco_anim
+        let anim_value = get_int("Anim");
+        match obj.obj_type {
+            ObjType::Weapon => obj.weapon_anim = anim_value,
+            ObjType::Shield => obj.shield_anim = anim_value,
+            ObjType::Helmet => obj.casco_anim = anim_value,
+            _ => {
+                // Some other types might use Anim too (e.g. Tool); store in weapon_anim as fallback
+                obj.weapon_anim = anim_value;
+            }
+        }
 
         // Load class restrictions (CP1..CP8)
         for cp in 1..=8 {
