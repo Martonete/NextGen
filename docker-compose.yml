@@ -23,9 +23,8 @@ services:
         condition: service_healthy
     ports:
       - "5028:5028"
-      - "7669:7669"
     volumes:
-      - logs:/app/server/logs
+      - ./server:/app/server
     environment:
       DATABASE_URL: postgres://ao:${POSTGRES_PASSWORD:-ao_secret}@postgres:5432/ao_server
       RUST_LOG: ao_server=info
@@ -33,4 +32,3 @@ services:
 
 volumes:
   pgdata:
-  logs:

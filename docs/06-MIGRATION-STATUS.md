@@ -122,6 +122,49 @@
 - [x] Mail system
 - [x] Friend list
 
+## Godot 4 Client (VB6 → Godot C#)
+
+### Rendering
+- [x] 4-pass tile renderer (L1 ground, L2 objects, L3 chars, L4 roofs)
+- [x] GRH animation system (VB6 formula: deltaMs * numFrames / speed)
+- [x] Body + head rendering with heading-dependent draw order
+- [x] Weapon, shield, helmet rendering (Armas.dat, Escudos.dat, Cascos.ind)
+- [x] Aura system (5 equipment slots + NPC aura, rotation, color tint)
+- [x] FX overlays (3 simultaneous slots + emoticons)
+- [x] Character shadows (ellipse)
+- [x] Dead character transparency pulsing
+- [x] Dialog bubbles (VB6 cDialogos: rise + fade)
+- [x] Name/clan/rank labels (bitmap font)
+- [x] Particle system (Particles.ini, 105 defs)
+- [x] Light system (4-corner per-vertex, VB6 clsLight.cls parity)
+- [x] Roof alpha fade on enter
+- [x] Minimap
+
+### UI
+- [x] Login screen + character select
+- [x] Full frmMain: chat console, HP/MP/STA/EXP bars, inventory, spells
+- [x] Bottom bar stats (weapon, defense, magdef, str, agi, rep, fps)
+- [x] Death panel (frmMuertito: Continuar/Regresar)
+- [x] Friends list with online status
+- [x] Spell list
+
+### Network
+- [x] 4-layer encrypt/decrypt (VB6 parity)
+- [x] 120+ packet handlers
+- [x] Client-side movement prediction + PT correction
+- [x] TCP disconnect detection + reconnect to login
+- [x] Key cooldown system (300ms for action keys)
+
+### Known Remaining (Client)
+- [ ] Commerce UI (frmComerciar)
+- [ ] Bank UI (frmBanco)
+- [ ] Guild UI (frmGuildInfo)
+- [ ] Quest UI
+- [ ] Server-side aura population (build_cd_packet sends zeros)
+- [ ] NPC aura loading from .dat files
+- [ ] Particle additive blending
+- [ ] Arrow projectile rendering
+
 ## Test Coverage
 
 **68 unit tests passing** covering:
@@ -155,7 +198,6 @@
 ### Quality of Life
 - [ ] Comprehensive logging for all GM actions
 - [ ] Graceful shutdown (save all charfiles)
-- [ ] Server stats endpoint (port 7669)
 - [ ] Configuration hot-reload
 
 ## Build & Deploy
@@ -190,4 +232,4 @@ make docker-stop  # Stop container
 | maps.rs | ~400 | Map data loading |
 | objects.rs | ~380 | Object data loading |
 | charfile.rs | ~700 | Character file I/O |
-| Total src/ | ~28,000 | Complete server |
+| Total server/source/ | ~28,000 | Complete server |

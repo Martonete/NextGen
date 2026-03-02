@@ -34,7 +34,6 @@ All core game systems are implemented and functional. See [06-MIGRATION-STATUS.m
 
 ### Quality of Life
 - Graceful shutdown with full charfile save
-- Stats HTTP endpoint (port 7669)
 - Configuration hot-reload
 - Comprehensive GM action logging
 - Stress testing (400+ concurrent users)

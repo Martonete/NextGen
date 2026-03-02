@@ -1,5 +1,6 @@
 target/
 .git/
+client/
 docs/
 server/ao-server
 server/charfile/
