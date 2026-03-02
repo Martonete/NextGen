@@ -101,7 +101,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         state.send_to(conn_id, &msg).await;
 
         // Broadcast
-        let broadcast = format!("{}851@{}", server_opcodes::CONSOLE_MSG, char_name);
+        let broadcast = format!("{}851@{}", server_opcodes::CONSOLE_MSG_ID, char_name);
         state.send_data(SendTarget::ToAll, &broadcast).await;
     } else {
         // Try to join Chaos Forces
@@ -138,7 +138,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         state.send_to(conn_id, &msg).await;
 
         // Broadcast
-        let broadcast = format!("{}852@{}", server_opcodes::CONSOLE_MSG, char_name);
+        let broadcast = format!("{}852@{}", server_opcodes::CONSOLE_MSG_ID, char_name);
         state.send_data(SendTarget::ToAll, &broadcast).await;
     }
 }
@@ -323,7 +323,7 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
 
     // Cannot leave faction while in a guild
     if guild_index > 0 {
-        let msg = format!("{}302", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}302", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -448,7 +448,7 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
     let num_mails: usize = crate::config::get_var(chr, "CORREO", "NUMCORREOS").parse().unwrap_or(0);
 
     if num_mails >= MAX_MAILS {
-        let msg = format!("{}629", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}629", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -465,7 +465,7 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
 
     // Notify recipient if online
     if let Some(&target_conn) = state.online_names.get(&recipient_name.to_uppercase()) {
-        let msg = format!("{}631", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}631", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(target_conn, &msg).await;
     }
 

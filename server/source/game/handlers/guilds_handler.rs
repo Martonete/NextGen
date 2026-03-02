@@ -218,7 +218,7 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
     crate::db::charfile::update_guild_index(&state.pool, &char_name, guild_num).await.ok();
 
     // Broadcast creation
-    let broadcast = format!("{}264@{}@{}@{}", server_opcodes::CONSOLE_MSG, char_name, name, guilds::alignment_name(alignment));
+    let broadcast = format!("{}264@{}@{}@{}", server_opcodes::CONSOLE_MSG_ID, char_name, name, guilds::alignment_name(alignment));
     state.send_data(SendTarget::ToAll, &broadcast).await;
 
     // Send updated inventory
@@ -272,7 +272,7 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            let msg = format!("{}120", server_opcodes::CONSOLE_MSG);
+            let msg = format!("{}120", server_opcodes::CONSOLE_MSG_ID);
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -295,7 +295,7 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     }
 
     if !is_leader {
-        let msg = format!("{}339", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}339", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -303,7 +303,7 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     // Leader must be sole member
     let members = guilds::load_members(&state.pool, &guild.name).await;
     if members.len() > 1 {
-        let msg = format!("{}340", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}340", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -320,7 +320,7 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     crate::db::charfile::update_guild_index(&state.pool, &char_name, 0).await.ok();
 
     // Broadcast dissolution
-    let broadcast = format!("{}341@{}", server_opcodes::CONSOLE_MSG, guild.name);
+    let broadcast = format!("{}341@{}", server_opcodes::CONSOLE_MSG_ID, guild.name);
     state.send_data(SendTarget::ToAll, &broadcast).await;
 }
 
@@ -329,7 +329,7 @@ pub(super) async fn handle_slash_salirclan(state: &mut GameState, conn_id: Conne
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            let msg = format!("{}120", server_opcodes::CONSOLE_MSG);
+            let msg = format!("{}120", server_opcodes::CONSOLE_MSG_ID);
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -369,11 +369,11 @@ pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: Connecti
         guilds::save_guild(&state.pool, &updated).await;
 
         // Notify guild
-        let notify = format!("{}337@{}", server_opcodes::CONSOLE_MSG, char_name);
+        let notify = format!("{}337@{}", server_opcodes::CONSOLE_MSG_ID, char_name);
         state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
     } else {
         // Notify guild
-        let notify = format!("{}354@{}", server_opcodes::CONSOLE_MSG, char_name);
+        let notify = format!("{}354@{}", server_opcodes::CONSOLE_MSG_ID, char_name);
         state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
     }
 
@@ -388,7 +388,7 @@ pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: Connecti
     // Update character guild in DB
     crate::db::charfile::update_guild_index(&state.pool, char_name, 0).await.ok();
 
-    let msg = format!("{}338", server_opcodes::CONSOLE_MSG);
+    let msg = format!("{}338", server_opcodes::CONSOLE_MSG_ID);
     state.send_to(conn_id, &msg).await;
 }
 
@@ -406,7 +406,7 @@ pub(super) async fn handle_slash_haclider(state: &mut GameState, conn_id: Connec
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        let msg = format!("{}377", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}377", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -415,7 +415,7 @@ pub(super) async fn handle_slash_haclider(state: &mut GameState, conn_id: Connec
     let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
     let target_guild = target_conn.and_then(|c| state.users.get(&c).map(|u| u.guild_index));
     if target_guild != Some(guild_index) {
-        let msg = format!("{}511", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}511", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -426,7 +426,7 @@ pub(super) async fn handle_slash_haclider(state: &mut GameState, conn_id: Connec
     guilds::save_guild(&state.pool, &updated).await;
 
     // Notify
-    let notify = format!("{}512@{}", server_opcodes::CONSOLE_MSG, target_name);
+    let notify = format!("{}512@{}", server_opcodes::CONSOLE_MSG_ID, target_name);
     state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
 }
 
@@ -444,7 +444,7 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        let msg = format!("{}377", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}377", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -453,7 +453,7 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
     let target_guild = target_conn.and_then(|c| state.users.get(&c).map(|u| u.guild_index));
     if target_guild != Some(guild_index) {
-        let msg = format!("{}511", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}511", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -462,7 +462,7 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     if guild.sub_lider1.to_uppercase() == target_name.to_uppercase()
         || guild.sub_lider2.to_uppercase() == target_name.to_uppercase()
     {
-        let msg = format!("{}510", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}510", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -473,14 +473,14 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     } else if updated.sub_lider2 == "Fermin" || updated.sub_lider2.is_empty() {
         updated.sub_lider2 = target_name.to_string();
     } else {
-        let msg = format!("{}513", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}513", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
 
     guilds::save_guild(&state.pool, &updated).await;
 
-    let notify = format!("{}514@{}", server_opcodes::CONSOLE_MSG, target_name);
+    let notify = format!("{}514@{}", server_opcodes::CONSOLE_MSG_ID, target_name);
     state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
 }
 
@@ -498,7 +498,7 @@ pub(super) async fn handle_slash_qsublidr(state: &mut GameState, conn_id: Connec
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        let msg = format!("{}377", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}377", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -509,14 +509,14 @@ pub(super) async fn handle_slash_qsublidr(state: &mut GameState, conn_id: Connec
     } else if updated.sub_lider2.to_uppercase() == target_name.to_uppercase() {
         updated.sub_lider2 = "Fermin".to_string();
     } else {
-        let msg = format!("{}516", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}516", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
 
     guilds::save_guild(&state.pool, &updated).await;
 
-    let notify = format!("{}515@{}", server_opcodes::CONSOLE_MSG, target_name);
+    let notify = format!("{}515@{}", server_opcodes::CONSOLE_MSG_ID, target_name);
     state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
 }
 
@@ -525,7 +525,7 @@ pub(super) async fn handle_slash_clan_list(state: &mut GameState, conn_id: Conne
     let guild_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
         _ => {
-            let msg = format!("{}120", server_opcodes::CONSOLE_MSG);
+            let msg = format!("{}120", server_opcodes::CONSOLE_MSG_ID);
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -568,7 +568,7 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            let msg = format!("{}120", server_opcodes::CONSOLE_MSG);
+            let msg = format!("{}120", server_opcodes::CONSOLE_MSG_ID);
             state.send_to(conn_id, &msg).await;
             return;
         }
@@ -576,7 +576,7 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
 
     // No tilde allowed in clan chat
     if text.contains('~') {
-        let msg = format!("{}198", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}198", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -668,7 +668,7 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
     let members = guilds::load_members(&state.pool, &guild.name).await;
     let max = guilds::max_members_for_level(guild.nivel_clan);
     if members.len() as i32 >= max {
-        let msg = format!("{}500", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}500", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -689,7 +689,7 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
             user.puede_retirar_obj = false;
             user.puede_retirar_oro = false;
         }
-        let msg = format!("{}501", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}501", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(target_conn, &msg).await;
 
         let sound = format!("{}43", server_opcodes::PLAY_SOUND);
@@ -697,7 +697,7 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
     }
 
     // Notify guild
-    let notify = format!("{}503@{}", server_opcodes::CONSOLE_MSG, applicant_name);
+    let notify = format!("{}503@{}", server_opcodes::CONSOLE_MSG_ID, applicant_name);
     state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
 }
 
@@ -750,7 +750,7 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
 
     // Only leader can expel
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        let msg = format!("{}377", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}377", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -786,7 +786,7 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
     }
 
     // Notify guild
-    let notify = format!("{}505@{}", server_opcodes::CONSOLE_MSG, target_name);
+    let notify = format!("{}505@{}", server_opcodes::CONSOLE_MSG_ID, target_name);
     state.send_data(SendTarget::ToGuildMembers(guild_index), &notify).await;
 }
 
@@ -858,7 +858,7 @@ pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: Connectio
         return;
     }
 
-    let msg = format!("{}507", server_opcodes::CONSOLE_MSG);
+    let msg = format!("{}507", server_opcodes::CONSOLE_MSG_ID);
     state.send_to(conn_id, &msg).await;
 }
 
@@ -956,7 +956,7 @@ pub(super) async fn handle_guild_bank_deposit(state: &mut GameState, conn_id: Co
     let amount: i64 = payload.trim().parse().unwrap_or(0);
 
     if amount <= 0 {
-        let msg = format!("{}508", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}508", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -980,7 +980,7 @@ pub(super) async fn handle_guild_bank_deposit(state: &mut GameState, conn_id: Co
 
     let current_bank_gold = guilds::load_bank_gold(&state.pool, &guild.name).await;
     if current_bank_gold + amount > guilds::MAX_GUILD_BANK_GOLD {
-        let msg = format!("{}268", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}268", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -1006,7 +1006,7 @@ pub(super) async fn handle_guild_bank_withdraw(state: &mut GameState, conn_id: C
     let amount: i64 = payload.trim().parse().unwrap_or(0);
 
     if amount <= 0 {
-        let msg = format!("{}508", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}508", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -1017,7 +1017,7 @@ pub(super) async fn handle_guild_bank_withdraw(state: &mut GameState, conn_id: C
     };
 
     if !puede_retirar_oro {
-        let msg = format!("{}269", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}269", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }
@@ -1030,7 +1030,7 @@ pub(super) async fn handle_guild_bank_withdraw(state: &mut GameState, conn_id: C
 
     let current_bank_gold = guilds::load_bank_gold(&state.pool, &guild.name).await;
     if amount > current_bank_gold {
-        let msg = format!("{}270", server_opcodes::CONSOLE_MSG);
+        let msg = format!("{}270", server_opcodes::CONSOLE_MSG_ID);
         state.send_to(conn_id, &msg).await;
         return;
     }

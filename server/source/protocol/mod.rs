@@ -162,7 +162,8 @@ pub mod server_opcodes {
     pub const POSITION_UPDATE: &str = "PU"; // Player position
     pub const NPC_HIT_USER: &str = "N2";    // NPC attacks user
     pub const USER_HIT_NPC: &str = "U2";    // User attacks NPC
-    pub const CONSOLE_MSG: &str = "P|";     // Console/system message (P| = whisper format, shown in console)
+    pub const CONSOLE_MSG: &str = "P|";     // Console/system message with inline text
+    pub const CONSOLE_MSG_ID: &str = "||";  // Console message by text ID (Textos.tsao lookup)
     pub const DICE_ROLL: &str = "DADOS";    // Dice roll result
     pub const FINISH_OK: &str = "FINOK";    // Operation finished
     pub const ACCOUNT_DATA: &str = "ACDA";  // Account data (character list)

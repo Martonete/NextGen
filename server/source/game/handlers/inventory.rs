@@ -69,7 +69,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
 
         // Level requirement
         if obj_data.lvl > 0 && user_level < obj_data.lvl && !is_gm {
-            let msg = format!("{}112@{}", server_opcodes::CONSOLE_MSG, obj_data.lvl);
+            let msg = format!("{}112@{}", server_opcodes::CONSOLE_MSG_ID, obj_data.lvl);
             state.send_to(conn_id, &msg).await;
             return;
         }

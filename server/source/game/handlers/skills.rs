@@ -878,7 +878,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         .unwrap_or(false);
 
     if !is_arrow || municion_amount < 1 {
-        let msg = format!("{}246", server_opcodes::CONSOLE_MSG); // "No arrows"
+        let msg = format!("{}246", server_opcodes::CONSOLE_MSG_ID); // "No arrows"
         state.send_to(conn_id, &msg).await;
         // Unequip ammo slot
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -889,7 +889,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
 
     // Stamina cost (1-10)
     if sta < 10 {
-        let msg = format!("{}17", server_opcodes::CONSOLE_MSG); // "Not enough stamina"
+        let msg = format!("{}17", server_opcodes::CONSOLE_MSG_ID); // "Not enough stamina"
         state.send_to(conn_id, &msg).await;
         return;
     }

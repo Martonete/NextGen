@@ -695,13 +695,13 @@ pub(super) async fn apply_spell_status(
         if target_dead {
             // Check resurrection safety (target opted out)
             if target_seguro_resu {
-                let msg = format!("{}841", server_opcodes::CONSOLE_MSG);
+                let msg = format!("{}841", server_opcodes::CONSOLE_MSG_ID);
                 state.send_to(caster_id, &msg).await;
                 return;
             }
             // Check resurrection cooldown
             if target_time_revivir > 0 {
-                let msg = format!("{}843@{}", server_opcodes::CONSOLE_MSG, target_time_revivir);
+                let msg = format!("{}843@{}", server_opcodes::CONSOLE_MSG_ID, target_time_revivir);
                 state.send_to(caster_id, &msg).await;
                 return;
             }
@@ -721,14 +721,14 @@ pub(super) async fn apply_spell_status(
                     target.min_hp = target.max_hp;
                 }
                 send_stats_hp(state, target_id).await;
-                let msg = format!("{}749@{}", server_opcodes::CONSOLE_MSG, caster_name);
+                let msg = format!("{}749@{}", server_opcodes::CONSOLE_MSG_ID, caster_name);
                 state.send_to(target_id, &msg).await;
             } else {
                 // Non-cleric: 10 second delayed resurrection
                 if let Some(target) = state.users.get_mut(&target_id) {
                     target.segundos_para_revivir = 10;
                 }
-                let msg = format!("{}845", server_opcodes::CONSOLE_MSG);
+                let msg = format!("{}845", server_opcodes::CONSOLE_MSG_ID);
                 state.send_to(target_id, &msg).await;
             }
 
