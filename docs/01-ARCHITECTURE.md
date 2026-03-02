@@ -8,12 +8,12 @@ Drop-in replacement for the Argentum Online (AO) VB6 server, written in Rust. Th
 
 - **Original VB6 server**: `Servidor/Codigo/` — 98 files, ~63,000 lines of Visual Basic 6
 - **VB6 client**: `Cliente/CODIGO/` — 158 files (read-only reference, never modified)
-- **Rust server**: `server-rust/src/` — all new code
+- **Rust server**: `server-rust/server/source/` — all new code
 
 ## Module Structure
 
 ```
-src/
+server/source/
 ├── main.rs              # Entry point, event loop, timer ticks
 ├── crypto/              # Encryption/decryption (4 layers)
 │   ├── aodef_encrypt.rs   # Hex encoding layer (AoDefServEncrypt)

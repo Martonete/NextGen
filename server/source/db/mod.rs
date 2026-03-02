@@ -24,7 +24,7 @@ pub async fn init_pool(database_url: &str) -> Result<PgPool, String> {
     tracing::info!("Connected to PostgreSQL");
 
     // Run embedded migrations
-    sqlx::migrate!("./migrations")
+    sqlx::migrate!("./server/migrations")
         .run(&pool)
         .await
         .map_err(|e| format!("Failed to run migrations: {}", e))?;

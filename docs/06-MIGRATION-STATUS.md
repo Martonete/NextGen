@@ -233,4 +233,4 @@ make docker-stop  # Stop container
 | maps.rs | ~400 | Map data loading |
 | objects.rs | ~380 | Object data loading |
 | charfile.rs | ~700 | Character file I/O |
-| Total src/ | ~28,000 | Complete server |
+| Total server/source/ | ~28,000 | Complete server |

@@ -5,13 +5,13 @@ WORKDIR /build
 
 # Cache dependencies: copy manifests first, then do a dummy build
 COPY Cargo.toml Cargo.lock ./
-RUN mkdir src && echo "fn main() {}" > src/main.rs \
+RUN mkdir -p server/source && echo "fn main() {}" > server/source/main.rs \
     && cargo build --release \
-    && rm -rf src target/release/deps/ao_server* target/release/ao-server
+    && rm -rf server/source target/release/deps/ao_server* target/release/ao-server
 
 # Now copy real source and build
-COPY src/ src/
-COPY migrations/ migrations/
+COPY server/source/ server/source/
+COPY server/migrations/ server/migrations/
 RUN cargo build --release
 
 # ── Stage 2: Runtime ────────────────────────────────────────────

@@ -5,10 +5,10 @@ Full rewrite of Argentum Online: **Rust server** (drop-in replacement for VB6 se
 ## Project Layout
 
 ```
-src/           Rust server source
-server/        Runtime data (maps, objects, NPCs, config, charfiles)
-client/        Godot 4 + C# client (Scripts/, Data/, Scenes/)
-docs/          Design docs and protocol references
+server/source/   Rust server source
+server/          Runtime data (maps, objects, NPCs, config, charfiles)
+client/          Godot 4 + C# client (Scripts/, Data/, Scenes/)
+docs/            Design docs and protocol references
 ```
 
 ## Server
