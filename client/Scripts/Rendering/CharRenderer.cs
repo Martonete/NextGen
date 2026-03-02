@@ -210,7 +210,7 @@ public static class CharRenderer
 
         // Shadow projection constants
         const float ShearRatio = 0.3f;  // per pixel above feet, shift right by 0.3px
-        const float FlatRatio = 0.65f;  // per pixel above feet, compress to 0.65px
+        const float FlatRatio = 0.85f;  // per pixel above feet, compress to 0.85px
         Color shadowColor = new(0, 0, 0, 0.35f);
 
         // Resolve body to compute the shared anchor point (feetY)
