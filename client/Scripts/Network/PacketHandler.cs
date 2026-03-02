@@ -35,6 +35,26 @@ public class PacketHandler
         if (string.IsNullOrEmpty(packet)) return;
 
         // Multi-char opcodes first (longest match)
+        // ── 15-char opcodes ──
+        if (packet == "HOLASOYUNCIRUJA")
+        {
+            // VB6: /PING response — calculate round-trip latency
+            ulong now = Time.GetTicksMsec();
+            ulong rtt = now - _state.PingSentMs;
+            string lagLabel;
+            if (rtt < 100) lagLabel = "0 Lag";
+            else if (rtt < 200) lagLabel = "Bajo";
+            else if (rtt < 400) lagLabel = "Medio";
+            else if (rtt < 900) lagLabel = "Alto";
+            else lagLabel = "Injugable";
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $"<<Recibido: el ping es de {rtt} Mili-Segundos ({rtt / 1000.0:F3} Seg) LAG: {lagLabel}",
+                Color = "00FF00"
+            });
+            return;
+        }
+
         // ── 9-char opcodes ──
         if (packet.StartsWith("INITBANCO"))
         {

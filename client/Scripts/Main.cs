@@ -704,6 +704,11 @@ public partial class Main : Control
         {
             if (text.StartsWith("/"))
             {
+                // /PING: record timestamp before sending
+                if (text.Equals("/PING", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    _state.PingSentMs = Time.GetTicksMsec();
+                }
                 // Slash commands go directly (no prefix)
                 _tcp.SendPacket($";{text}");
             }
