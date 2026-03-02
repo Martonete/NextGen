@@ -14,6 +14,11 @@ public class PacketHandler
 {
     private readonly GameState _state;
 
+    /// Callback to load the map immediately when CM is received.
+    /// This ensures the map file is loaded BEFORE subsequent BQ/HO packets
+    /// are processed, so blocked state and ground objects apply to the correct MapData.
+    public Action? OnMapLoad;
+
     // Meditation FX IDs — cleared when character moves
     private static readonly HashSet<int> MeditationFxIds = new()
     {
@@ -836,7 +841,6 @@ public class PacketHandler
             _state.MapColorR = ParseInt(parts[1]);
             _state.MapColorG = ParseInt(parts[2]);
             _state.MapColorB = ParseInt(parts[3]);
-            _state.NeedMapLoad = true;
 
             // Clear all characters (except self) and ground objects from previous map.
             // The server will re-send CC packets for entities on the new map.
@@ -854,6 +858,12 @@ public class PacketHandler
             _state.MapParticles.Clear();
             _state.MapLights.Clear();
             _state.LightsDirty = true;
+
+            // Load the map file IMMEDIATELY so that subsequent BQ/HO packets
+            // in this same batch apply to the correct (new) MapData.
+            // Previously NeedMapLoad deferred this to next frame, causing BQ
+            // writes to be overwritten when LoadCurrentMap() finally ran.
+            OnMapLoad?.Invoke();
 
             GD.Print($"[GAME] Change map: {_state.CurrentMap} (cleared {toRemove.Count} chars, all ground objects, particles, lights)");
         }

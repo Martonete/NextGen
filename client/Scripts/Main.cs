@@ -144,6 +144,7 @@ public partial class Main : Control
 
         // Setup packet handler
         _packetHandler = new PacketHandler(_state);
+        _packetHandler.OnMapLoad = LoadCurrentMap;
 
         // Grab Login UI nodes
         _loginPanel = GetNode<PanelContainer>("UILayer/LoginPanel");
@@ -572,6 +573,7 @@ public partial class Main : Control
 
         _tcp = new AoTcpClient();
         _packetHandler = new PacketHandler(_state);
+        _packetHandler.OnMapLoad = LoadCurrentMap;
         _inputHandler = new InputHandler(_tcp, _state);
         _connecting = true;
 
@@ -738,12 +740,8 @@ public partial class Main : Control
             _state.LoginError = "";
         }
 
-        // Handle map loading when requested
-        if (_state.NeedMapLoad)
-        {
-            _state.NeedMapLoad = false;
-            LoadCurrentMap();
-        }
+        // Map loading is now handled immediately in HandleChangeMap via OnMapLoad callback.
+        // This ensures BQ/HO packets apply to the correct MapData.
 
         // After LOGGED, transition to game
         if (_state.IsLogged && _state.CurrentScreen != Screen.Game)
