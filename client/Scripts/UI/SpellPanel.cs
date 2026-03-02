@@ -34,6 +34,14 @@ public partial class SpellPanel : Control
         _tcp = tcp;
     }
 
+    public override void _Notification(int what)
+    {
+        if (what == (int)NotificationMouseExit)
+        {
+            _hoveredSlot = -1;
+        }
+    }
+
     public override void _Process(double delta)
     {
         QueueRedraw();

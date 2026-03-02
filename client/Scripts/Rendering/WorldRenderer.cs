@@ -290,7 +290,10 @@ public partial class WorldRenderer : Node2D
         foreach (var kvp in _state.Characters)
         {
             var ch = kvp.Value;
+            // VB6: invisible chars skip ALL rendering (body, head, auras, everything)
             if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
+            // VB6: auras not drawn when Navegando or Invisible (clsDX8Engine.cls:2013)
+            if (ch.Invisible || ch.Navigating) continue;
 
             // Compute character screen position
             var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,

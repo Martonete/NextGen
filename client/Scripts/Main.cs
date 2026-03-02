@@ -694,7 +694,7 @@ public partial class Main : Control
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"Modo de habla: {modeName}",
-            Color = "00FF00"
+            Color = "FFFFFF"
         });
     }
 
