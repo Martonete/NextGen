@@ -236,8 +236,8 @@ public static class CharRenderer
         // Shadow shape: parallelogram anchored at feet, leaning upper-right
         //   Light from lower-left → top edge shifts right
         //   Vertically flattened to ~45% height (looks like ground projection)
-        float shearX = pw * 0.35f;   // top edge shifts right by 35% of sprite width
-        float flatH = ph * 0.45f;    // shadow height = 45% of sprite height
+        float shearX = pw * 0.5f;    // top edge shifts right by 50% of sprite width
+        float flatH = ph * 0.75f;    // shadow height = 75% of sprite height (reaches back/head)
         float feetY = drawY + ph;    // bottom of sprite = character feet
 
         // 4 vertices: BL → BR → TR → TL (counter-clockwise for DrawPolygon)
