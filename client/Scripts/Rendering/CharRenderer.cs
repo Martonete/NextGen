@@ -279,19 +279,12 @@ public static class CharRenderer
         // VB6: ARGB(100, 0, 0, 0) — black at 39% opacity
         Color shadowColor = new Color(0, 0, 0, 100f / 255f);
 
-        // Godot DrawPrimitive: 3 pts = triangle, 4 pts = quad (no 6-pt support).
-        // Draw as two separate triangles.
-        // Triangle 1: v0 (BL), v1 (TL), v2 (BR)
-        canvas.DrawPrimitive(
-            new Vector2[] { v0, v1, v2 },
-            new Color[] { shadowColor, shadowColor, shadowColor },
-            new Vector2[] { new(u0, v1u), new(u0, v0u), new(u1, v1u) },
-            texture);
-        // Triangle 2: v1 (TL), v3 (TR), v2 (BR)
-        canvas.DrawPrimitive(
-            new Vector2[] { v1, v3, v2 },
-            new Color[] { shadowColor, shadowColor, shadowColor },
-            new Vector2[] { new(u0, v0u), new(u1, v0u), new(u1, v1u) },
+        // DrawPolygon with 4 vertices (skewed quad) — single call, stable on all platforms.
+        // Winding: BL → TL(skewed) → TR(skewed) → BR (counter-clockwise)
+        canvas.DrawPolygon(
+            new Vector2[] { v0, v1, v3, v2 },
+            new Color[] { shadowColor, shadowColor, shadowColor, shadowColor },
+            new Vector2[] { new(u0, v1u), new(u0, v0u), new(u1, v0u), new(u1, v1u) },
             texture);
     }
 
