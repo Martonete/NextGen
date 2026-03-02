@@ -15,11 +15,10 @@ public partial class SoundManager : Node
 
     private readonly List<AudioStreamPlayer> _sfxPlayers = new();
     private AudioStreamPlayer? _musicPlayer;
-    private readonly Dictionary<string, AudioStream> _cache = new();
+    private readonly Dictionary<int, AudioStream?> _sfxCache = new();
+    private readonly Dictionary<int, AudioStream?> _musCache = new();
 
-    private string _wavPath = "";
-    private string _mp3Path = "";
-    private string _midiPath = "";
+    private string _dataPath = "";
     private int _currentMusicId;
     private bool _soundEnabled = true;
     private bool _musicEnabled = true;
@@ -42,9 +41,7 @@ public partial class SoundManager : Node
 
     public void Init(string dataPath)
     {
-        _wavPath = System.IO.Path.Combine(dataPath, "Sounds", "WAV");
-        _mp3Path = System.IO.Path.Combine(dataPath, "Sounds", "MP3");
-        _midiPath = System.IO.Path.Combine(dataPath, "Sounds", "MIDI");
+        _dataPath = dataPath;
 
         // Create SFX player pool
         for (int i = 0; i < MaxConcurrentSounds; i++)
@@ -62,24 +59,24 @@ public partial class SoundManager : Node
         _musicPlayer.VolumeDb = DefaultMusicVolume;
         AddChild(_musicPlayer);
 
-        GD.Print($"[SND] SoundManager initialized — WAV: {_wavPath}, pool: {MaxConcurrentSounds}");
+        // Test load sound 2 (common attack sound) to verify system works
+        var test = LoadWav(2);
+        GD.Print($"[SND] Init done. Test load sound 2: {(test != null ? "OK" : "FAIL")}");
     }
 
-    /// <summary>
-    /// Play a sound effect by ID. VB6: Audio.PlayWave(soundId).
-    /// Tries WAV first, then MP3 fallback.
-    /// </summary>
     public void PlaySound(int soundId)
     {
         if (!_soundEnabled || soundId <= 0) return;
 
-        GD.Print($"[SND] PlaySound({soundId})");
-        var stream = LoadSoundStream(soundId);
-        if (stream == null)
+        if (!_sfxCache.TryGetValue(soundId, out var stream))
         {
-            GD.Print($"[SND] PlaySound({soundId}) — stream is null, skipping");
-            return;
+            stream = LoadWav(soundId) ?? LoadMp3(soundId);
+            _sfxCache[soundId] = stream;
+            if (stream == null)
+                GD.Print($"[SND] Could not load sound {soundId}");
         }
+
+        if (stream == null) return;
 
         // Find a free player (not currently playing)
         AudioStreamPlayer? player = null;
@@ -97,17 +94,10 @@ public partial class SoundManager : Node
 
         player.Stream = stream;
         player.Play();
-        GD.Print($"[SND] Playing sound {soundId} — stream: {stream.GetType().Name}");
     }
 
-    /// <summary>
-    /// Play music by ID. VB6: Audio.PlayMIDI(musicId).
-    /// MIDI files can't be played in Godot — tries MP3 fallback with same ID.
-    /// </summary>
     public void PlayMusic(int musicId)
     {
-        GD.Print($"[SND] PlayMusic({musicId})");
-
         if (musicId <= 0)
         {
             StopMusic();
@@ -120,7 +110,13 @@ public partial class SoundManager : Node
         _currentMusicId = musicId;
         if (!_musicEnabled) return;
 
-        var stream = LoadMusicStream(musicId);
+        if (!_musCache.TryGetValue(musicId, out var stream))
+        {
+            // Music: try MP3 first (Godot can't play MIDI), then WAV
+            stream = LoadMp3(musicId) ?? LoadWav(musicId);
+            _musCache[musicId] = stream;
+        }
+
         if (stream == null)
         {
             GD.Print($"[SND] No music file for ID {musicId}");
@@ -131,7 +127,6 @@ public partial class SoundManager : Node
         {
             _musicPlayer.Stream = stream;
             _musicPlayer.Play();
-            GD.Print($"[SND] Playing music {musicId} — stream: {stream.GetType().Name}");
         }
     }
 
@@ -141,113 +136,126 @@ public partial class SoundManager : Node
         _musicPlayer?.Stop();
     }
 
-    private AudioStream? LoadSoundStream(int soundId)
-    {
-        string cacheKey = $"sfx:{soundId}";
-        if (_cache.TryGetValue(cacheKey, out var cached))
-            return cached;
-
-        var stream = TryLoadAudio(soundId, isSfx: true);
-
-        if (stream != null)
-            _cache[cacheKey] = stream;
-        else
-            GD.Print($"[SND] Could not load sound {soundId}");
-
-        return stream;
-    }
-
-    private AudioStream? LoadMusicStream(int musicId)
-    {
-        string cacheKey = $"mus:{musicId}";
-        if (_cache.TryGetValue(cacheKey, out var cached))
-            return cached;
-
-        // Music: try MP3 first, then WAV
-        var stream = TryLoadAudio(musicId, isSfx: false);
-
-        if (stream != null)
-            _cache[cacheKey] = stream;
-
-        return stream;
-    }
-
     /// <summary>
-    /// Try loading audio by ID. For SFX: WAV first, MP3 fallback.
-    /// For music: MP3 first, WAV fallback.
-    /// Handles both editor (res://) and exported (filesystem) builds.
+    /// Load a WAV file. Tries ResourceLoader first (editor), then raw file read (exported build).
     /// </summary>
-    private AudioStream? TryLoadAudio(int id, bool isSfx)
+    private AudioStream? LoadWav(int id)
     {
-        string wavRes = $"res://Data/Sounds/WAV/{id}.wav";
-        string mp3Res = $"res://Data/Sounds/MP3/{id}.mp3";
+        // Method 1: Godot ResourceLoader (works when Godot has imported the file)
+        string resPath = $"res://Data/Sounds/WAV/{id}.wav";
+        if (ResourceLoader.Exists(resPath))
+        {
+            try
+            {
+                var s = ResourceLoader.Load<AudioStream>(resPath);
+                if (s != null) return s;
+            }
+            catch { /* fall through */ }
+        }
 
-        string first = isSfx ? wavRes : mp3Res;
-        string second = isSfx ? mp3Res : wavRes;
+        // Method 2: Read raw file bytes and create AudioStreamWAV manually
+        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
+        if (!System.IO.File.Exists(filePath)) return null;
 
-        // Try via ResourceLoader (works in editor + properly exported PCKs)
-        var stream = TryResourceLoad(first) ?? TryResourceLoad(second);
-        if (stream != null) return stream;
-
-        // Fallback: load from filesystem directly (exported builds without PCK)
-        string firstPath = isSfx
-            ? System.IO.Path.Combine(_wavPath, $"{id}.wav")
-            : System.IO.Path.Combine(_mp3Path, $"{id}.mp3");
-        string secondPath = isSfx
-            ? System.IO.Path.Combine(_mp3Path, $"{id}.mp3")
-            : System.IO.Path.Combine(_wavPath, $"{id}.wav");
-
-        stream = TryLoadFromFile(firstPath) ?? TryLoadFromFile(secondPath);
-        return stream;
-    }
-
-    private static AudioStream? TryResourceLoad(string resPath)
-    {
-        if (!ResourceLoader.Exists(resPath)) return null;
         try
         {
-            return ResourceLoader.Load<AudioStream>(resPath);
+            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            return ParseWav(raw);
         }
         catch (System.Exception e)
         {
-            GD.Print($"[SND] ResourceLoader failed for {resPath}: {e.Message}");
+            GD.Print($"[SND] WAV parse failed for {id}: {e.Message}");
             return null;
         }
     }
 
     /// <summary>
-    /// Load audio directly from disk — for exported builds where files
-    /// are alongside the executable instead of packed in a PCK.
+    /// Load an MP3 file. Tries ResourceLoader first, then raw file read.
     /// </summary>
-    private static AudioStream? TryLoadFromFile(string absPath)
+    private AudioStream? LoadMp3(int id)
     {
-        if (!Godot.FileAccess.FileExists(absPath)) return null;
+        string resPath = $"res://Data/Sounds/MP3/{id}.mp3";
+        if (ResourceLoader.Exists(resPath))
+        {
+            try
+            {
+                var s = ResourceLoader.Load<AudioStream>(resPath);
+                if (s != null) return s;
+            }
+            catch { /* fall through */ }
+        }
+
+        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "MP3", $"{id}.mp3");
+        if (!System.IO.File.Exists(filePath)) return null;
 
         try
         {
-            if (absPath.EndsWith(".mp3", System.StringComparison.OrdinalIgnoreCase))
-            {
-                var file = Godot.FileAccess.Open(absPath, Godot.FileAccess.ModeFlags.Read);
-                if (file == null) return null;
-                var bytes = file.GetBuffer((long)file.GetLength());
-                file.Close();
-                var mp3 = new AudioStreamMP3();
-                mp3.Data = bytes;
-                return mp3;
-            }
-            else if (absPath.EndsWith(".wav", System.StringComparison.OrdinalIgnoreCase))
-            {
-                // For WAV, try loading via ResourceLoader with absolute path
-                var globalized = ProjectSettings.LocalizePath(absPath);
-                if (ResourceLoader.Exists(globalized))
-                    return ResourceLoader.Load<AudioStream>(globalized);
-            }
+            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            var mp3 = new AudioStreamMP3();
+            mp3.Data = raw;
+            return mp3;
         }
         catch (System.Exception e)
         {
-            GD.Print($"[SND] File load failed for {absPath}: {e.Message}");
+            GD.Print($"[SND] MP3 load failed for {id}: {e.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Parse a WAV file from raw bytes into an AudioStreamWAV.
+    /// Handles standard PCM WAV (8/16 bit, mono/stereo).
+    /// </summary>
+    private static AudioStreamWAV? ParseWav(byte[] raw)
+    {
+        // Minimal WAV parser: RIFF header → fmt chunk → data chunk
+        if (raw.Length < 44) return null;
+        if (raw[0] != 'R' || raw[1] != 'I' || raw[2] != 'F' || raw[3] != 'F') return null;
+        if (raw[8] != 'W' || raw[9] != 'A' || raw[10] != 'V' || raw[11] != 'E') return null;
+
+        int channels = 1;
+        int sampleRate = 22050;
+        int bitsPerSample = 16;
+        byte[]? pcmData = null;
+
+        int pos = 12;
+        while (pos + 8 <= raw.Length)
+        {
+            string chunkId = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
+            int chunkSize = System.BitConverter.ToInt32(raw, pos + 4);
+            int chunkDataStart = pos + 8;
+
+            if (chunkId == "fmt " && chunkSize >= 16)
+            {
+                int audioFormat = System.BitConverter.ToInt16(raw, chunkDataStart);
+                if (audioFormat != 1) return null; // Only PCM supported
+                channels = System.BitConverter.ToInt16(raw, chunkDataStart + 2);
+                sampleRate = System.BitConverter.ToInt32(raw, chunkDataStart + 4);
+                bitsPerSample = System.BitConverter.ToInt16(raw, chunkDataStart + 14);
+            }
+            else if (chunkId == "data")
+            {
+                int dataLen = System.Math.Min(chunkSize, raw.Length - chunkDataStart);
+                pcmData = new byte[dataLen];
+                System.Array.Copy(raw, chunkDataStart, pcmData, 0, dataLen);
+            }
+
+            pos = chunkDataStart + chunkSize;
+            // Chunks are word-aligned
+            if (pos % 2 != 0) pos++;
         }
 
-        return null;
+        if (pcmData == null || pcmData.Length == 0) return null;
+
+        var wav = new AudioStreamWAV();
+        wav.Data = pcmData;
+        wav.Format = bitsPerSample == 8
+            ? AudioStreamWAV.FormatEnum.Format8Bits
+            : AudioStreamWAV.FormatEnum.Format16Bits;
+        wav.Stereo = channels >= 2;
+        wav.MixRate = sampleRate;
+        wav.LoopMode = AudioStreamWAV.LoopModeEnum.Disabled;
+
+        return wav;
     }
 }
