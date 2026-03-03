@@ -49,6 +49,7 @@ public partial class DeathPanel : Control
         _state = state;
         _tcp = tcp;
         _dataPath = dataPath;
+        LoadTextures();
     }
 
     public override void _Ready()
@@ -56,13 +57,17 @@ public partial class DeathPanel : Control
         Size = new Vector2(PanelW, PanelH);
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.None;
+    }
 
+    private void LoadTextures()
+    {
         string basePath = System.IO.Path.Combine(_dataPath, "Graficos", "Principal");
         _bgTexture = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_Main.jpg"));
         _continuarHover = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_ContinuarI.jpg"));
         _continuarNormal = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_ContinuarA.jpg"));
         _regresarHover = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_RegresarI.jpg"));
         _regresarNormal = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_RegresarA.jpg"));
+        QueueRedraw();
     }
 
     private static Texture2D? LoadJpg(string path)

@@ -69,6 +69,7 @@ public partial class TravelPanel : Control
         _state = state;
         _tcp = tcp;
         _dataPath = dataPath;
+        LoadTextures();
     }
 
     public override void _Ready()
@@ -76,7 +77,10 @@ public partial class TravelPanel : Control
         Size = new Vector2(PanelW, PanelH);
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.None;
+    }
 
+    private void LoadTextures()
+    {
         // Load textures from Principal directory (filesystem)
         string basePath = System.IO.Path.Combine(_dataPath, "Graficos", "Principal");
         _bgTexture = LoadJpg(System.IO.Path.Combine(basePath, "Viajar_Main.jpg"));
@@ -87,6 +91,7 @@ public partial class TravelPanel : Control
             _btnNormal[i] = LoadJpg(System.IO.Path.Combine(basePath, $"Viajar_B{fileNames[i]}N.jpg"));
             _btnHover[i] = LoadJpg(System.IO.Path.Combine(basePath, $"Viajar_B{fileNames[i]}I.jpg"));
         }
+        QueueRedraw();
     }
 
     private static Texture2D? LoadJpg(string path)
