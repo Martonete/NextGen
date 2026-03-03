@@ -281,8 +281,9 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Mirror axis: character's feet (tile bottom edge)
-        float mirrorY = pos.Y + 4f;
+        // Mirror axis: character's feet = bottom edge of tile (pos.Y + TileSize)
+        // Character draws upward from pos, reflection draws downward from feet into water
+        float mirrorY = pos.Y + TileSize;
 
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
         canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
@@ -365,7 +366,7 @@ public static class CharRenderer
         if (aura.GrhIndex <= 0) return;
 
         // Mirror the normal aura Y around the character's feet (same mirrorY as DrawReflection)
-        float mirrorY = pos.Y + 4f;
+        float mirrorY = pos.Y + TileSize;
         float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
         float reflAuraY = 2f * mirrorY - normalAuraY;
         float auraX = pos.X + headOffset.X;
