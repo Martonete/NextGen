@@ -431,10 +431,37 @@ You need these on **your** machine (the one doing the export):
 
 1. **Godot 4.3 .NET** (already installed if you develop)
 2. **.NET 6.0 SDK** (already installed if you develop)
-3. **Godot Export Templates** — open Godot editor → `Editor → Manage Export Templates → Download and Install` (~800MB, one time)
+3. **Godot Export Templates** — open Godot editor → `Editor` → `Manage Export Templates` (`Gestionar plantillas de exportación` in Spanish) → `Download and Install` (~800MB, one time)
 4. **Make** (optional) — simplifies the process to a single command
 
 > **Note:** You do NOT need Rust installed to export the client. Rust is only for the server.
+
+### Configure the server IP
+
+Before exporting, set the server IP in `client/Scripts/Main.cs` line 15:
+
+```csharp
+private const string ServerHost = "123.45.67.89"; // Your server's public IP
+```
+
+For local testing use `127.0.0.1`. For production, use the VPS public IP.
+
+### First-time setup
+
+If this is the first time exporting (or after a fresh clone), you need a `.sln` file:
+
+1. Open Godot editor with the client project
+2. `Project` → `Tools` → `C#` → `Create C# Solution` (`Proyecto` → `Herramientas` → `C#` → `Crear solución de C#`)
+
+Also, if a `client/test/` folder exists, delete it — it contains standalone test files that conflict with the export:
+
+```powershell
+# Windows
+Remove-Item -Recurse -Force client\test
+
+# Linux/macOS
+rm -rf client/test
+```
 
 ### Option A: Using Make (Linux/macOS, or Windows with Make installed)
 
@@ -454,14 +481,16 @@ cd client
 # 1. Compile C#
 dotnet build
 
-# 2. Export exe (adjust path to your Godot binary)
+# 2. Create build folder
 mkdir build -Force
-& "C:\Godot\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 
-# 3. Copy game data alongside the exe
-Copy-Item -Recurse Data build\Data
+# 3. Export exe (adjust path to your Godot binary)
+& "C:\path\to\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 
-# 4. Zip for distribution
+# 4. Copy game data alongside the exe (only needed once, or after Data/ changes)
+Copy-Item -Recurse Data build\
+
+# 5. Zip for distribution
 Compress-Archive -Path build\* -DestinationPath ..\TierrasSagradasAO.zip
 ```
 
@@ -473,15 +502,27 @@ cd client
 # 1. Compile C#
 dotnet build
 
-# 2. Export exe
+# 2. Create build folder
 mkdir -p build
+
+# 3. Export exe
 godot --headless --export-release "Windows Desktop" build/TierrasSagradasAO.exe
 
-# 3. Copy game data
+# 4. Copy game data (only needed once, or after Data/ changes)
 cp -r Data build/Data
 
-# 4. Zip
+# 5. Zip
 cd build && zip -r ../../TierrasSagradasAO.zip . && cd ..
+```
+
+### Rebuilding after code changes
+
+When you change code (IP, bug fixes, etc.) you only need to recompile and re-export — no need to copy Data again:
+
+```powershell
+cd client
+dotnet build
+& "C:\path\to\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 ```
 
 ### What the player receives
@@ -501,6 +542,36 @@ TierrasSagradasAO/
 The player just unzips and runs `TierrasSagradasAO.exe`. No installation needed.
 
 Source code (`.cs` files) is **not** included — it's compiled into DLLs.
+
+### Server deployment (VPS)
+
+To run the server on a VPS for players to connect:
+
+```bash
+# 1. Generate SSH key and add to GitHub
+ssh-keygen -t ed25519 -C "your@email.com" -f ~/.ssh/id_ed25519 -N ""
+cat ~/.ssh/id_ed25519.pub
+# Copy the output → GitHub → Settings → SSH Keys → New SSH key
+
+# 2. Install Docker
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+newgrp docker
+
+# 3. Clone and start server
+git clone git@github.com:cyphercr0w/server-rust-tsao.git
+cd server-rust-tsao
+docker compose up -d
+
+# 4. Verify
+docker compose logs -f ao-server
+# Should show: "Listening on 0.0.0.0:5028"
+
+# 5. Open firewall port
+sudo ufw allow 5028/tcp    # Ubuntu
+```
+
+Make sure port **5028 TCP** is also open in your VPS provider's firewall/security group.
 
 ---
 
