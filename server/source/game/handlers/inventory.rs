@@ -993,12 +993,13 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         return;
     }
 
-    // Check if the object is pickable (agarrable)
-    let is_agarrable = state.get_object(ground_item.obj_index)
+    // VB6: Agarrable=1 means the object CANNOT be picked up (fixed object like sign, fire, etc.)
+    // If Agarrable <> 1 Then → allow pickup
+    let is_fixed = state.get_object(ground_item.obj_index)
         .map(|o| o.agarrable)
         .unwrap_or(false);
 
-    if !is_agarrable {
+    if is_fixed {
         let msg = format!("P|No puedes agarrar ese objeto{}", font_types::INFO);
         state.send_to(conn_id, &msg).await;
         return;
@@ -1653,19 +1654,9 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
         None => { return; }
     };
 
-    // Also check y-1 for NPC (character heads are above their tile position)
-    if tile_npc_idx == 0 && y - 1 >= 1 {
-        if let Some(npc_on_ym1) = state.world.grid(map).and_then(|g| g.tile(x, y - 1)).map(|t| t.npc_index) {
-            if npc_on_ym1 > 0 {
-                tile_npc_idx = npc_on_ym1;
-            }
-        }
-    }
-
-    // RC click — don't log (too frequent)
-
-    // Also check y+1 for NPC (VB6: Acciones.bas checks MapData(Map, X, Y).NpcIndex AND
-    // MapData(Map, X, Y+1).NpcIndex for NPC interactions via LookatTile)
+    // VB6 Acciones.bas: check Y+1 FIRST, then Y for characters.
+    // Character heads extend upward — clicking on the head area (tile Y) finds the
+    // character whose body is at tile Y+1. Only these two tiles are checked.
     if tile_npc_idx == 0 && y + 1 <= 100 {
         if let Some(npc_on_y1) = state.world.grid(map).and_then(|g| g.tile(x, y + 1)).map(|t| t.npc_index) {
             if npc_on_y1 > 0 {

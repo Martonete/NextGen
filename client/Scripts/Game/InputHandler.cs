@@ -118,17 +118,7 @@ public class InputHandler
         // Everything below is blocked when chat is active (letter keys would type into chat)
         if (_state.ChatActive) return;
 
-        // Attack (configurable key, 1000ms cooldown)
-        // Also allow Space as secondary attack key (always, not rebindable)
-        // VB6: blocked while resting or meditating
-        if (_keys.IsActionPressed(GameAction.Attack) || Input.IsKeyPressed(Key.Space))
-        {
-            if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
-            {
-                _tcp.SendPacket("AT");
-                _attackTimer = AttackCooldownMs;
-            }
-        }
+        // Attack is handled in HandleInputEvent() on key RELEASE (VB6 Form_KeyUp parity)
 
         // All action keys below share a cooldown to prevent rapid-fire when held.
         if (_keyCooldown > 0) return;
@@ -386,6 +376,31 @@ public class InputHandler
         int tileX = userX + (int)viewportPos.X / 32 - 8;
         int tileY = userY + (int)viewportPos.Y / 32 - 6;
         return (tileX, tileY);
+    }
+
+    /// <summary>
+    /// Handle discrete input events. Called from Main._Input().
+    /// VB6 parity: attack fires on key RELEASE (Form_KeyUp), not key down.
+    /// </summary>
+    public void HandleInputEvent(InputEvent @event)
+    {
+        if (!_state.IsLogged || _state.Paused) return;
+        if (_state.AnyFormOpen) return;
+        if (_state.ChatActive) return;
+
+        if (@event is InputEventKey keyEvent && !keyEvent.Pressed && !keyEvent.Echo)
+        {
+            // Key RELEASE — check for attack key (VB6: Form_KeyUp → BindKeys(1) → SendData "AT")
+            var key = keyEvent.Keycode;
+            if (key == _keys.GetKey(GameAction.Attack) || key == Key.Space)
+            {
+                if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
+                {
+                    _tcp.SendPacket("AT");
+                    _attackTimer = AttackCooldownMs;
+                }
+            }
+        }
     }
 
     public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)

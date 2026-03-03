@@ -128,7 +128,7 @@ pub struct ObjData {
     pub grh_index: i32,
     pub grh_secundario: i32,
     pub valor: i32,          // Item value/price
-    pub agarrable: bool,     // Can pick up
+    pub agarrable: bool,     // VB6: Agarrable=1 means FIXED (cannot pick up)
 
     // Weapon fields
     pub min_hit: i32,

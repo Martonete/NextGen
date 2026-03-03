@@ -639,12 +639,18 @@ async fn connect_user(
 
         if let Some(old_id) = old_conn {
             info!("[AUTH] Force-disconnecting stale session #{} for '{}' (re-login from #{})", old_id, char_name, conn_id);
-            // Send BP to area to remove the old character
+            // VB6: QDL to entire map, BP to 27×27 area to remove old character
             if let Some(old_user) = state.users.get(&old_id) {
-                let bp_pkt = format!("BP{}", old_user.char_index.0);
-                let (map, x, y) = (old_user.pos_map, old_user.pos_x, old_user.pos_y);
+                let ci = old_user.char_index.0;
+                let map = old_user.pos_map;
+                let qdl_pkt = format!("QDL{}", ci);
                 state.send_data(
-                    SendTarget::ToAreaButIndex { conn_id: old_id, map, x, y },
+                    SendTarget::ToMapButIndex { conn_id: old_id, map },
+                    &qdl_pkt,
+                ).await;
+                let bp_pkt = format!("BP{}", ci);
+                state.send_data(
+                    SendTarget::ToMapButIndex { conn_id: old_id, map },
                     &bp_pkt,
                 ).await;
             }
@@ -2578,14 +2584,21 @@ async fn send_full_spells(state: &mut GameState, conn_id: ConnectionId) {
 const MAX_LEVEL: i32 = 70;
 
 /// Check if user has enough exp to level up, and apply it.
+/// VB6 parity: two separate paths for levels 1-49 vs 50+.
 pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
     loop {
-        let (level, exp, class) = match state.users.get(&conn_id) {
-            Some(u) if u.logged => (u.level, u.exp, u.class.clone()),
+        let (level, exp, class, race, max_hp, intelligence) = match state.users.get(&conn_id) {
+            Some(u) if u.logged => (
+                u.level, u.exp, u.class.clone(), u.race.clone(),
+                u.max_hp, u.attributes[2], // attributes[2] = Intelligence
+            ),
             _ => return,
         };
 
         if level >= MAX_LEVEL {
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.exp = 0;
+            }
             return;
         }
 
@@ -2594,20 +2607,151 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             return;
         }
 
-        // Level up!
-        let (hp_gain, mana_gain, sta_gain, hit_gain) = level_up_gains(&class, level);
+        // ══════════════════════════════════════════════════════════════
+        // VB6: Level 50+ path — NO regular stat gains, only milestones
+        // ══════════════════════════════════════════════════════════════
+        if level >= 50 {
+            // Level up sound + FX
+            let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+            let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
+            let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
+            let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
+            state.send_data(SendTarget::ToArea { map, x, y }, "TW6").await;
+            state.send_to(conn_id, "||67").await;
+
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.level += 1;
+                user.exp = 0;
+            }
+            let new_level = level + 1;
+
+            let fx_pkt = format!("CFF{},58,0", char_index);
+            state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+
+            // VB6: ClassBonus.dat options at levels 53, 56, 60
+            let class_upper = class.to_uppercase();
+            let bonus_nivel = match new_level {
+                53 => Some(1),
+                56 => Some(2),
+                60 => Some(3),
+                _ => None,
+            };
+            if let Some(nivel) = bonus_nivel {
+                let dat_path = state.base_path.join("dat").join("ClassBonus.dat");
+                let dat = dat_path.to_str().unwrap_or("");
+                let opt1 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion1", nivel));
+                let opt2 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion2", nivel));
+                if !opt1.is_empty() || !opt2.is_empty() {
+                    let pkt = format!("99{},{}", opt1, opt2);
+                    state.send_to(conn_id, &pkt).await;
+                }
+            }
+
+            // VB6: Level 50 — +50 skill points (one-time)
+            if new_level == 50 {
+                let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+                let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 50!\u{00B0}0", name);
+                state.send_data(SendTarget::ToAll, &announce).await;
+                state.send_to(conn_id, "||57@50").await;
+                // TODO: AgregarPuntos(50) — add 50 free skill points
+            }
+
+            // VB6: Level 60 — +200 skill points (one-time), stop gaining exp
+            if new_level == 60 {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.exp = 0;
+                }
+                let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+                let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 60!\u{00B0}0", name);
+                state.send_data(SendTarget::ToAll, &announce).await;
+                state.send_to(conn_id, "||57@200").await;
+                // TODO: AgregarPuntos(200) — add 200 free skill points
+                send_stats_exp(state, conn_id).await;
+                let lvl_pkt = format!("[L]{}", new_level);
+                state.send_to(conn_id, &lvl_pkt).await;
+                send_stats_hp(state, conn_id).await;
+                return;
+            }
+
+            // VB6: Level 65 — +3-5 HP, +2 TSPoints
+            if new_level == 65 {
+                let hp_bonus = rand_range(3, 5);
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.max_hp += hp_bonus;
+                    user.min_hp = user.max_hp;
+                }
+                state.send_to(conn_id, &format!("||68@50 + 15@{}", hp_bonus)).await;
+                state.send_to(conn_id, "||900@2").await;
+                send_stats_hp(state, conn_id).await;
+            }
+
+            // VB6: Level 70 — +3-5 HP, +200 skill points, +5 TSPoints
+            if new_level == 70 {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.exp = 0;
+                }
+                let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+                let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 70!\u{00B0}0", name);
+                state.send_data(SendTarget::ToAll, &announce).await;
+                let hp_bonus = rand_range(3, 5);
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.max_hp += hp_bonus;
+                    user.min_hp = user.max_hp;
+                }
+                state.send_to(conn_id, &format!("||68@50 + 20@{}", hp_bonus)).await;
+                state.send_to(conn_id, "||57@200").await;
+                state.send_to(conn_id, "||900@5").await;
+                // TODO: AgregarPuntos(200) — add 200 free skill points
+                send_stats_hp(state, conn_id).await;
+                send_stats_exp(state, conn_id).await;
+                let lvl_pkt = format!("[L]{}", new_level);
+                state.send_to(conn_id, &lvl_pkt).await;
+                info!("[LEVEL] '{}' reached max level 70", name);
+                return;
+            }
+
+            send_stats_exp(state, conn_id).await;
+            let lvl_pkt = format!("[L]{}", new_level);
+            state.send_to(conn_id, &lvl_pkt).await;
+
+            let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+            info!("[LEVEL] '{}' reached level {}", name, new_level);
+            continue; // Check for multi-level jump
+        }
+
+        // ══════════════════════════════════════════════════════════════
+        // VB6: Level 1-49 path — full promedio HP + INT-based mana
+        // ══════════════════════════════════════════════════════════════
+        let (hp_gain, mana_gain, sta_gain, hit_gain) =
+            level_up_gains(&class, &race, level, max_hp, intelligence);
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.level += 1;
-            user.exp = 0; // VB6 parity: reset exp to 0 on each level up
+            user.exp = 0;
+
+            // HP: add gain
             user.max_hp += hp_gain;
-            user.min_hp += hp_gain; // Heal the gain
+
+            // Mana: add with cap (VB6: <36 → STAT_MAXMAN, >=36 → 9999)
             user.max_mana += mana_gain;
-            user.min_mana += mana_gain;
+            let mana_cap = if user.level < 36 { STAT_MAXMAN } else { 9999 };
+            if user.max_mana > mana_cap { user.max_mana = mana_cap; }
+
+            // STA: add with cap
             user.max_sta += sta_gain;
-            user.min_sta += sta_gain;
+            if user.max_sta > STAT_MAXSTA { user.max_sta = STAT_MAXSTA; }
+
+            // Hit: add with level-dependent caps
+            let hit_cap = if user.level < 36 { STAT_MAXHIT_UNDER36 } else { STAT_MAXHIT_OVER36 };
             user.max_hit += hit_gain;
+            if user.max_hit > hit_cap { user.max_hit = hit_cap; }
             user.min_hit += hit_gain;
+            if user.min_hit > hit_cap { user.min_hit = hit_cap; }
+
+            // VB6 parity: full heal on level up (MinHP = MaxHP)
+            user.min_hp = user.max_hp;
+            user.min_mana = user.max_mana;
+            user.min_sta = user.max_sta;
         }
 
         let new_level = level + 1;
@@ -2616,16 +2760,50 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
-        // VB6: SND_NIVEL (6) — level up sound
+        // Level up sound + FX
         state.send_data(SendTarget::ToArea { map, x, y }, "TW6").await;
-
-        // Level up FX (effect 58) to area
         let fx_pkt = format!("CFF{},58,0", char_index);
         state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
-        // Stat notifications (VB6: ||67 + ||68@level@hp_gain)
-        state.send_to(conn_id, "||67").await; // TEXTO67: Has subido de nivel!
-        state.send_to(conn_id, &format!("||68@{}@{}", new_level, hp_gain)).await; // TEXTO68
+        // VB6: ||67 = "Has subido de nivel!"
+        state.send_to(conn_id, "||67").await;
+
+        // VB6: Stat gain notifications (||71=HP, ||72=STA, ||73=MANA, ||74/75=HIT)
+        if hp_gain > 0 {
+            state.send_to(conn_id, &format!("||71@{}", hp_gain)).await;
+        }
+        if sta_gain > 0 {
+            state.send_to(conn_id, &format!("||72@{}", sta_gain)).await;
+        }
+        if mana_gain > 0 {
+            state.send_to(conn_id, &format!("||73@{}", mana_gain)).await;
+        }
+        if hit_gain > 0 {
+            state.send_to(conn_id, &format!("||74@{}", hit_gain)).await;
+            state.send_to(conn_id, &format!("||75@{}", hit_gain)).await;
+        }
+
+        // VB6: HP projection messages (how your HP is trending)
+        {
+            let tbl = hp_table(&class.to_uppercase(), &race.to_uppercase());
+            let cur_hp = state.users.get(&conn_id).map(|u| u.max_hp).unwrap_or(0);
+            if new_level < 20 {
+                // ||76@class@race@vidaMin@vidaMax — show target range
+                state.send_to(conn_id, &format!("||76@{}@{}@{}@{}", class, race,
+                    tbl.vida_veinte + (30 - 20) * tbl.define_random_min + 20 * tbl.random_final,
+                    tbl.vida_veinte + (30 - 20) * tbl.define_random_max + 20 * tbl.random_final,
+                )).await;
+            } else if new_level <= 29 {
+                // ||77@min@max — projected HP at level 50
+                let projected_min = cur_hp + (30 - new_level) * tbl.define_random_min + 20 * tbl.random_final;
+                let projected_max = cur_hp + (30 - new_level) * tbl.define_random_max + 20 * tbl.random_final;
+                state.send_to(conn_id, &format!("||77@{}@{}", projected_min, projected_max)).await;
+            } else {
+                // ||78@projected — exact projected HP at level 50
+                let projected = cur_hp + (50 - new_level) * tbl.random_final;
+                state.send_to(conn_id, &format!("||78@{}", projected)).await;
+            }
+        }
 
         // Send updated stats
         let lvl_pkt = format!("[L]{}", new_level);
@@ -2636,23 +2814,23 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         send_stats_exp(state, conn_id).await;
 
         let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        info!("[LEVEL] '{}' reached level {}", name, new_level);
+        info!("[LEVEL] '{}' reached level {} (HP+{}, MANA+{}, STA+{}, HIT+{})",
+            name, new_level, hp_gain, mana_gain, sta_gain, hit_gain);
 
-        // Milestone announcements
-        if new_level == 50 || new_level == 60 || new_level == 70 {
-            let announce = format!(
-                "T|65535\u{00B0}{} ha alcanzado el nivel {}!\u{00B0}0",
-                name, new_level
-            );
-            state.send_data(SendTarget::ToAll, &announce).await;
+        // VB6: Gold bonus for levels < 10 (600 × level)
+        if new_level < 10 {
+            let gold_bonus = 600 * new_level;
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.gold += gold_bonus as i64;
+            }
+            state.send_to(conn_id, &format!("||63@{}", gold_bonus)).await;
+            send_stats_gold(state, conn_id).await;
         }
 
-        // VB6 parity: Level 10 — warp to Tanaris, clear inventory, naked body, give torch
+        // VB6: Level 10 — warp to Tanaris, clear inventory, naked body, give torch
         if new_level == 10 {
-            // Warp to Tanaris (map 28, pos 54,34)
             warp_user(state, conn_id, 28, 54, 34).await;
 
-            // Clear entire inventory + equipment
             if let Some(user) = state.users.get_mut(&conn_id) {
                 for slot in user.inventory.iter_mut() {
                     slot.obj_index = 0;
@@ -2665,18 +2843,16 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                 user.casco_anim = 0;
             }
 
-            // Naked body based on race/gender
-            let (race, gender) = state.users.get(&conn_id)
+            let (race_l10, gender) = state.users.get(&conn_id)
                 .map(|u| (u.race.clone(), u.gender))
                 .unwrap_or_default();
             let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
-            let naked = naked_body(&race, gender_str);
+            let naked = naked_body(&race_l10, gender_str);
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.body = naked;
             }
 
-            // Give torch (1561 for Enano/Gnomo, 1560 for others)
-            let torch = if race.eq_ignore_ascii_case("enano") || race.eq_ignore_ascii_case("gnomo") {
+            let torch = if race_l10.eq_ignore_ascii_case("enano") || race_l10.eq_ignore_ascii_case("gnomo") {
                 1561
             } else {
                 1560
@@ -2688,10 +2864,8 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                 }
             }
 
-            // Send updates
             send_full_inventory(state, conn_id).await;
 
-            // CP packet (naked, no equipment) — re-read position after warp
             let (m, px, py, ci, hd, head) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y, u.char_index.0, u.heading, u.head))
                 .unwrap_or_default();
@@ -2699,102 +2873,152 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             state.send_data(SendTarget::ToArea { map: m, x: px, y: py }, &cp).await;
         }
 
-        // VB6 level bonuses from ClassBonus.dat (levels 53, 56, 60)
-        let bonus_level = match new_level {
-            53 => Some(1),
-            56 => Some(2),
-            60 => Some(3),
-            _ => None,
-        };
-        if let Some(nivel) = bonus_level {
-            let class_upper = class.to_uppercase();
-            let dat_path = state.base_path.join("dat").join("ClassBonus.dat");
-            let dat = dat_path.to_str().unwrap_or("");
-            let opt1 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion1", nivel));
-            let opt2 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion2", nivel));
-            if !opt1.is_empty() || !opt2.is_empty() {
-                // VB6: SendData toindex "99" & opt1 & "," & opt2
-                let pkt = format!("99{},{}", opt1, opt2);
-                state.send_to(conn_id, &pkt).await;
-            }
-
-            // VB6: Level 60 = +200 skill points (one-time)
-            if new_level == 60 {
-                // Award 200 free skill points
-                let msg = format!("{}Has alcanzado el nivel maximo! +200 puntos de skill.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                state.send_to(conn_id, &msg).await;
-            }
+        // VB6: Level 50 — announcement + skill points (one-time)
+        if new_level == 50 {
+            let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 50!\u{00B0}0", name);
+            state.send_data(SendTarget::ToAll, &announce).await;
+            state.send_to(conn_id, "||57@50").await;
+            // TODO: AgregarPuntos(50) — add 50 free skill points
         }
 
         // Continue looping in case of multi-level jumps
     }
 }
 
-/// Calculate stat gains per level based on class.
-/// Returns (hp_gain, mana_gain, sta_gain, hit_gain).
-fn level_up_gains(class: &str, level: i32) -> (i32, i32, i32, i32) {
-    let class_lower = class.to_lowercase();
-    match class_lower.as_str() {
-        "guerrero" => {
-            let hp = if level < 20 { rand_range(10, 11) } else { 11 };
-            let hit = if level > 35 { 2 } else { 3 };
-            (hp, 0, 20, hit)
-        }
-        "mago" => {
-            let hp = rand_range(4, 6);
-            let mana = rand_range(18, 22); // INT-based simplified
-            (hp, mana, 15, 1)
-        }
-        "clerigo" => {
-            let hp = rand_range(7, 9);
-            let mana = rand_range(12, 16);
-            (hp, mana, 18, 2)
-        }
-        "asesino" => {
-            let hp = rand_range(8, 10);
-            let hit = if level > 35 { 2 } else { 3 };
-            (hp, 0, 20, hit)
-        }
-        "bardo" => {
-            let hp = rand_range(6, 8);
-            let mana = rand_range(10, 14);
-            (hp, mana, 18, 2)
-        }
-        "druida" => {
-            let hp = rand_range(6, 8);
-            let mana = rand_range(14, 18);
-            (hp, mana, 17, 2)
-        }
-        "paladin" => {
-            let hp = rand_range(8, 10);
-            let mana = rand_range(8, 12);
-            let hit = if level > 35 { 1 } else { 3 };
-            (hp, mana, 20, hit)
-        }
-        "cazador" => {
-            let hp = rand_range(8, 10);
-            let hit = if level > 35 { 2 } else { 3 };
-            (hp, 0, 22, hit)
-        }
-        "trabajador" => {
-            let hp = rand_range(9, 11);
-            (hp, 0, 25, 1)
-        }
-        "pirata" => {
-            let hp = rand_range(9, 11);
-            let hit = if level > 35 { 2 } else { 3 };
-            (hp, 0, 20, hit)
-        }
-        "ladron" => {
-            let hp = rand_range(6, 8);
-            (hp, 0, 20, 2)
-        }
-        "bandido" => {
-            let hp = rand_range(8, 10);
-            (hp, 0, 20, 2)
-        }
-        _ => (8, 0, 18, 2), // Default
+// ── VB6 HP progression table entry (class × race) ──────────────────
+// The VB6 system uses a "promedio" (average-tracking) algorithm:
+//   Level 1-20:  if current HP + remaining levels × min < VidaVeinte → give max, else min
+//   Level 20-29: random in [DefineRandomMin, DefineRandomMax]
+//   Level 30+:   fixed RandomFinal
+// This ensures all characters of the same class/race converge to a predictable HP range.
+struct HpTable {
+    vida_veinte: i32,       // Target HP at level 20
+    random_veinte_min: i32, // Min HP roll for levels 1-20
+    random_veinte_max: i32, // Max HP roll for levels 1-20
+    define_random_min: i32, // Min HP roll for levels 20-29
+    define_random_max: i32, // Max HP roll for levels 20-29
+    random_final: i32,      // Fixed HP gain for level 30+
+}
+
+// VB6 constants
+const AUMENTO_ST_DEF: i32 = 15;
+const AUMENTO_ST_MAGO: i32 = 14; // AumentoSTDef - 1
+const STAT_MAXSTA: i32 = 30000;
+const STAT_MAXMAN: i32 = 30000;
+const STAT_MAXHIT_UNDER36: i32 = 99;
+const STAT_MAXHIT_OVER36: i32 = 999;
+
+/// Look up the VB6 HP progression table for a class/race combo.
+/// Returns None for unknown combos (uses guerrero-humano fallback in caller).
+fn hp_table(class: &str, race: &str) -> HpTable {
+    match (class, race) {
+        // ── GUERRERO ──
+        ("GUERRERO", "HUMANO")      => HpTable { vida_veinte: 225, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 11, define_random_max: 12, random_final: 11 },
+        ("GUERRERO", "ELFO")        => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min: 11, define_random_max: 12, random_final: 11 },
+        ("GUERRERO", "ELFO OSCURO") => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 10, define_random_min: 11, define_random_max: 12, random_final: 11 },
+        ("GUERRERO", "GNOMO")       => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final: 10 },
+        ("GUERRERO", "ENANO")       => HpTable { vida_veinte: 245, random_veinte_min: 11, random_veinte_max: 12, define_random_min: 11, define_random_max: 13, random_final: 11 },
+
+        // ── CAZADOR ──
+        ("CAZADOR", "HUMANO")       => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 11, define_random_min:  9, define_random_max: 11, random_final: 10 },
+        ("CAZADOR", "ELFO")         => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final:  9 },
+        ("CAZADOR", "ELFO OSCURO")  => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final:  9 },
+        ("CAZADOR", "GNOMO")        => HpTable { vida_veinte: 185, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  8, define_random_max:  9, random_final:  9 },
+        ("CAZADOR", "ENANO")        => HpTable { vida_veinte: 225, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 10, define_random_max: 11, random_final: 10 },
+
+        // ── PALADIN ──
+        ("PALADIN", "HUMANO")       => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 11, define_random_min: 10, define_random_max: 11, random_final: 10 },
+        ("PALADIN", "ELFO")         => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final: 10 },
+        ("PALADIN", "ELFO OSCURO")  => HpTable { vida_veinte: 200, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final: 10 },
+        ("PALADIN", "GNOMO")        => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  8, define_random_max:  9, random_final: 10 },
+        ("PALADIN", "ENANO")        => HpTable { vida_veinte: 215, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 10, define_random_max: 11, random_final: 10 },
+
+        // ── MAGO ──
+        ("MAGO", "HUMANO")          => HpTable { vida_veinte: 155, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("MAGO", "ELFO")            => HpTable { vida_veinte: 155, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  9, random_final:  7 },
+        ("MAGO", "ELFO OSCURO")     => HpTable { vida_veinte: 160, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  7 },
+        ("MAGO", "GNOMO")           => HpTable { vida_veinte: 135, random_veinte_min:  6, random_veinte_max:  6, define_random_min:  6, define_random_max:  7, random_final:  7 },
+        ("MAGO", "ENANO")           => HpTable { vida_veinte: 155, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  8, define_random_max:  9, random_final:  8 },
+
+        // ── CLERIGO ──
+        ("CLERIGO", "HUMANO")       => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
+        ("CLERIGO", "ELFO")         => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+        ("CLERIGO", "ELFO OSCURO")  => HpTable { vida_veinte: 180, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+        ("CLERIGO", "GNOMO")        => HpTable { vida_veinte: 170, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("CLERIGO", "ENANO")        => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
+
+        // ── DRUIDA ──
+        ("DRUIDA", "HUMANO")        => HpTable { vida_veinte: 185, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max: 10, random_final:  8 },
+        ("DRUIDA", "ELFO")          => HpTable { vida_veinte: 165, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("DRUIDA", "ELFO OSCURO")   => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("DRUIDA", "GNOMO")         => HpTable { vida_veinte: 170, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  6, define_random_max:  7, random_final:  7 },
+        ("DRUIDA", "ENANO")         => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+
+        // ── ASESINO ──
+        ("ASESINO", "HUMANO")       => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+        ("ASESINO", "ELFO")         => HpTable { vida_veinte: 165, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("ASESINO", "ELFO OSCURO")  => HpTable { vida_veinte: 170, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("ASESINO", "GNOMO")        => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  6, define_random_max:  7, random_final:  7 },
+        ("ASESINO", "ENANO")        => HpTable { vida_veinte: 185, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+
+        // ── BARDO ──
+        ("BARDO", "HUMANO")         => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
+        ("BARDO", "ELFO")           => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+        ("BARDO", "ELFO OSCURO")    => HpTable { vida_veinte: 180, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
+        ("BARDO", "GNOMO")          => HpTable { vida_veinte: 167, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
+        ("BARDO", "ENANO")          => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
+
+        // ── Default (unknown class/race) → guerrero humano ──
+        _ => HpTable { vida_veinte: 225, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 11, define_random_max: 12, random_final: 11 },
     }
+}
+
+/// VB6-accurate level-up stat gains.
+/// Uses the promedio (average-tracking) HP system with 40 class×race tables,
+/// INT-based mana per class, and level-tier hit/sta constants.
+/// Returns (hp_gain, mana_gain, sta_gain, hit_gain).
+fn level_up_gains(class: &str, race: &str, level: i32, current_max_hp: i32, intelligence: i32) -> (i32, i32, i32, i32) {
+    let class_upper = class.to_uppercase();
+    let race_upper = race.to_uppercase();
+    let cls = class_upper.as_str();
+
+    // ── HP gain (promedio system) ──
+    let tbl = hp_table(cls, &race_upper);
+    let hp_gain = if level <= 20 {
+        // VB6 promedio: if we can't reach VidaVeinte with min rolls for remaining levels, give max
+        if current_max_hp + (21 - level) * tbl.random_veinte_min < tbl.vida_veinte {
+            tbl.random_veinte_max
+        } else {
+            tbl.random_veinte_min
+        }
+    } else if level < 30 {
+        rand_range(tbl.define_random_min, tbl.define_random_max)
+    } else {
+        tbl.random_final
+    };
+
+    // ── Mana gain (INT-based per class) ──
+    let mana_gain = match cls {
+        "MAGO"    => 3 * intelligence,                          // 3 × INT
+        "CLERIGO" => 2 * intelligence,                          // 2 × INT
+        "DRUIDA" | "BARDO" => (2.1 * intelligence as f64) as i32, // 2.1 × INT (truncated)
+        "PALADIN" | "ASESINO" => intelligence,                  // 1 × INT
+        _ => 0,                                                 // No mana classes
+    };
+
+    // ── STA gain ──
+    let sta_gain = if cls == "MAGO" { AUMENTO_ST_MAGO } else { AUMENTO_ST_DEF };
+
+    // ── Hit gain (level-dependent for combat classes) ──
+    let hit_gain = match cls {
+        "GUERRERO" | "CAZADOR" => if level > 35 { 2 } else { 3 },
+        "PALADIN" | "ASESINO"  => if level > 35 { 1 } else { 3 },
+        "MAGO"                 => 1,
+        "CLERIGO" | "DRUIDA" | "BARDO" => 2,
+        _ => 2, // Default for unknown classes
+    };
+
+    (hp_gain, mana_gain, sta_gain, hit_gain)
 }
 
 // =====================================================================
@@ -3127,28 +3351,56 @@ async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionId, new_map:
 
 async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
     let old_data = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index),
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y),
         None => return,
     };
-    let (old_map, old_x, old_y, char_index) = old_data;
+    let (old_map, old_x, old_y, char_index, area_min_x, area_min_y) = old_data;
 
     // 1. BKW — fade to black (VB6 line 2262)
     state.send_to(conn_id, "BKW").await;
 
-    // 2. QDL — remove dialog from area (VB6 line 2264)
+    // 2. QDL + BP — remove dialog and character from the full 27×27 area.
+    // VB6 ToPCArea uses the 27×27 zone group, not just the viewport (±8x, ±6y).
+    // Movement `+` packets are broadcast to the full 27×27 area, so QDL/BP must
+    // reach the same players — otherwise ghosts remain visible at the teleport tile.
     let qdl_pkt = format!("QDL{}", char_index.0);
-    state.send_data(
-        SendTarget::ToArea { map: old_map, x: old_x, y: old_y },
-        &qdl_pkt,
-    ).await;
+    let bp_pkt = format!("BP{}", char_index.0);
     state.send_to(conn_id, "QTDL").await;
 
-    // 3. EraseUserChar — remove from old position + send BP to old area
-    let bp_pkt = format!("BP{}", char_index.0);
-    state.send_data(
-        SendTarget::ToAreaButIndex { conn_id, map: old_map, x: old_x, y: old_y },
-        &bp_pkt,
-    ).await;
+    if area_min_x > 0 || area_min_y > 0 {
+        let amx = area_min_x.max(1);
+        let amy = area_min_y.max(1);
+        let axx = (area_min_x + 26).min(100);
+        let axy = (area_min_y + 26).min(100);
+        if let Some(grid) = state.world.grid(old_map) {
+            let mut targets: Vec<ConnectionId> = Vec::new();
+            for sy in amy..=axy {
+                for sx in amx..=axx {
+                    if let Some(tile) = grid.tile(sx, sy) {
+                        if let Some(c) = tile.user_conn {
+                            if c != conn_id { targets.push(c); }
+                        }
+                    }
+                }
+            }
+            for c in &targets {
+                state.send_to(*c, &qdl_pkt).await;
+            }
+            for c in &targets {
+                state.send_to(*c, &bp_pkt).await;
+            }
+        }
+    } else {
+        // Fallback: area not initialized yet — send to entire map (safe catch-all)
+        state.send_data(
+            SendTarget::ToMapButIndex { conn_id, map: old_map },
+            &qdl_pkt,
+        ).await;
+        state.send_data(
+            SendTarget::ToMapButIndex { conn_id, map: old_map },
+            &bp_pkt,
+        ).await;
+    }
     state.world.remove_user(old_map, old_x, old_y);
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)

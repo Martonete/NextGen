@@ -267,6 +267,7 @@ public partial class Main : Control
         _console.AddThemeStyleboxOverride("normal", consoleStyle);
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
+        _chatInput.MaxLength = 160; // VB6: frmMain.frm txtChat MaxLength=160
         // Dark background + thin border — sits below the game viewport, no overlap
         var chatBox = new StyleBoxFlat();
         chatBox.BgColor = new Color(0, 0, 0, 0.85f);
@@ -3107,6 +3108,9 @@ public partial class Main : Control
 
         }
 
+        // VB6 Form_KeyUp: attack fires on key RELEASE, not key down
+        _inputHandler?.HandleInputEvent(@event);
+
         // Block mouse clicks on game world when any modal panel is open
         if (_state.Comerciando || _state.Banqueando || _state.BovedaAbierta
             || _state.MacroPanelOpen || _state.OptionsPanelOpen || _state.KeyBindPanelOpen
@@ -3143,7 +3147,7 @@ public partial class Main : Control
                         return;
                     }
 
-                    if (mb.ShiftPressed && _state.Privileges >= 2)
+                    if (mb.ShiftPressed && _state.Privileges >= 1)
                     {
                         // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
                         _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);

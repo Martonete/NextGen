@@ -198,17 +198,49 @@ async fn main() {
                 // Get user info and save charfile before removal
                 let user_info = state.users.get(&conn_id)
                     .filter(|u| u.logged)
-                    .map(|u| (u.char_name.clone(), u.pos_map, u.pos_x, u.pos_y, u.char_index));
+                    .map(|u| (u.char_name.clone(), u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y));
 
-                if let Some((name, map, x, y, char_index)) = user_info {
+                if let Some((name, map, x, y, char_index, area_min_x, area_min_y)) = user_info {
                     info!("[DISC] #{} '{}' disconnected — saving charfile", conn_id, name);
 
-                    // Send BP (remove char) to area before removing
-                    let bp_pkt = format!("BP{}", char_index.0);
+                    // VB6 CloseUser: QDL sent to entire map, BP sent to 27×27 area
+                    // QDL removes dialog labels — must reach all players on the map (VB6: ToMapButIndex)
+                    let qdl_pkt = format!("QDL{}", char_index.0);
                     state.send_data(
-                        game::types::SendTarget::ToAreaButIndex { conn_id, map, x, y },
-                        &bp_pkt,
+                        game::types::SendTarget::ToMapButIndex { conn_id, map },
+                        &qdl_pkt,
                     ).await;
+
+                    // BP (remove char) — VB6 EraseUserChar uses SendToUserArea (27×27 zone)
+                    let bp_pkt = format!("BP{}", char_index.0);
+                    if area_min_x > 0 || area_min_y > 0 {
+                        // Use the full 27×27 area zone — matches movement broadcast range
+                        let amx = area_min_x.max(1);
+                        let amy = area_min_y.max(1);
+                        let axx = (area_min_x + 26).min(100);
+                        let axy = (area_min_y + 26).min(100);
+                        if let Some(grid) = state.world.grid(map) {
+                            let mut targets: Vec<net::ConnectionId> = Vec::new();
+                            for sy in amy..=axy {
+                                for sx in amx..=axx {
+                                    if let Some(tile) = grid.tile(sx, sy) {
+                                        if let Some(c) = tile.user_conn {
+                                            if c != conn_id { targets.push(c); }
+                                        }
+                                    }
+                                }
+                            }
+                            for c in &targets {
+                                state.send_to(*c, &bp_pkt).await;
+                            }
+                        }
+                    } else {
+                        // Fallback: send to entire map (safe catch-all)
+                        state.send_data(
+                            game::types::SendTarget::ToMapButIndex { conn_id, map },
+                            &bp_pkt,
+                        ).await;
+                    }
 
                     // Save full character state to DB
                     if let Some(user) = state.users.get(&conn_id) {

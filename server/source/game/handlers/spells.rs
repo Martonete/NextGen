@@ -311,6 +311,16 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             }
         }
 
+        // VB6: RemoverParalisis only works if target IS paralyzed (modHechizos.bas:766-802)
+        // If target is not paralyzed, b stays False → no mana consumed, no FX
+        if spell.remover_paralisis {
+            let is_paralyzed = state.users.get(&target_id)
+                .map(|u| u.paralyzed).unwrap_or(false);
+            if !is_paralyzed {
+                return;
+            }
+        }
+
         // VB6: InfoHechizo — FX + messages (sent BEFORE mana consumption)
         send_spell_info_user(state, conn_id, target_id, &spell, char_index).await;
 
@@ -334,6 +344,14 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         match spell.target {
             TargetType::Self_ => {
                 // Self-only spell — beneficial only
+                // VB6: RemoverParalisis on self also requires being paralyzed
+                if spell.remover_paralisis {
+                    let is_paralyzed = state.users.get(&conn_id)
+                        .map(|u| u.paralyzed).unwrap_or(false);
+                    if !is_paralyzed {
+                        return;
+                    }
+                }
                 send_spell_info_user(state, conn_id, conn_id, &spell, char_index).await;
                 match spell.tipo {
                     crate::data::spells::SpellType::Properties => {
@@ -958,9 +976,11 @@ pub(super) async fn apply_spell_teleport(
     // Remove from current position
     state.world.remove_user(cur_map, cur_x, cur_y);
 
-    // Send BP to area (remove character)
+    // VB6: QDL + BP sent to full area to prevent ghost characters
+    let qdl_pkt = format!("QDL{}", char_index.0);
+    state.send_data(SendTarget::ToMapButIndex { conn_id: caster_id, map: cur_map }, &qdl_pkt).await;
     let bp_pkt = format!("BP{}", char_index.0);
-    state.send_data(SendTarget::ToArea { map: cur_map, x: cur_x, y: cur_y }, &bp_pkt).await;
+    state.send_data(SendTarget::ToMapButIndex { conn_id: caster_id, map: cur_map }, &bp_pkt).await;
 
     // Update position
     if let Some(user) = state.users.get_mut(&caster_id) {
