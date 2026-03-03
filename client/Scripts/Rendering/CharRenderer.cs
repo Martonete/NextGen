@@ -413,9 +413,9 @@ public static class CharRenderer
         if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Weapons.Length) return;
         int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
         if (weapGrh <= 0) return;
-        // VB6: weapon reflection offset from body. +13 scaled gap puts it at hand height.
+        // VB6: weapon reflection offset from body. +15 scaled gap puts it at hand height.
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float weapY = pos.Y + absHo + 13f * absHo / 30f;
+        float weapY = pos.Y + absHo + 15f * absHo / 30f;
         DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, weapY, 75f / 255f, data);
     }
@@ -429,7 +429,7 @@ public static class CharRenderer
         if (shldGrh <= 0) return;
         // Same scaling as weapon
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float shldY = pos.Y + absHo + 13f * absHo / 30f;
+        float shldY = pos.Y + absHo + 15f * absHo / 30f;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, shldY, 83f / 255f, data);
     }
