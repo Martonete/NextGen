@@ -952,7 +952,7 @@ public partial class Main : Control
             _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
             _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
         }
-        _inputHandler = new InputHandler(_tcp, _state, _state.Keys);
+        _inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
         _inputHandler.OnToggleMusic = () =>
         {
             if (_soundManager != null)
@@ -2984,6 +2984,18 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
+                if (_state.Comerciando)
+                {
+                    _tcp?.SendPacket("FINCOM");
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+                if (_state.Banqueando || _state.BovedaAbierta)
+                {
+                    _tcp?.SendPacket("FINBAN");
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.AddFriendDialogOpen)
                 {
                     CloseAddFriendDialog();
@@ -3013,6 +3025,19 @@ public partial class Main : Control
                 }
                 // No dialog open → show escape menu
                 ShowEscapeMenu();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
+            // Block game keys when any form is open or a text field has focus.
+            // Escape (above) is still allowed so panels can be closed.
+            // This prevents Enter from toggling chat, F9/F10 from opening panels,
+            // and numpad from switching chat modes while typing in a form input.
+            var focusOwner = GetViewport().GuiGetFocusOwner();
+            bool uiTextFocused = focusOwner is LineEdit && focusOwner != _chatInput;
+            if (_state.AnyFormOpen || uiTextFocused)
+            {
+                // Still allow Escape (handled above) — everything else is blocked
                 GetViewport().SetInputAsHandled();
                 return;
             }

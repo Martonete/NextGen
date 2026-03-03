@@ -180,6 +180,15 @@ public class GameState
     public bool Banqueando;       // frmBanco is open (gold operations)
     public bool BovedaAbierta;    // frmNuevoBancoObj is open (item vault)
 
+    /// <summary>
+    /// True when any modal form/panel is open that should block game input (CheckKeys).
+    /// Used by InputHandler and Main._Input to suppress game actions while UI is active.
+    /// </summary>
+    public bool AnyFormOpen =>
+        EscapeMenuOpen || Comerciando || Banqueando || BovedaAbierta
+        || MacroPanelOpen || OptionsPanelOpen || KeyBindPanelOpen
+        || ShowTravelPanel || Trading || DropDialogOpen || AddFriendDialogOpen;
+
     // Arrow/projectile system (VB6: FLECHI)
     public List<ArrowProjectile> ActiveArrows = new();
 

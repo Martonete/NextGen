@@ -21,6 +21,7 @@ public class InputHandler
     private readonly AoTcpClient _tcp;
     private readonly GameState _state;
     private readonly KeyBindings _keys;
+    private readonly Viewport _viewport;
 
     // Meditation FX IDs — cleared when player moves
     private static readonly HashSet<int> MeditationFxIds = new()
@@ -54,20 +55,24 @@ public class InputHandler
     /// <summary>Callback invoked when the player presses the music toggle key.</summary>
     public Action? OnToggleMusic;
 
-    public InputHandler(AoTcpClient tcp, GameState state, KeyBindings keys)
+    public InputHandler(AoTcpClient tcp, GameState state, KeyBindings keys, Viewport viewport)
     {
         _tcp = tcp;
         _state = state;
         _keys = keys;
+        _viewport = viewport;
     }
 
     public void Process(double delta)
     {
         if (!_state.IsLogged || _state.Paused) return;
 
-        // Block all game input while in commerce/bank/macro/options/keybind mode
-        if (_state.EscapeMenuOpen || _state.Comerciando || _state.Banqueando || _state.MacroPanelOpen
-            || _state.OptionsPanelOpen || _state.KeyBindPanelOpen) return;
+        // Block all game input while any form/panel is open (VB6: CheckKeys disabled during forms)
+        if (_state.AnyFormOpen) return;
+
+        // Block if a GUI text field has focus (e.g. LineEdit in any panel)
+        var focused = _viewport.GuiGetFocusOwner();
+        if (focused is LineEdit) return;
 
         float deltaMs = (float)delta * 1000f;
 
