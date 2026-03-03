@@ -69,8 +69,8 @@ public static class CharRenderer
             Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim}({shieldInfo}) casco={ch.CascoAnim}({cascoInfo})");
         }
 
-        // VB6: dead character transparency pulsing (TransparenciaBody oscillates 0→100→0)
-        if (ch.Dead)
+        // VB6: TransparenciaBody oscillates 0→100→0 for dead and invisible (self) chars
+        if (ch.Dead || ch.Invisible)
         {
             if (!ch.Llegoalatransp)
             {
@@ -96,7 +96,8 @@ public static class CharRenderer
         }
 
         // Emoticon (VB6: rendered before body, at FxData offset above head, alpha 150)
-        if (ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0 && ch.EmoticonIndex < data.Fxs.Length)
+        // Not drawn when invisible (VB6: entire char skipped in invisible branch)
+        if (!ch.Invisible && ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0 && ch.EmoticonIndex < data.Fxs.Length)
         {
             var emFx = data.Fxs[ch.EmoticonIndex];
             if (emFx.Animacion > 0)
@@ -136,21 +137,29 @@ public static class CharRenderer
         // Auras use additive blend (D3DBLEND_ONE/ONE). Draws are collected in
         // WorldRenderer._Draw() and rendered by AuraAdditiveLayer ABOVE ContentLayer (z=1 > z=0).
 
+        // VB6: invisible self = pulsing transparency (TransparenciaBody 0-100)
+        Color? invisOverride = null;
+        if (ch.Invisible)
+            invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f);
+
         // Heading-dependent draw order (VB6: dibujarPersonaje)
-        DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state);
+        DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
+                      colorOverride: invisOverride);
 
         // Mark equipment debug as logged (after first full draw)
         if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
             ch._equipDebugLogged = true;
 
-        // FX overlays (up to 3 simultaneous)
-        DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
+        // FX overlays — not drawn when invisible (VB6: entire char skipped in invisible branch)
+        if (!ch.Invisible)
+            DrawFx(canvas, ch, screenPos, data, animator, deltaMs);
 
-        // Character-attached particles (queued to WorldRenderer's additive layer)
-        if (state != null && (state.Config?.ShowParticles ?? true))
+        // Character-attached particles — not drawn when invisible
+        if (!ch.Invisible && state != null && (state.Config?.ShowParticles ?? true))
             DrawCharParticles(canvas, ch, screenPos, state, data, worldRenderer);
 
         // Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
+        // VB6: name IS drawn for invisible self (visible to self/GMs)
         if (state == null || state.ShowNames)
             DrawName(canvas, ch, screenPos, data);
 
@@ -914,8 +923,10 @@ public static class CharRenderer
         int centerX = (int)pos.X + 16;
         int nickY = (int)pos.Y + 30;
 
-        // VB6: dead or in water → alpha 80, else 255
-        byte alpha = (ch.Dead) ? (byte)80 : (byte)255;
+        // VB6: dead → alpha 80, invisible → pulsing alpha, else 255
+        byte alpha = ch.Dead ? (byte)80
+                   : ch.Invisible ? (byte)(ch.TransparenciaBody * 255 / 100)
+                   : (byte)255;
         Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, alpha / 255f);
         font.DrawText(canvas, centerX, nickY, nick, nickColor, center: true);
 

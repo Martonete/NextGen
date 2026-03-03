@@ -2339,6 +2339,9 @@ public class PacketHandler
             if (_state.Characters.TryGetValue(charIdx, out var ch))
             {
                 ch.Invisible = invisible;
+                // Reset pulsing transparency state on visibility change
+                ch.TransparenciaBody = 0;
+                ch.Llegoalatransp = false;
             }
         }
     }
