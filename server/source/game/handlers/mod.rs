@@ -1065,7 +1065,8 @@ async fn connect_user(
     state.send_to(conn_id, "||710").await; // Messages activated
 
     // --- PHASE 12b: Online count (ON opcode → frmMain.ONLINES.Caption) ---
-    state.send_to(conn_id, &format!("ON{}", state.num_users)).await;
+    // VB6 MostrarNumUsers: broadcast online count to ALL players (General.bas:628)
+    state.send_data(SendTarget::ToAll, &format!("ON{}", state.num_users)).await;
 
     // --- PHASE 13: Scroll timers (VB6 lines 1781-1783) ---
     for i in 1..=4 {

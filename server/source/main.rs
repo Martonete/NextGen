@@ -323,6 +323,10 @@ async fn main() {
                 }
 
                 state.remove_connection(conn_id);
+
+                // VB6 MostrarNumUsers: broadcast updated online count to all remaining players
+                let on_pkt = format!("ON{}", state.num_users);
+                state.send_data(game::types::SendTarget::ToAll, &on_pkt).await;
             }
         }
             } // end tokio::select Some(event)
