@@ -433,9 +433,9 @@ public static class CharRenderer
         if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
         int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
         if (shldGrh <= 0) return;
-        // Same scaling as weapon
+        // Same scaling as weapon but 2px closer
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float shldY = pos.Y + absHo + 7f * absHo / 30f;
+        float shldY = pos.Y + absHo + 5f * absHo / 30f;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, shldY, 83f / 255f, data);
     }
