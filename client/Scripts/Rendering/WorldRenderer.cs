@@ -319,7 +319,17 @@ public partial class WorldRenderer : Node2D
 
             // Collect aura draws (updates angle state + queues to _pendingAuraDraws)
             if (_state.Config?.ShowAuras ?? true)
+            {
                 CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
+
+                // Reflected auras in water (queued here so they're ready before AuraLayer draws)
+                if ((_state.Config?.ShowReflections ?? true) && ch.PosY > 0
+                    && IsWater(_state.MapData, ch.PosX, ch.PosY + 1))
+                {
+                    Vector2 rPos = new(charPx, charPy - 2); // same 2px shift as body reflection
+                    CharRenderer.CollectReflAuraDraws(this, ch, rPos, headOffset, _data);
+                }
+            }
         }
 
         // Collect map particle draws for the additive layer (respects Config.ShowParticles)

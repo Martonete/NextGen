@@ -123,7 +123,7 @@ public static class CharRenderer
         if ((state?.Config?.ShowReflections ?? true) && charTileY > 0 && state?.MapData != null)
         {
             if (WorldRenderer.IsWater(state.MapData, charTileX, charTileY + 1))
-                DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator, worldRenderer);
+                DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator);
         }
 
         // Shadow: diagonal projection (light from lower-left → shadow upper-right)
@@ -322,8 +322,7 @@ public static class CharRenderer
     /// </summary>
     private static void DrawReflection(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
-        int heading, GameData data, GrhAnimator animator,
-        WorldRenderer? worldRenderer = null)
+        int heading, GameData data, GrhAnimator animator)
     {
         float hoX = headOffset.X, hoY = headOffset.Y;
 
@@ -336,9 +335,7 @@ public static class CharRenderer
         // Shift entire reflection 2px closer to character feet
         Vector2 rPos = new(pos.X, pos.Y - 2);
 
-        // Draw reflected auras on the additive layer (proper blending, no black bg)
-        if (!ch.Navigating && !ch.Mounted && worldRenderer != null)
-            QueueReflAuras(worldRenderer, ch, rPos, headOffset, data);
+        // Reflected auras are collected in WorldRenderer._Draw() (timing requirement)
 
         // Use heading-dependent draw order (same as dibujarPersonaje)
         switch (heading)
@@ -381,21 +378,21 @@ public static class CharRenderer
     /// Queue reflected auras to the additive layer (proper blending, no black bg).
     /// Position mirrors the normal aura position below the character's feet.
     /// </summary>
-    private static void QueueReflAuras(
+    public static void CollectReflAuraDraws(
         WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
         GameData data)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
 
-        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA);
-        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW);
-        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE);
-        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR);
-        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC);
-        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle);
     }
 
-    private static void QueueSingleReflAura(
+    private static void CollectSingleReflAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
         GameData data, int auraIndex, float angle)
     {

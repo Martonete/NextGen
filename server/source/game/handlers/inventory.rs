@@ -824,11 +824,12 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     }
                     u.weapon_anim = super::common::NINGUN_ARMA;
                     u.shield_anim = super::common::NINGUN_ESCUDO;
-                    // VB6: CascoAnim stays as-is (line 1409), helmet remains visible on mount
-                    // Flying mounts hide the head (the mount sprite replaces everything)
+                    // Flying mounts hide head AND helmet (mount sprite replaces everything)
+                    // Normal mounts: keep helmet visible (VB6 line 1409)
                     if is_flying {
                         u.levitando = true;
                         u.head = 0;
+                        u.casco_anim = super::common::NINGUN_CASCO;
                     }
                 }
             }
