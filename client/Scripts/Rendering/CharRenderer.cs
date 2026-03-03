@@ -123,7 +123,7 @@ public static class CharRenderer
         if ((state?.Config?.ShowReflections ?? true) && charTileY > 0 && state?.MapData != null)
         {
             if (WorldRenderer.IsWater(state.MapData, charTileX, charTileY + 1))
-                DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator);
+                DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator, worldRenderer);
         }
 
         // Shadow: diagonal projection (light from lower-left → shadow upper-right)
@@ -322,7 +322,8 @@ public static class CharRenderer
     /// </summary>
     private static void DrawReflection(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
-        int heading, GameData data, GrhAnimator animator)
+        int heading, GameData data, GrhAnimator animator,
+        WorldRenderer? worldRenderer = null)
     {
         float hoX = headOffset.X, hoY = headOffset.Y;
 
@@ -335,9 +336,9 @@ public static class CharRenderer
         // Shift entire reflection 2px closer to character feet
         Vector2 rPos = new(pos.X, pos.Y - 2);
 
-        // Draw reflected auras BEHIND the reflected character (new feature, not in VB6)
-        if (!ch.Navigating)
-            DrawReflAuras(canvas, ch, rPos, headOffset, data);
+        // Draw reflected auras on the additive layer (proper blending, no black bg)
+        if (!ch.Navigating && !ch.Mounted && worldRenderer != null)
+            QueueReflAuras(worldRenderer, ch, rPos, headOffset, data);
 
         // Use heading-dependent draw order (same as dibujarPersonaje)
         switch (heading)
@@ -377,25 +378,25 @@ public static class CharRenderer
     }
 
     /// <summary>
-    /// Draw all character auras as flipped-Y reflections in the water.
-    /// Drawn before the body reflection so auras appear behind the reflected character.
+    /// Queue reflected auras to the additive layer (proper blending, no black bg).
+    /// Position mirrors the normal aura position below the character's feet.
     /// </summary>
-    private static void DrawReflAuras(
-        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+    private static void QueueReflAuras(
+        WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
         GameData data)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
 
-        DrawSingleReflAura(canvas, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA);
-        DrawSingleReflAura(canvas, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW);
-        DrawSingleReflAura(canvas, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE);
-        DrawSingleReflAura(canvas, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR);
-        DrawSingleReflAura(canvas, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC);
-        DrawSingleReflAura(canvas, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle);
+        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA);
+        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW);
+        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE);
+        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR);
+        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC);
+        QueueSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle);
     }
 
-    private static void DrawSingleReflAura(
-        Node2D canvas, Vector2 pos, Vector2 headOffset,
+    private static void QueueSingleReflAura(
+        WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
         GameData data, int auraIndex, float angle)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
@@ -403,14 +404,19 @@ public static class CharRenderer
         var aura = data.Auras[auraIndex];
         if (aura.GrhIndex <= 0) return;
 
-        // Same position as normal aura but mirrored below character
-        float auraX = pos.X + headOffset.X;
-        // Normal aura Y: pos.Y + headOffset.Y + 72 - offset
-        // Reflected: mirror below character feet, use -headOffset.Y as base distance
+        // Normal aura position: pos.X + hoX, pos.Y + hoY + 72 - offset
+        // The normal aura is at a Y offset of (hoY + 72 - offset) above pos.
+        // The reflection should mirror this below the character's feet.
+        // Body reflection is at pos.Y + absHo (clamped to 36 for short races).
+        // Reflected aura: same X, Y mirrored = pos.Y + absHo + (absHo - (hoY + 72 - offset))
         float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-        float normalAuraRelY = headOffset.Y + 72 - aura.Offset;
-        // Mirror: positive offset below character = absHo - normalAuraRelY mapped below
-        float reflAuraY = pos.Y + absHo - normalAuraRelY;
+        float normalRelY = headOffset.Y + 72 - aura.Offset; // negative = above pos
+        float reflAuraY = pos.Y + absHo - normalRelY;
+
+        float auraX = pos.X + headOffset.X;
+
+        // Reduced alpha for reflection effect
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
 
         // Resolve animated GRH frame
         int grhIndex = aura.GrhIndex;
@@ -426,70 +432,9 @@ public static class CharRenderer
             }
         }
 
-        // Draw flipped with reduced alpha and aura color tint
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 60f / 255f);
-        DrawGrhFlippedYColored(canvas, grhIndex, frame, auraX, reflAuraY, color,
-                               aura.Giratoria ? -angle : 0f, data);
-    }
-
-    /// <summary>
-    /// DrawGrhFlippedY variant with full color tint (for aura reflections).
-    /// Supports optional rotation for Giratoria auras.
-    /// </summary>
-    private static void DrawGrhFlippedYColored(
-        Node2D canvas, int grhIndex, int frame,
-        float x, float y, Color color, float angle, GameData data)
-    {
-        var resolved = data.ResolveGrh(grhIndex, frame);
-        if (resolved == null || resolved.FileNum <= 0) return;
-
-        var texture = data.Textures?.GetTexture(resolved.FileNum);
-        if (texture == null) return;
-
-        int texW = texture.GetWidth(), texH = texture.GetHeight();
-        int sx = resolved.SX, sy = resolved.SY;
-        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-        if (texW > 0) sx %= texW;
-        if (texH > 0) sy %= texH;
-        if (sx + pw > texW) pw = texW - sx;
-        if (sy + ph > texH) ph = texH - sy;
-        if (pw <= 0 || ph <= 0) return;
-
-        float drawX = x;
-        float drawY = y;
-        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
-
-        float u0 = (float)sx / texW;
-        float v0 = (float)sy / texH;
-        float u1 = (float)(sx + pw) / texW;
-        float v1 = (float)(sy + ph) / texH;
-
-        if (angle != 0f)
-        {
-            // Rotate around sprite center
-            float cx = drawX + pw / 2f;
-            float cy = drawY + ph / 2f;
-            canvas.DrawSetTransform(new Vector2(cx, cy), angle);
-            float hx = pw / 2f, hy = ph / 2f;
-            Vector2[] verts = { new(-hx, -hy), new(hx, -hy), new(hx, hy), new(-hx, hy) };
-            Vector2[] uvs = { new(u0, v1), new(u1, v1), new(u1, v0), new(u0, v0) };
-            Color[] colors = { color, color, color, color };
-            canvas.DrawPolygon(verts, colors, uvs, texture);
-            canvas.DrawSetTransform(Vector2.Zero, 0f);
-        }
-        else
-        {
-            Vector2[] verts = {
-                new(drawX, drawY), new(drawX + pw, drawY),
-                new(drawX + pw, drawY + ph), new(drawX, drawY + ph),
-            };
-            Vector2[] uvs = { new(u0, v1), new(u1, v1), new(u1, v0), new(u0, v0) };
-            Color[] colors = { color, color, color, color };
-            canvas.DrawPolygon(verts, colors, uvs, texture);
-        }
+        // Queue to the additive layer (same as normal auras, proper blending)
+        worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
+                                     aura.Giratoria ? -angle : 0f);
     }
 
     private static void DrawReflBody(
