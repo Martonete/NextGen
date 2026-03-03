@@ -50,6 +50,19 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     let mut aura_changed = false;
 
     if currently_equipped {
+        // VB6: Can't unequip armor/weapon/shield/helmet while mounted
+        let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
+        if is_mounted {
+            match obj_data.obj_type {
+                ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
+                    let msg = format!("{}No puedes cambiar de equipamiento mientras estas montado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+                    state.send_to(conn_id, &msg).await;
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         // Unequip
         // Check if unequipping clears an aura
         let had_aura = obj_data.crea_aura > 0;
@@ -119,6 +132,19 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if is_navigating {
             match obj_data.obj_type {
                 ObjType::Armor | ObjType::Shield | ObjType::Helmet => return,
+                _ => {}
+            }
+        }
+
+        // VB6: Can't equip armor/weapon/shield/helmet while mounted (InvUsuario.bas line 631)
+        let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
+        if is_mounted {
+            match obj_data.obj_type {
+                ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
+                    let msg = format!("{}No puedes cambiar de equipamiento mientras estas montado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
+                    state.send_to(conn_id, &msg).await;
+                    return;
+                }
                 _ => {}
             }
         }
@@ -788,7 +814,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     u.casco_anim = casco_anim;
                 }
             } else {
-                // Mount up
+                // Mount up — VB6: keep helmet visible, hide weapon/shield only
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.montado = true;
                     u.montado_body = u.body;
@@ -797,7 +823,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     }
                     u.weapon_anim = super::common::NINGUN_ARMA;
                     u.shield_anim = super::common::NINGUN_ESCUDO;
-                    u.casco_anim = super::common::NINGUN_CASCO;
+                    // VB6: CascoAnim stays as-is (line 1409), helmet remains visible on mount
                     if is_flying {
                         u.levitando = true;
                     }
