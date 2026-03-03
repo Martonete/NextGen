@@ -119,12 +119,8 @@ public static class CharRenderer
             }
         }
 
-        // Water reflection (VB6: HayAgua check, body/head flipped vertically with alpha)
-        if ((state?.Config?.ShowReflections ?? true) && charTileY > 0 && state?.MapData != null)
-        {
-            if (WorldRenderer.IsWater(state.MapData, charTileX, charTileY + 1))
-                DrawReflection(canvas, ch, screenPos, headOffset, heading, data, animator);
-        }
+        // Water reflections are now drawn by WorldRenderer (PASS 1.5) between
+        // Layer 1 and Layer 2, so they clip naturally to water tiles.
 
         // Shadow: diagonal projection (light from lower-left → shadow upper-right)
         // Single body shadow only — no separate head (avoids doubling artifacts)
@@ -277,7 +273,7 @@ public static class CharRenderer
     /// using the exact same functions as the normal character. No hardcoded offsets.
     /// DrawSetTransform(scale.Y=-1) mirrors all subsequent draw calls automatically.
     /// </summary>
-    private static void DrawReflection(
+    public static void DrawReflection(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {

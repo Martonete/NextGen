@@ -10,13 +10,15 @@ namespace TierrasSagradasAO.Rendering;
 /// Renders the game world matching VB6 RenderScreen.
 ///
 /// Layer architecture (children of WorldRenderer, drawn after parent _Draw):
-///   WorldRenderer._Draw()         → PASS 1+2 (terrain layers 1+2)
+///   WorldRenderer._Draw()         → PASS 1 (layer 1) + PASS 1.5 (reflections)
+///                                   + PASS 1b (non-water mask) + PASS 2 (layer 2)
 ///   AuraLayer (z=0, additive)     → auras (added first, same-z = tree order)
 ///   ContentLayer (z=0)            → PASS 3 (ground objects + characters + layer 3)
 ///   AdditiveParticleLayer (z=2)   → particles (VB6: D3DBLEND_ONE/ONE)
 ///   RoofLayer (z=3)               → PASS 4 (roof with fade)
 ///
-/// Draw order: Terrain → Auras → Characters → Particles → Roof.
+/// Draw order: Terrain L1 → Reflections → L1 mask → L2 → Auras → Characters → Particles → Roof.
+/// Reflections are clipped to water tiles by redrawing non-water L1 tiles on top.
 /// </summary>
 public partial class WorldRenderer : Node2D
 {
@@ -263,6 +265,81 @@ public partial class WorldRenderer : Node2D
                 else
                 {
                     DrawTileGrh(tile.Layer1, pos, center: false);
+                }
+            }
+        }
+
+        // ==========================================
+        // PASS 1.5: Character reflections on water
+        // Drawn after Layer 1 so they appear on water tiles.
+        // ==========================================
+        bool showReflections = _state.Config?.ShowReflections ?? true;
+        // Track which tiles need masking (non-water L1 near reflections)
+        HashSet<(int, int)>? maskTiles = null;
+
+        if (showReflections)
+        {
+            foreach (var kvp in _state.Characters)
+            {
+                var ch = kvp.Value;
+                if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
+
+                // Only draw reflection if tile below character is water
+                if (ch.PosY < 1 || ch.PosY >= 100) continue;
+                if (!IsWater(_state.MapData, ch.PosX, ch.PosY + 1)) continue;
+
+                var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
+                                            _framePixelOffsetX, _framePixelOffsetY);
+                float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
+                float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
+
+                int heading = ch.Heading;
+                if (heading < 1 || heading > 4) heading = 3;
+
+                Vector2 headOffset = new Vector2(0, -30);
+                if (ch.Body > 0 && ch.Body < _data.Bodies.Length)
+                {
+                    var body = _data.Bodies[ch.Body];
+                    headOffset = new Vector2(body.HeadOffsetX, body.HeadOffsetY);
+                }
+
+                CharRenderer.DrawReflection(this, ch, new Vector2(charPx, charPy),
+                    headOffset, heading, _data, _animator);
+
+                // Collect non-water L1 tiles around the reflection for masking
+                maskTiles ??= new HashSet<(int, int)>();
+                for (int ry = ch.PosY + 1; ry <= Math.Min(100, ch.PosY + 2); ry++)
+                {
+                    for (int rx = Math.Max(1, ch.PosX - 2); rx <= Math.Min(100, ch.PosX + 2); rx++)
+                    {
+                        if (!IsWater(_state.MapData, rx, ry))
+                            maskTiles.Add((rx, ry));
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // PASS 1b: Redraw non-water Layer 1 tiles near reflections (mask)
+        // These tiles cover reflection overflow onto land.
+        // ==========================================
+        if (maskTiles != null)
+        {
+            foreach (var (mx, my) in maskTiles)
+            {
+                ref var maskTile = ref _state.MapData.Tiles[mx, my];
+                if (maskTile.Layer1 <= 0) continue;
+
+                Vector2 mpos = TileToScreen(mx, my, _frameUserX, _frameUserY,
+                                             _framePixelOffsetX, _framePixelOffsetY);
+                if (_frameHasLights)
+                {
+                    Color lightColor = LightSystem.GetTileLight(_state, mx, my);
+                    DrawTileGrh(maskTile.Layer1, mpos, center: false, modulate: lightColor);
+                }
+                else
+                {
+                    DrawTileGrh(maskTile.Layer1, mpos, center: false);
                 }
             }
         }
