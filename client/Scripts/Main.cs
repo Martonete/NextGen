@@ -3033,12 +3033,14 @@ public partial class Main : Control
             // Escape (above) is still allowed so panels can be closed.
             // This prevents Enter from toggling chat, F9/F10 from opening panels,
             // and numpad from switching chat modes while typing in a form input.
+            //
+            // IMPORTANT: Do NOT call SetInputAsHandled() when a LineEdit has focus —
+            // Godot processes _Input() BEFORE GUI input routing, so consuming the
+            // event here would prevent the LineEdit from receiving keystrokes.
             var focusOwner = GetViewport().GuiGetFocusOwner();
             bool uiTextFocused = focusOwner is LineEdit && focusOwner != _chatInput;
             if (_state.AnyFormOpen || uiTextFocused)
             {
-                // Still allow Escape (handled above) — everything else is blocked
-                GetViewport().SetInputAsHandled();
                 return;
             }
 
