@@ -374,10 +374,10 @@ public static class CharRenderer
         int bodyGrh = data.Bodies[ch.Body].Walk[heading];
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        // For short races (|hoY|<26), push reflection further down so it doesn't clip under feet
+        // All races use 30px distance so short race reflections don't clip under feet
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float boost = absHo < 26f ? (26f - absHo) : 0f;
-        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + absHo + boost, 75f / 255f, data);
+        float dist = absHo < 30f ? 30f : absHo;
+        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
     private static void DrawReflHead(
