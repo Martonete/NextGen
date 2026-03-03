@@ -283,9 +283,20 @@ public partial class WorldRenderer : Node2D
                 var ch = kvp.Value;
                 if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
 
-                // Only draw reflection if tile below character is water
+                // Draw reflection if ANY tile in the row below has water (L1 GRH 1505-1520)
+                // within the character's sprite width. Mounted sprites are wider (~3 tiles).
+                // PASS 1b mask ensures reflections only show on water tiles.
                 if (ch.PosY < 1 || ch.PosY >= 100) continue;
-                if (!IsWater(_state.MapData, ch.PosX, ch.PosY + 1)) continue;
+                bool hasNearbyWater = false;
+                int checkRange = ch.Mounted ? 3 : 2;
+                for (int cx = Math.Max(1, ch.PosX - checkRange);
+                     cx <= Math.Min(100, ch.PosX + checkRange) && !hasNearbyWater; cx++)
+                {
+                    ref var wt = ref _state.MapData.Tiles[cx, ch.PosY + 1];
+                    if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520)
+                        hasNearbyWater = true;
+                }
+                if (!hasNearbyWater) continue;
 
                 var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
                                             _framePixelOffsetX, _framePixelOffsetY);
@@ -398,8 +409,20 @@ public partial class WorldRenderer : Node2D
                 CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
 
                 // Reflected auras in water (queued here so they're ready before AuraLayer draws)
-                if ((_state.Config?.ShowReflections ?? true) && ch.PosY > 0
-                    && IsWater(_state.MapData, ch.PosX, ch.PosY + 1))
+                // Check nearby water tiles (same logic as PASS 1.5 reflection)
+                bool auraHasWater = false;
+                if ((_state.Config?.ShowReflections ?? true) && ch.PosY > 0 && ch.PosY < 100)
+                {
+                    int auraRange = ch.Mounted ? 3 : 2;
+                    for (int acx = Math.Max(1, ch.PosX - auraRange);
+                         acx <= Math.Min(100, ch.PosX + auraRange) && !auraHasWater; acx++)
+                    {
+                        ref var awt = ref _state.MapData.Tiles[acx, ch.PosY + 1];
+                        if (awt.Layer1 >= 1505 && awt.Layer1 <= 1520)
+                            auraHasWater = true;
+                    }
+                }
+                if (auraHasWater)
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
                         new Vector2(charPx, charPy), headOffset, _data);
