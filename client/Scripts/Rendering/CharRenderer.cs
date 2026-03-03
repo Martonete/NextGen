@@ -473,7 +473,7 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float helmetGap = 14f * absHo / 30f - 3f;
-        helmetGap += 5f; // global +5 offset so reflection clears character feet
+        helmetGap += 2f; // global offset so reflection clears character feet (5-3 adjust)
         // Mounted: helmet needs extra distance since mount body is taller, and X+1
         float xOff = 0f;
         if (ch.Mounted) { helmetGap += 18f; xOff = 1f; }

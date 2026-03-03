@@ -631,12 +631,13 @@ public partial class WorldRenderer : Node2D
                 if (sy + ph > texH) ph = texH - sy;
                 if (pw <= 0 || ph <= 0) continue;
 
-                // Center X only. Do NOT apply tileHeight upward offset for reflected auras:
-                // the sprite is UV-flipped and should extend downward from the reflection pos.
+                // Same tileWidth/tileHeight centering as normal auras and DrawGrhFlippedY.
                 float drawX = pos.X;
                 float drawY = pos.Y;
                 if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
                     drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+                if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+                    drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
                 // Y-flip via UV: swap top/bottom in texture coords
                 float u0 = (float)sx / texW;
