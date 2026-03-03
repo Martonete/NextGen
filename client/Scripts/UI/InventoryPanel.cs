@@ -40,6 +40,13 @@ public partial class InventoryPanel : Control
     public int SelectedSlot => _selectedSlot;
     public bool DyDEnabled { get => _dydEnabled; set => _dydEnabled = value; }
 
+    /// <summary>Cancel any in-progress drag operation (e.g. when switching tabs).</summary>
+    public void CancelDrag()
+    {
+        _dragging = false;
+        _dragSourceSlot = -1;
+    }
+
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
         _state = state;

@@ -356,10 +356,9 @@ public partial class Main : Control
         _inventoryPanel.TooltipLabel = _itemNameLabel;
 
         // DyD toggle — VB6: DyD at (541,338,21,21) — image toggles between on/off
-        _dydOffTex = ResourceLoader.Exists("res://Data/Graficos/DyD_off.jpg")
-            ? ResourceLoader.Load<Texture2D>("res://Data/Graficos/DyD_off.jpg") : null;
-        _dydOnTex = ResourceLoader.Exists("res://Data/Graficos/DyD_on.jpg")
-            ? ResourceLoader.Load<Texture2D>("res://Data/Graficos/DyD_on.jpg") : null;
+        // Load via Image.Load() (filesystem), not ResourceLoader (requires Godot import)
+        _dydOffTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
+        _dydOnTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
         _dydToggle = new TextureButton();
         _dydToggle.Position = new Vector2(541, 338);
         _dydToggle.Size = new Vector2(21, 21);
@@ -822,6 +821,8 @@ public partial class Main : Control
         _inventoryPanel!.Visible = true;
         _itemNameLabel!.Visible = true;
         _dydToggle!.Visible = true;
+        // Sync DyD button texture with current state
+        _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
         _spellPanel!.Visible = false;
         _lanzarButton!.Visible = false;
         _infoButton!.Visible = false;
@@ -835,6 +836,7 @@ public partial class Main : Control
     private void OnSpellTabPressed()
     {
         _showingSpells = true;
+        _inventoryPanel!.CancelDrag();
         _inventoryPanel!.Visible = false;
         _itemNameLabel!.Visible = false;
         _dydToggle!.Visible = false;
