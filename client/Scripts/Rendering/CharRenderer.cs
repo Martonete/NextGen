@@ -399,7 +399,7 @@ public static class CharRenderer
         if (hGrh <= 0) return;
         // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float helmetGap = 14f * absHo / 30f;
+        float helmetGap = 14f * absHo / 30f - 3f;
         DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + helmetGap, 150f / 255f, data);
     }
 
@@ -560,7 +560,7 @@ public static class CharRenderer
         }
 
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
-        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 3);
+        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
 
         DrawGrh(canvas, data, grhIdx, 0, helmetPos, true);
     }
