@@ -16,6 +16,7 @@ namespace TierrasSagradasAO.Rendering;
 ///   Layer2Layer (z=-1)            → PASS 2 (layer 2, covers aura under border opaque portions)
 ///   AuraLayer (z=0, additive)     → normal auras
 ///   ContentLayer (z=0)            → PASS 3 (ground objects + characters + layer 3)
+///   DialogOverlayLayer (z=1)     → dialog text (above all characters/NPCs)
 ///   AdditiveParticleLayer (z=2)   → particles (VB6: D3DBLEND_ONE/ONE)
 ///   RoofLayer (z=3)               → PASS 4 (roof with fade)
 ///
@@ -35,6 +36,7 @@ public partial class WorldRenderer : Node2D
     private Layer2Layer? _layer2Layer;
     private AuraAdditiveLayer? _auraLayer;
     private ContentLayer? _contentLayer;
+    private DialogOverlayLayer? _dialogLayer;
     private AdditiveParticleLayer? _additiveLayer;
     private RoofLayer? _roofLayer;
 
@@ -73,6 +75,10 @@ public partial class WorldRenderer : Node2D
 
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
+
+    // Pending dialog draws — queued during DrawContent, drawn by DialogOverlayLayer on top of everything
+    // Each entry: (lines, textCenterX, baseY, fontSize, color)
+    private readonly List<(string[] lines, int textCenterX, int baseY, int fontSize, Color color)> _pendingDialogDraws = new();
 
     // Whether any reflection was drawn this frame (used by PASS 1b mask)
     private bool _frameAnyReflection;
@@ -135,6 +141,13 @@ public partial class WorldRenderer : Node2D
         _contentLayer.ZIndex = 0;
         _contentLayer.SetRenderer(this);
         AddChild(_contentLayer);
+
+        // Dialog overlay: z=1 — above characters/NPCs, below particles/roof
+        _dialogLayer = new DialogOverlayLayer();
+        _dialogLayer.Name = "DialogOverlay";
+        _dialogLayer.ZIndex = 1;
+        _dialogLayer.SetRenderer(this);
+        AddChild(_dialogLayer);
 
         // Particle layer: additive blend, z=2
         _additiveLayer = new AdditiveParticleLayer();
@@ -248,6 +261,7 @@ public partial class WorldRenderer : Node2D
         _pendingCharParticleDraws.Clear();
         _pendingAuraDraws.Clear();
         _pendingReflAuraDraws.Clear();
+        _pendingDialogDraws.Clear();
         _pendingRoofDraws.Clear();
 
         // VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
@@ -468,6 +482,7 @@ public partial class WorldRenderer : Node2D
         _layer2Layer?.QueueRedraw();
         _auraLayer?.QueueRedraw();
         _contentLayer?.QueueRedraw();
+        _dialogLayer?.QueueRedraw();
         _additiveLayer?.QueueRedraw();
         _roofLayer?.QueueRedraw();
     }
@@ -897,6 +912,35 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
+    /// Queue a dialog draw for the overlay layer (above all characters).
+    /// Called by CharRenderer.DrawDialog.
+    /// </summary>
+    public void QueueDialogDraw(string[] lines, int textCenterX, int baseY, int fontSize, Color color)
+    {
+        _pendingDialogDraws.Add((lines, textCenterX, baseY, fontSize, color));
+    }
+
+    /// <summary>
+    /// Draw pending dialog text on a given canvas (used by DialogOverlayLayer).
+    /// </summary>
+    public void DrawPendingDialogs(CanvasItem canvas)
+    {
+        if (_data?.Fonts?[1] == null) return;
+        var font = _data.Fonts[1]!;
+
+        foreach (var (lines, textCenterX, baseY, fontSize, color) in _pendingDialogDraws)
+        {
+            int offset = -(fontSize + 2) * (lines.Length - 1);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                int lineY = baseY + offset + 2;
+                font.DrawText(canvas, textCenterX, lineY, lines[i], color, center: true);
+                offset += fontSize + 5;
+            }
+        }
+    }
+
+    /// <summary>
     /// Draw all pending roof tiles on a given canvas (used by RoofLayer).
     /// </summary>
     public void DrawPendingRoof(CanvasItem canvas)
@@ -1011,6 +1055,25 @@ public partial class ContentLayer : Node2D
     public override void _Draw()
     {
         _renderer?.DrawContent(this);
+    }
+}
+
+/// <summary>
+/// Child Node2D for dialog text overlay. z_index=1 — above characters/NPCs,
+/// below particles (z=2) and roof (z=3). Ensures dialog bubbles are always readable.
+/// </summary>
+public partial class DialogOverlayLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawPendingDialogs(this);
     }
 }
 

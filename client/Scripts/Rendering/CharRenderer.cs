@@ -154,8 +154,8 @@ public static class CharRenderer
         if (state == null || state.ShowNames)
             DrawName(canvas, ch, screenPos, data);
 
-        // Dialog bubble (VB6: cDialogos.Render)
-        DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs);
+        // Dialog bubble — queued to overlay layer (above all characters/NPCs)
+        DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs, worldRenderer);
     }
 
     /// <summary>
@@ -947,7 +947,8 @@ public static class CharRenderer
     /// VB6 Desvanecimiento: starts at 20, +12/frame while Sube>0. After lifetime: -10/frame.
     /// </summary>
     private static void DrawDialog(Node2D canvas, Character ch, Vector2 pos,
-                                    Vector2 headOffset, GameData data, float deltaMs)
+                                    Vector2 headOffset, GameData data, float deltaMs,
+                                    WorldRenderer? worldRenderer = null)
     {
         if (string.IsNullOrEmpty(ch.DialogText)) return;
 
@@ -1007,49 +1008,28 @@ public static class CharRenderer
             color = new Color(1, 1, 1, alpha / 255f);
         }
 
-        // VB6 font size for dialog: usedFont.Size (VB6 StdFont)
-        // The VB6 cDialogos uses a StdFont, while Engine_Text_Draw uses bitmap font.
-        // In the Render() method, offset calculation uses usedFont.size.
-        // Typical VB6 AO dialog font size ≈ 8-10pt. We use font1.CharHeight (12).
         int fontSize = font.CharHeight;
 
-        // VB6 Y calculation:
-        // UpdateDialogPos: .Y = (PixelOffsetY + HeadOffset.Y) - (UBound(textLine) * 3)
-        // Render: if Sube > 0: .Y += Sube / 1.2
-        // Draw: .Y + offset + 2, offset starts at -(fontSize+2)*UBound(textLine)
         int baseY = (int)(pos.Y + headOffset.Y) - ((numLines - 1) * 3);
         if (ch.DialogRiseCounter > 0)
             baseY += (int)(ch.DialogRiseCounter / 1.2f);
 
-        // VB6: offset starts at -(usedFont.size + 2) * UBound(.textLine())
-        int offset = -(fontSize + 2) * (numLines - 1);
-
-        // VB6: X = PixelOffsetX + HeadOffset.X - 168 - (MAX_LENGTH/2)*3 + 171
-        //      = PixelOffsetX + HeadOffset.X - 33
-        // But VB6 Engine_Text_Draw with DT_LEFT just draws at X. No centering.
-        // The X offset of -33 + manual padding in FormatChat centers single-line text.
-        // We'll center each line manually for cleaner rendering.
-        int centerX = (int)(pos.X + headOffset.X) - 33 + 171;
-        // Simplify: centerX ≈ pos.X + headOffset.X + 138... that's way off screen.
-        // Actually: VB6 passes X = PixelOffsetX + HeadOffset.X - 168 to UpdateDialogPos
-        // .X = X - 36 = PixelOffsetX + HeadOffset.X - 204
-        // Draw at .X + 171 = PixelOffsetX + HeadOffset.X - 204 + 171 = PixelOffsetX + HeadOffset.X - 33
-        // Hmm, HeadOffset.X is typically 0 to 4. So X = tileX - 33 + maybe 2 = tileX - 31.
-        // But text is drawn from that X, left-aligned. For 24-char max, each char ~7px = 168px total.
-        // Center of tile = tileX + 16. Text centered means start at tileX + 16 - 84 = tileX - 68.
-        // VB6 FormatChat pads single-line text with spaces for centering.
-        // Let's use the tile center and center the text properly.
         int textCenterX = (int)pos.X + 16;
 
-        for (int i = 0; i < numLines; i++)
+        // Queue to overlay layer (above all characters) or draw directly as fallback
+        if (worldRenderer != null)
         {
-            string line = lines[i];
-            int lineY = baseY + offset + 2;
-
-            font.DrawText(canvas, textCenterX, lineY, line, color, center: true);
-
-            // VB6: offset += usedFont.size + 5
-            offset += fontSize + 5;
+            worldRenderer.QueueDialogDraw(lines, textCenterX, baseY, fontSize, color);
+        }
+        else
+        {
+            int offset = -(fontSize + 2) * (numLines - 1);
+            for (int i = 0; i < numLines; i++)
+            {
+                int lineY = baseY + offset + 2;
+                font.DrawText(canvas, textCenterX, lineY, lines[i], color, center: true);
+                offset += fontSize + 5;
+            }
         }
     }
 
