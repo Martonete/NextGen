@@ -3,7 +3,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget};
+use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::game::world;
 use crate::game::npc;
 use crate::protocol::{server_opcodes, font_types};
@@ -123,9 +123,9 @@ pub(super) async fn puede_atacar_npc(
         return false;
     }
 
-    // VB6: Counselors can't attack (Privilegios > User && Privilegios <= GranDios)
-    // privileges > 0 means GM/admin/counselor
-    if user.privileges > 0 {
+    // VB6: Privilegios > User AND Privilegios <= GranDios can't attack NPCs
+    // Levels 1-8 (Consejero..GranDios) are blocked; 9+ (Developer, SubAdmin, Admin) CAN attack
+    if user.privileges > privilege_level::USER && user.privileges <= privilege_level::GRAN_DIOS {
         return false;
     }
 
