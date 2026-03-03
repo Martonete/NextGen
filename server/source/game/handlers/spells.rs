@@ -154,7 +154,17 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         None => return,
     };
 
-    // ===== STEP 1: PuedeLanzar — mana, skill checks (VB6 lines 269-309) =====
+    // ===== STEP 1: PuedeLanzar — weapon, mana, skill checks (VB6 lines 269-309) =====
+
+    // VB6 modHechizos.bas:614-617: must have weapon/staff equipped to cast spells
+    let weapon_equipped = state.users.get(&conn_id)
+        .map(|u| u.equip.weapon > 0)
+        .unwrap_or(false);
+    if !weapon_equipped {
+        state.send_to(conn_id, "||26").await; // "Necesitas un arma mágica para lanzar hechizos"
+        return;
+    }
+
     if min_mana < spell.mana_requerido {
         state.send_to(conn_id, "||18").await; // Not enough mana
         return;
@@ -594,7 +604,8 @@ pub(super) async fn apply_spell_status_npc(
         }
         if spell.paraliza {
             npc.paralyzed = true;
-            npc.counter_paralisis = paralisis_interval;
+            // NPCs use 5x the normal paralysis duration (they recover much slower)
+            npc.counter_paralisis = paralisis_interval * 5;
         }
         // VB6: RemoverParalisis does NOT work on NPCs (only users)
     }
