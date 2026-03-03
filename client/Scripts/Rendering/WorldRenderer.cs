@@ -327,7 +327,7 @@ public partial class WorldRenderer : Node2D
                 if (ch.PosY < 1 || ch.PosY > 97) continue;
                 bool hasNearbyWater = false;
                 int checkRangeX = ch.Mounted ? 3 : 2;
-                for (int cy = ch.PosY + 1; cy <= Math.Min(100, ch.PosY + 3) && !hasNearbyWater; cy++)
+                for (int cy = ch.PosY + 1; cy <= Math.Min(100, ch.PosY + 4) && !hasNearbyWater; cy++)
                 {
                     for (int cx = Math.Max(1, ch.PosX - checkRangeX);
                          cx <= Math.Min(100, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
