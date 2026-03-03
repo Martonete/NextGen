@@ -306,11 +306,14 @@ public partial class WorldRenderer : Node2D
                 CharRenderer.DrawReflection(this, ch, new Vector2(charPx, charPy),
                     headOffset, heading, _data, _animator);
 
-                // Collect non-water L1 tiles around the reflection for masking
+                // Collect non-water L1 tiles around the reflection for masking.
+                // Reflection extends ~3 tiles below (body+head flipped), ~4 for mounts.
+                // Horizontal: weapon/shield can extend ~3 tiles wide.
                 maskTiles ??= new HashSet<(int, int)>();
-                for (int ry = ch.PosY + 1; ry <= Math.Min(100, ch.PosY + 2); ry++)
+                int maskExtY = ch.Mounted ? 4 : 3;
+                for (int ry = ch.PosY + 1; ry <= Math.Min(100, ch.PosY + maskExtY); ry++)
                 {
-                    for (int rx = Math.Max(1, ch.PosX - 2); rx <= Math.Min(100, ch.PosX + 2); rx++)
+                    for (int rx = Math.Max(1, ch.PosX - 3); rx <= Math.Min(100, ch.PosX + 3); rx++)
                     {
                         if (!IsWater(_state.MapData, rx, ry))
                             maskTiles.Add((rx, ry));
