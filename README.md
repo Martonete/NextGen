@@ -18,6 +18,7 @@ Full rewrite of Argentum Online: **Rust server** (drop-in replacement for VB6 se
   - [macOS](#client-on-macos)
   - [Linux](#client-on-linux)
 - [Makefile Commands](#makefile-commands)
+- [Client Distribution (standalone .exe)](#client-distribution-standalone-exe)
 - [Server Configuration Reference](#server-configuration-reference)
 - [Database](#database)
 - [Game Data Files](#game-data-files)
@@ -417,6 +418,89 @@ make run              # rebuilds + runs
 # Run everything at once:
 make docker-run client-run
 ```
+
+---
+
+## Client Distribution (standalone .exe)
+
+To share the client with players, you export a standalone executable. Players don't need to install Godot, .NET, or anything else.
+
+### Prerequisites (one-time setup)
+
+You need these on **your** machine (the one doing the export):
+
+1. **Godot 4.3 .NET** (already installed if you develop)
+2. **.NET 6.0 SDK** (already installed if you develop)
+3. **Godot Export Templates** — open Godot editor → `Editor → Manage Export Templates → Download and Install` (~800MB, one time)
+4. **Make** (optional) — simplifies the process to a single command
+
+> **Note:** You do NOT need Rust installed to export the client. Rust is only for the server.
+
+### Option A: Using Make (Linux/macOS, or Windows with Make installed)
+
+```bash
+make client-dist
+```
+
+This generates `dist/TierrasSagradasAO.zip` — ready to send.
+
+To install Make on Windows: `choco install make` ([Chocolatey](https://chocolatey.org/))
+
+### Option B: Manual (Windows PowerShell, no Make)
+
+```powershell
+cd client
+
+# 1. Compile C#
+dotnet build
+
+# 2. Export exe (adjust path to your Godot binary)
+mkdir build -Force
+& "C:\Godot\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
+
+# 3. Copy game data alongside the exe
+Copy-Item -Recurse Data build\Data
+
+# 4. Zip for distribution
+Compress-Archive -Path build\* -DestinationPath ..\TierrasSagradasAO.zip
+```
+
+### Option C: Manual (Linux/macOS, no Make)
+
+```bash
+cd client
+
+# 1. Compile C#
+dotnet build
+
+# 2. Export exe
+mkdir -p build
+godot --headless --export-release "Windows Desktop" build/TierrasSagradasAO.exe
+
+# 3. Copy game data
+cp -r Data build/Data
+
+# 4. Zip
+cd build && zip -r ../../TierrasSagradasAO.zip . && cd ..
+```
+
+### What the player receives
+
+```
+TierrasSagradasAO/
+  TierrasSagradasAO.exe          Game executable (Godot + .pck embedded)
+  TierrasSagradasAO.dll          Compiled game logic (.NET assembly)
+  GodotSharp/                    .NET runtime (auto-included by Godot)
+  Data/
+    Graficos/                    Sprites and UI textures
+    INIT/                        Config files, auras, particles, fonts
+    Maps/                        Client-side map data
+    Sounds/                      Sound effects and music
+```
+
+The player just unzips and runs `TierrasSagradasAO.exe`. No installation needed.
+
+Source code (`.cs` files) is **not** included — it's compiled into DLLs.
 
 ---
 
