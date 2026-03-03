@@ -100,7 +100,7 @@ public partial class WorldRenderer : Node2D
         _reflAuraLayer = new ReflectedAuraLayer();
         _reflAuraLayer.Name = "ReflectedAuraLayer";
         _reflAuraLayer.Material = additiveMat;
-        _reflAuraLayer.ZIndex = -3;
+        _reflAuraLayer.ZIndex = 0;
         _reflAuraLayer.SetRenderer(this);
         AddChild(_reflAuraLayer);
 
@@ -108,7 +108,7 @@ public partial class WorldRenderer : Node2D
         // to cover body reflection + reflected aura overflow onto land)
         _maskLayer = new NonWaterMaskLayer();
         _maskLayer.Name = "NonWaterMaskLayer";
-        _maskLayer.ZIndex = -2;
+        _maskLayer.ZIndex = 0;
         _maskLayer.SetRenderer(this);
         AddChild(_maskLayer);
 
@@ -116,7 +116,7 @@ public partial class WorldRenderer : Node2D
         // occluding reflected auras under border opaque portions)
         _layer2Layer = new Layer2Layer();
         _layer2Layer.Name = "Layer2Layer";
-        _layer2Layer.ZIndex = -1;
+        _layer2Layer.ZIndex = 0;
         _layer2Layer.SetRenderer(this);
         AddChild(_layer2Layer);
 
