@@ -281,18 +281,20 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Mirror axis: character's feet = bottom edge of tile (pos.Y + TileSize)
-        // Character draws upward from pos, reflection draws downward from feet into water
-        float mirrorY = pos.Y + TileSize;
+        // Mirror axis: character's feet, 2px closer to tile
+        float mirrorY = pos.Y + TileSize - 2f;
 
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
         canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
 
-        // Reflection alpha
+        // Reflection alpha for body/head/weapon/shield
         Color reflColor = new Color(1f, 1f, 1f, 75f / 255f);
+        // Helmet gets 50% more opacity so it covers the face underneath
+        Color helmetColor = new Color(1f, 1f, 1f, 112f / 255f);
 
-        // Draw character parts in heading order — same as normal, same positions
-        DrawCharParts(canvas, ch, pos, headOffset, heading, data, animator, null, reflColor);
+        // Draw character parts with separate helmet alpha
+        DrawCharParts(canvas, ch, pos, headOffset, heading, data, animator,
+                      null, reflColor, helmetColor);
 
         // Reset transform
         canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
@@ -305,8 +307,10 @@ public static class CharRenderer
     private static void DrawCharParts(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator,
-        GameState? state = null, Color? colorOverride = null)
+        GameState? state = null, Color? colorOverride = null,
+        Color? helmetColorOverride = null)
     {
+        Color? hc = helmetColorOverride ?? colorOverride;
         switch (heading)
         {
             case 1: // North
@@ -314,19 +318,19 @@ public static class CharRenderer
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 break;
             case 2: // East
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 break;
             case 3: // South
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 break;
@@ -334,7 +338,7 @@ public static class CharRenderer
                 DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 break;
         }
@@ -366,7 +370,7 @@ public static class CharRenderer
         if (aura.GrhIndex <= 0) return;
 
         // Mirror the normal aura Y around the character's feet (same mirrorY as DrawReflection)
-        float mirrorY = pos.Y + TileSize;
+        float mirrorY = pos.Y + TileSize - 2f;
         float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
         float reflAuraY = 2f * mirrorY - normalAuraY;
         float auraX = pos.X + headOffset.X;

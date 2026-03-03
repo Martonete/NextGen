@@ -326,8 +326,8 @@ public partial class WorldRenderer : Node2D
                 if ((_state.Config?.ShowReflections ?? true) && ch.PosY > 0
                     && IsWater(_state.MapData, ch.PosX, ch.PosY + 1))
                 {
-                    Vector2 rPos = new(charPx, charPy - 2); // same 2px shift as body reflection
-                    CharRenderer.CollectReflAuraDraws(this, ch, rPos, headOffset, _data);
+                    CharRenderer.CollectReflAuraDraws(this, ch,
+                        new Vector2(charPx, charPy), headOffset, _data);
                 }
             }
         }
