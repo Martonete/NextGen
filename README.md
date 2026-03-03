@@ -13,7 +13,7 @@ Full rewrite of Argentum Online: **Rust server** (drop-in replacement for VB6 se
   - [Windows](#windows-from-source)
   - [macOS](#macos-from-source)
   - [Linux](#linux-from-source)
-- [Client Setup (Godot 4.3 + C#)](#client-setup-godot-43--c)
+- [Client Setup (Godot 4.4 + C#)](#client-setup-godot-43--c)
   - [Windows](#client-on-windows)
   - [macOS](#client-on-macos)
   - [Linux](#client-on-linux)
@@ -58,7 +58,7 @@ server-rust-tsao/
       INIT/            Asset indices, config files, auras, particles
       Graficos/        Sprite sheets (PNG)
       Maps/            Client-side map files
-    project.godot    Godot 4.3 C# project file
+    project.godot    Godot 4.4 C# project file
   Cargo.toml         Rust dependencies
   Makefile           Build commands for server + client
   Dockerfile         Multi-stage Docker build (Rust 1.85 → Debian slim)
@@ -90,8 +90,8 @@ That's it. Docker handles Rust compilation, PostgreSQL, and networking.
 
 | Requirement | Version | Notes |
 |-------------|---------|-------|
-| Godot | 4.3 **.NET** | Must be the .NET variant — standard Godot won't work |
-| .NET SDK | 6.0 | Required for C# compilation |
+| Godot | 4.4 **.NET** | Must be the .NET variant — standard Godot won't work |
+| .NET SDK | 8.0 | Required for C# compilation |
 
 ---
 
@@ -290,35 +290,35 @@ make build && make run
 
 ---
 
-## Client Setup (Godot 4.3 + C#)
+## Client Setup (Godot 4.4 + C#)
 
-The client requires two things: **Godot 4.3 .NET** and **.NET 6.0 SDK**.
+The client requires two things: **Godot 4.4 .NET** and **.NET 8.0 SDK**.
 
-### Install .NET 6.0 SDK
+### Install .NET 8.0 SDK
 
 | Platform | Instructions |
 |----------|-------------|
-| **Windows** | Download installer from https://dotnet.microsoft.com/download/dotnet/6.0 |
-| **macOS** | Download installer, or: `brew install dotnet@6` |
-| **Linux** | `sudo apt install -y dotnet-sdk-6.0` (Ubuntu/Debian) or see https://learn.microsoft.com/en-us/dotnet/core/install/linux |
+| **Windows** | Download installer from https://dotnet.microsoft.com/download/dotnet/8.0 |
+| **macOS** | Download installer, or: `brew install dotnet@8` |
+| **Linux** | `sudo apt install -y dotnet-sdk-8.0` (Ubuntu/Debian) or see https://learn.microsoft.com/en-us/dotnet/core/install/linux |
 
 Verify:
 ```bash
 dotnet --version
-# Should show 6.x.x
+# Should show 8.x.x
 ```
 
-### Install Godot 4.3 (.NET version)
+### Install Godot 4.4 (.NET version)
 
-Download **Godot 4.3 — .NET** from: https://godotengine.org/download/archive/4.3-stable/
+Download **Godot 4.4 — .NET** from: https://godotengine.org/download/archive/4.4-stable/
 
 > **IMPORTANT:** You must download the **.NET** variant. The standard version cannot compile C# scripts and **will not work**.
 
 | Platform | File to download |
 |----------|-----------------|
-| **Windows** | `Godot_v4.3-stable_mono_win64.exe` |
-| **macOS** | `Godot_v4.3-stable_mono_macos.universal.zip` |
-| **Linux** | `Godot_v4.3-stable_mono_linux_x86_64.zip` |
+| **Windows** | `Godot_v4.4-stable_mono_win64.exe` |
+| **macOS** | `Godot_v4.4-stable_mono_macos.universal.zip` |
+| **Linux** | `Godot_v4.4-stable_mono_linux_x86_64.zip` |
 
 ### Client on Windows
 
@@ -442,8 +442,8 @@ The client uses a **split build** to enable lightweight updates:
 
 You need these on **your** machine (the one doing the export):
 
-1. **Godot 4.3 .NET** (already installed if you develop)
-2. **.NET 6.0 SDK** (already installed if you develop)
+1. **Godot 4.4 .NET** (already installed if you develop)
+2. **.NET 8.0 SDK** (already installed if you develop)
 3. **Godot Export Templates** — open Godot editor → `Editor` → `Manage Export Templates` (`Gestionar plantillas de exportación` in Spanish) → `Download and Install` (~800MB, one time)
 4. **Make** (optional) — simplifies the process to a single command
 
@@ -509,7 +509,7 @@ dotnet build
 mkdir build -Force
 
 # 3. Export (generates .exe + .pck + data_*/ separately)
-& "C:\path\to\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
+& "C:\path\to\Godot_v4.4-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 
 # 4. Copy game data alongside the exe (only needed ONCE, or after Data/ changes)
 Copy-Item -Recurse Data build\
@@ -564,7 +564,7 @@ When you change code (C# logic, UI, bug fixes, etc.) you only need to re-export 
 ```powershell
 cd client
 dotnet build
-& "C:\path\to\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
+& "C:\path\to\Godot_v4.4-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 ```
 
 Then send **only `TierrasSagradasAO.pck`** (~180KB) to the tester. They replace their `.pck` and done.
@@ -832,7 +832,7 @@ Response Packets → Encryption → TCP Send
 ### Client
 
 ```
-Godot 4.3 Main Loop (60 FPS)
+Godot 4.4 Main Loop (60 FPS)
   ↓
 InputHandler.cs — keyboard/mouse → packet commands
   ↓
@@ -938,7 +938,7 @@ GM commands are typed in the chat window with a `/` prefix. Access depends on pr
 
 | Problem | Solution |
 |---------|----------|
-| "Unable to find .NET SDK" | Install .NET 6.0 SDK, restart terminal and Godot |
+| "Unable to find .NET SDK" | Install .NET 8.0 SDK, restart terminal and Godot |
 | C# build errors on first open | Run `make client-build` or `dotnet build` in `client/` |
 | "Connection refused" | Start the server first (`make docker-run` or `make run`) |
 | Assets missing / white textures | Ensure `client/Data/` contains `INIT/`, `Graficos/`, `Maps/` folders with game assets |

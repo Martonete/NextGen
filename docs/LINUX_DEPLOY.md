@@ -46,14 +46,14 @@ docker compose version
 
 ---
 
-## 3. Install .NET 6.0 SDK
+## 3. Install .NET 8.0 SDK
 
-Required by the Godot 4.3 C# client.
+Required by the Godot 4.4 C# client.
 
 ```bash
 curl -fsSL https://dot.net/v1/dotnet-install.sh -o dotnet-install.sh
 chmod +x dotnet-install.sh
-./dotnet-install.sh --channel 6.0
+./dotnet-install.sh --channel 8.0
 
 # Add to PATH
 echo 'export DOTNET_ROOT=$HOME/.dotnet' >> ~/.bashrc
@@ -66,16 +66,16 @@ dotnet --version
 
 ---
 
-## 4. Install Godot 4.3 .NET
+## 4. Install Godot 4.4 .NET
 
 ```bash
 cd ~
-wget https://github.com/godotengine/godot/releases/download/4.3-stable/Godot_v4.3-stable_mono_linux_x86_64.zip
-unzip Godot_v4.3-stable_mono_linux_x86_64.zip
-sudo mv Godot_v4.3-stable_mono_linux_x86_64 /opt/godot
+wget https://github.com/godotengine/godot/releases/download/4.4-stable/Godot_v4.4-stable_mono_linux_x86_64.zip
+unzip Godot_v4.4-stable_mono_linux_x86_64.zip
+sudo mv Godot_v4.4-stable_mono_linux_x86_64 /opt/godot
 
 # Create alias for easy access
-echo 'alias godot="/opt/godot/Godot_v4.3-stable_mono_linux.x86_64"' >> ~/.bashrc
+echo 'alias godot="/opt/godot/Godot_v4.4-stable_mono_linux.x86_64"' >> ~/.bashrc
 source ~/.bashrc
 
 # Verify (opens Godot editor)
@@ -205,4 +205,4 @@ The client connects to `127.0.0.1:5028` by default. If the server runs on a diff
 | `Connection refused` on client | Make sure the server is running: `docker compose logs ao-server` |
 | Server crashes on startup | Check `server/server.ini` exists and `dat/`, `maps/` directories have data files |
 | Changes not taking effect | Run `dotnet build` in `client/` before launching. Godot runs pre-compiled assemblies |
-| `dotnet build` fails | Check .NET 6.0 SDK is installed: `dotnet --list-sdks`. Godot 4.3 requires .NET 6 |
+| `dotnet build` fails | Check .NET 8.0 SDK is installed: `dotnet --list-sdks`. Godot 4.4 requires .NET 8 |
