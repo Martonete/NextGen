@@ -357,6 +357,10 @@ public partial class WorldRenderer : Node2D
                 CharRenderer.DrawReflection(this, ch, new Vector2(charPx, charPy),
                     headOffset, heading, _data, _animator);
 
+                // Reflected FX overlays (same Y-flip, same pass as body reflection)
+                CharRenderer.DrawReflectionFx(this, ch, new Vector2(charPx, charPy),
+                    headOffset, heading, _data, _animator);
+
                 // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
                 // Same conditions as normal auras: skip if Navegando, Montado, or Invisible
                 if ((_state.Config?.ShowAuras ?? true)

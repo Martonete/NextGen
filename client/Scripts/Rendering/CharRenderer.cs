@@ -328,6 +328,116 @@ public static class CharRenderer
     }
 
     /// <summary>
+    /// Draw reflected FX overlays (up to 3 simultaneous) and emoticons on water.
+    /// Uses the same Y-flip mirror as DrawReflection. Called from WorldRenderer PASS 1.5.
+    /// Does NOT advance frame counters — those are advanced in DrawFx/DrawCharacter.
+    /// </summary>
+    public static void DrawReflectionFx(
+        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+        int heading, GameData data, GrhAnimator animator)
+    {
+        // Check if there's anything to draw
+        bool hasEmoticon = ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0
+                           && ch.EmoticonIndex < data.Fxs.Length;
+        bool hasAnyFx = false;
+        for (int i = 0; i < 3; i++)
+        {
+            if (ch.ActiveFxSlots[i] > 0) { hasAnyFx = true; break; }
+        }
+        if (!hasEmoticon && !hasAnyFx) return;
+
+        // Compute mirrorY — same logic as DrawReflection
+        float mirrorAdj = 0f;
+        if (ch.Mounted)
+        {
+            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+            {
+                var body = data.Bodies[ch.Body];
+                int bodyGrh = (heading >= 1 && heading <= 4) ? body.Walk[heading] : 0;
+                if (bodyGrh > 0)
+                {
+                    var resolved = data.ResolveGrh(bodyGrh, 0);
+                    if (resolved != null && resolved.PixelHeight > TileSize)
+                    {
+                        float extraH = resolved.PixelHeight - TileSize;
+                        mirrorAdj = -(extraH * 0.15f);
+                    }
+                }
+            }
+        }
+        else if (ch.Head <= 0)
+            mirrorAdj = -2f;
+        else
+        {
+            float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
+            if (absHo >= 28f)
+                mirrorAdj = -2f;
+        }
+        float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
+
+        // Reflection alpha for FX (same as equipment reflection)
+        Color fxReflColor = new Color(1f, 1f, 1f, 112f / 255f);
+
+        // Set Y-flip transform
+        canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
+
+        // Emoticon reflection
+        if (hasEmoticon)
+        {
+            var emFx = data.Fxs[ch.EmoticonIndex];
+            if (emFx.Animacion > 0)
+            {
+                Vector2 emPos = pos + headOffset + new Vector2(emFx.OffsetX, emFx.OffsetY);
+                int emFrame = 0;
+                if (emFx.Animacion > 0 && emFx.Animacion < data.Grhs.Length)
+                {
+                    var emGrh = data.Grhs[emFx.Animacion];
+                    if (emGrh.NumFrames > 1)
+                    {
+                        long now = System.Environment.TickCount64;
+                        float speed = emGrh.Speed > 0 ? emGrh.Speed : 100f;
+                        emFrame = (int)(now / speed % emGrh.NumFrames);
+                    }
+                }
+                DrawGrh(canvas, data, emFx.Animacion, emFrame, emPos, true, fxReflColor);
+            }
+        }
+
+        // FX slot reflections (read-only — no frame counter changes)
+        for (int i = 0; i < 3; i++)
+        {
+            int fxIdx = ch.ActiveFxSlots[i];
+            if (fxIdx <= 0 || fxIdx >= data.Fxs.Length) continue;
+
+            var fx = data.Fxs[fxIdx];
+            if (fx.Animacion <= 0) continue;
+
+            int grhIndex = fx.Animacion;
+            if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) continue;
+            var grh = data.Grhs[grhIndex];
+
+            int frame;
+            if (grh.NumFrames <= 1)
+            {
+                frame = 0;
+            }
+            else
+            {
+                // Read current frame from the slot counter (already advanced by DrawFx)
+                frame = (int)ch.FxFrameCounter[i];
+                if (frame >= grh.NumFrames) frame = grh.NumFrames - 1;
+                if (frame < 0) frame = 0;
+            }
+
+            Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
+            DrawGrh(canvas, data, grhIndex, frame, fxPos, true, fxReflColor);
+        }
+
+        // Reset transform
+        canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+    }
+
+    /// <summary>
     /// Draw character parts (body, head, helmet, weapon, shield) in VB6 heading order.
     /// Used by both normal rendering and reflection (via DrawSetTransform flip).
     /// </summary>
