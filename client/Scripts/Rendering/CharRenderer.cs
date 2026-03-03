@@ -412,7 +412,7 @@ public static class CharRenderer
         // Place reflected aura at the same Y as the reflected body center.
         // The sprite is UV-flipped (handled by DrawPendingAuras reflected path).
         float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-        float bodyReflY = (absHo < 36f ? 36f : absHo) + 5f; // same clamp+offset as DrawReflBody
+        float bodyReflY = (absHo < 36f ? 36f : absHo) + 10f;
         float reflAuraY = pos.Y + bodyReflY;
 
         float auraX = pos.X + headOffset.X;
