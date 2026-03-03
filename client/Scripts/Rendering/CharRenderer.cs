@@ -284,7 +284,9 @@ public static class CharRenderer
         // Mirror axis: character's feet. Per-body-type fine-tune.
         float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
         float mirrorAdj = 0f;
-        if (ch.Head <= 0) // no head: flying mount, boat
+        if (ch.Mounted) // mount bodies are taller — bring mirror up to keep reflection close
+            mirrorAdj = 2f;
+        else if (ch.Head <= 0) // no head: flying mount, boat
             mirrorAdj = -2f;
         else if (absHo >= 28f) // tall races (human/elf/dark elf)
             mirrorAdj = -2f;
