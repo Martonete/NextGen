@@ -390,9 +390,7 @@ public static class CharRenderer
         int headGrh = data.Heads[ch.Head].Head[heading];
         if (headGrh <= 0) return;
         float yOff = ch.Dead ? 22f : 9f;
-        float headAlpha = (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
-                           && data.Cascos[ch.CascoAnim].Head[heading] > 0) ? 35f / 255f : 100f / 255f;
-        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data);
+        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, 100f / 255f, data);
     }
 
     private static void DrawReflHelmet(
