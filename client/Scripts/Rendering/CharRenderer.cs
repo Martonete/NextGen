@@ -327,46 +327,42 @@ public static class CharRenderer
     {
         float hoX = headOffset.X, hoY = headOffset.Y;
 
-        // VB6 offsets (clsDX8Engine.cls lines 1988-2006):
-        //   Body:   (X, Y - HeadOffset.Y)          Invert_y alpha=100
-        //   Head:   (X - hoX, Y - hoY + 11/24)     Invert_y alpha=100 (35 if helmet)
-        //   Helmet: (X - hoX + 1, Y - hoY + 14)    Invert_y alpha=150
-        //   Weapon: (X, Y + 40)                     Invert_y alpha=100
-        //   Shield: (X, Y + 40)                     Invert_y alpha=100
+        // Shift entire reflection 2px closer to character feet
+        Vector2 rPos = new(pos.X, pos.Y - 2);
 
         // Use heading-dependent draw order (same as dibujarPersonaje)
         switch (heading)
         {
             case 1: // North
-                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
-                DrawReflShield(canvas, ch, pos, heading, data, animator);
-                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
+                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, heading, data, animator);
+                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
                 break;
 
             case 2: // East
-                DrawReflShield(canvas, ch, pos, heading, data, animator);
-                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, heading, data, animator);
+                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
                 break;
 
             case 3: // South
-                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
-                DrawReflShield(canvas, ch, pos, heading, data, animator);
+                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, heading, data, animator);
                 break;
 
             case 4: // West
-                DrawReflWeapon(canvas, ch, pos, heading, data, animator);
-                DrawReflBody(canvas, ch, pos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflHelmet(canvas, ch, pos, hoX, hoY, heading, data);
-                DrawReflShield(canvas, ch, pos, heading, data, animator);
+                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
+                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
+                DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
+                DrawReflShield(canvas, ch, rPos, heading, data, animator);
                 break;
         }
     }
