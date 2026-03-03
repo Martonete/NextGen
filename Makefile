@@ -1,5 +1,5 @@
 .PHONY: build run dev test clean docker-build docker-run docker-stop docker-logs \
-       client client-build client-run client-editor client-clean help
+       client client-build client-run client-editor client-clean client-export client-dist help
 
 .DEFAULT_GOAL := help
 
@@ -60,6 +60,31 @@ client-editor:
 client-clean:
 	cd client && dotnet clean
 
+# ─── Client Export (Distribution) ───────────────────────────────
+
+# Export standalone .exe (requires Godot export templates installed)
+# Install templates: Godot Editor → Editor → Manage Export Templates → Download
+client-export: client-build
+	@test -n "$(GODOT)" || (echo "ERROR: Godot not found. Install it or run: make client-export GODOT=/path/to/godot" && exit 1)
+	@mkdir -p client/build
+	cd client && "$(GODOT)" --headless --export-release "Windows Desktop" build/TierrasSagradasAO.exe
+	@echo ""
+	@echo "  Export complete → client/build/"
+
+# Build a ready-to-distribute folder (exe + Data/) and zip it
+client-dist: client-export
+	@rm -rf dist/TierrasSagradasAO
+	@mkdir -p dist/TierrasSagradasAO
+	cp -r client/build/* dist/TierrasSagradasAO/
+	cp -r client/Data dist/TierrasSagradasAO/
+	cd dist && zip -r TierrasSagradasAO.zip TierrasSagradasAO/
+	@echo ""
+	@echo "  Distribution ready → dist/TierrasSagradasAO.zip"
+	@echo "  Contents:"
+	@echo "    TierrasSagradasAO.exe    (game executable)"
+	@echo "    *.dll                    (.NET runtime + game assemblies)"
+	@echo "    Data/                    (graphics, maps, config)"
+
 # ─── Help ─────────────────────────────────────────────────────────
 
 help:
@@ -85,4 +110,8 @@ help:
 	@echo "    make client-run     Build C# + run game"
 	@echo "    make client-editor  Open Godot editor"
 	@echo "    make client-clean   Clean C# build artifacts"
+	@echo ""
+	@echo "  Client Distribution"
+	@echo "    make client-export  Export standalone .exe (Windows)"
+	@echo "    make client-dist    Export + package as .zip with Data/"
 	@echo ""
