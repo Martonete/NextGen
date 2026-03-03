@@ -645,35 +645,35 @@ public partial class WorldRenderer : Node2D
                 float u1 = (float)(sx + pw) / texW;
                 float v1 = (float)(sy + ph) / texH;
 
+                // Flipped UV verts + UVs (same technique as DrawGrhFlippedY: DrawPolygon)
+                Vector2[] verts, uvs;
                 if (angle != 0f)
                 {
                     float cx = drawX + pw / 2f;
                     float cy = drawY + ph / 2f;
                     ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
-                    // Flipped UV (v0/v1 swapped)
-                    var points = new Vector2[] {
+                    verts = new Vector2[] {
                         new(-pw / 2f, -ph / 2f), new(pw / 2f, -ph / 2f),
                         new(pw / 2f, ph / 2f), new(-pw / 2f, ph / 2f)
                     };
-                    var uvs = new Vector2[] {
+                    uvs = new Vector2[] {
                         new(u0, v1), new(u1, v1), new(u1, v0), new(u0, v0)
                     };
                     var colors = new Color[] { color, color, color, color };
-                    canvas.DrawPrimitive(points, colors, uvs, texture);
+                    canvas.DrawPolygon(verts, colors, uvs, texture);
                     ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
                 }
                 else
                 {
-                    // Flipped UV (v0/v1 swapped) — no rotation
-                    var points = new Vector2[] {
+                    verts = new Vector2[] {
                         new(drawX, drawY), new(drawX + pw, drawY),
                         new(drawX + pw, drawY + ph), new(drawX, drawY + ph)
                     };
-                    var uvs = new Vector2[] {
+                    uvs = new Vector2[] {
                         new(u0, v1), new(u1, v1), new(u1, v0), new(u0, v0)
                     };
                     var colors = new Color[] { color, color, color, color };
-                    canvas.DrawPrimitive(points, colors, uvs, texture);
+                    canvas.DrawPolygon(verts, colors, uvs, texture);
                 }
             }
             else if (angle != 0f)
