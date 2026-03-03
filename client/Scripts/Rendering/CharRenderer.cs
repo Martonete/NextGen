@@ -430,7 +430,7 @@ public static class CharRenderer
         float reflAuraY = 2f * mirrorY - normalAuraY + tileOff - ph;
 
         float auraX = pos.X + headOffset.X;
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.36f);
 
         // Queue on the reflected aura list (no tileHeight offset applied by renderer)
         // Same rotation angle as normal aura — water reflection only flips Y, not X

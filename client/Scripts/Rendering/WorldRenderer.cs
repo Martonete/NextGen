@@ -358,7 +358,9 @@ public partial class WorldRenderer : Node2D
                     headOffset, heading, _data, _animator);
 
                 // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
-                if (_state.Config?.ShowAuras ?? true)
+                // Same conditions as normal auras: skip if Navegando, Montado, or Invisible
+                if ((_state.Config?.ShowAuras ?? true)
+                    && !ch.Invisible && !ch.Navigating && !ch.Mounted)
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
                         new Vector2(charPx, charPy), headOffset, _data);
