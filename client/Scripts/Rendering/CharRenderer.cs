@@ -379,7 +379,7 @@ public static class CharRenderer
         int bodyGrh = data.Bodies[ch.Body].Walk[heading];
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y - hoY, 100f / 255f, data, true);
+        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y - hoY, 100f / 255f, data);
     }
 
     private static void DrawReflHead(
@@ -392,7 +392,7 @@ public static class CharRenderer
         float yOff = ch.Dead ? 24f : 11f;
         float headAlpha = (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
                            && data.Cascos[ch.CascoAnim].Head[heading] > 0) ? 35f / 255f : 100f / 255f;
-        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data, false);
+        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data);
     }
 
     private static void DrawReflHelmet(
@@ -402,7 +402,7 @@ public static class CharRenderer
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
         if (hGrh <= 0) return;
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data, false);
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data);
     }
 
     private static void DrawReflWeapon(
@@ -413,7 +413,7 @@ public static class CharRenderer
         int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
         if (weapGrh <= 0) return;
         DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 100f / 255f, data, true);
+            pos.X, pos.Y + 40, 100f / 255f, data);
     }
 
     private static void DrawReflShield(
@@ -424,18 +424,18 @@ public static class CharRenderer
         int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
         if (shldGrh <= 0) return;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 100f / 255f, data, true);
+            pos.X, pos.Y + 40, 100f / 255f, data);
     }
 
     /// <summary>
     /// Draw a GRH at (x, y) with center=true and Y-flipped (Invert_y).
-    /// Used for water reflections. Negative dest height = Godot vertical flip.
-    /// anchorBottom=true: feet stay at original bottom position (for body/weapon/shield).
-    /// anchorBottom=false: sprite flips in place (for head/helmet).
+    /// Uses DrawPolygon with flipped UV coordinates — exactly how VB6 does it.
+    /// The sprite position stays identical to an unflipped draw, only the
+    /// texture is rendered upside-down within the same rectangle.
     /// </summary>
     private static void DrawGrhFlippedY(
         Node2D canvas, int grhIndex, int frame,
-        float x, float y, float alpha, GameData data, bool anchorBottom)
+        float x, float y, float alpha, GameData data)
     {
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
@@ -460,13 +460,31 @@ public static class CharRenderer
         if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
             drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
-        var srcRect = new Rect2(sx, sy, pw, ph);
-        // anchorBottom: shift down by ph so flipped feet stay at original bottom.
-        // Without it, feet jump to the top of the sprite area.
-        float destY = anchorBottom ? drawY + ph + ph : drawY + ph;
-        var destRect = new Rect2(drawX, destY, pw, -ph);
+        // VB6 Invert_y: swap src.top/src.bottom in UV space.
+        // Vertex positions stay the same — only texture mapping is flipped.
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+
+        Vector2[] verts = {
+            new(drawX, drawY),            // top-left
+            new(drawX + pw, drawY),       // top-right
+            new(drawX + pw, drawY + ph),  // bottom-right
+            new(drawX, drawY + ph),       // bottom-left
+        };
+
+        // Flipped UVs: screen top → texture bottom, screen bottom → texture top
+        Vector2[] uvs = {
+            new(u0, v1),  // top-left vertex → bottom-left of texture
+            new(u1, v1),  // top-right vertex → bottom-right of texture
+            new(u1, v0),  // bottom-right vertex → top-right of texture
+            new(u0, v0),  // bottom-left vertex → top-left of texture
+        };
+
         Color color = new(1, 1, 1, alpha);
-        canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+        Color[] colors = { color, color, color, color };
+        canvas.DrawPolygon(verts, colors, uvs, texture);
     }
 
     private static void DrawBody(
