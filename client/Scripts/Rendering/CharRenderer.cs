@@ -458,9 +458,10 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constants tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float yOff = ch.Dead ? (20f * absHo / 30f) : (7f * absHo / 30f);
-        // Mounted: head needs extra distance since mount body is taller
-        if (ch.Mounted) yOff += 15f;
-        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, 75f / 255f, data);
+        // Mounted: head needs extra distance since mount body is taller, and X+1
+        float xOff = 0f;
+        if (ch.Mounted) { yOff += 18f; xOff = 1f; }
+        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX + xOff, pos.Y - hoY + yOff, 75f / 255f, data);
     }
 
     private static void DrawReflHelmet(
@@ -473,9 +474,10 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float helmetGap = 14f * absHo / 30f - 3f;
-        // Mounted: helmet needs extra distance since mount body is taller
-        if (ch.Mounted) helmetGap += 15f;
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + helmetGap, 150f / 255f, data);
+        // Mounted: helmet needs extra distance since mount body is taller, and X+1
+        float xOff = 0f;
+        if (ch.Mounted) { helmetGap += 18f; xOff = 1f; }
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1 + xOff, pos.Y - hoY + helmetGap, 150f / 255f, data);
     }
 
     private static void DrawReflWeapon(
@@ -593,8 +595,9 @@ public static class CharRenderer
         var head = data.Heads[ch.Head];
         if (head.Head[heading] == 0) return;
 
-        // VB6: heading 1 gets X-1 adjustment
+        // VB6: heading 1 gets X-1 adjustment; mounted gets X+1
         float xAdj = heading == 1 ? -1f : 0f;
+        if (ch.Mounted) xAdj += 1f;
         Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
         // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145)
@@ -635,6 +638,7 @@ public static class CharRenderer
         }
 
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
+        if (ch.Mounted) xAdj += 1f;
         Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
 
         DrawGrh(canvas, data, grhIdx, 0, helmetPos, true);
