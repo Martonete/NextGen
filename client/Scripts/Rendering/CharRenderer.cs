@@ -440,9 +440,15 @@ public static class CharRenderer
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
         // Short races clamp to 36px so body reflection doesn't clip under feet
-        // +5 global offset so reflection starts below character feet (not hidden behind them)
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float dist = (absHo < 36f ? 36f : absHo) + 5f;
+        float dist = absHo < 36f ? 36f : absHo;
+        // Per-body-type Y adjust so reflection aligns with feet edge
+        if (ch.Head <= 0) // no head: flying mount, boat
+            dist += 10f;
+        else if (absHo >= 28f) // tall races (human/elf/dark elf)
+            dist += 3f;
+        else // short races (enano/gnomo)
+            dist += 6f;
         DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
