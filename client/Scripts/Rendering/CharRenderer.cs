@@ -332,8 +332,16 @@ public static class CharRenderer
         // so the rider's head stays close to the mount in the reflection.
         float hoYForParts = (ch.Mounted && hoY < -30f) ? -30f : hoY;
 
-        // Shift entire reflection 2px closer to character feet
-        Vector2 rPos = new(pos.X, pos.Y - 2);
+        // Per-body-type Y shift for the entire reflection (body+head+weapon+shield+helmet)
+        float absHo = -hoY > 1f ? -hoY : 1f;
+        float bodyShift = -2f; // base: 2px closer to feet
+        if (ch.Head <= 0) // no head: flying mount, boat
+            bodyShift += 15f;
+        else if (absHo >= 28f) // tall races (human/elf/dark elf)
+            bodyShift += 0f;
+        else // short races (enano/gnomo)
+            bodyShift += 9f;
+        Vector2 rPos = new(pos.X, pos.Y + bodyShift);
 
         // Reflected auras are collected in WorldRenderer._Draw() (timing requirement)
 
@@ -440,15 +448,9 @@ public static class CharRenderer
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
         // Short races clamp to 36px so body reflection doesn't clip under feet
+        // Per-body-type shifts are applied to rPos in DrawReflection (moves all parts together)
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float dist = absHo < 36f ? 36f : absHo;
-        // Per-body-type Y adjust so reflection aligns with feet edge
-        if (ch.Head <= 0) // no head: flying mount, boat
-            dist += 20f;
-        else if (absHo >= 28f) // tall races (human/elf/dark elf)
-            dist += 1f;
-        else // short races (enano/gnomo)
-            dist += 14f;
+        float dist = (absHo < 36f ? 36f : absHo) + 5f;
         DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
@@ -462,7 +464,6 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constants tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float yOff = ch.Dead ? (20f * absHo / 30f) : (7f * absHo / 30f);
-        yOff += 5f; // global +5 offset so reflection clears character feet
         // Mounted: head needs extra distance since mount body is taller, and X+1
         float xOff = 0f;
         if (ch.Mounted) { yOff += 18f; xOff = 1f; }
@@ -479,7 +480,6 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float helmetGap = 14f * absHo / 30f - 3f;
-        helmetGap += 2f; // global offset so reflection clears character feet (5-3 adjust)
         // Mounted: helmet needs extra distance since mount body is taller, and X+1
         float xOff = 0f;
         if (ch.Mounted) { helmetGap += 18f; xOff = 1f; }
@@ -495,7 +495,7 @@ public static class CharRenderer
         if (weapGrh <= 0) return;
         // Weapon reflection Y: absHo base + 7 scaled gap (hand height)
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float weapY = pos.Y + absHo + 7f * absHo / 30f + 5f;
+        float weapY = pos.Y + absHo + 7f * absHo / 30f;
         DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, weapY, 75f / 255f, data);
     }
@@ -509,7 +509,7 @@ public static class CharRenderer
         if (shldGrh <= 0) return;
         // Same scaling as weapon but 2px closer
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float shldY = pos.Y + absHo + 5f * absHo / 30f + 5f;
+        float shldY = pos.Y + absHo + 5f * absHo / 30f;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, shldY, 90f / 255f, data);
     }
