@@ -274,8 +274,7 @@ public partial class WorldRenderer : Node2D
         // Drawn after Layer 1 so they appear on water tiles.
         // ==========================================
         bool showReflections = _state.Config?.ShowReflections ?? true;
-        // Track which tiles need masking (non-water L1 near reflections)
-        HashSet<(int, int)>? maskTiles = null;
+        bool anyReflectionDrawn = false;
 
         if (showReflections)
         {
@@ -305,51 +304,37 @@ public partial class WorldRenderer : Node2D
 
                 CharRenderer.DrawReflection(this, ch, new Vector2(charPx, charPy),
                     headOffset, heading, _data, _animator);
-
-                // Collect tiles with non-water Layer 1 around the reflection for masking.
-                // Only mask tiles where L1 graphic is NOT water (1505-1520).
-                // Tiles with water L1 + border L2 should NOT be masked — the reflection
-                // must show through the transparent part of the L2 border.
-                // Reflection extends ~3 tiles below (body+head flipped), ~4 for mounts.
-                // +1 in each direction to compensate for MoveOffset during movement
-                // (pixel offset shifts reflection up to 32px beyond tile bounds).
-                maskTiles ??= new HashSet<(int, int)>();
-                int maskExtY = ch.Mounted ? 5 : 4;
-                int maskExtX = ch.Mounted ? 5 : 4;
-                for (int ry = ch.PosY; ry <= Math.Min(100, ch.PosY + maskExtY); ry++)
-                {
-                    for (int rx = Math.Max(1, ch.PosX - maskExtX); rx <= Math.Min(100, ch.PosX + maskExtX); rx++)
-                    {
-                        ref var checkTile = ref _state.MapData.Tiles[rx, ry];
-                        bool isWaterGrh = checkTile.Layer1 >= 1505 && checkTile.Layer1 <= 1520;
-                        if (!isWaterGrh)
-                            maskTiles.Add((rx, ry));
-                    }
-                }
+                anyReflectionDrawn = true;
             }
         }
 
         // ==========================================
-        // PASS 1b: Redraw non-water Layer 1 tiles near reflections (mask)
-        // These tiles cover reflection overflow onto land.
+        // PASS 1b: Redraw ALL non-water Layer 1 tiles to mask reflection overflow.
+        // Any L1 tile whose graphic is not water (1505-1520) gets redrawn on top,
+        // guaranteeing reflections are only visible on water — no edge cases.
+        // Only runs when at least one reflection was drawn this frame.
         // ==========================================
-        if (maskTiles != null)
+        if (anyReflectionDrawn)
         {
-            foreach (var (mx, my) in maskTiles)
+            for (int y = l1MinY; y <= l1MaxY; y++)
             {
-                ref var maskTile = ref _state.MapData.Tiles[mx, my];
-                if (maskTile.Layer1 <= 0) continue;
+                for (int x = l1MinX; x <= l1MaxX; x++)
+                {
+                    ref var tile = ref _state.MapData.Tiles[x, y];
+                    if (tile.Layer1 <= 0) continue;
+                    if (tile.Layer1 >= 1505 && tile.Layer1 <= 1520) continue; // skip water
 
-                Vector2 mpos = TileToScreen(mx, my, _frameUserX, _frameUserY,
-                                             _framePixelOffsetX, _framePixelOffsetY);
-                if (_frameHasLights)
-                {
-                    Color lightColor = LightSystem.GetTileLight(_state, mx, my);
-                    DrawTileGrh(maskTile.Layer1, mpos, center: false, modulate: lightColor);
-                }
-                else
-                {
-                    DrawTileGrh(maskTile.Layer1, mpos, center: false);
+                    Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
+                                                _framePixelOffsetX, _framePixelOffsetY);
+                    if (_frameHasLights)
+                    {
+                        Color lightColor = LightSystem.GetTileLight(_state, x, y);
+                        DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
+                    }
+                    else
+                    {
+                        DrawTileGrh(tile.Layer1, pos, center: false);
+                    }
                 }
             }
         }
