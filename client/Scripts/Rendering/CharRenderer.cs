@@ -385,7 +385,7 @@ public static class CharRenderer
         if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
         int headGrh = data.Heads[ch.Head].Head[heading];
         if (headGrh <= 0) return;
-        float yOff = ch.Dead ? 22f : 9f;
+        float yOff = ch.Dead ? 20f : 7f;
         DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, 100f / 255f, data);
     }
 
@@ -396,7 +396,7 @@ public static class CharRenderer
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
         if (hGrh <= 0) return;
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 12, 150f / 255f, data);
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 10, 150f / 255f, data);
     }
 
     private static void DrawReflWeapon(
