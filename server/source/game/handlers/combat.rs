@@ -623,12 +623,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
     }
 
-    // Notify area
-    let msg = format!("T|12632256\u{00B0}{} ha muerto\u{00B0}{}", victim_name, char_index.0);
-    state.send_data(
-        SendTarget::ToAreaButIndex { conn_id, map, x, y },
-        &msg,
-    ).await;
+    // VB6: No "ha muerto" floating text — only the "¡Aaaahhhh!" scream (sent above)
 
     // Check if the dead user was in a duel or desafio
     let en_duelo = state.users.get(&conn_id).map(|u| u.en_duelo).unwrap_or(false);
