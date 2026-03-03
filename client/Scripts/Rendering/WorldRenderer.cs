@@ -311,11 +311,14 @@ public partial class WorldRenderer : Node2D
                 // Tiles with water L1 + border L2 should NOT be masked — the reflection
                 // must show through the transparent part of the L2 border.
                 // Reflection extends ~3 tiles below (body+head flipped), ~4 for mounts.
+                // +1 in each direction to compensate for MoveOffset during movement
+                // (pixel offset shifts reflection up to 32px beyond tile bounds).
                 maskTiles ??= new HashSet<(int, int)>();
-                int maskExtY = ch.Mounted ? 4 : 3;
-                for (int ry = ch.PosY + 1; ry <= Math.Min(100, ch.PosY + maskExtY); ry++)
+                int maskExtY = ch.Mounted ? 5 : 4;
+                int maskExtX = ch.Mounted ? 5 : 4;
+                for (int ry = ch.PosY; ry <= Math.Min(100, ch.PosY + maskExtY); ry++)
                 {
-                    for (int rx = Math.Max(1, ch.PosX - 3); rx <= Math.Min(100, ch.PosX + 3); rx++)
+                    for (int rx = Math.Max(1, ch.PosX - maskExtX); rx <= Math.Min(100, ch.PosX + maskExtX); rx++)
                     {
                         ref var checkTile = ref _state.MapData.Tiles[rx, ry];
                         bool isWaterGrh = checkTile.Layer1 >= 1505 && checkTile.Layer1 <= 1520;
