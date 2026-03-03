@@ -401,13 +401,11 @@ public static class CharRenderer
         var aura = data.Auras[auraIndex];
         if (aura.GrhIndex <= 0) return;
 
-        // The body reflection draws at pos.Y + absHo (clamped min 36 for short races).
-        // The normal aura is at pos.Y + hoY + 72 - offset (above character).
-        // Place reflected aura at same relative offset below the reflected body center.
+        // Place reflected aura at the same Y as the reflected body center.
+        // The sprite is UV-flipped (handled by DrawPendingAuras reflected path).
         float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
         float bodyReflY = absHo < 36f ? 36f : absHo; // same clamp as DrawReflBody
-        float normalAuraRelToBody = headOffset.Y + 72 - aura.Offset; // negative = above body
-        float reflAuraY = pos.Y + bodyReflY - normalAuraRelToBody;
+        float reflAuraY = pos.Y + bodyReflY;
 
         float auraX = pos.X + headOffset.X;
 
@@ -428,9 +426,9 @@ public static class CharRenderer
             }
         }
 
-        // Queue to the additive layer (same as normal auras, proper blending)
+        // Queue to the additive layer with reflected=true (UV-flipped, proper blending)
         worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
-                                     aura.Giratoria ? -angle : 0f);
+                                     aura.Giratoria ? -angle : 0f, reflected: true);
     }
 
     private static void DrawReflBody(
