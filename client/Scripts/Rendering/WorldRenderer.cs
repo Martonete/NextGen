@@ -748,8 +748,11 @@ public partial class WorldRenderer : Node2D
         }
 
         // Reflected auras — clipped per-tile to water areas only.
-        // For each aura, only draw the portions that overlap water tiles (L1 1505-1520).
-        // This avoids any masking layer that could interfere with normal auras.
+        // Reflected auras — clipped per-tile to pure water areas only.
+        // Pure water = L1 is water (1505-1520) AND L2 == 0 (no border graphic).
+        // Border tiles (L1=water + L2>0) are excluded because AuraLayer draws
+        // AFTER L2, so the aura would appear on top of the border.
+        // Both rotating and non-rotating auras use per-tile clipping.
         if (_state?.MapData != null)
         {
             foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
@@ -773,31 +776,8 @@ public partial class WorldRenderer : Node2D
                 if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
                     drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
 
-                if (angle != 0f)
+                // All reflected auras use per-tile clipping (no rotation for reflections)
                 {
-                    // Rotating auras: check center tile, draw if water
-                    float cx = drawX + pw / 2f;
-                    float cy = drawY + ph / 2f;
-                    int ctX = (int)Math.Floor((cx - _framePixelOffsetX) / TileSize)
-                              + _frameUserX - HalfWindowTileWidth;
-                    int ctY = (int)Math.Floor((cy - _framePixelOffsetY) / TileSize)
-                              + _frameUserY - HalfWindowTileHeight;
-                    if (ctX >= 1 && ctX <= 100 && ctY >= 1 && ctY <= 100)
-                    {
-                        ref var ct = ref _state.MapData.Tiles[ctX, ctY];
-                        if (ct.Layer1 >= 1505 && ct.Layer1 <= 1520)
-                        {
-                            ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
-                            canvas.DrawTextureRectRegion(texture,
-                                new Rect2(-pw / 2f, -ph / 2f, pw, ph),
-                                new Rect2(sx, sy, pw, ph), color);
-                            ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
-                        }
-                    }
-                }
-                else
-                {
-                    // Non-rotating: clip to each overlapping water tile
                     int tMinX = (int)Math.Floor((drawX - _framePixelOffsetX) / TileSize)
                                 + _frameUserX - HalfWindowTileWidth;
                     int tMaxX = (int)Math.Floor((drawX + pw - 1 - _framePixelOffsetX) / TileSize)
@@ -812,7 +792,8 @@ public partial class WorldRenderer : Node2D
                         for (int tx = Math.Max(1, tMinX); tx <= Math.Min(100, tMaxX); tx++)
                         {
                             ref var wt = ref _state.MapData.Tiles[tx, ty];
-                            if (wt.Layer1 < 1505 || wt.Layer1 > 1520) continue; // not water
+                            // Pure water only: L1 is water AND no L2 border
+                            if (wt.Layer1 < 1505 || wt.Layer1 > 1520 || wt.Layer2 > 0) continue;
 
                             // Compute tile screen rect
                             Vector2 tileScreen = TileToScreen(tx, ty, _frameUserX, _frameUserY,
