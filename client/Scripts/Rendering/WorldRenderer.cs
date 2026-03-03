@@ -10,15 +10,14 @@ namespace TierrasSagradasAO.Rendering;
 /// Renders the game world matching VB6 RenderScreen.
 ///
 /// Layer architecture (children of WorldRenderer, drawn after parent _Draw):
-///   WorldRenderer._Draw()         → PASS 1 (layer 1) + PASS 1.5 (body reflections)
-///                                   + PASS 1.5b (reflected auras, clipped to water)
+///   WorldRenderer._Draw()         → PASS 1 (layer 1) + PASS 1.5 (reflections)
 ///                                   + PASS 1b (non-water mask) + PASS 2 (layer 2)
-///   AuraLayer (z=0, additive)     → normal auras only
+///   AuraLayer (z=0, additive)     → auras + reflected auras (clipped to water tiles)
 ///   ContentLayer (z=0)            → PASS 3 (ground objects + characters + layer 3)
 ///   AdditiveParticleLayer (z=2)   → particles (VB6: D3DBLEND_ONE/ONE)
 ///   RoofLayer (z=3)               → PASS 4 (roof with fade)
 ///
-/// Draw order: Terrain L1 → Reflections → Refl.Auras → L1 mask → L2 → Auras → Characters → Particles → Roof.
+/// Draw order: Terrain L1 → Reflections → L1 mask → L2 → Auras → Characters → Particles → Roof.
 /// Reflections are clipped to water tiles by redrawing non-water L1 tiles on top.
 /// </summary>
 public partial class WorldRenderer : Node2D
@@ -336,79 +335,6 @@ public partial class WorldRenderer : Node2D
         }
 
         // ==========================================
-        // PASS 1.5b: Draw reflected auras between L1 and L2.
-        // Drawn here (standard blend on WorldRenderer canvas) so L2 borders
-        // naturally occlude them, same as body reflections.
-        // ==========================================
-        if (_pendingReflAuraDraws.Count > 0 && _state.MapData != null)
-        {
-            foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
-            {
-                var resolved = _data.ResolveGrh(grhIndex, frame);
-                if (resolved == null || resolved.FileNum <= 0) continue;
-                var texture = _data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) continue;
-
-                int sx = resolved.SX, sy = resolved.SY;
-                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                int texW = texture.GetWidth(), texH = texture.GetHeight();
-                if (texW > 0) sx = sx % texW;
-                if (texH > 0) sy = sy % texH;
-                if (sx + pw > texW) pw = texW - sx;
-                if (sy + ph > texH) ph = texH - sy;
-                if (pw <= 0 || ph <= 0) continue;
-
-                float drawX = pos.X;
-                float drawY = pos.Y;
-                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-
-                // Per-tile clipping: only draw on tiles where L1 is water (1505-1520).
-                // No L2 check needed — L2 borders will be drawn on top in PASS 2.
-                int tMinX = (int)Math.Floor((drawX - _framePixelOffsetX) / TileSize)
-                            + _frameUserX - HalfWindowTileWidth;
-                int tMaxX = (int)Math.Floor((drawX + pw - 1 - _framePixelOffsetX) / TileSize)
-                            + _frameUserX - HalfWindowTileWidth;
-                int tMinY = (int)Math.Floor((drawY - _framePixelOffsetY) / TileSize)
-                            + _frameUserY - HalfWindowTileHeight;
-                int tMaxY = (int)Math.Floor((drawY + ph - 1 - _framePixelOffsetY) / TileSize)
-                            + _frameUserY - HalfWindowTileHeight;
-
-                for (int ty = Math.Max(1, tMinY); ty <= Math.Min(100, tMaxY); ty++)
-                {
-                    for (int tx = Math.Max(1, tMinX); tx <= Math.Min(100, tMaxX); tx++)
-                    {
-                        ref var wt = ref _state.MapData.Tiles[tx, ty];
-                        // Water check only — L2 exclusion removed so borders occlude naturally
-                        if (wt.Layer1 < 1505 || wt.Layer1 > 1520) continue;
-
-                        Vector2 tileScreen = TileToScreen(tx, ty, _frameUserX, _frameUserY,
-                                                           _framePixelOffsetX, _framePixelOffsetY);
-                        float tLeft = tileScreen.X;
-                        float tTop = tileScreen.Y;
-                        float tRight = tLeft + TileSize;
-                        float tBottom = tTop + TileSize;
-
-                        float cLeft = Math.Max(drawX, tLeft);
-                        float cTop = Math.Max(drawY, tTop);
-                        float cRight = Math.Min(drawX + pw, tRight);
-                        float cBottom = Math.Min(drawY + ph, tBottom);
-                        if (cRight <= cLeft || cBottom <= cTop) continue;
-
-                        float srcOffX = cLeft - drawX;
-                        float srcOffY = cTop - drawY;
-                        var clippedSrc = new Rect2(sx + srcOffX, sy + srcOffY,
-                                                    cRight - cLeft, cBottom - cTop);
-                        var clippedDest = new Rect2(cLeft, cTop,
-                                                     cRight - cLeft, cBottom - cTop);
-                        DrawTextureRectRegion(texture, clippedDest, clippedSrc, color);
-                    }
-                }
-            }
-            _pendingReflAuraDraws.Clear();
-        }
-
-        // ==========================================
         // PASS 1b: Redraw ALL non-water Layer 1 tiles to mask reflection overflow.
         // Any L1 tile whose graphic is not water (1505-1520) gets redrawn on top,
         // guaranteeing reflections are only visible on water — no edge cases.
@@ -496,7 +422,7 @@ public partial class WorldRenderer : Node2D
             if (_state.Config?.ShowAuras ?? true)
             {
                 CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
-                // Reflected auras are collected and drawn in PASS 1.5 (same pass as body reflections)
+                // Reflected auras drawn in AuraLayer (additive) with water-tile clipping
             }
         }
 
@@ -821,8 +747,111 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        // Reflected auras are now drawn in PASS 1.5b (between L1 and L2) on WorldRenderer's
-        // canvas, so L2 borders naturally occlude them. _pendingReflAuraDraws is already cleared there.
+        // Reflected auras — clipped per-tile to water areas.
+        // Water = L1 is water (1505-1520). Border tiles (L1=water + L2>0) ARE included
+        // because the aura additive blend at 0.3 alpha is subtle enough on borders.
+        // Supports rotation (Giratoria auras) via DrawSetTransform.
+        if (_state?.MapData != null)
+        {
+            foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
+            {
+                var resolved = _data.ResolveGrh(grhIndex, frame);
+                if (resolved == null || resolved.FileNum <= 0) continue;
+                var texture = _data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) continue;
+
+                int sx = resolved.SX, sy = resolved.SY;
+                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                int texW = texture.GetWidth(), texH = texture.GetHeight();
+                if (texW > 0) sx = sx % texW;
+                if (texH > 0) sy = sy % texH;
+                if (sx + pw > texW) pw = texW - sx;
+                if (sy + ph > texH) ph = texH - sy;
+                if (pw <= 0 || ph <= 0) continue;
+
+                float drawX = pos.X;
+                float drawY = pos.Y;
+                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+
+                if (angle != 0f)
+                {
+                    // Rotating reflected aura — DrawSetTransform around sprite center
+                    float cx = drawX + pw / 2f;
+                    float cy = drawY + ph / 2f;
+                    ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
+
+                    // Per-tile clipping in rotated space
+                    int tMinX = (int)Math.Floor((drawX - pw - _framePixelOffsetX) / TileSize)
+                                + _frameUserX - HalfWindowTileWidth;
+                    int tMaxX = (int)Math.Floor((drawX + pw * 2 - _framePixelOffsetX) / TileSize)
+                                + _frameUserX - HalfWindowTileWidth;
+                    int tMinY = (int)Math.Floor((drawY - ph - _framePixelOffsetY) / TileSize)
+                                + _frameUserY - HalfWindowTileHeight;
+                    int tMaxY = (int)Math.Floor((drawY + ph * 2 - _framePixelOffsetY) / TileSize)
+                                + _frameUserY - HalfWindowTileHeight;
+
+                    bool anyWater = false;
+                    for (int ty = Math.Max(1, tMinY); ty <= Math.Min(100, tMaxY) && !anyWater; ty++)
+                        for (int tx = Math.Max(1, tMinX); tx <= Math.Min(100, tMaxX) && !anyWater; tx++)
+                        {
+                            ref var wt = ref _state.MapData.Tiles[tx, ty];
+                            if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520) anyWater = true;
+                        }
+
+                    if (anyWater)
+                    {
+                        var srcRect = new Rect2(sx, sy, pw, ph);
+                        var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
+                        canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                    }
+                    ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
+                }
+                else
+                {
+                    // Non-rotating — per-tile clipping to water tiles
+                    int tMinX = (int)Math.Floor((drawX - _framePixelOffsetX) / TileSize)
+                                + _frameUserX - HalfWindowTileWidth;
+                    int tMaxX = (int)Math.Floor((drawX + pw - 1 - _framePixelOffsetX) / TileSize)
+                                + _frameUserX - HalfWindowTileWidth;
+                    int tMinY = (int)Math.Floor((drawY - _framePixelOffsetY) / TileSize)
+                                + _frameUserY - HalfWindowTileHeight;
+                    int tMaxY = (int)Math.Floor((drawY + ph - 1 - _framePixelOffsetY) / TileSize)
+                                + _frameUserY - HalfWindowTileHeight;
+
+                    for (int ty = Math.Max(1, tMinY); ty <= Math.Min(100, tMaxY); ty++)
+                    {
+                        for (int tx = Math.Max(1, tMinX); tx <= Math.Min(100, tMaxX); tx++)
+                        {
+                            ref var wt = ref _state.MapData.Tiles[tx, ty];
+                            // Water only (L1 1505-1520) — no L2 exclusion
+                            if (wt.Layer1 < 1505 || wt.Layer1 > 1520) continue;
+
+                            Vector2 tileScreen = TileToScreen(tx, ty, _frameUserX, _frameUserY,
+                                                               _framePixelOffsetX, _framePixelOffsetY);
+                            float tLeft = tileScreen.X;
+                            float tTop = tileScreen.Y;
+                            float tRight = tLeft + TileSize;
+                            float tBottom = tTop + TileSize;
+
+                            float cLeft = Math.Max(drawX, tLeft);
+                            float cTop = Math.Max(drawY, tTop);
+                            float cRight = Math.Min(drawX + pw, tRight);
+                            float cBottom = Math.Min(drawY + ph, tBottom);
+                            if (cRight <= cLeft || cBottom <= cTop) continue;
+
+                            float srcOffX = cLeft - drawX;
+                            float srcOffY = cTop - drawY;
+                            var clippedSrc = new Rect2(sx + srcOffX, sy + srcOffY,
+                                                        cRight - cLeft, cBottom - cTop);
+                            var clippedDest = new Rect2(cLeft, cTop,
+                                                         cRight - cLeft, cBottom - cTop);
+                            canvas.DrawTextureRectRegion(texture, clippedDest, clippedSrc, color);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>
