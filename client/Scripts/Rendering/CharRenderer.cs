@@ -137,9 +137,8 @@ public static class CharRenderer
         if (drawShadow)
             DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
-        // VB6: Auras are drawn BEFORE dibujarPersonaje (behind the character body).
-        // They use additive blend (D3DBLEND_ONE/ONE). Aura draws are collected in
-        // WorldRenderer._Draw() and rendered by AuraAdditiveLayer BEFORE this ContentLayer.
+        // Auras use additive blend (D3DBLEND_ONE/ONE). Draws are collected in
+        // WorldRenderer._Draw() and rendered by AuraAdditiveLayer ABOVE ContentLayer (z=1 > z=0).
 
         // Heading-dependent draw order (VB6: dibujarPersonaje)
         switch (heading)
@@ -605,10 +604,8 @@ public static class CharRenderer
 
     /// <summary>
     /// Collect aura draw data for a character and queue to WorldRenderer's aura layer.
-    /// Called from WorldRenderer._Draw() BEFORE characters render, so the aura additive
-    /// layer (z=0) draws before the content layer (z=1).
-    ///
-    /// VB6: auras drawn before dibujarPersonaje, using D3DBLEND_ONE/ONE (additive).
+    /// The aura layer (z=1) draws ABOVE the content layer (z=0), so auras appear
+    /// on top of layer 3 tiles and characters, with additive blend.
     /// Position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
     /// Rotation: angle += 0.004 per frame if Giratoria, wraps at 180
     /// </summary>

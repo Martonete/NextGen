@@ -11,12 +11,12 @@ namespace TierrasSagradasAO.Rendering;
 ///
 /// Layer architecture (Godot child draw order — all children draw AFTER parent):
 ///   WorldRenderer._Draw()       → PASS 1+2 (terrain layers 1+2)
-///   AuraLayer (z=0, additive)   → auras (VB6: drawn before dibujarPersonaje, D3DBLEND_ONE/ONE)
-///   ContentLayer (z=1)          → PASS 3 (ground objects + characters + layer 3) + status overlay
+///   ContentLayer (z=0)          → PASS 3 (ground objects + characters + layer 3) + status overlay
+///   AuraLayer (z=1, additive)   → auras rendered ABOVE layer 3 (additive blend)
 ///   AdditiveParticleLayer (z=2) → particles (VB6: D3DBLEND_ONE/ONE)
 ///   RoofLayer (z=3)             → PASS 4 (roof with fade)
 ///
-/// This ensures auras render AFTER terrain but BEFORE characters, with additive blend.
+/// This ensures auras render ABOVE characters and layer 3 tiles, with additive blend.
 /// </summary>
 public partial class WorldRenderer : Node2D
 {
@@ -81,20 +81,20 @@ public partial class WorldRenderer : Node2D
             BlendMode = CanvasItemMaterial.BlendModeEnum.Add
         };
 
-        // Aura layer: additive blend, z=0 (first child after parent terrain)
+        // Content layer: standard blend, z=0 (characters + ground objects + layer 3)
+        _contentLayer = new ContentLayer();
+        _contentLayer.Name = "ContentLayer";
+        _contentLayer.ZIndex = 0;
+        _contentLayer.SetRenderer(this);
+        AddChild(_contentLayer);
+
+        // Aura layer: additive blend, z=1 (ABOVE layer 3 tiles and characters)
         _auraLayer = new AuraAdditiveLayer();
         _auraLayer.Name = "AuraLayer";
         _auraLayer.Material = additiveMat;
-        _auraLayer.ZIndex = 0;
+        _auraLayer.ZIndex = 1;
         _auraLayer.SetRenderer(this);
         AddChild(_auraLayer);
-
-        // Content layer: standard blend, z=1 (characters + objects + layer 3)
-        _contentLayer = new ContentLayer();
-        _contentLayer.Name = "ContentLayer";
-        _contentLayer.ZIndex = 1;
-        _contentLayer.SetRenderer(this);
-        AddChild(_contentLayer);
 
         // Particle layer: additive blend, z=2
         _additiveLayer = new AdditiveParticleLayer();
@@ -694,7 +694,7 @@ public partial class WorldRenderer : Node2D
 
 /// <summary>
 /// Child Node2D with additive blend material. Draws auras queued by WorldRenderer.
-/// z_index=0 — draws after terrain but before ContentLayer (z=1).
+/// z_index=1 — draws AFTER ContentLayer (z=0), above layer 3 and characters.
 /// </summary>
 public partial class AuraAdditiveLayer : Node2D
 {
@@ -713,7 +713,7 @@ public partial class AuraAdditiveLayer : Node2D
 
 /// <summary>
 /// Child Node2D for PASS 3 content: ground objects, characters, layer 3, status.
-/// z_index=1 — draws after AuraLayer (z=0), before particles (z=2).
+/// z_index=0 — draws first (characters + ground objects + layer 3), before AuraLayer (z=1).
 /// </summary>
 public partial class ContentLayer : Node2D
 {
