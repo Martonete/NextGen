@@ -402,7 +402,7 @@ public static class CharRenderer
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
         if (hGrh <= 0) return;
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data);
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 12, 150f / 255f, data);
     }
 
     private static void DrawReflWeapon(
