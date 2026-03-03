@@ -705,8 +705,8 @@ async fn connect_user(
 
         // Safety: if charfile has invalid body (0=invisible, 8=ghost) but dead=false,
         // restore naked body. body=0 can happen if a GM disconnects while invisible.
-        // SKIP this check if navigating — boat state has head=0, body=boat ropaje (valid).
-        if !user.dead && !char_data.navigating && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
+        // SKIP if navigating (boat has head=0) or montado (flying mount has head=0).
+        if !user.dead && !char_data.navigating && !char_data.montado && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
             let gender_str = char_data.gender.to_string();
             user.body = naked_body(&char_data.race, &gender_str);
             // Head 500 is ghost head, head 0 is invisible — use a default for race/gender
