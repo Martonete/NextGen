@@ -3130,20 +3130,33 @@ public partial class Main : Control
             {
                 var viewPos = new Vector2(clickX, clickY);
 
-                // Double-click: Godot sets DoubleClick=true on PRESS only.
-                // VB6 Form_DblClick sends RC (interact: open/close doors, use objects).
-                if (mb.Pressed && mb.DoubleClick && mb.ButtonIndex == MouseButton.Left)
+                // On PRESS: handle double-click, shift+click (GM teleport)
+                // Modifier flags (ShiftPressed) are only reliable on press, not release.
+                if (mb.Pressed && mb.ButtonIndex == MouseButton.Left)
                 {
-                    _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
-                    _dblClickHandled = true;
-                    GetViewport().SetInputAsHandled();
-                    return;
+                    if (mb.DoubleClick)
+                    {
+                        // VB6 Form_DblClick sends RC (interact: open/close doors, use objects).
+                        _inputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+                        _dblClickHandled = true;
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
+
+                    if (mb.ShiftPressed && _state.Privileges >= 2)
+                    {
+                        // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
+                        _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
+                        _dblClickHandled = true; // reuse flag to skip the release
+                        GetViewport().SetInputAsHandled();
+                        return;
+                    }
                 }
 
                 // On release: handle single clicks
                 if (!mb.Pressed)
                 {
-                    // Skip the release after a double-click (already handled above)
+                    // Skip the release after a double-click or shift+click (already handled on press)
                     if (_dblClickHandled && mb.ButtonIndex == MouseButton.Left)
                     {
                         _dblClickHandled = false;
@@ -3152,15 +3165,7 @@ public partial class Main : Control
 
                     if (mb.ButtonIndex == MouseButton.Left)
                     {
-                        // Use Input.IsKeyPressed for Shift — on Linux/X11, modifier flags
-                        // can be lost on release events depending on the window manager.
-                        bool shiftHeld = mb.ShiftPressed || Input.IsKeyPressed(Key.Shift);
-                        if (shiftHeld && _state.Privileges >= 2)
-                        {
-                            // VB6 GM: Shift+Click → /TELEP YO mapa,x,y
-                            _inputHandler?.HandleGmTeleport(viewPos, _state.UserPosX, _state.UserPosY, _state.CurrentMap);
-                        }
-                        else if (_state.UsingSkill > 0)
+                        if (_state.UsingSkill > 0)
                         {
                             // VB6: Form_Click when UsingSkill > 0 → WLC (spell targeting)
                             _inputHandler?.HandleSpellClick(viewPos, _state.UserPosX, _state.UserPosY);
