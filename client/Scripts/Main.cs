@@ -187,12 +187,18 @@ public partial class Main : Control
 
         string dataPath;
         if (OS.HasFeature("editor"))
+        {
             dataPath = ProjectSettings.GlobalizePath("res://Data");
+        }
         else
-            dataPath = System.IO.Path.Combine(
-                System.IO.Path.GetDirectoryName(OS.GetExecutablePath()) ?? ".",
-                "Data"
-            );
+        {
+            string exeDir = System.IO.Path.GetDirectoryName(OS.GetExecutablePath()) ?? ".";
+            dataPath = System.IO.Path.Combine(exeDir, "Data");
+
+            // Load patch PCK files (overrides base resources).
+            // Drop a "patch.pck" next to the exe for delta updates.
+            LoadPatchPacks(exeDir);
+        }
 
         GD.Print($"[MAIN] Data path: {dataPath}");
         _dataPath = dataPath;
@@ -1244,7 +1250,7 @@ public partial class Main : Control
         // Save choice to config so next launch skips the dialog
         _state.Config.Fullscreen = !windowed;
         if (!windowed)
-            _state.Config.AspectRatioMode = 0; // default stretch
+            _state.Config.AspectRatioMode = 1; // default 16:9
 
         if (!windowed)
         {
@@ -2587,8 +2593,8 @@ public partial class Main : Control
                     _commercePanel!.Init(_state, _gameData, _tcp);
                     _bankPanel!.Init(_state, _gameData, _tcp);
                     _vaultPanel!.Init(_state, _gameData, _tcp);
-                    _travelPanel!.Init(_state, _tcp);
-                    _deathPanel!.Init(_state, _tcp);
+                    _travelPanel!.Init(_state, _tcp, _dataPath);
+                    _deathPanel!.Init(_state, _tcp, _dataPath);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -3486,5 +3492,38 @@ public partial class Main : Control
     public override void _ExitTree()
     {
         _tcp?.Dispose();
+    }
+
+    /// <summary>
+    /// Load patch PCK files from the exe directory.
+    /// Files named "patch.pck" or "patch_*.pck" override base resources,
+    /// allowing delta updates without replacing the full game.
+    /// Patches are loaded in alphabetical order so later patches win.
+    /// </summary>
+    private void LoadPatchPacks(string exeDir)
+    {
+        // Single patch file
+        string singlePatch = System.IO.Path.Combine(exeDir, "patch.pck");
+        if (System.IO.File.Exists(singlePatch))
+        {
+            bool ok = ProjectSettings.LoadResourcePack(singlePatch, true);
+            GD.Print($"[PATCH] patch.pck: {(ok ? "loaded" : "FAILED")}");
+        }
+
+        // Numbered patches: patch_001.pck, patch_002.pck, etc.
+        string[] patchFiles;
+        try
+        {
+            patchFiles = System.IO.Directory.GetFiles(exeDir, "patch_*.pck");
+            System.Array.Sort(patchFiles);
+        }
+        catch { return; }
+
+        foreach (string pf in patchFiles)
+        {
+            bool ok = ProjectSettings.LoadResourcePack(pf, true);
+            string name = System.IO.Path.GetFileName(pf);
+            GD.Print($"[PATCH] {name}: {(ok ? "loaded" : "FAILED")}");
+        }
     }
 }

@@ -61,7 +61,7 @@ public class GameConfig
 
     // ── Display ──────────────────────────────────────────
     public bool Fullscreen;                 // false=windowed, true=fullscreen
-    public int AspectRatioMode;             // 0=Stretch (no bars), 1=Keep ratio (black bars)
+    public int AspectRatioMode = 1;         // 0=Stretch (4:3), 1=Keep ratio 16:9 (black bars)
 
     /// <summary>True if Options.tsao existed on disk when loaded (used to skip startup dialog).</summary>
     [System.NonSerialized] public bool LoadedFromFile;

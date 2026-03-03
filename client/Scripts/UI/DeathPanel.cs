@@ -42,10 +42,13 @@ public partial class DeathPanel : Control
 
     private int _hoveredBtn = 0; // 0=none, 1=continuar, 2=regresar
 
-    public void Init(GameState state, AoTcpClient tcp)
+    private string _dataPath = "";
+
+    public void Init(GameState state, AoTcpClient tcp, string dataPath)
     {
         _state = state;
         _tcp = tcp;
+        _dataPath = dataPath;
     }
 
     public override void _Ready()
@@ -54,25 +57,19 @@ public partial class DeathPanel : Control
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.None;
 
-        string basePath = "res://Data/Graficos/Principal/";
-        _bgTexture = LoadJpg(basePath + "cartelMuerte_Main.jpg");
-        _continuarHover = LoadJpg(basePath + "cartelMuerte_ContinuarI.jpg");
-        _continuarNormal = LoadJpg(basePath + "cartelMuerte_ContinuarA.jpg");
-        _regresarHover = LoadJpg(basePath + "cartelMuerte_RegresarI.jpg");
-        _regresarNormal = LoadJpg(basePath + "cartelMuerte_RegresarA.jpg");
+        string basePath = System.IO.Path.Combine(_dataPath, "Graficos", "Principal");
+        _bgTexture = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_Main.jpg"));
+        _continuarHover = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_ContinuarI.jpg"));
+        _continuarNormal = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_ContinuarA.jpg"));
+        _regresarHover = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_RegresarI.jpg"));
+        _regresarNormal = LoadJpg(System.IO.Path.Combine(basePath, "cartelMuerte_RegresarA.jpg"));
     }
 
     private static Texture2D? LoadJpg(string path)
     {
-        if (ResourceLoader.Exists(path))
-            return ResourceLoader.Load<Texture2D>(path);
-
-        string diskPath = ProjectSettings.GlobalizePath(path);
-        if (!Godot.FileAccess.FileExists(path) && !System.IO.File.Exists(diskPath))
-            return null;
-
+        if (!System.IO.File.Exists(path)) return null;
         var img = new Image();
-        var err = img.Load(diskPath);
+        var err = img.Load(path);
         if (err != Error.Ok) return null;
         return ImageTexture.CreateFromImage(img);
     }

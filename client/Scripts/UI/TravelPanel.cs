@@ -62,10 +62,13 @@ public partial class TravelPanel : Control
     private int _hoveredIdx = -1;
     private string _descText = "";
 
-    public void Init(GameState state, AoTcpClient tcp)
+    private string _dataPath = "";
+
+    public void Init(GameState state, AoTcpClient tcp, string dataPath)
     {
         _state = state;
         _tcp = tcp;
+        _dataPath = dataPath;
     }
 
     public override void _Ready()
@@ -74,31 +77,23 @@ public partial class TravelPanel : Control
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.None;
 
-        // Load textures from Principal directory
-        string basePath = "res://Data/Graficos/Principal/";
-        _bgTexture = LoadJpg(basePath + "Viajar_Main.jpg");
+        // Load textures from Principal directory (filesystem)
+        string basePath = System.IO.Path.Combine(_dataPath, "Graficos", "Principal");
+        _bgTexture = LoadJpg(System.IO.Path.Combine(basePath, "Viajar_Main.jpg"));
 
         string[] fileNames = { "Tanaris", "Thir", "Jhumbel", "Inthak", "Anvilmar", "Kahlimdor", "Ruvendel", "Helka" };
         for (int i = 0; i < 8; i++)
         {
-            _btnNormal[i] = LoadJpg($"{basePath}Viajar_B{fileNames[i]}N.jpg");
-            _btnHover[i] = LoadJpg($"{basePath}Viajar_B{fileNames[i]}I.jpg");
+            _btnNormal[i] = LoadJpg(System.IO.Path.Combine(basePath, $"Viajar_B{fileNames[i]}N.jpg"));
+            _btnHover[i] = LoadJpg(System.IO.Path.Combine(basePath, $"Viajar_B{fileNames[i]}I.jpg"));
         }
     }
 
     private static Texture2D? LoadJpg(string path)
     {
-        // Godot can load JPGs via ImageTexture if imported, or at runtime
-        if (ResourceLoader.Exists(path))
-            return ResourceLoader.Load<Texture2D>(path);
-
-        // Fallback: try loading from absolute disk path
-        string diskPath = ProjectSettings.GlobalizePath(path);
-        if (!Godot.FileAccess.FileExists(path) && !System.IO.File.Exists(diskPath))
-            return null;
-
+        if (!System.IO.File.Exists(path)) return null;
         var img = new Image();
-        var err = img.Load(diskPath);
+        var err = img.Load(path);
         if (err != Error.Ok) return null;
         return ImageTexture.CreateFromImage(img);
     }

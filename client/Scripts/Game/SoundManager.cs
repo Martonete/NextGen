@@ -160,23 +160,10 @@ public partial class SoundManager : Node
     }
 
     /// <summary>
-    /// Load a WAV file. Tries ResourceLoader first (editor), then raw file read (exported build).
+    /// Load a WAV file from the external Data/Sounds/WAV/ folder.
     /// </summary>
     private AudioStream? LoadWav(int id)
     {
-        // Method 1: Godot ResourceLoader (works when Godot has imported the file)
-        string resPath = $"res://Data/Sounds/WAV/{id}.wav";
-        if (ResourceLoader.Exists(resPath))
-        {
-            try
-            {
-                var s = ResourceLoader.Load<AudioStream>(resPath);
-                if (s != null) return s;
-            }
-            catch { /* fall through */ }
-        }
-
-        // Method 2: Read raw file bytes and create AudioStreamWav manually
         string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
         if (!System.IO.File.Exists(filePath)) return null;
 
@@ -193,21 +180,10 @@ public partial class SoundManager : Node
     }
 
     /// <summary>
-    /// Load an MP3 file. Tries ResourceLoader first, then raw file read.
+    /// Load an MP3 file from the external Data/Sounds/MP3/ folder.
     /// </summary>
     private AudioStream? LoadMp3(int id)
     {
-        string resPath = $"res://Data/Sounds/MP3/{id}.mp3";
-        if (ResourceLoader.Exists(resPath))
-        {
-            try
-            {
-                var s = ResourceLoader.Load<AudioStream>(resPath);
-                if (s != null) return s;
-            }
-            catch { /* fall through */ }
-        }
-
         string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "MP3", $"{id}.mp3");
         if (!System.IO.File.Exists(filePath)) return null;
 

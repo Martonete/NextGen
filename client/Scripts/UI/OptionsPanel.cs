@@ -367,8 +367,8 @@ public partial class OptionsPanel : PanelContainer
         var aspectRow = new HBoxContainer();
         aspectRow.AddChild(SmallLabel("Aspecto:"));
         _optAspect = new OptionButton();
-        _optAspect.AddItem("Estirar (sin bordes)", 0);
-        _optAspect.AddItem("Mantener ratio (barras negras)", 1);
+        _optAspect.AddItem("Ratio 4:3", 0);
+        _optAspect.AddItem("Ratio 16:9", 1);
         _optAspect.CustomMinimumSize = new Vector2(220, 0);
         _optAspect.AddThemeFontSizeOverride("font_size", 11);
         _optAspect.ItemSelected += _ => ApplyImmediate();
