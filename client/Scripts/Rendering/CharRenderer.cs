@@ -296,14 +296,13 @@ public static class CharRenderer
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
         canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
 
-        // Reflection alpha: body/head are most transparent, equipment is more visible
-        Color reflColor = new Color(1f, 1f, 1f, 75f / 255f);
-        // Weapon/shield/helmet get higher opacity for visual priority in reflection
+        // Reflection alpha: body/head most transparent, equipment more visible, helmet most opaque
+        Color reflColor = new Color(1f, 1f, 1f, 60f / 255f);
         Color equipColor = new Color(1f, 1f, 1f, 112f / 255f);
+        Color helmetColor = new Color(1f, 1f, 1f, 125f / 255f);
 
-        // Draw character parts with separate equipment alpha
         DrawCharParts(canvas, ch, pos, headOffset, heading, data, animator,
-                      null, reflColor, equipColor);
+                      null, reflColor, equipColor, helmetColor);
 
         // Reset transform
         canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
@@ -317,10 +316,10 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator,
         GameState? state = null, Color? colorOverride = null,
-        Color? equipColorOverride = null)
+        Color? equipColorOverride = null, Color? helmetColorOverride = null)
     {
-        // equipColorOverride applies to weapon, shield, helmet (higher opacity in reflections)
         Color? ec = equipColorOverride ?? colorOverride;
+        Color? hc = helmetColorOverride ?? ec;
         switch (heading)
         {
             case 1: // North
@@ -328,19 +327,19 @@ public static class CharRenderer
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 break;
             case 2: // East
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 break;
             case 3: // South
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 break;
@@ -348,7 +347,7 @@ public static class CharRenderer
                 DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
                 DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 break;
         }
@@ -415,8 +414,9 @@ public static class CharRenderer
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
 
         // Queue on the reflected aura list (no tileHeight offset applied by renderer)
+        // Same rotation angle as normal aura — water reflection only flips Y, not X
         worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
-                                         aura.Giratoria ? -angle : 0f);
+                                         aura.Giratoria ? angle : 0f);
     }
 
     private static void DrawBody(
