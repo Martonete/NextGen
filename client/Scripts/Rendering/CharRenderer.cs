@@ -422,7 +422,7 @@ public static class CharRenderer
         int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
         if (shldGrh <= 0) return;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 40f / 255f, data);
+            pos.X, pos.Y + 40, 110f / 255f, data);
     }
 
     /// <summary>
