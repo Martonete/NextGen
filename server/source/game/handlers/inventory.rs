@@ -411,7 +411,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
         None => return,
     };
 
-    if is_dead && obj_data.obj_type != ObjType::ResurrectPotion {
+    if is_dead && obj_data.obj_type != ObjType::ResurrectPotion && obj_data.obj_type != ObjType::Boat {
         state.send_to(conn_id, "||5").await; // VB6 TEXTO5: muerto, no puede usar items
         return;
     }
@@ -599,6 +599,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             } else {
                 // === MOUNT (VB6 DoNavega if branch) ===
                 let ropaje = obj_data.num_ropaje;
+                let is_dead_mount = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.old_head = u.head;
                     u.head = 0;
@@ -607,7 +608,10 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     u.casco_anim = super::common::NINGUN_CASCO;
                     u.navigating = true;
                     u.barco_slot = idx + 1; // VB6 BarcoSlot (1-based)
-                    if ropaje > 0 {
+                    if is_dead_mount {
+                        // VB6: dead user gets ghost boat body (iFragataFantasmal = 87)
+                        u.body = 87;
+                    } else if ropaje > 0 {
                         u.body = ropaje;
                     }
                 }

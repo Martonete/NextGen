@@ -849,11 +849,20 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
     }
 }
 
-/// Move an NPC in a direction. Returns true if moved.
-pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> bool {
+/// Ghost push data returned by move_npc when a dead user was pushed aside.
+pub(super) struct GhostPush {
+    pub ghost_conn: ConnectionId,
+    pub ghost_char_index: i32,
+    pub map: i32,
+    pub new_x: i32,
+    pub new_y: i32,
+}
+
+/// Move an NPC in a direction. Returns (moved, optional ghost push info).
+pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (bool, Option<GhostPush>) {
     let npc = match state.get_npc(npc_idx) {
         Some(n) if n.is_alive() => n,
-        _ => return false,
+        _ => return (false, None),
     };
     let (map, x, y) = (npc.map, npc.x, npc.y);
     let (dx, dy) = world::heading_to_offset(heading);
@@ -862,10 +871,10 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> b
 
     // Check bounds and blocked
     if !world::in_map_bounds(new_x, new_y) {
-        return false;
+        return (false, None);
     }
     if state.is_tile_blocked(map, new_x, new_y) {
-        return false;
+        return (false, None);
     }
 
     // VB6 LegalPosNPC: water + trigger checks
@@ -874,25 +883,84 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> b
     let has_water = state.hay_agua(map, new_x, new_y);
 
     if !agua_valida && has_water {
-        return false;
+        return (false, None);
     }
     if tierra_invalida && !has_water {
-        return false;
+        return (false, None);
     }
 
     // VB6: trigger <> eTrigger.POSINVALIDA (InvalidPos=3)
     let trigger = get_map_tile_trigger(state, map, new_x, new_y);
     if trigger == crate::data::maps::Trigger::InvalidPos {
-        return false;
+        return (false, None);
     }
 
     // Check runtime tile (user or NPC already there)
-    let free = state.world.grid(map)
+    let tile_info = state.world.grid(map)
         .and_then(|g| g.tile(new_x, new_y))
-        .map(|t| t.user_conn.is_none() && t.npc_index == 0)
-        .unwrap_or(false);
-    if !free {
-        return false;
+        .map(|t| (t.user_conn, t.npc_index));
+    let (tile_user, tile_npc) = match tile_info {
+        Some((u, n)) => (u, n),
+        None => return (false, None),
+    };
+
+    // Another NPC on tile → can't move
+    if tile_npc != 0 {
+        return (false, None);
+    }
+
+    // VB6 "Mover Casper" for NPCs: if a dead user is on the tile, push them aside
+    let mut ghost_push: Option<GhostPush> = None;
+    if let Some(occupant_conn) = tile_user {
+        let is_ghost = state.users.get(&occupant_conn).map(|u| u.dead).unwrap_or(false);
+        if !is_ghost {
+            // Living user on tile → NPC can't move
+            return (false, None);
+        }
+
+        // Try to push ghost to adjacent free tile (S, N, E, W)
+        let directions = [heading, 3, 1, 2, 4];
+        let mut push_found = false;
+        let mut px = 0i32;
+        let mut py = 0i32;
+        for &dir in &directions {
+            let (ddx, ddy) = world::heading_to_offset(dir);
+            let nx = new_x + ddx;
+            let ny = new_y + ddy;
+            if !world::in_map_bounds(nx, ny) { continue; }
+            if state.is_tile_blocked(map, nx, ny) { continue; }
+            let free = state.world.grid(map)
+                .map(|g| g.is_tile_free(nx, ny))
+                .unwrap_or(false);
+            if free {
+                px = nx;
+                py = ny;
+                push_found = true;
+                break;
+            }
+        }
+
+        if !push_found {
+            return (false, None); // no room to push ghost
+        }
+
+        // Push ghost on grid
+        state.world.remove_user(map, new_x, new_y);
+        state.world.place_user(map, px, py, occupant_conn);
+
+        let ghost_ci = state.users.get(&occupant_conn).map(|u| u.char_index.0).unwrap_or(0);
+        if let Some(ghost) = state.users.get_mut(&occupant_conn) {
+            ghost.pos_x = px;
+            ghost.pos_y = py;
+        }
+
+        ghost_push = Some(GhostPush {
+            ghost_conn: occupant_conn,
+            ghost_char_index: ghost_ci,
+            map,
+            new_x: px,
+            new_y: py,
+        });
     }
 
     // Move: update grid
@@ -913,7 +981,7 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> b
         npc.heading = heading;
     }
 
-    true
+    (true, ghost_push)
 }
 
 /// VB6: CheckPets — When an NPC attacks a user, the user's pets react by targeting that NPC.

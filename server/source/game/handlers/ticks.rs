@@ -99,8 +99,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 }
                 if rand_range(1, 12) == 3 {
                     let heading = rand_range(1, 4);
-                    if move_npc(state, npc_idx, heading) {
-                        send_npc_move(state, npc_idx).await;
+                    {
+                        let (moved, ghost) = move_npc(state, npc_idx, heading);
+                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                        if moved { send_npc_move(state, npc_idx).await; }
                     }
                 }
             }
@@ -178,8 +180,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             // Chase target
                             if dist > 1 {
                                 let heading = chase_heading(x, y, tx, ty);
-                                if move_npc(state, npc_idx, heading) {
-                                    send_npc_move(state, npc_idx).await;
+                                {
+                                    let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                    if moved { send_npc_move(state, npc_idx).await; }
                                 }
                             }
                         } else {
@@ -200,8 +204,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         // Random walk
                         if rand_range(1, 12) == 3 {
                             let heading = rand_range(1, 4);
-                            if move_npc(state, npc_idx, heading) {
-                                send_npc_move(state, npc_idx).await;
+                            {
+                                let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                if moved { send_npc_move(state, npc_idx).await; }
                             }
                         }
                     }
@@ -246,8 +252,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             // Chase attacker
                             if dist > 1 {
                                 let heading = chase_heading(x, y, tx, ty);
-                                if move_npc(state, npc_idx, heading) {
-                                    send_npc_move(state, npc_idx).await;
+                                {
+                                    let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                    if moved { send_npc_move(state, npc_idx).await; }
                                 }
                             }
                         }
@@ -260,8 +268,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     restore_old_movement(state, npc_idx);
                     if rand_range(1, 12) == 3 {
                         let heading = rand_range(1, 4);
-                        if move_npc(state, npc_idx, heading) {
-                            send_npc_move(state, npc_idx).await;
+                        {
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
                         }
                     }
                 }
@@ -308,16 +318,20 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let dist = (x - tx).abs() + (y - ty).abs();
                             if dist > 1 {
                                 let heading = chase_heading(x, y, tx, ty);
-                                if move_npc(state, npc_idx, heading) {
-                                    send_npc_move(state, npc_idx).await;
+                                {
+                                    let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                    if moved { send_npc_move(state, npc_idx).await; }
                                 }
                             }
                         }
                     } else if rand_range(1, 12) == 3 {
                         // No target — random wander
                         let heading = rand_range(1, 4);
-                        if move_npc(state, npc_idx, heading) {
-                            send_npc_move(state, npc_idx).await;
+                        {
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
                         }
                     }
                 }
@@ -357,8 +371,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 .unwrap_or(false);
 
                             if has_path {
-                                if npc_pathfind_step(state, npc_idx) {
-                                    send_npc_move(state, npc_idx).await;
+                                {
+                                    let (pf_moved, pf_ghost) = npc_pathfind_step(state, npc_idx);
+                                    if let Some(gp) = pf_ghost { send_ghost_push(state, gp).await; }
+                                    if pf_moved { send_npc_move(state, npc_idx).await; }
                                 }
                             } else {
                                 let path = pathfind_bfs(state, map, x, y, tx, ty);
@@ -367,13 +383,17 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                         n.pf_path = path;
                                         n.pf_step = 0;
                                     }
-                                    if npc_pathfind_step(state, npc_idx) {
-                                        send_npc_move(state, npc_idx).await;
+                                    {
+                                        let (pf_moved, pf_ghost) = npc_pathfind_step(state, npc_idx);
+                                        if let Some(gp) = pf_ghost { send_ghost_push(state, gp).await; }
+                                        if pf_moved { send_npc_move(state, npc_idx).await; }
                                     }
                                 } else {
                                     let heading = chase_heading(x, y, tx, ty);
-                                    if move_npc(state, npc_idx, heading) {
-                                        send_npc_move(state, npc_idx).await;
+                                    {
+                                        let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                        if moved { send_npc_move(state, npc_idx).await; }
                                     }
                                 }
                             }
@@ -388,8 +408,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 } else {
                     if rand_range(1, 12) == 3 {
                         let heading = rand_range(1, 4);
-                        if move_npc(state, npc_idx, heading) {
-                            send_npc_move(state, npc_idx).await;
+                        {
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
                         }
                     }
                 }
@@ -439,8 +461,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                         }
                                     } else {
                                         let heading = chase_heading(x, y, tnx, tny);
-                                        if move_npc(state, npc_idx, heading) {
-                                            send_npc_move(state, npc_idx).await;
+                                        {
+                                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                            if moved { send_npc_move(state, npc_idx).await; }
                                         }
                                     }
                                 }
@@ -451,14 +475,18 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         } else if dist > 3 {
                             // Too far from master — follow
                             let heading = chase_heading(x, y, mx, my);
-                            if move_npc(state, npc_idx, heading) {
-                                send_npc_move(state, npc_idx).await;
+                            {
+                                let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                if moved { send_npc_move(state, npc_idx).await; }
                             }
                         } else if rand_range(1, 12) == 3 {
                             // Near master — random wander
                             let heading = rand_range(1, 4);
-                            if move_npc(state, npc_idx, heading) {
-                                send_npc_move(state, npc_idx).await;
+                            {
+                                let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                if moved { send_npc_move(state, npc_idx).await; }
                             }
                         }
                     }
@@ -572,6 +600,17 @@ pub(super) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
 
     // Check if NPC crossed a 9x9 area boundary — if so, send CC to newly visible players
     check_update_needed_npc(state, npc_idx, heading).await;
+}
+
+/// Send packets for a ghost push (position update to ghost + movement broadcast to area).
+pub(super) async fn send_ghost_push(state: &mut GameState, push: super::npcs::GhostPush) {
+    let pu_pkt = format!("PU{},{}", push.new_x, push.new_y);
+    state.send_to(push.ghost_conn, &pu_pkt).await;
+    let move_pkt = format!("+{},{},{}", push.ghost_char_index, push.new_x, push.new_y);
+    state.send_data(
+        SendTarget::ToAreaButIndex { conn_id: push.ghost_conn, map: push.map, x: push.new_x, y: push.new_y },
+        &move_pkt,
+    ).await;
 }
 
 /// CheckUpdateNeededNpc — VB6 ModAreas.bas line 320-406.

@@ -1151,6 +1151,13 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         // On foot: blocked tiles and water tiles are impassable
         tile_blocked || has_water
     };
+
+    // VB6 "Mover Casper": if a living user walks onto a dead user's tile, push the ghost aside.
+    // Must happen BEFORE is_legal_pos since dead users occupy the tile (user_conn is set).
+    if !dead && !blocked {
+        mover_casper(state, map, new_x, new_y, heading).await;
+    }
+
     let legal = state.world.is_legal_pos(map, new_x, new_y, blocked);
 
     // Walk movement — don't log (too frequent)
@@ -3347,6 +3354,76 @@ async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionId, new_map:
             }
         }
     }
+}
+
+/// VB6 "Mover Casper": push a dead user off a tile so a living user/NPC can occupy it.
+/// Tries the mover's heading direction first, then S, N, E, W as fallback.
+/// If no free adjacent tile is found, the ghost stays (movement will be rejected by is_legal_pos).
+async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32, mover_heading: i32) {
+    // Check if there's a user on the target tile
+    let ghost_conn = match state.world.grid(map)
+        .and_then(|g| g.tile(x, y))
+        .and_then(|t| t.user_conn) {
+        Some(c) => c,
+        None => return, // no user on tile
+    };
+
+    // Only push if that user is dead
+    let is_ghost = state.users.get(&ghost_conn).map(|u| u.dead).unwrap_or(false);
+    if !is_ghost {
+        return;
+    }
+
+    let ghost_char_index = match state.users.get(&ghost_conn) {
+        Some(u) => u.char_index,
+        None => return,
+    };
+
+    // VB6 MoverCasper: try heading direction first, then S(3), N(1), E(2), W(4) fallback
+    let directions = [mover_heading, 3, 1, 2, 4];
+    let mut push_x = 0i32;
+    let mut push_y = 0i32;
+    let mut found = false;
+
+    for &dir in &directions {
+        let (dx, dy) = world::heading_to_offset(dir);
+        let nx = x + dx;
+        let ny = y + dy;
+        if !world::in_map_bounds(nx, ny) { continue; }
+        if state.is_tile_blocked(map, nx, ny) { continue; }
+        let tile_free = state.world.grid(map)
+            .map(|g| g.is_tile_free(nx, ny))
+            .unwrap_or(false);
+        if tile_free {
+            push_x = nx;
+            push_y = ny;
+            found = true;
+            break;
+        }
+    }
+
+    if !found {
+        return; // no free tile — ghost stays, movement will be blocked
+    }
+
+    // Move ghost: update grid
+    state.world.remove_user(map, x, y);
+    state.world.place_user(map, push_x, push_y, ghost_conn);
+
+    // Update ghost user position
+    if let Some(ghost) = state.users.get_mut(&ghost_conn) {
+        ghost.pos_x = push_x;
+        ghost.pos_y = push_y;
+    }
+
+    // Send position update to ghost (PU) and movement broadcast to area
+    let pu_pkt = format!("PU{},{}", push_x, push_y);
+    state.send_to(ghost_conn, &pu_pkt).await;
+    let move_pkt = format!("+{},{},{}", ghost_char_index.0, push_x, push_y);
+    state.send_data(
+        SendTarget::ToAreaButIndex { conn_id: ghost_conn, map, x: push_x, y: push_y },
+        &move_pkt,
+    ).await;
 }
 
 async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {

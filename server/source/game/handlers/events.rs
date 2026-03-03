@@ -2309,34 +2309,36 @@ pub(super) fn heading_from_step(cx: i32, cy: i32, nx: i32, ny: i32) -> i32 {
 }
 
 /// Execute one pathfinding step for an NPC — moves to next step in path.
-pub(super) fn npc_pathfind_step(state: &mut GameState, npc_idx: usize) -> bool {
-    let (step, path_len, map, x, y) = match state.get_npc(npc_idx) {
+/// Returns (moved, optional ghost push data).
+pub(super) fn npc_pathfind_step(state: &mut GameState, npc_idx: usize) -> (bool, Option<super::npcs::GhostPush>) {
+    let (step, path_len, _map, x, y) = match state.get_npc(npc_idx) {
         Some(n) => (n.pf_step, n.pf_path.len(), n.map, n.x, n.y),
-        None => return false,
+        None => return (false, None),
     };
 
-    if step >= path_len { return false; }
+    if step >= path_len { return (false, None); }
 
     let (nx, ny) = match state.get_npc(npc_idx) {
         Some(n) => n.pf_path[step],
-        None => return false,
+        None => return (false, None),
     };
 
     let heading = heading_from_step(x, y, nx, ny);
 
     // Try to move NPC in this direction
-    if move_npc(state, npc_idx, heading) {
+    let (moved, ghost) = move_npc(state, npc_idx, heading);
+    if moved {
         if let Some(n) = state.get_npc_mut(npc_idx) {
             n.pf_step += 1;
         }
-        true
+        (true, ghost)
     } else {
         // Path blocked — clear path to force recompute
         if let Some(n) = state.get_npc_mut(npc_idx) {
             n.pf_path.clear();
             n.pf_step = 0;
         }
-        false
+        (false, ghost)
     }
 }
 

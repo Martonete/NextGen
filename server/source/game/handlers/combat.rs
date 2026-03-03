@@ -480,8 +480,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         user.paralyzed = false;
         user.invisible = false;
         user.meditating = false;
-        // Dead body model (neutral)
-        user.body = DEAD_BODY_NEUTRAL;
+        // VB6 UserDie: if navigating, use ghost boat (iFragataFantasmal=87), else normal dead body
+        if user.navigating {
+            user.body = 87; // iFragataFantasmal
+        } else {
+            user.body = DEAD_BODY_NEUTRAL;
+        }
         user.head = DEAD_HEAD_NEUTRAL;
         user.weapon_anim = super::common::NINGUN_ARMA;
         user.shield_anim = super::common::NINGUN_ESCUDO;
