@@ -223,9 +223,8 @@ pub(super) async fn user_attack_npc(
         // Miss — VB6: SND_SWING to area
         state.send_data(SendTarget::ToArea { map, x, y }, "TW2").await;
         state.send_to(conn_id, "U1").await;
-        // VB6: floating red "¡Fallo!" above attacker (N| vbRed°¡Fallo!°charIndex)
-        let user_ci = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
-        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", user_ci);
+        // VB6: floating red "¡Fallo!" above the NPC that was attacked
+        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", npc_char_index.0);
         state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
         return;
     }

@@ -989,8 +989,8 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
 
     if rand_range(1, 100) > hit_prob {
         state.send_to(conn_id, "U1").await; // Miss
-        // VB6: floating red "¡Fallo!" above attacker
-        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", char_index.0);
+        // VB6: floating red "¡Fallo!" above the NPC that was attacked
+        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", npc_char.0);
         state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
         return;
     }
