@@ -333,35 +333,35 @@ public static class CharRenderer
         switch (heading)
         {
             case 1: // North
-                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
-                DrawReflShield(canvas, ch, rPos, heading, data, animator);
+                DrawReflWeapon(canvas, ch, rPos, hoY, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
                 DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
                 break;
 
             case 2: // East
-                DrawReflShield(canvas, ch, rPos, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
                 DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
-                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
+                DrawReflWeapon(canvas, ch, rPos, hoY, heading, data, animator);
                 break;
 
             case 3: // South
                 DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
                 DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
-                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
-                DrawReflShield(canvas, ch, rPos, heading, data, animator);
+                DrawReflWeapon(canvas, ch, rPos, hoY, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, hoY, heading, data, animator);
                 break;
 
             case 4: // West
-                DrawReflWeapon(canvas, ch, rPos, heading, data, animator);
+                DrawReflWeapon(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
                 DrawReflHead(canvas, ch, rPos, hoX, hoY, heading, data);
                 DrawReflHelmet(canvas, ch, rPos, hoX, hoY, heading, data);
-                DrawReflShield(canvas, ch, rPos, heading, data, animator);
+                DrawReflShield(canvas, ch, rPos, hoY, heading, data, animator);
                 break;
         }
     }
@@ -384,7 +384,9 @@ public static class CharRenderer
         if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
         int headGrh = data.Heads[ch.Head].Head[heading];
         if (headGrh <= 0) return;
-        float yOff = ch.Dead ? 20f : 7f;
+        // Scale gap proportionally to body height (VB6 constants tuned for |hoY|=30)
+        float absHo = -hoY > 1f ? -hoY : 1f;
+        float yOff = ch.Dead ? (20f * absHo / 30f) : (7f * absHo / 30f);
         DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, 75f / 255f, data);
     }
 
@@ -395,29 +397,38 @@ public static class CharRenderer
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
         int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
         if (hGrh <= 0) return;
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + 14, 150f / 255f, data);
+        // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
+        float absHo = -hoY > 1f ? -hoY : 1f;
+        float helmetGap = 14f * absHo / 30f;
+        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + helmetGap, 150f / 255f, data);
     }
 
     private static void DrawReflWeapon(
-        Node2D canvas, Character ch, Vector2 pos,
+        Node2D canvas, Character ch, Vector2 pos, float hoY,
         int heading, GameData data, GrhAnimator animator)
     {
         if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Weapons.Length) return;
         int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
         if (weapGrh <= 0) return;
+        // VB6: Y+40 was tuned for |hoY|=30 → -hoY + 10. Scale the +10 with body height.
+        float absHo = -hoY > 1f ? -hoY : 1f;
+        float weapY = pos.Y + absHo + 10f * absHo / 30f;
         DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 75f / 255f, data);
+            pos.X, weapY, 75f / 255f, data);
     }
 
     private static void DrawReflShield(
-        Node2D canvas, Character ch, Vector2 pos,
+        Node2D canvas, Character ch, Vector2 pos, float hoY,
         int heading, GameData data, GrhAnimator animator)
     {
         if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
         int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
         if (shldGrh <= 0) return;
+        // Same scaling as weapon
+        float absHo = -hoY > 1f ? -hoY : 1f;
+        float shldY = pos.Y + absHo + 10f * absHo / 30f;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 83f / 255f, data);
+            pos.X, shldY, 83f / 255f, data);
     }
 
     /// <summary>
@@ -549,7 +560,7 @@ public static class CharRenderer
         }
 
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
-        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
+        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 3);
 
         DrawGrh(canvas, data, grhIdx, 0, helmetPos, true);
     }

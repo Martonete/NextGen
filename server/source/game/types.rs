@@ -306,6 +306,7 @@ pub struct UserState {
     // Montado (mounted)
     pub montado: bool,             // Is currently mounted
     pub montado_body: i32,         // Original body before mounting
+    pub levitando: bool,           // Flying mount levitation
 
     // Divine system (Dioses)
     pub sirviente_de_dios: String,   // God name: Mifrit, Poseidon, Tarraske, Erebros
@@ -527,6 +528,7 @@ impl UserState {
             nombre_amigo: Default::default(),
             montado: false,
             montado_body: 0,
+            levitando: false,
             sirviente_de_dios: String::new(),
             almas_contenidas: 0,
             almas_ofrecidas: 0,

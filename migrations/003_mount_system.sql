@@ -1,0 +1,4 @@
+-- Mount system: add montado, levitando, montado_body columns
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS montado BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS levitando BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS montado_body INTEGER NOT NULL DEFAULT 0;

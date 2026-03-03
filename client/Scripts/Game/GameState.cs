@@ -74,6 +74,7 @@ public class GameState
     public float ParalysisMaxTimer; // Max duration for progress bar ratio
     public ulong PingSentMs;       // VB6: TimerPing(1) — GetTickCount when /PING sent
     public bool UserNavigating;
+    public bool UserMounted;
     public bool UserStopped;
     public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
     public bool ItemSafety = true; // VB6: ISItem — client-side drop prevention (toggled with numpad *)

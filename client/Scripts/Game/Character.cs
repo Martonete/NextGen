@@ -34,6 +34,8 @@ public class Character
     public bool Dead;
     public bool Invisible;
     public bool Navigating;
+    public bool Mounted;
+    public bool Levitating;
 
     // VB6: dead character transparency pulsing (TransparenciaBody oscillates 0-100)
     public int TransparenciaBody;  // 0-100, alpha = this + 45

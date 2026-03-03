@@ -173,6 +173,10 @@ public class PacketHandler
         {
             _state.UserNavigating = !_state.UserNavigating;
         }
+        else if (packet.StartsWith("MVOL"))
+        {
+            HandleMountFly(packet[4..]);
+        }
         else if (packet.StartsWith("STOPD"))
         {
             _state.UserStopped = packet.Length > 5 && packet[5] == '1';
@@ -718,6 +722,11 @@ public class PacketHandler
         else if (packet.StartsWith("AU|"))
         {
             HandleAuraUpdate(packet[3..]);
+        }
+        // ── USM — User mount state ──
+        else if (packet.StartsWith("USM"))
+        {
+            HandleUserMount(packet[3..]);
         }
         // ── Pipe opcodes |X ──
         else if (packet.StartsWith("|S1"))
@@ -1808,6 +1817,53 @@ public class PacketHandler
             ch.AuraIndexE = ParseInt(parts[4]); // Shield aura
             ch.AuraIndexR = ParseInt(parts[5]); // Ring aura
             ch.AuraIndexC = ParseInt(parts[6]); // Helmet aura
+        }
+
+        // Parse levitando (field 7)
+        if (parts.Length >= 8)
+        {
+            ch.Levitating = ParseInt(parts[7]) == 1;
+        }
+    }
+
+    /// <summary>
+    /// USM — User mount state update.
+    /// Format: USM{charindex},{0|1}
+    /// </summary>
+    private void HandleUserMount(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 2) return;
+
+        int idx = ParseInt(parts[0]);
+        bool mounted = parts[1] == "1";
+
+        if (_state.Characters.TryGetValue(idx, out var ch))
+        {
+            ch.Mounted = mounted;
+        }
+
+        if (idx == _state.UserCharIndex)
+        {
+            _state.UserMounted = mounted;
+        }
+    }
+
+    /// <summary>
+    /// MVOL — Mount flying/levitation state.
+    /// Format: MVOL{charindex},{0|1}
+    /// </summary>
+    private void HandleMountFly(string data)
+    {
+        var parts = data.Split(',');
+        if (parts.Length < 2) return;
+
+        int idx = ParseInt(parts[0]);
+        bool levitating = parts[1] == "1";
+
+        if (_state.Characters.TryGetValue(idx, out var ch))
+        {
+            ch.Levitating = levitating;
         }
     }
 

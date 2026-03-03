@@ -74,6 +74,9 @@ pub struct CharData {
     pub hidden: bool,
     pub navigating: bool,
     pub barco_slot: i32,
+    pub montado: bool,
+    pub levitando: bool,
+    pub montado_body: i32,
     pub map: i32,
     pub x: i32,
     pub y: i32,
@@ -176,7 +179,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
                 gold, bank_gold, skill_pts_libres,
                 attributes, skills, spells,
                 banned, dead, poisoned, paralyzed, hidden, navigating, criminal,
-                privileges, barco_slot,
+                privileges, barco_slot, montado, levitando, montado_body,
                 weapon_eqp_slot, armour_eqp_slot, shield_eqp_slot, helmet_eqp_slot, municion_eqp_slot,
                 guild_index, reputation,
                 armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
@@ -234,6 +237,9 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     let hidden: bool = row.get("hidden");
     let navigating: bool = row.get("navigating");
     let barco_slot: i32 = row.try_get("barco_slot").unwrap_or(0);
+    let montado: bool = row.try_get("montado").unwrap_or(false);
+    let levitando: bool = row.try_get("levitando").unwrap_or(false);
+    let montado_body: i32 = row.try_get("montado_body").unwrap_or(0);
     let criminal: bool = row.get("criminal");
     let privileges: i32 = row.get("privileges");
     let weapon_eqp_slot: i32 = row.get("weapon_eqp_slot");
@@ -314,6 +320,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         attributes: sql_array_to_5(&attributes_vec),
         skills: sql_array_to_22(&skills_vec),
         banned, dead, poisoned, paralyzed, hidden, navigating, barco_slot,
+        montado, levitando, montado_body,
         map, x, y, guild_index, privileges,
         inventory,
         weapon_eqp_slot: weapon_eqp_slot as usize,
@@ -520,6 +527,9 @@ pub struct CharSaveData {
     pub hidden: bool,
     pub navigating: bool,
     pub barco_slot: usize,
+    pub montado: bool,
+    pub levitando: bool,
+    pub montado_body: i32,
     pub privileges: i32,
     pub spells: [i32; 20],
     pub inventory: Vec<(i32, i32, bool)>,
@@ -573,6 +583,7 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             armada_real = $47, fuerzas_caos = $48,
             puntos_donacion = $49, puntos_torneo = $50, ts_points = $51,
             barco_slot = $52,
+            montado = $53, levitando = $54, montado_body = $55,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -596,6 +607,7 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(data.ejercito_real).bind(data.ejercito_caos)
     .bind(data.puntos_donacion).bind(data.puntos_torneo).bind(data.ts_points)
     .bind(data.barco_slot as i32)
+    .bind(data.montado).bind(data.levitando).bind(data.montado_body)
     .execute(pool)
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;

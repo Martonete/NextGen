@@ -92,6 +92,9 @@ pub struct CharData {
     pub hidden: bool,
     pub navigating: bool,
     pub barco_slot: i32,   // VB6 BarcoSlot — inventory slot (1-based) with equipped boat
+    pub montado: bool,
+    pub levitando: bool,
+    pub montado_body: i32,
 
     // POSITION
     pub map: i32,
@@ -240,6 +243,9 @@ pub fn load_charfile(base: &Path, char_name: &str) -> Result<CharData, String> {
         hidden: ini.get("FLAGS", "Oculto").map(|s| s == "1").unwrap_or(false),
         navigating: ini.get("FLAGS", "Navegando").map(|s| s == "1").unwrap_or(false),
         barco_slot: get_int("Inventory", "BarcoSlot"),
+        montado: ini.get("FLAGS", "Montado").map(|s| s == "1").unwrap_or(false),
+        levitando: ini.get("FLAGS", "Levitando").map(|s| s == "1").unwrap_or(false),
+        montado_body: get_int("FLAGS", "MontadoBody"),
 
         map: get_int("INIT", "Map"),
         x: get_int("INIT", "X"),
@@ -614,6 +620,9 @@ pub fn save_charfile(base: &Path, char_name: &str, data: &CharSaveData) -> Resul
     lines.push(format!("Criminal={}", if data.criminal { 1 } else { 0 }));
     lines.push(format!("Oculto={}", if data.hidden { 1 } else { 0 }));
     lines.push(format!("Navegando={}", if data.navigating { 1 } else { 0 }));
+    lines.push(format!("Montado={}", if data.montado { 1 } else { 0 }));
+    lines.push(format!("Levitando={}", if data.levitando { 1 } else { 0 }));
+    lines.push(format!("MontadoBody={}", data.montado_body));
 
     // [HECHIZOS]
     lines.push("[HECHIZOS]".into());
@@ -716,6 +725,9 @@ pub struct CharSaveData {
     pub hidden: bool,
     pub navigating: bool,
     pub barco_slot: usize,
+    pub montado: bool,
+    pub levitando: bool,
+    pub montado_body: i32,
     pub privileges: i32,
     pub spells: [i32; 20],
     pub inventory: Vec<(i32, i32, bool)>, // (obj_idx, amount, equipped)

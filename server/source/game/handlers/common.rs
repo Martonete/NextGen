@@ -137,7 +137,7 @@ pub(super) fn area_id(x: i32, y: i32) -> i32 {
 
 pub(super) fn build_cd_packet(user: &UserState) -> String {
     let color = 0;
-    let levitando = 0;
+    let levitando = if user.levitando { 1 } else { 0 };
     let tiene_ranking = 0;
     format!(
         "[CD{},{},{},{},{},{},{},{},{}",

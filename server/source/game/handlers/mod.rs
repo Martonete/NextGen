@@ -699,6 +699,9 @@ async fn connect_user(
         user.old_head = char_data.head; // VB6 OrigChar.Head — for boat/invis restore
         user.navigating = char_data.navigating;
         user.barco_slot = char_data.barco_slot as usize;
+        user.montado = char_data.montado;
+        user.levitando = char_data.levitando;
+        user.montado_body = char_data.montado_body;
 
         // Safety: if charfile has invalid body (0=invisible, 8=ghost) but dead=false,
         // restore naked body. body=0 can happen if a GM disconnects while invisible.

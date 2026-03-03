@@ -750,32 +750,87 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             state.send_to(conn_id, "||119").await; // TEXTO119: Te has resucitado
         }
         ObjType::Mount => {
-            // Mount/dismount — similar to boat but for land mounts
+            // Mount/dismount — land mounts use montado (NOT navigating, which is for boats)
             let ropaje = obj_data.num_ropaje;
             let is_flying = obj_data.es_voladora;
-            let navigating = state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
-            if navigating {
-                // Dismount
+
+            // Pre-checks
+            let (is_dead, is_navigating, is_mounted) = state.users.get(&conn_id)
+                .map(|u| (u.dead, u.navigating, u.montado))
+                .unwrap_or((false, false, false));
+            if is_dead || is_navigating {
+                return;
+            }
+
+            let (map, x, y, char_index) = match state.users.get(&conn_id) {
+                Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index),
+                None => return,
+            };
+
+            if is_mounted {
+                // Dismount — check tile is not water (can't dismount in water)
+                if state.hay_agua(map, x, y) {
+                    state.send_to(conn_id, &format!("{}No puedes desmontar aqui.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                    return;
+                }
+
                 if let Some(u) = state.users.get_mut(&conn_id) {
-                    u.navigating = false;
-                    u.body = 1; // Reset to default body
+                    u.montado = false;
+                    u.levitando = false;
+                    u.body = u.montado_body;
+                }
+
+                // Restore equipped weapon/shield/helmet appearance
+                let (weapon_anim, shield_anim, casco_anim) = get_equipped_anims(state, conn_id);
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.weapon_anim = weapon_anim;
+                    u.shield_anim = shield_anim;
+                    u.casco_anim = casco_anim;
                 }
             } else {
                 // Mount up
                 if let Some(u) = state.users.get_mut(&conn_id) {
-                    u.navigating = true;
+                    u.montado = true;
+                    u.montado_body = u.body;
                     if ropaje > 0 {
                         u.body = ropaje;
                     }
+                    u.weapon_anim = super::common::NINGUN_ARMA;
+                    u.shield_anim = super::common::NINGUN_ESCUDO;
+                    u.casco_anim = super::common::NINGUN_CASCO;
+                    if is_flying {
+                        u.levitando = true;
+                    }
                 }
             }
-            let cc = state.users.get(&conn_id).map(|u| u.build_cc_packet()).unwrap_or_default();
-            let (map, x, y) = match state.users.get(&conn_id) {
-                Some(u) => (u.pos_map, u.pos_x, u.pos_y),
-                None => return,
+
+            // Send appearance update (CP)
+            let cp = {
+                let user = match state.users.get(&conn_id) {
+                    Some(u) => u,
+                    None => return,
+                };
+                format!("CP{},{},{},{},{},{},0,0,{}", user.char_index.0, user.body, user.head, user.heading,
+                    user.weapon_anim, user.shield_anim, user.casco_anim)
             };
-            if !cc.is_empty() {
-                state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+
+            // Send mount state (USM)
+            let mounted_now = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
+            let usm = format!("USM{},{}", char_index.0, if mounted_now { 1 } else { 0 });
+            state.send_data(SendTarget::ToArea { map, x, y }, &usm).await;
+
+            // Send flying state (MVOL) if flying mount
+            if is_flying {
+                let lev = state.users.get(&conn_id).map(|u| u.levitando).unwrap_or(false);
+                let mvol = format!("MVOL{},{}", char_index.0, if lev { 1 } else { 0 });
+                state.send_data(SendTarget::ToArea { map, x, y }, &mvol).await;
+            }
+
+            // Send [CD (levitando update)
+            if let Some(user) = state.users.get(&conn_id) {
+                let cd = super::common::build_cd_packet(user);
+                state.send_data(SendTarget::ToArea { map, x, y }, &cd).await;
             }
         }
         ObjType::ScrollItem => {

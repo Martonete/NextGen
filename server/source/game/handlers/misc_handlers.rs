@@ -1038,6 +1038,12 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
             super::common::NINGUN_ARMA, super::common::NINGUN_ESCUDO, super::common::NINGUN_CASCO)
     };
     state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+
+    // Send mount state packet
+    let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+    let usm = format!("USM{},{}", char_index, 1);
+    state.send_data(SendTarget::ToArea { map, x, y }, &usm).await;
+
     state.send_to(conn_id, &format!("{}Te has montado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
 }
 
@@ -1072,6 +1078,12 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
         format!("CP{},{},{},{},{},{},0,0,{}", user.char_index.0, user.body, user.head, user.heading, user.weapon_anim, user.shield_anim, user.casco_anim)
     };
     state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+
+    // Send mount state packet
+    let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+    let usm = format!("USM{},{}", char_index, 0);
+    state.send_data(SendTarget::ToArea { map, x, y }, &usm).await;
+
     state.send_to(conn_id, &format!("{}Te has desmontado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
 }
 
