@@ -396,6 +396,8 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constants tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float yOff = ch.Dead ? (20f * absHo / 30f) : (7f * absHo / 30f);
+        // Mounted: head needs extra distance since mount body is taller
+        if (ch.Mounted) yOff += 10f;
         DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, 75f / 255f, data);
     }
 
@@ -409,6 +411,8 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float helmetGap = 14f * absHo / 30f - 3f;
+        // Mounted: helmet needs extra distance since mount body is taller
+        if (ch.Mounted) helmetGap += 10f;
         DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1, pos.Y - hoY + helmetGap, 150f / 255f, data);
     }
 
