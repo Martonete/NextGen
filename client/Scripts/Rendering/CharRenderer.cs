@@ -404,7 +404,7 @@ public static class CharRenderer
         // Place reflected aura at the same Y as the reflected body center.
         // The sprite is UV-flipped (handled by DrawPendingAuras reflected path).
         float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-        float bodyReflY = absHo < 36f ? 36f : absHo; // same clamp as DrawReflBody
+        float bodyReflY = (absHo < 36f ? 36f : absHo) + 5f; // same clamp+offset as DrawReflBody
         float reflAuraY = pos.Y + bodyReflY;
 
         float auraX = pos.X + headOffset.X;
@@ -440,8 +440,9 @@ public static class CharRenderer
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
         // Short races clamp to 36px so body reflection doesn't clip under feet
+        // +5 global offset so reflection starts below character feet (not hidden behind them)
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float dist = absHo < 36f ? 36f : absHo;
+        float dist = (absHo < 36f ? 36f : absHo) + 5f;
         DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
@@ -455,6 +456,7 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constants tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float yOff = ch.Dead ? (20f * absHo / 30f) : (7f * absHo / 30f);
+        yOff += 5f; // global +5 offset so reflection clears character feet
         // Mounted: head needs extra distance since mount body is taller, and X+1
         float xOff = 0f;
         if (ch.Mounted) { yOff += 18f; xOff = 1f; }
@@ -471,6 +473,7 @@ public static class CharRenderer
         // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
         float absHo = -hoY > 1f ? -hoY : 1f;
         float helmetGap = 14f * absHo / 30f - 3f;
+        helmetGap += 5f; // global +5 offset so reflection clears character feet
         // Mounted: helmet needs extra distance since mount body is taller, and X+1
         float xOff = 0f;
         if (ch.Mounted) { helmetGap += 18f; xOff = 1f; }
@@ -486,7 +489,7 @@ public static class CharRenderer
         if (weapGrh <= 0) return;
         // Weapon reflection Y: absHo base + 7 scaled gap (hand height)
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float weapY = pos.Y + absHo + 7f * absHo / 30f;
+        float weapY = pos.Y + absHo + 7f * absHo / 30f + 5f;
         DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, weapY, 75f / 255f, data);
     }
@@ -500,7 +503,7 @@ public static class CharRenderer
         if (shldGrh <= 0) return;
         // Same scaling as weapon but 2px closer
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float shldY = pos.Y + absHo + 5f * absHo / 30f;
+        float shldY = pos.Y + absHo + 5f * absHo / 30f + 5f;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
             pos.X, shldY, 90f / 255f, data);
     }
