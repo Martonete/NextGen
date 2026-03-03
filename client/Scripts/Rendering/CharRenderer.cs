@@ -392,18 +392,24 @@ public static class CharRenderer
             }
         }
 
-        // Mirror the normal aura position around mirrorY.
-        // The reflected aura list skips tileHeight offset, so we compute the final position directly.
+        // Mirror the normal aura's visual rect around mirrorY.
+        // Normal aura: top = normalAuraY - tileOff, bottom = top + ph
+        // Mirrored bottom → becomes reflected top: reflTop = 2*mirrorY - normalBottom
+        //   = 2*mirrorY - (normalAuraY - tileOff + ph)
+        //   = 2*mirrorY - normalAuraY + tileOff - ph
+        // Since reflected list does NOT apply tileOff, reflAuraY IS the final draw position.
         float mirrorY = pos.Y + TileSize - 2f;
         float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
-        // Normal aura final = normalAuraY - tileOff (DrawPendingAuras shifts up)
-        // Reflected final = 2*mirrorY - normalFinalY = 2*mirrorY - normalAuraY + tileOff
-        // Since reflected list does NOT apply tileOff, reflAuraY IS the final position.
         float tileOff = 0f;
+        float ph = TileSize; // fallback
         var resolved = data.ResolveGrh(grhIndex, frame);
-        if (resolved != null && resolved.TileHeight > 1f)
-            tileOff = (int)(resolved.TileHeight * TileSize) - TileSize;
-        float reflAuraY = 2f * mirrorY - normalAuraY + tileOff;
+        if (resolved != null)
+        {
+            ph = resolved.PixelHeight;
+            if (resolved.TileHeight > 1f)
+                tileOff = (int)(resolved.TileHeight * TileSize) - TileSize;
+        }
+        float reflAuraY = 2f * mirrorY - normalAuraY + tileOff - ph;
 
         float auraX = pos.X + headOffset.X;
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
