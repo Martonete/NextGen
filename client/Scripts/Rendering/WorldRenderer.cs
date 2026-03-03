@@ -59,7 +59,7 @@ public partial class WorldRenderer : Node2D
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color)> _pendingCharParticleDraws = new();
 
     // Pending aura draws for the aura additive layer (VB6: D3DBLEND_ONE/ONE)
-    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, bool reflected)> _pendingAuraDraws = new();
+    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
 
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
@@ -612,73 +612,9 @@ public partial class WorldRenderer : Node2D
     {
         if (_data == null) return;
 
-        foreach (var (grhIndex, frame, pos, color, angle, reflected) in _pendingAuraDraws)
+        foreach (var (grhIndex, frame, pos, color, angle) in _pendingAuraDraws)
         {
-            if (reflected)
-            {
-                // Reflected aura: Y-flipped UV (same technique as DrawGrhFlippedY)
-                var resolved = _data.ResolveGrh(grhIndex, frame);
-                if (resolved == null || resolved.FileNum <= 0) continue;
-                var texture = _data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) continue;
-
-                int sx = resolved.SX, sy = resolved.SY;
-                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                int texW = texture.GetWidth(), texH = texture.GetHeight();
-                if (texW > 0) sx %= texW;
-                if (texH > 0) sy %= texH;
-                if (sx + pw > texW) pw = texW - sx;
-                if (sy + ph > texH) ph = texH - sy;
-                if (pw <= 0 || ph <= 0) continue;
-
-                // Same tileWidth/tileHeight centering as normal auras.
-                // reflAuraY is computed via mirror formula (2*mirrorY - normalY) so the
-                // normal tileHeight offset produces the correct mirrored position.
-                float drawX = pos.X;
-                float drawY = pos.Y;
-                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-                if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-                    drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
-
-                // Y-flip via UV: swap top/bottom in texture coords
-                float u0 = (float)sx / texW;
-                float v0 = (float)sy / texH;
-                float u1 = (float)(sx + pw) / texW;
-                float v1 = (float)(sy + ph) / texH;
-
-                // Flipped UV verts + UVs (same technique as DrawGrhFlippedY: DrawPolygon)
-                Vector2[] verts, uvs;
-                if (angle != 0f)
-                {
-                    float cx = drawX + pw / 2f;
-                    float cy = drawY + ph / 2f;
-                    ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
-                    verts = new Vector2[] {
-                        new(-pw / 2f, -ph / 2f), new(pw / 2f, -ph / 2f),
-                        new(pw / 2f, ph / 2f), new(-pw / 2f, ph / 2f)
-                    };
-                    uvs = new Vector2[] {
-                        new(u0, v1), new(u1, v1), new(u1, v0), new(u0, v0)
-                    };
-                    var colors = new Color[] { color, color, color, color };
-                    canvas.DrawPolygon(verts, colors, uvs, texture);
-                    ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
-                }
-                else
-                {
-                    verts = new Vector2[] {
-                        new(drawX, drawY), new(drawX + pw, drawY),
-                        new(drawX + pw, drawY + ph), new(drawX, drawY + ph)
-                    };
-                    uvs = new Vector2[] {
-                        new(u0, v1), new(u1, v1), new(u1, v0), new(u0, v0)
-                    };
-                    var colors = new Color[] { color, color, color, color };
-                    canvas.DrawPolygon(verts, colors, uvs, texture);
-                }
-            }
-            else if (angle != 0f)
+            if (angle != 0f)
             {
                 // Rotating aura — use DrawSetTransform for rotation around sprite center
                 var resolved = _data.ResolveGrh(grhIndex, frame);
@@ -748,9 +684,9 @@ public partial class WorldRenderer : Node2D
     /// Queue an aura draw for the aura additive layer.
     /// Called by CharRenderer.CollectAuraDraws.
     /// </summary>
-    public void QueueAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle, bool reflected = false)
+    public void QueueAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle)
     {
-        _pendingAuraDraws.Add((grhIndex, frame, pos, color, angle, reflected));
+        _pendingAuraDraws.Add((grhIndex, frame, pos, color, angle));
     }
 
     /// <summary>

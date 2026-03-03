@@ -378,14 +378,6 @@ public static class CharRenderer
         var aura = data.Auras[auraIndex];
         if (aura.GrhIndex <= 0) return;
 
-        // Mirror the normal aura Y around the character's feet (same mirrorY as DrawReflection)
-        float mirrorY = pos.Y + TileSize - 2f;
-        float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
-        float reflAuraY = 2f * mirrorY - normalAuraY;
-        float auraX = pos.X + headOffset.X;
-
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
-
         int grhIndex = aura.GrhIndex;
         int frame = 0;
         if (grhIndex > 0 && grhIndex < data.Grhs.Length)
@@ -399,8 +391,28 @@ public static class CharRenderer
             }
         }
 
+        // Get the tileHeight offset that DrawPendingAuras will apply (upward shift).
+        // We need to compensate: the normal path shifts drawY UP by tileOff,
+        // but for reflections that shift goes the wrong direction.
+        // Formula: we want final drawY = 2*mirrorY - normalFinalDrawY
+        //   normalFinalDrawY = normalAuraY - tileOff
+        //   reflFinalDrawY   = reflAuraY - tileOff  (same offset applied by DrawPendingAuras)
+        //   reflAuraY - tileOff = 2*mirrorY - (normalAuraY - tileOff)
+        //   reflAuraY = 2*mirrorY - normalAuraY + 2*tileOff
+        float mirrorY = pos.Y + TileSize - 2f;
+        float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
+        float tileOff = 0f;
+        var resolved = data.ResolveGrh(grhIndex, frame);
+        if (resolved != null && resolved.TileHeight > 1f)
+            tileOff = (int)(resolved.TileHeight * TileSize) - TileSize;
+        float reflAuraY = 2f * mirrorY - normalAuraY + 2f * tileOff;
+
+        float auraX = pos.X + headOffset.X;
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
+
+        // Queue as normal aura (no UV flip needed — aura glow is symmetric)
         worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
-                                     aura.Giratoria ? -angle : 0f, reflected: true);
+                                     aura.Giratoria ? -angle : 0f);
     }
 
     private static void DrawBody(
