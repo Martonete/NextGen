@@ -380,9 +380,9 @@ public static class CharRenderer
         int bodyGrh = data.Bodies[ch.Body].Walk[heading];
         if (bodyGrh <= 0) return;
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        // Short races clamp to 34px so body reflection doesn't clip under feet
+        // Short races clamp to 36px so body reflection doesn't clip under feet
         float absHo = -hoY > 1f ? -hoY : 1f;
-        float dist = absHo < 34f ? 34f : absHo;
+        float dist = absHo < 36f ? 36f : absHo;
         DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
