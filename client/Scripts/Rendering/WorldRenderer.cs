@@ -318,7 +318,7 @@ public partial class WorldRenderer : Node2D
             foreach (var kvp in _state.Characters)
             {
                 var ch = kvp.Value;
-                if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
+                if (ch.Invisible) continue;
 
                 // Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
                 // has water (L1 GRH 1505-1520). Checking 3 rows allows the reflection

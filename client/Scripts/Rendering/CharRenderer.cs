@@ -130,7 +130,7 @@ public static class CharRenderer
             bool isNpc = ch.CharIndex != state.UserCharIndex && ch.NpcNumber > 0;
             drawShadow = isNpc ? state.Config.ShowNpcShadows : state.Config.ShowShadows;
         }
-        if (drawShadow)
+        if (drawShadow && !ch.Invisible)
             DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
         // Auras use additive blend (D3DBLEND_ONE/ONE). Draws are collected in
