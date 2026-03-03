@@ -570,6 +570,54 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 }
             }
 
+            // Auto-dismount from mount if mounted (before boarding boat)
+            let is_mounted_for_boat = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
+            if is_mounted_for_boat && !is_navigating {
+                // Dismount mount — restore body, clear mount state
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.montado = false;
+                    u.levitando = false;
+                    u.body = u.montado_body;
+                    u.head = u.orig_head;
+                }
+                let (weap_a, shield_a, casco_a) = get_equipped_anims(state, conn_id);
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.weapon_anim = weap_a;
+                    u.shield_anim = shield_a;
+                    u.casco_anim = casco_a;
+                    // Restore auras from equipped items
+                    for slot_idx in 0..MAX_INVENTORY_SLOTS {
+                        if !u.inventory[slot_idx].equipped { continue; }
+                        let oi = u.inventory[slot_idx].obj_index;
+                        if oi < 1 { continue; }
+                        if let Some(obj) = state.game_data.objects.get((oi - 1) as usize) {
+                            if obj.crea_aura > 0 {
+                                match obj.obj_type {
+                                    ObjType::Armor => u.aura_a = obj.crea_aura,
+                                    ObjType::Weapon => u.aura_w = obj.crea_aura,
+                                    ObjType::Shield => u.aura_e = obj.crea_aura,
+                                    ObjType::Helmet => u.aura_c = obj.crea_aura,
+                                    ObjType::Tool => u.aura_r = obj.crea_aura,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                // Notify: mount off
+                let mnt_ci = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
+                let usm_off = format!("USM{},0", mnt_ci);
+                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &usm_off).await;
+                let mvol_off = format!("MVOL{},0", mnt_ci);
+                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &mvol_off).await;
+                let (cd, au) = {
+                    let u = state.users.get(&conn_id).unwrap();
+                    (super::common::build_cd_packet(u), super::common::build_aura_packet(u))
+                };
+                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &cd).await;
+                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &au).await;
+            }
+
             // VB6 DoNavega: If hidden, reveal first (NOVER)
             let (was_hidden, char_index_val, map_for_nover) = match state.users.get(&conn_id) {
                 Some(u) => (u.hidden, u.char_index.0, u.pos_map),
@@ -784,8 +832,53 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             let (is_dead, is_navigating, is_mounted) = state.users.get(&conn_id)
                 .map(|u| (u.dead, u.navigating, u.montado))
                 .unwrap_or((false, false, false));
-            if is_dead || is_navigating {
+            if is_dead {
                 return;
+            }
+
+            // Auto-dismount from boat if navigating
+            if is_navigating {
+                let equip_info = state.users.get(&conn_id).map(|u| {
+                    let get_inv_obj = |slot: usize| -> i32 {
+                        if slot >= 1 && slot <= u.inventory.len() { u.inventory[slot - 1].obj_index } else { 0 }
+                    };
+                    (
+                        get_inv_obj(u.equip.armor),
+                        get_inv_obj(u.equip.weapon),
+                        get_inv_obj(u.equip.shield),
+                        get_inv_obj(u.equip.helmet),
+                        u.old_head, u.race.clone(), u.gender,
+                    )
+                });
+                if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, race, gender)) = equip_info {
+                    let armor_body = state.get_object(armor_obj).map(|o| o.num_ropaje).unwrap_or(0);
+                    let weapon_anim = state.get_object(weapon_obj).map(|o| o.weapon_anim).unwrap_or(0);
+                    let shield_anim = state.get_object(shield_obj).map(|o| o.shield_anim).unwrap_or(0);
+                    let casco_anim = state.get_object(helmet_obj).map(|o| o.casco_anim).unwrap_or(0);
+                    if let Some(u) = state.users.get_mut(&conn_id) {
+                        u.navigating = false;
+                        u.barco_slot = 0;
+                        u.head = saved_head;
+                        u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
+                        u.weapon_anim = weapon_anim;
+                        u.shield_anim = shield_anim;
+                        u.casco_anim = casco_anim;
+                    }
+                }
+                // Notify clients: navigation off
+                let (nav_ci, nav_map, nav_x, nav_y) = match state.users.get(&conn_id) {
+                    Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
+                    None => return,
+                };
+                let cp_nav = {
+                    let u = state.users.get(&conn_id).unwrap();
+                    format!("CP{},{},{},{},{},{},0,0,{}", u.char_index.0, u.body, u.head,
+                        u.heading, u.weapon_anim, u.shield_anim, u.casco_anim)
+                };
+                state.send_data(SendTarget::ToArea { map: nav_map, x: nav_x, y: nav_y }, &cp_nav).await;
+                state.send_to(conn_id, "NAVEG").await;
+                let nvg_off = format!("NVG{},0", nav_ci);
+                state.send_data(SendTarget::ToAll, &nvg_off).await;
             }
 
             let (map, x, y, char_index) = match state.users.get(&conn_id) {
