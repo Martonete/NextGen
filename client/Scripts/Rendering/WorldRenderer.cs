@@ -60,6 +60,8 @@ public partial class WorldRenderer : Node2D
 
     // Pending aura draws for the aura additive layer (VB6: D3DBLEND_ONE/ONE)
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
+    // Reflected auras — pre-computed final position, no tileHeight offset applied
+    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingReflAuraDraws = new();
 
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
@@ -208,6 +210,7 @@ public partial class WorldRenderer : Node2D
         _pendingMapParticleDraws.Clear();
         _pendingCharParticleDraws.Clear();
         _pendingAuraDraws.Clear();
+        _pendingReflAuraDraws.Clear();
         _pendingRoofDraws.Clear();
 
         // VB6 ShowNextFrame: render center = UserPos - AddtoUserPos, offset = OffsetCounter
@@ -652,6 +655,67 @@ public partial class WorldRenderer : Node2D
                 CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
             }
         }
+
+        // Reflected auras — position is pre-computed, NO tileHeight offset
+        foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
+        {
+            if (angle != 0f)
+            {
+                var resolved = _data.ResolveGrh(grhIndex, frame);
+                if (resolved == null || resolved.FileNum <= 0) continue;
+                var texture = _data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) continue;
+
+                int sx = resolved.SX, sy = resolved.SY;
+                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                int texW = texture.GetWidth(), texH = texture.GetHeight();
+                if (texW > 0) sx = sx % texW;
+                if (texH > 0) sy = sy % texH;
+                if (sx + pw > texW) pw = texW - sx;
+                if (sy + ph > texH) ph = texH - sy;
+                if (pw <= 0 || ph <= 0) continue;
+
+                // Center X only (no tileHeight Y offset for reflections)
+                float drawX = pos.X;
+                float drawY = pos.Y;
+                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+
+                float cx = drawX + pw / 2f;
+                float cy = drawY + ph / 2f;
+                ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
+                var srcRect = new Rect2(sx, sy, pw, ph);
+                var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
+            }
+            else
+            {
+                // Draw without tileHeight offset — use raw position
+                var resolved = _data.ResolveGrh(grhIndex, frame);
+                if (resolved == null || resolved.FileNum <= 0) continue;
+                var texture = _data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) continue;
+
+                int sx = resolved.SX, sy = resolved.SY;
+                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                int texW = texture.GetWidth(), texH = texture.GetHeight();
+                if (texW > 0) sx = sx % texW;
+                if (texH > 0) sy = sy % texH;
+                if (sx + pw > texW) pw = texW - sx;
+                if (sy + ph > texH) ph = texH - sy;
+                if (pw <= 0 || ph <= 0) continue;
+
+                float drawX = pos.X;
+                float drawY = pos.Y;
+                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+
+                var srcRect = new Rect2(sx, sy, pw, ph);
+                var destRect = new Rect2(drawX, drawY, pw, ph);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+            }
+        }
     }
 
     /// <summary>
@@ -687,6 +751,14 @@ public partial class WorldRenderer : Node2D
     public void QueueAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle)
     {
         _pendingAuraDraws.Add((grhIndex, frame, pos, color, angle));
+    }
+
+    /// <summary>
+    /// Queue a reflected aura draw. Position is pre-computed final (no tileHeight offset applied).
+    /// </summary>
+    public void QueueReflAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle)
+    {
+        _pendingReflAuraDraws.Add((grhIndex, frame, pos, color, angle));
     }
 
     /// <summary>

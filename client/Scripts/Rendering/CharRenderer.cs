@@ -296,14 +296,14 @@ public static class CharRenderer
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
         canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
 
-        // Reflection alpha for body/head/weapon/shield
+        // Reflection alpha: body/head are most transparent, equipment is more visible
         Color reflColor = new Color(1f, 1f, 1f, 75f / 255f);
-        // Helmet gets 50% more opacity so it covers the face underneath
-        Color helmetColor = new Color(1f, 1f, 1f, 112f / 255f);
+        // Weapon/shield/helmet get higher opacity for visual priority in reflection
+        Color equipColor = new Color(1f, 1f, 1f, 112f / 255f);
 
-        // Draw character parts with separate helmet alpha
+        // Draw character parts with separate equipment alpha
         DrawCharParts(canvas, ch, pos, headOffset, heading, data, animator,
-                      null, reflColor, helmetColor);
+                      null, reflColor, equipColor);
 
         // Reset transform
         canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
@@ -317,38 +317,39 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator,
         GameState? state = null, Color? colorOverride = null,
-        Color? helmetColorOverride = null)
+        Color? equipColorOverride = null)
     {
-        Color? hc = helmetColorOverride ?? colorOverride;
+        // equipColorOverride applies to weapon, shield, helmet (higher opacity in reflections)
+        Color? ec = equipColorOverride ?? colorOverride;
         switch (heading)
         {
             case 1: // North
-                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
-                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
                 break;
             case 2: // East
-                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
-                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 break;
             case 3: // South
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
-                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
-                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 break;
             case 4: // West
-                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
                 DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
-                DrawHelmet(canvas, ch, pos, headOffset, heading, data, hc);
-                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, ec);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, ec);
                 break;
         }
     }
@@ -391,28 +392,25 @@ public static class CharRenderer
             }
         }
 
-        // Get the tileHeight offset that DrawPendingAuras will apply (upward shift).
-        // We need to compensate: the normal path shifts drawY UP by tileOff,
-        // but for reflections that shift goes the wrong direction.
-        // Formula: we want final drawY = 2*mirrorY - normalFinalDrawY
-        //   normalFinalDrawY = normalAuraY - tileOff
-        //   reflFinalDrawY   = reflAuraY - tileOff  (same offset applied by DrawPendingAuras)
-        //   reflAuraY - tileOff = 2*mirrorY - (normalAuraY - tileOff)
-        //   reflAuraY = 2*mirrorY - normalAuraY + 2*tileOff
+        // Mirror the normal aura position around mirrorY.
+        // The reflected aura list skips tileHeight offset, so we compute the final position directly.
         float mirrorY = pos.Y + TileSize - 2f;
         float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
+        // Normal aura final = normalAuraY - tileOff (DrawPendingAuras shifts up)
+        // Reflected final = 2*mirrorY - normalFinalY = 2*mirrorY - normalAuraY + tileOff
+        // Since reflected list does NOT apply tileOff, reflAuraY IS the final position.
         float tileOff = 0f;
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved != null && resolved.TileHeight > 1f)
             tileOff = (int)(resolved.TileHeight * TileSize) - TileSize;
-        float reflAuraY = 2f * mirrorY - normalAuraY + 2f * tileOff;
+        float reflAuraY = 2f * mirrorY - normalAuraY + tileOff;
 
         float auraX = pos.X + headOffset.X;
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
 
-        // Queue as normal aura (no UV flip needed — aura glow is symmetric)
-        worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
-                                     aura.Giratoria ? -angle : 0f);
+        // Queue on the reflected aura list (no tileHeight offset applied by renderer)
+        worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
+                                         aura.Giratoria ? -angle : 0f);
     }
 
     private static void DrawBody(

@@ -807,12 +807,30 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     u.head = u.orig_head; // Restore head (flying mounts hide it)
                 }
 
-                // Restore equipped weapon/shield/helmet appearance
+                // Restore equipped weapon/shield/helmet appearance + auras
                 let (weapon_anim, shield_anim, casco_anim) = get_equipped_anims(state, conn_id);
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.weapon_anim = weapon_anim;
                     u.shield_anim = shield_anim;
                     u.casco_anim = casco_anim;
+                    // Restore auras from equipped items
+                    for slot_idx in 0..MAX_INVENTORY_SLOTS {
+                        if !u.inventory[slot_idx].equipped { continue; }
+                        let oi = u.inventory[slot_idx].obj_index;
+                        if oi < 1 { continue; }
+                        if let Some(obj) = state.game_data.objects.get((oi - 1) as usize) {
+                            if obj.crea_aura > 0 {
+                                match obj.obj_type {
+                                    ObjType::Armor => u.aura_a = obj.crea_aura,
+                                    ObjType::Weapon => u.aura_w = obj.crea_aura,
+                                    ObjType::Shield => u.aura_e = obj.crea_aura,
+                                    ObjType::Helmet => u.aura_c = obj.crea_aura,
+                                    ObjType::Tool => u.aura_r = obj.crea_aura,
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
                 }
             } else {
                 // Mount up — VB6: keep helmet visible, hide weapon/shield only
@@ -824,6 +842,12 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     }
                     u.weapon_anim = super::common::NINGUN_ARMA;
                     u.shield_anim = super::common::NINGUN_ESCUDO;
+                    // Clear all auras while mounted (equipment is hidden)
+                    u.aura_a = 0;
+                    u.aura_w = 0;
+                    u.aura_e = 0;
+                    u.aura_c = 0;
+                    u.aura_r = 0;
                     // Flying mounts hide head AND helmet (mount sprite replaces everything)
                     // Normal mounts: keep helmet visible (VB6 line 1409)
                     if is_flying {
@@ -857,11 +881,13 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 state.send_data(SendTarget::ToArea { map, x, y }, &mvol).await;
             }
 
-            // Send [CD (levitando update)
-            if let Some(user) = state.users.get(&conn_id) {
-                let cd = super::common::build_cd_packet(user);
-                state.send_data(SendTarget::ToArea { map, x, y }, &cd).await;
-            }
+            // Send [CD (levitando + auras) and AU| (aura update)
+            let (cd, au) = {
+                let user = match state.users.get(&conn_id) { Some(u) => u, None => return };
+                (super::common::build_cd_packet(user), super::common::build_aura_packet(user))
+            };
+            state.send_data(SendTarget::ToArea { map, x, y }, &cd).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &au).await;
         }
         ObjType::ScrollItem => {
             // VB6: Buff scroll — typeScroll: 1=exp, 2=gold, 3=drop, 4=crystal drop
