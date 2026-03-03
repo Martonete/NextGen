@@ -153,6 +153,9 @@ pub struct NpcData {
     // Trainer creature data (VB6: NroCriaturas, CI1..CIN, CN1..CNN)
     pub nro_criaturas: i32,
     pub criaturas: Vec<TrainerCreature>,
+
+    // Default aura (VB6: NPC can have CreaAura set in dat file, applied on spawn)
+    pub aura: i32,
 }
 
 /// Trainer creature entry (VB6: tCriaturasEntrenador).
@@ -196,6 +199,7 @@ impl Default for NpcData {
             give_pts: 0,
             snd1: 0, snd2: 0, snd3: 0,
             nro_criaturas: 0, criaturas: Vec::new(),
+            aura: 0,
         }
     }
 }
@@ -291,6 +295,7 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         snd1: get_int("SND1"),
         snd2: get_int("Snd2"),
         snd3: get_int("SND3"),
+        aura: get_int("CreaAura"),
         nro_criaturas: get_int("NroCriaturas"),
         criaturas: {
             let nro = get_int("NroCriaturas") as usize;

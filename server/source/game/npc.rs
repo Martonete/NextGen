@@ -240,7 +240,7 @@ impl NpcState {
             counter_paralisis: 0,
             lanza_spells: data.lanza_spells,
             spells: data.spells.clone(),
-            aura: 0,
+            aura: data.aura,
             maestro_user: None,
             area_id: 0,
             area_min_x: 0,

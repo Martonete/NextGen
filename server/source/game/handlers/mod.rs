@@ -2333,6 +2333,26 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/CHEAT ") {
         let target = cmd[7..].trim();
         handle_slash_cheat(state, conn_id, target).await;
+    } else if cmd_upper == "/REY" {
+        gm_commands::handle_slash_rey(state, conn_id).await;
+    } else if cmd_upper.starts_with("/NPCAURA ") {
+        let args = cmd[9..].trim();
+        gm_commands::handle_slash_npcaura(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/DEST") && (cmd_upper.len() == 5 || cmd_upper.as_bytes().get(5) == Some(&b' ')) {
+        gm_commands::handle_slash_dest(state, conn_id).await;
+    } else if cmd_upper == "/MASSDEST" {
+        gm_commands::handle_slash_massdest(state, conn_id).await;
+    } else if cmd_upper.starts_with("/IRCERCA ") {
+        let target = cmd[9..].trim();
+        gm_commands::handle_slash_ircerca(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/HACERITEM ") {
+        let args = &cmd[11..];
+        gm_commands::handle_slash_haceritem(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/NENE ") {
+        let args = cmd[6..].trim();
+        gm_commands::handle_slash_nene(state, conn_id, args).await;
+    } else if cmd_upper == "/RESETINV" {
+        gm_commands::handle_slash_resetinv(state, conn_id).await;
     } else {
         // Unknown command — send feedback
         state.send_to(conn_id, "||714").await; // TEXTO714: Comando no reconocido

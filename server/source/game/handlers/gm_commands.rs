@@ -1365,28 +1365,56 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
     state.send_to(conn_id, &format!("{}{} NPCs eliminados en mapa {}.{}", server_opcodes::CONSOLE_MSG, killed, map, font_types::INFO)).await;
 }
 
-/// /LIMPIAR or /LMAP — Clean all ground items on current map.
+/// Check if an object is a map fixture (not player-droppable).
+/// VB6: ItemNoEsDeMapa — returns TRUE if item is NOT a map fixture (i.e. can be cleaned).
+/// Map fixtures: Doors(6), Trees(4), Signs(8), Forums(10), Minerals(23), Teleports(19).
+fn is_map_fixture(state: &GameState, obj_index: i32) -> bool {
+    use crate::data::objects::ObjType;
+    match state.get_object(obj_index) {
+        Some(obj) => matches!(obj.obj_type,
+            ObjType::Door | ObjType::Trees | ObjType::Sign |
+            ObjType::Forum | ObjType::Mineral | ObjType::Teleport
+        ),
+        None => false, // Unknown object — safe to clean
+    }
+}
+
+/// /LIMPIAR or /LMAP — Clean dropped ground items on current map.
+/// Skips map fixtures (doors, trees, signs, forums, minerals, teleports).
+/// VB6: LimpiarMapa / LimpiarMundoEntero — only cleans items in tClearWorld.
 pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: ConnectionId) {
     let map = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => u.pos_map,
         _ => return,
     };
 
-    // Clean ground items from world grid
-    let mut cleaned = 0;
-    let grid = state.world.grid_mut(map);
-    for y in 1..=100i32 {
-        for x in 1..=100i32 {
-            if let Some(tile) = grid.tile_mut(x, y) {
-                if tile.ground_item.obj_index > 0 {
-                    tile.ground_item = world::GroundItem::default();
-                    cleaned += 1;
+    // Collect items to clean (skip map fixtures)
+    let mut to_clean: Vec<(i32, i32)> = Vec::new();
+    if let Some(grid) = state.world.grid(map) {
+        for y in 1..=100i32 {
+            for x in 1..=100i32 {
+                if let Some(tile) = grid.tile(x, y) {
+                    if tile.ground_item.obj_index > 0 && !is_map_fixture(state, tile.ground_item.obj_index) {
+                        to_clean.push((x, y));
+                    }
                 }
             }
         }
     }
 
-    state.send_to(conn_id, &format!("{}{} items del suelo limpiados en mapa {}.{}", server_opcodes::CONSOLE_MSG, cleaned, map, font_types::INFO)).await;
+    // Remove items and send BO packets
+    for &(x, y) in &to_clean {
+        let grid = state.world.grid_mut(map);
+        if let Some(tile) = grid.tile_mut(x, y) {
+            tile.ground_item = world::GroundItem::default();
+        }
+        // VB6: EraseObj sends "BO{x},{y}" to map
+        state.send_data(SendTarget::ToMap(map), &format!("BO{},{}", x, y)).await;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} used /LIMPIAR on map {} — cleaned {} items", gm_name, map, to_clean.len());
+    state.send_to(conn_id, &format!("{}{} items del suelo limpiados en mapa {}.{}", server_opcodes::CONSOLE_MSG, to_clean.len(), map, font_types::INFO)).await;
 }
 
 /// /NICK2IP nick — Get IP of user.
@@ -3285,4 +3313,363 @@ pub(super) async fn handle_slash_tsum(state: &mut GameState, conn_id: Connection
     }
 
     state.send_to(conn_id, &format!("{}Invocados {} participantes del torneo.{}", server_opcodes::CONSOLE_MSG, warped, font_types::INFO)).await;
+}
+
+/// /REY — Spawn the Ancalagon pre-dragon + 4 guardians (VB6: /SALEREY in TCP.bas line 5170).
+/// Requires DIOS+ privileges.
+pub(super) async fn handle_slash_rey(state: &mut GameState, conn_id: ConnectionId) {
+    let is_gm = state.users.get(&conn_id).map(|u| u.logged && u.privileges >= privilege_level::DIOS).unwrap_or(false);
+    if !is_gm { return; }
+
+    if state.ancalagon_pre_dragon || state.ancalagon_alive {
+        state.send_to(conn_id, &format!("{}El Rey Ancalagon ya está activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Broadcast warning (VB6: SendData ToAll, "||805")
+    state.send_data(SendTarget::ToAll, "||805").await;
+
+    // Spawn pre-dragon (NPC 937) at map 123, (50,18)
+    state.ancalagon_guardians = 0;
+    if let Some(idx) = state.spawn_npc(937, 123, 50, 18) {
+        state.ancalagon_pre_dragon = true;
+        state.ancalagon_pre_dragon_idx = idx;
+        // Set aura 3 (VB6: Npclist(IndexReyAncalagon).Char.AuraA = 3)
+        if let Some(npc) = state.get_npc_mut(idx) {
+            npc.aura = 3;
+            let cc = npc.build_cc_packet();
+            state.send_data(SendTarget::ToMap(123), &cc).await;
+        }
+    }
+
+    // Spawn 4 guardians (NPC 938) — VB6 positions
+    let guardian_positions = [(50, 17), (49, 18), (51, 18), (50, 19)];
+    for (gx, gy) in &guardian_positions {
+        state.spawn_npc(938, 123, *gx, *gy);
+    }
+
+    // Reset timer so tick_ancalagon won't auto-spawn again
+    state.ancalagon_minutes = 0;
+    state.ancalagon_seconds = 0;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} used /REY — spawned Ancalagon pre-dragon + 4 guardians", gm_name);
+    state.send_to(conn_id, &format!("{}Rey Ancalagon invocado en mapa 123.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+}
+
+/// /NPCAURA <npc_runtime_index> <aura_id> — Set aura on a live NPC instance.
+/// Requires DIOS+ privileges. Useful for testing NPC aura visuals.
+pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let is_gm = state.users.get(&conn_id).map(|u| u.logged && u.privileges >= privilege_level::DIOS).unwrap_or(false);
+    if !is_gm { return; }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 2 {
+        state.send_to(conn_id, &format!("{}Uso: /NPCAURA <npc_index> <aura_id>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let npc_idx: usize = match parts[0].parse() {
+        Ok(v) => v,
+        Err(_) => {
+            state.send_to(conn_id, &format!("{}NPC index inválido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+    let aura_id: i32 = match parts[1].parse() {
+        Ok(v) => v,
+        Err(_) => {
+            state.send_to(conn_id, &format!("{}Aura ID inválido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    let (npc_name, map) = match state.get_npc(npc_idx) {
+        Some(npc) if npc.active => (npc.name.clone(), npc.map),
+        _ => {
+            state.send_to(conn_id, &format!("{}NPC {} no encontrado o inactivo.{}", server_opcodes::CONSOLE_MSG, npc_idx, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    if let Some(npc) = state.get_npc_mut(npc_idx) {
+        npc.aura = aura_id;
+        let cc = npc.build_cc_packet();
+        state.send_data(SendTarget::ToMap(map), &cc).await;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} set NPC {} ({}) aura to {}", gm_name, npc_idx, npc_name, aura_id);
+    state.send_to(conn_id, &format!("{}NPC {} ({}) aura = {}{}", server_opcodes::CONSOLE_MSG, npc_idx, npc_name, aura_id, font_types::INFO)).await;
+}
+
+/// /DEST — Destroy floor object at GM's current tile.
+/// VB6: TCP.bas line 5125. Calls EraseObj(SendTarget.toMap, ..., 10000, ...)
+pub(super) async fn handle_slash_dest(state: &mut GameState, conn_id: ConnectionId) {
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    let obj_idx = state.world.grid(map)
+        .and_then(|g| g.tile(x, y))
+        .map(|t| t.ground_item.obj_index)
+        .unwrap_or(0);
+
+    if obj_idx <= 0 {
+        state.send_to(conn_id, &format!("{}No hay objeto en esta posición.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let obj_name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_default();
+
+    let grid = state.world.grid_mut(map);
+    if let Some(tile) = grid.tile_mut(x, y) {
+        tile.ground_item = world::GroundItem::default();
+    }
+
+    // Send BO packet to notify clients
+    state.send_data(SendTarget::ToMap(map), &format!("BO{},{}", x, y)).await;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} used /DEST at ({},{},{}) — destroyed {}", gm_name, map, x, y, obj_name);
+    state.send_to(conn_id, &format!("{}Destruido: {} en ({},{}).{}", server_opcodes::CONSOLE_MSG, obj_name, x, y, font_types::INFO)).await;
+}
+
+/// /MASSDEST — Destroy all non-map floor objects in GM's visible area.
+/// VB6: TCP.bas line 4914. Iterates MinXBorder/MinYBorder area, skips map fixtures.
+pub(super) async fn handle_slash_massdest(state: &mut GameState, conn_id: ConnectionId) {
+    let (map, cx, cy) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    let min_y = (cy - world::MIN_Y_BORDER + 1).max(1);
+    let max_y = (cy + world::MIN_Y_BORDER - 1).min(100);
+    let min_x = (cx - world::MIN_X_BORDER + 1).max(1);
+    let max_x = (cx + world::MIN_X_BORDER - 1).min(100);
+
+    // Collect positions to clean (skip map fixtures)
+    let mut to_clean: Vec<(i32, i32)> = Vec::new();
+    if let Some(grid) = state.world.grid(map) {
+        for y in min_y..=max_y {
+            for x in min_x..=max_x {
+                if let Some(tile) = grid.tile(x, y) {
+                    if tile.ground_item.obj_index > 0 && !is_map_fixture(state, tile.ground_item.obj_index) {
+                        to_clean.push((x, y));
+                    }
+                }
+            }
+        }
+    }
+
+    for &(x, y) in &to_clean {
+        let grid = state.world.grid_mut(map);
+        if let Some(tile) = grid.tile_mut(x, y) {
+            tile.ground_item = world::GroundItem::default();
+        }
+        state.send_data(SendTarget::ToMap(map), &format!("BO{},{}", x, y)).await;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} used /MASSDEST at ({},{},{}) — cleaned {} items", gm_name, map, cx, cy, to_clean.len());
+    state.send_to(conn_id, &format!("{}{} objetos destruidos en el área.{}", server_opcodes::CONSOLE_MSG, to_clean.len(), font_types::INFO)).await;
+}
+
+/// /IRCERCA <name> — Teleport GM to an empty tile near a target player.
+/// VB6: TCP.bas line 2931. Searches outward from distance 2 to 5 for a legal free tile.
+pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+    let priv_level = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => u.privileges,
+        _ => return,
+    };
+
+    let target_id = match state.find_user_by_name(target_name) {
+        Some(id) => id,
+        None => {
+            state.send_to(conn_id, "||196").await; // User not found
+            return;
+        }
+    };
+
+    // Can't teleport to higher-ranked GMs unless you're DIOS+
+    let target_priv = state.users.get(&target_id).map(|u| u.privileges).unwrap_or(0);
+    if target_priv >= privilege_level::DIOS && priv_level < privilege_level::DIOS {
+        return;
+    }
+
+    let (tmap, tx, ty) = match state.users.get(&target_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+
+    // Search outward from distance 2 to 5 for a legal free tile (VB6 pattern)
+    for dist in 2..=5i32 {
+        for ix in (tx - dist)..=(tx + dist) {
+            for iy in (ty - dist)..=(ty + dist) {
+                // Only check perimeter of the square
+                if ix > tx - dist && ix < tx + dist && iy > ty - dist && iy < ty + dist {
+                    continue;
+                }
+                if ix < 1 || ix > 100 || iy < 1 || iy > 100 {
+                    continue;
+                }
+                let blocked = state.is_tile_blocked(tmap, ix, iy);
+                if !blocked && state.world.is_legal_pos(tmap, ix, iy, false) {
+                    warp_user(state, conn_id, tmap, ix, iy).await;
+                    send_warp_fx(state, conn_id).await;
+                    return;
+                }
+            }
+        }
+    }
+
+    state.send_to(conn_id, &format!("{}No se encontró posición libre cerca del jugador.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+}
+
+/// /HACERITEM <objID>@<amount> — Create item on floor at GM position.
+/// VB6: TCP.bas line 5072. Requires GRAN_DIOS+. Fails if tile already has object.
+pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::GRAN_DIOS => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    // Parse objID@amount (VB6 uses '@' delimiter)
+    let parts: Vec<&str> = args.split('@').collect();
+    let obj_id: i32 = parts.first().and_then(|s| s.trim().parse().ok()).unwrap_or(0);
+    let amount: i32 = if parts.len() >= 2 {
+        parts[1].trim().parse().unwrap_or(1).max(1).min(10000)
+    } else {
+        1
+    };
+
+    if obj_id < 1 {
+        state.send_to(conn_id, &format!("{}Uso: /HACERITEM <objID>@<cantidad>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Verify object exists
+    let (obj_name, grh) = match state.get_object(obj_id) {
+        Some(obj) => (obj.name.clone(), obj.grh_index),
+        None => {
+            state.send_to(conn_id, &format!("{}Objeto {} no existe.{}", server_opcodes::CONSOLE_MSG, obj_id, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Check tile is empty
+    let tile_occupied = state.world.grid(map)
+        .and_then(|g| g.tile(x, y))
+        .map(|t| t.ground_item.obj_index > 0)
+        .unwrap_or(true);
+
+    if tile_occupied {
+        state.send_to(conn_id, &format!("{}Ya hay un objeto en esta posición.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Place item
+    let grid = state.world.grid_mut(map);
+    if let Some(tile) = grid.tile_mut(x, y) {
+        tile.ground_item.obj_index = obj_id;
+        tile.ground_item.amount = amount;
+    }
+
+    // Send HO packet to show item visually
+    if grh > 0 {
+        state.send_data(SendTarget::ToArea { map, x, y }, &format!("HO{},{},{}", grh, x, y)).await;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} used /HACERITEM {} x{} ({}) at ({},{},{})", gm_name, obj_id, amount, obj_name, map, x, y);
+    // Notify GM
+    state.send_to(conn_id, &format!("{}Creado: {} x{} ({}) en ({},{}).{}", server_opcodes::CONSOLE_MSG, obj_name, amount, obj_id, x, y, font_types::INFO)).await;
+    // Notify admins (VB6: ||802)
+    state.send_data(SendTarget::ToAdmins, &format!("||802@{}@{}@{}@{}", gm_name, obj_id, obj_name, amount)).await;
+}
+
+/// /MASSDEST — already handled above.
+
+/// /NENE <map> — List hostile NPCs alive on a given map.
+/// VB6: TCP.bas line 3287. Lists hostile NPCs with Alineacion=2.
+pub(super) async fn handle_slash_nene(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let is_gm = state.users.get(&conn_id).map(|u| u.logged && u.privileges >= privilege_level::CONSEJERO).unwrap_or(false);
+    if !is_gm { return; }
+
+    let target_map: i32 = args.trim().parse().unwrap_or(0);
+    if target_map < 1 {
+        state.send_to(conn_id, &format!("{}Uso: /NENE <mapa>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    let mut names: Vec<String> = Vec::new();
+    for npc_opt in state.npcs.iter().flatten() {
+        if npc_opt.active && npc_opt.is_alive() && npc_opt.map == target_map
+            && npc_opt.hostile && npc_opt.alineacion == 2
+        {
+            names.push(npc_opt.name.clone());
+        }
+    }
+
+    let list = if names.is_empty() {
+        "No hay NPCs hostiles".to_string()
+    } else {
+        names.join(", ")
+    };
+
+    state.send_to(conn_id, &format!("{}NPCs hostiles en mapa {}: {}{}", server_opcodes::CONSOLE_MSG, target_map, list, font_types::INFO)).await;
+}
+
+/// /RESETINV — Reset targeted NPC's inventory to its NpcData defaults.
+/// VB6: TCP.bas line 4610. Requires targeting an NPC first.
+pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: ConnectionId) {
+    let (is_gm, target_npc_idx) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => (true, u.target_npc),
+        _ => (false, 0),
+    };
+    if !is_gm { return; }
+
+    if target_npc_idx == 0 {
+        state.send_to(conn_id, &format!("{}No tenés un NPC seleccionado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        return;
+    }
+
+    // Get NPC number to look up original data
+    let npc_number = match state.get_npc(target_npc_idx) {
+        Some(npc) if npc.active => npc.npc_number,
+        _ => {
+            state.send_to(conn_id, &format!("{}NPC no encontrado o inactivo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Get original inventory from NpcData
+    let original_items = match state.game_data.npcs.get(npc_number) {
+        Some(data) => data.items.clone(),
+        None => {
+            state.send_to(conn_id, &format!("{}NPC data {} no encontrado.{}", server_opcodes::CONSOLE_MSG, npc_number, font_types::INFO)).await;
+            return;
+        }
+    };
+
+    // Reset inventory
+    if let Some(npc) = state.get_npc_mut(target_npc_idx) {
+        for slot in npc.inventory.iter_mut() {
+            *slot = super::super::npc::NpcInvSlot::default();
+        }
+        for (i, item) in original_items.iter().enumerate() {
+            if i < npc.inventory.len() {
+                npc.inventory[i].obj_index = item.obj_index;
+                npc.inventory[i].amount = item.amount;
+                npc.inventory[i].prob_tirar = item.prob_tirar;
+            }
+        }
+        npc.nro_items = original_items.len() as i32;
+    }
+
+    let npc_name = state.get_npc(target_npc_idx).map(|n| n.name.clone()).unwrap_or_default();
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} used /RESETINV on NPC {} ({})", gm_name, target_npc_idx, npc_name);
+    state.send_to(conn_id, &format!("{}Inventario de {} reseteado.{}", server_opcodes::CONSOLE_MSG, npc_name, font_types::INFO)).await;
 }

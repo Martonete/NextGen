@@ -1134,6 +1134,60 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
+    // If item is equipped, unequip it first (VB6: DropObj line 295 calls Desequipar)
+    let is_equipped = state.users.get(&conn_id)
+        .map(|u| u.inventory[idx].equipped)
+        .unwrap_or(false);
+
+    if is_equipped {
+        let obj_data = state.get_object(obj_idx).cloned();
+        if let Some(obj) = &obj_data {
+            let had_aura = obj.crea_aura > 0;
+            let obj_type = obj.obj_type;
+            unequip_slot(state, conn_id, idx, &obj_type);
+
+            // Extract values needed for packets before borrowing state mutably
+            let (ci, weapon_anim, body, shield_anim, casco_anim, au_pkt) =
+                match state.users.get(&conn_id) {
+                    Some(user) => (
+                        user.char_index.0,
+                        user.weapon_anim,
+                        user.body,
+                        user.shield_anim,
+                        user.casco_anim,
+                        if had_aura { Some(super::common::build_aura_packet(user)) } else { None },
+                    ),
+                    None => return,
+                };
+
+            // Broadcast appearance change to area
+            match obj_type {
+                ObjType::Weapon => {
+                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|W{},{}", ci, weapon_anim)).await;
+                }
+                ObjType::Armor => {
+                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|B{},{}", ci, body)).await;
+                }
+                ObjType::Shield => {
+                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|E{},{}", ci, shield_anim)).await;
+                }
+                ObjType::Helmet => {
+                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|C{},{}", ci, casco_anim)).await;
+                }
+                _ => {}
+            }
+
+            // Send aura update if item had an aura
+            if let Some(au) = au_pkt {
+                state.send_data(SendTarget::ToArea { map, x, y }, &au).await;
+            }
+
+            // Send updated ANM (equipment stats) to the user
+            let anm = build_anm_packet(state, conn_id);
+            state.send_to(conn_id, &anm).await;
+        }
+    }
+
     // Get GrhIndex for the item
     let grh_index = state.get_object(obj_idx)
         .map(|o| o.grh_index)
