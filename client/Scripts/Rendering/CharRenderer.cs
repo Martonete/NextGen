@@ -448,7 +448,7 @@ public static class CharRenderer
         else if (absHo >= 28f) // tall races (human/elf/dark elf)
             dist += 1f;
         else // short races (enano/gnomo)
-            dist += 8f;
+            dist += 11f;
         DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
