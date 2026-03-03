@@ -1011,6 +1011,24 @@ async fn connect_user(
         }
     }
 
+    // --- PHASE 10d: USM/MVOL if mounted ---
+    // Send mount state to the user's client so it knows the character is mounted.
+    // Also broadcast to area so other players see the mount.
+    {
+        let mount_info = state.users.get(&conn_id).map(|u| (u.montado, u.levitando, u.char_index.0));
+        if let Some((true, levitando, char_idx)) = mount_info {
+            let (m, x, y) = state.users.get(&conn_id)
+                .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+                .unwrap_or((0, 0, 0));
+            let usm = format!("USM{},{}", char_idx, 1);
+            state.send_data(SendTarget::ToArea { map: m, x, y }, &usm).await;
+            if levitando {
+                let mvol = format!("MVOL{},{}", char_idx, 1);
+                state.send_data(SendTarget::ToArea { map: m, x, y }, &mvol).await;
+            }
+        }
+    }
+
     // --- PHASE 11: WarpUserChar — position + area visibility (VB6 line 1736) ---
     // VB6 calls WarpUserChar which sends: BKW, CM, XM, N~, PU, CC, area visibility, BKW
     {
