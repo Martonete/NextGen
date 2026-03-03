@@ -389,7 +389,7 @@ public static class CharRenderer
         if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
         int headGrh = data.Heads[ch.Head].Head[heading];
         if (headGrh <= 0) return;
-        float yOff = ch.Dead ? 23f : 10f;
+        float yOff = ch.Dead ? 22f : 9f;
         float headAlpha = (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
                            && data.Cascos[ch.CascoAnim].Head[heading] > 0) ? 35f / 255f : 100f / 255f;
         DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX, pos.Y - hoY + yOff, headAlpha, data);
@@ -424,7 +424,7 @@ public static class CharRenderer
         int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
         if (shldGrh <= 0) return;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, pos.Y + 40, 100f / 255f, data);
+            pos.X, pos.Y + 40, 70f / 255f, data);
     }
 
     /// <summary>
