@@ -911,19 +911,14 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
             }
 
             // Revive: restore HP, clear dead flag, restore body
-            let (map, x, y, race, max_hp) = match state.users.get(&tc) {
-                Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.race.clone(), u.max_hp),
+            // VB6: uses in-memory OrigChar.Head (not DB), DarCuerpoDesnudo for body
+            let (map, x, y, race, max_hp, orig_head, gender) = match state.users.get(&tc) {
+                Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.race.clone(), u.max_hp, u.orig_head, u.gender),
                 None => return,
             };
 
-            // Read gender and head from DB for naked body
-            let char_name_for_load = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
-            let (gender, orig_head) = match crate::db::charfile::load_charfile(&state.pool, &char_name_for_load).await {
-                Ok(chr) => (chr.gender.to_string(), chr.head),
-                Err(_) => ("1".to_string(), 1),
-            };
-
-            let new_body = naked_body(&race, &gender);
+            let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
+            let new_body = naked_body(&race, gender_str);
 
             if let Some(user) = state.users.get_mut(&tc) {
                 user.dead = false;
@@ -942,18 +937,8 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
                 None => return,
             };
 
-            // Resurrection FX (VB6: CFF charindex, 65, 0)
-            let cff_pkt = format!("CFF{},65,0", char_index.0);
-            state.send_data(SendTarget::ToArea { map, x, y }, &cff_pkt).await;
-
-            // Send HP update
-            let hp_pkt = {
-                let u = state.users.get(&tc).unwrap();
-                format!("[H]{},{}", u.max_hp, u.min_hp)
-            };
-            state.send_to(tc, &hp_pkt).await;
-
-            // Broadcast CP (character model change) — VB6: ChangeUserChar
+            // VB6 GM /REVIVIR: no CFF (no resurrection FX), just ChangeUserChar + SendUserHP
+            // Broadcast CP (character model change) — VB6: ChangeUserChar(toMap, ...)
             let cp_pkt = format!(
                 "CP{},{},{},{},{},{},0,0,{}",
                 char_index.0, new_body, orig_head, heading,
@@ -961,7 +946,13 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
             );
             state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
 
+            // Send HP update (VB6: SendUserHP)
+            send_stats_hp(state, tc).await;
+
+            // VB6: ||749@GMname — notify target who revived them
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+            state.send_to(tc, &format!("||749@{}", admin_name)).await;
+
             state.send_to(conn_id, &format!("{}{} revivido.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
             info!("[GM] {} revived {}", admin_name, target);
         }
