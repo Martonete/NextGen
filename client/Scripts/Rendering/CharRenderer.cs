@@ -141,40 +141,7 @@ public static class CharRenderer
         // WorldRenderer._Draw() and rendered by AuraAdditiveLayer ABOVE ContentLayer (z=1 > z=0).
 
         // Heading-dependent draw order (VB6: dibujarPersonaje)
-        switch (heading)
-        {
-            case 1: // North
-                DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
-                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
-                break;
-
-            case 2: // East
-                DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
-                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
-                DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
-                break;
-
-            case 3: // South (default)
-                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
-                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
-                DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
-                break;
-
-            case 4: // West
-                DrawWeapon(canvas, ch, screenPos, headOffset, heading, data, animator);
-                DrawBody(canvas, ch, screenPos, heading, data, animator, state);
-                DrawHead(canvas, ch, screenPos, headOffset, heading, data, state);
-                DrawHelmet(canvas, ch, screenPos, headOffset, heading, data);
-                DrawShield(canvas, ch, screenPos, headOffset, heading, data, animator);
-                break;
-        }
+        DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state);
 
         // Mark equipment debug as logged (after first full draw)
         if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
@@ -305,93 +272,82 @@ public static class CharRenderer
     }
 
     /// <summary>
-    /// VB6: water reflection — body and head drawn flipped vertically below character
-    /// when there's water at (tileX, tileY+1). Alpha ~100/255.
-    /// Mirror axis = pos.Y + TileSize (waterline at character feet).
-    /// Each component's normal draw-Y is mirrored: reflectedTop = 2*mirrorY - normalBottom.
-    /// </summary>
     /// <summary>
-    /// VB6 water reflection: draws body, head, helmet, weapon, shield inverted (Invert_y=True).
-    /// VB6 offsets (relative to PixelOffsetX/Y):
-    ///   Body:   (X, Y - HeadOffset.Y) alpha=100
-    ///   Head:   (X - HeadOffset.X, Y - HeadOffset.Y + 11) alpha=100 (or +24 if dead)
-    ///   Casco:  (X - HeadOffset.X + 1, Y - HeadOffset.Y + 14) alpha=150
-    ///   Arma:   (X, Y + 40) alpha=100
-    ///   Escudo: (X, Y + 40) alpha=100
-    /// All drawn with Invert_y=True and center=1.
+    /// Water reflection: flip the canvas Y around the character's feet, then draw
+    /// using the exact same functions as the normal character. No hardcoded offsets.
+    /// DrawSetTransform(scale.Y=-1) mirrors all subsequent draw calls automatically.
     /// </summary>
     private static void DrawReflection(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        float hoX = headOffset.X, hoY = headOffset.Y;
+        // Mirror axis: character's feet (tile bottom edge)
+        float mirrorY = pos.Y + 4f;
 
-        // When mounted, the body is the mount sprite (very tall, hoY≈-45+).
-        // Head/helmet/weapon/shield gap formulas scale with |hoY|, which pushes
-        // them way too far from the mount body. Clamp to normal human range (-30)
-        // so the rider's head stays close to the mount in the reflection.
-        float hoYForParts = (ch.Mounted && hoY < -30f) ? -30f : hoY;
+        // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
+        canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
 
-        // Per-body-type Y shift for the entire reflection (body+head+weapon+shield+helmet)
-        float absHo = -hoY > 1f ? -hoY : 1f;
-        float bodyShift = -2f; // base: 2px closer to feet
-        if (ch.Head <= 0) // no head: flying mount, boat
-            bodyShift += 15f;
-        else if (absHo >= 28f) // tall races (human/elf/dark elf)
-            bodyShift += 0f;
-        else // short races (enano/gnomo)
-            bodyShift += 9f;
-        Vector2 rPos = new(pos.X, pos.Y + bodyShift);
+        // Reflection alpha
+        Color reflColor = new Color(1f, 1f, 1f, 75f / 255f);
 
-        // Reflected auras are collected in WorldRenderer._Draw() (timing requirement)
+        // Draw character parts in heading order — same as normal, same positions
+        DrawCharParts(canvas, ch, pos, headOffset, heading, data, animator, null, reflColor);
 
-        // Use heading-dependent draw order (same as dibujarPersonaje)
+        // Reset transform
+        canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+    }
+
+    /// <summary>
+    /// Draw character parts (body, head, helmet, weapon, shield) in VB6 heading order.
+    /// Used by both normal rendering and reflection (via DrawSetTransform flip).
+    /// </summary>
+    private static void DrawCharParts(
+        Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
+        int heading, GameData data, GrhAnimator animator,
+        GameState? state = null, Color? colorOverride = null)
+    {
         switch (heading)
         {
             case 1: // North
-                DrawReflWeapon(canvas, ch, rPos, hoYForParts, heading, data, animator);
-                DrawReflShield(canvas, ch, rPos, hoYForParts, heading, data, animator);
-                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflHelmet(canvas, ch, rPos, hoX, hoYForParts, heading, data);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
+                DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
                 break;
-
             case 2: // East
-                DrawReflShield(canvas, ch, rPos, hoYForParts, heading, data, animator);
-                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflHelmet(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflWeapon(canvas, ch, rPos, hoYForParts, heading, data, animator);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
+                DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 break;
-
             case 3: // South
-                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflHelmet(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflWeapon(canvas, ch, rPos, hoYForParts, heading, data, animator);
-                DrawReflShield(canvas, ch, rPos, hoYForParts, heading, data, animator);
+                DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
+                DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 break;
-
             case 4: // West
-                DrawReflWeapon(canvas, ch, rPos, hoYForParts, heading, data, animator);
-                DrawReflBody(canvas, ch, rPos, hoY, heading, data, animator);
-                DrawReflHead(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflHelmet(canvas, ch, rPos, hoX, hoYForParts, heading, data);
-                DrawReflShield(canvas, ch, rPos, hoYForParts, heading, data, animator);
+                DrawWeapon(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
+                DrawBody(canvas, ch, pos, heading, data, animator, state, colorOverride);
+                DrawHead(canvas, ch, pos, headOffset, heading, data, state, colorOverride);
+                DrawHelmet(canvas, ch, pos, headOffset, heading, data, colorOverride);
+                DrawShield(canvas, ch, pos, headOffset, heading, data, animator, colorOverride);
                 break;
         }
     }
 
     /// <summary>
-    /// Queue reflected auras to the additive layer (proper blending, no black bg).
-    /// Position mirrors the normal aura position below the character's feet.
+    /// Queue reflected auras to the additive layer (auras need special additive blending
+    /// and can't use the DrawSetTransform flip approach).
     /// </summary>
     public static void CollectReflAuraDraws(
         WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
         GameData data)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
-
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA);
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW);
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE);
@@ -405,22 +361,17 @@ public static class CharRenderer
         GameData data, int auraIndex, float angle)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
-
         var aura = data.Auras[auraIndex];
         if (aura.GrhIndex <= 0) return;
 
-        // Place reflected aura at the same Y as the reflected body center.
-        // The sprite is UV-flipped (handled by DrawPendingAuras reflected path).
-        float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-        float bodyReflY = (absHo < 36f ? 36f : absHo) + 10f;
-        float reflAuraY = pos.Y + bodyReflY;
-
+        // Mirror the normal aura Y around the character's feet (same mirrorY as DrawReflection)
+        float mirrorY = pos.Y + 4f;
+        float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
+        float reflAuraY = 2f * mirrorY - normalAuraY;
         float auraX = pos.X + headOffset.X;
 
-        // Reduced alpha for reflection effect
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.3f);
 
-        // Resolve animated GRH frame
         int grhIndex = aura.GrhIndex;
         int frame = 0;
         if (grhIndex > 0 && grhIndex < data.Grhs.Length)
@@ -434,149 +385,14 @@ public static class CharRenderer
             }
         }
 
-        // Queue to the additive layer with reflected=true (UV-flipped, proper blending)
         worldRenderer.QueueAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
                                      aura.Giratoria ? -angle : 0f, reflected: true);
     }
 
-    private static void DrawReflBody(
-        Node2D canvas, Character ch, Vector2 pos, float hoY,
-        int heading, GameData data, GrhAnimator animator)
-    {
-        if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
-        int bodyGrh = data.Bodies[ch.Body].Walk[heading];
-        if (bodyGrh <= 0) return;
-        int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        // Short races clamp to 36px so body reflection doesn't clip under feet
-        // Per-body-type shifts are applied to rPos in DrawReflection (moves all parts together)
-        float absHo = -hoY > 1f ? -hoY : 1f;
-        float dist = (absHo < 36f ? 36f : absHo) + 5f;
-        DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
-    }
-
-    private static void DrawReflHead(
-        Node2D canvas, Character ch, Vector2 pos, float hoX, float hoY,
-        int heading, GameData data)
-    {
-        if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
-        int headGrh = data.Heads[ch.Head].Head[heading];
-        if (headGrh <= 0) return;
-        // Scale gap proportionally to body height (VB6 constants tuned for |hoY|=30)
-        float absHo = -hoY > 1f ? -hoY : 1f;
-        float yOff = ch.Dead ? (20f * absHo / 30f) : (7f * absHo / 30f);
-        // Mounted: head needs extra distance since mount body is taller, and X+1
-        float xOff = 0f;
-        if (ch.Mounted) { yOff += 18f; xOff = 1f; }
-        DrawGrhFlippedY(canvas, headGrh, 0, pos.X - hoX + xOff, pos.Y - hoY + yOff, 75f / 255f, data);
-    }
-
-    private static void DrawReflHelmet(
-        Node2D canvas, Character ch, Vector2 pos, float hoX, float hoY,
-        int heading, GameData data)
-    {
-        if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
-        int hGrh = data.Cascos[ch.CascoAnim].Head[heading];
-        if (hGrh <= 0) return;
-        // Scale gap proportionally to body height (VB6 constant 14 tuned for |hoY|=30)
-        float absHo = -hoY > 1f ? -hoY : 1f;
-        float helmetGap = 14f * absHo / 30f - 3f;
-        // Mounted: helmet needs extra distance since mount body is taller, and X+1
-        float xOff = 0f;
-        if (ch.Mounted) { helmetGap += 18f; xOff = 1f; }
-        DrawGrhFlippedY(canvas, hGrh, 0, pos.X - hoX + 1 + xOff, pos.Y - hoY + helmetGap, 150f / 255f, data);
-    }
-
-    private static void DrawReflWeapon(
-        Node2D canvas, Character ch, Vector2 pos, float hoY,
-        int heading, GameData data, GrhAnimator animator)
-    {
-        if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Weapons.Length) return;
-        int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
-        if (weapGrh <= 0) return;
-        // Weapon reflection Y: absHo base + 7 scaled gap (hand height)
-        float absHo = -hoY > 1f ? -hoY : 1f;
-        float weapY = pos.Y + absHo + 7f * absHo / 30f;
-        DrawGrhFlippedY(canvas, weapGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, weapY, 75f / 255f, data);
-    }
-
-    private static void DrawReflShield(
-        Node2D canvas, Character ch, Vector2 pos, float hoY,
-        int heading, GameData data, GrhAnimator animator)
-    {
-        if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
-        int shldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
-        if (shldGrh <= 0) return;
-        // Same scaling as weapon but 2px closer
-        float absHo = -hoY > 1f ? -hoY : 1f;
-        float shldY = pos.Y + absHo + 5f * absHo / 30f;
-        DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, shldY, 90f / 255f, data);
-    }
-
-    /// <summary>
-    /// Draw a GRH at (x, y) with center=true and Y-flipped (Invert_y).
-    /// Uses DrawPolygon with flipped UV coordinates — exactly how VB6 does it.
-    /// The sprite position stays identical to an unflipped draw, only the
-    /// texture is rendered upside-down within the same rectangle.
-    /// </summary>
-    private static void DrawGrhFlippedY(
-        Node2D canvas, int grhIndex, int frame,
-        float x, float y, float alpha, GameData data)
-    {
-        var resolved = data.ResolveGrh(grhIndex, frame);
-        if (resolved == null || resolved.FileNum <= 0) return;
-
-        var texture = data.Textures?.GetTexture(resolved.FileNum);
-        if (texture == null) return;
-
-        int texW = texture.GetWidth(), texH = texture.GetHeight();
-        int sx = resolved.SX, sy = resolved.SY;
-        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-        if (texW > 0) sx %= texW;
-        if (texH > 0) sy %= texH;
-        if (sx + pw > texW) pw = texW - sx;
-        if (sy + ph > texH) ph = texH - sy;
-        if (pw <= 0 || ph <= 0) return;
-
-        // Center=true (same as DrawGrh)
-        float drawX = x;
-        float drawY = y;
-        if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-            drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-        if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-            drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
-
-        // VB6 Invert_y: swap src.top/src.bottom in UV space.
-        // Vertex positions stay the same — only texture mapping is flipped.
-        float u0 = (float)sx / texW;
-        float v0 = (float)sy / texH;
-        float u1 = (float)(sx + pw) / texW;
-        float v1 = (float)(sy + ph) / texH;
-
-        Vector2[] verts = {
-            new(drawX, drawY),            // top-left
-            new(drawX + pw, drawY),       // top-right
-            new(drawX + pw, drawY + ph),  // bottom-right
-            new(drawX, drawY + ph),       // bottom-left
-        };
-
-        // Flipped UVs: screen top → texture bottom, screen bottom → texture top
-        Vector2[] uvs = {
-            new(u0, v1),  // top-left vertex → bottom-left of texture
-            new(u1, v1),  // top-right vertex → bottom-right of texture
-            new(u1, v0),  // bottom-right vertex → top-right of texture
-            new(u0, v0),  // bottom-left vertex → top-left of texture
-        };
-
-        Color color = new(1, 1, 1, alpha);
-        Color[] colors = { color, color, color, color };
-        canvas.DrawPolygon(verts, colors, uvs, texture);
-    }
-
     private static void DrawBody(
         Node2D canvas, Character ch, Vector2 pos, int heading,
-        GameData data, GrhAnimator animator, GameState? state = null)
+        GameData data, GrhAnimator animator, GameState? state = null,
+        Color? colorOverride = null)
     {
         if (ch.Body <= 0 || ch.Body >= data.Bodies.Length) return;
         var body = data.Bodies[ch.Body];
@@ -585,6 +401,11 @@ public static class CharRenderer
         int bodyGrh = body.Walk[heading];
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
 
+        if (colorOverride.HasValue)
+        {
+            DrawGrh(canvas, data, bodyGrh, frame, pos, true, colorOverride.Value);
+            return;
+        }
         // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145), alive = 255
         // Only pulse when DeadCharTransparency config is enabled
         byte alpha = (ch.Dead && (state?.Config?.DeadCharTransparency ?? true))
@@ -595,7 +416,8 @@ public static class CharRenderer
 
     private static void DrawHead(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
-        int heading, GameData data, GameState? state = null)
+        int heading, GameData data, GameState? state = null,
+        Color? colorOverride = null)
     {
         if (ch.Head <= 0 || ch.Head >= data.Heads.Length) return;
         var head = data.Heads[ch.Head];
@@ -606,6 +428,11 @@ public static class CharRenderer
         if (ch.Mounted) xAdj += 1f;
         Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
+        if (colorOverride.HasValue)
+        {
+            DrawGrh(canvas, data, head.Head[heading], 0, headPos, true, colorOverride.Value);
+            return;
+        }
         // VB6: dead alpha = TransparenciaBody + 45 (pulsing 45-145)
         // Only pulse when DeadCharTransparency config is enabled
         byte alpha = (ch.Dead && (state?.Config?.DeadCharTransparency ?? true))
@@ -616,7 +443,7 @@ public static class CharRenderer
 
     private static void DrawHelmet(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
-        int heading, GameData data)
+        int heading, GameData data, Color? colorOverride = null)
     {
         if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length)
         {
@@ -647,12 +474,13 @@ public static class CharRenderer
         if (ch.Mounted) xAdj += 1f;
         Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
 
-        DrawGrh(canvas, data, grhIdx, 0, helmetPos, true);
+        DrawGrh(canvas, data, grhIdx, 0, helmetPos, true, colorOverride);
     }
 
     private static void DrawWeapon(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
-        int heading, GameData data, GrhAnimator animator)
+        int heading, GameData data, GrhAnimator animator,
+        Color? colorOverride = null)
     {
         if (ch.WeaponAnim <= 0 || ch.WeaponAnim >= data.Weapons.Length) return;
         var weapon = data.Weapons[ch.WeaponAnim];
@@ -662,12 +490,13 @@ public static class CharRenderer
         // VB6: dibArm → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
         Vector2 weaponPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, grhIndex, frame, weaponPos, true);
+        DrawGrh(canvas, data, grhIndex, frame, weaponPos, true, colorOverride);
     }
 
     private static void DrawShield(
         Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
-        int heading, GameData data, GrhAnimator animator)
+        int heading, GameData data, GrhAnimator animator,
+        Color? colorOverride = null)
     {
         if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length)
         {
@@ -695,7 +524,7 @@ public static class CharRenderer
         // VB6: dibEsc → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
         Vector2 shieldPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, grhIndex, frame, shieldPos, true);
+        DrawGrh(canvas, data, grhIndex, frame, shieldPos, true, colorOverride);
     }
 
     /// <summary>
