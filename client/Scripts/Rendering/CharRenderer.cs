@@ -401,14 +401,10 @@ public static class CharRenderer
         var aura = data.Auras[auraIndex];
         if (aura.GrhIndex <= 0) return;
 
-        // Normal aura position: pos.X + hoX, pos.Y + hoY + 72 - offset
-        // The normal aura is at a Y offset of (hoY + 72 - offset) above pos.
-        // The reflection should mirror this below the character's feet.
-        // Body reflection is at pos.Y + absHo (clamped to 36 for short races).
-        // Reflected aura: same X, Y mirrored = pos.Y + absHo + (absHo - (hoY + 72 - offset))
-        float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-        float normalRelY = headOffset.Y + 72 - aura.Offset; // negative = above pos
-        float reflAuraY = pos.Y + absHo - normalRelY;
+        // Normal aura Y = pos.Y + (hoY + 72 - offset), which is above character.
+        // Mirror around character feet (pos.Y): reflAuraY = pos.Y - normalRelY
+        float normalRelY = headOffset.Y + 72 - aura.Offset;
+        float reflAuraY = pos.Y - normalRelY;
 
         float auraX = pos.X + headOffset.X;
 
