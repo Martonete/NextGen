@@ -444,11 +444,11 @@ public static class CharRenderer
         float dist = absHo < 36f ? 36f : absHo;
         // Per-body-type Y adjust so reflection aligns with feet edge
         if (ch.Head <= 0) // no head: flying mount, boat
-            dist += 10f;
+            dist += 15f;
         else if (absHo >= 28f) // tall races (human/elf/dark elf)
-            dist += 3f;
+            dist += 1f;
         else // short races (enano/gnomo)
-            dist += 6f;
+            dist += 8f;
         DrawGrhFlippedY(canvas, bodyGrh, frame, pos.X, pos.Y + dist, 75f / 255f, data);
     }
 
