@@ -283,18 +283,22 @@ public partial class WorldRenderer : Node2D
                 var ch = kvp.Value;
                 if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
 
-                // Draw reflection if ANY tile in the row below has water (L1 GRH 1505-1520)
-                // within the character's sprite width. Mounted sprites are wider (~3 tiles).
+                // Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
+                // has water (L1 GRH 1505-1520). Checking 3 rows allows the reflection
+                // to smoothly fade out as the character walks away from water.
                 // PASS 1b mask ensures reflections only show on water tiles.
-                if (ch.PosY < 1 || ch.PosY >= 100) continue;
+                if (ch.PosY < 1 || ch.PosY > 97) continue;
                 bool hasNearbyWater = false;
-                int checkRange = ch.Mounted ? 3 : 2;
-                for (int cx = Math.Max(1, ch.PosX - checkRange);
-                     cx <= Math.Min(100, ch.PosX + checkRange) && !hasNearbyWater; cx++)
+                int checkRangeX = ch.Mounted ? 3 : 2;
+                for (int cy = ch.PosY + 1; cy <= Math.Min(100, ch.PosY + 3) && !hasNearbyWater; cy++)
                 {
-                    ref var wt = ref _state.MapData.Tiles[cx, ch.PosY + 1];
-                    if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520)
-                        hasNearbyWater = true;
+                    for (int cx = Math.Max(1, ch.PosX - checkRangeX);
+                         cx <= Math.Min(100, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
+                    {
+                        ref var wt = ref _state.MapData.Tiles[cx, cy];
+                        if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520)
+                            hasNearbyWater = true;
+                    }
                 }
                 if (!hasNearbyWater) continue;
 
@@ -411,15 +415,18 @@ public partial class WorldRenderer : Node2D
                 // Reflected auras in water (queued here so they're ready before AuraLayer draws)
                 // Check nearby water tiles (same logic as PASS 1.5 reflection)
                 bool auraHasWater = false;
-                if ((_state.Config?.ShowReflections ?? true) && ch.PosY > 0 && ch.PosY < 100)
+                if ((_state.Config?.ShowReflections ?? true) && ch.PosY > 0 && ch.PosY <= 97)
                 {
-                    int auraRange = ch.Mounted ? 3 : 2;
-                    for (int acx = Math.Max(1, ch.PosX - auraRange);
-                         acx <= Math.Min(100, ch.PosX + auraRange) && !auraHasWater; acx++)
+                    int auraRangeX = ch.Mounted ? 3 : 2;
+                    for (int acy = ch.PosY + 1; acy <= Math.Min(100, ch.PosY + 3) && !auraHasWater; acy++)
                     {
-                        ref var awt = ref _state.MapData.Tiles[acx, ch.PosY + 1];
-                        if (awt.Layer1 >= 1505 && awt.Layer1 <= 1520)
-                            auraHasWater = true;
+                        for (int acx = Math.Max(1, ch.PosX - auraRangeX);
+                             acx <= Math.Min(100, ch.PosX + auraRangeX) && !auraHasWater; acx++)
+                        {
+                            ref var awt = ref _state.MapData.Tiles[acx, acy];
+                            if (awt.Layer1 >= 1505 && awt.Layer1 <= 1520)
+                                auraHasWater = true;
+                        }
                     }
                 }
                 if (auraHasWater)
@@ -751,9 +758,21 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        // Reflected auras — position is pre-computed, NO tileHeight offset
+        // Reflected auras — only draw on water tiles (L1 GRH 1505-1520).
+        // Convert screen center of aura back to tile coords to check.
         foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
         {
+            // Screen-to-tile: check if aura center falls on a water tile
+            float auraCenterX = pos.X + TileSize / 2f;
+            float auraCenterY = pos.Y + TileSize / 2f;
+            int tileX = (int)Math.Round((auraCenterX - _framePixelOffsetX) / TileSize)
+                        + _frameUserX - HalfWindowTileWidth;
+            int tileY = (int)Math.Round((auraCenterY - _framePixelOffsetY) / TileSize)
+                        + _frameUserY - HalfWindowTileHeight;
+            if (tileX < 1 || tileX > 100 || tileY < 1 || tileY > 100) continue;
+            ref var auraTile = ref _state!.MapData!.Tiles[tileX, tileY];
+            if (auraTile.Layer1 < 1505 || auraTile.Layer1 > 1520) continue; // not water
+
             if (angle != 0f)
             {
                 var resolved = _data.ResolveGrh(grhIndex, frame);
