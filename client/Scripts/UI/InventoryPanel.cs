@@ -33,6 +33,9 @@ public partial class InventoryPanel : Control
     private int _dragSourceSlot = -1;
     private bool _dragging;
     private Vector2 _dragMousePos; // local mouse pos during drag
+    private Vector2 _dragStartPos; // position where press started (for drag threshold)
+    private bool _dragPending;     // press happened but drag not yet activated (needs movement threshold)
+    private const float DragThreshold = 6f; // pixels of movement before drag activates
 
     // Tooltip label (set by Main.cs)
     public Label? TooltipLabel;
@@ -44,6 +47,7 @@ public partial class InventoryPanel : Control
     public void CancelDrag()
     {
         _dragging = false;
+        _dragPending = false;
         _dragSourceSlot = -1;
     }
 
@@ -181,7 +185,18 @@ public partial class InventoryPanel : Control
                 UpdateTooltip(slot);
             }
 
-            // Drag handling — track mouse position for ghost item rendering
+            // Drag threshold: only activate drag after mouse moves enough from press point.
+            // This prevents drag from blocking rapid clicks (poteo) while allowing real drags.
+            if (_dragPending && _dydEnabled && _dragSourceSlot >= 0)
+            {
+                if (motion.Position.DistanceTo(_dragStartPos) >= DragThreshold)
+                {
+                    _dragging = true;
+                    _dragPending = false;
+                }
+            }
+
+            // Track mouse position for ghost item rendering during active drag
             if (_dragging && _dydEnabled && _dragSourceSlot >= 0)
             {
                 _dragMousePos = motion.Position;
@@ -200,6 +215,11 @@ public partial class InventoryPanel : Control
                         if (mb.DoubleClick)
                         {
                             // VB6: double click → QSA{slot},{picInv.Visible} (1=visible)
+                            // Cancel any pending drag — this is a use action, not a drag
+                            _dragPending = false;
+                            _dragging = false;
+                            _dragSourceSlot = -1;
+
                             _selectedSlot = slot;
                             _state.SelectedInvSlot = slot;
                             _tcp.SendPacket($"QSA{slot + 1},{(Visible ? 1 : 0)}");
@@ -209,11 +229,13 @@ public partial class InventoryPanel : Control
                             _selectedSlot = slot;
                             _state.SelectedInvSlot = slot;
 
-                            // Start drag if DyD enabled
+                            // Prepare drag (pending) — don't activate yet until mouse moves enough
                             if (_dydEnabled && _state.Inventory[slot].ObjIndex > 0)
                             {
                                 _dragSourceSlot = slot;
-                                _dragging = true;
+                                _dragPending = true;
+                                _dragStartPos = mb.Position;
+                                // _dragging stays false until threshold is met
                             }
                         }
                     }
@@ -222,15 +244,18 @@ public partial class InventoryPanel : Control
                 {
                     if (_dragging && _dydEnabled && _dragSourceSlot >= 0)
                     {
+                        // Drag completed — check for swap
                         int destSlot = HitTestSlot(mb.Position);
                         if (destSlot >= 0 && destSlot < TotalSlots && destSlot != _dragSourceSlot)
                         {
                             // Send SWAP packet (1-indexed)
                             _tcp.SendPacket($"SWAP{destSlot + 1},{_dragSourceSlot + 1}");
                         }
-                        _dragSourceSlot = -1;
-                        _dragging = false;
                     }
+                    // Always clear drag state on release
+                    _dragSourceSlot = -1;
+                    _dragging = false;
+                    _dragPending = false;
                 }
             }
             else if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
