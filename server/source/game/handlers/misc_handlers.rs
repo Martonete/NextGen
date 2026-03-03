@@ -1062,7 +1062,9 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.montado = false;
+        user.levitando = false;
         user.body = user.montado_body;
+        user.head = user.orig_head; // Restore head (flying mounts hide it)
     }
 
     // Restore equipped weapon/shield/helmet appearance

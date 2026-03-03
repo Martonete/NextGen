@@ -804,6 +804,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     u.montado = false;
                     u.levitando = false;
                     u.body = u.montado_body;
+                    u.head = u.orig_head; // Restore head (flying mounts hide it)
                 }
 
                 // Restore equipped weapon/shield/helmet appearance
@@ -824,8 +825,10 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     u.weapon_anim = super::common::NINGUN_ARMA;
                     u.shield_anim = super::common::NINGUN_ESCUDO;
                     // VB6: CascoAnim stays as-is (line 1409), helmet remains visible on mount
+                    // Flying mounts hide the head (the mount sprite replaces everything)
                     if is_flying {
                         u.levitando = true;
+                        u.head = 0;
                     }
                 }
             }
@@ -1271,6 +1274,92 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
             // Send updated ANM (equipment stats) to the user
             let anm = build_anm_packet(state, conn_id);
             state.send_to(conn_id, &anm).await;
+        }
+    }
+
+    // VB6: If dropping a mount while mounted, dismount (only if this is the last one)
+    // Same for boats while navigating.
+    let drop_obj_type = state.get_object(obj_idx).map(|o| o.obj_type);
+    let (is_mounted, is_navigating) = state.users.get(&conn_id)
+        .map(|u| (u.montado, u.navigating))
+        .unwrap_or((false, false));
+
+    if drop_obj_type == Some(ObjType::Mount) && is_mounted {
+        let remaining = state.users.get(&conn_id)
+            .map(|u| {
+                let mut count = 0i32;
+                for s in &u.inventory {
+                    if s.obj_index == obj_idx { count += s.amount; }
+                }
+                count - drop_amount
+            })
+            .unwrap_or(0);
+
+        if remaining <= 0 {
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.montado = false;
+                u.levitando = false;
+                u.body = u.montado_body;
+                u.head = u.orig_head;
+            }
+            let (wa, sa, ca) = get_equipped_anims(state, conn_id);
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.weapon_anim = wa;
+                u.shield_anim = sa;
+                u.casco_anim = ca;
+            }
+            let (cp, usm, mvol, cd) = {
+                let u = match state.users.get(&conn_id) { Some(u) => u, None => return };
+                (
+                    format!("CP{},{},{},{},{},{},0,0,{}", u.char_index.0, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+                    format!("USM{},0", u.char_index.0),
+                    format!("MVOL{},0", u.char_index.0),
+                    super::common::build_cd_packet(u),
+                )
+            };
+            state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &usm).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &mvol).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &cd).await;
+        }
+    }
+
+    if drop_obj_type == Some(ObjType::Boat) && is_navigating {
+        let remaining = state.users.get(&conn_id)
+            .map(|u| {
+                let mut count = 0i32;
+                for s in &u.inventory {
+                    if s.obj_index == obj_idx { count += s.amount; }
+                }
+                count - drop_amount
+            })
+            .unwrap_or(0);
+
+        if remaining <= 0 {
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.navigating = false;
+                u.body = u.montado_body;
+                if u.old_head > 0 { u.head = u.old_head; }
+                u.barco_slot = 0;
+            }
+            let (wa, sa, ca) = get_equipped_anims(state, conn_id);
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.weapon_anim = wa;
+                u.shield_anim = sa;
+                u.casco_anim = ca;
+            }
+            let (cp, naveg, char_idx) = {
+                let u = match state.users.get(&conn_id) { Some(u) => u, None => return };
+                (
+                    format!("CP{},{},{},{},{},{},0,0,{}", u.char_index.0, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+                    format!("NAVEG{},0", u.char_index.0),
+                    u.char_index.0,
+                )
+            };
+            state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+            state.send_data(SendTarget::ToArea { map, x, y }, &naveg).await;
+            state.send_to(conn_id, &format!("NVG{}", 0)).await;
+            let _ = char_idx; // suppress warning
         }
     }
 
