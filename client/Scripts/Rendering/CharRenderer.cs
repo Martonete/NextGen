@@ -437,7 +437,7 @@ public static class CharRenderer
         float absHo = -hoY > 1f ? -hoY : 1f;
         float shldY = pos.Y + absHo + 5f * absHo / 30f;
         DrawGrhFlippedY(canvas, shldGrh, ch.Moving ? (int)ch.WalkFrame : 0,
-            pos.X, shldY, 83f / 255f, data);
+            pos.X, shldY, 75f / 255f, data);
     }
 
     /// <summary>
