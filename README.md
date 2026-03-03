@@ -425,6 +425,19 @@ make docker-run client-run
 
 To share the client with players, you export a standalone executable. Players don't need to install Godot, .NET, or anything else.
 
+### Architecture: EXE + PCK + Data
+
+The client uses a **split build** to enable lightweight updates:
+
+| Component | Size | Changes? | Description |
+|-----------|------|----------|-------------|
+| `TierrasSagradasAO.exe` | ~82MB | Never (unless Godot version changes) | Godot engine + .NET runtime |
+| `TierrasSagradasAO.pck` | ~180KB | Every code change | Compiled scenes + scripts |
+| `data_TierrasSagradasAO_*/` | ~150MB | Never (unless Godot version changes) | .NET runtime DLLs |
+| `Data/` | ~217MB | Only when assets change | Game assets (sprites, sounds, maps, config) |
+
+**Key point:** `Data/` is loaded from the filesystem at runtime, NOT from the PCK. The `.gdignore` file in `Data/` prevents Godot from importing/packing these assets. All loaders (`TextureManager`, `SoundManager`, `MapLoader`, etc.) use `System.IO.File` directly.
+
 ### Prerequisites (one-time setup)
 
 You need these on **your** machine (the one doing the export):
@@ -463,6 +476,17 @@ Remove-Item -Recurse -Force client\test
 rm -rf client/test
 ```
 
+### Export settings (already configured)
+
+The export preset (`client/export_presets.cfg`) is pre-configured:
+
+- **`embed_pck=false`** — generates a separate `.pck` file instead of embedding it in the .exe
+- **`export_filter="selected_scenes"`** — only packs `Scenes/Main.tscn` and its dependencies (scripts)
+- **`exclude_filter="test/*, Data/*"`** — excludes test files and all game data from the PCK
+- **`Data/.gdignore`** — prevents Godot from importing assets into `.godot/imported/`
+
+> **Do NOT change these settings.** They ensure the PCK stays small (~180KB) for fast updates.
+
 ### Option A: Using Make (Linux/macOS, or Windows with Make installed)
 
 ```bash
@@ -484,10 +508,10 @@ dotnet build
 # 2. Create build folder
 mkdir build -Force
 
-# 3. Export exe (adjust path to your Godot binary)
+# 3. Export (generates .exe + .pck + data_*/ separately)
 & "C:\path\to\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 
-# 4. Copy game data alongside the exe (only needed once, or after Data/ changes)
+# 4. Copy game data alongside the exe (only needed ONCE, or after Data/ changes)
 Copy-Item -Recurse Data build\
 
 # 5. Zip for distribution
@@ -505,19 +529,37 @@ dotnet build
 # 2. Create build folder
 mkdir -p build
 
-# 3. Export exe
+# 3. Export (generates .exe + .pck + data_*/ separately)
 godot --headless --export-release "Windows Desktop" build/TierrasSagradasAO.exe
 
-# 4. Copy game data (only needed once, or after Data/ changes)
+# 4. Copy game data (only needed ONCE, or after Data/ changes)
 cp -r Data build/Data
 
 # 5. Zip
 cd build && zip -r ../../TierrasSagradasAO.zip . && cd ..
 ```
 
-### Rebuilding after code changes
+### What the player receives (first install)
 
-When you change code (IP, bug fixes, etc.) you only need to recompile and re-export — no need to copy Data again:
+```
+TierrasSagradasAO/
+  TierrasSagradasAO.exe              Godot engine (~82MB)
+  TierrasSagradasAO.pck              Game logic — scenes + scripts (~180KB)
+  data_TierrasSagradasAO_windows/    .NET runtime DLLs (~150MB)
+  Data/
+    Graficos/                        Sprites and UI textures (~90MB)
+    INIT/                            Config files, auras, particles, fonts (~1MB)
+    Maps/                            Client-side map data (~7MB)
+    Sounds/                          Sound effects and music (~113MB)
+```
+
+The player just unzips and runs `TierrasSagradasAO.exe`. No installation needed.
+
+Source code (`.cs` files) is **not** included — it's compiled into the PCK.
+
+### Updating the client (after code changes)
+
+When you change code (C# logic, UI, bug fixes, etc.) you only need to re-export and send the `.pck`:
 
 ```powershell
 cd client
@@ -525,23 +567,24 @@ dotnet build
 & "C:\path\to\Godot_v4.3-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
 ```
 
-### What the player receives
+Then send **only `TierrasSagradasAO.pck`** (~180KB) to the tester. They replace their `.pck` and done.
 
-```
-TierrasSagradasAO/
-  TierrasSagradasAO.exe          Game executable (Godot + .pck embedded)
-  TierrasSagradasAO.dll          Compiled game logic (.NET assembly)
-  GodotSharp/                    .NET runtime (auto-included by Godot)
-  Data/
-    Graficos/                    Sprites and UI textures
-    INIT/                        Config files, auras, particles, fonts
-    Maps/                        Client-side map data
-    Sounds/                      Sound effects and music
-```
+| What changed | What to send | Size |
+|---|---|---|
+| C# code, scenes, UI logic | `TierrasSagradasAO.pck` | ~180KB |
+| Game assets (new map, sound, sprite) | The specific file(s) for `Data/` | Variable |
+| Godot engine version upgrade | Full re-export (.exe + data_*/) | ~230MB |
+| First install | Everything (zip) | ~450MB |
 
-The player just unzips and runs `TierrasSagradasAO.exe`. No installation needed.
+### Patch PCK system (advanced)
 
-Source code (`.cs` files) is **not** included — it's compiled into DLLs.
+The client supports **patch PCK files** for delta updates without replacing the base `.pck`:
+
+1. Export a patch PCK containing only modified resources
+2. Name it `patch.pck` (or `patch_001.pck`, `patch_002.pck` for ordered patches)
+3. Place it next to the `.exe`
+
+On startup, `Main.cs` loads patch files automatically via `ProjectSettings.LoadResourcePack()`. Later patches override earlier ones. This is useful for hotfixes without replacing the full PCK.
 
 ### Server deployment (VPS)
 
