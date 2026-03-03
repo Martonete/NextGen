@@ -281,8 +281,15 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Mirror axis: character's feet, 2px closer to tile
-        float mirrorY = pos.Y + TileSize - 2f;
+        // Mirror axis: character's feet. Per-body-type fine-tune.
+        float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
+        float mirrorAdj = 0f;
+        if (ch.Head <= 0) // no head: flying mount, boat
+            mirrorAdj = -2f;
+        else if (absHo >= 28f) // tall races (human/elf/dark elf)
+            mirrorAdj = -2f;
+        // short races (bajos): 0 — already good
+        float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
         canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
