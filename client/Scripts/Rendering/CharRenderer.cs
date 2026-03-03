@@ -281,16 +281,39 @@ public static class CharRenderer
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
         int heading, GameData data, GrhAnimator animator)
     {
-        // Mirror axis: character's feet. Per-body-type fine-tune.
-        float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
+        // Mirror axis: character's feet (sprite bottom = pos.Y + TileSize).
+        // Tall sprites (mounts) have transparent padding at the bottom,
+        // so we pull the mirror line up proportionally to the extra height.
         float mirrorAdj = 0f;
-        if (ch.Mounted) // mount bodies are taller — bring mirror up to keep reflection close
-            mirrorAdj = 2f;
-        else if (ch.Head <= 0) // no head: flying mount, boat
+        if (ch.Mounted)
+        {
+            // Resolve body GRH to get actual pixel height
+            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+            {
+                var body = data.Bodies[ch.Body];
+                int bodyGrh = (heading >= 1 && heading <= 4) ? body.Walk[heading] : 0;
+                if (bodyGrh > 0)
+                {
+                    var resolved = data.ResolveGrh(bodyGrh, 0);
+                    if (resolved != null && resolved.PixelHeight > TileSize)
+                    {
+                        // The taller the sprite, the more transparent padding at bottom.
+                        // Pull mirror up by ~15% of the extra height.
+                        float extraH = resolved.PixelHeight - TileSize;
+                        mirrorAdj = -(extraH * 0.15f);
+                    }
+                }
+            }
+        }
+        else if (ch.Head <= 0) // no head: boat
             mirrorAdj = -2f;
-        else if (absHo >= 28f) // tall races (human/elf/dark elf)
-            mirrorAdj = -2f;
-        // short races (bajos): 0 — already good
+        else
+        {
+            float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
+            if (absHo >= 28f) // tall races (human/elf/dark elf)
+                mirrorAdj = -2f;
+            // short races (bajos): 0 — already good
+        }
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
