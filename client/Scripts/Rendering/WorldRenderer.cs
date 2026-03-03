@@ -631,13 +631,13 @@ public partial class WorldRenderer : Node2D
                 if (sy + ph > texH) ph = texH - sy;
                 if (pw <= 0 || ph <= 0) continue;
 
-                // Same tileWidth/tileHeight centering as normal auras and DrawGrhFlippedY.
+                // Center X with tileWidth. For Y: center the sprite vertically at pos.Y
+                // (NOT the normal tileHeight anchor which pulls it 96px up for 4-tile auras,
+                // overlapping with the real aura above).
                 float drawX = pos.X;
-                float drawY = pos.Y;
+                float drawY = pos.Y - ph / 2f;
                 if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
                     drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-                if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
-                    drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
 
                 // Y-flip via UV: swap top/bottom in texture coords
                 float u0 = (float)sx / texW;
