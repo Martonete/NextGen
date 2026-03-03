@@ -11,14 +11,17 @@ namespace TierrasSagradasAO.Rendering;
 ///
 /// Layer architecture (children of WorldRenderer, drawn after parent _Draw):
 ///   WorldRenderer._Draw()         → PASS 1 (layer 1) + PASS 1.5 (reflections)
-///                                   + PASS 1b (non-water mask) + PASS 2 (layer 2)
-///   AuraLayer (z=0, additive)     → auras + reflected auras (clipped to water tiles)
+///   ReflectedAuraLayer (z=-3, additive) → reflected auras (clipped by mask + L2)
+///   NonWaterMaskLayer (z=-2)      → PASS 1b (non-water L1 mask, covers reflection/aura overflow)
+///   Layer2Layer (z=-1)            → PASS 2 (layer 2, covers aura under border opaque portions)
+///   AuraLayer (z=0, additive)     → normal auras
 ///   ContentLayer (z=0)            → PASS 3 (ground objects + characters + layer 3)
 ///   AdditiveParticleLayer (z=2)   → particles (VB6: D3DBLEND_ONE/ONE)
 ///   RoofLayer (z=3)               → PASS 4 (roof with fade)
 ///
-/// Draw order: Terrain L1 → Reflections → L1 mask → L2 → Auras → Characters → Particles → Roof.
-/// Reflections are clipped to water tiles by redrawing non-water L1 tiles on top.
+/// Draw order: Terrain L1 → Reflections → Refl.Auras → L1 mask → L2 → Auras → Characters → Particles → Roof.
+/// Reflections + reflected auras are clipped to water tiles by the mask (non-water L1 redraw)
+/// and by L2 borders drawn on top.
 /// </summary>
 public partial class WorldRenderer : Node2D
 {
@@ -27,6 +30,9 @@ public partial class WorldRenderer : Node2D
     private GrhAnimator? _animator;
 
     // Child layers
+    private ReflectedAuraLayer? _reflAuraLayer;
+    private NonWaterMaskLayer? _maskLayer;
+    private Layer2Layer? _layer2Layer;
     private AuraAdditiveLayer? _auraLayer;
     private ContentLayer? _contentLayer;
     private AdditiveParticleLayer? _additiveLayer;
@@ -75,6 +81,7 @@ public partial class WorldRenderer : Node2D
     private int _frameUserX, _frameUserY;
     private float _framePixelOffsetX, _framePixelOffsetY;
     private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
+    private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
     private bool _frameHasLights;
 
     public void Init(GameState state, GameData data, GrhAnimator animator)
@@ -88,9 +95,34 @@ public partial class WorldRenderer : Node2D
             BlendMode = CanvasItemMaterial.BlendModeEnum.Add
         };
 
-        // Content layer: standard blend, z=0 (characters + ground objects + layer 3)
-        // Aura layer: z=0 added BEFORE ContentLayer — same z draws in tree order,
-        // so auras render AFTER terrain (WorldRenderer._Draw) but BEFORE characters.
+        // Reflected aura layer: additive blend, z=-3 (draws after parent _Draw,
+        // before mask and L2 — so mask covers land overflow, L2 covers border overlap)
+        _reflAuraLayer = new ReflectedAuraLayer();
+        _reflAuraLayer.Name = "ReflectedAuraLayer";
+        _reflAuraLayer.Material = additiveMat;
+        _reflAuraLayer.ZIndex = -3;
+        _reflAuraLayer.SetRenderer(this);
+        AddChild(_reflAuraLayer);
+
+        // Non-water mask layer: standard blend, z=-2 (redraws non-water L1 tiles
+        // to cover body reflection + reflected aura overflow onto land)
+        _maskLayer = new NonWaterMaskLayer();
+        _maskLayer.Name = "NonWaterMaskLayer";
+        _maskLayer.ZIndex = -2;
+        _maskLayer.SetRenderer(this);
+        AddChild(_maskLayer);
+
+        // Layer 2 layer: standard blend, z=-1 (draws L2 borders/objects on top,
+        // occluding reflected auras under border opaque portions)
+        _layer2Layer = new Layer2Layer();
+        _layer2Layer.Name = "Layer2Layer";
+        _layer2Layer.ZIndex = -1;
+        _layer2Layer.SetRenderer(this);
+        AddChild(_layer2Layer);
+
+        // Aura layer: additive blend, z=0 (normal auras only)
+        // Added BEFORE ContentLayer — same z draws in tree order,
+        // so auras render AFTER L2 but BEFORE characters.
         _auraLayer = new AuraAdditiveLayer();
         _auraLayer.Name = "AuraLayer";
         _auraLayer.Material = additiveMat;
@@ -203,8 +235,8 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Main _Draw: renders PASS 1+2 (terrain) and computes per-frame data for child layers.
-    /// Child layers (auras, content, particles, roof) draw in their own _Draw() after this.
+    /// Main _Draw: renders PASS 1 (L1 ground) + PASS 1.5 (body reflections).
+    /// PASS 1b (mask), L2, and auras are handled by child layers drawn after this.
     /// </summary>
     public override void _Draw()
     {
@@ -241,20 +273,21 @@ public partial class WorldRenderer : Node2D
         _frameMinY = Math.Max(1, screenMinY - TileBufferSize);
         _frameMaxY = Math.Min(100, screenMaxY + TileBufferSize);
 
+        // L1 bounds (visible +2 margin) — used by mask layer too
+        _frameL1MinX = Math.Max(1, screenMinX - 2);
+        _frameL1MaxX = Math.Min(100, screenMaxX + 2);
+        _frameL1MinY = Math.Max(1, screenMinY - 2);
+        _frameL1MaxY = Math.Min(100, screenMaxY + 2);
+
         _frameHasLights = (_state.Config?.ShowLights ?? true)
                           && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
         // ==========================================
-        int l1MinX = Math.Max(1, screenMinX - 2);
-        int l1MaxX = Math.Min(100, screenMaxX + 2);
-        int l1MinY = Math.Max(1, screenMinY - 2);
-        int l1MaxY = Math.Min(100, screenMaxY + 2);
-
-        for (int y = l1MinY; y <= l1MaxY; y++)
+        for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
-            for (int x = l1MinX; x <= l1MaxX; x++)
+            for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
@@ -275,6 +308,7 @@ public partial class WorldRenderer : Node2D
         // ==========================================
         // PASS 1.5: Character reflections on water
         // Drawn after Layer 1 so they appear on water tiles.
+        // Reflected auras are collected here and drawn by ReflectedAuraLayer child.
         // ==========================================
         bool showReflections = _state.Config?.ShowReflections ?? true;
         _frameAnyReflection = false;
@@ -289,7 +323,7 @@ public partial class WorldRenderer : Node2D
                 // Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
                 // has water (L1 GRH 1505-1520). Checking 3 rows allows the reflection
                 // to smoothly fade out as the character walks away from water.
-                // PASS 1b mask ensures reflections only show on water tiles.
+                // NonWaterMaskLayer ensures reflections only show on water tiles.
                 if (ch.PosY < 1 || ch.PosY > 97) continue;
                 bool hasNearbyWater = false;
                 int checkRangeX = ch.Mounted ? 3 : 2;
@@ -323,7 +357,7 @@ public partial class WorldRenderer : Node2D
                 CharRenderer.DrawReflection(this, ch, new Vector2(charPx, charPy),
                     headOffset, heading, _data, _animator);
 
-                // Collect reflected auras here too (same pass as body reflection)
+                // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
                 if (_state.Config?.ShowAuras ?? true)
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
@@ -334,59 +368,8 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        // ==========================================
-        // PASS 1b: Redraw ALL non-water Layer 1 tiles to mask reflection overflow.
-        // Any L1 tile whose graphic is not water (1505-1520) gets redrawn on top,
-        // guaranteeing reflections are only visible on water — no edge cases.
-        // Only runs when at least one reflection was drawn this frame.
-        // ==========================================
-        if (_frameAnyReflection)
-        {
-            for (int y = l1MinY; y <= l1MaxY; y++)
-            {
-                for (int x = l1MinX; x <= l1MaxX; x++)
-                {
-                    ref var tile = ref _state.MapData.Tiles[x, y];
-                    if (tile.Layer1 <= 0) continue;
-                    if (tile.Layer1 >= 1505 && tile.Layer1 <= 1520) continue; // skip water
-
-                    Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
-                                                _framePixelOffsetX, _framePixelOffsetY);
-                    if (_frameHasLights)
-                    {
-                        Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                        DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
-                    }
-                    else
-                    {
-                        DrawTileGrh(tile.Layer1, pos, center: false);
-                    }
-                }
-            }
-        }
-
-        // ==========================================
-        // PASS 2: Layer 2 — extended buffer range
-        // ==========================================
-        for (int y = _frameMinY; y <= _frameMaxY; y++)
-        {
-            for (int x = _frameMinX; x <= _frameMaxX; x++)
-            {
-                ref var tile = ref _state.MapData.Tiles[x, y];
-                if (tile.Layer2 <= 0) continue;
-
-                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                if (_frameHasLights)
-                {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrh(tile.Layer2, pos, center: false, modulate: lightColor);
-                }
-                else
-                {
-                    DrawTileGrh(tile.Layer2, pos, center: false);
-                }
-            }
-        }
+        // PASS 1b (mask) and PASS 2 (L2) are now drawn by child layers
+        // (NonWaterMaskLayer and Layer2Layer) which draw AFTER this _Draw().
 
         // ==========================================
         // Pre-compute PASS 3 data for ContentLayer (characters queue aura draws)
@@ -422,7 +405,6 @@ public partial class WorldRenderer : Node2D
             if (_state.Config?.ShowAuras ?? true)
             {
                 CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
-                // Reflected auras drawn in AuraLayer (additive) with water-tile clipping
             }
         }
 
@@ -475,6 +457,9 @@ public partial class WorldRenderer : Node2D
         }
 
         // Trigger child layer redraws
+        _reflAuraLayer?.QueueRedraw();
+        _maskLayer?.QueueRedraw();
+        _layer2Layer?.QueueRedraw();
         _auraLayer?.QueueRedraw();
         _contentLayer?.QueueRedraw();
         _additiveLayer?.QueueRedraw();
@@ -700,7 +685,121 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Draw pending aura draws on a given canvas (used by AuraAdditiveLayer).
+    /// Draw pending reflected auras on a given canvas (used by ReflectedAuraLayer).
+    /// No per-tile clipping needed — NonWaterMaskLayer covers land overflow,
+    /// Layer2Layer covers border opaque portions.
+    /// </summary>
+    public void DrawPendingReflAuras(CanvasItem canvas)
+    {
+        if (_data == null) return;
+
+        foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
+        {
+            var resolved = _data.ResolveGrh(grhIndex, frame);
+            if (resolved == null || resolved.FileNum <= 0) continue;
+            var texture = _data.Textures?.GetTexture(resolved.FileNum);
+            if (texture == null) continue;
+
+            int sx = resolved.SX, sy = resolved.SY;
+            int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+            int texW = texture.GetWidth(), texH = texture.GetHeight();
+            if (texW > 0) sx = sx % texW;
+            if (texH > 0) sy = sy % texH;
+            if (sx + pw > texW) pw = texW - sx;
+            if (sy + ph > texH) ph = texH - sy;
+            if (pw <= 0 || ph <= 0) continue;
+
+            // Only tileWidth centering — tileHeight is baked into the reflected Y position
+            float drawX = pos.X;
+            float drawY = pos.Y;
+            if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+
+            if (angle != 0f)
+            {
+                // Rotating reflected aura — DrawSetTransform around sprite center
+                float cx = drawX + pw / 2f;
+                float cy = drawY + ph / 2f;
+                ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
+                var srcRect = new Rect2(sx, sy, pw, ph);
+                var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
+            }
+            else
+            {
+                // Non-rotating reflected aura — draw at position
+                var srcRect = new Rect2(sx, sy, pw, ph);
+                var destRect = new Rect2(drawX, drawY, pw, ph);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Draw PASS 1b: redraw all non-water L1 tiles to mask reflection + reflected aura overflow.
+    /// Called by NonWaterMaskLayer._Draw().
+    /// </summary>
+    public void DrawNonWaterMask(CanvasItem canvas)
+    {
+        if (_state?.MapData == null || _data == null || _animator == null) return;
+        if (!_frameAnyReflection) return;
+
+        for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
+        {
+            for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
+            {
+                ref var tile = ref _state.MapData.Tiles[x, y];
+                if (tile.Layer1 <= 0) continue;
+                if (tile.Layer1 >= 1505 && tile.Layer1 <= 1520) continue; // skip water
+
+                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
+                                            _framePixelOffsetX, _framePixelOffsetY);
+                if (_frameHasLights)
+                {
+                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false, modulate: lightColor);
+                }
+                else
+                {
+                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Draw PASS 2: Layer 2 tiles.
+    /// Called by Layer2Layer._Draw().
+    /// </summary>
+    public void DrawLayer2(CanvasItem canvas)
+    {
+        if (_state?.MapData == null || _data == null || _animator == null) return;
+
+        for (int y = _frameMinY; y <= _frameMaxY; y++)
+        {
+            for (int x = _frameMinX; x <= _frameMaxX; x++)
+            {
+                ref var tile = ref _state.MapData.Tiles[x, y];
+                if (tile.Layer2 <= 0) continue;
+
+                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+                if (_frameHasLights)
+                {
+                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false, modulate: lightColor);
+                }
+                else
+                {
+                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Draw pending normal aura draws on a given canvas (used by AuraAdditiveLayer).
+    /// Only normal (non-reflected) auras — reflected auras are handled by ReflectedAuraLayer.
     /// </summary>
     public void DrawPendingAuras(CanvasItem canvas)
     {
@@ -744,112 +843,6 @@ public partial class WorldRenderer : Node2D
             else
             {
                 CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
-            }
-        }
-
-        // Reflected auras — clipped per-tile to water areas.
-        // Water = L1 is water (1505-1520). Border tiles (L1=water + L2>0) ARE included
-        // because the aura additive blend at 0.3 alpha is subtle enough on borders.
-        // Supports rotation (Giratoria auras) via DrawSetTransform.
-        if (_state?.MapData != null)
-        {
-            foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
-            {
-                var resolved = _data.ResolveGrh(grhIndex, frame);
-                if (resolved == null || resolved.FileNum <= 0) continue;
-                var texture = _data.Textures?.GetTexture(resolved.FileNum);
-                if (texture == null) continue;
-
-                int sx = resolved.SX, sy = resolved.SY;
-                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-                int texW = texture.GetWidth(), texH = texture.GetHeight();
-                if (texW > 0) sx = sx % texW;
-                if (texH > 0) sy = sy % texH;
-                if (sx + pw > texW) pw = texW - sx;
-                if (sy + ph > texH) ph = texH - sy;
-                if (pw <= 0 || ph <= 0) continue;
-
-                float drawX = pos.X;
-                float drawY = pos.Y;
-                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-
-                if (angle != 0f)
-                {
-                    // Rotating reflected aura — DrawSetTransform around sprite center
-                    float cx = drawX + pw / 2f;
-                    float cy = drawY + ph / 2f;
-                    ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle);
-
-                    // Per-tile clipping in rotated space
-                    int tMinX = (int)Math.Floor((drawX - pw - _framePixelOffsetX) / TileSize)
-                                + _frameUserX - HalfWindowTileWidth;
-                    int tMaxX = (int)Math.Floor((drawX + pw * 2 - _framePixelOffsetX) / TileSize)
-                                + _frameUserX - HalfWindowTileWidth;
-                    int tMinY = (int)Math.Floor((drawY - ph - _framePixelOffsetY) / TileSize)
-                                + _frameUserY - HalfWindowTileHeight;
-                    int tMaxY = (int)Math.Floor((drawY + ph * 2 - _framePixelOffsetY) / TileSize)
-                                + _frameUserY - HalfWindowTileHeight;
-
-                    bool anyWater = false;
-                    for (int ty = Math.Max(1, tMinY); ty <= Math.Min(100, tMaxY) && !anyWater; ty++)
-                        for (int tx = Math.Max(1, tMinX); tx <= Math.Min(100, tMaxX) && !anyWater; tx++)
-                        {
-                            ref var wt = ref _state.MapData.Tiles[tx, ty];
-                            if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520) anyWater = true;
-                        }
-
-                    if (anyWater)
-                    {
-                        var srcRect = new Rect2(sx, sy, pw, ph);
-                        var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
-                        canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
-                    }
-                    ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f);
-                }
-                else
-                {
-                    // Non-rotating — per-tile clipping to water tiles
-                    int tMinX = (int)Math.Floor((drawX - _framePixelOffsetX) / TileSize)
-                                + _frameUserX - HalfWindowTileWidth;
-                    int tMaxX = (int)Math.Floor((drawX + pw - 1 - _framePixelOffsetX) / TileSize)
-                                + _frameUserX - HalfWindowTileWidth;
-                    int tMinY = (int)Math.Floor((drawY - _framePixelOffsetY) / TileSize)
-                                + _frameUserY - HalfWindowTileHeight;
-                    int tMaxY = (int)Math.Floor((drawY + ph - 1 - _framePixelOffsetY) / TileSize)
-                                + _frameUserY - HalfWindowTileHeight;
-
-                    for (int ty = Math.Max(1, tMinY); ty <= Math.Min(100, tMaxY); ty++)
-                    {
-                        for (int tx = Math.Max(1, tMinX); tx <= Math.Min(100, tMaxX); tx++)
-                        {
-                            ref var wt = ref _state.MapData.Tiles[tx, ty];
-                            // Water only (L1 1505-1520) — no L2 exclusion
-                            if (wt.Layer1 < 1505 || wt.Layer1 > 1520) continue;
-
-                            Vector2 tileScreen = TileToScreen(tx, ty, _frameUserX, _frameUserY,
-                                                               _framePixelOffsetX, _framePixelOffsetY);
-                            float tLeft = tileScreen.X;
-                            float tTop = tileScreen.Y;
-                            float tRight = tLeft + TileSize;
-                            float tBottom = tTop + TileSize;
-
-                            float cLeft = Math.Max(drawX, tLeft);
-                            float cTop = Math.Max(drawY, tTop);
-                            float cRight = Math.Min(drawX + pw, tRight);
-                            float cBottom = Math.Min(drawY + ph, tBottom);
-                            if (cRight <= cLeft || cBottom <= cTop) continue;
-
-                            float srcOffX = cLeft - drawX;
-                            float srcOffY = cTop - drawY;
-                            var clippedSrc = new Rect2(sx + srcOffX, sy + srcOffY,
-                                                        cRight - cLeft, cBottom - cTop);
-                            var clippedDest = new Rect2(cLeft, cTop,
-                                                         cRight - cLeft, cBottom - cTop);
-                            canvas.DrawTextureRectRegion(texture, clippedDest, clippedSrc, color);
-                        }
-                    }
-                }
             }
         }
     }
@@ -912,7 +905,68 @@ public partial class WorldRenderer : Node2D
 }
 
 /// <summary>
-/// Child Node2D with additive blend material. Draws auras queued by WorldRenderer.
+/// Child Node2D with additive blend material. Draws reflected auras.
+/// z_index=-3, draws AFTER parent _Draw (body reflections) but BEFORE mask and L2.
+/// NonWaterMaskLayer (z=-2) covers overflow onto land.
+/// Layer2Layer (z=-1) covers overlap under border opaque portions.
+/// </summary>
+public partial class ReflectedAuraLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawPendingReflAuras(this);
+    }
+}
+
+/// <summary>
+/// Child Node2D for PASS 1b: redraws non-water L1 tiles to mask reflection
+/// and reflected aura overflow onto land.
+/// z_index=-2, draws AFTER reflected auras but BEFORE L2.
+/// </summary>
+public partial class NonWaterMaskLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawNonWaterMask(this);
+    }
+}
+
+/// <summary>
+/// Child Node2D for PASS 2: draws Layer 2 tiles (borders, objects).
+/// z_index=-1, draws AFTER mask but BEFORE normal auras.
+/// Covers reflected aura portions under border opaque areas.
+/// </summary>
+public partial class Layer2Layer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawLayer2(this);
+    }
+}
+
+/// <summary>
+/// Child Node2D with additive blend material. Draws normal auras queued by WorldRenderer.
 /// z_index=0, added before ContentLayer — same-z children draw in tree order.
 /// </summary>
 public partial class AuraAdditiveLayer : Node2D
