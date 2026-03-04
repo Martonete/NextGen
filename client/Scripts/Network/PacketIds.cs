@@ -86,7 +86,7 @@ public static class ClientPacketId
     public const byte GuildAccept = 103;
     public const byte GuildReject = 104;
     public const byte GuildExpel = 105;
-    public const byte GuildNews = 106;
+    public const byte GuildNewsReq = 106;
     public const byte GuildApply = 107;
     public const byte GuildDetails = 108;
     public const byte GuildBankPermsQuery = 109;
@@ -120,7 +120,7 @@ public static class ClientPacketId
 
     // Player info (140-149)
     public const byte PlayerInfo = 140;
-    public const byte MiniStats = 141;
+    public const byte MiniStatsReq = 141;
     public const byte HeadChange = 142;
     public const byte Rankings = 143;
     public const byte SendPoints = 144;
@@ -327,9 +327,6 @@ public static class ServerPacketId
 
     /// DiceRollAlt — alternative dice roll result (same fields as DiceRoll). ID 68.
     public const byte DiceRollAlt = 68;
-
-    /// AccountData — raw account data string. ID 76.
-    public const byte AccountData = 76;
 
     // ── Movement / Projectiles ───────────────────────────────
 
