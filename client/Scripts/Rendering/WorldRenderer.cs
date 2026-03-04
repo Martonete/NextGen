@@ -83,6 +83,11 @@ public partial class WorldRenderer : Node2D
     // Whether any reflection was drawn this frame (used by PASS 1b mask)
     private bool _frameAnyReflection;
 
+    // Reusable arrays for DrawTileGrhLit (avoids per-tile allocation)
+    private readonly Vector2[] _litQuadPoints = new Vector2[4];
+    private readonly Color[] _litQuadColors = new Color[4];
+    private readonly Vector2[] _litQuadUVs = new Vector2[4];
+
     // Per-frame camera data (computed in _Draw, used by child layer callbacks)
     private int _frameUserX, _frameUserY;
     private float _framePixelOffsetX, _framePixelOffsetY;
@@ -309,12 +314,13 @@ public partial class WorldRenderer : Node2D
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
                 if (_frameHasLights)
                 {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
+                    LightSystem.GetTileLightCorners(_state, x, y,
+                        out Color tl, out Color tr, out Color br, out Color bl);
+                    DrawTileGrhLit(tile.Layer1, pos, tl, tr, br, bl);
                 }
                 else
                 {
-                    DrawTileGrh(tile.Layer1, pos, center: false);
+                    DrawTileGrh(tile.Layer1, pos);
                 }
             }
         }
@@ -708,13 +714,68 @@ public partial class WorldRenderer : Node2D
     /// <summary>
     /// Draw a tile GRH on this WorldRenderer's canvas (for terrain passes).
     /// </summary>
-    private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
+    private void DrawTileGrh(int grhIndex, Vector2 pos)
     {
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
         int frame = _animator.GetCurrentFrame(grhIndex, _data);
-        CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center, modulate);
+        CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center: false);
+    }
+
+    /// <summary>
+    /// Draw a ground tile with per-vertex lighting (4 corner colors).
+    /// Uses DrawPolygon for smooth light gradients matching VB6 DX8 behavior.
+    /// </summary>
+    private void DrawTileGrhLit(int grhIndex, Vector2 pos,
+        Color topLeft, Color topRight, Color bottomRight, Color bottomLeft)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        float dx = (float)Math.Round(pos.X);
+        float dy = (float)Math.Round(pos.Y);
+
+        // Quad vertices: TL, TR, BR, BL
+        _litQuadPoints[0] = new Vector2(dx, dy);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph);
+
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
+
+        // UVs normalized to texture size
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
+        DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
     }
 
     /// <summary>
@@ -727,6 +788,59 @@ public partial class WorldRenderer : Node2D
 
         int frame = _animator.GetCurrentFrame(grhIndex, _data);
         CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, center, modulate);
+    }
+
+    /// <summary>
+    /// Draw a ground tile with per-vertex lighting on a specific canvas.
+    /// Used by child layers (mask, L2) that need the same smooth gradients as PASS 1.
+    /// </summary>
+    private void DrawTileGrhLitTo(CanvasItem canvas, int grhIndex, Vector2 pos,
+        Color topLeft, Color topRight, Color bottomRight, Color bottomLeft)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        float dx = (float)Math.Round(pos.X);
+        float dy = (float)Math.Round(pos.Y);
+
+        _litQuadPoints[0] = new Vector2(dx, dy);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph);
+
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
+
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
+        canvas.DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
     }
 
     /// <summary>
@@ -802,8 +916,9 @@ public partial class WorldRenderer : Node2D
                                             _framePixelOffsetX, _framePixelOffsetY);
                 if (_frameHasLights)
                 {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false, modulate: lightColor);
+                    LightSystem.GetTileLightCorners(_state, x, y,
+                        out Color tl, out Color tr, out Color br, out Color bl);
+                    DrawTileGrhLitTo(canvas, tile.Layer1, pos, tl, tr, br, bl);
                 }
                 else
                 {
@@ -831,8 +946,9 @@ public partial class WorldRenderer : Node2D
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
                 if (_frameHasLights)
                 {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false, modulate: lightColor);
+                    LightSystem.GetTileLightCorners(_state, x, y,
+                        out Color tl, out Color tr, out Color br, out Color bl);
+                    DrawTileGrhLitTo(canvas, tile.Layer2, pos, tl, tr, br, bl);
                 }
                 else
                 {

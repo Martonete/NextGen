@@ -18,8 +18,8 @@ namespace TierrasSagradasAO.Game;
 /// Multiple lights: last one written wins (VB6 doesn't do max — the commented
 /// line `If TileLight > LightCalculate` is disabled in the VB6 source).
 ///
-/// For Godot rendering, we average the 4 corners into a single modulate color
-/// since DrawTextureRectRegion doesn't support per-vertex colors.
+/// Ground tiles (Layer 1) use per-vertex lighting via DrawPolygon for smooth gradients.
+/// Sprites (objects, trees, roofs) use averaged single-color modulation.
 /// </summary>
 public class LightSystem
 {
@@ -147,7 +147,7 @@ public class LightSystem
 
     /// <summary>
     /// Get the average light color for a tile (average of 4 corners).
-    /// When lights exist, all tiles have at least ambient color.
+    /// Used for sprites/objects where per-vertex isn't practical.
     /// </summary>
     public static Color GetTileLight(GameState state, int x, int y)
     {
@@ -159,11 +159,30 @@ public class LightSystem
         var c2 = state.TileLightColors[x, y, 2];
         var c3 = state.TileLightColors[x, y, 3];
 
-        // Average 4 corners for single-color modulation
         float r = (c0.R + c1.R + c2.R + c3.R) * 0.25f;
         float g = (c0.G + c1.G + c2.G + c3.G) * 0.25f;
         float b = (c0.B + c1.B + c2.B + c3.B) * 0.25f;
 
         return new Color(r, g, b, 1f);
+    }
+
+    /// <summary>
+    /// Get 4 corner light colors for a tile (for per-vertex interpolation).
+    /// VB6 layout: NW(idx 1), NE(idx 3), SE(idx 2), SW(idx 0).
+    /// Returns in screen quad order: TopLeft, TopRight, BottomRight, BottomLeft.
+    /// </summary>
+    public static void GetTileLightCorners(GameState state, int x, int y,
+        out Color topLeft, out Color topRight, out Color bottomRight, out Color bottomLeft)
+    {
+        if (state.TileLightColors == null || x < 1 || x > MapSize || y < 1 || y > MapSize)
+        {
+            topLeft = topRight = bottomRight = bottomLeft = Colors.White;
+            return;
+        }
+
+        topLeft     = state.TileLightColors[x, y, 1]; // NW
+        topRight    = state.TileLightColors[x, y, 3]; // NE
+        bottomRight = state.TileLightColors[x, y, 2]; // SE
+        bottomLeft  = state.TileLightColors[x, y, 0]; // SW
     }
 }
