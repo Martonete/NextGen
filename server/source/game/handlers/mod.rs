@@ -1785,13 +1785,15 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     if !legal {
         // Check if there's a map exit at the target tile
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
-            // VB6: FX only if tile has otTeleport object (not on map border exits)
-            let has_teleport_obj = {
+            // FX if tile has otTeleport object OR particle group (particle teleports)
+            let has_teleport_fx = {
                 let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
-                obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false)
+                let has_obj = obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false);
+                let has_particle = get_map_tile_particle(state, map, new_x, new_y) > 0;
+                has_obj || has_particle
             };
             warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
-            if has_teleport_obj {
+            if has_teleport_fx {
                 send_warp_fx(state, conn_id).await;
             }
             return;
@@ -1864,13 +1866,15 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // VB6 DoTileEvents: check tile exit AFTER successful movement (map transitions)
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
-        // VB6: FX only if tile has otTeleport object (not on map border exits)
-        let has_teleport_obj = {
+        // FX if tile has otTeleport object OR particle group (particle teleports)
+        let has_teleport_fx = {
             let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
-            obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false)
+            let has_obj = obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false);
+            let has_particle = get_map_tile_particle(state, map, new_x, new_y) > 0;
+            has_obj || has_particle
         };
         warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
-        if has_teleport_obj {
+        if has_teleport_fx {
             send_warp_fx(state, conn_id).await;
         }
     }

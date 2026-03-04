@@ -40,6 +40,16 @@ pub(super) fn get_map_tile_obj(state: &GameState, map: i32, x: i32, y: i32) -> i
     0
 }
 
+pub(super) fn get_map_tile_particle(state: &GameState, map: i32, x: i32, y: i32) -> i16 {
+    let map_idx = map as usize;
+    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
+            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].particle_group_index;
+        }
+    }
+    0
+}
+
 pub(super) fn set_map_tile_obj(state: &mut GameState, map: i32, x: i32, y: i32, new_obj: i16) {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
