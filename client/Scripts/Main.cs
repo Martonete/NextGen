@@ -692,7 +692,7 @@ public partial class Main : Control
             else
             {
                 DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-                DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
+                DisplayServer.WindowSetSize(new Vector2I(800, 600));
                 GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
             }
             if (_loginPanel != null)
@@ -2749,6 +2749,8 @@ public partial class Main : Control
         else
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetSize(new Vector2I(800, 600));
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         }
 
@@ -3245,7 +3247,8 @@ public partial class Main : Control
                 else
                 {
                     DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-                    DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
+                    DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+                    DisplayServer.WindowSetSize(new Vector2I(800, 600));
                     GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
                 }
                 _state.Config.Fullscreen = goFullscreen;
