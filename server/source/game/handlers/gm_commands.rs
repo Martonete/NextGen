@@ -23,6 +23,7 @@ async fn follow_tile_exit_after_warp(state: &mut GameState, conn_id: ConnectionI
         let (m, fx, fy) = (u.pos_map, u.pos_x, u.pos_y);
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(m, fx, fy) {
             warp_user(state, conn_id, exit_map as i32, exit_x as i32, exit_y as i32).await;
+            send_warp_fx(state, conn_id).await;
         }
     }
 }
