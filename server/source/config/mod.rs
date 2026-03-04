@@ -93,6 +93,7 @@ pub struct ServerConfig {
     pub notice: String,
     pub pretoriano_map: i32,
     pub intervalo_paralizado: i32,  // VB6: IntervaloParalizado (ticks at 40ms — default 500 = 20s)
+    pub intervalo_invisible: i32,   // VB6: IntervaloInvisible (ticks at 40ms — default 500 = 20s)
     pub npc_ai_interval_ms: u64,    // VB6: IntervaloNpcAI (ms — default 1300)
 }
 
@@ -156,6 +157,9 @@ impl ServerConfig {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(163),
             intervalo_paralizado: ini.get("INTERVALOS", "IntervaloParalizado")
+                .and_then(|s| s.trim().parse().ok())
+                .unwrap_or(500),
+            intervalo_invisible: ini.get("INTERVALOS", "IntervaloInvisible")
                 .and_then(|s| s.trim().parse().ok())
                 .unwrap_or(500),
             npc_ai_interval_ms: ini.get("INTERVALOS", "IntervaloNpcAI")

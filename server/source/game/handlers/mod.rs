@@ -1822,37 +1822,41 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
-    let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
-    let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
-        Some(u) => (u.area_min_x, u.area_min_y),
-        None => (0, 0),
-    };
-    if area_min_x > 0 || area_min_y > 0 {
-        let amx = area_min_x.max(1);
-        let amy = area_min_y.max(1);
-        let axx = (area_min_x + 26).min(100);
-        let axy = (area_min_y + 26).min(100);
-        let mut targets: Vec<ConnectionId> = Vec::new();
-        if let Some(grid) = state.world.grid(map) {
-            for sy in amy..=axy {
-                for sx in amx..=axx {
-                    if let Some(tile) = grid.tile(sx, sy) {
-                        if let Some(c) = tile.user_conn {
-                            if c != conn_id { targets.push(c); }
+    // Skip if invisible — others must NOT see movement.
+    let is_invisible = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
+    if !is_invisible {
+        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
+        let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
+            Some(u) => (u.area_min_x, u.area_min_y),
+            None => (0, 0),
+        };
+        if area_min_x > 0 || area_min_y > 0 {
+            let amx = area_min_x.max(1);
+            let amy = area_min_y.max(1);
+            let axx = (area_min_x + 26).min(100);
+            let axy = (area_min_y + 26).min(100);
+            let mut targets: Vec<ConnectionId> = Vec::new();
+            if let Some(grid) = state.world.grid(map) {
+                for sy in amy..=axy {
+                    for sx in amx..=axx {
+                        if let Some(tile) = grid.tile(sx, sy) {
+                            if let Some(c) = tile.user_conn {
+                                if c != conn_id { targets.push(c); }
+                            }
                         }
                     }
                 }
             }
+            for c in targets {
+                state.send_bytes(c, &move_pkt).await;
+            }
+        } else {
+            // Fallback: use standard area broadcast
+            state.send_data_bytes(
+                SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
+                &move_pkt,
+            ).await;
         }
-        for c in targets {
-            state.send_bytes(c, &move_pkt).await;
-        }
-    } else {
-        // Fallback: use standard area broadcast
-        state.send_data_bytes(
-            SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
-            &move_pkt,
-        ).await;
     }
 
     // VB6: ZonaCura check — auto-heal/revive if near a Revividor NPC (Sacerdotes automáticos)
@@ -4098,7 +4102,8 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
 
     // 8c. Re-send invisible state — CC creates a fresh Character with Invisible=false,
     // so the client loses the pulsing alpha. Send NOVER to restore it.
-    if state.users.get(&conn_id).map(|u| u.admin_invisible).unwrap_or(false) {
+    // Covers both GM /invisible and spell invisibility.
+    if state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false) {
         state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true)).await;
     }
 
@@ -4109,8 +4114,8 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
     make_user_visible(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
-    //     Skip if admin_invisible — others must NOT see us.
-    let is_invis = state.users.get(&conn_id).map(|u| u.admin_invisible).unwrap_or(false);
+    //     Skip if invisible (GM or spell) — others must NOT see us.
+    let is_invis = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
     if !is_invis {
         state.send_data_bytes(
             SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
@@ -4308,6 +4313,7 @@ mod db_tests {
             notice: notice.to_string(),
             pretoriano_map: 0,
             intervalo_paralizado: 500,
+            intervalo_invisible: 500,
             npc_ai_interval_ms: 1300,
         }
     }

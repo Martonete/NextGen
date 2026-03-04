@@ -9,7 +9,7 @@ use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
 use crate::data::npcs::NpcType;
 use crate::db::charfile;
 use crate::game::npc;
-use crate::protocol::binary_packets;
+use crate::protocol::{binary_packets, font_index};
 use super::common::*;
 use super::world;
 
@@ -1362,6 +1362,37 @@ pub async fn tick_intervals(state: &mut GameState) {
     for conn_id in unparalyze {
         let pkt = binary_packets::write_paralize_ok();
         state.send_bytes(conn_id, &pkt).await;
+    }
+
+    // VB6: EfectoInvisibilidad — count up invisibility timer each tick.
+    // Only for spell invisibility (not admin_invisible which is permanent).
+    let intervalo_invis = state.config.intervalo_invisible;
+    let mut uninvis: Vec<(ConnectionId, i16, i32, i32, i32, bool)> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.invisible && !user.admin_invisible {
+            if user.counter_invisible < intervalo_invis {
+                user.counter_invisible += 1;
+            } else {
+                // Timer expired — remove invisibility
+                user.invisible = false;
+                user.hidden = false;
+                user.counter_invisible = 0;
+                uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating));
+            }
+        }
+    }
+    for (conn_id, ci, map, x, y, navigating) in uninvis {
+        state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+        if !navigating {
+            // Re-broadcast CC so others see us again
+            let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+            let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+            // Tell self we're visible again
+            let nover = binary_packets::write_set_invisible(ci, false);
+            state.send_bytes(conn_id, &nover).await;
+        }
     }
 
     // NPC paralysis countdown (same 40ms tick as user paralysis)

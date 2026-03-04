@@ -751,6 +751,7 @@ pub(super) async fn apply_spell_status(
         if spell.invisibilidad {
             target.invisible = true;
             target.hidden = true;
+            target.counter_invisible = 0; // VB6: starts at 0, counts up to IntervaloInvisible
             send_invis = true;
         }
     }
