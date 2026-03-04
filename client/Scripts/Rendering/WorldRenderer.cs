@@ -92,8 +92,9 @@ public partial class WorldRenderer : Node2D
     // Two oscillating counters that bounce between -WaterHeight and +WaterHeight.
     // Creates a triangle wave with phase offset for ripple effect.
     private const float WaterHeight = 4f;          // max vertex displacement in pixels
-    // VB6: 4 * 0.042 = 0.168 per frame @ ~30fps → ~5.04/sec. Scale by delta in _Process.
-    private const float WaterSpeedPerSec = 0.168f * 30f;
+    // VB6: 4 * 0.042 = 0.168 per frame. VB6 ran at ~20-25fps typically (not 30).
+    // Using 20fps estimate → 0.168 * 20 = 3.36/sec for a ~4.76s full cycle.
+    private const float WaterSpeedPerSec = 0.168f * 20f;
     private float _waterCount0;                     // primary wave
     private float _waterCount1;                     // secondary wave (phase-offset)
     private bool _waterDir0;                        // false=rising, true=falling

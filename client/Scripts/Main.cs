@@ -2578,6 +2578,15 @@ public partial class Main : Control
             _state.LoginError = "";
         }
 
+        // Safety: sync panel-open flags with actual visibility.
+        // If a panel flag is stuck true but the panel isn't visible, the user is frozen.
+        if (_state.MacroPanelOpen && _macroPanel != null && !_macroPanel.Visible)
+            _state.MacroPanelOpen = false;
+        if (_state.OptionsPanelOpen && _optionsPanel != null && !_optionsPanel.Visible)
+            _state.OptionsPanelOpen = false;
+        if (_state.KeyBindPanelOpen && _keyBindPanel != null && !_keyBindPanel.Visible)
+            _state.KeyBindPanelOpen = false;
+
         // Show Mensaje dialog (VB6: Mensaje form — ERR, ERO, !! packets)
         if (!string.IsNullOrEmpty(_state.MensajeText))
         {
@@ -3238,10 +3247,25 @@ public partial class Main : Control
                 return;
             }
 
+            // Allow F9/F10 to toggle their own panels even when a form is open.
+            // Without this, opening a panel blocks F9/F10 from closing it, freezing input.
+            if (key.Keycode == Key.F9 && !_state.ChatActive && _state.MacroPanelOpen)
+            {
+                _macroPanel?.Close();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+            if (key.Keycode == Key.F10 && !_state.ChatActive && _state.OptionsPanelOpen)
+            {
+                _optionsPanel?.Close();
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
             // Block game keys when any form is open or a text field has focus.
-            // Escape (above) is still allowed so panels can be closed.
-            // This prevents Enter from toggling chat, F9/F10 from opening panels,
-            // and numpad from switching chat modes while typing in a form input.
+            // Escape (above) and F9/F10 toggles (above) are still allowed.
+            // This prevents Enter from toggling chat, and numpad from switching
+            // chat modes while typing in a form input.
             //
             // IMPORTANT: Do NOT call SetInputAsHandled() when a LineEdit has focus —
             // Godot processes _Input() BEFORE GUI input routing, so consuming the
