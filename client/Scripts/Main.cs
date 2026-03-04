@@ -1037,12 +1037,13 @@ public partial class Main : Control
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[MAIN] Connection failed: {ex.Message}");
+            GD.PrintErr($"[MAIN] Connection failed: {ex}");
             _connecting = false;
             _tcp?.Dispose();
             _tcp = null;
             _inputHandler = null;
-            _statusLabel!.Text = $"Error: {ex.Message}";
+
+            _statusLabel!.Text = FriendlyConnectionError(ex);
             _connectButton!.Disabled = false;
         }
     }
@@ -1056,6 +1057,21 @@ public partial class Main : Control
         _statusLabel!.Text = "Error: El servidor no respondió.";
         _connectButton!.Disabled = false;
     }
+
+    private static string FriendlyConnectionError(Exception ex) => ex switch
+    {
+        System.Net.Sockets.SocketException se => se.SocketErrorCode switch
+        {
+            System.Net.Sockets.SocketError.ConnectionRefused => "El servidor no está disponible. Intentá de nuevo en unos segundos.",
+            System.Net.Sockets.SocketError.TimedOut => "No se pudo conectar: el servidor no responde.",
+            System.Net.Sockets.SocketError.HostNotFound => "No se encontró el servidor. Verificá tu conexión.",
+            System.Net.Sockets.SocketError.NetworkUnreachable => "Red no disponible. Verificá tu conexión a internet.",
+            _ => $"Error de conexión: {se.SocketErrorCode}",
+        },
+        OperationCanceledException => "No se pudo conectar: el servidor no responde.",
+        NullReferenceException => "El servidor no está disponible. Intentá de nuevo en unos segundos.",
+        _ => $"Error de conexión: {ex.Message}",
+    };
 
     private void OnEnterPressed()
     {
@@ -1316,7 +1332,6 @@ public partial class Main : Control
         else
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         }
 
@@ -1879,11 +1894,11 @@ public partial class Main : Control
         }
         catch (Exception ex)
         {
-            GD.PrintErr($"[MAIN] Account creation connection failed: {ex.Message}");
+            GD.PrintErr($"[MAIN] Account creation connection failed: {ex}");
             _connecting = false;
             _tcp?.Dispose();
             _tcp = null;
-            _acctErrorLabel!.Text = $"Error: {ex.Message}";
+            _acctErrorLabel!.Text = FriendlyConnectionError(ex);
             _acctErrorLabel.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
             _acctCreateButton!.Disabled = false;
         }
@@ -2718,7 +2733,6 @@ public partial class Main : Control
         else
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         }
 
