@@ -10,6 +10,9 @@ Zona=ESPECIAL
 Restringir=No
 BackUp= 1
 Pk=1
+R=220
+G=220
+B=220
 [MAPA107]
 MagiaSinefecto=0
 InviSinEfecto=0

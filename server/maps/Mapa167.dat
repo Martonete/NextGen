@@ -8,6 +8,9 @@ Terreno=BOSQUE
 Zona=CAMPO
 BackUp= 0
 Pk=0
+R=220
+G=220
+B=220
 [MAPA167]
 Name=Fortaleza del Clan
 MagiaSinefecto=0
