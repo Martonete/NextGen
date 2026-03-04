@@ -17,6 +17,16 @@ use super::{
     spawn_npc_at,
 };
 
+/// After a GM warp, check if the destination tile has an exit and follow it.
+async fn follow_tile_exit_after_warp(state: &mut GameState, conn_id: ConnectionId) {
+    if let Some(u) = state.users.get(&conn_id) {
+        let (m, fx, fy) = (u.pos_map, u.pos_x, u.pos_y);
+        if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(m, fx, fy) {
+            warp_user(state, conn_id, exit_map as i32, exit_x as i32, exit_y as i32).await;
+        }
+    }
+}
+
 pub(super) async fn handle_slash_gmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
     let (priv_level, name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges > privilege_level::USER => {
@@ -88,6 +98,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
 
     warp_user(state, target_id, map, x, y).await;
     send_warp_fx(state, target_id).await;
+    follow_tile_exit_after_warp(state, target_id).await;
 
     // Notify
     if target_id == conn_id {
@@ -127,6 +138,7 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
 
     warp_user(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
+    follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
 }
 
@@ -165,6 +177,7 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
 
     warp_user(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
+    follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
 }
 
@@ -196,6 +209,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
 
     warp_user(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
+    follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
 }
 

@@ -4112,11 +4112,6 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // 14. Warp pets to new map (VB6: WarpMascotas)
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
 
-    // 15. Do NOT check tile exits at warp destination.
-    // Tile exits are only triggered by player WALKING onto a tile (DoTileEvents).
-    // Warps (map change, GM /WARP, border transitions) should not chain-trigger exits,
-    // otherwise border transitions landing on the opposite exit row cause infinite loops.
-
 }
 
 /// Send warp FX (sound + visual) at user's current position.
