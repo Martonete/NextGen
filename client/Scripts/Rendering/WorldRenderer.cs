@@ -92,7 +92,8 @@ public partial class WorldRenderer : Node2D
     // Two oscillating counters that bounce between -WaterHeight and +WaterHeight.
     // Creates a triangle wave with phase offset for ripple effect.
     private const float WaterHeight = 4f;          // max vertex displacement in pixels
-    private const float WaterSpeed = 4f * 0.042f;  // VB6: 4 * 0.042 ≈ 0.168 per frame
+    // VB6: 4 * 0.042 = 0.168 per frame @ ~30fps → ~5.04/sec. Scale by delta in _Process.
+    private const float WaterSpeedPerSec = 0.168f * 30f;
     private float _waterCount0;                     // primary wave
     private float _waterCount1;                     // secondary wave (phase-offset)
     private bool _waterDir0;                        // false=rising, true=falling
@@ -229,9 +230,11 @@ public partial class WorldRenderer : Node2D
     /// </summary>
     private void UpdateWaterWave()
     {
+        float step = WaterSpeedPerSec * (_deltaMs / 1000f);
+
         if (!_waterDir0)
         {
-            _waterCount0 += WaterSpeed;
+            _waterCount0 += step;
             if (_waterCount0 >= WaterHeight)
             {
                 _waterCount0 = WaterHeight;
@@ -240,7 +243,7 @@ public partial class WorldRenderer : Node2D
         }
         else
         {
-            _waterCount0 -= WaterSpeed;
+            _waterCount0 -= step;
             if (_waterCount0 <= -WaterHeight)
             {
                 _waterCount0 = -WaterHeight;
@@ -922,11 +925,16 @@ public partial class WorldRenderer : Node2D
             if (!ignoreBottom) { botL = _waterCount1; botR = -_waterCount1; }
         }
 
-        // Quad vertices with water Y displacement: TL, TR, BR, BL
-        _litQuadPoints[0] = new Vector2(dx, dy + topL);
-        _litQuadPoints[1] = new Vector2(dx + pw, dy + topR);
-        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph + botR);
-        _litQuadPoints[3] = new Vector2(dx, dy + ph + botL);
+        // Extend polygon by WaterHeight on top and bottom to prevent gap artifacts.
+        // VB6 DX8 triangle strips naturally overlapped; Godot polygons don't, so we
+        // pad each tile slightly. The UV stretches ~12% (4px on 32px) — imperceptible
+        // on water textures. Adjacent water tiles overlap, covering any displacement gaps.
+        float pad = WaterHeight;
+
+        _litQuadPoints[0] = new Vector2(dx, dy - pad + topL);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy - pad + topR);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph + pad + botR);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph + pad + botL);
 
         _litQuadColors[0] = topLeft;
         _litQuadColors[1] = topRight;
