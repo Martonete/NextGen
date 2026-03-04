@@ -682,22 +682,57 @@ pub(super) async fn apply_spell_status(
     spell: &crate::data::spells::SpellData,
 ) {
     // VB6: Can't paralyze/immobilize yourself (||31)
-    if spell.paraliza && caster_id == target_id {
+    if (spell.paraliza || spell.inmoviliza) && caster_id == target_id {
         state.send_msg_id(caster_id, 31, "").await;
         return;
+    }
+    // VB6: Can't poison yourself
+    if spell.envenena && caster_id == target_id {
+        return;
+    }
+
+    // Pre-read target state for validation checks
+    let target_dead = state.users.get(&target_id).map(|u| u.dead).unwrap_or(false);
+    let target_navigating = state.users.get(&target_id).map(|u| u.navigating).unwrap_or(false);
+    let target_map = state.users.get(&target_id).map(|u| u.pos_map).unwrap_or(0);
+
+    // VB6: Cure poison — can't cure dead users
+    if spell.cura_veneno && target_dead {
+        state.send_console(caster_id, "¡El usuario está muerto!", font_index::INFO).await;
+        return;
+    }
+
+    // VB6: Invisibility — can't invis dead users
+    if spell.invisibilidad && target_dead {
+        return;
+    }
+    // VB6: Invisibility — check map InviSinEfecto
+    if spell.invisibilidad {
+        let invi_blocked = state.game_data.maps.get(target_map as usize)
+            .and_then(|m| m.as_ref())
+            .map(|m| m.info.invi_sin_efecto)
+            .unwrap_or(false);
+        if invi_blocked {
+            state.send_console(caster_id, "La invisibilidad no funciona en este mapa.", font_index::INFO).await;
+            return;
+        }
     }
 
     // Track what we need to send after dropping the mutable borrow
     let mut send_paradok_on = false;   // paralysis applied → send PARADOK + PU
     let mut send_paradok_off = false;  // paralysis removed → send PARADOK
+    let mut send_invis = false;        // invisibility applied → send BP + SetInvisible
 
     if let Some(target) = state.users.get_mut(&target_id) {
         if spell.cura_veneno {
             target.poisoned = false;
         }
-        if spell.paraliza {
+        if spell.paraliza || spell.inmoviliza {
             if !target.paralyzed {
                 target.paralyzed = true;
+                if spell.inmoviliza {
+                    target.immobilized = true;
+                }
                 target.counter_paralisis = state.config.intervalo_paralizado;
                 send_paradok_on = true;
             }
@@ -705,6 +740,8 @@ pub(super) async fn apply_spell_status(
         if spell.remover_paralisis {
             if target.paralyzed {
                 target.paralyzed = false;
+                target.immobilized = false;
+                target.counter_paralisis = 0;
                 send_paradok_off = true;
             }
         }
@@ -714,12 +751,15 @@ pub(super) async fn apply_spell_status(
         if spell.invisibilidad {
             target.invisible = true;
             target.hidden = true;
+            target.counter_invisible = 0; // VB6: starts at 0, counts up to IntervaloInvisible
+            send_invis = true;
         }
     }
 
     // Send PARADOK + PU outside borrow scope (VB6: lines 759-760)
     if send_paradok_on {
-        let pkt = binary_packets::write_paralize_ok();
+        let para_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
+        let pkt = binary_packets::write_paralize_ok(para_secs);
         state.send_bytes(target_id, &pkt).await;
         // PU forces client position to server-known position (prevents ghost movement)
         if let Some(u) = state.users.get(&target_id) {
@@ -728,8 +768,22 @@ pub(super) async fn apply_spell_status(
         }
     }
     if send_paradok_off {
-        let pkt = binary_packets::write_paralize_ok();
+        let pkt = binary_packets::write_paralize_ok(0);
         state.send_bytes(target_id, &pkt).await;
+    }
+
+    // Invisibility spell — remove from others' screens, tell self
+    // VB6: skip SetInvisible packet if navigating (boat already hides char)
+    if send_invis && !target_navigating {
+        if let Some(u) = state.users.get(&target_id) {
+            let ci = u.char_index.0 as i16;
+            let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+            let invis_secs = (state.config.intervalo_invisible as f32 * 0.04) as i16;
+            let bp = binary_packets::write_character_remove(ci);
+            state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id: target_id, map, x, y }, &bp).await;
+            let nover = binary_packets::write_set_invisible(ci, true, invis_secs);
+            state.send_bytes(target_id, &nover).await;
+        }
     }
 
     // Resurrection spell

@@ -12,7 +12,7 @@ use super::world;
 
 // Functions from parent module (mod.rs) used by GM commands
 use super::{
-    warp_user, send_warp_fx, user_die, revive_user, check_user_level,
+    warp_user, warp_user_exact, send_warp_fx, user_die, revive_user, check_user_level,
     naked_body, send_inventory_slot, send_full_inventory, llevar_usuarios_cvc,
     spawn_npc_at,
 };
@@ -97,7 +97,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
         }
     };
 
-    warp_user(state, target_id, map, x, y).await;
+    warp_user_exact(state, target_id, map, x, y).await;
     send_warp_fx(state, target_id).await;
     follow_tile_exit_after_warp(state, target_id).await;
 
@@ -137,7 +137,7 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    warp_user(state, conn_id, map, tx, ty).await;
+    warp_user_exact(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -176,7 +176,7 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
         return;
     }
 
-    warp_user(state, conn_id, map, x, y).await;
+    warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -208,7 +208,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
         }
     };
 
-    warp_user(state, conn_id, map, x, y).await;
+    warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -381,40 +381,30 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
     };
 
     if is_invisible {
-        // Make visible again — restore old body/head
-        let (old_body, old_head) = {
-            let user = state.users.get(&conn_id).unwrap();
-            (user.old_body, user.old_head)
-        };
+        // Make visible again
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.admin_invisible = false;
             user.invisible = false;
-            user.body = old_body;
-            user.head = old_head;
         }
-        // Broadcast appearance change
+        // Re-broadcast appearance (body/head never changed — still intact)
         let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
         // NOVER packet (visible)
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false);
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
         state.send_console(conn_id, "Sos visible.", font_index::INFO).await;
     } else {
-        // Save current body/head, go invisible
+        // Go invisible — keep body/head intact for self-rendering with pulsing alpha
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.old_body = user.body;
-            user.old_head = user.head;
-            user.body = 0;
-            user.head = 0;
             user.admin_invisible = true;
             user.invisible = true;
         }
-        // Broadcast appearance change (body=0, head=0 = invisible)
-        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
-        // NOVER packet (invisible)
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
+        // BP — remove character from other players' screens
+        let bp = binary_packets::write_character_remove(char_index.0 as i16);
+        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &bp).await;
+        // NOVER packet — tell self we're invisible (permanent GM, duration=0)
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
+        state.send_bytes(conn_id, &nover).await;
         state.send_console(conn_id, "Sos invisible.", font_index::INFO).await;
     }
 }

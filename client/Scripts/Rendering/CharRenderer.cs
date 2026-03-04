@@ -69,18 +69,20 @@ public static class CharRenderer
             Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim}({shieldInfo}) casco={ch.CascoAnim}({cascoInfo})");
         }
 
-        // VB6: TransparenciaBody oscillates 0→100→0 for dead and invisible (self) chars
+        // Pulsing transparency for dead and invisible (self) chars.
+        // Time-based: full cycle ~2s. Range 18→53 (alpha ~45→135 of 255).
         if (ch.Dead || ch.Invisible)
         {
+            float speed = deltaMs * 0.035f; // 35 / 1000ms = 0.035 per ms
             if (!ch.Llegoalatransp)
             {
-                ch.TransparenciaBody++;
-                if (ch.TransparenciaBody >= 100) ch.Llegoalatransp = true;
+                ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 53f);
+                if (ch.TransparenciaBody >= 53f) ch.Llegoalatransp = true;
             }
             else
             {
-                ch.TransparenciaBody--;
-                if (ch.TransparenciaBody <= 0) ch.Llegoalatransp = false;
+                ch.TransparenciaBody = Math.Max(ch.TransparenciaBody - speed, 18f);
+                if (ch.TransparenciaBody <= 18f) ch.Llegoalatransp = false;
             }
         }
 
@@ -161,7 +163,7 @@ public static class CharRenderer
         // Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
         // VB6: name IS drawn for invisible self (visible to self/GMs)
         if (state == null || state.ShowNames)
-            DrawName(canvas, ch, screenPos, data);
+            DrawName(canvas, ch, screenPos, data, state);
 
         // Dialog bubble — queued to overlay layer (above all characters/NPCs)
         DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs, worldRenderer);
@@ -704,22 +706,22 @@ public static class CharRenderer
     /// </summary>
     public static void CollectAuraDraws(
         WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
-        GameData data)
+        GameData data, float alphaOverride = 1f)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
         if (ch.Navigating) return; // No auras while on a boat
 
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle, alphaOverride);
     }
 
     private static void CollectSingleAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
-        GameData data, int auraIndex, ref float angle)
+        GameData data, int auraIndex, ref float angle, float alphaOverride = 1f)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
 
@@ -737,8 +739,8 @@ public static class CharRenderer
         float auraX = pos.X + headOffset.X;
         float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
 
-        // VB6 color: static R,G,B (simplified — full pulsing is cosmetic polish)
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 1f);
+        // VB6 color: static R,G,B. Alpha reduced when invisible (pulsing with body).
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, alphaOverride);
 
         // Resolve animated GRH frame
         int grhIndex = aura.GrhIndex;
@@ -899,7 +901,7 @@ public static class CharRenderer
     /// and clan/rank at PixelOffsetY+45.
     /// Uses font1 (bitmap font) for pixel-perfect match.
     /// </summary>
-    private static void DrawName(Node2D canvas, Character ch, Vector2 pos, GameData data)
+    private static void DrawName(Node2D canvas, Character ch, Vector2 pos, GameData data, GameState? state = null)
     {
         if (string.IsNullOrEmpty(ch.Name)) return;
 
@@ -943,6 +945,7 @@ public static class CharRenderer
         {
             font.DrawText(canvas, centerX, tagY, clan, nickColor, center: true);
         }
+
     }
 
     /// <summary>

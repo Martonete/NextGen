@@ -52,7 +52,7 @@ public partial class Main : Control
     private Label? _onlineLabel;
     private Label? _coordsLabel;
     private Label? _expLabel;
-    private Button? _btnCastiGM;
+    private Control? _btnCastiGM;
 
     // Bottom bar combat/attribute labels
     private Label? _armaLabel;
@@ -318,30 +318,32 @@ public partial class Main : Control
         ApplyFont(_coordsLabel, "Tahoma", 700);
         _coordsLabel.AddThemeFontSizeOverride("font_size", 9);
 
-        // GM "CASTI GM" button — hidden by default, shown when Privileges >= 1
-        _btnCastiGM = new Button();
-        _btnCastiGM.Text = "CASTI GM";
-        _btnCastiGM.Position = new Vector2(560, 556);
-        _btnCastiGM.Size = new Vector2(70, 12);
-        _btnCastiGM.AddThemeFontSizeOverride("font_size", 7);
-        var castiStyle = new StyleBoxFlat();
-        castiStyle.BgColor = new Color(0.7f, 0.1f, 0.1f);
-        castiStyle.SetContentMarginAll(0);
-        castiStyle.SetCornerRadiusAll(1);
-        _btnCastiGM.AddThemeStyleboxOverride("normal", castiStyle);
-        var castiHover = new StyleBoxFlat();
-        castiHover.BgColor = new Color(0.85f, 0.15f, 0.15f);
-        castiHover.SetContentMarginAll(0);
-        castiHover.SetCornerRadiusAll(1);
-        _btnCastiGM.AddThemeStyleboxOverride("hover", castiHover);
-        var castiPressed = new StyleBoxFlat();
-        castiPressed.BgColor = new Color(0.5f, 0.05f, 0.05f);
-        castiPressed.SetContentMarginAll(0);
-        castiPressed.SetCornerRadiusAll(1);
-        _btnCastiGM.AddThemeStyleboxOverride("pressed", castiPressed);
-        _btnCastiGM.AddThemeColorOverride("font_color", Colors.White);
+        // GM "CASTI GM" button — ColorRect + Label to bypass Button min height.
+        _btnCastiGM = new Control();
+        _btnCastiGM.Position = new Vector2(560, 581);
+        _btnCastiGM.Size = new Vector2(70, 14);
         _btnCastiGM.Visible = false;
-        _btnCastiGM.Pressed += () => _tcp?.SendPacket(ClientPackets.WriteTalk("/TELEP YO 104 51 51"));
+        _btnCastiGM.MouseFilter = Control.MouseFilterEnum.Stop;
+        var castiBg = new ColorRect();
+        castiBg.Color = new Color(0.7f, 0.1f, 0.1f);
+        castiBg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        castiBg.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _btnCastiGM.AddChild(castiBg);
+        var castiLabel = new Label();
+        castiLabel.Text = "CASTI GM";
+        castiLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        castiLabel.VerticalAlignment = VerticalAlignment.Center;
+        castiLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        castiLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        castiLabel.AddThemeFontSizeOverride("font_size", 7);
+        castiLabel.AddThemeColorOverride("font_color", Colors.White);
+        castiLabel.ClipContents = true;
+        _btnCastiGM.AddChild(castiLabel);
+        _btnCastiGM.GuiInput += (InputEvent ev) =>
+        {
+            if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                _tcp?.SendPacket(ClientPackets.WriteTalk("/TELEP YO 104 51 51"));
+        };
         GetNode("GameUI").AddChild(_btnCastiGM);
 
         // exp: Cambria 8.25pt Bold, White (VB6: &H8000000B& system color → white on dark UI)
@@ -3079,6 +3081,16 @@ public partial class Main : Control
             && _state.CurrentScreen == Screen.CharSelect)
         {
             HandleDisconnect("");
+            return;
+        }
+
+        // Enter on login screen → trigger connect button
+        if (@event is InputEventKey enterLoginKey && enterLoginKey.Pressed && !enterLoginKey.Echo
+            && (enterLoginKey.Keycode == Key.Enter || enterLoginKey.Keycode == Key.KpEnter)
+            && _state.CurrentScreen == Screen.Login
+            && _connectButton != null && !_connectButton.Disabled)
+        {
+            _connectButton.EmitSignal("pressed");
             return;
         }
 

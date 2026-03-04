@@ -376,9 +376,10 @@ public partial class WorldRenderer : Node2D
                     headOffset, heading, _data, _animator);
 
                 // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
-                // Same conditions as normal auras: skip if Navegando, Montado, or Invisible
+                // Skip if Navegando or Montado. Invisible self-char still shows auras.
                 if ((_state.Config?.ShowAuras ?? true)
-                    && !ch.Invisible && !ch.Navigating && !ch.Mounted)
+                    && !ch.Navigating && !ch.Mounted
+                    && (!ch.Invisible || kvp.Key == _state.UserCharIndex))
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
                         new Vector2(charPx, charPy), headOffset, _data);
@@ -402,10 +403,10 @@ public partial class WorldRenderer : Node2D
         foreach (var kvp in _state.Characters)
         {
             var ch = kvp.Value;
-            // VB6: invisible chars skip ALL rendering (body, head, auras, everything)
+            // Invisible chars from OTHER players skip ALL rendering
             if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
-            // VB6: auras not drawn when Navegando, Montado, or Invisible
-            if (ch.Invisible || ch.Navigating || ch.Mounted) continue;
+            // Auras not drawn when Navegando or Montado (equipment hidden)
+            if (ch.Navigating || ch.Mounted) continue;
 
             // Compute character screen position
             var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
@@ -422,9 +423,16 @@ public partial class WorldRenderer : Node2D
             }
 
             // Collect aura draws (updates angle state + queues to _pendingAuraDraws)
+            // When invisible (self only), auras pulse with the same alpha as the body
             if (_state.Config?.ShowAuras ?? true)
             {
-                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
+                float auraAlpha = 1f;
+                if (ch.Invisible)
+                {
+                    // TransparenciaBody ranges 18-53, maps to alpha ~45-135 out of 255
+                    auraAlpha = (ch.TransparenciaBody + 45f) / 255f;
+                }
+                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data, auraAlpha);
             }
         }
 
@@ -613,7 +621,21 @@ public partial class WorldRenderer : Node2D
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
-            DrawStatusIconTo(canvas, slot, 23611, -1, -1, "OCULTO",
+            // Decrement invisibility countdown in real seconds
+            if (selfCh.InvisibleCountdown > 0)
+            {
+                selfCh.InvisibleCountdownTimer += _deltaMs;
+                if (selfCh.InvisibleCountdownTimer >= 1000f)
+                {
+                    selfCh.InvisibleCountdownTimer -= 1000f;
+                    selfCh.InvisibleCountdown--;
+                }
+            }
+            float inviCurrent = selfCh.InvisibleCountdown;
+            // Spell invisibility has countdown (label "INVISIBLE"), hide skill has no countdown (label "OCULTO")
+            bool isSpellInvi = selfCh.InvisibleMaxCountdown > 0;
+            string inviLabel = isSpellInvi ? "INVISIBLE" : "OCULTO";
+            DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, inviLabel,
                            new Color(0.6f, 0.6f, 1f));
             slot++;
         }
@@ -632,18 +654,10 @@ public partial class WorldRenderer : Node2D
             slot++;
         }
 
-        if (_state.SafeMode)
-        {
-            DrawStatusIconTo(canvas, slot, 0, -1, -1, "SEGURO",
-                           new Color(0f, 1f, 0f));
-            slot++;
-        }
-
         if (_state.UserNavigating)
         {
-            DrawStatusIconTo(canvas, slot, 0, -1, -1, "NAVEGANDO",
-                           new Color(0.3f, 0.7f, 1f));
-            slot++;
+            // Draw on the right side to avoid overlapping countdown bars
+            DrawStatusLabelRight(canvas, "NAVEGANDO", new Color(0.3f, 0.7f, 1f));
         }
     }
 
@@ -679,6 +693,16 @@ public partial class WorldRenderer : Node2D
         {
             _data.Fonts[1]!.DrawText(canvas, (int)baseX, (int)baseY + 2, label, labelColor);
         }
+    }
+
+    /// <summary>
+    /// Draw a status label on the top-right corner of the viewport.
+    /// </summary>
+    private void DrawStatusLabelRight(CanvasItem canvas, string label, Color color)
+    {
+        if (_data?.Fonts?[1] == null) return;
+        float x = 534f - 10f - (label.Length * 8f); // approximate right-align
+        _data.Fonts[1]!.DrawText(canvas, (int)x, 7, label, color);
     }
 
     /// <summary>
