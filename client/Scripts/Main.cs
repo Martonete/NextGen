@@ -52,6 +52,7 @@ public partial class Main : Control
     private Label? _onlineLabel;
     private Label? _coordsLabel;
     private Label? _expLabel;
+    private Button? _btnCastiGM;
 
     // Bottom bar combat/attribute labels
     private Label? _armaLabel;
@@ -309,6 +310,16 @@ public partial class Main : Control
         // Coord: Tahoma 5.25pt Bold, White
         ApplyFont(_coordsLabel, "Tahoma", 700);
         _coordsLabel.AddThemeFontSizeOverride("font_size", 9);
+
+        // GM "CASTI GM" button — hidden by default, shown when Privileges >= 1
+        _btnCastiGM = new Button();
+        _btnCastiGM.Text = "CASTI GM";
+        _btnCastiGM.Position = new Vector2(560, 540);
+        _btnCastiGM.Size = new Vector2(70, 16);
+        _btnCastiGM.AddThemeFontSizeOverride("font_size", 7);
+        _btnCastiGM.Visible = false;
+        _btnCastiGM.Pressed += () => _tcp?.SendPacket(ClientPackets.WriteTalk("/TELEP YO 104 51 51"));
+        GetNode("GameUI").AddChild(_btnCastiGM);
 
         // exp: Cambria 8.25pt Bold, White (VB6: &H8000000B& system color → white on dark UI)
         ApplyFont(_expLabel, "Cambria", 700);
@@ -2930,6 +2941,9 @@ public partial class Main : Control
         _onlineLabel!.Text = $"{_state.OnlineCount}";
         // VB6: Coord.Caption = NombreMapa & " (" & Map & "," & X & "," & Y & ")"
         _coordsLabel!.Text = $"{_state.MapName} ({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
+
+        // GM button visibility
+        if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;
 
         // Combat stat labels
         _armaLabel!.Text = $"{_state.AttackMin}/{_state.AttackMax}";
