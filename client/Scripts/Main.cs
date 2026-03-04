@@ -320,7 +320,7 @@ public partial class Main : Control
 
         // GM "CASTI GM" button — ColorRect + Label to bypass Button min height.
         _btnCastiGM = new Control();
-        _btnCastiGM.Position = new Vector2(560, 577);
+        _btnCastiGM.Position = new Vector2(560, 580);
         _btnCastiGM.Size = new Vector2(70, 14);
         _btnCastiGM.Visible = false;
         _btnCastiGM.MouseFilter = Control.MouseFilterEnum.Stop;
@@ -335,7 +335,7 @@ public partial class Main : Control
         castiLabel.VerticalAlignment = VerticalAlignment.Center;
         castiLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         castiLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        castiLabel.AddThemeFontSizeOverride("font_size", 5);
+        castiLabel.AddThemeFontSizeOverride("font_size", 7);
         castiLabel.AddThemeColorOverride("font_color", Colors.White);
         castiLabel.ClipContents = true;
         _btnCastiGM.AddChild(castiLabel);
