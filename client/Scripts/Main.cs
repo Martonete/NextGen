@@ -322,7 +322,7 @@ public partial class Main : Control
         _btnCastiGM = new Button();
         _btnCastiGM.Text = "CASTI GM";
         _btnCastiGM.Position = new Vector2(560, 563);
-        _btnCastiGM.Size = new Vector2(70, 6);
+        _btnCastiGM.Size = new Vector2(70, 3);
         _btnCastiGM.AddThemeFontSizeOverride("font_size", 7);
         _btnCastiGM.FocusMode = Control.FocusModeEnum.None;
         var castiStyle = new StyleBoxFlat();
