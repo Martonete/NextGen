@@ -3545,6 +3545,12 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     state.send_to(conn_id, &own_cc).await;
     state.send_to(conn_id, &own_cd).await;
 
+    // 8b. Re-send mount state — CC creates a fresh Character with Mounted=false,
+    // so the client loses the mount flag. Send USM to restore it.
+    if state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false) {
+        state.send_to(conn_id, &format!("USM{},1", ci.0)).await;
+    }
+
     // 9. PU (position update — tells client where to center camera)
     state.send_to(conn_id, &format!("PU{},{}", final_x, final_y)).await;
 
