@@ -91,10 +91,13 @@ public partial class WorldRenderer : Node2D
     // VB6 water polygon deformation (modEngine.bas lines 1752-1781)
     // Two oscillating counters that bounce between -WaterHeight and +WaterHeight.
     // Creates a triangle wave with phase offset for ripple effect.
-    private const float WaterHeight = 4f;          // max vertex displacement in pixels
-    // VB6: 4 * 0.042 = 0.168 per frame. VB6 ran at ~20-25fps typically (not 30).
-    // Using 20fps estimate → 0.168 * 20 = 3.36/sec for a ~4.76s full cycle.
-    private const float WaterSpeedPerSec = 0.168f * 20f;
+    // VB6 used WaterHeight=4 with DX8 shared-vertex triangle strips (no gaps).
+    // Godot DrawPolygon draws each tile independently — large displacements cause
+    // visible seams. Use smaller amplitude for smoother result.
+    private const float WaterHeight = 2f;
+    // VB6: 4 * 0.042 = 0.168 per frame at ~20fps → scale proportionally for height=2.
+    // 0.168 * (2/4) = 0.084 per frame * 20fps = 1.68/sec → ~4.76s full cycle.
+    private const float WaterSpeedPerSec = 0.084f * 20f;
     private float _waterCount0;                     // primary wave
     private float _waterCount1;                     // secondary wave (phase-offset)
     private bool _waterDir0;                        // false=rising, true=falling

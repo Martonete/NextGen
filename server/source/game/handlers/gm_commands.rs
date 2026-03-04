@@ -1365,6 +1365,7 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
 /// Check if an object is a map fixture (not player-droppable).
 /// VB6: ItemNoEsDeMapa — returns TRUE if item is NOT a map fixture (i.e. can be cleaned).
 /// Map fixtures: Doors(6), Trees(4), Signs(8), Forums(10), Minerals(23), Teleports(19).
+/// Check if an object is a map fixture that should NOT be cleaned by /MASSDEST.
 fn is_map_fixture(state: &GameState, obj_index: i32) -> bool {
     use crate::data::objects::ObjType;
     match state.get_object(obj_index) {
@@ -1372,47 +1373,58 @@ fn is_map_fixture(state: &GameState, obj_index: i32) -> bool {
             ObjType::Door | ObjType::Trees | ObjType::Sign |
             ObjType::Forum | ObjType::Mineral | ObjType::Teleport
         ),
-        None => false, // Unknown object — safe to clean
+        None => false,
     }
 }
 
-/// /LIMPIAR or /LMAP — Clean dropped ground items on current map.
-/// Skips map fixtures (doors, trees, signs, forums, minerals, teleports).
-/// VB6: LimpiarMapa / LimpiarMundoEntero — only cleans items in tClearWorld.
+/// /LIMPIAR or /LMAP — Clean items tracked in the TrashCollector (clean_world).
+/// VB6: LimpiarMundo (General.bas) — iterates TrashCollector, calls EraseObj
+/// on each entry, then clears the list. Does NOT scan the map for all items.
+/// Only items explicitly added via clean_world_add_item (NPC drops, player drops,
+/// campfires, etc.) are cleaned. Map fixtures (trees, flowers, signs, doors,
+/// minerals, etc.) placed by the map editor are never touched.
 pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: ConnectionId) {
-    let map = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => u.pos_map,
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => return,
-    };
-
-    // Collect items to clean (skip map fixtures)
-    let mut to_clean: Vec<(i32, i32)> = Vec::new();
-    if let Some(grid) = state.world.grid(map) {
-        for y in 1..=100i32 {
-            for x in 1..=100i32 {
-                if let Some(tile) = grid.tile(x, y) {
-                    if tile.ground_item.obj_index > 0 && !is_map_fixture(state, tile.ground_item.obj_index) {
-                        to_clean.push((x, y));
-                    }
-                }
-            }
-        }
     }
 
-    // Remove items and send BO packets
-    for &(x, y) in &to_clean {
+    // Collect active TrashCollector entries (VB6: iterate TrashCollector in reverse)
+    let mut cleaned = 0i32;
+    for i in 0..state.clean_world.len() {
+        let entry = &state.clean_world[i];
+        if entry.map == 0 && entry.x == 0 && entry.y == 0 {
+            continue; // empty slot
+        }
+
+        let map = entry.map;
+        let x = entry.x;
+        let y = entry.y;
+
+        // VB6: EraseObj(1, d.Map, d.X, d.Y) — remove 1 unit from ground
         let grid = state.world.grid_mut(map);
         if let Some(tile) = grid.tile_mut(x, y) {
-            tile.ground_item = world::GroundItem::default();
+            if tile.ground_item.obj_index > 0 {
+                tile.ground_item.amount -= 1;
+                if tile.ground_item.amount <= 0 {
+                    tile.ground_item = world::GroundItem::default();
+                }
+                // Send BO (object delete) to everyone on that map
+                let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+                state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+                cleaned += 1;
+            }
         }
-        // VB6: EraseObj sends BO to map
-        let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+
+        // Clear the entry
+        state.clean_world[i] = crate::game::types::CleanWorldEntry::default();
     }
 
+    // VB6 also calls SecurityIp.IpSecurityMantenimientoLista — no equivalent needed
+
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    info!("[GM] {} used /LIMPIAR on map {} — cleaned {} items", gm_name, map, to_clean.len());
-    state.send_console(conn_id, &format!("{} items del suelo limpiados en mapa {}.", to_clean.len(), map), font_index::INFO).await;
+    info!("[GM] {} used /LIMPIAR — cleaned {} tracked items", gm_name, cleaned);
+    state.send_console(conn_id, &format!("{} items limpiados del TrashCollector.", cleaned), font_index::INFO).await;
 }
 
 /// /NICK2IP nick — Get IP of user.
