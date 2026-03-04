@@ -962,6 +962,7 @@ public partial class PacketHandler
         _state.AddToUserPosY = 0;
         _state.UserMoving = false;
         _state.PendingMoves = 0;
+        _state.PtCooldownFrames = 10; // Block movement for ~10 frames after map change
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
         {
             selfCh.MoveOffsetX = 0;
