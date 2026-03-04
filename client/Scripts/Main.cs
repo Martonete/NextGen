@@ -287,13 +287,13 @@ public partial class Main : Control
         consoleStyle.ContentMarginBottom = 6;
         _console.AddThemeStyleboxOverride("normal", consoleStyle);
         ApplyFont(_console, bold: true);
-        _console.AddThemeFontSizeOverride("normal_font_size", 8);
-        _console.AddThemeFontSizeOverride("bold_font_size", 8);
+        _console.AddThemeFontSizeOverride("normal_font_size", 9);
+        _console.AddThemeFontSizeOverride("bold_font_size", 9);
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
         _chatInput.MaxLength = 160; // VB6: frmMain.frm txtChat MaxLength=160
         ApplyFont(_chatInput);
-        _chatInput.AddThemeFontSizeOverride("font_size", 8);
+        _chatInput.AddThemeFontSizeOverride("font_size", 9);
         // Dark background + thin border — sits below the game viewport, no overlap
         var chatBox = new StyleBoxFlat();
         chatBox.BgColor = new Color(0, 0, 0, 0.85f);
@@ -834,14 +834,13 @@ public partial class Main : Control
     private static void LoadUIFonts(string dataPath)
     {
         string fontsDir = System.IO.Path.Combine(dataPath, "Fonts");
-        string regularPath = System.IO.Path.Combine(fontsDir, "Silkscreen.ttf");
-        string boldPath = System.IO.Path.Combine(fontsDir, "Silkscreen-Bold.ttf");
+        string regularPath = System.IO.Path.Combine(fontsDir, "LiberationSans-Regular.ttf");
+        string boldPath = System.IO.Path.Combine(fontsDir, "LiberationSans-Bold.ttf");
 
         if (System.IO.File.Exists(regularPath))
         {
             var fontData = new FontFile();
             fontData.LoadDynamicFont(regularPath);
-            fontData.Hinting = TextServer.Hinting.None;
             _uiFont = fontData;
             GD.Print($"[MAIN] UI font loaded: {regularPath}");
         }
@@ -854,7 +853,6 @@ public partial class Main : Control
         {
             var fontData = new FontFile();
             fontData.LoadDynamicFont(boldPath);
-            fontData.Hinting = TextServer.Hinting.None;
             _uiFontBold = fontData;
             GD.Print($"[MAIN] UI bold font loaded: {boldPath}");
         }
@@ -3558,7 +3556,7 @@ public partial class Main : Control
             // VB6: AgregarParticulasyLuces(MapNum) — add hardcoded map decorations
             MapEffects.AddParticlesAndLights(_state.CurrentMap, _state);
 
-            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
+            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK — particles: {_state.MapParticles.Count}, lights: {_state.MapLights.Count}, particleDefs: {_state.ParticleDefs.Length}");
         }
         catch (Exception ex)
         {
