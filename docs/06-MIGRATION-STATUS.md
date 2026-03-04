@@ -177,7 +177,7 @@
 
 ## Test Coverage
 
-**65 unit tests passing** across 20 modules:
+**68 unit tests passing** across 20 modules:
 - Crypto (26 tests): AoDefEnc cipher, base64, conversion, roundtrip
 - Protocol (6 tests): Packet field parsing
 - Config (5 tests): INI parser (UTF-8, UTF-16 LE/BE, Latin-1)

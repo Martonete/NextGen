@@ -2,7 +2,7 @@
 
 ## Current Status: ~90% VB6 Parity
 
-All core game systems are implemented and functional. Server: 55 Rust files, 35.5K LOC, 228 protocol opcodes, 90 GM handlers, 65 tests. Client: 38 C# files, 16.4K LOC, 159 packet handlers. See [06-MIGRATION-STATUS.md](06-MIGRATION-STATUS.md) for detailed tracking.
+All core game systems are implemented and functional. Server: 55 Rust files, 35.5K LOC, 228 protocol opcodes, 90 GM handlers, 68 tests. Client: 38 C# files, 16.4K LOC, 159 packet handlers. See [06-MIGRATION-STATUS.md](06-MIGRATION-STATUS.md) for detailed tracking.
 
 ## Documentation Index
 
@@ -14,9 +14,9 @@ All core game systems are implemented and functional. Server: 55 Rust files, 35.
 | [04-DATA-FORMATS.md](04-DATA-FORMATS.md) | File formats (maps, objects, charfiles, accounts) |
 | [05-VB6-PARITY.md](05-VB6-PARITY.md) | VB6-specific behaviors and gotchas |
 | [06-MIGRATION-STATUS.md](06-MIGRATION-STATUS.md) | What's done, what's remaining, codebase stats |
-| [BANKING_SYSTEM_VB6.md](BANKING_SYSTEM_VB6.md) | VB6 banking system reference |
-| [TRADING_PROTOCOL.md](TRADING_PROTOCOL.md) | Player trading protocol reference |
-| [MISSING_HANDLERS.md](MISSING_HANDLERS.md) | VB6 handlers not yet implemented (88 items) |
+| [SERVER-CONFIG.md](SERVER-CONFIG.md) | server.ini, Intervalos.ini, environment variables |
+| [DATABASE.md](DATABASE.md) | PostgreSQL schema, backup/restore |
+| [vb6-reference/](vb6-reference/) | VB6 banking and trading protocol references |
 
 ## Remaining Work
 
