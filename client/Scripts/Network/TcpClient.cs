@@ -27,12 +27,13 @@ public class AoTcpClient : IDisposable
     /// <summary>
     /// Connect to the AO server asynchronously.
     /// </summary>
-    public async Task ConnectAsync(string host, int port)
+    public async Task ConnectAsync(string host, int port, int timeoutMs = 5000)
     {
         _client = new TcpClient();
         _cts = new CancellationTokenSource();
 
-        await _client.ConnectAsync(host, port);
+        using var connectCts = new CancellationTokenSource(timeoutMs);
+        await _client.ConnectAsync(host, port, connectCts.Token);
         _stream = _client.GetStream();
         _connected = true;
 

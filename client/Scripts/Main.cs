@@ -1003,6 +1003,17 @@ public partial class Main : Control
             await Task.Delay(50);
             _tcp.SendPacket(ClientPackets.WriteAlogin(account, password));
             GD.Print("[MAIN] Sent: ALOGIN (binary)");
+
+            // Timeout: if server doesn't respond within 8 seconds, abort
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(8000);
+                if (_state.CurrentScreen == Screen.Login && !_connecting
+                    && _tcp != null && _tcp.IsConnected && _statusLabel!.Text == "Enviando login...")
+                {
+                    CallDeferred(nameof(LoginTimeout));
+                }
+            });
         }
         catch (Exception ex)
         {
@@ -1014,6 +1025,16 @@ public partial class Main : Control
             _statusLabel!.Text = $"Error: {ex.Message}";
             _connectButton!.Disabled = false;
         }
+    }
+
+    private void LoginTimeout()
+    {
+        GD.PrintErr("[MAIN] Login timeout — server did not respond");
+        _tcp?.Dispose();
+        _tcp = null;
+        _inputHandler = null;
+        _statusLabel!.Text = "Error: El servidor no respondió.";
+        _connectButton!.Disabled = false;
     }
 
     private void OnEnterPressed()
