@@ -157,6 +157,13 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.PauseToggle: // 41
                 _state.Paused = !_state.Paused;
+                if (_state.Paused)
+                {
+                    // Stop any in-progress movement so the client doesn't queue
+                    // extra walk packets while paused (e.g., during map warp).
+                    _state.UserMoving = false;
+                    _state.PendingMoves = 0;
+                }
                 break;
             case ServerPacketId.RainToggle: // 42
                 _state.Raining = !_state.Raining;
@@ -954,6 +961,7 @@ public partial class PacketHandler
         _state.AddToUserPosX = 0;
         _state.AddToUserPosY = 0;
         _state.UserMoving = false;
+        _state.PendingMoves = 0;
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
         {
             selfCh.MoveOffsetX = 0;
