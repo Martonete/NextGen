@@ -17,6 +17,10 @@ public partial class Main : Control
 
     private readonly GameData _gameData = new();
     private readonly GameState _state = new();
+
+    // UI fonts loaded from Data/Fonts/
+    private static Font? _uiFont;
+    private static Font? _uiFontBold;
     private AoTcpClient? _tcp;
     private PacketHandler? _packetHandler;
     private InputHandler? _inputHandler;
@@ -222,6 +226,9 @@ public partial class Main : Control
         // Load key bindings (Teclas.tsao)
         _state.Keys = KeyBindings.Load(dataPath);
 
+        // Load UI fonts from filesystem
+        LoadUIFonts(dataPath);
+
         if (!_gameData.IsLoaded)
         {
             GD.PrintErr("[MAIN] Failed to load game data — aborting");
@@ -279,9 +286,14 @@ public partial class Main : Control
         consoleStyle.ContentMarginTop = 1;
         consoleStyle.ContentMarginBottom = 6;
         _console.AddThemeStyleboxOverride("normal", consoleStyle);
+        ApplyFont(_console, bold: true);
+        _console.AddThemeFontSizeOverride("normal_font_size", 8);
+        _console.AddThemeFontSizeOverride("bold_font_size", 8);
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
         _chatInput.MaxLength = 160; // VB6: frmMain.frm txtChat MaxLength=160
+        ApplyFont(_chatInput);
+        _chatInput.AddThemeFontSizeOverride("font_size", 8);
         // Dark background + thin border — sits below the game viewport, no overlap
         var chatBox = new StyleBoxFlat();
         chatBox.BgColor = new Color(0, 0, 0, 0.85f);
@@ -335,6 +347,7 @@ public partial class Main : Control
         castiLabel.VerticalAlignment = VerticalAlignment.Center;
         castiLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         castiLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        ApplyFont(castiLabel);
         castiLabel.AddThemeFontSizeOverride("font_size", 7);
         castiLabel.AddThemeColorOverride("font_color", Colors.White);
         castiLabel.ClipContents = true;
@@ -475,6 +488,7 @@ public partial class Main : Control
         _friendsList = new ItemList();
         _friendsList.Position = new Vector2(396, 2);
         _friendsList.Size = new Vector2(137, 88);
+        ApplyFont(_friendsList);
         _friendsList.AddThemeFontSizeOverride("font_size", 9);
         _friendsList.AddThemeColorOverride("font_color", new Color(0.753f, 0.878f, 1f)); // VB6: &H00C0E0FF&
         var friendsBg = new StyleBoxFlat();
@@ -817,13 +831,64 @@ public partial class Main : Control
     /// Uses a SystemFont with weight 700 overriding the theme font.
     /// </summary>
     /// Apply a specific font to a label (VB6 parity: exact font family + weight).
-    private static void ApplyFont(Label label, string fontName = "Tahoma", int weight = 700)
+    private static void LoadUIFonts(string dataPath)
     {
-        var font = new SystemFont();
-        font.FontNames = new string[] { fontName };
-        font.FontWeight = weight;
-        font.MultichannelSignedDistanceField = true;
-        label.AddThemeFontOverride("font", font);
+        string fontsDir = System.IO.Path.Combine(dataPath, "Fonts");
+        string regularPath = System.IO.Path.Combine(fontsDir, "Silkscreen.ttf");
+        string boldPath = System.IO.Path.Combine(fontsDir, "Silkscreen-Bold.ttf");
+
+        if (System.IO.File.Exists(regularPath))
+        {
+            var fontData = new FontFile();
+            fontData.LoadDynamicFont(regularPath);
+            fontData.Hinting = TextServer.Hinting.None;
+            _uiFont = fontData;
+            GD.Print($"[MAIN] UI font loaded: {regularPath}");
+        }
+        else
+        {
+            GD.PrintErr($"[MAIN] UI font not found: {regularPath}");
+        }
+
+        if (System.IO.File.Exists(boldPath))
+        {
+            var fontData = new FontFile();
+            fontData.LoadDynamicFont(boldPath);
+            fontData.Hinting = TextServer.Hinting.None;
+            _uiFontBold = fontData;
+            GD.Print($"[MAIN] UI bold font loaded: {boldPath}");
+        }
+    }
+
+    /// <summary>
+    /// Apply UI font to a control (label, button, etc.)
+    /// </summary>
+    private static void ApplyFont(Control control, bool bold = false)
+    {
+        var font = bold ? (_uiFontBold ?? _uiFont) : _uiFont;
+        if (font == null) return;
+
+        if (control is Label label)
+            label.AddThemeFontOverride("font", font);
+        else if (control is Button button)
+            button.AddThemeFontOverride("font", font);
+        else if (control is LineEdit lineEdit)
+            lineEdit.AddThemeFontOverride("font", font);
+        else if (control is RichTextLabel rtl)
+        {
+            rtl.AddThemeFontOverride("normal_font", font);
+            var boldFont = _uiFontBold ?? font;
+            rtl.AddThemeFontOverride("bold_font", boldFont);
+        }
+        else if (control is ItemList itemList)
+            itemList.AddThemeFontOverride("font", font);
+    }
+
+    /// <summary>Legacy overload kept for stat labels that specify fontName.</summary>
+    private static void ApplyFont(Label label, string fontName, int weight = 700)
+    {
+        // Use our custom font instead of system font
+        ApplyFont((Control)label, weight >= 600);
     }
 
     private static Label CreateStatLabel(float x, float y, float w, float h, Color color, int fontSize,
