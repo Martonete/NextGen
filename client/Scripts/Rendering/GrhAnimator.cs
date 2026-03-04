@@ -22,6 +22,9 @@ public class GrhAnimator
     // Used for looping tile animations — guarantees perfect sync.
     private double _globalTimeMs;
 
+    /// <summary>Global clock in milliseconds (read-only). Used by water UV scrolling.</summary>
+    public double GlobalTimeMs => _globalTimeMs;
+
     // Per-GRH state only for one-shot (non-looping) animations like FX.
     private readonly Dictionary<int, AnimState> _fxStates = new();
 
