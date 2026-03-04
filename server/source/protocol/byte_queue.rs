@@ -123,21 +123,29 @@ impl ByteQueue {
         self.data.extend_from_slice(&val.to_le_bytes());
     }
 
-    /// Write a variable-length ASCII string (2-byte LE length prefix + data).
+    /// Write a variable-length Latin-1 string (2-byte LE length prefix + data).
+    /// Encodes each Unicode char as its Latin-1 byte (codepoint & 0xFF).
+    /// This matches the VB6/Windows-1252 encoding used by the client.
     pub fn write_ascii_string(&mut self, val: &str) {
-        let bytes = val.as_bytes();
+        let bytes: Vec<u8> = val.chars().map(|c| {
+            let cp = c as u32;
+            if cp <= 0xFF { cp as u8 } else { b'?' }
+        }).collect();
         let len = bytes.len().min(u16::MAX as usize);
         self.write_integer(len as i16);
         self.data.extend_from_slice(&bytes[..len]);
     }
 
-    /// Write a fixed-length ASCII string (no length prefix, padded/truncated).
+    /// Write a fixed-length Latin-1 string (no length prefix, padded/truncated).
     pub fn write_ascii_string_fixed(&mut self, val: &str, len: usize) {
-        let bytes = val.as_bytes();
+        let bytes: Vec<u8> = val.chars().map(|c| {
+            let cp = c as u32;
+            if cp <= 0xFF { cp as u8 } else { b'?' }
+        }).collect();
         if bytes.len() >= len {
             self.data.extend_from_slice(&bytes[..len]);
         } else {
-            self.data.extend_from_slice(bytes);
+            self.data.extend_from_slice(&bytes);
             // Pad with zeros
             self.data.extend(std::iter::repeat(0u8).take(len - bytes.len()));
         }

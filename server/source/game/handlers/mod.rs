@@ -179,7 +179,10 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let head = bq.read_integer().unwrap_or(0);
             let homeland = bq.read_byte().unwrap_or(0);
             let account = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("NLOGIN{},{},{},{},{},{},{}", char_name, race, gender, class, head, homeland, account);
+            // Handler reads: field1=name, field2=race, field4=gender(string), field5=class, field6=homeland, field7=account, field8=head
+            // VB6 client had extra field3 (description?) and gender as "Hombre"/"Mujer"
+            let gender_str = if gender == 1 { "Hombre" } else { "Mujer" };
+            let text = format!("NLOGIN{},{},0,{},{},{},{},{}", char_name, race, gender_str, class, homeland, account, head);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::OOLOGI => {
@@ -206,7 +209,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::REPASS => {
             let old_pass = bq.read_ascii_string().unwrap_or_default();
             let new_pass = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("REPASS{},{}", old_pass, new_pass);
+            // Handler expects: REPASS<account>,<old>,<new>,<confirm>
+            let account = state.users.get(&conn_id)
+                .map(|u| u.account_name.clone())
+                .unwrap_or_default();
+            let text = format!("REPASS{},{},{},{}", account, old_pass, new_pass, new_pass);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::REECUH => {
@@ -220,7 +227,16 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         }
         ClientPacketID::TBRP => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("TBRP{}", char_name);
+            // Handler expects: TBRP<name>,<account>,<password(codex)>
+            // Binary client only sends name. Account is from connection state.
+            // For security verification, load the charfile password (codex) server-side
+            // since the client is already authenticated via ALOGIN.
+            let account = state.users.get(&conn_id)
+                .map(|u| u.account_name.clone())
+                .unwrap_or_default();
+            let codex = charfile::load_charfile(&state.pool, &char_name).await
+                .map(|c| c.password).unwrap_or_default();
+            let text = format!("TBRP{},{},{}", char_name, account, codex);
             handle_packet(state, conn_id, &text).await;
         }
 
