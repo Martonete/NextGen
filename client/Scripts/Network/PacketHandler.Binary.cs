@@ -2176,10 +2176,10 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(srcIndex, out var srcCh) &&
             _state.Characters.TryGetValue(tgtIndex, out var tgtCh))
         {
-            float srcPixelX = srcCh.Pos.X * 32f + 16f;
-            float srcPixelY = srcCh.Pos.Y * 32f + 16f;
-            float tgtPixelX = tgtCh.Pos.X * 32f + 16f;
-            float tgtPixelY = tgtCh.Pos.Y * 32f + 16f;
+            float srcPixelX = srcCh.PosX * 32f + 16f;
+            float srcPixelY = srcCh.PosY * 32f + 16f;
+            float tgtPixelX = tgtCh.PosX * 32f + 16f;
+            float tgtPixelY = tgtCh.PosY * 32f + 16f;
             _state.ActiveArrows.Add(new ArrowProjectile
             {
                 ShooterCharIndex = srcIndex,
