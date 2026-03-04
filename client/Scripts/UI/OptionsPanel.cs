@@ -376,7 +376,7 @@ public partial class OptionsPanel : PanelContainer
         _optAspect.AddItem("Ratio 16:9", 1);
         _optAspect.CustomMinimumSize = new Vector2(220, 0);
         _optAspect.AddThemeFontSizeOverride("font_size", 11);
-        _optAspect.ItemSelected += _ => ApplyImmediate();
+        _optAspect.Disabled = true;
         _aspectRow.AddChild(_optAspect);
         vbox.AddChild(_aspectRow);
 

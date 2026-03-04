@@ -249,6 +249,11 @@ public partial class Main : Control
         _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
         _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
 
+        // Set Linear texture filtering on UI layers so fonts/text scale smoothly.
+        // Game viewport keeps Nearest (pixel art) via project default_texture_filter=0.
+        GetNode<CanvasLayer>("UILayer").TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+        GetNode<Control>("GameUI").TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+
         // Grab Login UI nodes
         _loginPanel = GetNode<PanelContainer>("UILayer/LoginPanel");
         _charSelectPanel = GetNode<PanelContainer>("UILayer/CharSelectPanel");
