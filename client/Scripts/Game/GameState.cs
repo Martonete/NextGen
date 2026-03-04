@@ -190,6 +190,58 @@ public class GameState
         || MacroPanelOpen || OptionsPanelOpen || KeyBindPanelOpen
         || ShowTravelPanel || Trading || DropDialogOpen || AddFriendDialogOpen;
 
+    // Extended stat fields
+    public int CarryBulk;           // StatBulk (ID 127) — current carry weight
+    public string SpellInfoText = ""; // SpellInfoResp (ID 148)
+
+    // Crafting lists (smith/carp)
+    public string CraftListData = ""; // raw CSV from SmithWeapons/SmithArmors/CarpItems
+
+    // Event / environment
+    public string BattleTeamScores = ""; // BattleTeamScores (ID 163)
+    public byte AmbientColorR = 200, AmbientColorG = 200, AmbientColorB = 200; // AmbientColor (ID 164)
+
+    // Guild bank
+    public long GuildBankGold;
+    public bool GuildBankCanObj;
+    public bool GuildBankCanGold;
+    public string GuildInfoData = ""; // raw guild info string from server
+
+    // Quest
+    public string QuestData = ""; // raw quest data string from server
+
+    // Mail
+    public string MailData = ""; // raw mail data string from server
+    public bool ShowMailPanel;   // MailOpenTrigger (ID 252)
+
+    // Friends
+    public string FriendListData = ""; // raw friend list string from server
+    public bool ShowFriendDialog;      // FriendDialog (ID 253)
+
+    // UI triggers
+    public bool ShowTravelsPanel;  // TravelsOpen (ID 251)
+
+    // Right-click context menu (MenuData)
+    public string MenuTargetName = "";
+    public int MenuTargetPriv;
+
+    // Selection / misc data
+    public string SelectData = "";   // SelectData (ID 222)
+    public string MiniTopData = "";  // MiniTopData (ID 223)
+
+    // Tournament / auction
+    public int TournamentPoints;
+    public string AuctionBidData = "";
+
+    // Trading
+    public int TradePartnerGold;
+
+    // Arena
+    public string ArenaDuelData = "";
+
+    // Raw account data (AccountData ID 76)
+    public string RawAccountData = "";
+
     // Arrow/projectile system (VB6: FLECHI)
     public List<ArrowProjectile> ActiveArrows = new();
 

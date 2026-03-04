@@ -69,7 +69,10 @@ use std::collections::HashMap;
 use tracing::{info, warn};
 
 use crate::net::ConnectionId;
-use crate::protocol::{client_opcodes, server_opcodes, font_types, fields::read_field};
+use crate::protocol::{client_opcodes, font_index, fields::read_field};
+use crate::protocol::byte_queue::ByteQueue;
+use crate::protocol::packets::ClientPacketID;
+use crate::protocol::binary_packets;
 use crate::db::{accounts, charfile, guilds};
 use crate::db::password;
 use crate::data::objects::ObjType;
@@ -78,6 +81,602 @@ use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, 
 use super::world;
 use super::npc;
 use crate::data::npcs::NpcType;
+
+/// Process all binary packets in a TCP data chunk.
+///
+/// Prepends any leftover bytes from previous reads, processes complete packets
+/// in a loop, and saves any remaining partial packet bytes.
+pub async fn handle_packet_stream(state: &mut GameState, conn_id: ConnectionId, new_data: &[u8]) {
+    // Prepend leftover data from previous reads
+    let data = if let Some(mut prev) = state.recv_buffers.remove(&conn_id) {
+        prev.extend_from_slice(new_data);
+        prev
+    } else {
+        new_data.to_vec()
+    };
+
+    if data.is_empty() {
+        return;
+    }
+
+    let mut bq = ByteQueue::from_bytes(&data);
+
+    // Loop through all complete packets in the buffer
+    loop {
+        if bq.remaining() == 0 {
+            break;
+        }
+
+        // Save position before attempting to read a packet.
+        // If we can't read a complete packet, restore and save leftovers.
+        let saved_pos = bq.save_position();
+
+        match handle_one_packet(state, conn_id, &mut bq).await {
+            PacketResult::Ok => {
+                // Packet processed successfully, continue to next
+            }
+            PacketResult::Incomplete => {
+                // Not enough data for a complete packet — save leftovers
+                bq.restore_position(saved_pos);
+                let leftover = bq.read_remaining();
+                if !leftover.is_empty() {
+                    state.recv_buffers.insert(conn_id, leftover);
+                }
+                break;
+            }
+            PacketResult::Error => {
+                // Invalid data — discard remaining buffer
+                break;
+            }
+        }
+    }
+}
+
+enum PacketResult {
+    Ok,
+    Incomplete,
+    Error,
+}
+
+/// Route a single binary packet from the ByteQueue.
+///
+/// 13.3-style binary protocol: reads 1-byte opcode, then typed fields via ByteQueue.
+/// Bridge layer: converts binary fields to the text format existing handlers expect.
+async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mut ByteQueue) -> PacketResult {
+    let packet_id_byte = match bq.read_byte() {
+        Ok(b) => b,
+        Err(_) => return PacketResult::Incomplete,
+    };
+
+    let packet_id = match ClientPacketID::from_byte(packet_id_byte) {
+        Some(id) => id,
+        None => {
+            info!("[PKT] Unknown binary packet ID {} from #{}", packet_id_byte, conn_id);
+            return PacketResult::Error;
+        }
+    };
+
+    // Bridge: read binary fields, reconstruct text for existing handlers.
+    match packet_id {
+        // Pre-login
+        ClientPacketID::KERD22 => {
+            let hd = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("KERD22{}", hd);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ALOGIN => {
+            let account = bq.read_ascii_string().unwrap_or_default();
+            let password = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ALOGIN{},{}", account, password);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::NLOGIN => {
+            // Read all fields from binary
+            let char_name = bq.read_ascii_string().unwrap_or_default();
+            let race = bq.read_byte().unwrap_or(0);
+            let gender = bq.read_byte().unwrap_or(0);
+            let class = bq.read_byte().unwrap_or(0);
+            let head = bq.read_integer().unwrap_or(0);
+            let homeland = bq.read_byte().unwrap_or(0);
+            let account = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("NLOGIN{},{},{},{},{},{},{}", char_name, race, gender, class, head, homeland, account);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::OOLOGI => {
+            let char_name = bq.read_ascii_string().unwrap_or_default();
+            let account = bq.read_ascii_string().unwrap_or_default();
+            let codex = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("OOLOGI{},{},{}", char_name, account, codex);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::THCJXD => {
+            let char_name = bq.read_ascii_string().unwrap_or_default();
+            let account = bq.read_ascii_string().unwrap_or_default();
+            let codex = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("THCJXD{},{},{}", char_name, account, codex);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::NACCNT => {
+            let account = bq.read_ascii_string().unwrap_or_default();
+            let password = bq.read_ascii_string().unwrap_or_default();
+            let pin = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("NACCNT{},{},{}", account, password, pin);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::REPASS => {
+            let old_pass = bq.read_ascii_string().unwrap_or_default();
+            let new_pass = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("REPASS{},{}", old_pass, new_pass);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::REECUH => {
+            let account = bq.read_ascii_string().unwrap_or_default();
+            let pin = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("REECUH{},{}", account, pin);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::TIRDAD => {
+            handle_packet(state, conn_id, "TIRDAD").await;
+        }
+        ClientPacketID::TBRP => {
+            let char_name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("TBRP{}", char_name);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Movement
+        ClientPacketID::Walk => {
+            let heading = bq.read_byte().unwrap_or(1);
+            let text = format!("M{}", heading);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ChangeHeading => {
+            let heading = bq.read_byte().unwrap_or(1);
+            let text = format!("CHEA{}", heading);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::RequestPos => {
+            handle_packet(state, conn_id, "RPU").await;
+        }
+        ClientPacketID::Actualizar => {
+            handle_packet(state, conn_id, "ACTUALIZAR").await;
+        }
+
+        // Combat
+        ClientPacketID::Attack => {
+            handle_packet(state, conn_id, "AT").await;
+        }
+        ClientPacketID::CastSpell => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let text = format!("LH{}", slot);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::LeftClick => {
+            let x = bq.read_byte().unwrap_or(0);
+            let y = bq.read_byte().unwrap_or(0);
+            let text = format!("LC{},{}", x, y);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::RightClick => {
+            let x = bq.read_byte().unwrap_or(0);
+            let y = bq.read_byte().unwrap_or(0);
+            let text = format!("RC{},{}", x, y);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::WorkLeftClick => {
+            let x = bq.read_byte().unwrap_or(0);
+            let y = bq.read_byte().unwrap_or(0);
+            let skill = bq.read_byte().unwrap_or(0);
+            let text = format!("WLC{},{},{}", x, y, skill);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Chat
+        ClientPacketID::Talk => {
+            let msg = bq.read_ascii_string().unwrap_or_default();
+            let text = format!(";{}", msg);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::Yell => {
+            let msg = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("-{}", msg);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::Whisper => {
+            let target = bq.read_ascii_string().unwrap_or_default();
+            let msg = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("\\{},{}", target, msg);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::SlashCommand => {
+            let cmd = bq.read_ascii_string().unwrap_or_default();
+            // Slash commands go through the talk handler as ";/<cmd>"
+            let text = format!(";{}", cmd);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Items
+        ClientPacketID::PickUp => {
+            handle_packet(state, conn_id, "AG").await;
+        }
+        ClientPacketID::DropItem => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("TI{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::UseItem => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let text = format!("USA{}", slot);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::UseItemClick => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let text = format!("QSA{}", slot);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::EquipItem => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let text = format!("EQUI{}", slot);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::SwapItems => {
+            let from = bq.read_byte().unwrap_or(0);
+            let to = bq.read_byte().unwrap_or(0);
+            let text = format!("SWAP{},{}", from, to);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::MouseDrop => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("TR{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Skills
+        ClientPacketID::UseSkill => {
+            let skill_id = bq.read_byte().unwrap_or(0);
+            let text = format!("UK{}", skill_id);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::SkillSet => {
+            // SKSE sends comma-separated skill points
+            let mut parts = Vec::new();
+            for _ in 0..20 {
+                parts.push(bq.read_byte().unwrap_or(0).to_string());
+            }
+            let text = format!("SKSE{}", parts.join(","));
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::Meditate => {
+            handle_packet(state, conn_id, "ME").await;
+        }
+        ClientPacketID::SafeToggle => {
+            handle_packet(state, conn_id, "SEG").await;
+        }
+        ClientPacketID::MacroDetect => {
+            handle_packet(state, conn_id, "TENGOMACROS").await;
+        }
+        ClientPacketID::LevelBonus => {
+            let bonus = bq.read_byte().unwrap_or(0);
+            let text = format!("BOF{}", bonus);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Spells
+        ClientPacketID::SpellInfo => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let text = format!("INFS{}", slot);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::MoveSpell => {
+            let from = bq.read_byte().unwrap_or(0);
+            let to = bq.read_byte().unwrap_or(0);
+            let text = format!("DESPHE{},{}", from, to);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::CastByName => {
+            let target = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("DOWNSI{}", target);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Commerce
+        ClientPacketID::CommerceBuy => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("COMP{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::CommerceSell => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("VEND{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::CommerceClose => {
+            handle_packet(state, conn_id, "FINCOM").await;
+        }
+        ClientPacketID::TradeOfferGold => {
+            let amount = bq.read_long().unwrap_or(0);
+            let text = format!("UOR{}", amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::TradeOfferItem => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("UOC{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::TradeResponse => {
+            let response = bq.read_byte().unwrap_or(0);
+            let text = format!("TDR{}", response);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::TradeCancel => {
+            handle_packet(state, conn_id, "TCM").await;
+        }
+        ClientPacketID::TradeChat => {
+            let msg = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("VHC{}", msg);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Banking
+        ClientPacketID::BankDeposit => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("DEPO{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::BankWithdraw => {
+            let slot = bq.read_byte().unwrap_or(0);
+            let amount = bq.read_integer().unwrap_or(0);
+            let text = format!("RETI{},{}", slot, amount);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::BankClose => {
+            handle_packet(state, conn_id, "FINBAN").await;
+        }
+
+        // Crafting
+        ClientPacketID::ConstructSmith => {
+            let item = bq.read_integer().unwrap_or(0);
+            let text = format!("CNS{}", item);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ConstructCarp => {
+            let item = bq.read_integer().unwrap_or(0);
+            let text = format!("CNC{}", item);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::TrainCreature => {
+            let pet = bq.read_byte().unwrap_or(0);
+            let text = format!("ENTR{}", pet);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Guild
+        ClientPacketID::GuildInfo => {
+            handle_packet(state, conn_id, "GLINFO").await;
+        }
+        ClientPacketID::GuildCreate => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CIG{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildUpdateCodex => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("DESCOD{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildAccept => {
+            let name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ACEPTARI{}", name);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildReject => {
+            let name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("RECHAZAR{}", name);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildExpel => {
+            let name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ECHARCLA{}", name);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildNews => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ACTGNEWS{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildApply => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("SOLICITUD{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildDetails => {
+            let name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CLANDETAILS{}", name);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildBankPermsQuery => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("VLKG{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildBankPermsSet => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("BOVC{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildBankOpen => {
+            handle_packet(state, conn_id, "INIBOV").await;
+        }
+        ClientPacketID::GuildBankSave => {
+            handle_packet(state, conn_id, "CCBG").await;
+        }
+        ClientPacketID::GuildBankDeposit => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CCDO{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::GuildBankWithdraw => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CCRO{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ClanBankWithdrawItem => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("RETB{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ClanBankDepositItem => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("DEPB{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::CloseGuildBank => {
+            handle_packet(state, conn_id, "FINCBN").await;
+        }
+        ClientPacketID::GuildDonatePts => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ADDPTS{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ClanValidName => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("NANVAME{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Quests
+        ClientPacketID::QuestList => {
+            handle_packet(state, conn_id, "IQUEST").await;
+        }
+        ClientPacketID::QuestInfo => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("INFD{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::QuestAccept => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ACQT{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Mail
+        ClientPacketID::MailSend => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CZM{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::MailOpen => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CZC{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::MailExtract => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CZR{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::MailDelete => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CZB{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Friends
+        ClientPacketID::FriendAdd => {
+            let name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("ADDCON{}", name);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::FriendRemove => {
+            let name = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("BORRAC{}", name);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::InitChat => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("INCHAT{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::ChatMsg => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("KKCHAT{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+
+        // Player info
+        ClientPacketID::PlayerInfo => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("DAMINF{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::MiniStats => {
+            handle_packet(state, conn_id, "FEST").await;
+        }
+        ClientPacketID::HeadChange => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("CABEZI{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::Rankings => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let text = format!("RANKIN{}", data_str);
+            handle_packet(state, conn_id, &text).await;
+        }
+        ClientPacketID::SendPoints => {
+            handle_packet(state, conn_id, "ACTPT").await;
+        }
+        ClientPacketID::DuelArenaInfo => {
+            handle_packet(state, conn_id, "IDUELOS").await;
+        }
+        ClientPacketID::ToInfo => {
+            handle_packet(state, conn_id, "TOINFO").await;
+        }
+
+        // Misc — all use the generic string bridge
+        ClientPacketID::HouseQuery => { bridge_string(bq, state, conn_id, "FWO").await; }
+        ClientPacketID::HouseBuy => { bridge_string(bq, state, conn_id, "CUC").await; }
+        ClientPacketID::PetRename => { bridge_string(bq, state, conn_id, "CNM").await; }
+        ClientPacketID::GemExchange => { bridge_string(bq, state, conn_id, "GEMS").await; }
+        ClientPacketID::MedalExchange => { bridge_string(bq, state, conn_id, "GEPS").await; }
+        ClientPacketID::DivineOffer => { bridge_string(bq, state, conn_id, "OFDIOZ").await; }
+        ClientPacketID::TsShop => { bridge_string(bq, state, conn_id, "FTSPTS").await; }
+        ClientPacketID::UpgradeQuery => { bridge_string(bq, state, conn_id, "SPH").await; }
+        ClientPacketID::UpgradeDo => { bridge_string(bq, state, conn_id, "SP\u{00C9}").await; }
+        ClientPacketID::ArenaSpectate => { bridge_string(bq, state, conn_id, "ARE").await; }
+        ClientPacketID::DragDrop => { bridge_string(bq, state, conn_id, "DYDTRA").await; }
+        ClientPacketID::Vote => { bridge_string(bq, state, conn_id, "NVOT").await; }
+        ClientPacketID::Report => { bridge_string(bq, state, conn_id, "NEWD").await; }
+        ClientPacketID::SosView => { handle_packet(state, conn_id, "CONSUL").await; }
+        ClientPacketID::SosSend => { bridge_string(bq, state, conn_id, "#").await; }
+        ClientPacketID::SosRespond => { bridge_string(bq, state, conn_id, "X").await; }
+        ClientPacketID::DonationMenu => { handle_packet(state, conn_id, "DCANJE").await; }
+        ClientPacketID::DonationPreview => { bridge_string(bq, state, conn_id, "DPX").await; }
+        ClientPacketID::DonationRedeem => { bridge_string(bq, state, conn_id, "DRX").await; }
+        ClientPacketID::TournamentMenu => { handle_packet(state, conn_id, "CCANJE").await; }
+        ClientPacketID::PrizeInfo => { bridge_string(bq, state, conn_id, "IPX").await; }
+        ClientPacketID::PrizeBuy => { bridge_string(bq, state, conn_id, "SPX").await; }
+        ClientPacketID::FpzReport => { bridge_string(bq, state, conn_id, "ENVFPZ").await; }
+        ClientPacketID::ClanInvalidName => { bridge_string(bq, state, conn_id, "NANVAMX").await; }
+        ClientPacketID::PCGF => { bridge_string(bq, state, conn_id, "PCGF").await; }
+        ClientPacketID::PCWC => { bridge_string(bq, state, conn_id, "PCWC").await; }
+        ClientPacketID::PCCC => { bridge_string(bq, state, conn_id, "PCCC").await; }
+    }
+
+    PacketResult::Ok
+}
+
+/// Bridge helper: reads a string from ByteQueue and forwards to text handler.
+async fn bridge_string(bq: &mut ByteQueue, state: &mut GameState, conn_id: ConnectionId, opcode: &str) {
+    let data_str = bq.read_ascii_string().unwrap_or_default();
+    let text = format!("{}{}", opcode, data_str);
+    handle_packet(state, conn_id, &text).await;
+}
 
 /// Route a decrypted packet to the appropriate handler.
 pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &str) {
@@ -369,19 +968,19 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
-        state.send_to(conn_id, &format!("{}Tu PC se encuentra bajo Tolerancia 0.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if !is_valid_name(&account_name) {
-        state.send_to(conn_id, &format!("{}Nombre invalido.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if !accounts::account_exists(&state.pool, &account_name).await {
-        state.send_to(conn_id, &format!("{}La cuenta no existe.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -390,14 +989,14 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         Ok(acc) => acc,
         Err(e) => {
             warn!("[AUTH] Failed to load account '{}': {}", account_name, e);
-            state.send_to(conn_id, &format!("{}Error al leer la cuenta.", server_opcodes::ERROR)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer la cuenta.")).await;
             close_connection(state, conn_id).await;
             return;
         }
     };
 
     if !password::verify_password(&password, &account.password_hash) {
-        state.send_to(conn_id, &format!("{}Password incorrecto.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -406,9 +1005,8 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         let motivo = &account.ban_reason;
         let ban_by = read_field(2, motivo, ',');
         let ban_reason = read_field(1, motivo, ',');
-        state.send_to(conn_id, &format!(
-            "{}Tu cuenta se encuentra actualmente baneada por: {} con motivo: {}.",
-            server_opcodes::ERROR, ban_by, ban_reason
+        state.send_bytes(conn_id, &binary_packets::write_error_msg(
+            &format!("Tu cuenta se encuentra actualmente baneada por: {} con motivo: {}.", ban_by, ban_reason)
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -420,8 +1018,7 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         user.account_id = account.id;
     }
 
-    let iniac = format!("INIAC{},{}", account.num_pjs, state.notice);
-    state.send_to(conn_id, &iniac).await;
+    state.send_bytes(conn_id, &binary_packets::write_init_account(account.num_pjs as u8, &state.notice)).await;
 
     for i in 0..account.num_pjs {
         let pj_name = &account.characters[i];
@@ -430,8 +1027,12 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         }
         match charfile::load_char_preview(&state.pool, pj_name).await {
             Ok(preview) => {
-                let addpj = format!("ADDPJ{},{},{}", pj_name, i + 1, preview.to_addpj_data());
-                state.send_to(conn_id, &addpj).await;
+                state.send_bytes(conn_id, &binary_packets::write_add_pj(
+                    pj_name, (i + 1) as u8,
+                    preview.head as i16, preview.body as i16,
+                    preview.weapon as i16, preview.shield as i16, preview.helmet as i16,
+                    preview.level as u8, &preview.class, preview.dead, &preview.race,
+                )).await;
             }
             Err(e) => {
                 warn!("[AUTH] Failed to load preview for '{}': {}", pj_name, e);
@@ -439,8 +1040,7 @@ async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         }
     }
 
-    let codeh = format!("CODEH{}", account.security_code);
-    state.send_to(conn_id, &codeh).await;
+    state.send_bytes(conn_id, &binary_packets::write_security_code(&account.security_code)).await;
 
     info!("[AUTH] Account '{}' authenticated, {} characters", account_name, account.num_pjs);
 }
@@ -455,19 +1055,19 @@ async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, data: &str)
     info!("[AUTH] New account request: '{}' from #{}", account_name, conn_id);
 
     if !is_valid_name(&account_name) {
-        state.send_to(conn_id, &format!("{}Nombre de cuenta invalido.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if account_name.len() < 3 {
-        state.send_to(conn_id, &format!("{}El nombre de la cuenta debe tener al menos 3 caracteres.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre de la cuenta debe tener al menos 3 caracteres.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if password.len() < 3 {
-        state.send_to(conn_id, &format!("{}La password debe tener al menos 3 caracteres.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La password debe tener al menos 3 caracteres.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -476,7 +1076,7 @@ async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, data: &str)
         Ok(h) => h,
         Err(e) => {
             warn!("[AUTH] Failed to hash password: {}", e);
-            state.send_to(conn_id, &format!("{}Error interno del servidor.", server_opcodes::ERROR)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error interno del servidor.")).await;
             close_connection(state, conn_id).await;
             return;
         }
@@ -491,11 +1091,11 @@ async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, data: &str)
     ).await {
         Ok(_account_id) => {
             info!("[AUTH] Account '{}' created successfully", account_name);
-            state.send_to(conn_id, &format!("{}Cuenta creada con exito!", server_opcodes::ERROR)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Cuenta creada con exito!")).await;
             close_connection(state, conn_id).await;
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}{}", server_opcodes::ERROR, e)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string())).await;
             close_connection(state, conn_id).await;
         }
     }
@@ -512,27 +1112,26 @@ async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
-        state.send_to(conn_id, &format!("{}Tu PC se encuentra bajo Tolerancia 0.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if !is_valid_name(&char_name) {
-        state.send_to(conn_id, &format!("{}Nombre invalido.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if is_char_banned(&state.pool, &char_name).await {
-        state.send_to(conn_id, &format!(
-            "{}Se te ha prohibido la entrada a Tierras Sagradas debido a tu mal comportamiento. Consulta a un administrador para saber el motivo de la prohibicion.",
-            server_opcodes::ERROR
+        state.send_bytes(conn_id, &binary_packets::write_error_msg(
+            "Se te ha prohibido la entrada a Tierras Sagradas debido a tu mal comportamiento. Consulta a un administrador para saber el motivo de la prohibicion."
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -542,7 +1141,7 @@ async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, data: &str)
         .map(|u| u.account_name.clone())
         .unwrap_or_default();
     if !expected_account.is_empty() && account.to_uppercase() != expected_account.to_uppercase() {
-        state.send_to(conn_id, &format!("{}Error al conectar, intente de nuevo.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al conectar, intente de nuevo.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -560,15 +1159,14 @@ async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, data: &str)
     info!("[AUTH] Character login (OOLOGI): '{}' from #{}", char_name, conn_id);
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if is_char_banned(&state.pool, &char_name).await {
-        state.send_to(conn_id, &format!(
-            "{}Se te ha prohibido la entrada a Tierras Sagradas AO debido a tu mal comportamiento.",
-            server_opcodes::ERROR
+        state.send_bytes(conn_id, &binary_packets::write_error_msg(
+            "Se te ha prohibido la entrada a Tierras Sagradas AO debido a tu mal comportamiento."
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -587,9 +1185,8 @@ async fn connect_user(
 ) {
     // Check max users
     if state.num_users >= state.config.max_users {
-        state.send_to(conn_id, &format!(
-            "{}El servidor ha alcanzado el maximo de usuarios soportado. Intente mas tarde.",
-            server_opcodes::ERROR
+        state.send_bytes(conn_id, &binary_packets::write_error_msg(
+            "El servidor ha alcanzado el maximo de usuarios soportado. Intente mas tarde."
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -599,10 +1196,9 @@ async fn connect_user(
     if !state.config.allow_multi_logins {
         let user_ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
         if is_same_ip_online(state, conn_id, &user_ip) {
-            state.send_to(conn_id, server_opcodes::FINISH_OK).await;
-            state.send_to(conn_id, &format!(
-                "{}No es posible usar mas de un personaje al mismo tiempo.",
-                server_opcodes::ERROR_SHOW
+            state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show(
+                "No es posible usar mas de un personaje al mismo tiempo."
             )).await;
             close_connection(state, conn_id).await;
             return;
@@ -614,7 +1210,7 @@ async fn connect_user(
         Ok(data) => data,
         Err(e) => {
             warn!("[AUTH] Failed to load character '{}': {}", char_name, e);
-            state.send_to(conn_id, &format!("{}Error en el personaje.", server_opcodes::ERROR)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error en el personaje.")).await;
             close_connection(state, conn_id).await;
             return;
         }
@@ -622,8 +1218,8 @@ async fn connect_user(
 
     // Verify password (CodeX)
     if !codex.is_empty() && char_data.password.to_uppercase() != codex.to_uppercase() {
-        state.send_to(conn_id, server_opcodes::FINISH_OK).await;
-        state.send_to(conn_id, &format!("{}Password incorrecto.", server_opcodes::ERROR_SHOW)).await;
+        state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("Password incorrecto.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -643,13 +1239,13 @@ async fn connect_user(
             if let Some(old_user) = state.users.get(&old_id) {
                 let ci = old_user.char_index.0;
                 let map = old_user.pos_map;
-                let qdl_pkt = format!("QDL{}", ci);
-                state.send_data(
+                let qdl_pkt = binary_packets::write_remove_char_dialog(ci as i16);
+                state.send_data_bytes(
                     SendTarget::ToMapButIndex { conn_id: old_id, map },
                     &qdl_pkt,
                 ).await;
-                let bp_pkt = format!("BP{}", ci);
-                state.send_data(
+                let bp_pkt = binary_packets::write_character_remove(ci as i16);
+                state.send_data_bytes(
                     SendTarget::ToMapButIndex { conn_id: old_id, map },
                     &bp_pkt,
                 ).await;
@@ -668,9 +1264,8 @@ async fn connect_user(
         .map(|a| a.characters)
         .unwrap_or_default();
     if let Some(other) = state.is_account_char_online(&account_chars, char_name) {
-        state.send_to(conn_id, &format!(
-            "{}Perdon, un usuario de la misma cuenta esta conectado ({}), intente de nuevo en 5 minutos.",
-            server_opcodes::ERROR_SHOW, other
+        state.send_bytes(conn_id, &binary_packets::write_error_show(
+            &format!("Perdon, un usuario de la misma cuenta esta conectado ({}), intente de nuevo en 5 minutos.", other)
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -910,31 +1505,30 @@ async fn connect_user(
     // =========================================================
 
     // --- PHASE 1: Map setup (VB6 lines 1552-1555) ---
-    state.send_to(conn_id, &format!("CM{},{},{},{}", map, r, g, b)).await;
-    state.send_to(conn_id, &format!("PU{},{}", x, y)).await;
-    state.send_to(conn_id, &format!("XM{}", music)).await;
-    state.send_to(conn_id, &format!("N~{}", map_name)).await;
+    state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0)).await;
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8)).await;
+    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
+    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
 
     // --- PHASE 2: Privilege level (VB6 lines 1558-1596) ---
-    state.send_to(conn_id, &format!("LDG{}", char_data.privileges)).await;
+    state.send_bytes(conn_id, &binary_packets::write_privilege_level(char_data.privileges as u8)).await;
 
     // --- PHASE 3: Hunger/Thirst (VB6 line 1608) ---
-    state.send_to(conn_id, &format!(
-        "EHYS{},{},{},{}",
-        char_data.max_agua, char_data.min_agua,
-        char_data.max_ham, char_data.min_ham
+    state.send_bytes(conn_id, &binary_packets::write_update_hunger_thirst(
+        char_data.max_agua as u8, char_data.min_agua as u8,
+        char_data.max_ham as u8, char_data.min_ham as u8,
     )).await;
 
     // --- PHASE 4: Broadcast status to area (VB6 line 1609) ---
-    let status_mith = if char_data.criminal { 2 } else { 1 };
-    let px_pkt = format!("PX{},{},{}", char_index.0, status_mith, char_name);
-    state.send_data(
+    let status_mith = if char_data.criminal { 2u8 } else { 1u8 };
+    let px_pkt = binary_packets::write_update_tag_and_status(char_index.0 as i16, status_mith, char_name);
+    state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id, map, x, y },
         &px_pkt,
     ).await;
 
     // --- PHASE 5: Reputation (VB6 line 1666) ---
-    state.send_to(conn_id, &format!("RPT{}", char_data.reputation)).await;
+    state.send_bytes(conn_id, &binary_packets::write_reputation(char_data.reputation as i32)).await;
 
     // --- PHASE 6: Friend list (VB6 line 1685) ---
     send_friend_list(state, conn_id).await;
@@ -943,44 +1537,34 @@ async fn connect_user(
 
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
-    state.send_to(conn_id, server_opcodes::LOGGED).await;
+    state.send_bytes(conn_id, &binary_packets::write_logged(0)).await;
 
     // --- PHASE 8: Equipment hitbox stats (VB6 line 1701) ---
     let anm = build_anm_packet(state, conn_id);
-    state.send_to(conn_id, &anm).await;
+    // build_anm_packet returns "ANM<csv>" — strip the 3-char "ANM" prefix for the binary builder
+    state.send_bytes(conn_id, &binary_packets::write_anim_data(&anm[3..])).await;
 
     // --- PHASE 9: Bulk stats [ES (VB6 line 1720) ---
     let exp_next = state.exp_for_level(char_data.level);
-    state.send_to(conn_id, &format!(
-        "[ES{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
-        char_data.max_hp, char_data.min_hp,
-        char_data.max_mana, char_data.min_mana,
-        char_data.max_sta, char_data.min_sta,
-        char_data.gold,
-        char_data.level,
-        exp_next,
-        char_data.exp,
-        char_name,
-        char_data.attributes[1], // Agility (AT2)
-        char_data.attributes[0], // Strength (AT1)
-        char_data.reputation,
+    state.send_bytes(conn_id, &binary_packets::write_update_user_stats(
+        char_data.max_hp as i16, char_data.min_hp as i16,
+        char_data.max_mana as i16, char_data.min_mana as i16,
+        char_data.max_sta as i16, char_data.min_sta as i16,
+        char_data.gold as i32,
+        char_data.level as u8,
+        exp_next as i32,
+        char_data.exp as i32,
     )).await;
 
     // --- PHASE 10: Stop state (VB6 line 1730) ---
-    // STOPD uses flags.Stopped (GM /STOP command), NOT paralysis
     let stopped_flag = if let Some(u) = state.users.get(&conn_id) { u.not_move } else { false };
-    state.send_to(conn_id, &format!("STOPD{}", if stopped_flag { 1 } else { 0 })).await;
+    state.send_bytes(conn_id, &binary_packets::write_stop_dancing(stopped_flag)).await;
 
     // --- PHASE 10b: PARADOK if paralyzed (VB6 line 1732) ---
     // PARADOK is a toggle — client starts with UserParalizado=False,
     // so we send one PARADOK to set it to True if the char is paralyzed.
     if char_data.paralyzed {
-        // Send remaining duration
-        let remaining_secs = state.users.get(&conn_id)
-            .map(|u| (u.counter_paralisis as f32 * 0.04) as i32)
-            .unwrap_or(20);
-        let pkt = format!("PARADOK{}", remaining_secs.max(1));
-        state.send_to(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &binary_packets::write_paralize_ok()).await;
     }
 
     // --- PHASE 10c: NAVEG if navigating (VB6 TCP.bas lines 1515-1521, 1654) ---
@@ -1010,7 +1594,7 @@ async fn connect_user(
                     user.body = boat_ropaje;
                 }
             }
-            state.send_to(conn_id, "NAVEG").await;
+            state.send_bytes(conn_id, &binary_packets::write_navigate_toggle()).await;
         }
     }
 
@@ -1023,11 +1607,9 @@ async fn connect_user(
             let (m, x, y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y))
                 .unwrap_or((0, 0, 0));
-            let usm = format!("USM{},{}", char_idx, 1);
-            state.send_data(SendTarget::ToArea { map: m, x, y }, &usm).await;
+            state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_user_mount(char_idx as i16, true)).await;
             if levitando {
-                let mvol = format!("MVOL{},{}", char_idx, 1);
-                state.send_data(SendTarget::ToArea { map: m, x, y }, &mvol).await;
+                state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_levitate(char_idx as i16, true)).await;
             }
         }
     }
@@ -1049,24 +1631,24 @@ async fn connect_user(
         };
 
         // BKW (fade to black)
-        state.send_to(conn_id, "BKW").await;
+        state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
         // CM (change map — client loads the map file)
-        state.send_to(conn_id, &format!("CM{},{},{},{}", map, r, g, b)).await;
+        state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0)).await;
         // XM (music)
-        state.send_to(conn_id, &format!("XM{}", music)).await;
+        state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
         // N~ (map name display)
-        state.send_to(conn_id, &format!("N~{}", map_name)).await;
+        state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
         // IP (self char index — tells client which CC is "me")
-        state.send_to(conn_id, &format!("IP{}", char_index.0)).await;
+        state.send_bytes(conn_id, &binary_packets::write_user_char_index(char_index.0 as i16)).await;
         // Own CC packet (client renders self) + [CD (char data)
         if let Some(user) = state.users.get(&conn_id) {
-            let own_cc = user.build_cc_packet();
-            let own_cd = build_cd_packet(user);
-            state.send_to(conn_id, &own_cc).await;
-            state.send_to(conn_id, &own_cd).await;
+            let own_cc = user.build_cc_binary();
+            let own_cd = build_cd_binary(user);
+            state.send_bytes(conn_id, &own_cc).await;
+            state.send_bytes(conn_id, &own_cd).await;
         }
         // PU (position update — tells client where to center camera)
-        state.send_to(conn_id, &format!("PU{},{}", x, y)).await;
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8)).await;
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
 
@@ -1075,30 +1657,30 @@ async fn connect_user(
         // BKW again to toggle pausa back to False (VB6 WarpUserChar line 2404)
         // BKW toggles pausa — first one pauses, second one un-pauses.
         // Without this, client stays paused and CheckKeys never runs (no movement!)
-        state.send_to(conn_id, "BKW").await;
+        state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
 
         // VB6: WarpUserChar(..., True) on login — send warp FX to area
         send_warp_fx(state, conn_id).await;
     }
 
     // --- PHASE 12: Console messages (VB6 lines 1738-1747) ---
-    state.send_to(conn_id, "||705").await;
-    state.send_to(conn_id, "||706@0").await; // 0 penalties
-    state.send_to(conn_id, "||707").await;
-    state.send_to(conn_id, &format!("||709@{}", char_name)).await;
-    state.send_to(conn_id, "||710").await; // Messages activated
+    state.send_msg_id(conn_id, 705, "").await;
+    state.send_msg_id(conn_id, 706, "0").await; // 0 penalties
+    state.send_msg_id(conn_id, 707, "").await;
+    state.send_msg_id(conn_id, 709, char_name).await;
+    state.send_msg_id(conn_id, 710, "").await; // Messages activated
 
     // --- PHASE 12b: Online count (ON opcode → frmMain.ONLINES.Caption) ---
     // VB6 MostrarNumUsers: broadcast online count to ALL players (General.bas:628)
-    state.send_data(SendTarget::ToAll, &format!("ON{}", state.num_users)).await;
+    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_online_count(state.num_users as i16)).await;
 
     // --- PHASE 13: Scroll timers (VB6 lines 1781-1783) ---
-    for i in 1..=4 {
-        state.send_to(conn_id, &format!("TIS{},0,0", i)).await;
+    for i in 1u8..=4 {
+        state.send_bytes(conn_id, &binary_packets::write_timer_info(i, 0, 0)).await;
     }
 
     // --- PHASE 14: Inventory (VB6 lines 1785-1786) ---
-    state.send_to(conn_id, server_opcodes::INV_INIT).await;
+    state.send_bytes(conn_id, &binary_packets::write_inv_init()).await;
     send_full_inventory(state, conn_id).await;
 
     // --- PHASE 15: Spells (VB6 line 1787) ---
@@ -1127,8 +1709,7 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed and not_move block.
     if paralyzed || not_move {
         // Force client back to server position (prevents ghost movement on client)
-        let pu_pkt = format!("PU{},{}", old_x, old_y);
-        state.send_to(conn_id, &pu_pkt).await;
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
         return;
     }
 
@@ -1149,14 +1730,12 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        state.send_to(conn_id, "MEDOK").await;
-        let msg = "||205".to_string(); // TEXTO205: Dejas de meditar
-        state.send_to(conn_id, &msg).await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+        state.send_msg_id(conn_id, 205, "").await; // TEXTO205: Dejas de meditar
         // Remove meditation FX from area
-        let cfx_pkt = format!("CFX{},{},{}", char_index.0, 0, 0);
-        state.send_data(
+        state.send_data_bytes(
             SendTarget::ToArea { map, x: old_x, y: old_y },
-            &cfx_pkt,
+            &binary_packets::write_create_fx(char_index.0 as i16, 0, 0),
         ).await;
     }
 
@@ -1204,7 +1783,7 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
         // Reject movement — send position correction
         // Walk rejected — don't log (too frequent)
-        state.send_to(conn_id, &format!("PT{},{}", old_x, old_y)).await;
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
         return;
     }
 
@@ -1223,9 +1802,9 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         user.pos_y = new_y;
     }
 
-    // Broadcast movement to area (+ packet: CharIndex,X,Y) — only to OTHER players
+    // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
-    let move_pkt = format!("+{},{},{}", char_index.0, new_x, new_y);
+    let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
     let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
         Some(u) => (u.area_min_x, u.area_min_y),
         None => (0, 0),
@@ -1248,11 +1827,11 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
             }
         }
         for c in targets {
-            state.send_to(c, &move_pkt).await;
+            state.send_bytes(c, &move_pkt).await;
         }
     } else {
         // Fallback: use standard area broadcast
-        state.send_data(
+        state.send_data_bytes(
             SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
             &move_pkt,
         ).await;
@@ -1299,10 +1878,9 @@ async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, dat
     }
 
     // Broadcast heading change to area (VB6: |H<charIndex>,<heading>)
-    let pkt = format!("|H{},{}", char_index.0, heading);
-    state.send_data(
+    state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id, map, x, y },
-        &pkt,
+        &binary_packets::write_heading_change(char_index.0 as i16, heading as u8),
     ).await;
 }
 
@@ -1310,8 +1888,7 @@ async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, dat
 async fn handle_request_pos(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.logged {
-            let pkt = format!("PU{},{}", user.pos_x, user.pos_y);
-            state.send_to(conn_id, &pkt).await;
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as u8, user.pos_y as u8)).await;
         }
     }
 }
@@ -1338,28 +1915,21 @@ async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // Silenced users can't chat
     if silenced {
-        state.send_to(conn_id, "||191").await; // TEXTO191: Has sido silenciado
+        state.send_msg_id(conn_id, 191, "").await; // TEXTO191: Has sido silenciado
         return;
     }
 
     // Color based on status
-    let color = if dead {
-        "12632256" // Gray for dead
+    let color: i32 = if dead {
+        12632256 // Gray for dead
     } else if privileges > 0 {
-        "65535" // Yellow for GM (vbYellow)
+        65535 // Yellow for GM (vbYellow)
     } else {
-        "16777215" // White (vbWhite)
+        16777215 // White (vbWhite)
     };
 
-    // T| format uses ASCII 176 (°) as delimiter between color, text, charindex
-    let pkt = format!("T|{}\u{00B0}{}\u{00B0}{}", color, message, char_index.0);
-
-    if dead {
-        // Dead players only heard by other dead players (simplified: send to area)
-        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
-    } else {
-        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
-    }
+    // Send binary talk packet to area
+    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, &message, color).await;
 }
 
 /// - — Yell message (larger area, red text).
@@ -1380,9 +1950,8 @@ async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         return;
     }
 
-    // Yell uses red color and goes to the whole map
-    let pkt = format!("N|255\u{00B0}{}\u{00B0}{}", message, char_index.0);
-    state.send_data(SendTarget::ToMap(map), &pkt).await;
+    // Yell uses red color and goes to the whole map (binary overhead chat)
+    state.send_chat_over_head_to(SendTarget::ToMap(map), &message, char_index.0 as i16, 255).await;
 }
 
 /// \ — Whisper (private message).
@@ -1413,7 +1982,7 @@ async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId, data: &str
 
     if target_id.is_none() {
         // User not found — send console message
-        state.send_to(conn_id, "||196").await;
+        state.send_msg_id(conn_id, 196, "").await;
         return;
     }
     let target_id = target_id.unwrap();
@@ -1423,20 +1992,12 @@ async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId, data: &str
         .map(|u| u.char_name.clone())
         .unwrap_or_else(|| target_name.clone());
 
-    // Send to sender: "Le dijiste a <target>: <message>"
-    let sender_pkt = format!(
-        "P|Le dijiste a {}: {}{}",
-        target_display, message, font_types::WHISPER_SENT
-    );
-    state.send_to(conn_id, &sender_pkt).await;
+    // Send to sender: "Le dijiste a <target>: <message>" (binary whisper)
+    state.send_whisper(conn_id, &format!("Le dijiste a {}: {}", target_display, message), font_index::WHISPER_SENT).await;
 
-    // Send to receiver
+    // Send to receiver (binary whisper)
     let prefix = if privileges > 0 { "(GM) " } else { "" };
-    let recv_pkt = format!(
-        "P|{}{} te dijo: {}{}",
-        prefix, sender_name, message, font_types::WHISPER_RECV
-    );
-    state.send_to(target_id, &recv_pkt).await;
+    state.send_whisper(target_id, &format!("{}{} te dijo: {}", prefix, sender_name, message), font_index::WHISPER_RECV).await;
 }
 
 // =====================================================================
@@ -1449,25 +2010,19 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
-        state.send_to(conn_id, &format!("{}Tu PC se encuentra bajo Tolerancia 0.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if !state.config.can_create_characters {
-        state.send_to(conn_id, &format!(
-            "{}La creacion de personajes en este servidor se ha deshabilitado.",
-            server_opcodes::ERROR
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La creacion de personajes en este servidor se ha deshabilitado.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if state.config.server_only_gms {
-        state.send_to(conn_id, &format!(
-            "{}Servidor restringido a administradores. La creacion de personajes se encuentra deshabilitada.",
-            server_opcodes::ERROR
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Servidor restringido a administradores. La creacion de personajes se encuentra deshabilitada.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -1485,16 +2040,13 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
     info!("[AUTH] New character request: '{}' race='{}' class='{}' from #{}", char_name, race, class, conn_id);
 
     if !is_valid_name(&char_name) {
-        state.send_to(conn_id, &format!("{}Nombre invalido.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido.")).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     if char_name.len() < 3 {
-        state.send_to(conn_id, &format!(
-            "{}El nombre del personaje debe tener al menos 3 caracteres.",
-            server_opcodes::ERROR
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre del personaje debe tener al menos 3 caracteres.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -1508,7 +2060,7 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         .unwrap_or(0);
 
     if account_id == 0 {
-        state.send_to(conn_id, &format!("{}Debes iniciar sesion primero.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes iniciar sesion primero.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -1533,7 +2085,7 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
             connect_user(state, conn_id, &char_name, &account, "").await;
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}{}", server_opcodes::ERROR, e)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string())).await;
             close_connection(state, conn_id).await;
         }
     }
@@ -1549,12 +2101,9 @@ async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) {
         user.dice_attributes = attrs;
     }
 
-    let dados = format!(
-        "{}{},{},{},{},{}",
-        server_opcodes::DICE_ROLL,
-        attrs[0], attrs[1], attrs[2], attrs[3], attrs[4]
-    );
-    state.send_to(conn_id, &dados).await;
+    state.send_bytes(conn_id, &binary_packets::write_dice_roll(
+        attrs[0] as u8, attrs[1] as u8, attrs[2] as u8, attrs[3] as u8, attrs[4] as u8,
+    )).await;
 }
 
 /// TBRP — Delete character.
@@ -1567,7 +2116,7 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -1575,7 +2124,7 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let char_data = match charfile::load_charfile(&state.pool, &char_name).await {
         Ok(data) => data,
         Err(_) => {
-            state.send_to(conn_id, &format!("{}Error al leer el personaje.", server_opcodes::ERROR)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer el personaje.")).await;
             close_connection(state, conn_id).await;
             return;
         }
@@ -1583,34 +2132,25 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // Verify password (security_code from account)
     if char_data.password.to_uppercase() != password.to_uppercase() {
-        state.send_to(conn_id, &format!("{}Password incorrecto.", server_opcodes::ERROR)).await;
-        state.send_to(conn_id, server_opcodes::FINISH_OK).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
         close_connection(state, conn_id).await;
         return;
     }
 
     // Block deletion of GMs/privileged characters (VB6 checks privilege level)
     if char_data.privileges > 0 {
-        state.send_to(conn_id, &format!(
-            "{}No podes borrar gms.",
-            server_opcodes::ERROR_SHOW
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("No podes borrar gms.")).await;
         return;
     }
 
     if char_data.level >= 50 {
-        state.send_to(conn_id, &format!(
-            "{}No podes borrar usuarios nivel 50 o superior.",
-            server_opcodes::ERROR
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("No podes borrar usuarios nivel 50 o superior.")).await;
         return;
     }
 
     if char_data.guild_index > 0 {
-        state.send_to(conn_id, &format!(
-            "{}No podes borrar usuarios que esten dentro de un clan. Primero abandona el clan.",
-            server_opcodes::ERROR
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("No podes borrar usuarios que esten dentro de un clan. Primero abandona el clan.")).await;
         return;
     }
 
@@ -1619,8 +2159,8 @@ async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     }
 
     info!("[AUTH] Character '{}' deleted", char_name);
-    state.send_to(conn_id, server_opcodes::FINISH_OK).await;
-    state.send_to(conn_id, &format!("{}Personaje Borrado con exito.", server_opcodes::ERROR_SHOW)).await;
+    state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
+    state.send_bytes(conn_id, &binary_packets::write_error_show("Personaje Borrado con exito.")).await;
     close_connection(state, conn_id).await;
 }
 
@@ -1635,49 +2175,37 @@ async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str)
     info!("[AUTH] Password change request for '{}' from #{}", account_name, conn_id);
 
     if new_password == old_password {
-        state.send_to(conn_id, &format!(
-            "{}No puedes volver a utilizar la misma contrasena.",
-            server_opcodes::ERROR_SHOW
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("No puedes volver a utilizar la misma contrasena.")).await;
         return;
     }
 
     if new_password.len() < 3 {
-        state.send_to(conn_id, &format!(
-            "{}La contrasena debe tener un minimo de 3 caracteres.",
-            server_opcodes::ERROR_SHOW
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("La contrasena debe tener un minimo de 3 caracteres.")).await;
         return;
     }
 
     if new_password != confirm_password {
-        state.send_to(conn_id, &format!(
-            "{}Las contrasenas no coinciden.",
-            server_opcodes::ERROR_SHOW
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("Las contrasenas no coinciden.")).await;
         return;
     }
 
     let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
-            state.send_to(conn_id, &format!("{}La cuenta no existe.", server_opcodes::ERROR_SHOW)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("La cuenta no existe.")).await;
             return;
         }
     };
 
     if !password::verify_password(&old_password, &account.password_hash) {
-        state.send_to(conn_id, &format!(
-            "{}La Password actual que nos proporciono, no coincide con la del registro.",
-            server_opcodes::ERROR_SHOW
-        )).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("La Password actual que nos proporciono, no coincide con la del registro.")).await;
         return;
     }
 
     let new_hash = match password::hash_password(&new_password) {
         Ok(h) => h,
         Err(_) => {
-            state.send_to(conn_id, &format!("{}Error interno.", server_opcodes::ERROR_SHOW)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("Error interno.")).await;
             return;
         }
     };
@@ -1685,14 +2213,11 @@ async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str)
     match accounts::update_password(&state.pool, &account_name, &new_hash).await {
         Ok(()) => {
             info!("[AUTH] Password changed for account '{}'", account_name);
-            state.send_to(conn_id, &format!(
-                "{}La password de su cuenta fue cambiada con exito. Ahora para logear debera de utilizar la nueva.",
-                server_opcodes::ERROR_SHOW
-            )).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("La password de su cuenta fue cambiada con exito. Ahora para logear debera de utilizar la nueva.")).await;
         }
         Err(e) => {
             warn!("[AUTH] Failed to update password: {}", e);
-            state.send_to(conn_id, &format!("{}Error al cambiar la password.", server_opcodes::ERROR_SHOW)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("Error al cambiar la password.")).await;
         }
     }
 }
@@ -1708,14 +2233,14 @@ async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str)
     let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
-            state.send_to(conn_id, &format!("{}La cuenta no existe.", server_opcodes::ERROR)).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe.")).await;
             close_connection(state, conn_id).await;
             return;
         }
     };
 
     if pin.to_uppercase() != account.pin.to_uppercase() {
-        state.send_to(conn_id, &format!("{}El pin ingresado no es correcto.", server_opcodes::ERROR)).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El pin ingresado no es correcto.")).await;
         close_connection(state, conn_id).await;
         return;
     }
@@ -1726,9 +2251,8 @@ async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str)
         let _ = accounts::update_password(&state.pool, &account_name, &hash).await;
     }
 
-    state.send_to(conn_id, &format!(
-        "{}Has recuperado la cuenta, utiliza la contrasena {} para poder logearte.",
-        server_opcodes::ERROR_SHOW, new_pass
+    state.send_bytes(conn_id, &binary_packets::write_error_show(
+        &format!("Has recuperado la cuenta, utiliza la contrasena {} para poder logearte.", new_pass)
     )).await;
 
     info!("[AUTH] Account '{}' recovered, new password generated", account_name);
@@ -1836,7 +2360,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/ONLINE" {
         handle_slash_online(state, conn_id).await;
     } else if cmd_upper == "/PING" {
-        state.send_to(conn_id, "HOLASOYUNCIRUJA").await;
+        state.send_bytes(conn_id, &binary_packets::write_pong_response()).await;
     } else if cmd_upper == "/BALANCE" {
         handle_slash_balance(state, conn_id).await;
     } else if cmd_upper.starts_with("/GLOBAL ") {
@@ -2001,7 +2525,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             _ => { return; }
         };
         crear_clan_pretoriano(state, map, x, y, faccion).await;
-        state.send_to(conn_id, &format!("{}Clan pretoriano creado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Clan pretoriano creado.", font_index::INFO).await;
     } else if cmd_upper.starts_with("/EVENTO ") {
         let args = cmd[8..].trim();
         handle_gm_evento(state, conn_id, args).await;
@@ -2015,14 +2539,14 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
                 evento_finalize(state).await;
             } else if state.evento_inscripciones {
                 evento_reset(state);
-                state.send_to(conn_id, &format!("{}Evento cancelado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                state.send_console(conn_id, "Evento cancelado.", font_index::INFO).await;
             }
         }
     } else if cmd_upper == "/LIMPRETORIANO" {
         let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
         if priv_level >= privilege_level::DIOS {
             limpiar_clan_pretoriano(state).await;
-            state.send_to(conn_id, &format!("{}Clan pretoriano eliminado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Clan pretoriano eliminado.", font_index::INFO).await;
         }
     // =====================================================================
     // Duel, Tournament, and Event commands
@@ -2071,9 +2595,9 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             user.seguro_cvc = !is_safe;
         }
         if !is_safe {
-            state.send_to(conn_id, server_opcodes::SAFE_ON).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_on()).await;
         } else {
-            state.send_to(conn_id, server_opcodes::SAFE_OFF).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_off()).await;
         }
     } else if cmd_upper == "/SEGR" {
         // Toggle resurrection safety — prevents others from rezzing you (VB6: /SEGR)
@@ -2082,9 +2606,9 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             user.seguro_resu = !is_safe;
         }
         if !is_safe {
-            state.send_to(conn_id, server_opcodes::SAFE_RESU_ON).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_resu_on()).await;
         } else {
-            state.send_to(conn_id, server_opcodes::SAFE_RESU_OFF).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_resu_off()).await;
         }
     } else if cmd_upper.starts_with("/DESC ") {
         let desc = cmd[6..].trim();
@@ -2114,7 +2638,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let text = &cmd[6..];
         let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
         info!("[BUG] {} reports: {}", name, text);
-        state.send_to(conn_id, &format!("{}Bug reportado. Gracias!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Bug reportado. Gracias!", font_index::INFO).await;
     } else if cmd_upper == "/ADVERTENCIAS" {
         handle_slash_advertencias(state, conn_id).await;
     } else if cmd_upper == "/CURAR" {
@@ -2323,7 +2847,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
         if !is_admin { return; }
         // Map saving not implemented (maps are loaded read-only from binary files)
-        state.send_to(conn_id, &format!("{}Mapa guardado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Mapa guardado.", font_index::INFO).await;
     } else if cmd_upper.starts_with("/SETDESC ") {
         let args = &cmd[9..];
         handle_slash_setdesc(state, conn_id, args).await;
@@ -2347,10 +2871,10 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             Ok(prizes) => {
                 let count = prizes.len();
                 state.game_data.prizes = prizes;
-                state.send_to(conn_id, &format!("{}Premios recargados: {} premios.{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+                state.send_console(conn_id, &format!("Premios recargados: {} premios.", count), font_index::INFO).await;
             }
             Err(e) => {
-                state.send_to(conn_id, &format!("{}Error recargando premios: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+                state.send_console(conn_id, &format!("Error recargando premios: {}", e), font_index::INFO).await;
             }
         }
     } else if cmd_upper.starts_with("/LOADMAP ") {
@@ -2393,7 +2917,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         gm_commands::handle_slash_resetinv(state, conn_id).await;
     } else {
         // Unknown command — send feedback
-        state.send_to(conn_id, "||714").await; // TEXTO714: Comando no reconocido
+        state.send_msg_id(conn_id, 714, "").await; // TEXTO714: Comando no reconocido
     }
 }
 
@@ -2406,7 +2930,7 @@ async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_to(conn_id, "||9").await;
+        state.send_msg_id(conn_id, 9, "").await;
         return;
     }
 
@@ -2426,13 +2950,13 @@ async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
-        state.send_to(conn_id, "||11").await;
+        state.send_msg_id(conn_id, 11, "").await;
         return;
     }
 
     // VB6: RevivirUsuario(userindex) then ||396
     revive_user(state, conn_id).await;
-    state.send_to(conn_id, "||396").await;
+    state.send_msg_id(conn_id, 396, "").await;
 }
 
 /// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
@@ -2463,17 +2987,19 @@ async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
     };
 
     // Resurrection FX (VB6: CFF charindex, 65, 0)
-    let cff_pkt = format!("CFF{},65,0", char_index.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &cff_pkt).await;
+    state.send_data_bytes(
+        SendTarget::ToArea { map, x, y },
+        &binary_packets::write_create_fx(char_index.0 as i16, 65, 0),
+    ).await;
 
     // Broadcast character model change (VB6: ChangeUserChar → CP packet)
-    // VB6 CP format: CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<fx>,<loops>,<helmet>
-    let cp_pkt = format!(
-        "CP{},{},{},{},{},{},0,0,{}",
-        char_index.0, new_body, orig_head, heading,
-        weapon_anim, shield_anim, casco_anim
-    );
-    state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+    state.send_data_bytes(
+        SendTarget::ToArea { map, x, y },
+        &binary_packets::write_character_change(
+            char_index.0 as i16, new_body as i16, orig_head as i16, heading as u8,
+            weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
+        ),
+    ).await;
 
     send_stats_hp(state, conn_id).await;
     send_stats_mana(state, conn_id).await;
@@ -2549,9 +3075,9 @@ async fn send_inventory_slot(state: &mut GameState, conn_id: ConnectionId, idx: 
     };
 
     if inv.obj_index == 0 {
-        // VB6 sends exactly 5 fields for empty slots: CSI<slot>,0,(None),0,0
-        let pkt = format!("CSI{},0,(None),0,0", slot);
-        state.send_to(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
+            slot as u8, 0, "(None)", 0, false, 0, 0, 0, 0, 0, 0.0,
+        )).await;
     } else {
         let obj = state.get_object(inv.obj_index).cloned();
         let (name, grh, obj_type, max_hit, min_hit, max_def, valor) = match obj {
@@ -2566,13 +3092,10 @@ async fn send_inventory_slot(state: &mut GameState, conn_id: ConnectionId, idx: 
             ),
             None => ("???".into(), 0, 0, 0, 0, 0, 0),
         };
-        let equipped = if inv.equipped { 1 } else { 0 };
-        let pkt = format!(
-            "CSI{},{},{},{},{},{},{},{},{},{},{}",
-            slot, inv.obj_index, name, inv.amount, equipped,
-            grh, obj_type, max_hit, min_hit, max_def, valor
-        );
-        state.send_to(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
+            slot as u8, inv.obj_index as i16, &name, inv.amount as i16, inv.equipped,
+            grh as i16, obj_type as u8, max_hit as i16, min_hit as i16, max_def as i16, valor as f32,
+        )).await;
     }
 }
 
@@ -2597,11 +3120,9 @@ async fn send_full_spells(state: &mut GameState, conn_id: ConnectionId) {
             let name = state.get_spell(spell_id)
                 .map(|s| s.nombre.clone())
                 .unwrap_or_else(|| "(Desconocido)".into());
-            let pkt = format!("SHS{},{},{}", slot, spell_id, name);
-            state.send_to(conn_id, &pkt).await;
+            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, spell_id as i16, &name)).await;
         } else {
-            let pkt = format!("SHS{},0,(Nada)", slot);
-            state.send_to(conn_id, &pkt).await;
+            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, 0, "(Nada)")).await;
         }
     }
 }
@@ -2648,8 +3169,8 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
             let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
             let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
-            state.send_data(SendTarget::ToArea { map, x, y }, "TW6").await;
-            state.send_to(conn_id, "||67").await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
+            state.send_msg_id(conn_id, 67, "").await;
 
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.level += 1;
@@ -2657,8 +3178,10 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             }
             let new_level = level + 1;
 
-            let fx_pkt = format!("CFF{},58,0", char_index);
-            state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+            state.send_data_bytes(
+                SendTarget::ToArea { map, x, y },
+                &binary_packets::write_create_fx(char_index as i16, 58, 0),
+            ).await;
 
             // VB6: ClassBonus.dat options at levels 53, 56, 60
             let class_upper = class.to_uppercase();
@@ -2674,17 +3197,17 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                 let opt1 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion1", nivel));
                 let opt2 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion2", nivel));
                 if !opt1.is_empty() || !opt2.is_empty() {
-                    let pkt = format!("99{},{}", opt1, opt2);
-                    state.send_to(conn_id, &pkt).await;
+                    let o1: u8 = opt1.parse().unwrap_or(0);
+                    let o2: u8 = opt2.parse().unwrap_or(0);
+                    state.send_bytes(conn_id, &binary_packets::write_class_options(o1, o2)).await;
                 }
             }
 
             // VB6: Level 50 — +50 skill points (one-time)
             if new_level == 50 {
                 let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 50!\u{00B0}0", name);
-                state.send_data(SendTarget::ToAll, &announce).await;
-                state.send_to(conn_id, "||57@50").await;
+                state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535).await;
+                state.send_msg_id(conn_id, 57, "50").await;
                 // TODO: AgregarPuntos(50) — add 50 free skill points
             }
 
@@ -2694,13 +3217,11 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                     user.exp = 0;
                 }
                 let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 60!\u{00B0}0", name);
-                state.send_data(SendTarget::ToAll, &announce).await;
-                state.send_to(conn_id, "||57@200").await;
+                state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 60!", name), 65535).await;
+                state.send_msg_id(conn_id, 57, "200").await;
                 // TODO: AgregarPuntos(200) — add 200 free skill points
                 send_stats_exp(state, conn_id).await;
-                let lvl_pkt = format!("[L]{}", new_level);
-                state.send_to(conn_id, &lvl_pkt).await;
+                state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
                 send_stats_hp(state, conn_id).await;
                 return;
             }
@@ -2712,8 +3233,8 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                     user.max_hp += hp_bonus;
                     user.min_hp = user.max_hp;
                 }
-                state.send_to(conn_id, &format!("||68@50 + 15@{}", hp_bonus)).await;
-                state.send_to(conn_id, "||900@2").await;
+                state.send_msg_id(conn_id, 68, &format!("50 + 15@{}", hp_bonus)).await;
+                state.send_msg_id(conn_id, 900, "2").await;
                 send_stats_hp(state, conn_id).await;
             }
 
@@ -2723,28 +3244,25 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                     user.exp = 0;
                 }
                 let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 70!\u{00B0}0", name);
-                state.send_data(SendTarget::ToAll, &announce).await;
+                state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 70!", name), 65535).await;
                 let hp_bonus = rand_range(3, 5);
                 if let Some(user) = state.users.get_mut(&conn_id) {
                     user.max_hp += hp_bonus;
                     user.min_hp = user.max_hp;
                 }
-                state.send_to(conn_id, &format!("||68@50 + 20@{}", hp_bonus)).await;
-                state.send_to(conn_id, "||57@200").await;
-                state.send_to(conn_id, "||900@5").await;
+                state.send_msg_id(conn_id, 68, &format!("50 + 20@{}", hp_bonus)).await;
+                state.send_msg_id(conn_id, 57, "200").await;
+                state.send_msg_id(conn_id, 900, "5").await;
                 // TODO: AgregarPuntos(200) — add 200 free skill points
                 send_stats_hp(state, conn_id).await;
                 send_stats_exp(state, conn_id).await;
-                let lvl_pkt = format!("[L]{}", new_level);
-                state.send_to(conn_id, &lvl_pkt).await;
+                state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
                 info!("[LEVEL] '{}' reached max level 70", name);
                 return;
             }
 
             send_stats_exp(state, conn_id).await;
-            let lvl_pkt = format!("[L]{}", new_level);
-            state.send_to(conn_id, &lvl_pkt).await;
+            state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
 
             let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
             info!("[LEVEL] '{}' reached level {}", name, new_level);
@@ -2793,26 +3311,28 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
         // Level up sound + FX
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW6").await;
-        let fx_pkt = format!("CFF{},58,0", char_index);
-        state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
+        state.send_data_bytes(
+            SendTarget::ToArea { map, x, y },
+            &binary_packets::write_create_fx(char_index as i16, 58, 0),
+        ).await;
 
         // VB6: ||67 = "Has subido de nivel!"
-        state.send_to(conn_id, "||67").await;
+        state.send_msg_id(conn_id, 67, "").await;
 
         // VB6: Stat gain notifications (||71=HP, ||72=STA, ||73=MANA, ||74/75=HIT)
         if hp_gain > 0 {
-            state.send_to(conn_id, &format!("||71@{}", hp_gain)).await;
+            state.send_msg_id(conn_id, 71, &hp_gain.to_string()).await;
         }
         if sta_gain > 0 {
-            state.send_to(conn_id, &format!("||72@{}", sta_gain)).await;
+            state.send_msg_id(conn_id, 72, &sta_gain.to_string()).await;
         }
         if mana_gain > 0 {
-            state.send_to(conn_id, &format!("||73@{}", mana_gain)).await;
+            state.send_msg_id(conn_id, 73, &mana_gain.to_string()).await;
         }
         if hit_gain > 0 {
-            state.send_to(conn_id, &format!("||74@{}", hit_gain)).await;
-            state.send_to(conn_id, &format!("||75@{}", hit_gain)).await;
+            state.send_msg_id(conn_id, 74, &hit_gain.to_string()).await;
+            state.send_msg_id(conn_id, 75, &hit_gain.to_string()).await;
         }
 
         // VB6: HP projection messages (how your HP is trending)
@@ -2821,7 +3341,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             let cur_hp = state.users.get(&conn_id).map(|u| u.max_hp).unwrap_or(0);
             if new_level < 20 {
                 // ||76@class@race@vidaMin@vidaMax — show target range
-                state.send_to(conn_id, &format!("||76@{}@{}@{}@{}", class, race,
+                state.send_msg_id(conn_id, 76, &format!("{}@{}@{}@{}", class, race,
                     tbl.vida_veinte + (30 - 20) * tbl.define_random_min + 20 * tbl.random_final,
                     tbl.vida_veinte + (30 - 20) * tbl.define_random_max + 20 * tbl.random_final,
                 )).await;
@@ -2829,17 +3349,16 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
                 // ||77@min@max — projected HP at level 50
                 let projected_min = cur_hp + (30 - new_level) * tbl.define_random_min + 20 * tbl.random_final;
                 let projected_max = cur_hp + (30 - new_level) * tbl.define_random_max + 20 * tbl.random_final;
-                state.send_to(conn_id, &format!("||77@{}@{}", projected_min, projected_max)).await;
+                state.send_msg_id(conn_id, 77, &format!("{}@{}", projected_min, projected_max)).await;
             } else {
                 // ||78@projected — exact projected HP at level 50
                 let projected = cur_hp + (50 - new_level) * tbl.random_final;
-                state.send_to(conn_id, &format!("||78@{}", projected)).await;
+                state.send_msg_id(conn_id, 78, &projected.to_string()).await;
             }
         }
 
         // Send updated stats
-        let lvl_pkt = format!("[L]{}", new_level);
-        state.send_to(conn_id, &lvl_pkt).await;
+        state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
         send_stats_hp(state, conn_id).await;
         send_stats_mana(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
@@ -2855,7 +3374,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.gold += gold_bonus as i64;
             }
-            state.send_to(conn_id, &format!("||63@{}", gold_bonus)).await;
+            state.send_msg_id(conn_id, 63, &gold_bonus.to_string()).await;
             send_stats_gold(state, conn_id).await;
         }
 
@@ -2901,15 +3420,16 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             let (m, px, py, ci, hd, head) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y, u.char_index.0, u.heading, u.head))
                 .unwrap_or_default();
-            let cp = format!("CP{},{},{},{},0,0,0,0,0", ci, naked, head, hd);
-            state.send_data(SendTarget::ToArea { map: m, x: px, y: py }, &cp).await;
+            state.send_data_bytes(
+                SendTarget::ToArea { map: m, x: px, y: py },
+                &binary_packets::write_character_change(ci as i16, naked as i16, head as i16, hd as u8, 0, 0, 0, 0, 0),
+            ).await;
         }
 
         // VB6: Level 50 — announcement + skill points (one-time)
         if new_level == 50 {
-            let announce = format!("T|65535\u{00B0}{} ha alcanzado el nivel 50!\u{00B0}0", name);
-            state.send_data(SendTarget::ToAll, &announce).await;
-            state.send_to(conn_id, "||57@50").await;
+            state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535).await;
+            state.send_msg_id(conn_id, 57, "50").await;
             // TODO: AgregarPuntos(50) — add 50 free skill points
         }
 
@@ -3071,8 +3591,6 @@ async fn make_user_visible(state: &mut GameState, conn_id: ConnectionId) {
     check_update_needed_user(state, conn_id, 255).await;
 }
 
-// area_id, build_cd_packet — moved to common.rs
-
 /// CheckUpdateNeededUser — VB6 ModAreas.bas area-based visibility system.
 /// Only fires when the player crosses a 9x9 area boundary.
 /// Sends CA packet to client (cleanup out-of-range entities),
@@ -3142,9 +3660,9 @@ async fn check_update_needed_user(
         let _ = writer.send_packet(&ca_bytes).await;
     }
 
-    // Build our CC for sending to newly visible users
+    // Build our CC (binary) for sending to newly visible users
     let my_cc = match state.users.get(&conn_id) {
-        Some(u) => u.build_cc_packet(),
+        Some(u) => u.build_cc_binary(),
         None => return,
     };
 
@@ -3153,7 +3671,7 @@ async fn check_update_needed_user(
     let mut new_users: Vec<ConnectionId> = Vec::new();
     let mut new_npcs: Vec<usize> = Vec::new();
     let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
-    let mut new_door_bqs: Vec<String> = Vec::new(); // BQ packets for door blocked state
+    let mut new_door_bqs: Vec<(i32, i32, bool)> = Vec::new(); // (x, y, blocked) for door tiles
     let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
     let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
 
@@ -3205,29 +3723,29 @@ async fn check_update_needed_user(
                             // VB6 ModAreas.bas:273-300 — send BQ for door tiles + adjacent tiles
                             // This ensures correct blocked state regardless of what .map file says
                             if obj.obj_type == crate::data::objects::ObjType::Door {
-                                let blocked_at = |ty: i32, tx: i32| -> i32 {
+                                let blocked_at = |ty: i32, tx: i32| -> bool {
                                     if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                                        if game_map.tiles[(ty - 1) as usize][(tx - 1) as usize].blocked { 1 } else { 0 }
-                                    } else { 0 }
+                                        game_map.tiles[(ty - 1) as usize][(tx - 1) as usize].blocked
+                                    } else { false }
                                 };
 
                                 // Always send BQ for door tile + x-1 (single door minimum)
-                                new_door_bqs.push(format!("BQ{},{},{}", sx, sy, blocked_at(sy, sx)));
-                                new_door_bqs.push(format!("BQ{},{},{}", sx - 1, sy, blocked_at(sy, sx - 1)));
+                                new_door_bqs.push((sx, sy, blocked_at(sy, sx)));
+                                new_door_bqs.push((sx - 1, sy, blocked_at(sy, sx - 1)));
 
                                 if obj.puerta_doble == 1 {
-                                    new_door_bqs.push(format!("BQ{},{},{}", sx + 1, sy, blocked_at(sy, sx + 1)));
-                                    new_door_bqs.push(format!("BQ{},{},{}", sx + 2, sy, blocked_at(sy, sx + 2)));
+                                    new_door_bqs.push((sx + 1, sy, blocked_at(sy, sx + 1)));
+                                    new_door_bqs.push((sx + 2, sy, blocked_at(sy, sx + 2)));
                                 } else if obj.porton == 1 || obj.reja_forta == 1 {
                                     for dx in [-2i32, -1, 0, 1, 2] {
-                                        new_door_bqs.push(format!("BQ{},{},{}", sx + dx, sy, blocked_at(sy, sx + dx)));
+                                        new_door_bqs.push((sx + dx, sy, blocked_at(sy, sx + dx)));
                                     }
                                 }
 
                                 // Special objects 1472/1470: always force unblocked (VB6 line 292-298)
                                 if oi == 1472 || oi == 1470 {
                                     for dx in [-2i32, -1, 0, 1, 2] {
-                                        new_door_bqs.push(format!("BQ{},{},0", sx + dx, sy));
+                                        new_door_bqs.push((sx + dx, sy, false));
                                     }
                                 }
                             }
@@ -3248,60 +3766,60 @@ async fn check_update_needed_user(
     for other_id in new_users {
         if let Some(other) = state.users.get(&other_id) {
             if other.logged {
-                let other_cc = other.build_cc_packet();
+                let other_cc = other.build_cc_binary();
                 let other_char_idx = other.char_index.0;
                 let other_invisible = other.admin_invisible;
-                let other_cd = build_cd_packet(other);
-                state.send_to(conn_id, &other_cc).await;
-                state.send_to(conn_id, &other_cd).await;
+                let other_cd = build_cd_binary(other);
+                state.send_bytes(conn_id, &other_cc).await;
+                state.send_bytes(conn_id, &other_cd).await;
                 // If the other player is invisible, tell us not to render them
                 if other_invisible {
-                    state.send_to(conn_id, &format!("NOVER{},1", other_char_idx)).await;
+                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true)).await;
                 }
                 // Send our CC + [CD to them
-                state.send_to(other_id, &my_cc).await;
+                state.send_bytes(other_id, &my_cc).await;
                 let my_cd = match state.users.get(&conn_id) {
-                    Some(u) => build_cd_packet(u),
+                    Some(u) => build_cd_binary(u),
                     None => continue,
                 };
-                state.send_to(other_id, &my_cd).await;
+                state.send_bytes(other_id, &my_cd).await;
                 // If we are invisible, tell them not to render us
                 if my_invisible {
-                    state.send_to(other_id, &format!("NOVER{},1", my_char_idx)).await;
+                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true)).await;
                 }
             }
         } else {
-            state.send_to(other_id, &my_cc).await;
+            state.send_bytes(other_id, &my_cc).await;
         }
     }
 
     // Send NPC CCs
     for npc_idx in new_npcs {
         let npc_cc = match state.get_npc(npc_idx) {
-            Some(npc) if npc.active => npc.build_cc_packet(),
+            Some(npc) if npc.active => npc.build_cc_binary(),
             _ => continue,
         };
-        state.send_to(conn_id, &npc_cc).await;
+        state.send_bytes(conn_id, &npc_cc).await;
     }
 
-    // Send ground items (HO packet) — VB6 ModAreas.bas line 264
+    // Send ground items (HO = ObjectCreate packet) — VB6 ModAreas.bas line 264
     for (grh, ix, iy) in new_items {
-        state.send_to(conn_id, &format!("HO{},{},{}", grh, ix, iy)).await;
+        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as u8, iy as u8, grh as i16)).await;
     }
 
-    // Send door BQ packets — VB6 ModAreas.bas lines 273-300
-    for bq in new_door_bqs {
-        state.send_to(conn_id, &bq).await;
+    // Send door BQ packets (BlockPosition) — VB6 ModAreas.bas lines 273-300
+    for (bx, by, blocked) in new_door_bqs {
+        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as u8, by as u8, blocked)).await;
     }
 
     // Send particle effects (PCF) — VB6 ModAreas.bas line 255
     for (pg, px, py) in new_particles {
-        state.send_to(conn_id, &format!("PCF{},{},{},0", pg, px, py)).await;
+        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as u8, py as u8, 0)).await;
     }
 
     // Send lighting effects (PCL) — VB6 ModAreas.bas line 259
     for (lx, ly, range, r, g, b) in new_lights {
-        state.send_to(conn_id, &format!("PCL{},{},{},{},{},{}", lx, ly, range, r, g, b)).await;
+        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as u8, ly as u8, range as u8, r as u8, g as u8, b as u8)).await;
     }
 }
 
@@ -3334,8 +3852,10 @@ async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionId, new_map:
             // Remove old NPC from world (send BP to area)
             let old_data = state.get_npc(idx).map(|n| (n.char_index, n.map, n.x, n.y));
             if let Some((ci, omap, ox, oy)) = old_data {
-                let bp = format!("BP{}", ci.0);
-                state.send_data(SendTarget::ToArea { map: omap, x: ox, y: oy }, &bp).await;
+                state.send_data_bytes(
+                    SendTarget::ToArea { map: omap, x: ox, y: oy },
+                    &binary_packets::write_character_remove(ci.0 as i16),
+                ).await;
             }
             state.kill_npc(idx);
 
@@ -3373,9 +3893,9 @@ async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionId, new_map:
             }
 
             // Broadcast new NPC to area
-            let cc_pkt = state.get_npc(new_idx).map(|n| n.build_cc_packet());
+            let cc_pkt = state.get_npc(new_idx).map(|n| n.build_cc_binary());
             if let Some(pkt) = cc_pkt {
-                state.send_data(SendTarget::ToArea { map: new_map, x: new_x, y: new_y }, &pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map: new_map, x: new_x, y: new_y }, &pkt).await;
             }
         }
     }
@@ -3442,12 +3962,10 @@ async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32, mover_hea
     }
 
     // Send position update to ghost (PU) and movement broadcast to area
-    let pu_pkt = format!("PU{},{}", push_x, push_y);
-    state.send_to(ghost_conn, &pu_pkt).await;
-    let move_pkt = format!("+{},{},{}", ghost_char_index.0, push_x, push_y);
-    state.send_data(
+    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as u8, push_y as u8)).await;
+    state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: ghost_conn, map, x: push_x, y: push_y },
-        &move_pkt,
+        &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as u8, push_y as u8),
     ).await;
 }
 
@@ -3459,15 +3977,15 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     let (old_map, old_x, old_y, char_index, area_min_x, area_min_y) = old_data;
 
     // 1. BKW — fade to black (VB6 line 2262)
-    state.send_to(conn_id, "BKW").await;
+    state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
 
     // 2. QDL + BP — remove dialog and character from the full 27×27 area.
     // VB6 ToPCArea uses the 27×27 zone group, not just the viewport (±8x, ±6y).
     // Movement `+` packets are broadcast to the full 27×27 area, so QDL/BP must
     // reach the same players — otherwise ghosts remain visible at the teleport tile.
-    let qdl_pkt = format!("QDL{}", char_index.0);
-    let bp_pkt = format!("BP{}", char_index.0);
-    state.send_to(conn_id, "QTDL").await;
+    let qdl_pkt = binary_packets::write_remove_char_dialog(char_index.0 as i16);
+    let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
+    state.send_bytes(conn_id, &binary_packets::write_remove_dialogs()).await;
 
     if area_min_x > 0 || area_min_y > 0 {
         let amx = area_min_x.max(1);
@@ -3486,19 +4004,19 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
                 }
             }
             for c in &targets {
-                state.send_to(*c, &qdl_pkt).await;
+                state.send_bytes(*c, &qdl_pkt).await;
             }
             for c in &targets {
-                state.send_to(*c, &bp_pkt).await;
+                state.send_bytes(*c, &bp_pkt).await;
             }
         }
     } else {
         // Fallback: area not initialized yet — send to entire map (safe catch-all)
-        state.send_data(
+        state.send_data_bytes(
             SendTarget::ToMapButIndex { conn_id, map: old_map },
             &qdl_pkt,
         ).await;
-        state.send_data(
+        state.send_data_bytes(
             SendTarget::ToMapButIndex { conn_id, map: old_map },
             &bp_pkt,
         ).await;
@@ -3532,37 +4050,37 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
         (200, 200, 200, 0, format!("Mapa {}", new_map))
     };
 
-    state.send_to(conn_id, &format!("CM{},{},{},{}", new_map, r, g, b)).await;
-    state.send_to(conn_id, &format!("XM{}", music)).await;
-    state.send_to(conn_id, &format!("N~{}", map_name)).await;
+    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0)).await;
+    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
+    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
 
     // 8. Send IP (self char index) + own CC + [CD so client renders self at new position
     let (ci, own_cc, own_cd) = match state.users.get(&conn_id) {
-        Some(u) => (u.char_index, u.build_cc_packet(), build_cd_packet(u)),
+        Some(u) => (u.char_index, u.build_cc_binary(), build_cd_binary(u)),
         None => return,
     };
-    state.send_to(conn_id, &format!("IP{}", ci.0)).await;
-    state.send_to(conn_id, &own_cc).await;
-    state.send_to(conn_id, &own_cd).await;
+    state.send_bytes(conn_id, &binary_packets::write_user_char_index(ci.0 as i16)).await;
+    state.send_bytes(conn_id, &own_cc).await;
+    state.send_bytes(conn_id, &own_cd).await;
 
     // 8b. Re-send mount state — CC creates a fresh Character with Mounted=false,
     // so the client loses the mount flag. Send USM to restore it.
     if state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false) {
-        state.send_to(conn_id, &format!("USM{},1", ci.0)).await;
+        state.send_bytes(conn_id, &binary_packets::write_user_mount(ci.0 as i16, true)).await;
     }
 
     // 9. PU (position update — tells client where to center camera)
-    state.send_to(conn_id, &format!("PU{},{}", final_x, final_y)).await;
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8)).await;
 
     // 10. Send area visibility (CA + strip CCs/NPCs/items)
     make_user_visible(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
-    state.send_data(
+    state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
         &own_cc,
     ).await;
-    state.send_data(
+    state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
         &own_cd,
     ).await;
@@ -3573,7 +4091,7 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
     // 13. BKW — fade back in (VB6 end of WarpUserChar)
-    state.send_to(conn_id, "BKW").await;
+    state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
 
     // 14. Warp pets to new map (VB6: WarpMascotas)
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
@@ -3596,8 +4114,8 @@ async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if !invisible {
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW3").await;
-        state.send_data(SendTarget::ToArea { map, x, y }, &format!("CFX{},1,0", ci)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0)).await;
     }
 }
 
@@ -3619,7 +4137,7 @@ async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
     // VB6: skip if in ring/arena
     let in_ring = state.users.get(&conn_id).map(|u| u.en_duelo || u.en_desafio).unwrap_or(false);
     if in_ring {
-        state.send_to(conn_id, "||395").await;
+        state.send_msg_id(conn_id, 395, "").await;
         return;
     }
 
@@ -3631,13 +4149,13 @@ async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
             user.min_sta = user.max_sta;
         }
         // VB6: ||693 = "Los dioses te han resucitado"
-        state.send_to(conn_id, "||693").await;
+        state.send_msg_id(conn_id, 693, "").await;
         // Sound: TW20
         let (map, x, y) = match state.users.get(&conn_id) {
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW20").await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8)).await;
         send_stats_hp(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
         // CFF resurrection effect (FX 65) — already sent by revive_user, skip duplicate
@@ -3647,12 +4165,12 @@ async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
             user.min_hp = user.max_hp;
         }
         // VB6: ||694 = "Los dioses te han curado"
-        state.send_to(conn_id, "||694").await;
+        state.send_msg_id(conn_id, 694, "").await;
         let (map, x, y) = match state.users.get(&conn_id) {
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW20").await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8)).await;
         send_stats_hp(state, conn_id).await;
     }
 

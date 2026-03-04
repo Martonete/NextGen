@@ -9,6 +9,7 @@ use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
 use crate::data::npcs::NpcType;
 use crate::db::charfile;
 use crate::game::npc;
+use crate::protocol::binary_packets;
 use super::common::*;
 use super::world;
 
@@ -525,18 +526,17 @@ pub(super) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spe
 
             // FX on NPC
             if spell.fx_grh > 0 {
-                let fx = format!("CFX{},{},{}", npc_char.0, spell.fx_grh, spell.loops);
-                state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &fx).await;
+                let pkt = binary_packets::write_create_fx(npc_char.0 as i16, spell.fx_grh as i16, spell.loops as i16);
+                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt).await;
             }
             if spell.wav > 0 {
-                let snd = format!("TW{}", spell.wav);
-                state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+                let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
+                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt).await;
             }
 
             // Magic words
             if !spell.palabras_magicas.is_empty() {
-                let talk = format!(";{} dice: {}~255~0~0", npc_name, spell.palabras_magicas);
-                state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &talk).await;
+                state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("{} dice: {}", npc_name, spell.palabras_magicas), npc_char.0 as i16, 255).await;
             }
             break; // Only cast one heal per tick
         }
@@ -555,11 +555,11 @@ pub async fn tick_npc_respawn(state: &mut GameState) {
         if state.respawn_npc(npc_idx) {
             // Send CC to area users
             let cc = match state.get_npc(npc_idx) {
-                Some(n) => (n.build_cc_packet(), n.map, n.x, n.y),
+                Some(n) => (n.build_cc_binary(), n.map, n.x, n.y),
                 None => continue,
             };
             let (cc_pkt, map, x, y) = cc;
-            state.send_data(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
         }
     }
 }
@@ -572,8 +572,8 @@ pub(super) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
     };
     let (char_idx, x, y, map, heading, area_min_x, area_min_y) = data;
 
-    // VB6 movement packet: *charindex,x,y
-    let pkt = format!("*{},{},{}", char_idx, x, y);
+    // VB6 movement packet: *charindex,x,y → binary CharacterMove
+    let pkt = binary_packets::write_character_move(char_idx as i16, x as u8, y as u8);
 
     // VB6 SendToNpcArea: sends to all users in the NPC's 27x27 area zone
     // (NOT the smaller 17x13 client window used by SendTarget::ToArea)
@@ -595,7 +595,7 @@ pub(super) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
         }
     }
     for conn in targets {
-        state.send_to(conn, &pkt).await;
+        state.send_bytes(conn, &pkt).await;
     }
 
     // Check if NPC crossed a 9x9 area boundary — if so, send CC to newly visible players
@@ -604,10 +604,10 @@ pub(super) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
 
 /// Send packets for a ghost push (position update to ghost + movement broadcast to area).
 pub(super) async fn send_ghost_push(state: &mut GameState, push: super::npcs::GhostPush) {
-    let pu_pkt = format!("PU{},{}", push.new_x, push.new_y);
-    state.send_to(push.ghost_conn, &pu_pkt).await;
-    let move_pkt = format!("+{},{},{}", push.ghost_char_index, push.new_x, push.new_y);
-    state.send_data(
+    let pu_pkt = binary_packets::write_pos_update(push.new_x as u8, push.new_y as u8);
+    state.send_bytes(push.ghost_conn, &pu_pkt).await;
+    let move_pkt = binary_packets::write_character_move(push.ghost_char_index as i16, push.new_x as u8, push.new_y as u8);
+    state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: push.ghost_conn, map: push.map, x: push.new_x, y: push.new_y },
         &move_pkt,
     ).await;
@@ -674,7 +674,7 @@ pub(super) async fn check_update_needed_npc(state: &mut GameState, npc_idx: usiz
 
     // Build NPC CC packet
     let npc_cc = match state.get_npc(npc_idx) {
-        Some(npc) if npc.active => npc.build_cc_packet(),
+        Some(npc) if npc.active => npc.build_cc_binary(),
         _ => return,
     };
 
@@ -694,7 +694,7 @@ pub(super) async fn check_update_needed_npc(state: &mut GameState, npc_idx: usiz
 
     for conn_id in users_in_strip {
         if state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false) {
-            state.send_to(conn_id, &npc_cc).await;
+            state.send_bytes(conn_id, &npc_cc).await;
         }
     }
 }
@@ -901,8 +901,8 @@ pub(super) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
     };
 
     // Impact sound
-    let snd_pkt = format!("TW{}", 10);
-    state.send_data(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt).await;
+    let snd_pkt = binary_packets::write_play_wave(10, a_x as u8, a_y as u8);
+    state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt).await;
 
     if target_dead {
         // Target NPC dies — use pet owner as killer if available
@@ -917,8 +917,8 @@ pub(super) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
                 Some(n) => (n.map, n.x, n.y, n.char_index),
                 None => return,
             };
-            let bp_pkt = format!("BP{}", char_index.0);
-            state.send_data(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+            let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
             state.kill_npc(target_idx);
         }
     }
@@ -931,8 +931,8 @@ pub(super) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
             Some(n) => (n.map, n.x, n.y, n.char_index),
             None => return,
         };
-        let bp = format!("BP{}", p_ci.0);
-        state.send_data(SendTarget::ToArea { map: p_map, x: p_x, y: p_y }, &bp).await;
+        let bp = binary_packets::write_character_remove(p_ci.0 as i16);
+        state.send_data_bytes(SendTarget::ToArea { map: p_map, x: p_x, y: p_y }, &bp).await;
         // Remove pet from owner
         if let Some(owner_conn) = a_master {
             remove_pet_from_owner(state, owner_conn, attacker_idx);
@@ -1000,11 +1000,11 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        state.send_to(conn_id, "||205").await; // TEXTO205: Dejas de meditar
+        state.send_msg_id(conn_id, 205, "").await; // Dejas de meditar
     } else {
         // Check if mana is already full
         if user.min_mana >= user.max_mana {
-            state.send_to(conn_id, "||393").await; // TEXTO393: Mana restaurado
+            state.send_msg_id(conn_id, 393, "").await; // Mana restaurado
             return;
         }
 
@@ -1012,11 +1012,11 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
             user.meditating = true;
         }
 
-        // Send meditation FX to area
-        let fx_pkt = format!("CFF{},{},999", char_index.0, MEDITATION_FX);
-        state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+        // Send meditation FX to area (999 loops = forever/looping)
+        let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, MEDITATION_FX as i16, 999);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
-        state.send_to(conn_id, "||394").await; // TEXTO394: Comenzas a meditar
+        state.send_msg_id(conn_id, 394, "").await; // Comenzas a meditar
     }
 }
 
@@ -1154,7 +1154,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
             }
             let unmuted = state.users.get(&conn_id).map(|u| !u.silenced).unwrap_or(false);
             if unmuted {
-                state.send_to(conn_id, "||946").await;
+                state.send_msg_id(conn_id, 946, "").await;
             }
         }
 
@@ -1167,7 +1167,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
             let released = state.users.get(&conn_id).map(|u| u.jail_timer <= 0).unwrap_or(false);
             if released {
                 // Release from jail — warp to Libertad (map 28, 50, 50)
-                state.send_to(conn_id, "||444").await;
+                state.send_msg_id(conn_id, 444, "").await;
                 warp_user(state, conn_id, 28, 50, 50).await;
             }
         }
@@ -1224,7 +1224,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 // Stop meditation when full
                 if let Some(u) = state.users.get(&conn_id) {
                     if !u.meditating {
-                        state.send_to(conn_id, "||829").await; // TEXTO829: Has terminado de meditar
+                        state.send_msg_id(conn_id, 829, "").await; // Has terminado de meditar
                     }
                 }
             }
@@ -1359,7 +1359,8 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // Send PARADOK to users who just got unparalyzed
     for conn_id in unparalyze {
-        state.send_to(conn_id, "PARADOK").await;
+        let pkt = binary_packets::write_paralize_ok();
+        state.send_bytes(conn_id, &pkt).await;
     }
 
     // NPC paralysis countdown (same 40ms tick as user paralysis)
@@ -1411,8 +1412,8 @@ pub async fn tick_clean_world(state: &mut GameState) {
                     tile.ground_item.amount = 0;
                 }
                 // Broadcast BO (remove object from ground) to area
-                let pkt = format!("BO{},{}", x, y);
-                state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+                let pkt = binary_packets::write_object_delete(x as u8, y as u8);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
             }
 
             // Clear the cleanup slot

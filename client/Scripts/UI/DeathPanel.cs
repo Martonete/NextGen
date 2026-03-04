@@ -154,7 +154,7 @@ public partial class DeathPanel : Control
             else if (btn == 2)
             {
                 // Regresar — send /REGRESAR to server, respawn at hometown
-                _tcp?.SendPacket(";/REGRESAR");
+                _tcp?.SendPacket(ClientPackets.WriteTalk("/REGRESAR"));
                 Hide();
                 GD.Print("[DEATH] Regresar — respawning at hometown");
             }

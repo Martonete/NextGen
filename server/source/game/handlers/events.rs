@@ -5,7 +5,7 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, UserState, SendTarget, privilege_level};
 use crate::game::npc;
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
+use crate::protocol::{font_index, fields::read_field, binary_packets};
 use crate::db::guilds;
 use crate::data::objects::ObjData;
 use super::common::*;
@@ -56,22 +56,22 @@ pub(super) async fn handle_slash_duelo(state: &mut GameState, conn_id: Connectio
     };
 
     if dead {
-        state.send_to(conn_id, &format!("{}No puedes hacer eso estando muerto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No puedes hacer eso estando muerto.", font_index::INFO).await;
         return;
     }
     if bet < DUEL_MIN_BET {
-        state.send_to(conn_id, &format!("{}La apuesta minima es {}.{}", server_opcodes::CONSOLE_MSG, DUEL_MIN_BET, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("La apuesta minima es {}.", DUEL_MIN_BET), font_index::INFO).await;
         return;
     }
     if gold < bet {
-        state.send_to(conn_id, &format!("{}No tenes suficiente oro.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO).await;
         return;
     }
 
     // Check if any arena is free
     let free_arena = (1..=4).find(|&i| !state.arena_ocupada[i]);
     if free_arena.is_none() {
-        state.send_to(conn_id, &format!("{}Todas las arenas estan ocupadas.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Todas las arenas estan ocupadas.", font_index::INFO).await;
         return;
     }
 
@@ -80,7 +80,7 @@ pub(super) async fn handle_slash_duelo(state: &mut GameState, conn_id: Connectio
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador no encontrado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
             return;
         }
     };
@@ -88,7 +88,7 @@ pub(super) async fn handle_slash_duelo(state: &mut GameState, conn_id: Connectio
     // Check target has enough gold
     let target_gold = state.users.get(&target_conn).map(|u| u.gold).unwrap_or(0);
     if target_gold < bet {
-        state.send_to(conn_id, &format!("{}El otro jugador no tiene suficiente oro.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El otro jugador no tiene suficiente oro.", font_index::INFO).await;
         return;
     }
 
@@ -102,11 +102,9 @@ pub(super) async fn handle_slash_duelo(state: &mut GameState, conn_id: Connectio
     }
 
     // Notify target
-    let pkt = format!("||546@{}@{}@{}@{}", name, class, level, bet);
-    state.send_to(target_conn, &pkt).await;
+    state.send_msg_id(target_conn, 546, &format!("{}@{}@{}@{}", name, class, level, bet)).await;
 
-    let msg = format!("{}Has desafiado a {} por {} de oro.{}", server_opcodes::CONSOLE_MSG, target_name, bet, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Has desafiado a {} por {} de oro.", target_name, bet), font_index::INFO).await;
 }
 
 /// /SIDUELO — Accept a pending duel challenge.
@@ -119,7 +117,7 @@ pub(super) async fn handle_slash_siduelo(state: &mut GameState, conn_id: Connect
     };
 
     if !has_challenge {
-        state.send_to(conn_id, &format!("{}No tenes ninguna oferta de duelo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No tenes ninguna oferta de duelo.", font_index::INFO).await;
         return;
     }
 
@@ -127,7 +125,7 @@ pub(super) async fn handle_slash_siduelo(state: &mut GameState, conn_id: Connect
     let challenger_conn = match state.online_names.get(&challenger_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_to(conn_id, &format!("{}El retador ya no esta online.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "El retador ya no esta online.", font_index::INFO).await;
             return;
         }
     };
@@ -140,7 +138,7 @@ pub(super) async fn handle_slash_siduelo(state: &mut GameState, conn_id: Connect
     let my_gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
     let their_gold = state.users.get(&challenger_conn).map(|u| u.gold).unwrap_or(0);
     if my_gold < bet || their_gold < bet {
-        state.send_to(conn_id, &format!("{}No hay suficiente oro.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay suficiente oro.", font_index::INFO).await;
         return;
     }
 
@@ -148,7 +146,7 @@ pub(super) async fn handle_slash_siduelo(state: &mut GameState, conn_id: Connect
     let arena = match (1..=4).find(|&i| !state.arena_ocupada[i]) {
         Some(a) => a,
         None => {
-            state.send_to(conn_id, &format!("{}No hay arenas disponibles.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No hay arenas disponibles.", font_index::INFO).await;
             return;
         }
     };
@@ -194,8 +192,7 @@ pub(super) async fn handle_slash_siduelo(state: &mut GameState, conn_id: Connect
     state.nombre_dueleando[idx + 2] = their_name.clone();
 
     // Announce
-    let pkt = format!("||548@{}@{}@{}@{}", arena, my_name, their_name, bet);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 548, &format!("{}@{}@{}@{}", arena, my_name, their_name, bet)).await;
 
     // Warp to arena positions
     let (p1x, p1y, p2x, p2y) = DUEL_POSITIONS[arena - 1];
@@ -214,15 +211,15 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
 
     if dead { return; }
     if level < DESAFIO_MIN_LEVEL {
-        state.send_to(conn_id, &format!("{}Necesitas nivel {} para crear un desafio.{}", server_opcodes::CONSOLE_MSG, DESAFIO_MIN_LEVEL, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("Necesitas nivel {} para crear un desafio.", DESAFIO_MIN_LEVEL), font_index::INFO).await;
         return;
     }
     if gold < DESAFIO_COST_DEFENDER {
-        state.send_to(conn_id, &format!("{}Necesitas {} de oro.{}", server_opcodes::CONSOLE_MSG, DESAFIO_COST_DEFENDER, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("Necesitas {} de oro.", DESAFIO_COST_DEFENDER), font_index::INFO).await;
         return;
     }
     if state.desafio_primero != 0 {
-        state.send_to(conn_id, &format!("{}Ya hay un desafio activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un desafio activo.", font_index::INFO).await;
         return;
     }
 
@@ -240,8 +237,7 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
     state.desafio_primero = conn_id;
 
     // Announce
-    let pkt = format!("||407@{}@{}@{}", name, class, level);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 407, &format!("{}@{}@{}", name, class, level)).await;
 
     // Warp to desafio map
     warp_user(state, conn_id, DESAFIO_MAP, 52, 32).await;
@@ -258,15 +254,15 @@ pub(super) async fn handle_slash_desafiar(state: &mut GameState, conn_id: Connec
 
     if dead { return; }
     if state.desafio_primero == 0 {
-        state.send_to(conn_id, &format!("{}No hay ningun desafio activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay ningun desafio activo.", font_index::INFO).await;
         return;
     }
     if state.desafio_segundo != 0 {
-        state.send_to(conn_id, &format!("{}Ya hay un retador peleando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un retador peleando.", font_index::INFO).await;
         return;
     }
     if gold < DESAFIO_COST_CHALLENGER {
-        state.send_to(conn_id, &format!("{}Necesitas {} de oro.{}", server_opcodes::CONSOLE_MSG, DESAFIO_COST_CHALLENGER, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("Necesitas {} de oro.", DESAFIO_COST_CHALLENGER), font_index::INFO).await;
         return;
     }
 
@@ -283,14 +279,12 @@ pub(super) async fn handle_slash_desafiar(state: &mut GameState, conn_id: Connec
     state.desafio_segundo = conn_id;
 
     // Announce
-    let pkt = format!("||410@{}", name);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 410, &name).await;
 
     // Notify defender
     let class = state.users.get(&conn_id).map(|u| u.class.clone()).unwrap_or_default();
     let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
-    let info_pkt = format!("||411@{}@{}@{}", name, class, level);
-    state.send_to(state.desafio_primero, &info_pkt).await;
+    state.send_msg_id(state.desafio_primero, 411, &format!("{}@{}@{}", name, class, level)).await;
 
     // Warp to desafio map
     warp_user(state, conn_id, DESAFIO_MAP, 52, 48).await;
@@ -385,18 +379,18 @@ pub(super) async fn handle_slash_torneo(state: &mut GameState, conn_id: Connecti
     if dead { return; }
 
     if !state.hay_torneo {
-        state.send_to(conn_id, &format!("{}No hay ningun torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay ningun torneo activo.", font_index::INFO).await;
         return;
     }
 
     let already = state.users.get(&conn_id).map(|u| u.en_torneo).unwrap_or(false);
     if already {
-        state.send_to(conn_id, &format!("{}Ya estas inscripto en el torneo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya estas inscripto en el torneo.", font_index::INFO).await;
         return;
     }
 
     if state.usuarios_en_torneo >= 64 {
-        state.send_to(conn_id, &format!("{}El torneo esta lleno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El torneo esta lleno.", font_index::INFO).await;
         return;
     }
 
@@ -408,31 +402,24 @@ pub(super) async fn handle_slash_torneo(state: &mut GameState, conn_id: Connecti
         user.num_torneo = state.usuarios_en_torneo;
     }
 
-    let msg = format!("{}Te has inscripto al torneo! (#{}){}",
-        server_opcodes::CONSOLE_MSG, state.usuarios_en_torneo, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Te has inscripto al torneo! (#{})", state.usuarios_en_torneo), font_index::INFO).await;
 
     // Announce
-    let pkt = format!("{}{} se ha inscripto al torneo. ({}/64){}",
-        server_opcodes::CONSOLE_MSG, name, state.usuarios_en_torneo, font_types::SYSTEM);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_console_to(SendTarget::ToAll, &format!("{} se ha inscripto al torneo. ({}/64)", name, state.usuarios_en_torneo), font_index::SERVER).await;
 }
 
 /// /PARTICIPANTES — List tournament participants.
 pub(super) async fn handle_slash_participantes(state: &mut GameState, conn_id: ConnectionId) {
     if state.cronologia_participantes.is_empty() {
-        state.send_to(conn_id, &format!("{}No hay participantes.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay participantes.", font_index::INFO).await;
         return;
     }
 
-    let msg = format!("{}Participantes del torneo ({}):{}", server_opcodes::CONSOLE_MSG,
-        state.cronologia_participantes.len(), font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Participantes del torneo ({}):", state.cronologia_participantes.len()), font_index::INFO).await;
 
     let participants = state.cronologia_participantes.clone();
     for (i, name) in participants.iter().enumerate() {
-        let pkt = format!("{}{}: {}{}", server_opcodes::CONSOLE_MSG, i + 1, name, font_types::INFO);
-        state.send_to(conn_id, &pkt).await;
+        state.send_console(conn_id, &format!("{}: {}", i + 1, name), font_index::INFO).await;
     }
 }
 
@@ -444,7 +431,7 @@ pub(super) async fn handle_slash_horda(state: &mut GameState, conn_id: Connectio
     };
 
     if dead || level < 10 || guild > 0 || armada || caos {
-        state.send_to(conn_id, &format!("{}No puedes unirte a la Horda.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No puedes unirte a la Horda.", font_index::INFO).await;
         return;
     }
 
@@ -455,7 +442,7 @@ pub(super) async fn handle_slash_horda(state: &mut GameState, conn_id: Connectio
     // Warp to Horde spawn
     warp_user(state, conn_id, 27, 47, 48).await;
 
-    state.send_to(conn_id, &format!("{}Te has unido a la Horda!{}", server_opcodes::CONSOLE_MSG, font_types::SYSTEM)).await;
+    state.send_console(conn_id, "Te has unido a la Horda!", font_index::SERVER).await;
 }
 
 /// /ALIANZA — Join the Alliance faction. Warps to map 29.
@@ -466,7 +453,7 @@ pub(super) async fn handle_slash_alianza(state: &mut GameState, conn_id: Connect
     };
 
     if dead || level < 10 || guild > 0 || armada || caos {
-        state.send_to(conn_id, &format!("{}No puedes unirte a la Alianza.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No puedes unirte a la Alianza.", font_index::INFO).await;
         return;
     }
 
@@ -477,7 +464,7 @@ pub(super) async fn handle_slash_alianza(state: &mut GameState, conn_id: Connect
     // Warp to Alliance spawn
     warp_user(state, conn_id, 29, 50, 90).await;
 
-    state.send_to(conn_id, &format!("{}Te has unido a la Alianza!{}", server_opcodes::CONSOLE_MSG, font_types::SYSTEM)).await;
+    state.send_console(conn_id, "Te has unido a la Alianza!", font_index::SERVER).await;
 }
 
 /// /PARTICIPAR — Join the currently active event.
@@ -487,7 +474,7 @@ pub(super) async fn handle_slash_participar(state: &mut GameState, conn_id: Conn
     } else if state.torneo_auto_activo {
         torneo_auto_join(state, conn_id).await;
     } else {
-        state.send_to(conn_id, &format!("{}No hay ningun evento activo en este momento.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay ningun evento activo en este momento.", font_index::INFO).await;
     }
 }
 
@@ -497,37 +484,37 @@ pub(super) async fn handle_slash_eventos(state: &mut GameState, conn_id: Connect
 
     if state.evento_activo {
         let tipo_name = event_type_name(state.evento_tipo);
-        msgs.push(format!("{}{} en curso ({} participantes).{}", server_opcodes::CONSOLE_MSG, tipo_name, state.evento_participantes.len(), font_types::INFO));
+        msgs.push(format!("{} en curso ({} participantes).", tipo_name, state.evento_participantes.len()));
     }
     if state.evento_inscripciones {
         let tipo_name = event_type_name(state.evento_tipo);
-        msgs.push(format!("{}Inscripciones abiertas para {} ({}/{}).{}", server_opcodes::CONSOLE_MSG, tipo_name, state.evento_participantes.len(), state.evento_max_players, font_types::INFO));
+        msgs.push(format!("Inscripciones abiertas para {} ({}/{}).", tipo_name, state.evento_participantes.len(), state.evento_max_players));
     }
     if state.torneo_auto_activo {
         let max = 1 << state.torneo_auto_rondas;
-        msgs.push(format!("{}Torneo automatico activo ({}/{} slots).{}", server_opcodes::CONSOLE_MSG, state.torneo_auto_bracket.len(), max, font_types::INFO));
+        msgs.push(format!("Torneo automatico activo ({}/{} slots).", state.torneo_auto_bracket.len(), max));
     }
     if state.hay_torneo {
-        msgs.push(format!("{}Torneo activo con {} participantes.{}", server_opcodes::CONSOLE_MSG, state.usuarios_en_torneo, font_types::INFO));
+        msgs.push(format!("Torneo activo con {} participantes.", state.usuarios_en_torneo));
     }
     if state.cvc_funciona {
-        msgs.push(format!("{}CvC en curso.{}", server_opcodes::CONSOLE_MSG, font_types::INFO));
+        msgs.push("CvC en curso.".to_string());
     }
     if state.desafio_primero != 0 {
         let defender = state.users.get(&state.desafio_primero)
             .map(|u| u.char_name.clone())
             .unwrap_or_default();
-        msgs.push(format!("{}Desafio activo. Defensor: {}{}", server_opcodes::CONSOLE_MSG, defender, font_types::INFO));
+        msgs.push(format!("Desafio activo. Defensor: {}", defender));
     }
     if state.siege_active {
-        msgs.push(format!("{}Asedio al castillo en curso.{}", server_opcodes::CONSOLE_MSG, font_types::INFO));
+        msgs.push("Asedio al castillo en curso.".to_string());
     }
 
     if msgs.is_empty() {
-        state.send_to(conn_id, &format!("{}No hay eventos activos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay eventos activos.", font_index::INFO).await;
     } else {
         for msg in msgs {
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, &msg, font_index::INFO).await;
         }
     }
 }
@@ -598,8 +585,7 @@ pub(super) async fn cvc_end_battle(state: &mut GameState, winner_guild: i32) {
     };
 
     // Broadcast result: ||85@winner@loser
-    let pkt = format!("||85@{}@{}", winner_name, loser_name);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 85, &format!("{}@{}", winner_name, loser_name)).await;
 
     // Update guild files: winner gets +1 CVCG, +75 reputation; loser gets +1 CVCP
     if let Some(mut guild) = guilds::load_guild(&state.pool, winner_guild).await {
@@ -655,18 +641,16 @@ pub(super) async fn cvc_player_death(state: &mut GameState, conn_id: ConnectionI
     }
 
     // Announce remaining counts
-    let msg = format!("{}CvC: {} ({}) vs {} ({}){}",
-        server_opcodes::CONSOLE_MSG,
+    let msg = format!("CvC: {} ({}) vs {} ({})",
         state.cvc_nombre1, state.cvc_clan1_count,
-        state.cvc_nombre2, state.cvc_clan2_count,
-        font_types::INFO);
+        state.cvc_nombre2, state.cvc_clan2_count);
     // Send to all CvC participants
     let cvc_conns: Vec<ConnectionId> = state.users.iter()
         .filter(|(_, u)| u.en_cvc)
         .map(|(&cid, _)| cid)
         .collect();
     for cid in cvc_conns {
-        state.send_to(cid, &msg).await;
+        state.send_console(cid, &msg, font_index::INFO).await;
     }
 }
 
@@ -693,19 +677,19 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
     };
 
     if dead {
-        state.send_to(conn_id, &format!("{}Estas muerto!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Estas muerto!", font_index::INFO).await;
         return;
     }
     if guild_index <= 0 {
-        state.send_to(conn_id, "||120").await; // No guild
+        state.send_msg_id(conn_id, 120, "").await; // No guild
         return;
     }
     if state.cvc_funciona {
-        state.send_to(conn_id, "||364").await; // CvC already active
+        state.send_msg_id(conn_id, 364, "").await; // CvC already active
         return;
     }
     if state.cvc_pending_target_guild > 0 {
-        state.send_to(conn_id, &format!("{}Ya hay un desafio CvC pendiente.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un desafio CvC pendiente.", font_index::INFO).await;
         return;
     }
     if map == 141 { return; } // Jail
@@ -722,7 +706,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
         None => false,
     };
     if !is_leader {
-        state.send_to(conn_id, &format!("{}Solo el lider o sub-lider puede desafiar a CvC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Solo el lider o sub-lider puede desafiar a CvC.", font_index::INFO).await;
         return;
     }
 
@@ -731,7 +715,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
     let target_guild_idx = match guilds::find_guild_by_name(&state.pool, &target_upper).await {
         Some(idx) if idx != guild_index => idx,
         _ => {
-            state.send_to(conn_id, &format!("{}Clan no encontrado o es tu propio clan.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Clan no encontrado o es tu propio clan.", font_index::INFO).await;
             return;
         }
     };
@@ -743,7 +727,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
         .count() as i32;
 
     if my_eligible < 1 {
-        state.send_to(conn_id, &format!("{}Tu clan no tiene miembros elegibles para CvC.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Tu clan no tiene miembros elegibles para CvC.", font_index::INFO).await;
         return;
     }
 
@@ -755,7 +739,7 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
         .map(|(&cid, _)| cid);
 
     if target_leader_conn.is_none() {
-        state.send_to(conn_id, &format!("{}El lider del clan {} no esta online.{}", server_opcodes::CONSOLE_MSG, target_clan, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("El lider del clan {} no esta online.", target_clan), font_index::INFO).await;
         return;
     }
     let target_leader_id = target_leader_conn.unwrap();
@@ -767,10 +751,9 @@ pub(super) async fn handle_slash_cvc(state: &mut GameState, conn_id: ConnectionI
     state.cvc_pending_challenger_name = my_guild_name.clone();
 
     // Send challenge to target leader: ||413@<challenger_clan>@<eligible_count>
-    let pkt = format!("||413@{}@{}", my_guild_name, my_eligible);
-    state.send_to(target_leader_id, &pkt).await;
+    state.send_msg_id(target_leader_id, 413, &format!("{}@{}", my_guild_name, my_eligible)).await;
 
-    state.send_to(conn_id, &format!("{}Desafio CvC enviado a {}. Esperando respuesta de su lider.{}", server_opcodes::CONSOLE_MSG, target_clan, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Desafio CvC enviado a {}. Esperando respuesta de su lider.", target_clan), font_index::INFO).await;
 }
 
 /// /NCVC — Disable CvC safety (opt out of auto-warp).
@@ -778,7 +761,7 @@ pub(super) async fn handle_slash_ncvc(state: &mut GameState, conn_id: Connection
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.seguro_cvc = false;
     }
-    state.send_to(conn_id, "||370").await;
+    state.send_msg_id(conn_id, 370, "").await;
 }
 
 /// /SCVC — Enable CvC safety (opt in for auto-warp).
@@ -786,7 +769,7 @@ pub(super) async fn handle_slash_scvc(state: &mut GameState, conn_id: Connection
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.seguro_cvc = true;
     }
-    state.send_to(conn_id, "||371").await;
+    state.send_msg_id(conn_id, 371, "").await;
 }
 
 /// /REGRESAR — Return to home city (die and respawn at home).
@@ -808,15 +791,13 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
 
     // Level check — must be level 10+
     if level < 10 {
-        let msg = format!("{}Debes ser nivel 10 o superior para usar /REGRESAR.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Debes ser nivel 10 o superior para usar /REGRESAR.", font_index::INFO).await;
         return;
     }
 
     // Block in special maps (31-34 arenas)
     if cur_map >= 31 && cur_map <= 34 {
-        let msg = format!("{}No puedes usar /REGRESAR en esta zona.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No puedes usar /REGRESAR en esta zona.", font_index::INFO).await;
         return;
     }
 
@@ -830,13 +811,14 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
             user.meditating = false;
             user.min_sta = 0;
         }
-        state.send_to(conn_id, "MUERT").await;
+        let dead_pkt = binary_packets::write_dead();
+        state.send_bytes(conn_id, &dead_pkt).await;
         send_stats_hp(state, conn_id).await;
         // Update appearance to dead body
         if let Some(user) = state.users.get(&conn_id) {
-            let cc = user.build_cc_packet();
+            let cc = user.build_cc_binary();
             let (m, ux, uy) = (user.pos_map, user.pos_x, user.pos_y);
-            state.send_data(SendTarget::ToArea { map: m, x: ux, y: uy }, &cc).await;
+            state.send_data_bytes(SendTarget::ToArea { map: m, x: ux, y: uy }, &cc).await;
         }
     }
 
@@ -859,8 +841,7 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
 
     warp_user(state, conn_id, dest_map, dest_x, dest_y).await;
 
-    let msg = format!("{}Has regresado a tu hogar.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Has regresado a tu hogar.", font_index::INFO).await;
 }
 
 /// /SALIR — Disconnect/logout.
@@ -879,13 +860,13 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
 
     // VB6: If Muerto = 1 Then ||3
     if dead {
-        state.send_to(conn_id, "||3").await;
+        state.send_msg_id(conn_id, 3, "").await;
         return;
     }
 
     // VB6: If MaxMAN = 0 Then ||4
     if max_mana == 0 {
-        state.send_to(conn_id, "||4").await;
+        state.send_msg_id(conn_id, 4, "").await;
         return;
     }
 
@@ -894,9 +875,9 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.min_mana = user.max_mana;
         }
-        state.send_to(conn_id, "||393").await;
+        state.send_msg_id(conn_id, 393, "").await;
         send_stats_mana(state, conn_id).await;
-        state.send_to(conn_id, "MEDOK").await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
         return;
     }
 
@@ -908,8 +889,8 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
 
     if !was_meditating {
         // Starting meditation — VB6: ||394 + MEDOK
-        state.send_to(conn_id, "||394").await;
-        state.send_to(conn_id, "MEDOK").await;
+        state.send_msg_id(conn_id, 394, "").await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
 
         // VB6: If MinMAN = MaxMAN Then exit (already full)
         let min_mana = state.users.get(&conn_id).map(|u| u.min_mana).unwrap_or(0);
@@ -937,20 +918,20 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
         };
 
         let loops = 999; // LoopAdEternum
-        let pkt = format!("CFX{},{},{}", ci, fx_id, loops);
-        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+        let pkt = binary_packets::write_create_fx(ci as i16, fx_id as i16, loops as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
     } else {
         // Stopping meditation — VB6: ||205 + MEDOK + clear FX
-        state.send_to(conn_id, "||205").await;
-        state.send_to(conn_id, "MEDOK").await;
+        state.send_msg_id(conn_id, 205, "").await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
 
         // VB6: Clear FX for area
         let (ci, map, x, y) = match state.users.get(&conn_id) {
             Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        let pkt = format!("CFX{},0,0", ci);
-        state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+        let pkt = binary_packets::write_create_fx(ci as i16, 0, 0);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
     }
 }
 
@@ -1017,8 +998,7 @@ pub async fn resolve_duel_death(state: &mut GameState, dead_conn: ConnectionId) 
     state.nombre_dueleando[idx + 2].clear();
 
     // Announce result
-    let pkt = format!("||691@{}@{}@{}@{}", arena, opponent_name, loser_name, winnings);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 691, &format!("{}@{}@{}@{}", arena, opponent_name, loser_name, winnings)).await;
 
     info!("[DUEL] {} defeated {} in arena {}. Won {} gold.", opponent_name, loser_name, arena, winnings);
 }
@@ -1061,8 +1041,7 @@ pub async fn resolve_desafio_death(state: &mut GameState, dead_conn: ConnectionI
         // Announce rounds milestone
         if rounds == 3 || rounds == 5 || rounds == 10 || rounds == 20 || rounds == 50 || rounds >= 100 {
             let defender_name = state.users.get(&state.desafio_primero).map(|u| u.char_name.clone()).unwrap_or_default();
-            let pkt = format!("{}El defensor {} lleva {} rondas!{}", server_opcodes::CONSOLE_MSG, defender_name, rounds, font_types::SYSTEM);
-            state.send_data(SendTarget::ToAll, &pkt).await;
+            state.send_console_to(SendTarget::ToAll, &format!("El defensor {} lleva {} rondas!", defender_name, rounds), font_index::SERVER).await;
         }
     } else {
         // Defender died — challenger wins
@@ -1091,8 +1070,7 @@ pub async fn resolve_desafio_death(state: &mut GameState, dead_conn: ConnectionI
         warp_user(state, defender_conn, EXIT_MAP, EXIT_X, EXIT_Y).await;
 
         let winner_name = state.users.get(&challenger_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-        let pkt = format!("{}{} ha ganado el desafio y recibe {} de oro!{}", server_opcodes::CONSOLE_MSG, winner_name, DESAFIO_REWARD, font_types::SYSTEM);
-        state.send_data(SendTarget::ToAll, &pkt).await;
+        state.send_console_to(SendTarget::ToAll, &format!("{} ha ganado el desafio y recibe {} de oro!", winner_name, DESAFIO_REWARD), font_index::SERVER).await;
     }
 }
 
@@ -1111,8 +1089,7 @@ const NOBILITY_SMAUG_NPC: i32 = 970;
 pub async fn nobleza_etapa_uno(state: &mut GameState, conn_id: ConnectionId) {
     // Check if someone else is already doing the quest
     if state.nobility_user != 0 {
-        let msg = format!("{}Alguien ya esta realizando la prueba de nobleza{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Alguien ya esta realizando la prueba de nobleza", font_index::INFO).await;
         return;
     }
 
@@ -1127,8 +1104,7 @@ pub async fn nobleza_etapa_uno(state: &mut GameState, conn_id: ConnectionId) {
         spawn_npc_at(state, NOBILITY_DRAGON_NPC as usize, NOBILITY_MAP, *sx, *sy).await;
     }
 
-    let msg = format!("{}Etapa 1: Elimina a los 4 dragones{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Etapa 1: Elimina a los 4 dragones", font_index::INFO).await;
 }
 
 /// Start stage 2 — spawn 2 Smaug hatchlings.
@@ -1143,8 +1119,7 @@ pub(super) async fn nobleza_etapa_dos(state: &mut GameState) {
     }
 
     let conn_id = state.nobility_user;
-    let msg = format!("{}Etapa 2: Elimina a las 2 crias de Smaug{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Etapa 2: Elimina a las 2 crias de Smaug", font_index::INFO).await;
 }
 
 /// Start stage 3 — spawn Smaug.
@@ -1156,8 +1131,7 @@ pub(super) async fn nobleza_etapa_tres(state: &mut GameState) {
     spawn_npc_at(state, NOBILITY_SMAUG_NPC as usize, NOBILITY_MAP, 52, 52).await;
 
     let conn_id = state.nobility_user;
-    let msg = format!("{}Etapa 3: Elimina a Smaug{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Etapa 3: Elimina a Smaug", font_index::INFO).await;
 }
 
 /// Called when an NPC is killed — check if it's part of the nobility quest.
@@ -1199,8 +1173,7 @@ pub async fn tick_nobleza(state: &mut GameState) {
             3 => {
                 // Quest complete!
                 let conn_id = state.nobility_user;
-                let msg = format!("{}Has completado la prueba de nobleza!{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                state.send_to(conn_id, &msg).await;
+                state.send_console(conn_id, "Has completado la prueba de nobleza!", font_index::INFO).await;
 
                 // Give reputation reward
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -1220,8 +1193,7 @@ pub async fn tick_nobleza(state: &mut GameState) {
     // Check timeout
     if state.nobility_timer <= 0 {
         let conn_id = state.nobility_user;
-        let msg = format!("{}El tiempo se ha acabado. Has fallado la prueba{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "El tiempo se ha acabado. Has fallado la prueba", font_index::INFO).await;
 
         // Teleport back to Tanaris (map 1, 50, 50)
         warp_user(state, conn_id, 1, 50, 50).await;
@@ -1254,8 +1226,8 @@ pub(super) async fn spawn_npc_at(state: &mut GameState, npc_number: usize, map: 
     }
 
     // Broadcast CC to area
-    let cc_pkt = npc.build_cc_packet();
-    state.send_data(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
+    let cc_pkt = npc.build_cc_binary();
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
 
     // Store NPC
     if idx >= state.npcs.len() {
@@ -1267,31 +1239,31 @@ pub(super) async fn spawn_npc_at(state: &mut GameState, npc_number: usize, map: 
 /// Helper: send CC packets for all nearby characters (users + NPCs) in area.
 pub(super) async fn send_area_chars(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32) {
     // Send CC for nearby users
-    let nearby_users: Vec<(ConnectionId, String)> = state.users.values()
+    let nearby_users: Vec<(ConnectionId, Vec<u8>)> = state.users.values()
         .filter(|u| u.logged && u.conn_id != conn_id && u.pos_map == map
                 && (u.pos_x - x).abs() <= world::MIN_X_BORDER
                 && (u.pos_y - y).abs() <= world::MIN_Y_BORDER)
-        .map(|u| (u.conn_id, u.build_cc_packet()))
+        .map(|u| (u.conn_id, u.build_cc_binary()))
         .collect();
 
     for (_uid, cc_pkt) in &nearby_users {
-        state.send_to(conn_id, cc_pkt).await;
+        state.send_bytes(conn_id, cc_pkt).await;
     }
 
     // Send CC for nearby NPCs
-    let mut npc_ccs: Vec<String> = Vec::new();
+    let mut npc_ccs: Vec<Vec<u8>> = Vec::new();
     for npc_opt in state.npcs.iter() {
         if let Some(npc) = npc_opt {
             if npc.active && npc.map == map
                 && (npc.x - x).abs() <= world::MIN_X_BORDER
                 && (npc.y - y).abs() <= world::MIN_Y_BORDER
             {
-                npc_ccs.push(npc.build_cc_packet());
+                npc_ccs.push(npc.build_cc_binary());
             }
         }
     }
     for cc_pkt in &npc_ccs {
-        state.send_to(conn_id, cc_pkt).await;
+        state.send_bytes(conn_id, cc_pkt).await;
     }
 }
 
@@ -1352,7 +1324,7 @@ pub(super) async fn handle_gm_evento(state: &mut GameState, conn_id: ConnectionI
     if priv_level < privilege_level::EVENT_MASTER { return; }
 
     if state.evento_activo || state.evento_inscripciones {
-        state.send_to(conn_id, &format!("{}Ya hay un evento activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un evento activo.", font_index::INFO).await;
         return;
     }
 
@@ -1363,7 +1335,7 @@ pub(super) async fn handle_gm_evento(state: &mut GameState, conn_id: ConnectionI
     let map: i32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
 
     if tipo < 1 || tipo > 8 {
-        state.send_to(conn_id, &format!("{}Tipos: 1=CTF 2=JDH 3=LUZ 4=ARAM 5=BatMistica 6=Faccionario 7=TorneoAuto 8=Guerra{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Tipos: 1=CTF 2=JDH 3=LUZ 4=ARAM 5=BatMistica 6=Faccionario 7=TorneoAuto 8=Guerra", font_index::INFO).await;
         return;
     }
 
@@ -1393,9 +1365,7 @@ pub(super) async fn handle_gm_evento(state: &mut GameState, conn_id: ConnectionI
     state.bat_kills = [0; 5];
 
     let tipo_name = event_type_name(tipo);
-    let msg = format!("{}Inscripciones abiertas para {}! Costo: {} oro. Usa /PARTICIPAR para inscribirte.{}",
-        server_opcodes::CONSOLE_MSG, tipo_name, cost, font_types::INFO);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_console_to(SendTarget::ToAll, &format!("Inscripciones abiertas para {}! Costo: {} oro. Usa /PARTICIPAR para inscribirte.", tipo_name, cost), font_index::INFO).await;
 
     info!("[EVENT] {} inscriptions opened (max {}, cost {}, map {})", tipo_name, max_p, cost, event_map);
 }
@@ -1403,7 +1373,7 @@ pub(super) async fn handle_gm_evento(state: &mut GameState, conn_id: ConnectionI
 /// /PARTICIPAR — Join the active event inscription.
 pub(super) async fn handle_slash_participar_evento(state: &mut GameState, conn_id: ConnectionId) {
     if !state.evento_inscripciones {
-        state.send_to(conn_id, &format!("{}No hay inscripciones abiertas.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay inscripciones abiertas.", font_index::INFO).await;
         return;
     }
 
@@ -1413,22 +1383,22 @@ pub(super) async fn handle_slash_participar_evento(state: &mut GameState, conn_i
     };
 
     if dead || en_evento {
-        state.send_to(conn_id, &format!("{}No puedes inscribirte ahora.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No puedes inscribirte ahora.", font_index::INFO).await;
         return;
     }
 
     if state.evento_participantes.len() as i32 >= state.evento_max_players {
-        state.send_to(conn_id, &format!("{}El evento esta lleno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El evento esta lleno.", font_index::INFO).await;
         return;
     }
 
     if state.evento_participantes.contains(&conn_id) {
-        state.send_to(conn_id, &format!("{}Ya estas inscripto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya estas inscripto.", font_index::INFO).await;
         return;
     }
 
     if gold < state.evento_costo {
-        state.send_to(conn_id, &format!("{}No tenes suficiente oro (necesitas {}).{}", server_opcodes::CONSOLE_MSG, state.evento_costo, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("No tenes suficiente oro (necesitas {}).", state.evento_costo), font_index::INFO).await;
         return;
     }
 
@@ -1442,9 +1412,7 @@ pub(super) async fn handle_slash_participar_evento(state: &mut GameState, conn_i
     state.evento_participantes.push(conn_id);
     let count = state.evento_participantes.len();
 
-    let msg = format!("{}Te inscribiste al evento! ({}/{}){}",
-        server_opcodes::CONSOLE_MSG, count, state.evento_max_players, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Te inscribiste al evento! ({}/{})", count, state.evento_max_players), font_index::INFO).await;
 
     // Auto-start when full
     if count as i32 >= state.evento_max_players {
@@ -1549,15 +1517,15 @@ pub(super) async fn evento_begin(state: &mut GameState) {
             if let Some(idx) = state.spawn_npc(ARAM_TOWER_BLUE_NPC, map, 50, 65) {
                 state.aram_torre_azul = idx;
                 if let Some(npc) = state.get_npc(idx) {
-                    let cc = npc.build_cc_packet();
-                    state.send_data(SendTarget::ToMap(map), &cc).await;
+                    let cc = npc.build_cc_binary();
+                    state.send_data_bytes(SendTarget::ToMap(map), &cc).await;
                 }
             }
             if let Some(idx) = state.spawn_npc(ARAM_TOWER_RED_NPC, map, 50, 35) {
                 state.aram_torre_roja = idx;
                 if let Some(npc) = state.get_npc(idx) {
-                    let cc = npc.build_cc_packet();
-                    state.send_data(SendTarget::ToMap(map), &cc).await;
+                    let cc = npc.build_cc_binary();
+                    state.send_data_bytes(SendTarget::ToMap(map), &cc).await;
                 }
             }
             state.evento_timer = 600;
@@ -1654,8 +1622,7 @@ pub(super) async fn evento_begin(state: &mut GameState) {
     }
 
     let tipo_name = event_type_name(tipo);
-    let msg = format!("{}El evento {} ha comenzado!{}", server_opcodes::CONSOLE_MSG, tipo_name, font_types::INFO);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_console_to(SendTarget::ToAll, &format!("El evento {} ha comenzado!", tipo_name), font_index::INFO).await;
 
     info!("[EVENT] {} started with {} players on map {}", tipo_name, participants.len(), map);
 }
@@ -1667,8 +1634,8 @@ pub async fn tick_eventos(state: &mut GameState) {
         state.auto_msg_counter += 1;
         if state.auto_msg_counter >= state.auto_msg_interval * 60 {
             state.auto_msg_counter = 0;
-            let msg = format!("N|{}{}", state.auto_msg_text, font_types::SYSTEM);
-            state.send_data(SendTarget::ToAll, &msg).await;
+            let auto_text = state.auto_msg_text.clone();
+            state.send_console_to(SendTarget::ToAll, &auto_text, font_index::SERVER).await;
         }
     }
 
@@ -1687,7 +1654,7 @@ pub async fn tick_eventos(state: &mut GameState) {
                         user.gold += cost;
                     }
                     send_stats_gold(state, pid).await;
-                    state.send_to(pid, &format!("{}Evento cancelado por falta de participantes. Oro devuelto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                    state.send_console(pid, "Evento cancelado por falta de participantes. Oro devuelto.", font_index::INFO).await;
                 }
                 evento_reset(state);
                 return;
@@ -1709,15 +1676,14 @@ pub async fn tick_eventos(state: &mut GameState) {
                     user.not_move = false;
                 }
             }
-            let msg = format!("{}Comiencen!{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
             for &pid in &participants {
-                state.send_to(pid, &msg).await;
+                state.send_console(pid, "Comiencen!", font_index::INFO).await;
             }
         } else {
-            let msg = format!("{}El evento comienza en {}...{}", server_opcodes::CONSOLE_MSG, state.evento_countdown, font_types::INFO);
+            let countdown_msg = format!("El evento comienza en {}...", state.evento_countdown);
             let participants = state.evento_participantes.clone();
             for &pid in &participants {
-                state.send_to(pid, &msg).await;
+                state.send_console(pid, &countdown_msg, font_index::INFO).await;
             }
         }
         return;
@@ -1788,10 +1754,15 @@ pub async fn evento_player_death(state: &mut GameState, conn_id: ConnectionId, k
             if killer_team >= 1 && killer_team <= 4 {
                 state.bat_kills[killer_team as usize] += 1;
                 // Send update to all event participants
-                let pkt = format!("BTM1,{},{},{},{}", state.bat_kills[1], state.bat_kills[2], state.bat_kills[3], state.bat_kills[4]);
+                let pkt = binary_packets::write_battle_team_scores(
+                    state.bat_kills[1] as i32,
+                    state.bat_kills[2] as i32,
+                    state.bat_kills[3] as i32,
+                    state.bat_kills[4] as i32,
+                );
                 let participants = state.evento_participantes.clone();
                 for &pid in &participants {
-                    state.send_to(pid, &pkt).await;
+                    state.send_bytes(pid, &pkt).await;
                 }
             }
         }
@@ -1864,8 +1835,7 @@ pub(super) async fn evento_finalize(state: &mut GameState) {
                 else if state.ctf_puntos_azul > state.ctf_puntos_rojo { 1 }
                 else { 2 };
             let team_name = if winner_team == 1 { "Azul" } else { "Rojo" };
-            let msg = format!("{}El equipo {} gano la Captura de Bandera!{}", server_opcodes::CONSOLE_MSG, team_name, font_types::INFO);
-            state.send_data(SendTarget::ToAll, &msg).await;
+            state.send_console_to(SendTarget::ToAll, &format!("El equipo {} gano la Captura de Bandera!", team_name), font_index::INFO).await;
 
             // Award winning team
             for &pid in &participants {
@@ -1882,8 +1852,7 @@ pub(super) async fn evento_finalize(state: &mut GameState) {
             let winner = participants.first().copied();
             if let Some(wid) = winner {
                 let name = state.users.get(&wid).map(|u| u.char_name.clone()).unwrap_or_default();
-                let msg = format!("{}{} es el ultimo superviviente de los Juegos del Hambre!{}", server_opcodes::CONSOLE_MSG, name, font_types::INFO);
-                state.send_data(SendTarget::ToAll, &msg).await;
+                state.send_console_to(SendTarget::ToAll, &format!("{} es el ultimo superviviente de los Juegos del Hambre!", name), font_index::INFO).await;
                 if let Some(user) = state.users.get_mut(&wid) {
                     user.reputation += 50;
                 }
@@ -1900,9 +1869,7 @@ pub(super) async fn evento_finalize(state: &mut GameState) {
                 }
             }
             let team_names = ["", "Azul", "Amarillo", "Rojo", "Verde"];
-            let msg = format!("{}El equipo {} gano la Batalla Mistica con {} kills!{}",
-                server_opcodes::CONSOLE_MSG, team_names[best_team as usize], best_kills, font_types::INFO);
-            state.send_data(SendTarget::ToAll, &msg).await;
+            state.send_console_to(SendTarget::ToAll, &format!("El equipo {} gano la Batalla Mistica con {} kills!", team_names[best_team as usize], best_kills), font_index::INFO).await;
 
             for &pid in &participants {
                 let team = state.users.get(&pid).map(|u| u.evento_equipo).unwrap_or(0);
@@ -1923,8 +1890,7 @@ pub(super) async fn evento_finalize(state: &mut GameState) {
 
             if winner_team > 0 {
                 let team_name = if winner_team == 1 { "Azul" } else { "Rojo" };
-                let msg = format!("{}El equipo {} gano el ARAM!{}", server_opcodes::CONSOLE_MSG, team_name, font_types::INFO);
-                state.send_data(SendTarget::ToAll, &msg).await;
+                state.send_console_to(SendTarget::ToAll, &format!("El equipo {} gano el ARAM!", team_name), font_index::INFO).await;
                 for &pid in &participants {
                     let team = state.users.get(&pid).map(|u| u.evento_equipo).unwrap_or(0);
                     if team == winner_team {
@@ -1934,7 +1900,7 @@ pub(super) async fn evento_finalize(state: &mut GameState) {
                     }
                 }
             } else {
-                state.send_data(SendTarget::ToAll, &format!("{}El ARAM termino en empate!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                state.send_console_to(SendTarget::ToAll, "El ARAM termino en empate!", font_index::INFO).await;
             }
 
             // Kill tower NPCs
@@ -1942,11 +1908,10 @@ pub(super) async fn evento_finalize(state: &mut GameState) {
             state.kill_npc(state.aram_torre_roja);
         }
         EVENTO_FACCIONARIO | EVENTO_GUERRA => {
-            let msg = format!("{}El evento ha terminado!{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_data(SendTarget::ToAll, &msg).await;
+            state.send_console_to(SendTarget::ToAll, "El evento ha terminado!", font_index::INFO).await;
         }
         _ => {
-            state.send_data(SendTarget::ToAll, &format!("{}El evento ha terminado!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console_to(SendTarget::ToAll, "El evento ha terminado!", font_index::INFO).await;
         }
     }
 
@@ -2029,7 +1994,7 @@ pub(super) async fn handle_gm_torneo_auto(state: &mut GameState, conn_id: Connec
     if priv_level < privilege_level::EVENT_MASTER { return; }
 
     if state.torneo_auto_activo {
-        state.send_to(conn_id, &format!("{}Ya hay un torneo automatico activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un torneo automatico activo.", font_index::INFO).await;
         return;
     }
 
@@ -2040,9 +2005,7 @@ pub(super) async fn handle_gm_torneo_auto(state: &mut GameState, conn_id: Connec
     state.torneo_auto_bracket = Vec::with_capacity(max_players as usize);
     state.torneo_auto_timer = 60; // 60s signup
 
-    let msg = format!("{}Torneo automatico abierto! {} slots. Usa /TORNEO para inscribirte.{}",
-        server_opcodes::CONSOLE_MSG, max_players, font_types::INFO);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_console_to(SendTarget::ToAll, &format!("Torneo automatico abierto! {} slots. Usa /TORNEO para inscribirte.", max_players), font_index::INFO).await;
 
     info!("[TORNEO] Auto tournament started: {} rounds, {} slots", rounds, max_players);
 }
@@ -2050,18 +2013,18 @@ pub(super) async fn handle_gm_torneo_auto(state: &mut GameState, conn_id: Connec
 /// /TORNEO — Join automatic tournament (redirected here if torneo_auto active).
 pub async fn torneo_auto_join(state: &mut GameState, conn_id: ConnectionId) {
     if !state.torneo_auto_activo {
-        state.send_to(conn_id, &format!("{}No hay torneo automatico activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay torneo automatico activo.", font_index::INFO).await;
         return;
     }
 
     let max = 1 << state.torneo_auto_rondas;
     if state.torneo_auto_bracket.len() as i32 >= max {
-        state.send_to(conn_id, &format!("{}El torneo esta lleno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El torneo esta lleno.", font_index::INFO).await;
         return;
     }
 
     if state.torneo_auto_bracket.contains(&conn_id) {
-        state.send_to(conn_id, &format!("{}Ya estas inscripto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya estas inscripto.", font_index::INFO).await;
         return;
     }
 
@@ -2077,9 +2040,7 @@ pub async fn torneo_auto_join(state: &mut GameState, conn_id: ConnectionId) {
         user.y_anterior = user.pos_y;
     }
 
-    let msg = format!("{}Inscripto al torneo! Slot #{}/{}{}",
-        server_opcodes::CONSOLE_MSG, slot, max, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Inscripto al torneo! Slot #{}/{}", slot, max), font_index::INFO).await;
 
     // Auto-start when full
     if slot >= max {
@@ -2098,8 +2059,7 @@ pub(super) async fn torneo_auto_start_round(state: &mut GameState) {
         // We have a winner
         if let Some(&winner) = alive.first() {
             let name = state.users.get(&winner).map(|u| u.char_name.clone()).unwrap_or_default();
-            let msg = format!("{}{} ha ganado el torneo automatico!{}", server_opcodes::CONSOLE_MSG, name, font_types::INFO);
-            state.send_data(SendTarget::ToAll, &msg).await;
+            state.send_console_to(SendTarget::ToAll, &format!("{} ha ganado el torneo automatico!", name), font_index::INFO).await;
 
             if let Some(user) = state.users.get_mut(&winner) {
                 user.reputation += 100;
@@ -2113,10 +2073,10 @@ pub(super) async fn torneo_auto_start_round(state: &mut GameState) {
 
     // Pair up fighters
     let round = state.torneo_auto_ronda_actual;
-    let msg = format!("{}Ronda {} del torneo!{}", server_opcodes::CONSOLE_MSG, round, font_types::INFO);
+    let round_msg = format!("Ronda {} del torneo!", round);
 
     for &pid in &alive {
-        state.send_to(pid, &msg).await;
+        state.send_console(pid, &round_msg, font_index::INFO).await;
     }
 
     // Warp first pair to arena corners
@@ -2354,19 +2314,15 @@ pub(super) async fn handle_slash_castillos(state: &mut GameState, conn_id: Conne
     if state.siege_active {
         let owner = state.siege_guild_owner;
         let attacker = state.siege_guild_attacker;
-        let msg = format!("{}Asedio activo: Clan {} vs Clan {}. Puntos: {}/{}/{}{}",
-            server_opcodes::CONSOLE_MSG,
+        state.send_console(conn_id, &format!("Asedio activo: Clan {} vs Clan {}. Puntos: {}/{}/{}",
             owner, attacker,
-            state.siege_conquest[1], state.siege_conquest[2], state.siege_conquest[3],
-            font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+            state.siege_conquest[1], state.siege_conquest[2], state.siege_conquest[3]), font_index::INFO).await;
     } else {
         let owner = state.siege_guild_owner;
         if owner > 0 {
-            let msg = format!("{}El castillo pertenece al clan {}.{}", server_opcodes::CONSOLE_MSG, owner, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, &format!("El castillo pertenece al clan {}.", owner), font_index::INFO).await;
         } else {
-            state.send_to(conn_id, &format!("{}El castillo no pertenece a ningun clan.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "El castillo no pertenece a ningun clan.", font_index::INFO).await;
         }
     }
 }
@@ -2378,7 +2334,7 @@ pub(super) async fn handle_gm_start_siege(state: &mut GameState, conn_id: Connec
     let guild_attacker: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
 
     if guild_owner <= 0 || guild_attacker <= 0 {
-        state.send_to(conn_id, &format!("{}Uso: /SIEGE <owner>@<attacker>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /SIEGE <owner>@<attacker>", font_index::INFO).await;
         return;
     }
 
@@ -2388,8 +2344,7 @@ pub(super) async fn handle_gm_start_siege(state: &mut GameState, conn_id: Connec
     state.siege_conquest = [0; 4];
     state.siege_timer = SIEGE_DURATION_TICKS;
 
-    let msg = format!("{}El asedio al castillo ha comenzado!{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_console_to(SendTarget::ToAll, "El asedio al castillo ha comenzado!", font_index::INFO).await;
 
     info!("[SIEGE] Started: guild {} vs guild {}", guild_owner, guild_attacker);
 }
@@ -2397,7 +2352,7 @@ pub(super) async fn handle_gm_start_siege(state: &mut GameState, conn_id: Connec
 /// GM command: End siege.
 pub(super) async fn handle_gm_end_siege(state: &mut GameState, conn_id: ConnectionId) {
     if !state.siege_active {
-        state.send_to(conn_id, &format!("{}No hay asedio activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay asedio activo.", font_index::INFO).await;
         return;
     }
 
@@ -2426,13 +2381,11 @@ pub(super) async fn resolve_siege(state: &mut GameState) {
     if attacker_points >= 2 {
         // Attacker wins — they become the new owner
         state.siege_guild_owner = attacker;
-        let msg = format!("{}El clan atacante ha conquistado el castillo!{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_data(SendTarget::ToAll, &msg).await;
+        state.send_console_to(SendTarget::ToAll, "El clan atacante ha conquistado el castillo!", font_index::INFO).await;
         info!("[SIEGE] Attacker guild {} conquered castle from guild {}", attacker, owner);
     } else {
         // Defender holds
-        let msg = format!("{}El clan defensor ha mantenido el castillo!{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_data(SendTarget::ToAll, &msg).await;
+        state.send_console_to(SendTarget::ToAll, "El clan defensor ha mantenido el castillo!", font_index::INFO).await;
         info!("[SIEGE] Defender guild {} held castle against guild {}", owner, attacker);
     }
 
@@ -2480,7 +2433,7 @@ pub async fn tick_ancalagon(state: &mut GameState) {
         state.ancalagon_seconds = 0;
 
         // Broadcast warning
-        state.send_data(SendTarget::ToAll, "||471").await;
+        state.send_msg_id_to(SendTarget::ToAll, 471, "").await;
 
         // Spawn pre-dragon (NPC 937) at map 123, (50,18) — VB6: frmMain.frm line 1157-1159
         state.ancalagon_guardians = 0;
@@ -2490,8 +2443,8 @@ pub async fn tick_ancalagon(state: &mut GameState) {
             // VB6: Npclist(IndexReyAncalagon).Char.AuraA = 3
             if let Some(npc) = state.get_npc_mut(idx) {
                 npc.aura = 3;
-                let cc = npc.build_cc_packet();
-                state.send_data(SendTarget::ToMap(123), &cc).await;
+                let cc = npc.build_cc_binary();
+                state.send_data_bytes(SendTarget::ToMap(123), &cc).await;
             }
         }
 
@@ -2510,8 +2463,8 @@ pub(super) async fn try_spawn_ancalagon_dragon(state: &mut GameState, death_x: i
     if !state.ancalagon_alive && !state.ancalagon_pre_dragon {
         if let Some(_) = state.spawn_npc(936, 123, death_x, death_y) {
             state.ancalagon_alive = true;
-            let msg = "T|¡El Ancalagon ha aparecido!~255~0~0~1~0";
-            state.send_data(SendTarget::ToAll, msg).await;
+            // System broadcast — red font (was T| with font suffix, no ° separators)
+            state.send_console_to(SendTarget::ToAll, "¡El Ancalagon ha aparecido!", font_index::ROJO).await;
         }
     }
 }
@@ -2532,7 +2485,7 @@ pub async fn tick_guerra(state: &mut GameState) {
             .unwrap_or_default().as_secs() % 2 == 0 { 1u32 } else { 2u32 };
         if location == 1 {
             // Anvilmar (map 29)
-            state.send_data(SendTarget::ToAll, "||460").await;
+            state.send_msg_id_to(SendTarget::ToAll, 460, "").await;
             state.hay_guerra_anvil = true;
             if let Some(npc_idx) = state.spawn_npc(947, 29, 78, 45) {
                 state.rey_guerra_index = npc_idx;
@@ -2540,7 +2493,7 @@ pub async fn tick_guerra(state: &mut GameState) {
             state.hay_guerra = true;
         } else {
             // Khalimdar (map 27)
-            state.send_data(SendTarget::ToAll, "||461").await;
+            state.send_msg_id_to(SendTarget::ToAll, 461, "").await;
             state.hay_guerra_khalim = true;
             if let Some(npc_idx) = state.spawn_npc(948, 27, 50, 18) {
                 state.rey_guerra_index = npc_idx;
@@ -2551,15 +2504,15 @@ pub async fn tick_guerra(state: &mut GameState) {
 
     if mins >= 122 && mins < 132 && state.hay_guerra {
         let remaining = 132 - mins;
-        state.send_data(SendTarget::ToAll, &format!("||462@{}", remaining)).await;
+        state.send_msg_id_to(SendTarget::ToAll, 462, &remaining.to_string()).await;
     }
 
     if mins == 132 && state.hay_guerra {
         // War ends — no winner
         if state.hay_guerra_khalim {
-            state.send_data(SendTarget::ToAll, "||463").await;
+            state.send_msg_id_to(SendTarget::ToAll, 463, "").await;
         } else if state.hay_guerra_anvil {
-            state.send_data(SendTarget::ToAll, "||464").await;
+            state.send_msg_id_to(SendTarget::ToAll, 464, "").await;
         }
         // Remove war king NPC
         if state.rey_guerra_index > 0 {
@@ -2635,8 +2588,8 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
 
                 // Broadcast CC
                 if let Some(npc) = state.get_npc(npc_idx) {
-                    let cc_pkt = npc.build_cc_packet();
-                    state.send_data(SendTarget::ToArea { map, x: px, y: py }, &cc_pkt).await;
+                    let cc_pkt = npc.build_cc_binary();
+                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc_pkt).await;
                 }
             }
         }
@@ -2650,9 +2603,9 @@ pub(super) async fn limpiar_clan_pretoriano(state: &mut GameState) {
     let clan_indices: Vec<usize> = state.pretoriano_clan.drain(..).collect();
     for npc_idx in clan_indices {
         if let Some(npc) = state.get_npc(npc_idx) {
-            let bp_pkt = format!("BP{}", npc.char_index.0);
+            let bp_pkt = binary_packets::write_character_remove(npc.char_index.0 as i16);
             let (map, x, y) = (npc.map, npc.x, npc.y);
-            state.send_data(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
         }
         state.kill_npc(npc_idx);
     }

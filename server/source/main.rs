@@ -171,20 +171,10 @@ async fn main() {
             }
 
             ServerEvent::PacketReceived(conn_id, data) => {
-                // Convert to string for opcode parsing (VB6 uses text-based protocol)
-                // VB6 client sends Latin-1 (Windows-1252), not UTF-8.
-                // Each byte maps directly to its Unicode code point.
-                let data_str: String = data.iter().map(|&b| b as char).collect();
-                // trim() removes whitespace; also strip trailing null bytes and control chars
-                // that may survive decryption (VB6 string handling artifacts)
-                let data_str = data_str.trim().trim_end_matches(|c: char| c.is_control());
-
-                if !data_str.is_empty() {
-                    // Debug: log packets starting with COMP or VEND
-                    if data_str.starts_with("COMP") || data_str.starts_with("VEND") {
-                        tracing::info!("[RAW-PKT] #{} '{}'", conn_id, data_str);
-                    }
-                    game::handlers::handle_packet(&mut state, conn_id, data_str).await;
+                // 13.3 binary protocol: raw bytes, no encryption.
+                // Handles multi-packet TCP reads and partial packet buffering.
+                if !data.is_empty() {
+                    game::handlers::handle_packet_stream(&mut state, conn_id, &data).await;
                 }
             }
 
@@ -205,14 +195,14 @@ async fn main() {
 
                     // VB6 CloseUser: QDL sent to entire map, BP sent to 27×27 area
                     // QDL removes dialog labels — must reach all players on the map (VB6: ToMapButIndex)
-                    let qdl_pkt = format!("QDL{}", char_index.0);
-                    state.send_data(
+                    let qdl_pkt = protocol::binary_packets::write_remove_char_dialog(char_index.0 as i16);
+                    state.send_data_bytes(
                         game::types::SendTarget::ToMapButIndex { conn_id, map },
                         &qdl_pkt,
                     ).await;
 
                     // BP (remove char) — VB6 EraseUserChar uses SendToUserArea (27×27 zone)
-                    let bp_pkt = format!("BP{}", char_index.0);
+                    let bp_pkt = protocol::binary_packets::write_character_remove(char_index.0 as i16);
                     if area_min_x > 0 || area_min_y > 0 {
                         // Use the full 27×27 area zone — matches movement broadcast range
                         let amx = area_min_x.max(1);
@@ -231,12 +221,12 @@ async fn main() {
                                 }
                             }
                             for c in &targets {
-                                state.send_to(*c, &bp_pkt).await;
+                                state.send_bytes(*c, &bp_pkt).await;
                             }
                         }
                     } else {
                         // Fallback: send to entire map (safe catch-all)
-                        state.send_data(
+                        state.send_data_bytes(
                             game::types::SendTarget::ToMapButIndex { conn_id, map },
                             &bp_pkt,
                         ).await;
@@ -328,8 +318,8 @@ async fn main() {
                 state.remove_connection(conn_id);
 
                 // VB6 MostrarNumUsers: broadcast updated online count to all remaining players
-                let on_pkt = format!("ON{}", state.num_users);
-                state.send_data(game::types::SendTarget::ToAll, &on_pkt).await;
+                let on_pkt = protocol::binary_packets::write_online_count(state.num_users as i16);
+                state.send_data_bytes(game::types::SendTarget::ToAll, &on_pkt).await;
             }
         }
             } // end tokio::select Some(event)

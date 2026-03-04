@@ -241,7 +241,7 @@ public partial class TravelPanel : Control
                 }
 
                 GD.Print($"[TRAVEL] Traveling to {Cities[idx].Command}");
-                _tcp.SendPacket($";/VIAJAR {Cities[idx].Command}");
+                _tcp.SendPacket(ClientPackets.WriteTalk($"/VIAJAR {Cities[idx].Command}"));
                 CloseTravel();
                 AcceptEvent();
                 return;

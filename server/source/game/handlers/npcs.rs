@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::game::world;
 use crate::game::npc;
-use crate::protocol::{server_opcodes, font_types};
+use crate::protocol::binary_packets;
 use crate::data::experience::MAX_LEVEL;
 use super::common::*;
 use super::{
@@ -31,7 +31,7 @@ pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: Connection
     let max_x = (x + world::MIN_X_BORDER - 1).min(world::MAP_WIDTH as i32);
 
     // Collect NPC CCs first to avoid borrow issues
-    let mut npc_ccs: Vec<String> = Vec::new();
+    let mut npc_ccs: Vec<Vec<u8>> = Vec::new();
     if let Some(grid) = state.world.grid(map) {
         for ny in min_y..=max_y {
             for nx in min_x..=max_x {
@@ -39,7 +39,7 @@ pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: Connection
                     if tile.npc_index > 0 {
                         if let Some(npc) = state.get_npc(tile.npc_index as usize) {
                             if npc.is_alive() {
-                                npc_ccs.push(npc.build_cc_packet());
+                                npc_ccs.push(npc.build_cc_binary());
                             }
                         }
                     }
@@ -48,8 +48,8 @@ pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: Connection
         }
     }
 
-    for cc in npc_ccs {
-        state.send_to(conn_id, &cc).await;
+    for cc in &npc_ccs {
+        state.send_bytes(conn_id, cc).await;
     }
 }
 
@@ -60,7 +60,7 @@ pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: Conne
     let min_x = (x - world::MIN_X_BORDER + 1).max(1);
     let max_x = (x + world::MIN_X_BORDER - 1).min(world::MAP_WIDTH as i32);
 
-    let mut ho_packets: Vec<String> = Vec::new();
+    let mut ho_packets: Vec<Vec<u8>> = Vec::new();
     if let Some(grid) = state.world.grid(map) {
         for gy in min_y..=max_y {
             for gx in min_x..=max_x {
@@ -71,7 +71,7 @@ pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: Conne
                             .map(|o| o.grh_index)
                             .unwrap_or(0);
                         if grh > 0 {
-                            ho_packets.push(format!("HO{},{},{}", grh, gx, gy));
+                            ho_packets.push(binary_packets::write_object_create(gx as u8, gy as u8, grh as i16));
                         }
                     }
                 }
@@ -80,7 +80,7 @@ pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: Conne
     }
 
     for ho in ho_packets {
-        state.send_to(conn_id, &ho).await;
+        state.send_bytes(conn_id, &ho).await;
     }
 }
 
@@ -103,7 +103,7 @@ pub(super) async fn puede_atacar_npc(
 
     // NPC must be attackable (VB6: Attackable flag in NPCs.dat)
     if !npc.attackable {
-        state.send_to(conn_id, "||140").await; // "No puedes atacar a este NPC"
+        state.send_msg_id(conn_id, 140, "").await; // "No puedes atacar a este NPC"
         return false;
     }
 
@@ -119,7 +119,7 @@ pub(super) async fn puede_atacar_npc(
 
     // VB6: Dead users can't attack
     if user.dead {
-        state.send_to(conn_id, "||3").await; // "Estas muerto"
+        state.send_msg_id(conn_id, 3, "").await; // "Estas muerto"
         return false;
     }
 
@@ -135,13 +135,13 @@ pub(super) async fn puede_atacar_npc(
 
     // VB6: Horde faction can't attack NPCs 617 and 948 (faction-aligned NPCs)
     if (npc_number == 617 || npc_number == 948) && is_horda {
-        state.send_to(conn_id, "||167").await; // "No puedes atacar a un NPC de tu facción"
+        state.send_msg_id(conn_id, 167, "").await; // "No puedes atacar a un NPC de tu facción"
         return false;
     }
 
     // VB6: Alliance faction can't attack NPCs 618 and 947
     if (npc_number == 618 || npc_number == 947) && is_alianza {
-        state.send_to(conn_id, "||167").await;
+        state.send_msg_id(conn_id, 167, "").await;
         return false;
     }
 
@@ -159,7 +159,7 @@ pub(super) async fn puede_atacar_npc(
     // VB6: King's guards protection (Map 123, NPC 937, GuardiasRey <= 3)
     // Can't attack pre-dragon while guardians are still alive
     if npc_map == 123 && npc_number == 937 && state.ancalagon_guardians < 4 {
-        state.send_to(conn_id, "||168").await;
+        state.send_msg_id(conn_id, 168, "").await;
         return false;
     }
 
@@ -167,7 +167,7 @@ pub(super) async fn puede_atacar_npc(
     if npc_type == crate::data::npcs::NpcType::CastleKing || npc_number == 615 {
         // Must be in a guild to attack castle kings
         if user_guild_index <= 0 {
-            state.send_to(conn_id, "||120").await; // "Necesitas pertenecer a un clan"
+            state.send_msg_id(conn_id, 120, "").await; // "Necesitas pertenecer a un clan"
             return false;
         }
 
@@ -175,7 +175,7 @@ pub(super) async fn puede_atacar_npc(
         // Check if this NPC's map belongs to a castle owned by the attacker's guild
         if let Some(castle_owner_guild) = state.get_castle_owner_guild(npc_map) {
             if castle_owner_guild == user_guild_index {
-                state.send_to(conn_id, "||169").await; // "No puedes atacar al rey de tu propio castillo"
+                state.send_msg_id(conn_id, 169, "").await; // "No puedes atacar al rey de tu propio castillo"
                 return false;
             }
         }
@@ -221,11 +221,12 @@ pub(super) async fn user_attack_npc(
 
     if rand_range(1, 100) > hit_prob {
         // Miss — VB6: SND_SWING to area
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW2").await;
-        state.send_to(conn_id, "U1").await;
+        let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
+        state.send_bytes(conn_id, &pkt).await;
         // VB6: floating red "¡Fallo!" above the NPC that was attacked
-        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", npc_char_index.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char_index.0 as i16, 255).await;
         return;
     }
 
@@ -282,40 +283,38 @@ pub(super) async fn user_attack_npc(
     };
 
     // Send hit feedback: U2 to attacker (you hit NPC)
-    // VB6 format: "U2" & Daño — client does Right$(rData, Len-2) to get damage string
-    let u2_pkt = format!("U2{}", damage);
-    state.send_to(conn_id, &u2_pkt).await;
+    let u2_pkt = binary_packets::write_multi_user_hit_npc(damage);
+    state.send_bytes(conn_id, &u2_pkt).await;
 
     // Critical hit notification (VB6: ||138 — "Has dado un golpe critico!")
     if is_critical {
-        state.send_to(conn_id, "||138").await;
+        state.send_msg_id(conn_id, 138, "").await;
     }
 
-    // N| visual damage packet (VB6: floating yellow damage number above NPC)
-    // Format: N|{vbColor}°-{damage}°{charindex} — ° = char 176
-    // VB6 yellow = 65535 (RGB 255,255,0)
-    let n_pipe_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, npc_char_index.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &n_pipe_pkt).await;
+    // VB6: floating yellow damage number above NPC (vbYellow=65535)
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), npc_char_index.0 as i16, 65535).await;
 
     // VB6: NPC Snd1 (attack sound) + SND_IMPACTO + Snd2 (victim hurt sound, fallback SND_IMPACTO2=12)
     let (npc_snd1, npc_snd2) = state.get_npc(npc_idx)
         .map(|n| (n.snd1, n.snd2))
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
-        let snd = format!("TW{}", npc_snd1);
-        state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+        let snd = binary_packets::write_play_wave(npc_snd1 as u8, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
     }
-    state.send_data(SendTarget::ToArea { map, x, y }, "TW10").await;
+    let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
     if npc_snd2 > 0 {
-        let snd = format!("TW{}", npc_snd2);
-        state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+        let snd = binary_packets::write_play_wave(npc_snd2 as u8, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
     } else {
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW12").await;
+        let snd = binary_packets::write_play_wave(12, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
     }
 
     // Blood FX on NPC
-    let fx_pkt = format!("CFX{},{},{}", npc_char_index.0, 14, 0); // VB6: FXSANGRE = 14
-    state.send_data(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+    let fx_pkt = binary_packets::write_create_fx(npc_char_index.0 as i16, 14, 0); // VB6: FXSANGRE = 14
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
     // Per-hit EXP (VB6: CalcularDarExp — gives proportional exp on EVERY hit, not just on death)
     if npc_give_exp > 0 && npc_max_hp > 0 {
@@ -337,8 +336,8 @@ pub(super) async fn user_attack_npc(
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.exp += exp_award;
             }
-            // Send ||170@{exp} notification (VB6: "Has ganado %1 puntos de experiencia")
-            state.send_to(conn_id, &format!("||170@{}", exp_award)).await;
+            // Send msg 170 notification (VB6: "Has ganado %1 puntos de experiencia")
+            state.send_msg_id(conn_id, 170, &exp_award.to_string()).await;
             send_stats_exp(state, conn_id).await;
             check_user_level(state, conn_id).await;
         }
@@ -376,19 +375,18 @@ pub(super) async fn npc_die(
 
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
-        let snd_pkt = format!("TW{}", snd3);
-        state.send_data(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+        let snd_pkt = binary_packets::write_play_wave(snd3 as u8, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
     }
 
-    // 2) Send ||50 to killer (NPC death notification — client plays sound/animation)
-    state.send_to(killer_id, "||50").await;
+    // 2) Send msg 50 to killer (NPC death notification — client plays sound/animation)
+    state.send_msg_id(killer_id, 50, "").await;
 
     // 3) War king death check (VB6: NPC is rey de guerra)
     if state.hay_guerra && npc_idx == state.rey_guerra_index {
         // Faction wins — broadcast, award gold + faction points
         let killer_name = state.users.get(&killer_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        let msg = format!("||{}@{} ha matado al rey de la guerra!", 53, killer_name);
-        state.send_data(SendTarget::ToAll, &msg).await;
+        state.send_msg_id_to(SendTarget::ToAll, 53, &format!("{} ha matado al rey de la guerra!", killer_name)).await;
 
         if let Some(user) = state.users.get_mut(&killer_id) {
             user.gold += 1_000_000;
@@ -407,7 +405,7 @@ pub(super) async fn npc_die(
         936 => {
             // Dragon killed — broadcast ||54, award points, reset all state
             // VB6: ReyON = 0, IndexReyAncalagon = 0, GuardiasRey = 0
-            state.send_data(SendTarget::ToAll, "||54").await;
+            state.send_msg_id_to(SendTarget::ToAll, 54, "").await;
             state.ancalagon_alive = false;
             state.ancalagon_pre_dragon_idx = 0;
             state.ancalagon_guardians = 0;
@@ -435,13 +433,13 @@ pub(super) async fn npc_die(
             }
             // When all 4 guards dead: broadcast ||699 + remove aura from pre-dragon
             if state.ancalagon_guardians == 4 {
-                state.send_data(SendTarget::ToArea { map, x, y }, "||699").await;
+                state.send_msg_id_to(SendTarget::ToArea { map, x, y }, 699, "").await;
                 // VB6: Npclist(IndexReyAncalagon).Char.AuraA = 0 + MakeNPCChar
                 let pre_idx = state.ancalagon_pre_dragon_idx;
                 if let Some(npc) = state.get_npc_mut(pre_idx) {
                     npc.aura = 0;
-                    let cc = npc.build_cc_packet();
-                    state.send_data(SendTarget::ToMap(123), &cc).await;
+                    let cc = npc.build_cc_binary();
+                    state.send_data_bytes(SendTarget::ToMap(123), &cc).await;
                 }
             }
         }
@@ -479,8 +477,8 @@ pub(super) async fn npc_die(
                     }
                     let grh = state.get_object(*obj_id).map(|o| o.grh_index).unwrap_or(0);
                     if grh > 0 {
-                        let ho = format!("HO{},{},{}", grh, drop_x, drop_y);
-                        state.send_data(SendTarget::ToArea { map, x, y }, &ho).await;
+                        let ho = binary_packets::write_object_create(drop_x as u8, drop_y as u8, grh as i16);
+                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho).await;
                     }
                     clean_world_add_item(state, map, drop_x, drop_y, 10, *obj_id);
                 }
@@ -489,8 +487,8 @@ pub(super) async fn npc_die(
     }
 
     // 7) Remove NPC character from area (BP packet)
-    let bp_pkt = format!("BP{}", char_index.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+    let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
 
     // Kill NPC (remove from grid, mark inactive)
     state.kill_npc(npc_idx);
@@ -544,7 +542,7 @@ pub(super) async fn npc_die(
     // 12) Notify killer (VB6: ||50 + ||56@gold)
     // Note: ||50 already sent at step 2. ||170 exp is now per-hit (CalcularDarExp).
     if gold_award > 0 {
-        state.send_to(killer_id, &format!("||56@{}", gold_award)).await; // TEXTO56: La criatura ha dejado %1 monedas
+        state.send_msg_id(killer_id, 56, &gold_award.to_string()).await; // TEXTO56: La criatura ha dejado %1 monedas
     }
 
     // Quest kill tracking (VB6 RestarNPC)
@@ -632,8 +630,8 @@ pub(super) async fn npc_drop_items(
             // Get GRH for the object
             let grh = state.get_object(obj_index).map(|o| o.grh_index).unwrap_or(0);
             if grh > 0 {
-                let ho_pkt = format!("HO{},{},{}", grh, drop_x, drop_y);
-                state.send_data(SendTarget::ToArea { map, x: npc_x, y: npc_y }, &ho_pkt).await;
+                let ho_pkt = binary_packets::write_object_create(drop_x as u8, drop_y as u8, grh as i16);
+                state.send_data_bytes(SendTarget::ToArea { map, x: npc_x, y: npc_y }, &ho_pkt).await;
             }
 
             // Track for world cleanup
@@ -668,8 +666,11 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
             npc.heading = new_heading;
         }
         // Send CP packet to area (VB6: ChangeNPCChar sends CP<charindex>,<body>,<head>,<heading>)
-        let cp_pkt = format!("CP{},{},{},{}", npc_char_index.0, npc_body, npc_head, new_heading);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &cp_pkt).await;
+        let cp_pkt = binary_packets::write_character_change(
+            npc_char_index.0 as i16, npc_body as i16, npc_head as i16,
+            new_heading as u8, 0, 0, 0, 0, 0,
+        );
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &cp_pkt).await;
     }
 
     let user_data = match state.users.get(&target_conn) {
@@ -690,11 +691,12 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
 
     if rand_range(1, 100) > hit_prob {
         // Miss — VB6: SND_SWING to area + N1
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW2").await;
-        state.send_to(target_conn, "N1").await;
+        let snd = binary_packets::write_play_wave(2, nx as u8, ny as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCSwing);
+        state.send_bytes(target_conn, &pkt).await;
         // VB6: floating red "¡Fallo!" above user (N| vbRed°¡Fallo!°charIndex)
-        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", u_char_index.0);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &miss_pkt).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, "\u{00A1}Fallo!", u_char_index.0 as i16, 255).await;
         return;
     }
 
@@ -708,33 +710,34 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     if let Some(user) = state.users.get_mut(&target_conn) {
         user.min_hp -= damage;
     }
-    let n2_pkt = format!("N2{},{}", body_part, damage);
-    state.send_to(target_conn, &n2_pkt).await;
+    let n2_pkt = binary_packets::write_multi_npc_hit_user(body_part as u8, damage as i16);
+    state.send_bytes(target_conn, &n2_pkt).await;
 
     // VB6: floating yellow damage number above user (N| vbYellow°-<damage>°charIndex)
-    let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, u_char_index.0);
-    state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &dmg_pkt).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("-{}", damage), u_char_index.0 as i16, 65535).await;
 
     // Blood FX on player (VB6: FXSANGRE = 14)
-    let fx_pkt = format!("CFX{},{},{}", u_char_index.0, 14, 0);
-    state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &fx_pkt).await;
+    let fx_pkt = binary_packets::write_create_fx(u_char_index.0 as i16, 14, 0);
+    state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &fx_pkt).await;
 
     // VB6: NPC attack sound (Snd1) + victim hit sound (Snd2 or SND_IMPACTO2=12)
     let (npc_snd1, npc_snd2) = state.get_npc(npc_idx)
         .map(|n| (n.snd1, n.snd2))
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
-        let snd = format!("TW{}", npc_snd1);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        let snd = binary_packets::write_play_wave(npc_snd1 as u8, nx as u8, ny as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
     }
     // SND_IMPACTO to area on hit
-    state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW10").await;
+    let snd = binary_packets::write_play_wave(10, nx as u8, ny as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
     // Victim sound: Snd2 if defined, else SND_IMPACTO2 (12)
     if npc_snd2 > 0 {
-        let snd = format!("TW{}", npc_snd2);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        let snd = binary_packets::write_play_wave(npc_snd2 as u8, nx as u8, ny as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
     } else {
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, "TW12").await;
+        let snd = binary_packets::write_play_wave(12, nx as u8, ny as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
     }
 
     // NPC poison on hit (VB6: If Npclist(NpcIndex).Veneno = 1 Then NpcEnvenenarUser)
@@ -746,8 +749,7 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
                 user.poisoned = true;
                 user.counter_poison = 0;
             }
-            let msg = format!("{}||171@{}", server_opcodes::CONSOLE_MSG, npc_name);
-            state.send_to(target_conn, &msg).await;
+            state.send_msg_id(target_conn, 171, &npc_name).await;
         }
     }
 
@@ -784,19 +786,19 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
 
     // Magic words broadcast (spell name)
     if !spell.palabras_magicas.is_empty() {
-        let talk = format!(";{} dice: {}~255~0~0", npc_name, spell.palabras_magicas);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &talk).await;
+        let msg = format!("{} dice: {}", npc_name, spell.palabras_magicas);
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &msg, npc_char.0 as i16, 16711680).await; // vbRed
     }
 
     // FX on target
     let target_ci = state.users.get(&target_conn).map(|u| u.char_index.0).unwrap_or(0);
     if spell.fx_grh > 0 {
-        let fx = format!("CFX{},{},{}", target_ci, spell.fx_grh, spell.loops);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &fx).await;
+        let fx = binary_packets::write_create_fx(target_ci as i16, spell.fx_grh as i16, spell.loops as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &fx).await;
     }
     if spell.wav > 0 {
-        let snd = format!("TW{}", spell.wav);
-        state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        let snd = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
     }
 
     // Spell effect
@@ -822,9 +824,8 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
                 user.min_hp -= damage;
             }
 
-            // Send damage console message (VB6: ||830@NpcName@Damage)
-            let pkt = format!("||830@{}@{}", npc_name, damage);
-            state.send_to(target_conn, &pkt).await;
+            // Send damage console message (VB6: msg 830 — NpcName@Damage)
+            state.send_msg_id(target_conn, 830, &format!("{}@{}", npc_name, damage)).await;
             send_stats_hp(state, target_conn).await;
 
             // Check death
@@ -843,8 +844,8 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
             user.counter_paralisis = state.config.intervalo_paralizado;
         }
         let duration_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i32;
-        let pkt = format!("PARADOK{}", duration_secs);
-        state.send_to(target_conn, &pkt).await;
+        let pkt = binary_packets::write_paralize_ok();
+        state.send_bytes(target_conn, &pkt).await;
     }
 }
 

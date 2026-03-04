@@ -412,7 +412,7 @@ public partial class VaultPanel : Control
         if (qty > item.Amount) qty = item.Amount;
 
         // VB6: SendData("RETI," & slot & "," & cantidad)
-        _tcp.SendPacket($"RETI,{item.Slot},{qty}");
+        _tcp.SendPacket(ClientPackets.WriteBankWithdraw((byte)item.Slot, (short)qty));
     }
 
     private void OnDepositarPressed()
@@ -439,7 +439,7 @@ public partial class VaultPanel : Control
         if (qty > inv.Amount) qty = inv.Amount;
 
         // VB6: SendData("DEPO," & (slot+1) & "," & cantidad)
-        _tcp.SendPacket($"DEPO,{slotIdx + 1},{qty}");
+        _tcp.SendPacket(ClientPackets.WriteBankDeposit((byte)(slotIdx + 1), (short)qty));
     }
 
     private void OnRetirarOroPressed()
@@ -455,7 +455,7 @@ public partial class VaultPanel : Control
     private void OnSalirPressed()
     {
         // VB6: SendData("FINBAN") then Unload Me
-        _tcp?.SendPacket("FINBAN");
+        _tcp?.SendPacket(ClientPackets.WriteBankClose());
     }
 
     private int GetQuantity()
@@ -536,11 +536,11 @@ public partial class VaultPanel : Control
         {
             // VB6: SendData("CCDO" & cantidad) — but this is guild bank
             // Personal bank uses /DEPOSITAR via chat command
-            _tcp.SendPacket($"/DEPOSITAR {amount}");
+            _tcp.SendPacket(ClientPackets.WriteTalk($"/DEPOSITAR {amount}"));
         }
         else
         {
-            _tcp.SendPacket($"/RETIRAR {amount}");
+            _tcp.SendPacket(ClientPackets.WriteTalk($"/RETIRAR {amount}"));
         }
 
         HideGoldInputDialog();

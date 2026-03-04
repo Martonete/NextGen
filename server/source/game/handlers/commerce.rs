@@ -3,9 +3,9 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_BANK_SLOTS};
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
-use crate::data::objects::{ObjData, ObjType};
+use crate::game::types::{GameState, InventorySlot, MAX_BANK_SLOTS};
+use crate::protocol::{fields::read_field, binary_packets};
+use crate::data::objects::ObjType;
 use super::common::*;
 use super::{send_inventory_slot, send_full_inventory};
 
@@ -18,8 +18,8 @@ pub(super) async fn iniciar_comercio_npc(state: &mut GameState, conn_id: Connect
     // Check user not dead
     if let Some(u) = state.users.get(&conn_id) {
         if u.dead {
-            let msg = "||3".to_string(); // TEXTO3: Estás muerto
-            state.send_to(conn_id, &msg).await;
+            let pkt = binary_packets::write_console_msg_id(3, ""); // TEXTO3: Estás muerto
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
         if u.comerciando {
@@ -40,7 +40,8 @@ pub(super) async fn iniciar_comercio_npc(state: &mut GameState, conn_id: Connect
     }
 
     // Send INITCOM
-    state.send_to(conn_id, server_opcodes::INIT_COMMERCE).await;
+    let pkt = binary_packets::write_commerce_init();
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// Send NPC inventory to client (VB6: EnviarNpcInv).
@@ -64,8 +65,9 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
     let inflacion = state.get_npc(npc_idx).map(|n| n.inflacion).unwrap_or(0);
 
     if slot == 0 {
-        // Full inventory send
-        state.send_to(conn_id, server_opcodes::NPC_INV_RESET).await;
+        // Full inventory send — reset then send each non-empty slot
+        let pkt = binary_packets::write_npc_inv_reset();
+        state.send_bytes(conn_id, &pkt).await;
 
         for (obj_index, amount, idx) in &npc_data {
             if *obj_index <= 0 { continue; }
@@ -77,15 +79,19 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
             let infla = (inflacion as i64 * obj.valor as i64) / 100;
             let price = ((obj.valor as i64 + infla) as f64 / descuento) as i64;
 
-            let pkt = format!(
-                "{}{},{},{},{},{},{},{},{},{},{}",
-                server_opcodes::NPC_INV_ITEM,
-                obj.name, amount, price, obj.grh_index,
-                obj_index, obj.obj_type as i32,
-                obj.max_hit, obj.min_hit, obj.max_def,
-                idx + 1 // 1-based slot for client
+            let pkt = binary_packets::write_change_npc_inv_slot(
+                (*idx + 1) as u8, // 1-based slot for client
+                &obj.name,
+                *amount as i16,
+                price as f32,
+                obj.grh_index as i16,
+                *obj_index as i16,
+                obj.obj_type as u8,
+                obj.max_hit as i16,
+                obj.min_hit as i16,
+                obj.max_def as i16,
             );
-            state.send_to(conn_id, &pkt).await;
+            state.send_bytes(conn_id, &pkt).await;
         }
     } else {
         // Single slot update
@@ -94,9 +100,11 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
         let (obj_index, amount, _) = npc_data[idx];
 
         if obj_index <= 0 {
-            // Empty slot
-            let pkt = format!("{}{},(Nada),0,0,0,0,0,0,0,0,{}", server_opcodes::NPC_INV_SLOT, slot, slot);
-            state.send_to(conn_id, &pkt).await;
+            // Empty slot — send zeroed data
+            let pkt = binary_packets::write_change_npc_inv_slot(
+                slot as u8, "(Nada)", 0, 0.0, 0, 0, 0, 0, 0, 0,
+            );
+            state.send_bytes(conn_id, &pkt).await;
         } else {
             let obj = match state.get_object(obj_index) {
                 Some(o) => o.clone(),
@@ -105,15 +113,19 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
             let infla = (inflacion as i64 * obj.valor as i64) / 100;
             let price = ((obj.valor as i64 + infla) as f64 / descuento) as i64;
 
-            let pkt = format!(
-                "{}{},{},{},{},{},{},{},{},{},{},{}",
-                server_opcodes::NPC_INV_SLOT,
-                slot, obj.name, amount, price, obj.grh_index,
-                obj_index, obj.obj_type as i32,
-                obj.max_hit, obj.min_hit, obj.max_def,
-                slot
+            let pkt = binary_packets::write_change_npc_inv_slot(
+                slot as u8,
+                &obj.name,
+                amount as i16,
+                price as f32,
+                obj.grh_index as i16,
+                obj_index as i16,
+                obj.obj_type as u8,
+                obj.max_hit as i16,
+                obj.min_hit as i16,
+                obj.max_def as i16,
             );
-            state.send_to(conn_id, &pkt).await;
+            state.send_bytes(conn_id, &pkt).await;
         }
     }
 }
@@ -146,8 +158,8 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
     info!("[COMP] #{} state: dead={} comerciando={} target_npc={} gold={}", conn_id, dead, comerciando, target_npc, user_gold);
 
     if dead {
-        let msg = "||3".to_string(); // TEXTO3: Estás muerto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(3, ""); // TEXTO3: Estás muerto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
     if !comerciando || target_npc == 0 {
@@ -191,8 +203,8 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
 
     // Check gold
     if user_gold < total_price {
-        let msg = "||663".to_string(); // TEXTO663: No tenes suficiente dinero
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(663, ""); // TEXTO663: No tenes suficiente dinero
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -221,8 +233,8 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
     let user_slot = match user_inv_slot {
         Some(s) => s,
         None => {
-            let msg = "||108".to_string(); // TEXTO108: No podes cargar mas objetos
-            state.send_to(conn_id, &msg).await;
+            let pkt = binary_packets::write_console_msg_id(108, ""); // TEXTO108: No podes cargar mas objetos
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
     };
@@ -264,8 +276,8 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
     // After restock: send full NPC inventory (slot=0). Otherwise just the changed slot.
     enviar_npc_inv(state, conn_id, target_npc, if restocked { 0 } else { slot }).await;
 
-    let pkt = format!("{}{},{}", server_opcodes::TRANS_OK, slot, 0);
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_trans_ok(slot as u8, 0); // 0 = buy
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// VEND — User sells to NPC (VB6: NPCCompraItem / NpcCompraObj).
@@ -287,8 +299,8 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
     };
 
     if dead {
-        let msg = "||3".to_string(); // TEXTO3: Estás muerto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(3, ""); // TEXTO3: Estás muerto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
     if !comerciando || target_npc == 0 { return; }
@@ -312,8 +324,8 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
 
     if obj_index <= 0 || user_amount <= 0 { return; }
     if equipped {
-        let msg = "||185".to_string(); // TEXTO185: No podes depositar este objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(185, ""); // TEXTO185: No podes depositar este objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -325,24 +337,24 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
 
     // Reject conditions (VB6: NpcCompraObj)
     if obj.newbie {
-        let msg = "||660".to_string(); // TEXTO660: No comercio objetos para newbies
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(660, ""); // TEXTO660: No comercio objetos para newbies
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
     if obj_index == GOLD_OBJ_INDEX {
-        let msg = "||661".to_string(); // TEXTO661: El npc no esta interesado en comprar ese objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(661, ""); // TEXTO661: El npc no esta interesado en comprar ese objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
     if obj.obj_type == ObjType::Key {
-        let msg = "||661".to_string(); // TEXTO661: El npc no esta interesado en comprar ese objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(661, ""); // TEXTO661: El npc no esta interesado en comprar ese objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
     // TipoItems filter: 0 = buys anything, otherwise must match
     if npc_tipo_items != 0 && npc_tipo_items != obj.obj_type as i32 {
-        let msg = "||661".to_string(); // TEXTO661: El npc no esta interesado en comprar ese objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(661, ""); // TEXTO661: El npc no esta interesado en comprar ese objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -407,8 +419,8 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
         enviar_npc_inv(state, conn_id, target_npc, npc_slot_idx + 1).await;
     }
 
-    let pkt = format!("{}{},{}", server_opcodes::TRANS_OK, slot, 1);
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_trans_ok(slot as u8, 1); // 1 = sell
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// FINCOM — Close commerce window.
@@ -416,7 +428,8 @@ pub(super) async fn handle_commerce_close(state: &mut GameState, conn_id: Connec
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.comerciando = false;
     }
-    state.send_to(conn_id, server_opcodes::COMMERCE_CLOSE_OK).await;
+    let pkt = binary_packets::write_commerce_end();
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// Reload NPC inventory from game data (VB6: CargarInvent).
@@ -484,9 +497,13 @@ pub(super) async fn iniciar_comercio_usuario(state: &mut GameState, conn_id: Con
         u.trade_items.clear();
     }
 
-    // Send trade init to both
-    state.send_to(conn_id, server_opcodes::TRADE_INIT).await;
-    state.send_to(target_conn, server_opcodes::TRADE_INIT).await;
+    // Send trade init to both — use user_commerce_init with partner name
+    let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+    let user_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let pkt1 = binary_packets::write_user_commerce_init(&target_name);
+    state.send_bytes(conn_id, &pkt1).await;
+    let pkt2 = binary_packets::write_user_commerce_init(&user_name);
+    state.send_bytes(target_conn, &pkt2).await;
 }
 
 /// UOR — Offer gold in trade.
@@ -521,8 +538,8 @@ pub(super) async fn handle_trade_offer_gold(state: &mut GameState, conn_id: Conn
     }
 
     // Notify partner
-    let pkt = format!("{}{}", server_opcodes::TRADE_OFFER_RECV, gold);
-    state.send_to(partner, &pkt).await;
+    let pkt = binary_packets::write_trade_offer_recv(gold as i32);
+    state.send_bytes(partner, &pkt).await;
 }
 
 /// UOC — Offer items in trade.
@@ -563,8 +580,8 @@ pub(super) async fn handle_trade_offer_item(state: &mut GameState, conn_id: Conn
         o.obj_type == ObjType::Key || o.intransferible || o.item_dios
     }).unwrap_or(false);
     if blocked {
-        let msg = "||223".to_string(); // TEXTO223: No puedes transferir este objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(223, ""); // TEXTO223: No puedes transferir este objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -586,8 +603,8 @@ pub(super) async fn handle_trade_offer_item(state: &mut GameState, conn_id: Conn
 
     // Send item info to partner
     let obj_name = state.get_object(obj_index).map(|o| o.name.clone()).unwrap_or_default();
-    let pkt = format!("{}{}-{}-{}", server_opcodes::TRADE_ITEMS, obj_index, cantidad, obj_name);
-    state.send_to(partner, &pkt).await;
+    let pkt = binary_packets::write_trade_items(obj_index as i16, cantidad as i16, &obj_name);
+    state.send_bytes(partner, &pkt).await;
 }
 
 /// TDR — Trade response (0=accept, 1=reject).
@@ -675,8 +692,9 @@ pub(super) async fn execute_trade(state: &mut GameState, user1: ConnectionId, us
     }
 
     // Send updates
-    state.send_to(user1, server_opcodes::TRADE_OK).await;
-    state.send_to(user2, server_opcodes::TRADE_OK).await;
+    let pkt = binary_packets::write_trade_ok();
+    state.send_bytes(user1, &pkt).await;
+    state.send_bytes(user2, &pkt).await;
     send_stats_gold(state, user1).await;
     send_stats_gold(state, user2).await;
     send_full_inventory(state, user1).await;
@@ -685,6 +703,7 @@ pub(super) async fn execute_trade(state: &mut GameState, user1: ConnectionId, us
 
 /// Cancel trade between two users.
 pub(super) async fn cancel_trade(state: &mut GameState, user1: ConnectionId, user2: ConnectionId) {
+    let pkt = binary_packets::write_user_commerce_end();
     for uid in &[user1, user2] {
         if let Some(u) = state.users.get_mut(uid) {
             u.trading = false;
@@ -694,7 +713,7 @@ pub(super) async fn cancel_trade(state: &mut GameState, user1: ConnectionId, use
             u.trade_gold = 0;
             u.trade_items.clear();
         }
-        state.send_to(*uid, server_opcodes::TRADE_CANCEL_OK).await;
+        state.send_bytes(*uid, &pkt).await;
     }
 }
 
@@ -718,8 +737,9 @@ pub(super) async fn handle_trade_chat(state: &mut GameState, conn_id: Connection
     };
     if let Some(p) = partner {
         let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        let pkt = format!("{}{}: {}", server_opcodes::TRADE_CHAT_MSG, name, payload);
-        state.send_to(p, &pkt).await;
+        let msg = format!("{}: {}", name, payload);
+        let pkt = binary_packets::write_commerce_chat(&msg);
+        state.send_bytes(p, &pkt).await;
     }
 }
 
@@ -734,13 +754,13 @@ const MAX_BANK_STACK: i32 = 999;
 pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         if u.dead {
-            let msg = "||3".to_string(); // TEXTO3: Estás muerto
-            state.send_to(conn_id, &msg).await;
+            let pkt = binary_packets::write_console_msg_id(3, ""); // TEXTO3: Estás muerto
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
     }
 
-    // VB6 IniciarDeposito: UpdateBanUserInv(True) → SBR + SBO items, SendUserGLD, INITBANCO, Comerciando=True
+    // VB6 IniciarDeposito: UpdateBanUserInv(True) → bank slots, SendUserGLD, INITBANCO, Comerciando=True
     enviar_banco_inv(state, conn_id).await;
 
     // Send user gold
@@ -748,34 +768,36 @@ pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) 
 
     // Send bank gold (VB6: SendBankGold in IniciarDeposito)
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
-    state.send_to(conn_id, &format!("[BG{}", bank_gold)).await;
+    let pkt = binary_packets::write_update_bank_gold(bank_gold as i32);
+    state.send_bytes(conn_id, &pkt).await;
 
     // Set comerciando flag (VB6 sets this)
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.comerciando = true;
     }
 
-    // Send init bank packet
-    state.send_to(conn_id, server_opcodes::INIT_BANK).await;
+    // Send init bank packet (includes bank gold for client init)
+    let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
+    let pkt = binary_packets::write_bank_init(bank_gold as i32);
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// Send all bank slots to client (VB6: UpdateBanUserInv with UpdateAll=True).
 /// VB6 sends SBR first to reset, then SBO for each non-empty slot.
 /// SBO format: SBO<slot>,<obj_index>,<name>,<amount>,<grh>,<type>,<max_hit>,<min_hit>,<max_def>
 pub(super) async fn enviar_banco_inv(state: &mut GameState, conn_id: ConnectionId) {
-    // MAX_BANK_SLOTS imported from crate::game::types at top
-
-    // Send SBR to reset bank inventory on client
-    state.send_to(conn_id, "SBR").await;
-
+    // Send all bank slots via binary ChangeBankSlot packets.
+    // Empty slots get zeroed data; non-empty slots get full object info.
     for idx in 0..MAX_BANK_SLOTS {
+        let slot_num = (idx + 1) as u8;
+
         let slot_data = match state.users.get(&conn_id) {
             Some(u) if idx < u.bank.len() => {
                 let s = &u.bank[idx];
                 if s.obj_index > 0 {
                     state.get_object(s.obj_index).map(|o| {
-                        (s.obj_index, o.name.clone(), s.amount, o.grh_index, o.obj_type as i32,
-                         o.max_hit, o.min_hit, o.max_def)
+                        (s.obj_index, o.name.clone(), s.amount, o.grh_index, o.obj_type as u8,
+                         o.max_hit, o.min_hit, o.max_def, o.valor)
                     })
                 } else {
                     None
@@ -784,14 +806,19 @@ pub(super) async fn enviar_banco_inv(state: &mut GameState, conn_id: ConnectionI
             _ => None,
         };
 
-        // VB6 only sends SBO for non-empty slots
-        if let Some((obj_idx, name, amount, grh, obj_type, max_hit, min_hit, max_def)) = slot_data {
-            let slot_num = idx + 1;
-            // VB6 format: SBO<slot>,<obj_index>,<name>,<amount>,<grh>,<type>,<max_hit>,<min_hit>,<max_def>
-            let pkt = format!("{}{},{},{},{},{},{},{},{},{}",
-                server_opcodes::BANK_SLOT,
-                slot_num, obj_idx, name, amount, grh, obj_type, max_hit, min_hit, max_def);
-            state.send_to(conn_id, &pkt).await;
+        if let Some((obj_idx, name, amount, grh, obj_type, max_hit, min_hit, max_def, valor)) = slot_data {
+            let pkt = binary_packets::write_change_bank_slot(
+                slot_num, obj_idx as i16, &name, amount as i16,
+                false, grh as i16, obj_type,
+                max_hit as i16, min_hit as i16, max_def as i16, (valor / 3) as f32,
+            );
+            state.send_bytes(conn_id, &pkt).await;
+        } else {
+            // Empty slot
+            let pkt = binary_packets::write_change_bank_slot(
+                slot_num, 0, "", 0, false, 0, 0, 0, 0, 0, 0.0,
+            );
+            state.send_bytes(conn_id, &pkt).await;
         }
     }
 }
@@ -824,16 +851,16 @@ pub(super) async fn handle_bank_deposit(state: &mut GameState, conn_id: Connecti
 
     if obj_index <= 0 || user_amount <= 0 { return; }
     if equipped {
-        let msg = "||185".to_string(); // TEXTO185: No podes depositar este objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(185, ""); // TEXTO185: No podes depositar este objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
     // Check not intransferible
     let intransferible = state.get_object(obj_index).map(|o| o.intransferible).unwrap_or(false);
     if intransferible {
-        let msg = "||223".to_string(); // TEXTO223: No puedes transferir este objeto
-        state.send_to(conn_id, &msg).await;
+        let pkt = binary_packets::write_console_msg_id(223, ""); // TEXTO223: No puedes transferir este objeto
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -862,8 +889,8 @@ pub(super) async fn handle_bank_deposit(state: &mut GameState, conn_id: Connecti
     let bank_idx = match bank_slot {
         Some(i) => i,
         None => {
-            let msg = "||186".to_string(); // TEXTO186: No tienes mas espacio en el banco
-            state.send_to(conn_id, &msg).await;
+            let pkt = binary_packets::write_console_msg_id(186, ""); // TEXTO186: No tienes mas espacio en el banco
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
     };
@@ -890,9 +917,9 @@ pub(super) async fn handle_bank_deposit(state: &mut GameState, conn_id: Connecti
     // Send updates (VB6: UpdateBanUserInv(True) + UpdateVentanaBanco)
     send_inventory_slot(state, conn_id, slot_idx).await;
     enviar_banco_inv(state, conn_id).await;
-    // VB6: BANCOOK<slot>,1 (1 = deposit from user inv)
-    let pkt = format!("BANCOOK{},1", slot);
-    state.send_to(conn_id, &pkt).await;
+    // Bank operation confirmation
+    let pkt = binary_packets::write_bank_ok();
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// RETI,<slot>,<cantidad> — Withdraw item from bank.
@@ -928,8 +955,8 @@ pub(super) async fn handle_bank_withdraw(state: &mut GameState, conn_id: Connect
     let inv_idx = match inv_slot {
         Some(i) => i,
         None => {
-            let msg = "||108".to_string(); // TEXTO108: No podes cargar mas objetos
-            state.send_to(conn_id, &msg).await;
+            let pkt = binary_packets::write_console_msg_id(108, ""); // TEXTO108: No podes cargar mas objetos
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
     };
@@ -952,9 +979,9 @@ pub(super) async fn handle_bank_withdraw(state: &mut GameState, conn_id: Connect
     send_inventory_slot(state, conn_id, inv_idx).await;
     send_stats_gold(state, conn_id).await;
     enviar_banco_inv(state, conn_id).await;
-    // VB6: BANCOOK<slot>,0 (0 = withdraw from bank)
-    let pkt = format!("BANCOOK{},0", slot);
-    state.send_to(conn_id, &pkt).await;
+    // Bank operation confirmation
+    let pkt = binary_packets::write_bank_ok();
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// FINBAN — Close bank/commerce window.
@@ -964,6 +991,7 @@ pub(super) async fn handle_bank_close(state: &mut GameState, conn_id: Connection
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.comerciando = false;
     }
-    state.send_to(conn_id, server_opcodes::BANK_CLOSE_OK).await;
+    let pkt = binary_packets::write_bank_end();
+    state.send_bytes(conn_id, &pkt).await;
 }
 

@@ -5,7 +5,7 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::game::world;
-use crate::protocol::{server_opcodes, font_types};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use super::common::*;
 use super::{
@@ -56,9 +56,9 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             let stayed = check_permanecer_oculto(user);
             if !stayed {
                 // Revealed — broadcast NOVER
-                let nover = format!("NOVER{},0", char_index.0);
-                state.send_data(SendTarget::ToMap(map), &nover).await;
-                state.send_to(conn_id, "||195").await; // "Has sido descubierto."
+                let pkt = binary_packets::write_set_invisible(char_index.0 as i16, false);
+                state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
+                state.send_msg_id(conn_id, 195, "").await; // Has sido descubierto
             }
         }
     }
@@ -79,8 +79,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         .and_then(|t| t.user_conn);
 
     // Play attack sound/animation to area
-    let swing_pkt = format!("TW{}", 2); // Generic attack sound
-    state.send_data(
+    let swing_pkt = binary_packets::write_play_wave(2, x as u8, y as u8);
+    state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
         &swing_pkt,
     ).await;
@@ -88,20 +88,20 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
     if let Some(victim_id) = target_conn {
         // PvP attack
         if safe_on {
-            state.send_to(conn_id, "||207").await; // TEXTO207: Escribe /SEG para quitar el seguro
+            state.send_msg_id(conn_id, 207, "").await; // Escribe /SEG para quitar el seguro
             return;
         }
 
         // VB6: Safe zone check (trigger=4) — no combat allowed
         let attacker_trigger = get_map_tile_trigger(state, map, x, y);
         if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_to(conn_id, "||163").await; // TEXTO163: zona segura
+            state.send_msg_id(conn_id, 163, "").await; // zona segura
             return;
         }
         let victim_pos = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
         let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
         if victim_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_to(conn_id, "||163").await; // TEXTO163: zona segura
+            state.send_msg_id(conn_id, 163, "").await; // zona segura
             return;
         }
 
@@ -121,11 +121,11 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
              v_max_hp, v_min_hp, v_class, v_heading, v_char_index) = victim_data;
 
         if v_dead {
-            state.send_to(conn_id, "||154").await; // Target is dead
+            state.send_msg_id(conn_id, 154, "").await; // Target is dead
             return;
         }
         if v_privs > 0 {
-            state.send_to(conn_id, "||155").await; // Can't attack GMs
+            state.send_msg_id(conn_id, 155, "").await; // Can't attack GMs
             return;
         }
 
@@ -143,13 +143,14 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         if !hit {
             // Miss — VB6: SND_SWING to area
-            state.send_data(SendTarget::ToArea { map, x, y }, "TW2").await;
-            let pkt = format!("U3{}", attacker_name);
-            state.send_to(victim_id, &pkt).await;
-            state.send_to(conn_id, "U1").await;
+            let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+            let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
+            state.send_bytes(victim_id, &pkt).await;
+            let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
+            state.send_bytes(conn_id, &pkt).await;
             // VB6: floating red "¡Fallo!" above victim (N| vbRed°¡Fallo!°charIndex)
-            let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", v_char_index.0);
-            state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
+            state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255).await;
             return;
         }
 
@@ -200,10 +201,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         if apunalar_skill > 0 && heading == v_heading {
             if let Some(stab_dmg) = calc_apunalar_damage(apunalar_skill, &class, heading, v_heading, damage, false) {
                 damage = stab_dmg;
-                let msg = format!("||821@{}@{}", victim_name, damage);
-                state.send_to(conn_id, &msg).await;
-                let msg2 = format!("||823@{}@{}", attacker_name, damage);
-                state.send_to(victim_id, &msg2).await;
+                state.send_msg_id(conn_id, 821, &format!("{}@{}", victim_name, damage)).await;
+                state.send_msg_id(victim_id, 823, &format!("{}@{}", attacker_name, damage)).await;
                 // Skill gain for apuñalar
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     try_level_skill(u, 8);
@@ -217,17 +216,17 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         // VB6: SND_IMPACTO to area on hit
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW10").await;
+        let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
 
-        let n4_pkt = format!("N4{},{},{}", body_part, damage, attacker_name);
-        state.send_to(victim_id, &n4_pkt).await;
+        let n4_pkt = binary_packets::write_multi_user_hitted_by_user(char_index.0 as i16, body_part as u8, damage as i16);
+        state.send_bytes(victim_id, &n4_pkt).await;
 
-        let n5_pkt = format!("N5{},{},{}", body_part, damage, victim_name);
-        state.send_to(conn_id, &n5_pkt).await;
+        let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, body_part as u8, damage as i16);
+        state.send_bytes(conn_id, &n5_pkt).await;
 
         // VB6: floating yellow damage number above victim (N| vbYellow°-<damage>°charIndex)
-        let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, v_char_index.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &dmg_pkt).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535).await;
 
         // Desarmar (disarm) — VB6: Desarmar, chance to unequip victim weapon
         let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
@@ -238,10 +237,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     victim.equip.weapon = 0;
                 }
             }
-            let msg = format!("{}Te han desarmado!{}", server_opcodes::CONSOLE_MSG, font_types::COMBAT);
-            state.send_to(victim_id, &msg).await;
-            let msg2 = format!("{}Has desarmado a {}!{}", server_opcodes::CONSOLE_MSG, victim_name, font_types::COMBAT);
-            state.send_to(conn_id, &msg2).await;
+            state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT).await;
+            state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT).await;
             // Skill gain
             if let Some(u) = state.users.get_mut(&conn_id) {
                 try_level_skill(u, 20);
@@ -267,10 +264,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     victim.poisoned = true;
                     victim.counter_poison = 0;
                 }
-                let msg = format!("{}{}171@{}", server_opcodes::CONSOLE_MSG, "||", attacker_name);
-                state.send_to(victim_id, &msg).await;
-                let msg2 = format!("{}{}172@{}", server_opcodes::CONSOLE_MSG, "||", victim_name);
-                state.send_to(conn_id, &msg2).await;
+                state.send_msg_id(victim_id, 171, &attacker_name).await;
+                state.send_msg_id(conn_id, 172, &victim_name).await;
             }
         }
 
@@ -289,7 +284,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // Safe zone check for NPC attacks too
         let attacker_trigger = get_map_tile_trigger(state, map, x, y);
         if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_to(conn_id, "||164").await;
+            state.send_msg_id(conn_id, 164, "").await;
             return;
         }
 
@@ -468,8 +463,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     let (map, x, y, char_index, victim_name, victim_level) = user_data;
 
     // VB6: "¡Aaaahhhh!" floating text in red (vbRed=255) above dying character
-    let death_scream = format!("N|255\u{00B0}\u{00A1}Aaaahhhh!\u{00B0}{}", char_index.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &death_scream).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Aaaahhhh!", char_index.0 as i16, 255).await;
 
     // Mark as dead, change body to dead model
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -585,8 +579,8 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                                 tile.ground_item.amount = amount;
                             }
                         }
-                        let ho_pkt = format!("HO{},{},{}", grh, tx, ty);
-                        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+                        let ho_pkt = binary_packets::write_object_create(tx as u8, ty as u8, grh as i16);
+                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
                         off_idx = (idx + 1) % offsets.len();
                         placed = true;
                         break;
@@ -602,7 +596,8 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     send_full_inventory(state, conn_id).await;
 
     // Send death notification
-    state.send_to(conn_id, server_opcodes::YOU_DIED).await;
+    let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCKillUser);
+    state.send_bytes(conn_id, &pkt).await;
     send_stats_hp(state, conn_id).await;
 
     // VB6: On PK maps, send "MUERT" packet to show death dialog (frmMuertito)
@@ -611,22 +606,26 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         .map(|m| m.info.pk)
         .unwrap_or(false);
     if map_is_pk {
-        state.send_to(conn_id, "MUERT").await;
+        let pkt = binary_packets::write_dead();
+        state.send_bytes(conn_id, &pkt).await;
     }
 
     // Broadcast dead body model change (CP packet) to area
-    let cp_pkt = format!(
-        "CP{},{},{},{},{},{},0,0,{}",
-        char_index.0, DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
-        state.users.get(&conn_id).map(|u| u.heading).unwrap_or(2),
-        0, 0, 0  // weapon, shield, casco = 0
+    let heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(2);
+    let cp_pkt = binary_packets::write_character_change(
+        char_index.0 as i16, DEAD_BODY_NEUTRAL as i16, DEAD_HEAD_NEUTRAL as i16,
+        heading as u8, 0, 0, 0, 0, 0,
     );
-    state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
 
     // Bug 4: Broadcast zeroed auras to area
     if let Some(user) = state.users.get(&conn_id) {
-        let au_pkt = build_aura_packet(user);
-        state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+        let au_pkt = binary_packets::write_aura_update(
+            user.char_index.0 as i16,
+            user.aura_a as i16, user.aura_w as i16,
+            user.aura_e as i16, user.aura_r as i16, user.aura_c as i16,
+        );
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt).await;
     }
 
     // VB6: No "ha muerto" floating text — only the "¡Aaaahhhh!" scream (sent above)
@@ -700,12 +699,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                 .unwrap_or((0, 0, 0));
             if km > 0 {
                 if let Some(k) = state.users.get(&killer) {
-                    let cp = format!(
-                        "CP{},{},{},{},{},{},0,0,{}",
-                        k.char_index.0, k.body, k.head, k.heading,
-                        k.weapon_anim, k.shield_anim, k.casco_anim
+                    let cp = binary_packets::write_character_change(
+                        k.char_index.0 as i16, k.body as i16, k.head as i16,
+                        k.heading as u8, k.weapon_anim as i16, k.shield_anim as i16,
+                        k.casco_anim as i16, 0, 0,
                     );
-                    state.send_data(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp).await;
+                    state.send_data_bytes(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp).await;
                 }
             }
         }
@@ -714,8 +713,8 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         quest_check_player_kill(state, killer, conn_id).await;
 
         // Notify killer (VB6: ||60@name@class + ||170@exp)
-        state.send_to(killer, &format!("||60@{}@{}", victim_name, exp_gain)).await;
-        state.send_to(killer, &format!("||170@{}", exp_gain)).await;
+        state.send_msg_id(killer, 60, &format!("{}@{}", victim_name, exp_gain)).await;
+        state.send_msg_id(killer, 170, &format!("{}", exp_gain)).await;
         send_stats_exp(state, killer).await;
         check_user_level(state, killer).await;
 

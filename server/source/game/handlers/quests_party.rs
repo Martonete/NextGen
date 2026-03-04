@@ -4,7 +4,7 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, PartyState, MAX_PARTIES, MAX_PARTY_MEMBERS};
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
+use crate::protocol::{font_index, fields::read_field, binary_packets};
 use crate::data::quests;
 use super::common::*;
 use super::{send_inventory_slot, check_user_level};
@@ -27,23 +27,24 @@ pub(super) async fn handle_quest_list(state: &mut GameState, conn_id: Connection
 
     // Send quest list: QTL<count>,<name1>,<name2>,...
     let num_quests = state.game_data.quests.len();
-    let mut pkt = format!("{}{}", server_opcodes::QUEST_LIST_RESP, num_quests);
+    let mut data = num_quests.to_string();
     for quest in &state.game_data.quests {
-        pkt.push(',');
-        pkt.push_str(&quest.name);
+        data.push(',');
+        data.push_str(&quest.name);
     }
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_quest_list_data(&data);
+    state.send_bytes(conn_id, &pkt).await;
 
     // If currently on a quest, send progress
     // VB6: MQC<cantNPC>,<muereQuest>,<name>,<oro>,<ptsTorneo>,<creditos>,<ptsTS>
     if questeando && quest_num > 0 {
         if let Some(quest) = state.game_data.quests.get(quest_num as usize - 1) {
             let target = quests::quest_target(quest);
-            let pkt = format!("{}{},{},{},{},{},{},{}",
-                server_opcodes::QUEST_CURRENT,
+            let data = format!("{},{},{},{},{},{},{}",
                 target, quest_kills, quest.name, quest.oro, quest.pts_torneo, quest.creditos, quest.pts_ts
             );
-            state.send_to(conn_id, &pkt).await;
+            let pkt = binary_packets::write_quest_current_data(&data);
+            state.send_bytes(conn_id, &pkt).await;
         }
     }
 }
@@ -62,11 +63,11 @@ pub(super) async fn handle_quest_info(state: &mut GameState, conn_id: Connection
     let quest = &state.game_data.quests[quest_id as usize - 1];
 
     // VB6 format: MQS<Name>,<Oro>,<ptsTorneo>,<Creditos>,<ptsTS>
-    let pkt = format!("{}{},{},{},{},{}",
-        server_opcodes::QUEST_SELECTED,
+    let data = format!("{},{},{},{},{}",
         quest.name, quest.oro, quest.pts_torneo, quest.creditos, quest.pts_ts
     );
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_quest_selected_data(&data);
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// ACQT — Accept a quest.
@@ -83,7 +84,7 @@ pub(super) async fn handle_quest_accept(state: &mut GameState, conn_id: Connecti
 
     // VB6: If Questeando = 1 Or UserNumQuest > 0 Then send ||279
     if questeando || quest_num > 0 {
-        state.send_to(conn_id, "||279").await;
+        state.send_msg_id(conn_id, 279, "").await;
         return;
     }
 
@@ -94,14 +95,14 @@ pub(super) async fn handle_quest_accept(state: &mut GameState, conn_id: Connecti
         .map(|m| m.info.pk)
         .unwrap_or(false);
     if is_pk {
-        state.send_to(conn_id, "||291").await;
+        state.send_msg_id(conn_id, 291, "").await;
         return;
     }
 
     if quest_id <= 0 || quest_id as usize > state.game_data.quests.len() { return; }
 
     // VB6: send ||280, set flags
-    state.send_to(conn_id, "||280").await;
+    state.send_msg_id(conn_id, 280, "").await;
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.questeando = true;
@@ -132,7 +133,7 @@ pub(super) async fn handle_slash_noquest(state: &mut GameState, conn_id: Connect
     };
 
     if !questeando {
-        state.send_to(conn_id, "||304").await;
+        state.send_msg_id(conn_id, 304, "").await;
         return;
     }
 
@@ -149,7 +150,7 @@ pub(super) async fn handle_slash_noquest(state: &mut GameState, conn_id: Connect
     crate::config::write_var(chr, "FLAGS", "UserNumQuest", "0").ok();
     crate::config::write_var(chr, "FLAGS", "MuereQuest", "0").ok();
 
-    state.send_to(conn_id, "||305").await;
+    state.send_msg_id(conn_id, 305, "").await;
 }
 
 /// Check if an NPC kill counts towards quest progress.
@@ -230,7 +231,7 @@ pub async fn quest_check_player_kill(state: &mut GameState, killer_conn: Connect
 /// Premium/Estado multiplier: 2x for Gold, ptsTorneo, Reputation if estado!=0 OR EsPremium!=0.
 pub(super) async fn quest_complete(state: &mut GameState, conn_id: ConnectionId, char_name: &str, quest: &quests::QuestData) {
     // VB6: send ||66 (quest complete message)
-    state.send_to(conn_id, "||66").await;
+    state.send_msg_id(conn_id, 66, "").await;
 
     // Note: VB6 has estado/EsPremium multiplier (2x if either is nonzero).
     // We don't track these flags yet, so we use 1x multiplier for now.
@@ -245,7 +246,7 @@ pub(super) async fn quest_complete(state: &mut GameState, conn_id: ConnectionId,
         }
         // VB6: ||63@<formatted_gold>
         let formatted = poner_puntos(gold_reward);
-        state.send_to(conn_id, &format!("||63@{}", formatted)).await;
+        state.send_msg_id(conn_id, 63, &formatted).await;
     }
 
     // Tournament points reward
@@ -255,10 +256,11 @@ pub(super) async fn quest_complete(state: &mut GameState, conn_id: ConnectionId,
             user.puntos_torneo += pts_reward;
         }
         // VB6: ||57@<pts>
-        state.send_to(conn_id, &format!("||57@{}", pts_reward)).await;
+        state.send_msg_id(conn_id, 57, &pts_reward.to_string()).await;
         // VB6: AgregarPuntos sends PNT<total_pts>
         let total_pts = state.users.get(&conn_id).map(|u| u.puntos_torneo).unwrap_or(0);
-        state.send_to(conn_id, &format!("PNT{}", total_pts)).await;
+        let pkt = binary_packets::write_tournament_points(total_pts as i32);
+        state.send_bytes(conn_id, &pkt).await;
     }
 
     // TS points reward (no multiplier in VB6)
@@ -268,7 +270,7 @@ pub(super) async fn quest_complete(state: &mut GameState, conn_id: ConnectionId,
             user.ts_points += ts_reward;
         }
         // VB6: ||900@<pts>
-        state.send_to(conn_id, &format!("||900@{}", ts_reward)).await;
+        state.send_msg_id(conn_id, 900, &ts_reward.to_string()).await;
     }
 
     // Credits reward (no multiplier in VB6)
@@ -278,7 +280,7 @@ pub(super) async fn quest_complete(state: &mut GameState, conn_id: ConnectionId,
             user.puntos_donacion += credits_reward;
         }
         // VB6: ||930@<credits>
-        state.send_to(conn_id, &format!("||930@{}", credits_reward)).await;
+        state.send_msg_id(conn_id, 930, &credits_reward.to_string()).await;
     }
 
     // Reputation reward (same multiplier as ptsTorneo)
@@ -323,8 +325,7 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
     };
 
     if party_index > 0 {
-        let msg = format!("{}Ya perteneces a un grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Ya perteneces a un grupo.", font_index::INFO).await;
         return;
     }
 
@@ -338,8 +339,7 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
     }
 
     if new_index == 0 {
-        let msg = format!("{}No se pueden crear mas grupos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No se pueden crear mas grupos.", font_index::INFO).await;
         return;
     }
 
@@ -353,8 +353,7 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
         user.party_index = new_index;
     }
 
-    let msg = format!("{}Has creado un grupo. Usa /PARTY <nombre> para invitar jugadores.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Has creado un grupo. Usa /PARTY <nombre> para invitar jugadores.", font_index::INFO).await;
 }
 
 /// /PARTY <target> — Invite a player to party (leader only, max 3 tiles distance).
@@ -362,8 +361,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     let (party_index, map, x, y) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => (u.party_index, u.pos_map, u.pos_x, u.pos_y),
         Some(u) if u.logged => {
-            let msg = format!("{}No perteneces a un grupo. Usa /NUEVAPARTY.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "No perteneces a un grupo. Usa /NUEVAPARTY.", font_index::INFO).await;
             return;
         }
         _ => return,
@@ -375,8 +373,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
         .map(|p| p.leader == conn_id)
         .unwrap_or(false);
     if !is_leader {
-        let msg = format!("{}Solo el lider puede invitar jugadores.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Solo el lider puede invitar jugadores.", font_index::INFO).await;
         return;
     }
 
@@ -386,8 +383,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
         .map(|p| p.members.len())
         .unwrap_or(0);
     if member_count >= MAX_PARTY_MEMBERS {
-        let msg = format!("{}El grupo esta lleno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "El grupo esta lleno.", font_index::INFO).await;
         return;
     }
 
@@ -395,8 +391,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     let target_conn = match state.online_names.get(&target_name.to_uppercase()) {
         Some(&c) => c,
         None => {
-            let msg = format!("{}El jugador no esta conectado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
             return;
         }
     };
@@ -408,21 +403,18 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     let (t_party, t_map, t_x, t_y, t_dead) = target_data;
 
     if t_dead {
-        let msg = format!("{}No puedes invitar a un muerto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No puedes invitar a un muerto.", font_index::INFO).await;
         return;
     }
 
     if t_party > 0 {
-        let msg = format!("{}El jugador ya esta en un grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "El jugador ya esta en un grupo.", font_index::INFO).await;
         return;
     }
 
     // Check distance (max 3 tiles)
     if t_map != map || (t_x - x).abs() > 3 || (t_y - y).abs() > 3 {
-        let msg = format!("{}El jugador esta muy lejos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "El jugador esta muy lejos.", font_index::INFO).await;
         return;
     }
 
@@ -432,11 +424,9 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     }
 
     let inviter_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    let msg = format!("{}{} te ha invitado a un grupo. Usa /ACEPTAR o /CANCELAR.{}", server_opcodes::CONSOLE_MSG, inviter_name, font_types::INFO);
-    state.send_to(target_conn, &msg).await;
+    state.send_console(target_conn, &format!("{} te ha invitado a un grupo. Usa /ACEPTAR o /CANCELAR.", inviter_name), font_index::INFO).await;
 
-    let msg = format!("{}Has invitado a {} al grupo.{}", server_opcodes::CONSOLE_MSG, target_name, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Has invitado a {} al grupo.", target_name), font_index::INFO).await;
 }
 
 /// /ACEPTAR — Accept party invite.
@@ -447,8 +437,7 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
     };
 
     if party_pending <= 0 {
-        let msg = format!("{}No tienes ninguna invitacion pendiente.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No tienes ninguna invitacion pendiente.", font_index::INFO).await;
         return;
     }
 
@@ -459,8 +448,7 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
         .unwrap_or(false);
 
     if !party_ok {
-        let msg = format!("{}El grupo ya no existe o esta lleno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "El grupo ya no existe o esta lleno.", font_index::INFO).await;
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.party_pending = 0;
         }
@@ -478,8 +466,8 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
     }
 
     // Notify all party members
-    let notify = format!("{}{} se ha unido al grupo.{}", server_opcodes::CONSOLE_MSG, char_name, font_types::INFO);
-    send_to_party(state, party_pending, &notify).await;
+    let notify = format!("{} se ha unido al grupo.", char_name);
+    send_console_to_party(state, party_pending, &notify, font_index::INFO).await;
 }
 
 /// /CANCELAR — Leave party or reject invite.
@@ -494,14 +482,12 @@ pub(super) async fn handle_slash_party_cancel(state: &mut GameState, conn_id: Co
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.party_pending = 0;
         }
-        let msg = format!("{}Has rechazado la invitacion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Has rechazado la invitacion.", font_index::INFO).await;
         return;
     }
 
     if party_index <= 0 {
-        let msg = format!("{}No perteneces a un grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
         return;
     }
 
@@ -512,8 +498,7 @@ pub(super) async fn handle_slash_party_cancel(state: &mut GameState, conn_id: Co
         .unwrap_or(false);
 
     if is_leader {
-        let msg = format!("{}Eres el lider. Usa /FINPARTY para disolver el grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Eres el lider. Usa /FINPARTY para disolver el grupo.", font_index::INFO).await;
         return;
     }
 
@@ -527,11 +512,10 @@ pub(super) async fn handle_slash_party_cancel(state: &mut GameState, conn_id: Co
     }
 
     // Notify
-    let notify = format!("{}{} ha abandonado el grupo.{}", server_opcodes::CONSOLE_MSG, char_name, font_types::INFO);
-    send_to_party(state, party_index, &notify).await;
+    let notify = format!("{} ha abandonado el grupo.", char_name);
+    send_console_to_party(state, party_index, &notify, font_index::INFO).await;
 
-    let msg = format!("{}Has abandonado el grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Has abandonado el grupo.", font_index::INFO).await;
 }
 
 /// /FINPARTY — Disband party (leader only).
@@ -539,8 +523,7 @@ pub(super) async fn handle_slash_finparty(state: &mut GameState, conn_id: Connec
     let party_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => u.party_index,
         _ => {
-            let msg = format!("{}No perteneces a un grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
             return;
         }
     };
@@ -551,14 +534,12 @@ pub(super) async fn handle_slash_finparty(state: &mut GameState, conn_id: Connec
         .unwrap_or(false);
 
     if !is_leader {
-        let msg = format!("{}Solo el lider puede disolver el grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Solo el lider puede disolver el grupo.", font_index::INFO).await;
         return;
     }
 
     // Notify all members
-    let notify = format!("{}El grupo ha sido disuelto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    send_to_party(state, party_index, &notify).await;
+    send_console_to_party(state, party_index, "El grupo ha sido disuelto.", font_index::INFO).await;
 
     // Get member list before clearing
     let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
@@ -582,8 +563,7 @@ pub(super) async fn handle_slash_pinfo(state: &mut GameState, conn_id: Connectio
     let party_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => u.party_index,
         _ => {
-            let msg = format!("{}No perteneces a un grupo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
             return;
         }
     };
@@ -598,27 +578,37 @@ pub(super) async fn handle_slash_pinfo(state: &mut GameState, conn_id: Connectio
         .map(|p| p.leader)
         .unwrap_or(0);
 
-    let msg = format!("{}--- Miembros del grupo ---{}", server_opcodes::CONSOLE_MSG, font_types::GUILD_MSG);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "--- Miembros del grupo ---", font_index::GUILD_MSG).await;
 
     for &member_conn in &members {
         if let Some(user) = state.users.get(&member_conn) {
             let role = if member_conn == leader_conn { " [Lider]" } else { "" };
-            let line = format!("{}  {}{}{}", server_opcodes::CONSOLE_MSG, user.char_name, role, font_types::INFO);
-            state.send_to(conn_id, &line).await;
+            state.send_console(conn_id, &format!("  {}{}", user.char_name, role), font_index::INFO).await;
         }
     }
 }
 
-/// Send message to all party members.
-pub(super) async fn send_to_party(state: &mut GameState, party_index: i32, data: &str) {
+/// Send binary packet to all party members.
+pub(super) async fn send_to_party(state: &mut GameState, party_index: i32, data: &[u8]) {
     let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
         .and_then(|p| p.as_ref())
         .map(|p| p.members.clone())
         .unwrap_or_default();
 
     for &member_conn in &members {
-        state.send_to(member_conn, data).await;
+        state.send_bytes(member_conn, data).await;
+    }
+}
+
+/// Send a binary console message to all party members.
+pub(super) async fn send_console_to_party(state: &mut GameState, party_index: i32, msg: &str, font: u8) {
+    let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
+        .and_then(|p| p.as_ref())
+        .map(|p| p.members.clone())
+        .unwrap_or_default();
+
+    for &member_conn in &members {
+        state.send_console(member_conn, msg, font).await;
     }
 }
 

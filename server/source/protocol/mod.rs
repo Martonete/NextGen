@@ -1,13 +1,15 @@
 // Protocol module — packet parsing and building.
 //
-// This module handles the interpretation of decrypted packet data:
-// - Parsing client opcodes (ALOGIN, KERD22, AT, LH, etc.)
-// - Building server response packets (LOGGED, CC, CM, etc.)
-// - Field parsing using delimiters (comma, tilde, etc.)
+// Binary protocol (13.3): 1-byte opcode + typed fields via ByteQueue.
+// No encryption. Little-endian. Mirrors VB6 clsByteQueue.
 
 pub mod fields;
+pub mod byte_queue;
+pub mod packets;
+pub mod binary_packets;
 
 pub use fields::ReadField;
+pub use byte_queue::ByteQueue;
 
 /// Client packet opcodes — the first 2-6 characters of each decrypted packet.
 ///
@@ -147,148 +149,39 @@ pub mod client_opcodes {
     pub const PCCC: &str = "PCCC";            // Party/clan caption command
 }
 
-/// Server packet opcodes — the first characters of each outbound packet.
-///
-/// These must match EXACTLY what the VB6 client expects to parse.
-pub mod server_opcodes {
-    pub const ERROR: &str = "ERR";      // Error message (shows dialog, server disconnects after)
-    pub const ERROR_SHOW: &str = "ERO"; // Error message (shows dialog, stays connected)
-    pub const MSG_BOX: &str = "!!";     // In-game message box (VB6: Mensaje.Escribir)
-    pub const LOGGED: &str = "LOGGED";  // Login successful
-    pub const DEAD: &str = "MUERT";     // Character died
-    pub const CHANGE_MAP: &str = "CM";  // Switch to new map
-    pub const CREATE_CHAR: &str = "CC"; // Create character in view
-    pub const REMOVE_CHAR: &str = "BP"; // Remove character from view
-    pub const MOVE_CHAR: &str = "MP";   // Move character
-    pub const POSITION_UPDATE: &str = "PU"; // Player position
-    pub const NPC_HIT_USER: &str = "N2";    // NPC attacks user
-    pub const USER_HIT_NPC: &str = "U2";    // User attacks NPC
-    pub const CONSOLE_MSG: &str = "P|";     // Console/system message with inline text
-    pub const CONSOLE_MSG_ID: &str = "||";  // Console message by text ID (Textos.tsao lookup)
-    pub const DICE_ROLL: &str = "DADOS";    // Dice roll result
-    pub const FINISH_OK: &str = "FINOK";    // Operation finished
-    pub const ACCOUNT_DATA: &str = "ACDA";  // Account data (character list)
-
-    // Login flow packets
-    pub const INIT_ACCOUNT: &str = "INIAC"; // Initial account data (num chars + notice)
-    pub const ADD_PJ: &str = "ADDPJ";       // Add character to selection screen
-    pub const SECURITY_CODE: &str = "CODEH"; // Security code
-    pub const PRIVILEGE_LEVEL: &str = "LDG"; // Privilege level
-    pub const MAP_MUSIC: &str = "XM";        // Map music ID
-    pub const MAP_NAME: &str = "N~";         // Map name
-    pub const FRIEND_LIST: &str = "LDM";     // Friend list data
-
-    // Chat packets
-    pub const TALK: &str = "T|";        // Talk message (area)
-    pub const YELL: &str = "N|";        // Yell message (larger area)
-    pub const WHISPER: &str = "P|";     // Private message
-    pub const GUILD_CHAT: &str = "G|";  // Guild chat
-
-    // Inventory packets
-    pub const INV_SLOT: &str = "CSI";   // Inventory slot data
-    pub const INV_INIT: &str = "INVI0"; // Inventory init signal
-    pub const SPELL_SLOT: &str = "SHS"; // Spell slot data
-
-    // Stat update packets (brackets are part of the opcode)
-    pub const STAT_HP: &str = "[H]";
-    pub const STAT_MANA: &str = "[M]";
-    pub const STAT_STA: &str = "[S]";
-    pub const STAT_GOLD: &str = "[G]";
-    pub const STAT_EXP: &str = "[E]";
-    pub const STAT_LEVEL: &str = "[L]";
-    pub const STAT_NAME: &str = "[N]";
-    pub const STAT_BULK: &str = "[ES";  // Bulk stats on login (no closing bracket)
-
-    // Combat packets
-    pub const SAFE_ON: &str = "SEGON";
-    pub const SAFE_OFF: &str = "SEGOFF";
-    pub const SAFE_RESU_ON: &str = "SEGONR";
-    pub const SAFE_RESU_OFF: &str = "SEGOFR";
-    pub const USER_SWING: &str = "U1";  // User attack missed
-    pub const USER_HIT: &str = "U2";    // User dealt damage
-    pub const NPC_SWING: &str = "N1";   // NPC attack missed
-    pub const NPC_HIT: &str = "N2";     // NPC dealt damage to user
-    pub const PVP_DAMAGE_RECV: &str = "N4"; // PvP damage received
-    pub const PVP_DAMAGE_DEAL: &str = "N5"; // PvP damage dealt
-    pub const USER_MISS: &str = "U3";   // User's attack was evaded
-    pub const YOU_DIED: &str = "6";     // Death notification
-    pub const PLAY_SOUND: &str = "TW";  // Play sound effect
-    pub const CHAR_FX: &str = "CFX";    // Character visual effect
-    pub const CHANGE_CHAR: &str = "CP";   // Change character appearance
-    pub const CHAR_FX_ALT: &str = "CFF";  // Character FX (alternate format)
-
-    // Ground item packets
-    pub const SHOW_OBJ: &str = "HO";    // Show object on ground: HO{grh},{x},{y}
-    pub const ERASE_OBJ: &str = "BO";   // Remove object from ground: BO{x},{y}
-
-    // Work/skill packets
-    pub const WORK_MODE: &str = "T01";           // Activate work mode: T01<skillId>
-    pub const OPEN_SMITH: &str = "SFH";          // Open blacksmith UI
-    pub const OPEN_CARP: &str = "SFC";           // Open carpentry UI
-    pub const SMITH_WEAPONS: &str = "LAH";       // Buildable weapons list
-    pub const SMITH_ARMORS: &str = "LAR";        // Buildable armors list
-    pub const CARP_ITEMS: &str = "OBR";          // Buildable carpentry items
-    pub const MED_OK: &str = "MEDOK";            // Stop meditation
-    pub const HIDE_CHAR: &str = "NOVER";         // Toggle visibility: NOVER<charIndex>,<0|1>
-    pub const NAVIGATION: &str = "NAVEG";        // Toggle navigation
-    pub const INIT_BANK: &str = "INITBANCO";    // Open bank window
-    pub const BANK_SLOT: &str = "SBO";          // Bank slot data
-    pub const BANK_GOLD: &str = "[BG";          // Bank gold amount
-    pub const BANK_CLOSE_OK: &str = "FINBANOK"; // Bank close confirmation
-
-    // Player trading packets
-    pub const TRADE_INIT: &str = "ICO";         // Init commerce (trade started)
-    pub const TRADE_OFFER_RECV: &str = "IOR";   // Received trade offer (gold + items)
-    pub const TRADE_ITEMS: &str = "ICI";        // Trade inventory items
-    pub const TRADE_CHAT_MSG: &str = "VCC";     // Trade chat message
-    pub const TRADE_OK: &str = "TRADEOK";       // Trade completed
-    pub const TRADE_CANCEL_OK: &str = "CANCELTRADE"; // Trade cancelled
-
-    // Commerce packets
-    pub const NPC_INV_RESET: &str = "NPCR";     // Reset NPC inventory display
-    pub const NPC_INV_ITEM: &str = "NPCI";       // NPC inventory item data
-    pub const NPC_INV_SLOT: &str = "NPC|";       // Single NPC inv slot update
-    pub const INIT_COMMERCE: &str = "INITCOM";   // Open commerce window
-    pub const TRANS_OK: &str = "TRANSOK";        // Transaction success
-    pub const COMMERCE_CLOSE_OK: &str = "FINCOMOK"; // Commerce close confirmation
-
-    // Guild packets
-    pub const GUILD_LIST: &str = "GL";              // Guild list: GL<count>,<name>-<align>-<level>,...
-    pub const GUILD_INFO_LEADER: &str = "IREDAEL";  // Guild info for leader/sublider
-    pub const GUILD_INFO_MEMBER: &str = "IREDAEK";  // Guild info for regular member
-    pub const GUILD_SHOW_FORM: &str = "SHOWFUN";    // Show guild creation form
-    pub const GUILD_DETAILS_RESP: &str = "DTLC";    // Guild details response
-    pub const GUILD_BANK_PERMS_RESP: &str = "KHEKD"; // Bank permissions response
-    pub const CLAN_CHAT: &str = "C|";               // Clan chat message
-
-    // Quest packets
-    pub const QUEST_LIST_RESP: &str = "QTL";         // Quest list: QTL{num},{name1},{name2},...
-    pub const QUEST_CURRENT: &str = "MQC";           // Current quest progress
-    pub const QUEST_SELECTED: &str = "MQS";          // Quest details for selection
-    pub const QUEST_NPC_LIST: &str = "DAMEQUEST";    // NPC quest list signal
-
-    // Mail response packets
-    pub const MAIL_LIST: &str = "IFO";        // Mail list header
-    pub const MAIL_PLAYER_INFO: &str = "IDO"; // Player info + inventory
-    pub const MAIL_FRIENDS: &str = "IAO";     // Friend list for quick select
-    pub const MAIL_CONTENT: &str = "ILO";     // Full mail content
-    pub const MAIL_ITEMS: &str = "ITO";       // Mail items list
+/// Font index constants — byte IDs matching client FontTypes table (TextosLoader.cs).
+/// Used by binary ConsoleMsg (opcode 24) as the font_index field.
+pub mod font_index {
+    pub const TALK: u8 = 5;        // White (255,255,255) — normal chat
+    pub const FIGHT: u8 = 19;      // Red (255,0,0) — combat messages
+    pub const WARNING: u8 = 20;    // Blue (32,51,223)
+    pub const INFO: u8 = 21;       // Teal-green (69,190,156) — system info
+    pub const EJECUCION: u8 = 24;  // Gray (130,130,130)
+    pub const PARTY: u8 = 25;      // White (255,255,255) — party
+    pub const VENENO: u8 = 26;     // Green (0,255,0) — poison
+    pub const GUILD: u8 = 27;      // White (255,255,255) — guild
+    pub const SERVER: u8 = 28;     // Green (0,185,0) — server messages
+    pub const GUILD_MSG: u8 = 31;  // Gold (228,199,27)
+    pub const CONSEJO: u8 = 32;    // Dark blue (0,64,128)
+    pub const CENTINELA: u8 = 36;  // Green (0,170,0)
+    pub const AMARILLO: u8 = 38;   // Yellow bold (255,255,0)
+    pub const GRIS: u8 = 40;       // Gray bold (130,130,130)
+    pub const ROJO: u8 = 42;       // Red (255,0,0) — same as fight but different style
+    pub const DIOSES: u8 = 16;     // Blue-purple (100,0,255) — GM chat
+    pub const GLOBAL_USUARIO: u8 = 43; // Light purple (173,170,255)
+    pub const VERDE: u8 = 48;      // Green (0,255,0)
+    pub const CELESTE: u8 = 52;    // Cyan (128,255,255)
+    pub const NARANJA: u8 = 82;    // Orange (255,128,0)
+    pub const WHISPER_SENT: u8 = 42; // Red (255,0,0) — "le dijiste a"
+    pub const WHISPER_RECV: u8 = 38; // Yellow bold (255,255,0) — "te dijo"
+    pub const NPCSX: u8 = 13;      // Pink (255,83,255) — NPC debug info
+    pub const COMBAT_RED: u8 = 19;  // Red (255,0,0) — same as FIGHT
+    pub const NPC_INFO: u8 = 12;    // Dark gray (86,87,89) — NPC talk
+    pub const BLANCO: u8 = 46;      // White (255,255,255)
+    pub const BORDO: u8 = 47;       // Maroon/brown (128,0,0)
+    pub const AZUL: u8 = 49;        // Blue (0,0,255)
+    pub const VIOLETA: u8 = 50;     // Violet (128,0,128)
+    pub const NEWBIE: u8 = 6;       // Light yellow-green (225,249,158) — newbie color
+    pub const CIUDADANO: u8 = 11;   // Blue (48,128,255) — citizen/armada
 }
 
-/// Font type constants — appended to chat messages as ~r~g~b~bold~italic.
-/// Must match VB6 Declares.bas font types.
-pub mod font_types {
-    pub const TALK: &str = "~255~255~255~0~0";       // White, normal
-    pub const TALK_GM: &str = "~255~255~0~1~0";      // Yellow, bold (GM talk)
-    pub const TALK_DEAD: &str = "~192~192~192~0~1";  // Gray, italic (dead)
-    pub const YELL: &str = "~255~0~0~1~0";           // Red, bold
-    pub const WHISPER_SENT: &str = "~255~0~0~0~1";   // Red, italic (you told)
-    pub const WHISPER_RECV: &str = "~255~255~0~1~0";  // Yellow, bold (told you)
-    pub const SYSTEM: &str = "~0~255~0~0~0";         // Green, normal
-    pub const GUILD: &str = "~0~255~128~1~0";        // Teal, bold
-    pub const COMBAT: &str = "~255~0~0~0~0";         // Red, normal
-    pub const INFO: &str = "~65~190~156~0~0";        // Teal/info
-    pub const CLAN_MEMBER: &str = "~36~255~233~0~0";  // Teal (clan member chat)
-    pub const CLAN_LEADER: &str = "~255~0~0~0~0";     // Red (clan leader chat)
-    pub const GUILD_MSG: &str = "~228~199~27~0~0";    // Yellow-gold (guild messages)
-}

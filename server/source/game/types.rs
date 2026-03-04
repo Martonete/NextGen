@@ -553,26 +553,23 @@ impl UserState {
         }
     }
 
-    /// Build the CC (CreateChar) packet data for this user.
-    /// VB6 client expects 14 comma-separated fields:
-    /// CC body,head,heading,charindex,x,y,weapon,shield,helmet,name,statusmith,privileges,npcaura,npcnumber
-    pub fn build_cc_packet(&self) -> String {
-        let status = if self.criminal { 2 } else { 1 }; // 1=citizen, 2=criminal
-        // CC format (VB6 MakeUserChar): body,head,heading,charindex,x,y,weapon,shield,helmet,name,status,priv
-        format!(
-            "CC{},{},{},{},{},{},{},{},{},{},{},{}",
-            self.body,
-            self.head,
-            self.heading,
-            self.char_index.0,
-            self.pos_x,
-            self.pos_y,
-            self.weapon_anim,
-            self.shield_anim,
-            self.casco_anim,
-            self.char_name,
-            status,
-            self.privileges,
+    /// Build binary CC (CharacterCreate) packet for this user.
+    pub fn build_cc_binary(&self) -> Vec<u8> {
+        let nick_color = if self.criminal { 2u8 } else { 1u8 };
+        crate::protocol::binary_packets::write_character_create(
+            self.char_index.0 as i16,
+            self.body as i16,
+            self.head as i16,
+            self.heading as u8,
+            self.pos_x as u8,
+            self.pos_y as u8,
+            self.weapon_anim as i16,
+            self.shield_anim as i16,
+            self.casco_anim as i16,
+            0, 0, // fx_index, fx_loops
+            &self.char_name,
+            nick_color,
+            self.privileges as u8,
         )
     }
 }
@@ -845,6 +842,11 @@ pub struct GameState {
     // Role overrides from server.ini (VB6: EsAdministrador, EsDios, etc.)
     // Maps lowercase character name → privilege level. Loaded at startup, reloaded with /RELOADSINI.
     pub role_overrides: crate::config::RoleMap,
+
+    /// Per-connection receive buffers for accumulating partial binary packets.
+    /// When a TCP read delivers a partial packet, leftover bytes are stored here
+    /// and prepended to the next read.
+    pub recv_buffers: HashMap<ConnectionId, Vec<u8>>,
 }
 
 /// SOS message (help request from player)
@@ -1013,6 +1015,7 @@ impl GameState {
             gran_poder_holder: 0,
             countdown_seconds: 0,
             role_overrides,
+            recv_buffers: HashMap::new(),
         }
     }
 
@@ -1044,6 +1047,7 @@ impl GameState {
             }
         }
         self.writers.remove(&conn_id);
+        self.recv_buffers.remove(&conn_id);
     }
 
     /// Check if a character name is currently online.
@@ -1065,24 +1069,20 @@ impl GameState {
         None
     }
 
-    /// Send a packet to a specific connection.
-    pub async fn send_to(&mut self, conn_id: ConnectionId, data: &str) {
+    /// Send raw binary bytes to a specific connection (13.3 protocol, no encryption).
+    pub async fn send_bytes(&mut self, conn_id: ConnectionId, data: &[u8]) {
         if let Some(writer) = self.writers.get_mut(&conn_id) {
-            // Convert to Latin-1 (single byte per char) for VB6 protocol compatibility.
-            // Rust strings are UTF-8, where chars like ° (U+00B0) encode as 2 bytes (0xC2 0xB0).
-            // VB6 expects Latin-1 where ° is a single byte (0xB0).
-            let bytes: Vec<u8> = data.chars().map(|c| c as u8).collect();
-            if let Err(e) = writer.send_packet(&bytes).await {
+            if let Err(e) = writer.send_packet(data).await {
                 tracing::warn!("Failed to send to #{}: {}", conn_id, e);
             }
         }
     }
 
-    /// Send a packet using routing target (matches VB6 SendData).
-    pub async fn send_data(&mut self, target: SendTarget, data: &str) {
+    /// Send binary data using routing target (matches VB6 SendData).
+    pub async fn send_data_bytes(&mut self, target: SendTarget, data: &[u8]) {
         match target {
             SendTarget::ToIndex(conn_id) => {
-                self.send_to(conn_id, data).await;
+                self.send_bytes(conn_id, data).await;
             }
             SendTarget::ToAll => {
                 let ids: Vec<ConnectionId> = self.users.values()
@@ -1090,7 +1090,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_to(id, data).await;
+                    self.send_bytes(id, data).await;
                 }
             }
             SendTarget::ToMap(map) => {
@@ -1099,7 +1099,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_to(id, data).await;
+                    self.send_bytes(id, data).await;
                 }
             }
             SendTarget::ToArea { map, x, y } => {
@@ -1109,7 +1109,7 @@ impl GameState {
                     Vec::new()
                 };
                 for id in ids {
-                    self.send_to(id, data).await;
+                    self.send_bytes(id, data).await;
                 }
             }
             SendTarget::ToAreaButIndex { conn_id, map, x, y } => {
@@ -1120,7 +1120,7 @@ impl GameState {
                 };
                 for id in ids {
                     if id != conn_id {
-                        self.send_to(id, data).await;
+                        self.send_bytes(id, data).await;
                     }
                 }
             }
@@ -1130,7 +1130,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_to(id, data).await;
+                    self.send_bytes(id, data).await;
                 }
             }
             SendTarget::ToGuildMembers(guild_index) => {
@@ -1140,7 +1140,7 @@ impl GameState {
                         .map(|u| u.conn_id)
                         .collect();
                     for id in ids {
-                        self.send_to(id, data).await;
+                        self.send_bytes(id, data).await;
                     }
                 }
             }
@@ -1150,18 +1150,74 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_to(id, data).await;
+                    self.send_bytes(id, data).await;
                 }
             }
         }
     }
 
-    /// Send a packet and then close the connection.
-    pub async fn send_and_close(&mut self, conn_id: ConnectionId, data: &str) {
-        self.send_to(conn_id, data).await;
+    /// Send binary bytes and then close the connection.
+    pub async fn send_bytes_and_close(&mut self, conn_id: ConnectionId, data: &[u8]) {
+        self.send_bytes(conn_id, data).await;
         if let Some(mut writer) = self.writers.remove(&conn_id) {
             writer.shutdown().await;
         }
+    }
+
+    // ── Binary packet send helpers ─────────────────────────────
+
+    /// Send a console message by text ID (Textos.tsao lookup).
+    pub async fn send_msg_id(&mut self, conn_id: ConnectionId, msg_id: i16, args: &str) {
+        let pkt = crate::protocol::binary_packets::write_console_msg_id(msg_id, args);
+        self.send_bytes(conn_id, &pkt).await;
+    }
+
+    /// Send an inline console message with font index.
+    pub async fn send_console(&mut self, conn_id: ConnectionId, msg: &str, font: u8) {
+        let pkt = crate::protocol::binary_packets::write_console_msg(msg, font);
+        self.send_bytes(conn_id, &pkt).await;
+    }
+
+    /// Send a console message by text ID using routing target.
+    pub async fn send_msg_id_to(&mut self, target: SendTarget, msg_id: i16, args: &str) {
+        let pkt = crate::protocol::binary_packets::write_console_msg_id(msg_id, args);
+        self.send_data_bytes(target, &pkt).await;
+    }
+
+    /// Send an inline console message with font index using routing target.
+    pub async fn send_console_to(&mut self, target: SendTarget, msg: &str, font: u8) {
+        let pkt = crate::protocol::binary_packets::write_console_msg(msg, font);
+        self.send_data_bytes(target, &pkt).await;
+    }
+
+    /// Send chat-over-head to a target group.
+    pub async fn send_chat_over_head_to(&mut self, target: SendTarget, msg: &str, char_index: i16, color: i32) {
+        let pkt = crate::protocol::binary_packets::write_chat_over_head(msg, char_index, color);
+        self.send_data_bytes(target, &pkt).await;
+    }
+
+    /// Send area talk chat.
+    pub async fn send_chat_talk_to(&mut self, target: SendTarget, char_index: i16, msg: &str, color: i32) {
+        let pkt = crate::protocol::binary_packets::write_chat_talk(char_index, msg, color);
+        self.send_data_bytes(target, &pkt).await;
+    }
+
+    /// Send GM broadcast to target.
+    pub async fn send_gm_broadcast_to(&mut self, target: SendTarget, msg: &str) {
+        let pkt = crate::protocol::binary_packets::write_gm_broadcast(msg);
+        self.send_data_bytes(target, &pkt).await;
+    }
+
+    /// Send guild chat to target.
+    pub async fn send_guild_chat_to(&mut self, target: SendTarget, msg: &str) {
+        let pkt = crate::protocol::binary_packets::write_guild_chat(msg);
+        self.send_data_bytes(target, &pkt).await;
+    }
+
+    /// Send whisper to a specific connection.
+    pub async fn send_whisper(&mut self, conn_id: ConnectionId, msg: &str, font: u8) {
+        let pkt = crate::protocol::binary_packets::write_chat_whisper(msg, font);
+        self.send_bytes(conn_id, &pkt).await;
     }
 
     /// Check if a tile is blocked (from static map data).

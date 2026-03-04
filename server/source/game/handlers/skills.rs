@@ -6,7 +6,8 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::game::world;
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
+use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::packets::MultiMessageID;
 use crate::data::objects::{ObjData, ObjType};
 use super::common::*;
 use super::{
@@ -176,8 +177,7 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
     };
 
     if dead {
-        let msg = "||3".to_string(); // TEXTO3: Estás muerto
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 3, "").await;
         return;
     }
     if meditating { return; }
@@ -242,7 +242,7 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
                 send_stats_mana(state, conn_id).await;
                 send_stats_hp(state, conn_id).await;
             } else {
-                state.send_to(conn_id, "||288").await;
+                state.send_msg_id(conn_id, 288, "").await;
             }
         }
         skill_id::OCULTARSE => {
@@ -265,8 +265,7 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     // Check equipped fishing tool
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon == 0 {
-        let msg = format!("{}Necesitas una caña de pescar{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Necesitas una caña de pescar", font_index::INFO).await;
         return;
     }
 
@@ -274,8 +273,7 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     let has_water = state.hay_agua(map, tx, ty);
 
     if !has_water {
-        let msg = "||250".to_string(); // TEXTO250: No hay agua donde pescar
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 250, "").await;
         return;
     }
 
@@ -283,8 +281,7 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     let sta_cost = if is_recolector(&class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            let msg = "||17".to_string(); // TEXTO17: Estas muy cansado para realizar esa acción
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 17, "").await;
             return;
         }
     }
@@ -295,8 +292,8 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     }
 
     // Play sound to area
-    let snd = format!("TW{}", SND_PESCAR);
-    state.send_data(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as u8, uy as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -310,12 +307,10 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
         let slot = find_or_add_inv_slot(state, conn_id, PESCADO_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            let msg = "||813".to_string(); // TEXTO813: Has pescado un lindo pez!
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 813, "").await;
         }
     } else {
-        let msg = "||814".to_string(); // TEXTO814: No has pescado nada!
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 814, "").await;
     }
 
     // Try level skill + send stat updates
@@ -335,8 +330,7 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     // Check equipped axe
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon != HACHA_LENADOR {
-        let msg = format!("{}Necesitas un hacha de leñador{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Necesitas un hacha de leñador", font_index::INFO).await;
         return;
     }
 
@@ -375,8 +369,7 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
     let is_tree = tile_obj == Some(ObjType::Trees) || ground_obj_type == Some(ObjType::Trees);
     if !is_tree {
-        let msg = "||255".to_string(); // TEXTO255: No hay ningun arbol ahi
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 255, "").await;
         return;
     }
 
@@ -384,8 +377,7 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let sta_cost = if is_recolector(&class) { ESFUERZO_TALAR_RECOLECTOR } else { ESFUERZO_TALAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            let msg = "||17".to_string(); // TEXTO17: Estas muy cansado para realizar esa acción
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 17, "").await;
             return;
         }
     }
@@ -394,8 +386,8 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     }
 
     // Play sound
-    let snd = format!("TW{}", SND_TALAR);
-    state.send_data(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as u8, uy as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -406,12 +398,10 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
         let slot = find_or_add_inv_slot(state, conn_id, LENA_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            let msg = "||825".to_string(); // TEXTO825: Has conseguido algo de leña!
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 825, "").await;
         }
     } else {
-        let msg = "||826".to_string(); // TEXTO826: No has obtenido leña!
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 826, "").await;
     }
 
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -430,8 +420,7 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     // Check equipped pick
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon != PIQUETE_MINERO {
-        let msg = format!("{}Necesitas un pico de minero{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Necesitas un pico de minero", font_index::INFO).await;
         return;
     }
 
@@ -471,8 +460,7 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     let mineral_data = match mineral_obj {
         Some(ref o) if o.obj_type == ObjType::Deposit => o.clone(),
         _ => {
-            let msg = "||256".to_string(); // TEXTO256: Ahi no hay ningun yacimiento
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 256, "").await;
             return;
         }
     };
@@ -481,8 +469,7 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     let sta_cost = if is_recolector(&class) { ESFUERZO_EXCAVAR_RECOLECTOR } else { ESFUERZO_EXCAVAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            let msg = "||17".to_string(); // TEXTO17: Estas muy cansado para realizar esa acción
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 17, "").await;
             return;
         }
     }
@@ -491,8 +478,8 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     }
 
     // Play sound
-    let snd = format!("TW{}", SND_MINERO);
-    state.send_data(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as u8, uy as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -510,12 +497,10 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
         let slot = find_or_add_inv_slot(state, conn_id, mineral_item, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            let msg = "||827".to_string(); // TEXTO827: Has extraido algunos minerales!
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 827, "").await;
         }
     } else {
-        let msg = "||828".to_string(); // TEXTO828: No has conseguido nada!
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 828, "").await;
     }
 
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -544,8 +529,7 @@ pub(super) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let npc_idx = match npc_idx {
         Some(idx) => idx,
         None => {
-            let msg = "||258".to_string(); // TEXTO258: No hay ninguna criatura alli!
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 258, "").await;
             return;
         }
     };
@@ -560,8 +544,7 @@ pub(super) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         .unwrap_or(0);
 
     if domable <= 0 {
-        let msg = "||257".to_string(); // TEXTO257: No podes domar a esa criatura
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 257, "").await;
         return;
     }
 
@@ -583,12 +566,10 @@ pub(super) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         + random_number(1, carisma.max(1) / 3 + 1);
 
     if poder >= domable {
-        let msg = format!("{}Has domado a la criatura{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Has domado a la criatura", font_index::INFO).await;
         // Note: Full pet system (NPC follows owner) not yet implemented
     } else {
-        let msg = format!("{}No has podido domar a la criatura{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No has podido domar a la criatura", font_index::INFO).await;
     }
 
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -640,8 +621,7 @@ pub(super) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
         .unwrap_or(false);
 
     if !is_anvil {
-        let msg = "||263".to_string(); // TEXTO263: Ahi no hay ningun yunque
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 263, "").await;
         return;
     }
 
@@ -663,11 +643,12 @@ pub(super) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
         }
     }
 
-    let pkt = format!("{}{}", server_opcodes::SMITH_WEAPONS, weapons_list);
-    state.send_to(conn_id, &pkt).await;
-    let pkt = format!("{}{}", server_opcodes::SMITH_ARMORS, armors_list);
-    state.send_to(conn_id, &pkt).await;
-    state.send_to(conn_id, server_opcodes::OPEN_SMITH).await;
+    let pkt = binary_packets::write_smith_weapons(&weapons_list);
+    state.send_bytes(conn_id, &pkt).await;
+    let pkt = binary_packets::write_smith_armors(&armors_list);
+    state.send_bytes(conn_id, &pkt).await;
+    let pkt = binary_packets::write_show_blacksmith_form();
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// Smelting (FundirMineral).
@@ -695,8 +676,7 @@ pub(super) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     let (slot_idx, mineral_obj, amount, lingote_idx) = match mineral_slot {
         Some(data) => data,
         None => {
-            let msg = "||259".to_string(); // TEXTO259: No tienes mas minerales
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 259, "").await;
             return;
         }
     };
@@ -710,8 +690,7 @@ pub(super) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     };
 
     if amount < minerals_needed {
-        let msg = format!("{}No tienes suficientes minerales (necesitas {}){}", server_opcodes::CONSOLE_MSG, minerals_needed, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, &format!("No tienes suficientes minerales (necesitas {})", minerals_needed), font_index::INFO).await;
         return;
     }
 
@@ -740,8 +719,7 @@ pub(super) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
         send_inventory_slot(state, conn_id, idx).await;
     }
 
-    let msg = format!("{}Has fundido un lingote{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Has fundido un lingote", font_index::INFO).await;
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 14); // Mining skill
@@ -768,8 +746,7 @@ pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let target_conn = match target_conn {
         Some(id) if id != conn_id => id,
         _ => {
-            let msg = "||252".to_string(); // TEXTO252: No hay a quien robarle!
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 252, "").await;
             return;
         }
     };
@@ -796,25 +773,22 @@ pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
             // TEXTO816: Le has robado %1 monedas de oro a %2
             let victim_name_for_rob = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_to(conn_id, &format!("||816@{}@{}", stolen, victim_name_for_rob)).await;
+            state.send_msg_id(conn_id, 816, &format!("{}@{}", stolen, victim_name_for_rob)).await;
             // TEXTO819: %1 ha intentado robarte!
             let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_to(target_conn, &format!("||819@{}", thief_name)).await;
+            state.send_msg_id(target_conn, 819, &thief_name).await;
 
             send_stats_gold(state, conn_id).await;
             send_stats_gold(state, target_conn).await;
         } else {
-            let msg = "||818".to_string(); // TEXTO818: No has logrado robar nada!
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 818, "").await;
         }
     } else {
         // Fail — notify victim
         let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        let msg = "||818".to_string(); // TEXTO818: No has logrado robar nada!
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 818, "").await;
 
-        let victim_msg = format!("{}{} ha intentado robarte!{}", server_opcodes::CONSOLE_MSG, thief_name, font_types::COMBAT);
-        state.send_to(target_conn, &victim_msg).await;
+        state.send_console(target_conn, &format!("{} ha intentado robarte!", thief_name), font_index::FIGHT).await;
     }
 
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -878,8 +852,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         .unwrap_or(false);
 
     if !is_arrow || municion_amount < 1 {
-        let msg = format!("{}246", server_opcodes::CONSOLE_MSG_ID); // "No arrows"
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 246, "").await;
         // Unequip ammo slot
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.equip.municion = 0;
@@ -889,8 +862,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
 
     // Stamina cost (1-10)
     if sta < 10 {
-        let msg = format!("{}17", server_opcodes::CONSOLE_MSG_ID); // "Not enough stamina"
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 17, "").await;
         return;
     }
     let sta_cost = random_number(1, 10);
@@ -931,8 +903,8 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
 
         if let Some((npc_char, true)) = npc_data {
             // Send arrow visual
-            let flechi = format!("FLECHI{},{},{}", char_index.0, npc_char, arrow_grh);
-            state.send_data(SendTarget::ToMap(map), &flechi).await;
+            let flechi = binary_packets::write_arrow(char_index.0 as i16, npc_char as i16, arrow_grh as i16);
+            state.send_data_bytes(SendTarget::ToMap(map), &flechi).await;
 
             // Store target for combat resolution, then call standard attack
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -947,8 +919,8 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
             let target_char = state.users.get(&target).map(|u| u.char_index.0).unwrap_or(0);
 
             // Send arrow visual
-            let flechi = format!("FLECHI{},{},{}", char_index.0, target_char, arrow_grh);
-            state.send_data(SendTarget::ToMap(map), &flechi).await;
+            let flechi = binary_packets::write_arrow(char_index.0 as i16, target_char as i16, arrow_grh as i16);
+            state.send_data_bytes(SendTarget::ToMap(map), &flechi).await;
 
             // Store target and resolve
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -988,10 +960,10 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
     let hit_prob = ((50.0 + (attack_power - npc_evasion as f64) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
-        state.send_to(conn_id, "U1").await; // Miss
+        let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
+        state.send_bytes(conn_id, &pkt).await; // Miss
         // VB6: floating red "¡Fallo!" above the NPC that was attacked
-        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", npc_char.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char.0 as i16, 255).await;
         return;
     }
 
@@ -1012,12 +984,11 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
     };
 
     // Send hit packet
-    let u2_pkt = format!("U2,{},{}", damage, npc_name);
-    state.send_to(conn_id, &u2_pkt).await;
+    let u2_pkt = binary_packets::write_multi_user_hit_npc(damage as i32);
+    state.send_bytes(conn_id, &u2_pkt).await;
 
     // VB6: floating yellow damage number above NPC
-    let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, npc_char.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &dmg_pkt).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), npc_char.0 as i16, 65535).await;
 
     if new_hp <= 0 {
         // NPC killed
@@ -1030,8 +1001,8 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
 
         // Kill NPC
         let npc_ci = state.get_npc(npc_idx).map(|n| n.char_index.0).unwrap_or(0);
-        let bp_pkt = format!("BP{}", npc_ci);
-        state.send_data(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+        let bp_pkt = binary_packets::write_character_remove(npc_ci as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
 
         state.kill_npc(npc_idx);
         quest_check_npc_kill(state, conn_id, npc_number as i32).await;
@@ -1053,7 +1024,7 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
          min_hit, max_hit, skill_armas, attacker_name, class, safe_on) = att_data;
 
     if safe_on {
-        state.send_to(conn_id, "||207").await; // TEXTO207: Escribe /SEG para quitar el seguro
+        state.send_msg_id(conn_id, 207, "").await;
         return;
     }
 
@@ -1073,12 +1044,12 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
     let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
-        let pkt = format!("U3{}", attacker_name);
-        state.send_to(victim_id, &pkt).await;
-        state.send_to(conn_id, "U1").await;
+        let pkt = binary_packets::write_multi_user_attacked_swing(_char_index.0 as i16);
+        state.send_bytes(victim_id, &pkt).await;
+        let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
+        state.send_bytes(conn_id, &pkt).await;
         // VB6: floating red "¡Fallo!" above victim
-        let miss_pkt = format!("N|255\u{00B0}\u{00A1}Fallo!\u{00B0}{}", v_char_index.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &miss_pkt).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255).await;
         return;
     }
 
@@ -1107,14 +1078,13 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
     if let Some(victim) = state.users.get_mut(&victim_id) {
         victim.min_hp -= damage;
     }
-    let n4_pkt = format!("N4{},{},{}", body_part, damage, attacker_name);
-    state.send_to(victim_id, &n4_pkt).await;
-    let n5_pkt = format!("N5{},{},{}", body_part, damage, victim_name);
-    state.send_to(conn_id, &n5_pkt).await;
+    let n4_pkt = binary_packets::write_multi_user_hitted_by_user(_char_index.0 as i16, body_part as u8, damage as i16);
+    state.send_bytes(victim_id, &n4_pkt).await;
+    let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, body_part as u8, damage as i16);
+    state.send_bytes(conn_id, &n5_pkt).await;
 
     // VB6: floating yellow damage number above victim
-    let dmg_pkt = format!("N|65535\u{00B0}-{}\u{00B0}{}", damage, v_char_index.0);
-    state.send_data(SendTarget::ToArea { map, x, y }, &dmg_pkt).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535).await;
 
     send_stats_hp(state, victim_id).await;
 
@@ -1138,7 +1108,7 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
     // Blocked on special maps (VB6: 142, 121-123, 31-34)
     let blocked_maps = [142, 121, 122, 123, 31, 32, 33, 34];
     if blocked_maps.contains(&map) {
-        state.send_to(conn_id, "||838").await;
+        state.send_msg_id(conn_id, 838, "").await;
         return;
     }
 
@@ -1169,16 +1139,16 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             user.hidden = true;
         }
         // Send NOVER to make invisible on all clients in map
-        let nover = format!("NOVER{},1", char_index.0);
-        state.send_data(SendTarget::ToMap(map), &nover).await;
-        state.send_to(conn_id, "||808").await; // "Te has ocultado."
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
+        state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+        state.send_msg_id(conn_id, 808, "").await; // "Te has ocultado."
         // Skill gain
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, 8); // Ocultarse = eSkill 8 (1-based)
         }
     } else {
         // Failure
-        state.send_to(conn_id, "||809").await; // "No has logrado ocultarte."
+        state.send_msg_id(conn_id, 809, "").await; // "No has logrado ocultarte."
     }
 }
 
@@ -1303,8 +1273,7 @@ pub(super) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     // Check skill
     let skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // Herreria=15 (1-based 16)
     if skill < obj.sk_herreria {
-        let msg = format!("{}No tienes suficiente habilidad{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO).await;
         return;
     }
 
@@ -1316,8 +1285,7 @@ pub(super) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     ]);
 
     if !has_materials {
-        let msg = format!("{}No tienes los materiales necesarios{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO).await;
         return;
     }
 
@@ -1334,11 +1302,10 @@ pub(super) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-    let snd = format!("TW{}", SND_HERRERO);
-    state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+    let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as u8, y as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
 
-    let msg = format!("{}Has construido {}{}", server_opcodes::CONSOLE_MSG, obj.name, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO).await;
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 16);
@@ -1363,16 +1330,14 @@ pub(super) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     // Check equipped carpentry tool (VB6: SERRUCHO_CARPINTERO must be equipped)
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon != SERRUCHO_CARPINTERO {
-        let msg = format!("{}Necesitas un serrucho de carpintero{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Necesitas un serrucho de carpintero", font_index::INFO).await;
         return;
     }
 
     // Check skill
     let skill = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0); // Carpinteria=14 (1-based 15)
     if skill < obj.sk_carpinteria {
-        let msg = format!("{}No tienes suficiente habilidad{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO).await;
         return;
     }
 
@@ -1383,8 +1348,7 @@ pub(super) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     ]);
 
     if !has_materials {
-        let msg = format!("{}No tienes los materiales necesarios{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO).await;
         return;
     }
 
@@ -1400,11 +1364,10 @@ pub(super) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-    let snd = format!("TW{}", SND_CARPINTERO);
-    state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+    let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as u8, y as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
 
-    let msg = format!("{}Has construido {}{}", server_opcodes::CONSOLE_MSG, obj.name, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO).await;
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 15);

@@ -123,10 +123,10 @@ public class InputHandler
         // All action keys below share a cooldown to prevent rapid-fire when held.
         if (_keyCooldown > 0) return;
 
-        // Pick up item (VB6: AGR)
+        // Pick up item (VB6: AG)
         if (_keys.IsActionPressed(GameAction.PickUp))
         {
-            _tcp.SendPacket("AGR");
+            _tcp.SendPacket(ClientPackets.WritePickUp());
             _keyCooldown = KeyCooldownMs;
         }
         // Use item from selected inventory slot
@@ -135,7 +135,7 @@ public class InputHandler
             int slot = _state.SelectedInvSlot;
             if (slot >= 0 && slot < 25)
             {
-                _tcp.SendPacket($"USA{slot + 1}"); // 1-based
+                _tcp.SendPacket(ClientPackets.WriteUseItem((byte)(slot + 1)));
                 _keyCooldown = KeyCooldownMs;
             }
         }
@@ -145,7 +145,7 @@ public class InputHandler
             int slot = _state.SelectedInvSlot;
             if (slot >= 0 && slot < 25)
             {
-                _tcp.SendPacket($"EQUI{slot + 1}"); // 1-based
+                _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
                 _keyCooldown = KeyCooldownMs;
             }
         }
@@ -167,7 +167,7 @@ public class InputHandler
                 {
                     if (_state.Inventory[slot].Amount == 1)
                     {
-                        _tcp.SendPacket($"TI{slot + 1},1");
+                        _tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
                     }
                     else if (_state.Inventory[slot].Amount > 1)
                     {
@@ -194,13 +194,13 @@ public class InputHandler
         // Steal (VB6: UK12 — eSkill.Robar)
         else if (_keys.IsActionPressed(GameAction.Steal))
         {
-            _tcp.SendPacket("UK12");
+            _tcp.SendPacket(ClientPackets.WriteUseSkill(12));
             _keyCooldown = KeyCooldownMs;
         }
         // Hide/Stealth (VB6: UK9 — eSkill.Ocultarse)
         else if (_keys.IsActionPressed(GameAction.Hide))
         {
-            _tcp.SendPacket("UK9");
+            _tcp.SendPacket(ClientPackets.WriteUseSkill(9));
             _keyCooldown = KeyCooldownMs;
         }
         // Refresh position (VB6: RPU)
@@ -208,7 +208,7 @@ public class InputHandler
         {
             if (_refreshTimer <= 0)
             {
-                _tcp.SendPacket("RPU");
+                _tcp.SendPacket(ClientPackets.WriteRequestPos());
                 _refreshTimer = RefreshCooldownMs;
             }
             _keyCooldown = KeyCooldownMs;
@@ -216,19 +216,19 @@ public class InputHandler
         // Meditate (VB6: /MEDITAR)
         else if (_keys.IsActionPressed(GameAction.Meditate))
         {
-            _tcp.SendPacket(";/MEDITAR");
+            _tcp.SendPacket(ClientPackets.WriteMeditate());
             _keyCooldown = KeyCooldownMs;
         }
         // PvP safety toggle (VB6: /SEG)
         else if (_keys.IsActionPressed(GameAction.SafetyToggle))
         {
-            _tcp.SendPacket("SEG");
+            _tcp.SendPacket(ClientPackets.WriteSafeToggle());
             _keyCooldown = KeyCooldownMs;
         }
         // Resurrection safety toggle (VB6: /SEGR)
         else if (_keys.IsActionPressed(GameAction.ResSafety))
         {
-            _tcp.SendPacket(";/SEGR");
+            _tcp.SendPacket(ClientPackets.WriteTalk("/SEGR"));
             _keyCooldown = KeyCooldownMs;
         }
         // Item safety toggle (VB6: ISItem)
@@ -302,8 +302,8 @@ public class InputHandler
                 }
             }
 
-            // Send movement packet to server
-            _tcp.SendPacket($"M{heading}");
+            // Send movement packet to server (binary: Walk + heading byte)
+            _tcp.SendPacket(ClientPackets.WriteWalk((byte)heading));
             _state.PendingMoves++;
 
             // VB6 Char_Move_by_Head: update logical position + start animation
@@ -330,7 +330,7 @@ public class InputHandler
             // Blocked tile: just turn, don't move (VB6: only send CHEA if heading changed)
             if (ch.Heading != heading)
             {
-                _tcp.SendPacket($"CHEA{heading}");
+                _tcp.SendPacket(ClientPackets.WriteChangeHeading((byte)heading));
                 ch.Heading = heading;
             }
         }
@@ -396,7 +396,7 @@ public class InputHandler
             {
                 if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
                 {
-                    _tcp.SendPacket("AT");
+                    _tcp.SendPacket(ClientPackets.WriteAttack());
                     _attackTimer = AttackCooldownMs;
                 }
             }
@@ -407,14 +407,14 @@ public class InputHandler
     {
         var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-            _tcp.SendPacket($"LC{tileX},{tileY}");
+            _tcp.SendPacket(ClientPackets.WriteLeftClick((byte)tileX, (byte)tileY));
     }
 
     public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
     {
         var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-            _tcp.SendPacket($"RC{tileX},{tileY}");
+            _tcp.SendPacket(ClientPackets.WriteRightClick((byte)tileX, (byte)tileY));
     }
 
     public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
@@ -422,7 +422,7 @@ public class InputHandler
         var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
         {
-            _tcp.SendPacket($"WLC{tileX},{tileY},{_state.UsingSkill}");
+            _tcp.SendPacket(ClientPackets.WriteWorkLeftClick((byte)tileX, (byte)tileY, (byte)_state.UsingSkill));
             _state.UsingSkill = 0;
         }
     }
@@ -431,7 +431,7 @@ public class InputHandler
     {
         var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
         if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-            _tcp.SendPacket($";/TELEP YO {currentMap} {tileX} {tileY}");
+            _tcp.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {currentMap} {tileX} {tileY}"));
     }
 
     /// <summary>
@@ -447,11 +447,18 @@ public class InputHandler
         {
             if (cmd.Equals("/PING", System.StringComparison.OrdinalIgnoreCase))
                 _state.PingSentMs = Godot.Time.GetTicksMsec();
-            _tcp.SendPacket($";{cmd}");
+            _tcp.SendPacket(ClientPackets.WriteTalk(cmd));
         }
         else
         {
-            _tcp.SendPacket($"{_state.ChatModePrefix}{cmd}");
+            // Normal macro message with current chat mode
+            byte[] chatPkt = _state.ChatModePrefix switch
+            {
+                "-" => ClientPackets.WriteYell(cmd),
+                "\\" => ClientPackets.WriteWhisper("", cmd),
+                _ => ClientPackets.WriteTalk(cmd),
+            };
+            _tcp.SendPacket(chatPkt);
         }
     }
 }

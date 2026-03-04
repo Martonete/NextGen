@@ -431,7 +431,7 @@ public partial class CommercePanel : Control
 
         // VB6: SendData "COMP," & slot & "," & qty
         GD.Print($"[COMMERCE] Sending: COMP,{item.Slot},{qty}");
-        _tcp.SendPacket($"COMP,{item.Slot},{qty}");
+        _tcp.SendPacket(ClientPackets.WriteCommerceBuy((byte)item.Slot, (short)qty));
     }
 
     private void OnSellPressed()
@@ -455,7 +455,7 @@ public partial class CommercePanel : Control
 
         // VB6: SendData "VEND," & (slot+1) & "," & qty (1-indexed)
         GD.Print($"[COMMERCE] Sending: VEND,{slotIdx + 1},{qty}");
-        _tcp.SendPacket($"VEND,{slotIdx + 1},{qty}");
+        _tcp.SendPacket(ClientPackets.WriteCommerceSell((byte)(slotIdx + 1), (short)qty));
     }
 
     private void OnSelectAllPressed()
@@ -475,7 +475,7 @@ public partial class CommercePanel : Control
 
     private void OnClosePressed()
     {
-        _tcp?.SendPacket("FINCOM");
+        _tcp?.SendPacket(ClientPackets.WriteCommerceClose());
     }
 
     private int GetQuantity()

@@ -997,11 +997,11 @@ public partial class Main : Control
             _statusLabel!.Text = "Enviando login...";
 
             await Task.Delay(100);
-            _tcp.SendPacket("KERD22");
+            _tcp.SendPacket(ClientPackets.WriteKerd22());
 
             await Task.Delay(50);
-            _tcp.SendPacket($"ALOGIN{account},{password},0");
-            GD.Print("[MAIN] Sent: ALOGIN (comma-separated with version)");
+            _tcp.SendPacket(ClientPackets.WriteAlogin(account, password));
+            GD.Print("[MAIN] Sent: ALOGIN (binary)");
         }
         catch (Exception ex)
         {
@@ -1030,8 +1030,8 @@ public partial class Main : Control
                 _enterButton!.Disabled = true;
                 _noticeLabel!.Text = "Entrando al mundo...";
 
-                _tcp!.SendPacket($"OOLOGI{charName},{account},{code}");
-                GD.Print($"[MAIN] Sent: OOLOGI{charName},{account},{code}");
+                _tcp!.SendPacket(ClientPackets.WriteOologi(charName, account, code));
+                GD.Print($"[MAIN] Sent: OOLOGI {charName}");
             }
         }
         else
@@ -1065,18 +1065,24 @@ public partial class Main : Control
                 {
                     _state.PingSentMs = Time.GetTicksMsec();
                 }
-                // Slash commands go directly (no prefix)
-                _tcp.SendPacket($";{text}");
+                // Slash commands: send as Talk with the /command
+                _tcp.SendPacket(ClientPackets.WriteTalk(text));
             }
             else if (!string.IsNullOrEmpty(text) && text.Trim().Length > 0)
             {
-                // Normal message with current chat mode prefix
-                _tcp.SendPacket($"{_state.ChatModePrefix}{text}");
+                // Normal message with current chat mode
+                byte[] chatPkt = _state.ChatModePrefix switch
+                {
+                    "-" => ClientPackets.WriteYell(text),
+                    "\\" => ClientPackets.WriteWhisper("", text), // whisper target parsed server-side
+                    _ => ClientPackets.WriteTalk(text),
+                };
+                _tcp.SendPacket(chatPkt);
             }
             else
             {
                 // Empty/whitespace: send space to clear text above head (VB6 carteleo)
-                _tcp.SendPacket("; ");
+                _tcp.SendPacket(ClientPackets.WriteTalk(" "));
             }
         }
         // Always hide + clear on submit (VB6: Enter closes the input)
@@ -1390,7 +1396,7 @@ public partial class Main : Control
     private void OnEscapeMenuLogout()
     {
         HideEscapeMenu();
-        _tcp?.SendPacket(";/salir");
+        _tcp?.SendPacket(ClientPackets.WriteTalk("/salir"));
         HandleDisconnect("");
     }
 
@@ -1469,7 +1475,7 @@ public partial class Main : Control
         if (qty > 0)
         {
             int slot = _state.DropDialogSlot;
-            _tcp.SendPacket($"TI{slot + 1},{qty}"); // 1-based
+            _tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), (short)qty));
         }
         CloseDropDialog();
     }
@@ -1481,7 +1487,7 @@ public partial class Main : Control
         if (slot >= 0 && slot < 25)
         {
             int qty = _state.Inventory[slot].Amount;
-            _tcp.SendPacket($"TI{slot + 1},{qty}"); // 1-based
+            _tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), (short)qty));
         }
         CloseDropDialog();
     }
@@ -1556,7 +1562,7 @@ public partial class Main : Control
         if (_addFriendInput == null || _tcp == null) return;
         var name = _addFriendInput.Text.Trim();
         if (name.Length > 0)
-            _tcp.SendPacket($"ADDCON{name}");
+            _tcp.SendPacket(ClientPackets.WriteFriendAdd(name));
         CloseAddFriendDialog();
     }
 
@@ -1817,11 +1823,11 @@ public partial class Main : Control
             GD.Print("[MAIN] Connected! Sending NACCNT...");
 
             await Task.Delay(100);
-            _tcp.SendPacket("KERD22");
+            _tcp.SendPacket(ClientPackets.WriteKerd22());
 
             await Task.Delay(50);
-            _tcp.SendPacket($"NACCNT{account},{password},{pin}");
-            GD.Print("[MAIN] Sent: NACCNT");
+            _tcp.SendPacket(ClientPackets.WriteNaccnt(account, password, pin));
+            GD.Print("[MAIN] Sent: NACCNT (binary)");
         }
         catch (Exception ex)
         {
@@ -2244,8 +2250,8 @@ public partial class Main : Control
         string account = _state.AccountName;
         string code = _state.SecurityCode;
 
-        _tcp.SendPacket($"TBRP{charName},{account},{code}");
-        GD.Print($"[MAIN] Sent: TBRP{charName},{account},***");
+        _tcp.SendPacket(ClientPackets.WriteTbrp(charName));
+        GD.Print($"[MAIN] Sent: TBRP {charName}");
 
         _deleteConfirmDialog!.Visible = false;
         _noticeLabel!.Text = "Eliminando personaje...";
@@ -2307,9 +2313,10 @@ public partial class Main : Control
         int head = _state.CreateCharHead;
         string account = _state.AccountName;
 
-        string packet = $"NLOGIN{name},{raceName},{genderName},{genderName},{className},1,{account},{head},{_state.CreateCharFaction}";
-        _tcp!.SendPacket(packet);
-        GD.Print($"[MAIN] Sent: {packet}");
+        _tcp!.SendPacket(ClientPackets.WriteNlogin(
+            name, (byte)_state.CreateCharRace, (byte)_state.CreateCharGender,
+            (byte)_state.CreateCharClass, (short)head, (byte)_state.CreateCharFaction, account));
+        GD.Print($"[MAIN] Sent: NLOGIN {name} (binary)");
     }
 
     /// <summary>
@@ -2337,7 +2344,7 @@ public partial class Main : Control
         else
         {
             // Remove friend — send 1-based slot index
-            _tcp.SendPacket($"BORRAC{idx + 1}");
+            _tcp.SendPacket(ClientPackets.WriteFriendRemove((idx + 1).ToString()));
         }
     }
 
@@ -2353,20 +2360,19 @@ public partial class Main : Control
             return;
         }
 
-        // Poll and process inbound packets
-        var packets = _tcp.PollPackets();
-        foreach (string pkt in packets)
+        // Poll and process inbound binary data
+        var dataChunks = _tcp.PollPackets();
+        foreach (byte[] chunk in dataChunks)
         {
             _packetCount++;
             if (_packetCount <= 20)
             {
-                string preview = pkt.Length > 80 ? pkt[..80] + "..." : pkt;
                 string hex = "";
-                for (int i = 0; i < Math.Min(20, pkt.Length); i++)
-                    hex += ((int)pkt[i]).ToString("X2") + " ";
-                GD.Print($"[PKT #{_packetCount}] len={pkt.Length} text=\"{preview}\" hex=[{hex.Trim()}]");
+                for (int i = 0; i < Math.Min(20, chunk.Length); i++)
+                    hex += chunk[i].ToString("X2") + " ";
+                GD.Print($"[PKT #{_packetCount}] len={chunk.Length} hex=[{hex.Trim()}]");
             }
-            _packetHandler.HandlePacket(pkt);
+            _packetHandler.HandleBinaryData(chunk);
         }
 
         // React to screen transitions driven by PacketHandler
@@ -3003,13 +3009,13 @@ public partial class Main : Control
                 }
                 if (_state.Comerciando)
                 {
-                    _tcp?.SendPacket("FINCOM");
+                    _tcp?.SendPacket(ClientPackets.WriteCommerceClose());
                     GetViewport().SetInputAsHandled();
                     return;
                 }
                 if (_state.Banqueando || _state.BovedaAbierta)
                 {
-                    _tcp?.SendPacket("FINBAN");
+                    _tcp?.SendPacket(ClientPackets.WriteBankClose());
                     GetViewport().SetInputAsHandled();
                     return;
                 }

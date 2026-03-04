@@ -4,7 +4,7 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
+use crate::protocol::{font_index, fields::read_field, binary_packets};
 use crate::db::charfile;
 use super::common::*;
 
@@ -26,7 +26,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_to(conn_id, "||9").await;
+        state.send_msg_id(conn_id, 9, "").await;
         return;
     }
 
@@ -44,7 +44,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 4 || (u_y - npc_y).abs() > 4 {
-        state.send_to(conn_id, "||158").await;
+        state.send_msg_id(conn_id, 158, "").await;
         return;
     }
 
@@ -60,14 +60,12 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
     let (armada, caos, criminal, crim_killed, ciud_killed, reenlistadas, char_name, guild_index) = user_data;
 
     if armada || caos {
-        let msg = format!("{}Ya perteneces a una faccion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Ya perteneces a una faccion.", font_index::INFO).await;
         return;
     }
 
     if reenlistadas {
-        let msg = format!("{}Ya no puedes enlistarte nuevamente.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Ya no puedes enlistarte nuevamente.", font_index::INFO).await;
         return;
     }
 
@@ -76,8 +74,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
     if !criminal {
         // Try to join Royal Army
         if crim_killed < 50 {
-            let msg = format!("{}Necesitas haber matado al menos 50 criminales.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "Necesitas haber matado al menos 50 criminales.", font_index::INFO).await;
             return;
         }
 
@@ -97,17 +94,14 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         }
         send_stats_exp(state, conn_id).await;
 
-        let msg = format!("{}Te has enlistado en la Armada Real!{}", server_opcodes::CONSOLE_MSG, font_types::GUILD_MSG);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Te has enlistado en la Armada Real!", font_index::GUILD_MSG).await;
 
         // Broadcast
-        let broadcast = format!("{}851@{}", server_opcodes::CONSOLE_MSG_ID, char_name);
-        state.send_data(SendTarget::ToAll, &broadcast).await;
+        state.send_msg_id_to(SendTarget::ToAll, 851, &char_name).await;
     } else {
         // Try to join Chaos Forces
         if ciud_killed < 50 {
-            let msg = format!("{}Necesitas haber matado al menos 50 ciudadanos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "Necesitas haber matado al menos 50 ciudadanos.", font_index::INFO).await;
             return;
         }
 
@@ -116,8 +110,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         let chr = chr_path.to_str().unwrap_or("");
         let had_royal_xp = crate::config::get_var(chr, "FACCIONES", "rExReal") == "1";
         if had_royal_xp {
-            let msg = format!("{}No puedes unirte al Caos habiendo sido parte de la Armada.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "No puedes unirte al Caos habiendo sido parte de la Armada.", font_index::INFO).await;
             return;
         }
 
@@ -134,12 +127,10 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         }
         send_stats_exp(state, conn_id).await;
 
-        let msg = format!("{}Te has enlistado en las Fuerzas del Caos!{}", server_opcodes::CONSOLE_MSG, font_types::GUILD_MSG);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Te has enlistado en las Fuerzas del Caos!", font_index::GUILD_MSG).await;
 
         // Broadcast
-        let broadcast = format!("{}852@{}", server_opcodes::CONSOLE_MSG_ID, char_name);
-        state.send_data(SendTarget::ToAll, &broadcast).await;
+        state.send_msg_id_to(SendTarget::ToAll, 852, &char_name).await;
     }
 }
 
@@ -156,26 +147,17 @@ pub(super) async fn handle_slash_faction_info(state: &mut GameState, conn_id: Co
     let (armada, caos, crim_killed, ciud_killed, rec_real, rec_caos) = user_data;
 
     if armada {
-        let msg = format!("{}--- Armada Real ---{}", server_opcodes::CONSOLE_MSG, font_types::GUILD_MSG);
-        state.send_to(conn_id, &msg).await;
-        let msg = format!("{}Criminales matados: {}{}", server_opcodes::CONSOLE_MSG, crim_killed, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
-        let msg = format!("{}Rango: {}{}", server_opcodes::CONSOLE_MSG, faction_rank_name(rec_real, true), font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "--- Armada Real ---", font_index::GUILD_MSG).await;
+        state.send_console(conn_id, &format!("Criminales matados: {}", crim_killed), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Rango: {}", faction_rank_name(rec_real, true)), font_index::INFO).await;
     } else if caos {
-        let msg = format!("{}--- Fuerzas del Caos ---{}", server_opcodes::CONSOLE_MSG, font_types::GUILD_MSG);
-        state.send_to(conn_id, &msg).await;
-        let msg = format!("{}Ciudadanos matados: {}{}", server_opcodes::CONSOLE_MSG, ciud_killed, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
-        let msg = format!("{}Rango: {}{}", server_opcodes::CONSOLE_MSG, faction_rank_name(rec_caos, false), font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "--- Fuerzas del Caos ---", font_index::GUILD_MSG).await;
+        state.send_console(conn_id, &format!("Ciudadanos matados: {}", ciud_killed), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Rango: {}", faction_rank_name(rec_caos, false)), font_index::INFO).await;
     } else {
-        let msg = format!("{}No perteneces a ninguna faccion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
-        let msg = format!("{}Criminales matados: {}{}", server_opcodes::CONSOLE_MSG, crim_killed, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
-        let msg = format!("{}Ciudadanos matados: {}{}", server_opcodes::CONSOLE_MSG, ciud_killed, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        state.send_console(conn_id, &format!("Criminales matados: {}", crim_killed), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Ciudadanos matados: {}", ciud_killed), font_index::INFO).await;
     }
 }
 
@@ -211,7 +193,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_to(conn_id, "||9").await;
+        state.send_msg_id(conn_id, 9, "").await;
         return;
     }
 
@@ -229,7 +211,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 4 || (u_y - npc_y).abs() > 4 {
-        state.send_to(conn_id, "||12").await;
+        state.send_msg_id(conn_id, 12, "").await;
         return;
     }
 
@@ -245,8 +227,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
     let (armada, caos, crim_killed, ciud_killed, rec_real, rec_caos, char_name) = user_data;
 
     if !armada && !caos {
-        let msg = format!("{}No perteneces a ninguna faccion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
         return;
     }
 
@@ -257,15 +238,13 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
     if armada {
         let current_tier = rec_real;
         if current_tier >= 4 {
-            let msg = format!("{}Ya has alcanzado el rango maximo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "Ya has alcanzado el rango maximo.", font_index::INFO).await;
             return;
         }
 
         let needed = FACTION_TIER_THRESHOLDS[current_tier as usize];
         if crim_killed < needed {
-            let msg = format!("{}Necesitas {} criminales matados para el siguiente rango (tienes {}).{}", server_opcodes::CONSOLE_MSG, needed, crim_killed, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, &format!("Necesitas {} criminales matados para el siguiente rango (tienes {}).", needed, crim_killed), font_index::INFO).await;
             return;
         }
 
@@ -276,20 +255,17 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         }
         crate::config::write_var(chr, "FACCIONES", "recReal", &new_tier.to_string()).ok();
 
-        let msg = format!("{}Has ascendido al rango: {}!{}", server_opcodes::CONSOLE_MSG, faction_rank_name(new_tier, true), font_types::GUILD_MSG);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, true)), font_index::GUILD_MSG).await;
     } else {
         let current_tier = rec_caos;
         if current_tier >= 4 {
-            let msg = format!("{}Ya has alcanzado el rango maximo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "Ya has alcanzado el rango maximo.", font_index::INFO).await;
             return;
         }
 
         let needed = FACTION_TIER_THRESHOLDS[current_tier as usize];
         if ciud_killed < needed {
-            let msg = format!("{}Necesitas {} ciudadanos matados para el siguiente rango (tienes {}).{}", server_opcodes::CONSOLE_MSG, needed, ciud_killed, font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, &format!("Necesitas {} ciudadanos matados para el siguiente rango (tienes {}).", needed, ciud_killed), font_index::INFO).await;
             return;
         }
 
@@ -299,8 +275,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         }
         crate::config::write_var(chr, "FACCIONES", "recCaos", &new_tier.to_string()).ok();
 
-        let msg = format!("{}Has ascendido al rango: {}!{}", server_opcodes::CONSOLE_MSG, faction_rank_name(new_tier, false), font_types::GUILD_MSG);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, false)), font_index::GUILD_MSG).await;
     }
 }
 
@@ -316,15 +291,13 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
     let (armada, caos, char_name, guild_index) = user_data;
 
     if !armada && !caos {
-        let msg = format!("{}No perteneces a ninguna faccion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
         return;
     }
 
     // Cannot leave faction while in a guild
     if guild_index > 0 {
-        let msg = format!("{}302", server_opcodes::CONSOLE_MSG_ID);
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 302, "").await;
         return;
     }
 
@@ -342,8 +315,7 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
     crate::config::write_var(chr, "FACCIONES", "EjercitoCaos", "0").ok();
     crate::config::write_var(chr, "FACCIONES", "Reenlistadas", "1").ok();
 
-    let msg = format!("{}Has renunciado a tu faccion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Has renunciado a tu faccion.", font_index::INFO).await;
 }
 
 // =====================================================================
@@ -354,8 +326,7 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
 pub(super) async fn handle_slash_online(state: &mut GameState, conn_id: ConnectionId) {
     let count = state.num_users;
     let record = state.record_users;
-    let msg = format!("{}Jugadores online: {}. Record: {}.{}", server_opcodes::CONSOLE_MSG, count, record, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Jugadores online: {}. Record: {}.", count, record), font_index::INFO).await;
 }
 
 /// /BALANCE — Show gold and bank gold.
@@ -364,8 +335,7 @@ pub(super) async fn handle_slash_balance(state: &mut GameState, conn_id: Connect
         Some(u) if u.logged => (u.gold, u.bank_gold),
         _ => return,
     };
-    let msg = format!("{}Oro: {}. En banco: {}. Total: {}.{}", server_opcodes::CONSOLE_MSG, gold, bank_gold, gold + bank_gold, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Oro: {}. En banco: {}. Total: {}.", gold, bank_gold, gold + bank_gold), font_index::INFO).await;
 }
 
 /// /GLOBAL <text> — Send global chat message.
@@ -377,14 +347,13 @@ pub(super) async fn handle_slash_global(state: &mut GameState, conn_id: Connecti
 
     // VB6: If ChatGlobal == False and user is not staff → blocked
     if !state.chat_global && priv_level == 0 {
-        state.send_to(conn_id, "||549").await;
+        state.send_msg_id(conn_id, 549, "").await;
         return;
     }
 
     if text.contains('~') { return; }
 
-    let pkt = format!("{}{}> {}{}", server_opcodes::GUILD_CHAT, char_name, text, font_types::GUILD);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_guild_chat_to(SendTarget::ToAll, &format!("{}> {}", char_name, text)).await;
 }
 
 /// /STATS or /EST — Show character stats summary.
@@ -394,20 +363,23 @@ pub(super) async fn handle_slash_stats(state: &mut GameState, conn_id: Connectio
         _ => return,
     };
 
-    let lines = vec![
-        format!("{}--- Estadisticas de {} ---{}", server_opcodes::CONSOLE_MSG, u.char_name, font_types::GUILD_MSG),
-        format!("{}Clase: {} | Raza: {} | Nivel: {}{}", server_opcodes::CONSOLE_MSG, u.class, u.race, u.level, font_types::INFO),
-        format!("{}HP: {}/{} | Mana: {}/{} | STA: {}/{}{}", server_opcodes::CONSOLE_MSG, u.min_hp, u.max_hp, u.min_mana, u.max_mana, u.min_sta, u.max_sta, font_types::INFO),
-        format!("{}Fuerza: {} | Agilidad: {} | Inteligencia: {}{}", server_opcodes::CONSOLE_MSG, u.attributes[0], u.attributes[1], u.attributes[2], font_types::INFO),
-        format!("{}Carisma: {} | Constitucion: {}{}", server_opcodes::CONSOLE_MSG, u.attributes[3], u.attributes[4], font_types::INFO),
-        format!("{}Oro: {} | EXP: {}{}", server_opcodes::CONSOLE_MSG, u.gold, u.exp, font_types::INFO),
-    ];
+    let char_name = u.char_name.clone();
+    let class = u.class.clone();
+    let race = u.race.clone();
+    let level = u.level;
+    let (min_hp, max_hp) = (u.min_hp, u.max_hp);
+    let (min_mana, max_mana) = (u.min_mana, u.max_mana);
+    let (min_sta, max_sta) = (u.min_sta, u.max_sta);
+    let attrs = u.attributes.clone();
+    let gold = u.gold;
+    let exp = u.exp;
 
-    // Need to clone to avoid borrow issue
-    let lines_clone = lines;
-    for line in &lines_clone {
-        state.send_to(conn_id, line).await;
-    }
+    state.send_console(conn_id, &format!("--- Estadisticas de {} ---", char_name), font_index::GUILD_MSG).await;
+    state.send_console(conn_id, &format!("Clase: {} | Raza: {} | Nivel: {}", class, race, level), font_index::INFO).await;
+    state.send_console(conn_id, &format!("HP: {}/{} | Mana: {}/{} | STA: {}/{}", min_hp, max_hp, min_mana, max_mana, min_sta, max_sta), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Fuerza: {} | Agilidad: {} | Inteligencia: {}", attrs[0], attrs[1], attrs[2]), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Carisma: {} | Constitucion: {}", attrs[3], attrs[4]), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Oro: {} | EXP: {}", gold, exp), font_index::INFO).await;
 }
 
 // =====================================================================
@@ -436,8 +408,7 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
 
     // Validate recipient exists
     if !charfile::character_exists(&state.pool, recipient_name).await {
-        let msg = format!("{}El personaje no existe.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "El personaje no existe.", font_index::INFO).await;
         return;
     }
 
@@ -448,8 +419,7 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
     let num_mails: usize = crate::config::get_var(chr, "CORREO", "NUMCORREOS").parse().unwrap_or(0);
 
     if num_mails >= MAX_MAILS {
-        let msg = format!("{}629", server_opcodes::CONSOLE_MSG_ID);
-        state.send_to(conn_id, &msg).await;
+        state.send_msg_id(conn_id, 629, "").await;
         return;
     }
 
@@ -465,12 +435,10 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
 
     // Notify recipient if online
     if let Some(&target_conn) = state.online_names.get(&recipient_name.to_uppercase()) {
-        let msg = format!("{}631", server_opcodes::CONSOLE_MSG_ID);
-        state.send_to(target_conn, &msg).await;
+        state.send_msg_id(target_conn, 631, "").await;
     }
 
-    let msg = format!("{}Correo enviado a {}.{}", server_opcodes::CONSOLE_MSG, recipient_name, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Correo enviado a {}.", recipient_name), font_index::INFO).await;
 }
 
 /// CZC — Open/read mail slot.
@@ -501,8 +469,8 @@ pub(super) async fn handle_mail_open(state: &mut GameState, conn_id: ConnectionI
     crate::config::write_var(chr, "CORREO", &format!("NUECORREOS{}", slot), "0").ok();
 
     // Send content: ILO<remitente>$<asunto>$<mensaje>$<fecha>$
-    let pkt = format!("{}{}", server_opcodes::MAIL_CONTENT, content);
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_mail_content(&content);
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 /// CZB — Delete mail.
@@ -541,8 +509,7 @@ pub(super) async fn handle_mail_delete(state: &mut GameState, conn_id: Connectio
 
 /// CZR — Extract items from mail (simplified — no item attachment in basic impl).
 pub(super) async fn handle_mail_extract(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
-    let msg = format!("{}Este correo no tiene objetos adjuntos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, "Este correo no tiene objetos adjuntos.", font_index::INFO).await;
 }
 
 /// Send mail list to player.
@@ -567,8 +534,8 @@ pub(super) async fn send_mail_list(state: &mut GameState, conn_id: ConnectionId,
         }
     }
 
-    let pkt = format!("{}{}", server_opcodes::MAIL_LIST, entries.join(","));
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_mail_list(&entries.join(","));
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 // =====================================================================
@@ -594,8 +561,8 @@ pub(super) async fn broadcast_friend_connect(state: &mut GameState, conn_id: Con
     for (other_conn, account) in others {
         if is_friend_of_account(&base, &account, &char_name) {
             // Send KFM notification
-            let kfm = format!("KFM{}", char_name);
-            state.send_to(other_conn, &kfm).await;
+            let kfm = binary_packets::write_friend_online(&char_name);
+            state.send_bytes(other_conn, &kfm).await;
             // Send updated friend list so their ON/OFF status refreshes
             send_friend_list(state, other_conn).await;
         }
@@ -619,8 +586,8 @@ pub async fn broadcast_friend_disconnect(state: &mut GameState, conn_id: Connect
 
     for (other_conn, account) in others {
         if is_friend_of_account(&base, &account, &char_name) {
-            let dfm = format!("DFM{}", char_name);
-            state.send_to(other_conn, &dfm).await;
+            let dfm = binary_packets::write_friend_offline(&char_name);
+            state.send_bytes(other_conn, &dfm).await;
             send_friend_list(state, other_conn).await;
         }
     }
@@ -652,12 +619,14 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
     // VB6: Can't add self
     let self_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     if friend_name.to_uppercase() == self_name.to_uppercase() {
-        state.send_to(conn_id, &format!("{}No puedes agregarte a ti mismo.", server_opcodes::ERROR_SHOW)).await;
+        let pkt = binary_packets::write_message_box("No puedes agregarte a ti mismo.");
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
     if !charfile::character_exists(&state.pool, &friend_name).await {
-        state.send_to(conn_id, &format!("{}El personaje no existe.", server_opcodes::ERROR_SHOW)).await;
+        let pkt = binary_packets::write_message_box("El personaje no existe.");
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -665,7 +634,8 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
     // Check if the target character has privileges by loading their charfile
     if let Ok(char_data) = charfile::load_charfile(&state.pool, &friend_name).await {
         if char_data.privileges > 0 {
-            state.send_to(conn_id, &format!("{}No podes agregar GM's.", server_opcodes::ERROR_SHOW)).await;
+            let pkt = binary_packets::write_message_box("No podes agregar GM's.");
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
     }
@@ -680,7 +650,8 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
 
     let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
     if count >= 20 {
-        state.send_to(conn_id, &format!("{}Lista de amigos llena, solo puedes agregar 20.", server_opcodes::ERROR_SHOW)).await;
+        let pkt = binary_packets::write_message_box("Lista de amigos llena, solo puedes agregar 20.");
+        state.send_bytes(conn_id, &pkt).await;
         return;
     }
 
@@ -688,7 +659,8 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
     for i in 1..=count {
         let existing = crate::config::get_var(act, "AMIGOS", &format!("A{}", i));
         if existing.to_uppercase() == friend_name.to_uppercase() {
-            state.send_to(conn_id, &format!("{}El usuario ya esta en tu lista de amigos.", server_opcodes::ERROR_SHOW)).await;
+            let pkt = binary_packets::write_message_box("El usuario ya esta en tu lista de amigos.");
+            state.send_bytes(conn_id, &pkt).await;
             return;
         }
     }
@@ -701,8 +673,7 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
     // Send updated list
     send_friend_list(state, conn_id).await;
 
-    let msg = format!("{}{} agregado a tu lista de amigos.{}", server_opcodes::CONSOLE_MSG, friend_name, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("{} agregado a tu lista de amigos.", friend_name), font_index::INFO).await;
 }
 
 /// BORRAC<index> — Remove friend by slot.
@@ -769,8 +740,8 @@ pub(super) async fn send_friend_list(state: &mut GameState, conn_id: ConnectionI
         }
     }
 
-    let pkt = format!("LDM{}", result);
-    state.send_to(conn_id, &pkt).await;
+    let pkt = binary_packets::write_friend_list(&result);
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 // =====================================================================

@@ -217,7 +217,7 @@ public partial class SpellPanel : Control
         if (_selectedSlot >= 0 && _selectedSlot < MaxSpells &&
             _state.Spells[_selectedSlot].SpellId > 0)
         {
-            _tcp.SendPacket($"LH{_selectedSlot + 1}");
+            _tcp.SendPacket(ClientPackets.WriteCastSpell((byte)(_selectedSlot + 1)));
             // VB6: UsingSkill = Magia (constant 2, the skill type ID)
             // NOT the spell slot — the slot is stored server-side via LH packet
             _state.UsingSkill = 2;
@@ -233,7 +233,7 @@ public partial class SpellPanel : Control
         if (_selectedSlot >= 0 && _selectedSlot < MaxSpells &&
             _state.Spells[_selectedSlot].SpellId > 0)
         {
-            _tcp.SendPacket($"INFS{_selectedSlot + 1}");
+            _tcp.SendPacket(ClientPackets.WriteSpellInfo((byte)(_selectedSlot + 1)));
         }
     }
 
@@ -246,7 +246,7 @@ public partial class SpellPanel : Control
         if (_tcp == null) return;
         if (_selectedSlot >= 0 && _selectedSlot < MaxSpells)
         {
-            _tcp.SendPacket($"DESPHE{direction},{_selectedSlot + 1}");
+            _tcp.SendPacket(ClientPackets.WriteMoveSpell((byte)direction, (byte)(_selectedSlot + 1)));
         }
     }
 

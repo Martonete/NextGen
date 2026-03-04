@@ -6,7 +6,7 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, InventorySlot, EquipSlots, privilege_level};
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
+use crate::protocol::{font_index, fields::read_field, binary_packets};
 use super::common::*;
 use super::world;
 
@@ -25,8 +25,7 @@ pub(super) async fn handle_slash_gmsg(state: &mut GameState, conn_id: Connection
         _ => return,
     };
     let _ = priv_level;
-    let pkt = format!("||429@{}@{}", name, text);
-    state.send_data(SendTarget::ToAdmins, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 429, &format!("{}@{}", name, text)).await;
     info!("[GM] {} sent GMSG: {}", name, text);
 }
 
@@ -36,8 +35,7 @@ pub(super) async fn handle_slash_smsg(state: &mut GameState, conn_id: Connection
         Some(u) if u.logged && u.privileges > privilege_level::USER => u.char_name.clone(),
         _ => return,
     };
-    let pkt = format!("!!{}\x1b", text); // ENDC = ESC char (0x1B)
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_gm_broadcast_to(SendTarget::ToAll, text).await;
     info!("[GM] {} sent SMSG: {}", name, text);
 }
 
@@ -53,7 +51,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     // Parse: name map x y (space-delimited)
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 4 {
-        state.send_to(conn_id, &format!("{}Uso: /TELEP nombre mapa x y{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /TELEP nombre mapa x y", font_index::INFO).await;
         return;
     }
 
@@ -82,7 +80,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
         match state.find_user_by_name(name) {
             Some(id) => id,
             None => {
-                state.send_to(conn_id, "||196").await; // User not found
+                state.send_msg_id(conn_id, 196, "").await; // User not found
                 return;
             }
         }
@@ -93,11 +91,11 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
 
     // Notify
     if target_id == conn_id {
-        state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
+        state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
     } else {
         let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_to(target_id, &format!("||778@{}", gm_name)).await; // TEXTO778: %1 te ha transportado
-        state.send_to(conn_id, &format!("||651@{}", gm_name)).await; // TEXTO651: %1 transportado
+        state.send_msg_id(target_id, 778, &gm_name.to_string()).await; // TEXTO778: %1 te ha transportado
+        state.send_msg_id(conn_id, 651, &gm_name.to_string()).await; // TEXTO651: %1 transportado
     }
 }
 
@@ -118,18 +116,18 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
     };
 
     if tx == 0 && ty == 0 {
-        state.send_to(conn_id, &format!("{}Primero haz click en el destino.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Primero haz click en el destino.", font_index::INFO).await;
         return;
     }
 
     if !crate::game::world::in_map_bounds(tx, ty) {
-        state.send_to(conn_id, &format!("{}Coordenadas fuera de los limites del mapa.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Coordenadas fuera de los limites del mapa.", font_index::INFO).await;
         return;
     }
 
     warp_user(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
-    state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
+    state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
 }
 
 /// /GO map — Teleport self to map at position 50,50 (VB6 behavior, requires SEMIDIOS+).
@@ -137,14 +135,14 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_to(conn_id, &format!("{}No tenes permisos para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
             return;
         }
     };
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.is_empty() {
-        state.send_to(conn_id, &format!("{}Uso: /GO mapa{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /GO mapa", font_index::INFO).await;
         return;
     }
 
@@ -154,20 +152,20 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     let y: i32 = if parts.len() >= 3 { parts[2].parse().unwrap_or(50) } else { 50 };
 
     if map < 1 || !crate::game::world::in_map_bounds(x, y) {
-        state.send_to(conn_id, &format!("{}Mapa o coordenadas invalidas.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Mapa o coordenadas invalidas.", font_index::INFO).await;
         return;
     }
 
     // Check map exists
     let map_idx = map as usize;
     if map_idx >= state.game_data.maps.len() || state.game_data.maps.get(map_idx).and_then(|m| m.as_ref()).is_none() {
-        state.send_to(conn_id, &format!("{}Mapa {} no existe.{}", server_opcodes::CONSOLE_MSG, map, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("Mapa {} no existe.", map), font_index::INFO).await;
         return;
     }
 
     warp_user(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
-    state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
+    state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
 }
 
 /// /IRA name — Teleport to a player's position (requires SEMIDIOS+).
@@ -175,7 +173,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_to(conn_id, &format!("{}No tenes permisos para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
             return;
         }
     }
@@ -183,7 +181,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
@@ -191,14 +189,14 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     let (map, x, y) = match state.users.get(&target_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y),
         _ => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
 
     warp_user(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
-    state.send_to(conn_id, "||773").await; // TEXTO773: Has sido transportado
+    state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
 }
 
 /// /SUM name — Summon a player to your position (requires SEMIDIOS+).
@@ -206,7 +204,7 @@ pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionI
     let (my_map, my_x, my_y) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => (u.pos_map, u.pos_x, u.pos_y),
         _ => {
-            state.send_to(conn_id, &format!("{}No tenes permisos para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
             return;
         }
     };
@@ -214,15 +212,15 @@ pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionI
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
 
     warp_user(state, target_id, my_map, my_x, my_y).await;
     send_warp_fx(state, target_id).await;
-    state.send_to(conn_id, &format!("{}Invocaste a '{}'.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
-    state.send_to(target_id, &format!("{}Has sido invocado por un GM.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Invocaste a '{}'.", target), font_index::INFO).await;
+    state.send_console(target_id, "Has sido invocado por un GM.", font_index::INFO).await;
 }
 
 /// /KICK name — Disconnect a player (requires SEMIDIOS+).
@@ -230,7 +228,7 @@ pub(super) async fn handle_slash_kick(state: &mut GameState, conn_id: Connection
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_to(conn_id, &format!("{}No tenes permisos para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
             return;
         }
     }
@@ -238,14 +236,14 @@ pub(super) async fn handle_slash_kick(state: &mut GameState, conn_id: Connection
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
 
     // Don't let someone kick themselves
     if target_id == conn_id {
-        state.send_to(conn_id, &format!("{}No podes kickearte a vos mismo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No podes kickearte a vos mismo.", font_index::INFO).await;
         return;
     }
 
@@ -253,13 +251,13 @@ pub(super) async fn handle_slash_kick(state: &mut GameState, conn_id: Connection
     let target_priv = state.users.get(&target_id).map(|u| u.privileges).unwrap_or(0);
     let my_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
     if target_priv >= my_priv {
-        state.send_to(conn_id, &format!("{}No podes kickear a alguien de igual o mayor rango.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No podes kickear a alguien de igual o mayor rango.", font_index::INFO).await;
         return;
     }
 
-    state.send_to(target_id, &format!("{}Has sido desconectado por un GM.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(target_id, "Has sido desconectado por un GM.", font_index::INFO).await;
     close_connection(state, target_id).await;
-    state.send_to(conn_id, &format!("{}Jugador '{}' desconectado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Jugador '{}' desconectado.", target), font_index::INFO).await;
 }
 
 /// /ITEM objid amount — Create item in inventory (requires DIOS+).
@@ -267,14 +265,14 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
-            state.send_to(conn_id, &format!("{}No tenes permisos para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
             return;
         }
     }
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.is_empty() {
-        state.send_to(conn_id, &format!("{}Uso: /ITEM objid [cantidad]{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /ITEM objid [cantidad]", font_index::INFO).await;
         return;
     }
 
@@ -282,7 +280,7 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     let amount: i32 = if parts.len() > 1 { parts[1].parse().unwrap_or(1) } else { 1 };
 
     if obj_idx < 1 || amount < 1 {
-        state.send_to(conn_id, &format!("{}Parametros invalidos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Parametros invalidos.", font_index::INFO).await;
         return;
     }
 
@@ -290,7 +288,7 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     let obj_name = match state.get_object(obj_idx) {
         Some(obj) => obj.name.clone(),
         None => {
-            state.send_to(conn_id, &format!("{}Objeto {} no existe.{}", server_opcodes::CONSOLE_MSG, obj_idx, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Objeto {} no existe.", obj_idx), font_index::INFO).await;
             return;
         }
     };
@@ -312,10 +310,10 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
             }
             // Send CSI to update client inventory
             send_inventory_slot(state, conn_id, slot_idx).await;
-            state.send_to(conn_id, &format!("{}Creado: {} x{}.{}", server_opcodes::CONSOLE_MSG, obj_name, amount, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Creado: {} x{}.", obj_name, amount), font_index::INFO).await;
         }
         None => {
-            state.send_to(conn_id, &format!("{}Inventario lleno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Inventario lleno.", font_index::INFO).await;
         }
     }
 }
@@ -326,13 +324,13 @@ pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: Connection
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_to(conn_id, &format!("{}No tenes permisos para usar este comando.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
             return;
         }
     }
 
     if search.is_empty() {
-        state.send_to(conn_id, &format!("{}Uso: /SOBJ <nombre>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /SOBJ <nombre>", font_index::INFO).await;
         return;
     }
 
@@ -344,13 +342,13 @@ pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: Connection
         if name_upper.contains(&search_upper) {
             let name = state.game_data.objects[i].name.clone();
             let idx = state.game_data.objects[i].index;
-            state.send_to(conn_id, &format!("||748@{}@{}", name, idx)).await;
+            state.send_msg_id(conn_id, 748, &format!("{}@{}", name, idx)).await;
             found += 1;
         }
     }
 
     if found == 0 {
-        state.send_to(conn_id, &format!("{}No se encontraron objetos con '{}'.{}", server_opcodes::CONSOLE_MSG, search, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("No se encontraron objetos con '{}'.", search), font_index::INFO).await;
     }
 }
 
@@ -380,12 +378,12 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
             user.head = old_head;
         }
         // Broadcast appearance change
-        let cc = state.users.get(&conn_id).unwrap().build_cc_packet();
-        state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
         // NOVER packet (visible)
-        let nover = format!("NOVER{},0", char_index.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &nover).await;
-        state.send_to(conn_id, &format!("{}Sos visible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
+        state.send_console(conn_id, "Sos visible.", font_index::INFO).await;
     } else {
         // Save current body/head, go invisible
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -397,12 +395,12 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
             user.invisible = true;
         }
         // Broadcast appearance change (body=0, head=0 = invisible)
-        let cc = state.users.get(&conn_id).unwrap().build_cc_packet();
-        state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
         // NOVER packet (invisible)
-        let nover = format!("NOVER{},1", char_index.0);
-        state.send_data(SendTarget::ToArea { map, x, y }, &nover).await;
-        state.send_to(conn_id, &format!("{}Sos invisible.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
+        state.send_console(conn_id, "Sos invisible.", font_index::INFO).await;
     }
 }
 
@@ -424,14 +422,14 @@ pub(super) async fn handle_slash_donde(state: &mut GameState, conn_id: Connectio
             if target_priv >= privilege_level::DIOS {
                 let my_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
                 if my_priv < target_priv {
-                    state.send_to(conn_id, &format!("{}No podes localizar a ese usuario.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                    state.send_console(conn_id, "No podes localizar a ese usuario.", font_index::INFO).await;
                     return;
                 }
             }
-            state.send_to(conn_id, &format!("||735@{}@{}@{}@{}", name, map, x, y)).await;
+            state.send_msg_id(conn_id, 735, &format!("{}@{}@{}@{}", name, map, x, y)).await;
         }
         None => {
-            state.send_to(conn_id, &format!("||196")).await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -448,7 +446,7 @@ pub(super) async fn handle_slash_ban(state: &mut GameState, conn_id: ConnectionI
     let reason = if parts.len() > 1 { parts[1].trim() } else { "" };
 
     if nick.is_empty() || reason.is_empty() {
-        state.send_to(conn_id, "||758").await;
+        state.send_msg_id(conn_id, 758, "").await;
         return;
     }
 
@@ -469,23 +467,22 @@ pub(super) async fn handle_slash_ban(state: &mut GameState, conn_id: ConnectionI
             let _ = std::fs::write(&chr_path, updated);
         }
     } else {
-        state.send_to(conn_id, &format!("||440")).await;
+        state.send_msg_id(conn_id, 440, "").await;
         return;
     }
 
     // Broadcast ban notification
-    let ban_msg = format!("||760@{}@{}", admin_name, nick);
-    state.send_data(SendTarget::ToAdmins, &ban_msg).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 760, &format!("{}@{}", admin_name, nick)).await;
 
     // If online, disconnect
     if let Some(tc) = target_conn {
-        state.send_to(tc, &format!("{}Has sido baneado. Razon: {}{}", server_opcodes::CONSOLE_MSG, reason, font_types::COMBAT)).await;
+        state.send_console(tc, &format!("Has sido baneado. Razon: {}", reason), font_index::FIGHT).await;
         if let Some(w) = state.writers.get_mut(&tc) {
             w.shutdown().await;
         }
     }
 
-    state.send_to(conn_id, &format!("{}{} ha sido baneado. Razon: {}{}", server_opcodes::CONSOLE_MSG, nick, reason, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("{} ha sido baneado. Razon: {}", nick, reason), font_index::INFO).await;
     info!("[GM] {} banned {} for: {}", admin_name, nick, reason);
 }
 
@@ -499,7 +496,7 @@ pub(super) async fn handle_slash_unban(state: &mut GameState, conn_id: Connectio
     let nick = target.replace(['\\', '/'], "");
     let chr_path = state.base_path.join("charfile").join(format!("{}.chr", nick));
     if !chr_path.exists() {
-        state.send_to(conn_id, &format!("||189@{}", nick)).await;
+        state.send_msg_id(conn_id, 189, &nick.to_string()).await;
         return;
     }
 
@@ -510,9 +507,8 @@ pub(super) async fn handle_slash_unban(state: &mut GameState, conn_id: Connectio
     }
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    let msg = format!("||762@{}@{}", admin_name, nick);
-    state.send_data(SendTarget::ToAdmins, &msg).await;
-    state.send_to(conn_id, &format!("{}{} ha sido desbaneado.{}", server_opcodes::CONSOLE_MSG, nick, font_types::INFO)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 762, &format!("{}@{}", admin_name, nick)).await;
+    state.send_console(conn_id, &format!("{} ha sido desbaneado.", nick), font_index::INFO).await;
     info!("[GM] {} unbanned {}", admin_name, nick);
 }
 
@@ -534,8 +530,7 @@ pub(super) async fn handle_slash_banip(state: &mut GameState, conn_id: Connectio
 
     let ip_to_ban = if let Some((tc, ip, name)) = found {
         // Banning by nick — also kick the player
-        let msg = format!("||798@{}@{}", admin_name, name);
-        state.send_data(SendTarget::ToAdmins, &msg).await;
+        state.send_msg_id_to(SendTarget::ToAdmins, 798, &format!("{}@{}", admin_name, name)).await;
         if let Some(w) = state.writers.get_mut(&tc) {
             w.shutdown().await;
         }
@@ -547,12 +542,12 @@ pub(super) async fn handle_slash_banip(state: &mut GameState, conn_id: Connectio
 
     // Add to ban list
     if state.bans.is_ip_banned(&ip_to_ban) {
-        state.send_to(conn_id, "||797").await;
+        state.send_msg_id(conn_id, 797, "").await;
         return;
     }
 
     let _ = state.bans.ban_ip(&state.pool, &ip_to_ban).await;
-    state.send_to(conn_id, &format!("{}IP {} baneada.{}", server_opcodes::CONSOLE_MSG, ip_to_ban, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("IP {} baneada.", ip_to_ban), font_index::INFO).await;
     info!("[GM] {} banned IP {}", admin_name, ip_to_ban);
 }
 
@@ -565,11 +560,11 @@ pub(super) async fn handle_slash_unbanip(state: &mut GameState, conn_id: Connect
 
     let ip = ip.trim();
     if state.bans.unban_ip(&state.pool, ip).await {
-        state.send_to(conn_id, &format!("||799@{}", ip)).await;
+        state.send_msg_id(conn_id, 799, &ip.to_string()).await;
         let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
         info!("[GM] {} unbanned IP {}", admin_name, ip);
     } else {
-        state.send_to(conn_id, "||800").await;
+        state.send_msg_id(conn_id, 800, "").await;
     }
 }
 
@@ -585,7 +580,7 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
     let reason = if parts.len() > 1 { parts[1].trim() } else { "Sin razon" };
 
     if nick.is_empty() {
-        state.send_to(conn_id, "||758").await;
+        state.send_msg_id(conn_id, 758, "").await;
         return;
     }
 
@@ -599,8 +594,7 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
 
     let account_name = if let Some((tc, acc)) = online {
         // Kick the player
-        let msg = format!("||752@{}@{}", admin_name, nick);
-        state.send_data(SendTarget::ToAdmins, &msg).await;
+        state.send_msg_id_to(SendTarget::ToAdmins, 752, &format!("{}@{}", admin_name, nick)).await;
         if let Some(w) = state.writers.get_mut(&tc) {
             w.shutdown().await;
         }
@@ -628,11 +622,9 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
         }
     }
 
-    let msg = format!("||760@{}@{}", admin_name, nick);
-    state.send_data(SendTarget::ToAdmins, &msg).await;
-    let msg2 = format!("||761@{}@{}", admin_name, account_name);
-    state.send_data(SendTarget::ToAdmins, &msg2).await;
-    state.send_to(conn_id, &format!("{}{} y cuenta {} baneados.{}", server_opcodes::CONSOLE_MSG, nick, account_name, font_types::INFO)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 760, &format!("{}@{}", admin_name, nick)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 761, &format!("{}@{}", admin_name, account_name)).await;
+    state.send_console(conn_id, &format!("{} y cuenta {} baneados.", nick, account_name), font_index::INFO).await;
     info!("[GM] {} banned account {} (char: {})", admin_name, account_name, nick);
 }
 
@@ -664,9 +656,8 @@ pub(super) async fn handle_slash_unbanacc(state: &mut GameState, conn_id: Connec
         }
     }
 
-    let msg = format!("||763@{}@{}", admin_name, nick);
-    state.send_data(SendTarget::ToAdmins, &msg).await;
-    state.send_to(conn_id, &format!("{}Cuenta de {} desbaneada.{}", server_opcodes::CONSOLE_MSG, nick, font_types::INFO)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 763, &format!("{}@{}", admin_name, nick)).await;
+    state.send_console(conn_id, &format!("Cuenta de {} desbaneada.", nick), font_index::INFO).await;
     info!("[GM] {} unbanned account for {}", admin_name, nick);
 }
 
@@ -679,7 +670,7 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
 
     let parts: Vec<&str> = args.splitn(3, '@').collect();
     if parts.len() < 3 {
-        state.send_to(conn_id, "||745").await;
+        state.send_msg_id(conn_id, 745, "").await;
         return;
     }
 
@@ -688,7 +679,7 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
     let minutes: i32 = parts[2].trim().parse().unwrap_or(0);
 
     if minutes < 1 || minutes > 60 {
-        state.send_to(conn_id, "||746").await;
+        state.send_msg_id(conn_id, 746, "").await;
         return;
     }
 
@@ -701,7 +692,7 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
         Some((tc, priv_level)) => {
             // Can't jail admins
             if priv_level >= privilege_level::DIOS {
-                state.send_to(conn_id, "||442").await;
+                state.send_msg_id(conn_id, 442, "").await;
                 return;
             }
 
@@ -711,17 +702,17 @@ pub(super) async fn handle_slash_carcel(state: &mut GameState, conn_id: Connecti
             }
 
             // Send jail notification
-            state.send_to(tc, &format!("||659@{}", minutes)).await;
+            state.send_msg_id(tc, 659, &minutes.to_string()).await;
 
             // Warp to prison
             warp_user(state, tc, 78, 50, 50).await;
 
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_to(conn_id, &format!("{}{} encarcelado por {} minutos.{}", server_opcodes::CONSOLE_MSG, nick, minutes, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("{} encarcelado por {} minutos.", nick, minutes), font_index::INFO).await;
             info!("[GM] {} jailed {} for {}m: {}", admin_name, nick, minutes, reason);
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -738,7 +729,7 @@ pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: Conne
     let minutes: i32 = if parts.len() > 1 { parts[1].trim().parse().unwrap_or(5) } else { 5 };
 
     if minutes > 60 {
-        state.send_to(conn_id, "||944").await;
+        state.send_msg_id(conn_id, 944, "").await;
         return;
     }
 
@@ -755,22 +746,22 @@ pub(super) async fn handle_slash_silenciar(state: &mut GameState, conn_id: Conne
                     user.silenced = false;
                     user.silence_timer = 0;
                 }
-                state.send_to(conn_id, "||738").await;
-                state.send_to(tc, "||946").await;
+                state.send_msg_id(conn_id, 738, "").await;
+                state.send_msg_id(tc, 946, "").await;
             } else {
                 // Mute
                 if let Some(user) = state.users.get_mut(&tc) {
                     user.silenced = true;
                     user.silence_timer = minutes * 60;
                 }
-                state.send_to(conn_id, "||737").await;
-                state.send_to(tc, &format!("||943@{}", minutes)).await;
+                state.send_msg_id(conn_id, 737, "").await;
+                state.send_msg_id(tc, 943, &minutes.to_string()).await;
             }
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
             info!("[GM] {} {} {}", admin_name, if is_silenced { "unmuted" } else { "muted" }, nick);
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -787,7 +778,7 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
     let reason = if parts.len() > 1 { parts[1].trim() } else { "" };
 
     if nick.is_empty() || reason.is_empty() {
-        state.send_to(conn_id, "||741").await;
+        state.send_msg_id(conn_id, 741, "").await;
         return;
     }
 
@@ -803,7 +794,7 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
             // Can't warn higher privilege
             let my_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
             if priv_level >= my_priv && my_priv < privilege_level::ADMINISTRADOR {
-                state.send_to(conn_id, "||751").await;
+                state.send_msg_id(conn_id, 751, "").await;
                 return;
             }
 
@@ -813,9 +804,8 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
             }
 
             // Broadcast
-            let msg = format!("||742@{}@{}", admin_name, nick);
-            state.send_data(SendTarget::ToAdmins, &msg).await;
-            state.send_to(tc, &format!("||743@{}@{}@{}", admin_name, reason, new_warnings)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 742, &format!("{}@{}", admin_name, nick)).await;
+            state.send_msg_id(tc, 743, &format!("{}@{}@{}", admin_name, reason, new_warnings)).await;
 
             if new_warnings >= 5 {
                 // Auto-ban
@@ -826,8 +816,7 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
                         let _ = std::fs::write(&chr_path, updated);
                     }
                 }
-                let ban_msg = format!("||744@{}", nick);
-                state.send_data(SendTarget::ToAdmins, &ban_msg).await;
+                state.send_msg_id_to(SendTarget::ToAdmins, 744, &nick.to_string()).await;
                 if let Some(w) = state.writers.get_mut(&tc) {
                     w.shutdown().await;
                 }
@@ -838,14 +827,14 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
                 if let Some(user) = state.users.get_mut(&tc) {
                     user.jail_timer = jail_minutes * 60;
                 }
-                state.send_to(tc, &format!("||659@{}", jail_minutes)).await;
+                state.send_msg_id(tc, 659, &jail_minutes.to_string()).await;
                 warp_user(state, tc, 78, 50, 50).await;
             }
 
             info!("[GM] {} warned {} (#{}) for: {}", admin_name, nick, new_warnings, reason);
         }
         None => {
-            state.send_to(conn_id, "||440").await;
+            state.send_msg_id(conn_id, 440, "").await;
         }
     }
 }
@@ -871,12 +860,11 @@ pub(super) async fn handle_slash_kill(state: &mut GameState, conn_id: Connection
             user_die(state, tc, None).await;
 
             // Broadcast
-            let msg = format!("||753@{}@{}", admin_name, target);
-            state.send_data(SendTarget::ToArea { map, x, y }, &msg).await;
+            state.send_msg_id_to(SendTarget::ToArea { map, x, y }, 753, &format!("{}@{}", admin_name, target)).await;
             info!("[GM] {} killed {}", admin_name, target);
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -906,7 +894,7 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
         Some(tc) => {
             let is_dead = state.users.get(&tc).map(|u| u.dead).unwrap_or(false);
             if !is_dead {
-                state.send_to(conn_id, &format!("{}Ese usuario no esta muerto.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                state.send_console(conn_id, "Ese usuario no esta muerto.", font_index::INFO).await;
                 return;
             }
 
@@ -939,25 +927,24 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
 
             // VB6 GM /REVIVIR: no CFF (no resurrection FX), just ChangeUserChar + SendUserHP
             // Broadcast CP (character model change) — VB6: ChangeUserChar(toMap, ...)
-            let cp_pkt = format!(
-                "CP{},{},{},{},{},{},0,0,{}",
-                char_index.0, new_body, orig_head, heading,
-                weapon_anim, shield_anim, casco_anim
+            let cp_pkt = binary_packets::write_character_change(
+                char_index.0 as i16, new_body as i16, orig_head as i16, heading as u8,
+                weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
             );
-            state.send_data(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
 
             // Send HP update (VB6: SendUserHP)
             send_stats_hp(state, tc).await;
 
             // VB6: ||749@GMname — notify target who revived them
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_to(tc, &format!("||749@{}", admin_name)).await;
+            state.send_msg_id(tc, 749, &admin_name.to_string()).await;
 
-            state.send_to(conn_id, &format!("{}{} revivido.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("{} revivido.", target), font_index::INFO).await;
             info!("[GM] {} revived {}", admin_name, target);
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -987,10 +974,10 @@ pub(super) async fn handle_slash_espiar(state: &mut GameState, conn_id: Connecti
             let warp_y = (y - 2).max(1);
             warp_user(state, conn_id, map, warp_x, warp_y).await;
 
-            state.send_to(conn_id, &format!("{}Espiando a {}.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Espiando a {}.", target), font_index::INFO).await;
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1018,21 +1005,21 @@ pub(super) async fn handle_slash_inv(state: &mut GameState, conn_id: ConnectionI
                 .unwrap_or_default();
 
             let target_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_to(conn_id, &format!("{}Inventario de {}:{}", server_opcodes::CONSOLE_MSG, target_name, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Inventario de {}:", target_name), font_index::INFO).await;
 
             let is_empty = inv_data.is_empty();
             for (slot, obj_idx, amount, equipped) in inv_data {
                 let name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_else(|| format!("Obj#{}", obj_idx));
                 let eq = if equipped { " [E]" } else { "" };
-                state.send_to(conn_id, &format!("{}  Slot {}: {} x{}{}{}", server_opcodes::CONSOLE_MSG, slot, name, amount, eq, font_types::INFO)).await;
+                state.send_console(conn_id, &format!("  Slot {}: {} x{}{}", slot, name, amount, eq), font_index::INFO).await;
             }
 
             if is_empty {
-                state.send_to(conn_id, &format!("{}  (vacio){}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                state.send_console(conn_id, "  (vacio)", font_index::INFO).await;
             }
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1060,20 +1047,20 @@ pub(super) async fn handle_slash_bov(state: &mut GameState, conn_id: ConnectionI
 
             let target_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
             let bank_gold = state.users.get(&tc).map(|u| u.bank_gold).unwrap_or(0);
-            state.send_to(conn_id, &format!("{}Boveda de {} (Oro: {}):{}", server_opcodes::CONSOLE_MSG, target_name, bank_gold, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Boveda de {} (Oro: {}):", target_name, bank_gold), font_index::INFO).await;
 
             let bank_empty = bank_data.is_empty();
             for (slot, obj_idx, amount) in bank_data {
                 let name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_else(|| format!("Obj#{}", obj_idx));
-                state.send_to(conn_id, &format!("{}  Slot {}: {} x{}{}", server_opcodes::CONSOLE_MSG, slot, name, amount, font_types::INFO)).await;
+                state.send_console(conn_id, &format!("  Slot {}: {} x{}", slot, name, amount), font_index::INFO).await;
             }
 
             if bank_empty {
-                state.send_to(conn_id, &format!("{}  (vacia){}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                state.send_console(conn_id, "  (vacia)", font_index::INFO).await;
             }
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1086,9 +1073,8 @@ pub(super) async fn handle_slash_rmsg(state: &mut GameState, conn_id: Connection
     }
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    // VB6: N|<admin>> <message> with celeste font
-    let msg = format!("N|{}>> {}{}", admin_name, text, font_types::SYSTEM);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    // VB6: N|<admin>> <message> with green/server font
+    state.send_console_to(SendTarget::ToAll, &format!("{}>> {}", admin_name, text), font_index::SERVER).await;
     info!("[GM] {} broadcast: {}", admin_name, text);
 }
 
@@ -1105,7 +1091,7 @@ pub(super) async fn handle_slash_lmsg(state: &mut GameState, conn_id: Connection
     if text.is_empty() {
         state.auto_msg_active = false;
         state.auto_msg_text.clear();
-        state.send_to(conn_id, &format!("{}Mensaje automatico desactivado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Mensaje automatico desactivado.", font_index::INFO).await;
         return;
     }
 
@@ -1115,7 +1101,7 @@ pub(super) async fn handle_slash_lmsg(state: &mut GameState, conn_id: Connection
     state.auto_msg_interval = minutes;
     state.auto_msg_counter = 0;
 
-    state.send_to(conn_id, &format!("{}Mensaje automatico cada {}min: {}{}", server_opcodes::CONSOLE_MSG, minutes, text, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Mensaje automatico cada {}min: {}", minutes, text), font_index::INFO).await;
 }
 
 /// /EXP multiplier — Set experience multiplier.
@@ -1127,13 +1113,12 @@ pub(super) async fn handle_slash_exp_mult(state: &mut GameState, conn_id: Connec
 
     let mult: i32 = val.parse().unwrap_or(0);
     if mult < 1 {
-        state.send_to(conn_id, &format!("{}Valor invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Valor invalido.", font_index::INFO).await;
         return;
     }
 
     state.multiplicador_exp = mult;
-    let msg = format!("||774@{}", mult);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_msg_id_to(SendTarget::ToAll, 774, &mult.to_string()).await;
     info!("[GM] EXP multiplier set to {}x", mult);
 }
 
@@ -1146,13 +1131,12 @@ pub(super) async fn handle_slash_gld_mult(state: &mut GameState, conn_id: Connec
 
     let mult: i32 = val.parse().unwrap_or(0);
     if mult < 1 {
-        state.send_to(conn_id, &format!("{}Valor invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Valor invalido.", font_index::INFO).await;
         return;
     }
 
     state.multiplicador_oro = mult;
-    let msg = format!("||775@{}", mult);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_msg_id_to(SendTarget::ToAll, 775, &mult.to_string()).await;
     info!("[GM] Gold multiplier set to {}x", mult);
 }
 
@@ -1165,13 +1149,12 @@ pub(super) async fn handle_slash_drop_mult(state: &mut GameState, conn_id: Conne
 
     let mult: i32 = val.parse().unwrap_or(0);
     if mult < 1 {
-        state.send_to(conn_id, &format!("{}Valor invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Valor invalido.", font_index::INFO).await;
         return;
     }
 
     state.multiplicador_drop = mult;
-    let msg = format!("||776@{}", mult);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_msg_id_to(SendTarget::ToAll, 776, &mult.to_string()).await;
     info!("[GM] Drop multiplier set to {}x", mult);
 }
 
@@ -1204,11 +1187,11 @@ pub(super) async fn handle_slash_home(state: &mut GameState, conn_id: Connection
             };
 
             warp_user(state, tc, map, x, y).await;
-            state.send_to(conn_id, "||772").await;
-            state.send_to(tc, "||773").await;
+            state.send_msg_id(conn_id, 772, "").await;
+            state.send_msg_id(tc, 773, "").await;
         }
         None => {
-            state.send_to(conn_id, "||198").await;
+            state.send_msg_id(conn_id, 198, "").await;
         }
     }
 }
@@ -1224,8 +1207,7 @@ pub(super) async fn handle_slash_off(state: &mut GameState, conn_id: ConnectionI
     info!("[GM] {} shutting down server", admin_name);
 
     // Send shutdown message to all
-    let msg = format!("N|Servidor apagado por {}.{}", admin_name, font_types::COMBAT);
-    state.send_data(SendTarget::ToAll, &msg).await;
+    state.send_console_to(SendTarget::ToAll, &format!("Servidor apagado por {}.", admin_name), font_index::FIGHT).await;
 
     // Exit process
     std::process::exit(0);
@@ -1252,7 +1234,7 @@ pub(super) async fn handle_slash_echartodospjs(state: &mut GameState, conn_id: C
     }
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_to(conn_id, &format!("{}{} jugadores desconectados.{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("{} jugadores desconectados.", count), font_index::INFO).await;
     info!("[GM] {} kicked all {} players", admin_name, count);
 }
 
@@ -1282,13 +1264,12 @@ pub(super) async fn handle_slash_dametodo(state: &mut GameState, conn_id: Connec
             send_full_inventory(state, tc).await;
 
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_to(tc, &format!("||754@{}", admin_name)).await;
-            let msg = format!("||755@{}@{}", admin_name, target);
-            state.send_data(SendTarget::ToAdmins, &msg).await;
+            state.send_msg_id(tc, 754, &admin_name.to_string()).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 755, &format!("{}@{}", admin_name, target)).await;
             info!("[GM] {} stripped inventory of {}", admin_name, target);
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1313,16 +1294,16 @@ pub(super) async fn handle_slash_mata(state: &mut GameState, conn_id: Connection
                         }
                     }
                 }
-                let bp = format!("BP{}", ci.0);
-                state.send_data(SendTarget::ToArea { map, x, y }, &bp).await;
+                let bp = binary_packets::write_character_remove(ci.0 as i16);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp).await;
                 state.npcs[npc_idx] = None;
-                state.send_to(conn_id, &format!("{}NPC #{} eliminado.{}", server_opcodes::CONSOLE_MSG, npc_idx, font_types::INFO)).await;
+                state.send_console(conn_id, &format!("NPC #{} eliminado.", npc_idx), font_index::INFO).await;
                 return;
             }
         }
     }
 
-    state.send_to(conn_id, &format!("{}NPC no encontrado. Usa /MATA <npc_runtime_index>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, "NPC no encontrado. Usa /MATA <npc_runtime_index>", font_index::INFO).await;
 }
 
 /// /MASSKILL — Kill all NPCs on current map.
@@ -1346,14 +1327,14 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
                     tile.npc_index = 0;
                 }
             }
-            let bp = format!("BP{}", ci.0);
-            state.send_data(SendTarget::ToArea { map, x: nx, y: ny }, &bp).await;
+            let bp = binary_packets::write_character_remove(ci.0 as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &bp).await;
             killed += 1;
         }
         state.npcs[idx] = None;
     }
 
-    state.send_to(conn_id, &format!("{}{} NPCs eliminados en mapa {}.{}", server_opcodes::CONSOLE_MSG, killed, map, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("{} NPCs eliminados en mapa {}.", killed, map), font_index::INFO).await;
 }
 
 /// Check if an object is a map fixture (not player-droppable).
@@ -1399,13 +1380,14 @@ pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: Connect
         if let Some(tile) = grid.tile_mut(x, y) {
             tile.ground_item = world::GroundItem::default();
         }
-        // VB6: EraseObj sends "BO{x},{y}" to map
-        state.send_data(SendTarget::ToMap(map), &format!("BO{},{}", x, y)).await;
+        // VB6: EraseObj sends BO to map
+        let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /LIMPIAR on map {} — cleaned {} items", gm_name, map, to_clean.len());
-    state.send_to(conn_id, &format!("{}{} items del suelo limpiados en mapa {}.{}", server_opcodes::CONSOLE_MSG, to_clean.len(), map, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("{} items del suelo limpiados en mapa {}.", to_clean.len(), map), font_index::INFO).await;
 }
 
 /// /NICK2IP nick — Get IP of user.
@@ -1422,10 +1404,10 @@ pub(super) async fn handle_slash_nick2ip(state: &mut GameState, conn_id: Connect
 
     match found {
         Some((name, ip)) => {
-            state.send_to(conn_id, &format!("{}IP de {}: {}{}", server_opcodes::CONSOLE_MSG, name, ip, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("IP de {}: {}", name, ip), font_index::INFO).await;
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1443,9 +1425,9 @@ pub(super) async fn handle_slash_ip2nick(state: &mut GameState, conn_id: Connect
         .collect();
 
     if matches.is_empty() {
-        state.send_to(conn_id, &format!("{}Nadie con IP {}{}", server_opcodes::CONSOLE_MSG, ip, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("Nadie con IP {}", ip), font_index::INFO).await;
     } else {
-        state.send_to(conn_id, &format!("{}IP {}: {}{}", server_opcodes::CONSOLE_MSG, ip, matches.join(", "), font_types::INFO)).await;
+        state.send_console(conn_id, &format!("IP {}: {}", ip, matches.join(", ")), font_index::INFO).await;
     }
 }
 
@@ -1455,9 +1437,9 @@ pub(super) async fn handle_slash_noglobal(state: &mut GameState, conn_id: Connec
     if priv_level < 4 { return; } // Dios+
     state.chat_global = !state.chat_global;
     if state.chat_global {
-        state.send_data(SendTarget::ToAll, "||803").await;
+        state.send_msg_id_to(SendTarget::ToAll, 803, "").await;
     } else {
-        state.send_data(SendTarget::ToAll, "||804").await;
+        state.send_msg_id_to(SendTarget::ToAll, 804, "").await;
     }
 }
 
@@ -1470,7 +1452,7 @@ pub(super) async fn handle_slash_fps(state: &mut GameState, conn_id: ConnectionI
 
     let online = state.users.values().filter(|u| u.logged).count();
     let npc_count = state.npcs.iter().filter(|n| n.is_some()).count();
-    state.send_to(conn_id, &format!("{}Online: {} | NPCs: {} | Record: {}{}", server_opcodes::CONSOLE_MSG, online, npc_count, state.record_users, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Online: {} | NPCs: {} | Record: {}", online, npc_count, state.record_users), font_index::INFO).await;
 }
 
 /// /CT map x y — Create teleport at current position (requires map .inf modification).
@@ -1481,7 +1463,7 @@ pub(super) async fn handle_slash_ct(state: &mut GameState, conn_id: ConnectionId
     }
     // Teleport creation requires modifying map .inf files which is not yet supported.
     // In VB6 this modifies MapData().TileExit in memory.
-    state.send_to(conn_id, &format!("{}Creacion de teleports no soportada aun (requiere edicion de .inf).{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, "Creacion de teleports no soportada aun (requiere edicion de .inf).", font_index::INFO).await;
 }
 
 /// /DT — Destroy teleport at current position.
@@ -1490,7 +1472,7 @@ pub(super) async fn handle_slash_dt(state: &mut GameState, conn_id: ConnectionId
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => return,
     }
-    state.send_to(conn_id, &format!("{}Destruccion de teleports no soportada aun (requiere edicion de .inf).{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, "Destruccion de teleports no soportada aun (requiere edicion de .inf).", font_index::INFO).await;
 }
 
 /// /RESMAP — Respawn all NPCs on current map.
@@ -1518,7 +1500,7 @@ pub(super) async fn handle_slash_resmap(state: &mut GameState, conn_id: Connecti
         }
     }
 
-    state.send_to(conn_id, &format!("{}{} NPCs respawneados en mapa {}.{}", server_opcodes::CONSOLE_MSG, respawned, map, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("{} NPCs respawneados en mapa {}.", respawned, map), font_index::INFO).await;
 }
 
 /// /TALKAS text — Send message as NPC/anonymous.
@@ -1533,8 +1515,8 @@ pub(super) async fn handle_slash_talkas(state: &mut GameState, conn_id: Connecti
         None => return,
     };
 
-    let msg = format!("T|{}\u{00B0}{}\u{00B0}0", "16776960", args); // Yellow color
-    state.send_data(SendTarget::ToArea { map, x, y }, &msg).await;
+    // Yellow color = 16776960, char_index 0 = anonymous
+    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, 0, args, 16776960).await;
 }
 
 /// /SETDESC nick description — Set NPC/user description.
@@ -1544,7 +1526,7 @@ pub(super) async fn handle_slash_setdesc(state: &mut GameState, conn_id: Connect
         _ => return,
     }
 
-    state.send_to(conn_id, &format!("{}Descripcion actualizada.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO).await;
 }
 
 /// /STOP nick — Freeze user (can't move).
@@ -1565,10 +1547,10 @@ pub(super) async fn handle_slash_stop(state: &mut GameState, conn_id: Connection
                 user.paralyzed = freeze;
             }
             let status = if freeze { "paralizado" } else { "desparalizado" };
-            state.send_to(conn_id, &format!("{}{} {}.{}", server_opcodes::CONSOLE_MSG, target, status, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("{} {}.", target, status), font_index::INFO).await;
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1606,8 +1588,8 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
             // VB6: /MODMAPINFO PART <particle_id> — Set particle at player tile
             let particle_id: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             if particle_id == 0 { return; }
-            let pcf = format!("PCF{},{},{},0", particle_id, x, y);
-            state.send_data(SendTarget::ToMap(map), &pcf).await;
+            let pkt = binary_packets::write_particle_create(particle_id as i16, x as u8, y as u8, 0);
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
         }
         "LUZ" => {
             // VB6: /MODMAPINFO LUZ <range> <R> <G> <B>
@@ -1616,8 +1598,8 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
             let r: i32 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
             let g: i32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
             let b: i32 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
-            let pcl = format!("PCL{},{},{},{},{},{}", x, y, range, r, g, b);
-            state.send_data(SendTarget::ToMap(map), &pcl).await;
+            let pkt = binary_packets::write_light_create(x as u8, y as u8, range as u8, r as u8, g as u8, b as u8);
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
         }
         "RGB" => {
             // VB6: /MODMAPINFO RGB <R> <G> <B> — Set map ambient light
@@ -1629,8 +1611,8 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
                 game_map.info.g = g;  // Note: VB6 has r/b/g order bug, we keep correct r/g/b
                 game_map.info.b = b;
             }
-            let pcr = format!("PCR{},{},{}", r, g, b);
-            state.send_data(SendTarget::ToMap(map), &pcr).await;
+            let pkt = binary_packets::write_ambient_color(r as u8, g as u8, b as u8);
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
         }
         _ => {}
     }
@@ -1661,20 +1643,18 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
                 user.min_ham = user.max_ham;
             }
             // Send stat updates
-            let (hp, mana, sta) = {
-                let u = state.users.get(&tc).unwrap();
-                (format!("[H]{},{}", u.max_hp, u.min_hp),
-                 format!("[M]{},{}", u.max_mana, u.min_mana),
-                 format!("[S]{},{}", u.max_sta, u.min_sta))
-            };
-            state.send_to(tc, &hp).await;
-            state.send_to(tc, &mana).await;
-            state.send_to(tc, &sta).await;
+            let u = state.users.get(&tc).unwrap();
+            let hp_pkt = binary_packets::write_update_hp(u.min_hp as i16);
+            let mana_pkt = binary_packets::write_update_mana(u.min_mana as i16);
+            let sta_pkt = binary_packets::write_update_sta(u.min_sta as i16);
+            state.send_bytes(tc, &hp_pkt).await;
+            state.send_bytes(tc, &mana_pkt).await;
+            state.send_bytes(tc, &sta_pkt).await;
 
-            state.send_to(conn_id, &format!("{}{} restaurado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("{} restaurado.", target), font_index::INFO).await;
         }
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
         }
     }
 }
@@ -1687,9 +1667,8 @@ pub(super) async fn handle_slash_nave(state: &mut GameState, conn_id: Connection
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.navigating = !user.navigating;
         let status = if user.navigating { "activada" } else { "desactivada" };
-        let msg = format!("||Navegacion {}{}", status, font_types::SYSTEM);
         let conn = user.conn_id;
-        state.send_to(conn, &msg).await;
+        state.send_console(conn, &format!("Navegacion {}", status), font_index::SERVER).await;
     }
 }
 
@@ -1700,10 +1679,10 @@ pub(super) async fn handle_slash_habilitar(state: &mut GameState, conn_id: Conne
         _ => return,
     }
     if state.server_solo_gms {
-        state.send_to(conn_id, "||563").await; // Server abierto
+        state.send_msg_id(conn_id, 563, "").await; // Server abierto
         state.server_solo_gms = false;
     } else {
-        state.send_to(conn_id, "||564").await; // Server solo GMs
+        state.send_msg_id(conn_id, 564, "").await; // Server solo GMs
         state.server_solo_gms = true;
     }
 }
@@ -1719,23 +1698,22 @@ pub(super) async fn handle_slash_col(state: &mut GameState, conn_id: ConnectionI
     let msg_text = read_field(2, args, '@');
     if msg_text.is_empty() { return; }
 
-    let font = match color_str.to_uppercase().as_str() {
-        "LILA"     => "~200~20~215~1~0",
-        "VERDE"    => "~0~255~0~1~0",
-        "AZUL"     => "~0~0~255~1~0",
-        "ROJO"     => "~255~0~0~1~0",
-        "AMARILLO" => "~255~255~0~1~0",
-        "BLANCO"   => "~255~255~255~1~0",
-        "GRIS"     => "~120~120~120~1~0",
-        "NARANJA"  => "~255~128~0~1~0",
-        "MARRON"   => "~128~64~0~1~0",
-        "CELESTE"  => "~0~255~255~1~0",
-        "VIOLETA"  => "~64~0~128~1~0",
+    let font_id = match color_str.to_uppercase().as_str() {
+        "LILA"     => font_index::VIOLETA,   // closest purple
+        "VERDE"    => font_index::VERDE,
+        "AZUL"     => font_index::AZUL,
+        "ROJO"     => font_index::ROJO,
+        "AMARILLO" => font_index::AMARILLO,
+        "BLANCO"   => font_index::BLANCO,
+        "GRIS"     => font_index::GRIS,
+        "NARANJA"  => font_index::NARANJA,
+        "CELESTE"  => font_index::CELESTE,
+        "MARRON"   => font_index::BORDO,     // closest brown
+        "VIOLETA"  => font_index::VIOLETA,
         _ => return,
     };
 
-    let pkt = format!("N|{}> {}{}", name, msg_text, font);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_console_to(SendTarget::ToAll, &format!("{}> {}", name, msg_text), font_id).await;
 }
 
 /// /NOADV <name> — Clear all warnings/penalties for a character. Requires Semidios+.
@@ -1750,10 +1728,10 @@ pub(super) async fn handle_slash_noadv(state: &mut GameState, conn_id: Connectio
     if charpath.exists() {
         let chr = charpath.to_str().unwrap_or("");
         let _ = crate::config::write_var(chr, "PENAS", "Cant", "0");
-        state.send_to(conn_id, "||441").await;
+        state.send_msg_id(conn_id, 441, "").await;
         info!("[GM] Cleared penalties for {}", target);
     } else {
-        state.send_to(conn_id, "||196").await; // User not found
+        state.send_msg_id(conn_id, 196, "").await; // User not found
     }
 }
 
@@ -1770,12 +1748,11 @@ pub(super) async fn handle_slash_liberar(state: &mut GameState, conn_id: Connect
     if let Some(t_conn) = target_conn {
         // Warp target to Ullathorpe (map 1, 50, 50) as release location
         warp_user(state, t_conn, 1, 50, 50).await;
-        let pkt = format!("||443@{}@{}", gm_name, target);
-        state.send_data(SendTarget::ToAdmins, &pkt).await;
-        state.send_to(t_conn, "||444").await; // You've been released
+        state.send_msg_id_to(SendTarget::ToAdmins, 443, &format!("{}@{}", gm_name, target)).await;
+        state.send_msg_id(t_conn, 444, "").await; // You've been released
         info!("[GM] {} released {} from prison", gm_name, target);
     } else {
-        state.send_to(conn_id, "||198").await; // Not online
+        state.send_msg_id(conn_id, 198, "").await; // Not online
     }
 }
 
@@ -1789,20 +1766,18 @@ pub(super) async fn handle_slash_penas(state: &mut GameState, conn_id: Connectio
     let base = state.base_path.clone();
     let charpath = base.join("charfile").join(format!("{}.chr", target));
     if !charpath.exists() {
-        state.send_to(conn_id, "||196").await;
+        state.send_msg_id(conn_id, 196, "").await;
         return;
     }
     let chr = charpath.to_str().unwrap_or("");
 
     let cant: i32 = crate::config::get_var(chr, "PENAS", "Cant")
         .parse().unwrap_or(0);
-    let pkt_header = format!("||327@{}", cant);
-    state.send_to(conn_id, &pkt_header).await;
+    state.send_msg_id(conn_id, 327, &cant.to_string()).await;
 
     for i in 1..=cant {
         let p = crate::config::get_var(chr, "PENAS", &format!("P{}", i));
-        let pkt = format!("||327@{}", p);
-        state.send_to(conn_id, &pkt).await;
+        state.send_msg_id(conn_id, 327, &p.to_string()).await;
     }
 }
 
@@ -1848,7 +1823,7 @@ pub(super) async fn handle_slash_smod(state: &mut GameState, conn_id: Connection
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
             return;
         }
     };
@@ -1868,8 +1843,8 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
     match stat {
         "PART" => {
             if value <= 0 { return; }
-            let pkt = format!("CFF{},{},0", char_index, value);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 0);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
         "AURA" => {
             // VB6: UserList(tIndex).Char.AuraA = val(Arg2); SendUserAura
@@ -1877,13 +1852,17 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.aura_a = value as i32;
             }
             if let Some(user) = state.users.get(&target) {
-                let au_pkt = super::common::build_aura_packet(user);
-                state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+                let au_pkt = binary_packets::write_aura_update(
+                    user.char_index.0 as i16,
+                    user.aura_a as i16, user.aura_w as i16,
+                    user.aura_e as i16, user.aura_r as i16, user.aura_c as i16,
+                );
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt).await;
             }
         }
         "FX" => {
-            let pkt = format!("CFX{},{},20", char_index, value);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 20);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
         "ATRI" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -1891,14 +1870,14 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                     user.attributes[i] = value as i32;
                 }
             }
-            state.send_to(conn_id, &format!("||571@{}", value)).await;
+            state.send_msg_id(conn_id, 571, &value.to_string()).await;
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.gold = value;
             }
             send_stats_gold(state, target).await;
-            state.send_to(conn_id, &format!("||572@{}", value)).await;
+            state.send_msg_id(conn_id, 572, &value.to_string()).await;
         }
         "EXP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -1906,64 +1885,70 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
             }
             check_user_level(state, target).await;
             send_stats_exp(state, target).await;
-            state.send_to(conn_id, &format!("||572@{}", value)).await;
+            state.send_msg_id(conn_id, 572, &value.to_string()).await;
         }
         "BODY" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.body = value as i32;
             }
-            state.send_to(conn_id, &format!("||573@{}", value)).await;
+            state.send_msg_id(conn_id, 573, &value.to_string()).await;
             // VB6: ChangeUserChar → CP to map
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, value, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, value as i16, u.head as i16, u.heading as u8,
+                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
         }
         "HEAD" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.head = value as i32;
             }
-            state.send_to(conn_id, &format!("||574@{}", value)).await;
+            state.send_msg_id(conn_id, 574, &value.to_string()).await;
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, value, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, u.body as i16, value as i16, u.heading as u8,
+                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
         }
         "CRI" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.criminales_matados = value as i32;
             }
-            state.send_to(conn_id, &format!("||575@{}", value)).await;
+            state.send_msg_id(conn_id, 575, &value.to_string()).await;
         }
         "CIU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.ciudadanos_matados = value as i32;
             }
-            state.send_to(conn_id, &format!("||576@{}", value)).await;
+            state.send_msg_id(conn_id, 576, &value.to_string()).await;
         }
         "LEVEL" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.level = value as i32;
             }
-            state.send_to(conn_id, &format!("||577@{}", value)).await;
+            state.send_msg_id(conn_id, 577, &value.to_string()).await;
         }
         "CLASE" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.class = value_str.to_string();
             }
-            state.send_to(conn_id, &format!("||578@{}", value_str)).await;
+            state.send_msg_id(conn_id, 578, &value_str.to_string()).await;
         }
         "HAM" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.min_ham = value as i32;
                 user.max_ham = value as i32;
             }
-            state.send_to(conn_id, &format!("||579@{}", value)).await;
+            state.send_msg_id(conn_id, 579, &value.to_string()).await;
         }
         "AGU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.min_agua = value as i32;
                 user.max_agua = value as i32;
             }
-            state.send_to(conn_id, &format!("||580@{}", value)).await;
+            state.send_msg_id(conn_id, 580, &value.to_string()).await;
         }
         "STA" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -1971,7 +1956,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.max_sta = value as i32;
             }
             send_stats_sta(state, target).await;
-            state.send_to(conn_id, &format!("||581@{}", value)).await;
+            state.send_msg_id(conn_id, 581, &value.to_string()).await;
         }
         "MP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -1979,7 +1964,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.max_mana = value as i32;
             }
             send_stats_mana(state, target).await;
-            state.send_to(conn_id, &format!("||582@{}", value)).await;
+            state.send_msg_id(conn_id, 582, &value.to_string()).await;
         }
         "HP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -1987,34 +1972,43 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.max_hp = value as i32;
             }
             send_stats_hp(state, target).await;
-            state.send_to(conn_id, &format!("||583@{}", value)).await;
+            state.send_msg_id(conn_id, 583, &value.to_string()).await;
         }
         "ESCU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.shield_anim = value as i32;
             }
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, u.head, u.heading, u.weapon_anim, value, u.casco_anim);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
+                u.weapon_anim as i16, value as i16, u.casco_anim as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
         }
         "CASCO" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.casco_anim = value as i32;
             }
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, value);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
+                u.weapon_anim as i16, u.shield_anim as i16, value as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
         }
         "ARMA" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.weapon_anim = value as i32;
             }
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, u.head, u.heading, value, u.shield_anim, u.casco_anim);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
+                value as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
         }
         _ => {
-            state.send_to(conn_id, "||584").await;
+            state.send_msg_id(conn_id, 584, "").await;
         }
     }
 }
@@ -2033,16 +2027,15 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
     match stat {
         "PART" => {
             if value <= 0 { return; }
-            let pkt = format!("CFF{},{},0", char_index, value);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 0);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.gold = value;
             }
             send_stats_gold(state, target).await;
-            let pkt = format!("||591@{}@oro@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@oro@{}@{}", gm_name, target_name, value)).await;
         }
         "EXP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -2050,56 +2043,55 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
             }
             check_user_level(state, target).await;
             send_stats_exp(state, target).await;
-            let pkt = format!("||591@{}@experiencia@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@experiencia@{}@{}", gm_name, target_name, value)).await;
         }
         "BODY" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.body = value as i32;
             }
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, value, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
-            let pkt = format!("||591@{}@body@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, value as i16, u.head as i16, u.heading as u8,
+                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@body@{}@{}", gm_name, target_name, value)).await;
         }
         "HEAD" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.head = value as i32;
             }
             let u = state.users.get(&target).unwrap();
-            let cp = format!("CP{},{},{},{},{},{},0,0,{}", char_index, u.body, value, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim);
-            state.send_data(SendTarget::ToMap(map), &cp).await;
-            let pkt = format!("||591@{}@head@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            let cp = binary_packets::write_character_change(
+                char_index as i16, u.body as i16, value as i16, u.heading as u8,
+                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@head@{}@{}", gm_name, target_name, value)).await;
         }
         "CRI" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.criminales_matados = value as i32;
             }
-            let pkt = format!("||591@{}@criminales@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@criminales@{}@{}", gm_name, target_name, value)).await;
         }
         "CIU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.ciudadanos_matados = value as i32;
             }
-            let pkt = format!("||591@{}@ciudadanos@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@ciudadanos@{}@{}", gm_name, target_name, value)).await;
         }
         "LEVEL" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.level = value as i32;
             }
-            let pkt_level = format!("[L]{}", value);
-            state.send_to(target, &pkt_level).await;
-            let pkt = format!("||591@{}@nivel@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            let pkt_level = binary_packets::write_level_update(value as u8);
+            state.send_bytes(target, &pkt_level).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@nivel@{}@{}", gm_name, target_name, value)).await;
         }
         "CLASE" => {
             // VB6: class is a string, but we receive it as numeric here
-            let pkt = format!("||591@{}@clase@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@clase@{}@{}", gm_name, target_name, value)).await;
         }
         "STA" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -2107,8 +2099,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 user.max_sta = value as i32;
             }
             send_stats_sta(state, target).await;
-            let pkt = format!("||591@{}@energia@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@energia@{}@{}", gm_name, target_name, value)).await;
         }
         "MP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -2116,8 +2107,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 user.max_mana = value as i32;
             }
             send_stats_mana(state, target).await;
-            let pkt = format!("||591@{}@mana@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@mana@{}@{}", gm_name, target_name, value)).await;
         }
         "HP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -2125,11 +2115,10 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 user.max_hp = value as i32;
             }
             send_stats_hp(state, target).await;
-            let pkt = format!("||591@{}@vida@{}@{}", gm_name, target_name, value);
-            state.send_data(SendTarget::ToAdmins, &pkt).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@vida@{}@{}", gm_name, target_name, value)).await;
         }
         _ => {
-            state.send_to(gm_conn, "||584").await;
+            state.send_msg_id(gm_conn, 584, "").await;
         }
     }
 }
@@ -2161,8 +2150,7 @@ pub(super) async fn handle_slash_acc(state: &mut GameState, conn_id: ConnectionI
     // The GM's tile is occupied by the GM, so search nearby tiles
     let (spawn_x, spawn_y) = find_closest_legal_pos(state, map, x, y);
     if spawn_x == 0 && spawn_y == 0 {
-        let msg = format!("{}No hay posicion valida para spawnear.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No hay posicion valida para spawnear.", font_index::INFO).await;
         return;
     }
 
@@ -2171,9 +2159,9 @@ pub(super) async fn handle_slash_acc(state: &mut GameState, conn_id: ConnectionI
         // Broadcast CC for the NPC to nearby players
         let cc_pkt = state.npcs.get(npc_idx)
             .and_then(|n| n.as_ref())
-            .map(|n| n.build_cc_packet());
+            .map(|n| n.build_cc_binary());
         if let Some(cc) = cc_pkt {
-            state.send_data(SendTarget::ToArea { map, x: spawn_x, y: spawn_y }, &cc).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: spawn_x, y: spawn_y }, &cc).await;
         }
         let prefix = if with_respawn { "con respawn" } else { "sin respawn" };
         info!("[GM] {} spawned {} ({}) at map {} ({},{}) {}", name, npc_name, npc_num, map, spawn_x, spawn_y, prefix);
@@ -2215,7 +2203,7 @@ pub(super) async fn handle_slash_set_privilege(
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_to(conn_id, "||198").await; // Not online
+            state.send_msg_id(conn_id, 198, "").await; // Not online
             return;
         }
     };
@@ -2225,8 +2213,7 @@ pub(super) async fn handle_slash_set_privilege(
         .unwrap_or_default();
 
     // Announce to admins
-    let pkt = format!("||562@{}@{}@{}", gm_name, target_real_name, level_name);
-    state.send_data(SendTarget::ToAdmins, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 562, &format!("{}@{}@{}", gm_name, target_real_name, level_name)).await;
 
     // Set the new privilege level
     if let Some(user) = state.users.get_mut(&target_conn) {
@@ -2292,13 +2279,13 @@ pub(super) async fn handle_slash_borrarpj(state: &mut GameState, conn_id: Connec
     // Find the account that owns this character
     let charpath = base.join("charfile").join(format!("{}.chr", target));
     if !charpath.exists() {
-        state.send_to(conn_id, "||196").await;
+        state.send_msg_id(conn_id, 196, "").await;
         return;
     }
     let chr = charpath.to_str().unwrap_or("");
     let account_name = crate::config::get_var(chr, "CHAR", "Cuenta");
     if account_name.is_empty() {
-        state.send_to(conn_id, "||196").await;
+        state.send_msg_id(conn_id, 196, "").await;
         return;
     }
 
@@ -2331,8 +2318,7 @@ pub(super) async fn handle_slash_borrarpj(state: &mut GameState, conn_id: Connec
     let _ = std::fs::remove_file(&charpath);
 
     // Announce
-    let pkt = format!("||565@{}@{}", gm_name, target);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 565, &format!("{}@{}", gm_name, target)).await;
 
     info!("[GM] {} deleted character {}", gm_name, target);
 }
@@ -2352,7 +2338,7 @@ pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: Connectio
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
             return;
         }
     };
@@ -2395,14 +2381,10 @@ pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: Connectio
     close_connection(state, target_conn).await;
 
     // Announce
-    let pkt1 = format!("||567@{}@{}", gm_name, target);
-    let pkt2 = format!("||568@{}@{}", gm_name, target_hd);
-    let pkt3 = format!("||569@{}@{}", gm_name, target_ip);
-    let pkt4 = format!("||570@{}@{}", gm_name, target_account);
-    state.send_data(SendTarget::ToAll, &pkt1).await;
-    state.send_data(SendTarget::ToAll, &pkt2).await;
-    state.send_data(SendTarget::ToAll, &pkt3).await;
-    state.send_data(SendTarget::ToAll, &pkt4).await;
+    state.send_msg_id_to(SendTarget::ToAll, 567, &format!("{}@{}", gm_name, target)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 568, &format!("{}@{}", gm_name, target_hd)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 569, &format!("{}@{}", gm_name, target_ip)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 570, &format!("{}@{}", gm_name, target_account)).await;
 
     info!("[GM] {} banned {} (HD={}, IP={}, Account={})", gm_name, target, target_hd, target_ip, target_account);
 }
@@ -2448,8 +2430,8 @@ pub(super) async fn handle_slash_hechizo(state: &mut GameState, conn_id: Connect
         let spell_name = state.get_spell(spell_id)
             .map(|s| s.nombre.clone())
             .unwrap_or_else(|| format!("Hechizo {}", spell_id));
-        let pkt = format!("SHS{},{}", slot + 1, spell_name);
-        state.send_to(target_conn, &pkt).await;
+        let pkt = binary_packets::write_change_spell_slot((slot + 1) as u8, spell_id as i16, &spell_name);
+        state.send_bytes(target_conn, &pkt).await;
     }
 }
 
@@ -2469,7 +2451,7 @@ pub(super) async fn handle_slash_donacion(state: &mut GameState, conn_id: Connec
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_to(conn_id, "||196").await;
+            state.send_msg_id(conn_id, 196, "").await;
             return;
         }
     };
@@ -2479,8 +2461,7 @@ pub(super) async fn handle_slash_donacion(state: &mut GameState, conn_id: Connec
         .unwrap_or_default();
 
     // Donation points = amount * 10 (stored in charfile, not in runtime UserState for now)
-    let pkt = format!("||561@{}@{}", amount, target_real_name);
-    state.send_to(conn_id, &pkt).await;
+    state.send_msg_id(conn_id, 561, &format!("{}@{}", amount, target_real_name)).await;
 
     info!("[GM] Donation of ${} to {} ({} points)", amount, target_real_name, amount * 10);
 }
@@ -2496,22 +2477,22 @@ pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: Conne
     let vt = val_type.to_uppercase();
     match vt.as_str() {
         "DESAFIO" => {
-            state.send_to(conn_id, "||586").await;
+            state.send_msg_id(conn_id, 586, "").await;
         }
         "ARENA1" => {
-            state.send_data(SendTarget::ToAll, "||587@1").await;
+            state.send_msg_id_to(SendTarget::ToAll, 587, "1").await;
         }
         "ARENA2" => {
-            state.send_data(SendTarget::ToAll, "||587@2").await;
+            state.send_msg_id_to(SendTarget::ToAll, 587, "2").await;
         }
         "ARENA3" => {
-            state.send_data(SendTarget::ToAll, "||587@3").await;
+            state.send_msg_id_to(SendTarget::ToAll, 587, "3").await;
         }
         "ARENA4" => {
-            state.send_data(SendTarget::ToAll, "||587@4").await;
+            state.send_msg_id_to(SendTarget::ToAll, 587, "4").await;
         }
         "2VS2" => {
-            state.send_to(conn_id, "||588").await;
+            state.send_msg_id(conn_id, 588, "").await;
         }
         "CVC" => {
             if state.cvc_funciona {
@@ -2535,13 +2516,13 @@ pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: Conne
             state.cvc_pending_target_guild = 0;
             state.cvc_pending_challenger_guild = 0;
             state.cvc_pending_challenger_name.clear();
-            state.send_to(conn_id, "||589").await;
+            state.send_msg_id(conn_id, 589, "").await;
         }
         "INVOCACIONES" => {
-            state.send_to(conn_id, "||590").await;
+            state.send_msg_id(conn_id, 590, "").await;
         }
         _ => {
-            state.send_to(conn_id, "||585").await; // Invalid type
+            state.send_msg_id(conn_id, 585, "").await; // Invalid type
         }
     }
     info!("[GM] Reset vals: {}", vt);
@@ -2567,11 +2548,11 @@ pub(super) async fn handle_reload_sini(state: &mut GameState, conn_id: Connectio
             // Reload role overrides from server.ini (VB6: /RELOADSINI also reloads role lists)
             state.role_overrides = crate::config::load_roles(&base);
 
-            state.send_to(conn_id, &format!("{}server.ini recargado ({} roles).{}", server_opcodes::CONSOLE_MSG, state.role_overrides.len(), font_types::INFO)).await;
+            state.send_console(conn_id, &format!("server.ini recargado ({} roles).", state.role_overrides.len()), font_index::INFO).await;
             info!("[GM] {} reloaded server.ini ({} role overrides)", name, state.role_overrides.len());
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando server.ini: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando server.ini: {}", e), font_index::INFO).await;
         }
     }
 }
@@ -2588,11 +2569,11 @@ pub(super) async fn handle_reload_objects(state: &mut GameState, conn_id: Connec
         Ok(objects) => {
             let count = objects.len();
             state.game_data.objects = objects;
-            state.send_to(conn_id, &format!("{}Obj.dat recargado ({} objetos).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Obj.dat recargado ({} objetos).", count), font_index::INFO).await;
             info!("[GM] {} reloaded Obj.dat ({} objects)", name, count);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando Obj.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando Obj.dat: {}", e), font_index::INFO).await;
         }
     }
 }
@@ -2609,11 +2590,11 @@ pub(super) async fn handle_reload_spells(state: &mut GameState, conn_id: Connect
         Ok(spells) => {
             let count = spells.len();
             state.game_data.spells = spells;
-            state.send_to(conn_id, &format!("{}Hechizos.dat recargado ({} hechizos).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Hechizos.dat recargado ({} hechizos).", count), font_index::INFO).await;
             info!("[GM] {} reloaded Hechizos.dat ({} spells)", name, count);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando Hechizos.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando Hechizos.dat: {}", e), font_index::INFO).await;
         }
     }
 }
@@ -2630,11 +2611,11 @@ pub(super) async fn handle_reload_npcs(state: &mut GameState, conn_id: Connectio
         Ok(npc_db) => {
             let count = npc_db.count();
             state.game_data.npcs = npc_db;
-            state.send_to(conn_id, &format!("{}NPCs.dat recargado ({} NPCs).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("NPCs.dat recargado ({} NPCs).", count), font_index::INFO).await;
             info!("[GM] {} reloaded NPCs.dat ({} NPCs)", name, count);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando NPCs.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando NPCs.dat: {}", e), font_index::INFO).await;
         }
     }
 }
@@ -2650,11 +2631,11 @@ pub(super) async fn handle_reload_balance(state: &mut GameState, conn_id: Connec
     match crate::data::balance::load_balance(&base) {
         Ok(balance) => {
             state.game_data.balance = balance;
-            state.send_to(conn_id, &format!("{}Balance recargado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Balance recargado.", font_index::INFO).await;
             info!("[GM] {} reloaded Balance data", name);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando Balance: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando Balance: {}", e), font_index::INFO).await;
         }
     }
 }
@@ -2671,11 +2652,11 @@ pub(super) async fn handle_reload_quests(state: &mut GameState, conn_id: Connect
         Ok(quests) => {
             let count = quests.len();
             state.game_data.quests = quests;
-            state.send_to(conn_id, &format!("{}Quests.dat recargado ({} quests).{}", server_opcodes::CONSOLE_MSG, count, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Quests.dat recargado ({} quests).", count), font_index::INFO).await;
             info!("[GM] {} reloaded Quests.dat ({} quests)", name, count);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando Quests.dat: {}{}", server_opcodes::CONSOLE_MSG, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando Quests.dat: {}", e), font_index::INFO).await;
         }
     }
 }
@@ -2690,7 +2671,7 @@ pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: Connection
     let map_num: usize = match map_str.trim().parse() {
         Ok(n) if n >= 1 => n,
         _ => {
-            state.send_to(conn_id, &format!("{}Uso: /LOADMAP <numero>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Uso: /LOADMAP <numero>", font_index::INFO).await;
             return;
         }
     };
@@ -2707,11 +2688,11 @@ pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: Connection
             // Also update the world grid for this map
             state.world.reload_map(map_num, &state.game_data.maps);
 
-            state.send_to(conn_id, &format!("{}Mapa {} recargado.{}", server_opcodes::CONSOLE_MSG, map_num, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Mapa {} recargado.", map_num), font_index::INFO).await;
             info!("[GM] {} reloaded map {}", name, map_num);
         }
         Err(e) => {
-            state.send_to(conn_id, &format!("{}Error recargando mapa {}: {}{}", server_opcodes::CONSOLE_MSG, map_num, e, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Error recargando mapa {}: {}", map_num, e), font_index::INFO).await;
         }
     }
 }
@@ -2746,11 +2727,11 @@ pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: Connection
         let blocked_val = if is_blocked { 1 } else { 0 };
 
         // Broadcast BQ packet to everyone on the map
-        let bq_pkt = format!("BQ{},{},{}", x, y, blocked_val);
-        state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
+        let bq_pkt = binary_packets::write_block_position(x as u8, y as u8, is_blocked);
+        state.send_data_bytes(SendTarget::ToMap(map), &bq_pkt).await;
 
         let status = if is_blocked { "bloqueado" } else { "desbloqueado" };
-        state.send_to(conn_id, &format!("{}Tile ({},{}) {}.{}", server_opcodes::CONSOLE_MSG, x, y, status, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("Tile ({},{}) {}.", x, y, status), font_index::INFO).await;
     }
 }
 
@@ -2765,7 +2746,7 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
@@ -2777,7 +2758,7 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
     };
 
     if bank_items.is_empty() {
-        state.send_to(conn_id, &format!("{}El banco del jugador esta vacio.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El banco del jugador esta vacio.", font_index::INFO).await;
         return;
     }
 
@@ -2802,7 +2783,7 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
     }
 
     send_full_inventory(state, conn_id).await;
-    state.send_to(conn_id, &format!("{}Transferidos {} items del banco de '{}'.{}", server_opcodes::CONSOLE_MSG, added, target, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Transferidos {} items del banco de '{}'.", added, target), font_index::INFO).await;
 }
 
 /// /DV <name> — Devolver: warp player back to previous map position. VB6 TCP.bas:4190
@@ -2816,7 +2797,7 @@ pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
@@ -2825,7 +2806,7 @@ pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId
     let (prev_map, prev_x, prev_y) = match state.users.get(&target_id) {
         Some(u) if u.mapa_anterior > 0 => (u.mapa_anterior, u.x_anterior, u.y_anterior),
         _ => {
-            state.send_to(conn_id, &format!("{}El jugador no tiene posicion anterior guardada.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "El jugador no tiene posicion anterior guardada.", font_index::INFO).await;
             return;
         }
     };
@@ -2840,8 +2821,8 @@ pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId
 
     warp_user(state, target_id, prev_map, prev_x, prev_y).await;
     send_warp_fx(state, target_id).await;
-    state.send_to(target_id, &format!("{}Un GM te ha devuelto a tu posicion anterior.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
-    state.send_to(conn_id, &format!("{}Jugador '{}' devuelto.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+    state.send_console(target_id, "Un GM te ha devuelto a tu posicion anterior.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("Jugador '{}' devuelto.", target), font_index::INFO).await;
 }
 
 /// /CONT <seconds> — Start countdown broadcast. VB6 TCP.bas:3470
@@ -2854,19 +2835,18 @@ pub(super) async fn handle_slash_cont(state: &mut GameState, conn_id: Connection
 
     let seconds: i32 = args.trim().parse().unwrap_or(-1);
     if seconds < 0 || seconds > 60 {
-        state.send_to(conn_id, &format!("{}Uso: /CONT 0-60 (0 = cancelar){}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /CONT 0-60 (0 = cancelar)", font_index::INFO).await;
         return;
     }
 
     if seconds == 0 {
         state.countdown_seconds = 0;
-        state.send_to(conn_id, &format!("{}Cuenta regresiva cancelada.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Cuenta regresiva cancelada.", font_index::INFO).await;
     } else {
         state.countdown_seconds = seconds;
         // VB6: broadcasts ||739@seconds
-        let pkt = format!("||739@{}", seconds);
-        state.send_data(SendTarget::ToAll, &pkt).await;
-        state.send_to(conn_id, &format!("{}Cuenta regresiva iniciada: {} segundos.{}", server_opcodes::CONSOLE_MSG, seconds, font_types::INFO)).await;
+        state.send_msg_id_to(SendTarget::ToAll, 739, &seconds.to_string()).await;
+        state.send_console(conn_id, &format!("Cuenta regresiva iniciada: {} segundos.", seconds), font_index::INFO).await;
     }
 }
 
@@ -2881,7 +2861,7 @@ pub(super) async fn handle_slash_info(state: &mut GameState, conn_id: Connection
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no esta online.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no esta online.", target), font_index::INFO).await;
             return;
         }
     };
@@ -2904,7 +2884,7 @@ pub(super) async fn handle_slash_info(state: &mut GameState, conn_id: Connection
     };
 
     for line in info_lines {
-        state.send_to(conn_id, &format!("{}{}{}", server_opcodes::CONSOLE_MSG, line, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("{}", line), font_index::INFO).await;
     }
 }
 
@@ -2918,21 +2898,21 @@ pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: Connection
 
     let parts: Vec<&str> = args.splitn(2, '@').collect();
     if parts.len() < 2 {
-        state.send_to(conn_id, &format!("{}Uso: /EDIT nombre@niveles{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /EDIT nombre@niveles", font_index::INFO).await;
         return;
     }
 
     let target_name = parts[0].trim();
     let levels: i32 = parts[1].trim().parse().unwrap_or(0);
     if levels < 1 || levels > 50 {
-        state.send_to(conn_id, &format!("{}Niveles debe ser entre 1 y 50.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Niveles debe ser entre 1 y 50.", font_index::INFO).await;
         return;
     }
 
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target_name, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target_name), font_index::INFO).await;
             return;
         }
     };
@@ -2956,8 +2936,8 @@ pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: Connection
 
     send_stats_exp(state, target_id).await;
     let final_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(0);
-    state.send_to(conn_id, &format!("{}Jugador '{}' ahora es nivel {}.{}", server_opcodes::CONSOLE_MSG, target_name, final_level, font_types::INFO)).await;
-    state.send_to(target_id, &format!("{}Un GM te ha subido de nivel!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Jugador '{}' ahora es nivel {}.", target_name, final_level), font_index::INFO).await;
+    state.send_console(target_id, "Un GM te ha subido de nivel!", font_index::INFO).await;
 }
 
 /// /PREMIAR <name> <item_id> — Give prize item to player. VB6 TCP.bas:4237
@@ -2970,14 +2950,14 @@ pub(super) async fn handle_slash_premiar(state: &mut GameState, conn_id: Connect
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_to(conn_id, &format!("{}Uso: /PREMIAR nombre item_id{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /PREMIAR nombre item_id", font_index::INFO).await;
         return;
     }
 
     let target_name = parts[0];
     let item_id: i32 = parts[1].parse().unwrap_or(0);
     if item_id < 1 {
-        state.send_to(conn_id, &format!("{}Item invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Item invalido.", font_index::INFO).await;
         return;
     }
 
@@ -2994,7 +2974,7 @@ pub(super) async fn handle_slash_premiarts(state: &mut GameState, conn_id: Conne
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_to(conn_id, &format!("{}Uso: /PREMIARTS nombre item_id{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /PREMIARTS nombre item_id", font_index::INFO).await;
         return;
     }
 
@@ -3010,14 +2990,14 @@ async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_to(gm_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target_name, font_types::INFO)).await;
+            state.send_console(gm_id, &format!("Jugador '{}' no encontrado.", target_name), font_index::INFO).await;
             return;
         }
     };
 
     // Verify object exists
     if state.get_object(item_id).is_none() {
-        state.send_to(gm_id, &format!("{}Objeto {} no existe.{}", server_opcodes::CONSOLE_MSG, item_id, font_types::INFO)).await;
+        state.send_console(gm_id, &format!("Objeto {} no existe.", item_id), font_index::INFO).await;
         return;
     }
 
@@ -3029,10 +3009,10 @@ async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_
             user.inventory[slot_idx] = InventorySlot { obj_index: item_id, amount, equipped: false };
         }
         send_inventory_slot(state, target_id, slot_idx + 1).await;
-        state.send_to(gm_id, &format!("{}Item {} dado a '{}'.{}", server_opcodes::CONSOLE_MSG, item_id, target_name, font_types::INFO)).await;
-        state.send_to(target_id, &format!("{}Has recibido un premio!{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(gm_id, &format!("Item {} dado a '{}'.", item_id, target_name), font_index::INFO).await;
+        state.send_console(target_id, "Has recibido un premio!", font_index::INFO).await;
     } else {
-        state.send_to(gm_id, &format!("{}El jugador no tiene espacio en el inventario.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(gm_id, "El jugador no tiene espacio en el inventario.", font_index::INFO).await;
     }
 }
 
@@ -3047,7 +3027,7 @@ pub(super) async fn handle_slash_plata(state: &mut GameState, conn_id: Connectio
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
@@ -3058,8 +3038,7 @@ pub(super) async fn handle_slash_plata(state: &mut GameState, conn_id: Connectio
     }
     give_item_to_player(state, conn_id, target, 896, 1).await;
 
-    let pkt = format!("||520@{}", target); // Announce silver medal
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 520, target).await; // Announce silver medal
 }
 
 /// /BRONCE <name> — Give bronze trophy (obj 897) + update tournament points. VB6 TCP.bas:3147
@@ -3073,7 +3052,7 @@ pub(super) async fn handle_slash_bronce(state: &mut GameState, conn_id: Connecti
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
@@ -3083,8 +3062,7 @@ pub(super) async fn handle_slash_bronce(state: &mut GameState, conn_id: Connecti
     }
     give_item_to_player(state, conn_id, target, 897, 1).await;
 
-    let pkt = format!("||521@{}", target); // Announce bronze medal
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 521, target).await; // Announce bronze medal
 }
 
 /// /MEDALLA <name> — Give gold medal (obj 1025) + update tournament points. VB6 TCP.bas:3179
@@ -3098,7 +3076,7 @@ pub(super) async fn handle_slash_medalla(state: &mut GameState, conn_id: Connect
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
@@ -3108,8 +3086,7 @@ pub(super) async fn handle_slash_medalla(state: &mut GameState, conn_id: Connect
     }
     give_item_to_player(state, conn_id, target, 1025, 1).await;
 
-    let pkt = format!("||519@{}", target); // Announce gold medal
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 519, target).await; // Announce gold medal
 }
 
 /// /DESCALIFICAR <name> — Remove player from tournament. VB6 TCP.bas:3088
@@ -3121,21 +3098,21 @@ pub(super) async fn handle_slash_descalificar(state: &mut GameState, conn_id: Co
     }
 
     if !state.hay_torneo {
-        state.send_to(conn_id, &format!("{}No hay torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay torneo activo.", font_index::INFO).await;
         return;
     }
 
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, &format!("{}Jugador '{}' no encontrado.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
             return;
         }
     };
 
     let en_torneo = state.users.get(&target_id).map(|u| u.en_torneo).unwrap_or(false);
     if !en_torneo {
-        state.send_to(conn_id, &format!("{}El jugador no esta en el torneo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El jugador no esta en el torneo.", font_index::INFO).await;
         return;
     }
 
@@ -3159,9 +3136,8 @@ pub(super) async fn handle_slash_descalificar(state: &mut GameState, conn_id: Co
         }
     }
 
-    let pkt = format!("||522@{}", target); // Announce disqualification
-    state.send_data(SendTarget::ToAll, &pkt).await;
-    state.send_to(conn_id, &format!("{}Jugador '{}' descalificado del torneo.{}", server_opcodes::CONSOLE_MSG, target, font_types::INFO)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 522, target).await; // Announce disqualification
+    state.send_console(conn_id, &format!("Jugador '{}' descalificado del torneo.", target), font_index::INFO).await;
 }
 
 /// /MVP <npc>@<map>@<x>@<y> — Spawn MVP NPC at location. VB6 TCP.bas:3214
@@ -3174,7 +3150,7 @@ pub(super) async fn handle_slash_mvp(state: &mut GameState, conn_id: ConnectionI
 
     let parts: Vec<&str> = args.split('@').collect();
     if parts.len() < 4 {
-        state.send_to(conn_id, &format!("{}Uso: /MVP npc@mapa@x@y{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /MVP npc@mapa@x@y", font_index::INFO).await;
         return;
     }
 
@@ -3184,23 +3160,22 @@ pub(super) async fn handle_slash_mvp(state: &mut GameState, conn_id: ConnectionI
     let y: i32 = parts[3].trim().parse().unwrap_or(0);
 
     if npc_num < 1 || map < 1 || !crate::game::world::in_map_bounds(x, y) {
-        state.send_to(conn_id, &format!("{}Parametros invalidos.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Parametros invalidos.", font_index::INFO).await;
         return;
     }
 
     // Verify NPC exists
     if state.game_data.npcs.get(npc_num as usize).is_none() {
-        state.send_to(conn_id, &format!("{}NPC {} no existe.{}", server_opcodes::CONSOLE_MSG, npc_num, font_types::INFO)).await;
+        state.send_console(conn_id, &format!("NPC {} no existe.", npc_num), font_index::INFO).await;
         return;
     }
 
     // Use spawn_npc_at from events module
     super::spawn_npc_at(state, npc_num as usize, map, x, y).await;
-    state.send_to(conn_id, &format!("{}NPC {} (MVP) spawneado en mapa {} ({},{}).{}", server_opcodes::CONSOLE_MSG, npc_num, map, x, y, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("NPC {} (MVP) spawneado en mapa {} ({},{}).", npc_num, map, x, y), font_index::INFO).await;
 
     // Announce MVP spawn
-    let pkt = format!("||523@{}", map);
-    state.send_data(SendTarget::ToAll, &pkt).await;
+    state.send_msg_id_to(SendTarget::ToAll, 523, &map.to_string()).await;
 }
 
 /// /DOTORNEO <modality> — Start tournament. VB6 TCP.bas:4053
@@ -3212,13 +3187,13 @@ pub(super) async fn handle_slash_dotorneo(state: &mut GameState, conn_id: Connec
     }
 
     if state.hay_torneo {
-        state.send_to(conn_id, &format!("{}Ya hay un torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un torneo activo.", font_index::INFO).await;
         return;
     }
 
     let modality: i32 = args.trim().parse().unwrap_or(0);
     if modality < 1 || modality > 5 {
-        state.send_to(conn_id, &format!("{}Uso: /DOTORNEO 1-5 (1=1v1, 2=2v2, 3=3v3, 4=FFA, 5=especial){}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /DOTORNEO 1-5 (1=1v1, 2=2v2, 3=3v3, 4=FFA, 5=especial)", font_index::INFO).await;
         return;
     }
 
@@ -3227,9 +3202,8 @@ pub(super) async fn handle_slash_dotorneo(state: &mut GameState, conn_id: Connec
     state.cronologia_participantes.clear();
 
     // Broadcast tournament start announcement
-    let pkt = format!("||524@{}", modality);
-    state.send_data(SendTarget::ToAll, &pkt).await;
-    state.send_to(conn_id, &format!("{}Torneo modalidad {} iniciado. Jugadores usen /TORNEO para inscribirse.{}", server_opcodes::CONSOLE_MSG, modality, font_types::INFO)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 524, &modality.to_string()).await;
+    state.send_console(conn_id, &format!("Torneo modalidad {} iniciado. Jugadores usen /TORNEO para inscribirse.", modality), font_index::INFO).await;
 }
 
 /// /CANCELARTORNEO — Cancel active tournament. VB6 TCP.bas:4397
@@ -3241,7 +3215,7 @@ pub(super) async fn handle_slash_cancelartorneo(state: &mut GameState, conn_id: 
     }
 
     if !state.hay_torneo {
-        state.send_to(conn_id, &format!("{}No hay torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay torneo activo.", font_index::INFO).await;
         return;
     }
 
@@ -3260,9 +3234,8 @@ pub(super) async fn handle_slash_cancelartorneo(state: &mut GameState, conn_id: 
     state.usuarios_en_torneo = 0;
     state.cronologia_participantes.clear();
 
-    let pkt = "||525"; // Announce tournament cancelled
-    state.send_data(SendTarget::ToAll, pkt).await;
-    state.send_to(conn_id, &format!("{}Torneo cancelado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 525, "").await;
+    state.send_console(conn_id, "Torneo cancelado.", font_index::INFO).await;
 }
 
 /// /TSUM <from>@<to> — Teleport tournament players (numbered from-to) to GM's position. VB6 TCP.bas:4215
@@ -3274,13 +3247,13 @@ pub(super) async fn handle_slash_tsum(state: &mut GameState, conn_id: Connection
     };
 
     if !state.hay_torneo {
-        state.send_to(conn_id, &format!("{}No hay torneo activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay torneo activo.", font_index::INFO).await;
         return;
     }
 
     let parts: Vec<&str> = args.split('@').collect();
     if parts.len() < 2 {
-        state.send_to(conn_id, &format!("{}Uso: /TSUM desde@hasta{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /TSUM desde@hasta", font_index::INFO).await;
         return;
     }
 
@@ -3288,7 +3261,7 @@ pub(super) async fn handle_slash_tsum(state: &mut GameState, conn_id: Connection
     let to: usize = parts[1].trim().parse().unwrap_or(0);
 
     if from < 1 || to < from {
-        state.send_to(conn_id, &format!("{}Rango invalido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Rango invalido.", font_index::INFO).await;
         return;
     }
 
@@ -3303,7 +3276,7 @@ pub(super) async fn handle_slash_tsum(state: &mut GameState, conn_id: Connection
         }
     }
 
-    state.send_to(conn_id, &format!("{}Invocados {} participantes del torneo.{}", server_opcodes::CONSOLE_MSG, warped, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Invocados {} participantes del torneo.", warped), font_index::INFO).await;
 }
 
 /// /REY — Spawn the Ancalagon pre-dragon + 4 guardians (VB6: /SALEREY in TCP.bas line 5170).
@@ -3313,12 +3286,12 @@ pub(super) async fn handle_slash_rey(state: &mut GameState, conn_id: ConnectionI
     if !is_gm { return; }
 
     if state.ancalagon_pre_dragon || state.ancalagon_alive {
-        state.send_to(conn_id, &format!("{}El Rey Ancalagon ya está activo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "El Rey Ancalagon ya está activo.", font_index::INFO).await;
         return;
     }
 
     // Broadcast warning (VB6: SendData ToAll, "||805")
-    state.send_data(SendTarget::ToAll, "||805").await;
+    state.send_msg_id_to(SendTarget::ToAll, 805, "").await;
 
     // Spawn pre-dragon (NPC 937) at map 123, (50,18)
     state.ancalagon_guardians = 0;
@@ -3328,8 +3301,8 @@ pub(super) async fn handle_slash_rey(state: &mut GameState, conn_id: ConnectionI
         // Set aura 3 (VB6: Npclist(IndexReyAncalagon).Char.AuraA = 3)
         if let Some(npc) = state.get_npc_mut(idx) {
             npc.aura = 3;
-            let cc = npc.build_cc_packet();
-            state.send_data(SendTarget::ToMap(123), &cc).await;
+            let cc = npc.build_cc_binary();
+            state.send_data_bytes(SendTarget::ToMap(123), &cc).await;
         }
     }
 
@@ -3345,7 +3318,7 @@ pub(super) async fn handle_slash_rey(state: &mut GameState, conn_id: ConnectionI
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /REY — spawned Ancalagon pre-dragon + 4 guardians", gm_name);
-    state.send_to(conn_id, &format!("{}Rey Ancalagon invocado en mapa 123.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, "Rey Ancalagon invocado en mapa 123.", font_index::INFO).await;
 }
 
 /// /NPCAURA <npc_runtime_index> <aura_id> — Set aura on a live NPC instance.
@@ -3356,21 +3329,21 @@ pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: Connect
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_to(conn_id, &format!("{}Uso: /NPCAURA <npc_index> <aura_id>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /NPCAURA <npc_index> <aura_id>", font_index::INFO).await;
         return;
     }
 
     let npc_idx: usize = match parts[0].parse() {
         Ok(v) => v,
         Err(_) => {
-            state.send_to(conn_id, &format!("{}NPC index inválido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "NPC index inválido.", font_index::INFO).await;
             return;
         }
     };
     let aura_id: i32 = match parts[1].parse() {
         Ok(v) => v,
         Err(_) => {
-            state.send_to(conn_id, &format!("{}Aura ID inválido.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "Aura ID inválido.", font_index::INFO).await;
             return;
         }
     };
@@ -3378,20 +3351,20 @@ pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: Connect
     let (npc_name, map) = match state.get_npc(npc_idx) {
         Some(npc) if npc.active => (npc.name.clone(), npc.map),
         _ => {
-            state.send_to(conn_id, &format!("{}NPC {} no encontrado o inactivo.{}", server_opcodes::CONSOLE_MSG, npc_idx, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("NPC {} no encontrado o inactivo.", npc_idx), font_index::INFO).await;
             return;
         }
     };
 
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         npc.aura = aura_id;
-        let cc = npc.build_cc_packet();
-        state.send_data(SendTarget::ToMap(map), &cc).await;
+        let cc = npc.build_cc_binary();
+        state.send_data_bytes(SendTarget::ToMap(map), &cc).await;
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} set NPC {} ({}) aura to {}", gm_name, npc_idx, npc_name, aura_id);
-    state.send_to(conn_id, &format!("{}NPC {} ({}) aura = {}{}", server_opcodes::CONSOLE_MSG, npc_idx, npc_name, aura_id, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("NPC {} ({}) aura = {}", npc_idx, npc_name, aura_id), font_index::INFO).await;
 }
 
 /// /DEST — Destroy floor object at GM's current tile.
@@ -3408,7 +3381,7 @@ pub(super) async fn handle_slash_dest(state: &mut GameState, conn_id: Connection
         .unwrap_or(0);
 
     if obj_idx <= 0 {
-        state.send_to(conn_id, &format!("{}No hay objeto en esta posición.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No hay objeto en esta posición.", font_index::INFO).await;
         return;
     }
 
@@ -3420,11 +3393,12 @@ pub(super) async fn handle_slash_dest(state: &mut GameState, conn_id: Connection
     }
 
     // Send BO packet to notify clients
-    state.send_data(SendTarget::ToMap(map), &format!("BO{},{}", x, y)).await;
+    let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+    state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /DEST at ({},{},{}) — destroyed {}", gm_name, map, x, y, obj_name);
-    state.send_to(conn_id, &format!("{}Destruido: {} en ({},{}).{}", server_opcodes::CONSOLE_MSG, obj_name, x, y, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Destruido: {} en ({},{}).", obj_name, x, y), font_index::INFO).await;
 }
 
 /// /MASSDEST — Destroy all non-map floor objects in GM's visible area.
@@ -3459,12 +3433,13 @@ pub(super) async fn handle_slash_massdest(state: &mut GameState, conn_id: Connec
         if let Some(tile) = grid.tile_mut(x, y) {
             tile.ground_item = world::GroundItem::default();
         }
-        state.send_data(SendTarget::ToMap(map), &format!("BO{},{}", x, y)).await;
+        let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /MASSDEST at ({},{},{}) — cleaned {} items", gm_name, map, cx, cy, to_clean.len());
-    state.send_to(conn_id, &format!("{}{} objetos destruidos en el área.{}", server_opcodes::CONSOLE_MSG, to_clean.len(), font_types::INFO)).await;
+    state.send_console(conn_id, &format!("{} objetos destruidos en el área.", to_clean.len()), font_index::INFO).await;
 }
 
 /// /IRCERCA <name> — Teleport GM to an empty tile near a target player.
@@ -3478,7 +3453,7 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_to(conn_id, "||196").await; // User not found
+            state.send_msg_id(conn_id, 196, "").await; // User not found
             return;
         }
     };
@@ -3515,7 +3490,7 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
         }
     }
 
-    state.send_to(conn_id, &format!("{}No se encontró posición libre cerca del jugador.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+    state.send_console(conn_id, "No se encontró posición libre cerca del jugador.", font_index::INFO).await;
 }
 
 /// /HACERITEM <objID>@<amount> — Create item on floor at GM position.
@@ -3536,7 +3511,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
     };
 
     if obj_id < 1 {
-        state.send_to(conn_id, &format!("{}Uso: /HACERITEM <objID>@<cantidad>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /HACERITEM <objID>@<cantidad>", font_index::INFO).await;
         return;
     }
 
@@ -3544,7 +3519,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
     let (obj_name, grh) = match state.get_object(obj_id) {
         Some(obj) => (obj.name.clone(), obj.grh_index),
         None => {
-            state.send_to(conn_id, &format!("{}Objeto {} no existe.{}", server_opcodes::CONSOLE_MSG, obj_id, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("Objeto {} no existe.", obj_id), font_index::INFO).await;
             return;
         }
     };
@@ -3556,7 +3531,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
         .unwrap_or(true);
 
     if tile_occupied {
-        state.send_to(conn_id, &format!("{}Ya hay un objeto en esta posición.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Ya hay un objeto en esta posición.", font_index::INFO).await;
         return;
     }
 
@@ -3569,15 +3544,16 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
 
     // Send HO packet to show item visually
     if grh > 0 {
-        state.send_data(SendTarget::ToArea { map, x, y }, &format!("HO{},{},{}", grh, x, y)).await;
+        let ho_pkt = binary_packets::write_object_create(x as u8, y as u8, grh as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /HACERITEM {} x{} ({}) at ({},{},{})", gm_name, obj_id, amount, obj_name, map, x, y);
     // Notify GM
-    state.send_to(conn_id, &format!("{}Creado: {} x{} ({}) en ({},{}).{}", server_opcodes::CONSOLE_MSG, obj_name, amount, obj_id, x, y, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Creado: {} x{} ({}) en ({},{}).", obj_name, amount, obj_id, x, y), font_index::INFO).await;
     // Notify admins (VB6: ||802)
-    state.send_data(SendTarget::ToAdmins, &format!("||802@{}@{}@{}@{}", gm_name, obj_id, obj_name, amount)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 802, &format!("{}@{}@{}@{}", gm_name, obj_id, obj_name, amount)).await;
 }
 
 /// /MASSDEST — already handled above.
@@ -3590,7 +3566,7 @@ pub(super) async fn handle_slash_nene(state: &mut GameState, conn_id: Connection
 
     let target_map: i32 = args.trim().parse().unwrap_or(0);
     if target_map < 1 {
-        state.send_to(conn_id, &format!("{}Uso: /NENE <mapa>{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "Uso: /NENE <mapa>", font_index::INFO).await;
         return;
     }
 
@@ -3609,7 +3585,7 @@ pub(super) async fn handle_slash_nene(state: &mut GameState, conn_id: Connection
         names.join(", ")
     };
 
-    state.send_to(conn_id, &format!("{}NPCs hostiles en mapa {}: {}{}", server_opcodes::CONSOLE_MSG, target_map, list, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("NPCs hostiles en mapa {}: {}", target_map, list), font_index::INFO).await;
 }
 
 /// /RESETINV — Reset targeted NPC's inventory to its NpcData defaults.
@@ -3622,7 +3598,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     if !is_gm { return; }
 
     if target_npc_idx == 0 {
-        state.send_to(conn_id, &format!("{}No tenés un NPC seleccionado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+        state.send_console(conn_id, "No tenés un NPC seleccionado.", font_index::INFO).await;
         return;
     }
 
@@ -3630,7 +3606,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     let npc_number = match state.get_npc(target_npc_idx) {
         Some(npc) if npc.active => npc.npc_number,
         _ => {
-            state.send_to(conn_id, &format!("{}NPC no encontrado o inactivo.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+            state.send_console(conn_id, "NPC no encontrado o inactivo.", font_index::INFO).await;
             return;
         }
     };
@@ -3639,7 +3615,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     let original_items = match state.game_data.npcs.get(npc_number) {
         Some(data) => data.items.clone(),
         None => {
-            state.send_to(conn_id, &format!("{}NPC data {} no encontrado.{}", server_opcodes::CONSOLE_MSG, npc_number, font_types::INFO)).await;
+            state.send_console(conn_id, &format!("NPC data {} no encontrado.", npc_number), font_index::INFO).await;
             return;
         }
     };
@@ -3662,5 +3638,5 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     let npc_name = state.get_npc(target_npc_idx).map(|n| n.name.clone()).unwrap_or_default();
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /RESETINV on NPC {} ({})", gm_name, target_npc_idx, npc_name);
-    state.send_to(conn_id, &format!("{}Inventario de {} reseteado.{}", server_opcodes::CONSOLE_MSG, npc_name, font_types::INFO)).await;
+    state.send_console(conn_id, &format!("Inventario de {} reseteado.", npc_name), font_index::INFO).await;
 }

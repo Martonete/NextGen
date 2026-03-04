@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using System.Net.Sockets;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Godot;
@@ -9,18 +8,17 @@ using Godot;
 namespace TierrasSagradasAO.Network;
 
 /// <summary>
-/// Async TCP client with 0x00 packet framing.
-/// Manages connection, send/receive, and packet queue.
+/// Async TCP client for the 13.3 binary protocol.
+/// No encryption, no framing — raw binary bytes on the wire.
+/// Packets are self-delimiting via their 1-byte opcode + known field sizes.
 /// </summary>
 public class AoTcpClient : IDisposable
 {
     private TcpClient? _client;
     private NetworkStream? _stream;
     private CancellationTokenSource? _cts;
-    private readonly ConcurrentQueue<string> _inboundQueue = new();
-    private readonly AoCipher _cipher = new();
+    private readonly ConcurrentQueue<byte[]> _inboundQueue = new();
     private readonly byte[] _readBuffer = new byte[8192];
-    private readonly List<byte> _accumulator = new();
     private bool _connected;
 
     public bool IsConnected => _connected;
@@ -45,24 +43,16 @@ public class AoTcpClient : IDisposable
     }
 
     /// <summary>
-    /// Send a plaintext packet through the encryption pipeline.
-    /// plaintext → XOR cipher → hex → base64 → +0x00
+    /// Send raw binary bytes to the server.
+    /// 13.3 protocol: no encryption, no framing.
     /// </summary>
-    public void SendPacket(string plaintext)
+    public void SendPacket(byte[] data)
     {
-        if (!_connected || _stream == null) return;
-
-        byte[] data = Encoding.Latin1.GetBytes(plaintext);
-        byte[] encrypted = AoEncryption.EncryptOutbound(data, _cipher);
-
-        // Frame with 0x00
-        byte[] frame = new byte[encrypted.Length + 1];
-        Array.Copy(encrypted, frame, encrypted.Length);
-        frame[^1] = 0x00;
+        if (!_connected || _stream == null || data.Length == 0) return;
 
         try
         {
-            _stream.Write(frame, 0, frame.Length);
+            _stream.Write(data, 0, data.Length);
         }
         catch (Exception ex)
         {
@@ -72,21 +62,24 @@ public class AoTcpClient : IDisposable
     }
 
     /// <summary>
-    /// Dequeue all pending inbound packets (call from _Process).
+    /// Dequeue all pending inbound data chunks (call from _Process).
+    /// Each chunk is raw bytes from one TCP read, potentially containing
+    /// multiple packets. The packet handler uses ByteQueue to parse them.
     /// </summary>
-    public List<string> PollPackets()
+    public List<byte[]> PollPackets()
     {
-        var packets = new List<string>();
-        while (_inboundQueue.TryDequeue(out string? pkt))
+        var packets = new List<byte[]>();
+        while (_inboundQueue.TryDequeue(out byte[]? pkt))
         {
-            if (pkt != null)
+            if (pkt != null && pkt.Length > 0)
                 packets.Add(pkt);
         }
         return packets;
     }
 
     /// <summary>
-    /// Background read loop: accumulate TCP data, split by 0x00, decrypt.
+    /// Background read loop: raw binary reads, enqueue directly.
+    /// No encryption, no framing — raw bytes on the wire.
     /// </summary>
     private async Task ReadLoop(CancellationToken ct)
     {
@@ -102,22 +95,10 @@ public class AoTcpClient : IDisposable
                     return;
                 }
 
-                for (int i = 0; i < bytesRead; i++)
-                {
-                    byte b = _readBuffer[i];
-                    if (b == 0x00)
-                    {
-                        if (_accumulator.Count > 0)
-                        {
-                            ProcessInboundPacket(_accumulator.ToArray());
-                            _accumulator.Clear();
-                        }
-                    }
-                    else
-                    {
-                        _accumulator.Add(b);
-                    }
-                }
+                // Enqueue the raw bytes for the packet handler
+                byte[] data = new byte[bytesRead];
+                Array.Copy(_readBuffer, data, bytesRead);
+                _inboundQueue.Enqueue(data);
             }
         }
         catch (OperationCanceledException)
@@ -128,24 +109,6 @@ public class AoTcpClient : IDisposable
         {
             GD.PrintErr($"[TCP] Read error: {ex.Message}");
             Disconnect();
-        }
-    }
-
-    /// <summary>
-    /// Decrypt an inbound packet and enqueue it.
-    /// Server outbound: hex → base64 (no XOR cipher).
-    /// </summary>
-    private void ProcessInboundPacket(byte[] raw)
-    {
-        try
-        {
-            byte[] decrypted = AoEncryption.DecryptInbound(raw);
-            string plaintext = Encoding.Latin1.GetString(decrypted);
-            _inboundQueue.Enqueue(plaintext);
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[TCP] Decrypt error: {ex.Message}");
         }
     }
 

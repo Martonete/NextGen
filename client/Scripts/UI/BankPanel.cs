@@ -154,7 +154,7 @@ public partial class BankPanel : Control
     private void OnBovedaPressed()
     {
         // VB6: SendData("INIBOV") then Unload Me
-        _tcp?.SendPacket("INIBOV");
+        _tcp?.SendPacket(new byte[] { ClientPacketId.GuildBankOpen });
         // Signal Main.cs to open VaultPanel
         _state!.BovedaAbierta = true;
         OnOpenVault?.Invoke();
@@ -178,7 +178,7 @@ public partial class BankPanel : Control
 
     private void OnClosePressed()
     {
-        _tcp?.SendPacket("FINBAN");
+        _tcp?.SendPacket(ClientPackets.WriteBankClose());
     }
 
     // ── Inline gold input dialog ────────────────────────────────
@@ -261,12 +261,12 @@ public partial class BankPanel : Control
         if (_isDepositing)
         {
             // VB6: SendData("/DEPOSITAR " & cantidad)
-            _tcp.SendPacket($"/DEPOSITAR {amount}");
+            _tcp.SendPacket(ClientPackets.WriteTalk($"/DEPOSITAR {amount}"));
         }
         else
         {
             // VB6: SendData("/RETIRAR " & cantidad)
-            _tcp.SendPacket($"/RETIRAR {amount}");
+            _tcp.SendPacket(ClientPackets.WriteTalk($"/RETIRAR {amount}"));
         }
 
         HideGoldInputDialog();

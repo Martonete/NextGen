@@ -10,7 +10,7 @@ namespace TierrasSagradasAO.Network;
 /// Dispatches inbound packets by opcode prefix to handler methods.
 /// Updates GameState based on server packets.
 /// </summary>
-public class PacketHandler
+public partial class PacketHandler
 {
     private readonly GameState _state;
 
@@ -31,10 +31,72 @@ public class PacketHandler
         4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
     };
 
+    /// Receive buffer for accumulating partial binary packets across TCP reads.
+    private readonly List<byte> _recvBuffer = new();
+
     public PacketHandler(GameState state)
     {
         _state = state;
     }
+
+    /// <summary>
+    /// Process raw binary data from the TCP client.
+    /// Accumulates bytes across reads and extracts complete packets.
+    /// For GenericText packets (opcode 255), delegates to the text-based HandlePacket.
+    /// </summary>
+    public void HandleBinaryData(byte[] data)
+    {
+        _recvBuffer.AddRange(data);
+
+        // Process all complete packets in the buffer
+        while (_recvBuffer.Count > 0)
+        {
+            byte opcode = _recvBuffer[0];
+
+            if (opcode == ServerPacketId.GenericText)
+            {
+                // GenericText: [255][len:u16 LE][text_bytes]
+                if (_recvBuffer.Count < 3) break; // Need at least opcode + 2-byte length
+
+                int textLen = _recvBuffer[1] | (_recvBuffer[2] << 8);
+                int totalLen = 1 + 2 + textLen; // opcode + len + text
+
+                if (_recvBuffer.Count < totalLen) break; // Partial packet, wait for more data
+
+                // Extract the text content
+                string text = System.Text.Encoding.Latin1.GetString(
+                    _recvBuffer.GetRange(3, textLen).ToArray());
+
+                _recvBuffer.RemoveRange(0, totalLen);
+
+                // Delegate to existing text-based handler
+                HandlePacket(text);
+            }
+            else
+            {
+                // Native binary packet — create ByteQueue and dispatch.
+                // ByteQueue.Read* throws InvalidOperationException on insufficient data,
+                // which we catch to wait for more TCP bytes (partial packet rollback).
+                byte[] bufArray = _recvBuffer.ToArray();
+                var bq = new ByteQueue(bufArray);
+                int startPos = bq.ReadPosition;
+
+                try
+                {
+                    HandleBinaryPacket(bq);
+                    int consumed = bq.ReadPosition - startPos;
+                    _recvBuffer.RemoveRange(0, consumed);
+                }
+                catch (InvalidOperationException)
+                {
+                    // Incomplete packet — wait for more data
+                    break;
+                }
+            }
+        }
+    }
+
+    // HandleBinaryPacket(ByteQueue) is defined in PacketHandler.Binary.cs (partial class)
 
     public void HandlePacket(string packet)
     {

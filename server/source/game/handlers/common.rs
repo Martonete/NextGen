@@ -5,7 +5,7 @@
 
 use crate::net::ConnectionId;
 use crate::data::maps::Trigger;
-use crate::protocol::{server_opcodes, fields::read_field};
+use crate::protocol::{fields::read_field, binary_packets};
 use crate::game::types::{GameState, UserState, CleanWorldEntry, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 
@@ -85,46 +85,46 @@ pub(super) fn health_description(current: i32, max: i32, dead: bool) -> &'static
 
 pub(super) async fn send_stats_hp(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[H]{},{}", u.max_hp, u.min_hp);
-        state.send_to(conn_id, &pkt).await;
+        let pkt = binary_packets::write_update_hp(u.min_hp as i16);
+        state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_stats_mana(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[M]{},{}", u.max_mana, u.min_mana);
-        state.send_to(conn_id, &pkt).await;
+        let pkt = binary_packets::write_update_mana(u.min_mana as i16);
+        state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_stats_sta(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[S]{},{}", u.max_sta, u.min_sta);
-        state.send_to(conn_id, &pkt).await;
+        let pkt = binary_packets::write_update_sta(u.min_sta as i16);
+        state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_stats_gold(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = format!("[G]{}", u.gold);
-        state.send_to(conn_id, &pkt).await;
+        let pkt = binary_packets::write_update_gold(u.gold as i32);
+        state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_stats_exp(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let exp_next = state.exp_for_level(u.level);
-        let pkt = format!("[E]{},{}", exp_next, u.exp);
-        state.send_to(conn_id, &pkt).await;
+        let pkt = binary_packets::write_update_exp(u.exp as i32);
+        state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_hunger_thirst(state: &mut GameState, conn_id: ConnectionId) {
-    let data = match state.users.get(&conn_id) {
-        Some(u) => format!("EHYS{},{},{},{}", u.max_agua, u.min_agua, u.max_ham, u.min_ham),
+    let (max_agua, min_agua, max_ham, min_ham) = match state.users.get(&conn_id) {
+        Some(u) => (u.max_agua as u8, u.min_agua as u8, u.max_ham as u8, u.min_ham as u8),
         None => return,
     };
-    state.send_to(conn_id, &data).await;
+    let pkt = binary_packets::write_update_hunger_thirst(max_agua, min_agua, max_ham, min_ham);
+    state.send_bytes(conn_id, &pkt).await;
 }
 
 // =====================================================================
@@ -135,22 +135,30 @@ pub(super) fn area_id(x: i32, y: i32) -> i32 {
     (x / 9 + 1) * (y / 9 + 1)
 }
 
-pub(super) fn build_cd_packet(user: &UserState) -> String {
-    let color = 0;
-    let levitando = if user.levitando { 1 } else { 0 };
-    let tiene_ranking = 0;
-    format!(
-        "[CD{},{},{},{},{},{},{},{},{}",
-        user.char_index.0, color, user.aura_a, user.aura_w, user.aura_e, user.aura_r, user.aura_c, levitando, tiene_ranking
+/// Build binary CharData packet for a user.
+pub(super) fn build_cd_binary(user: &UserState) -> Vec<u8> {
+    crate::protocol::binary_packets::write_char_data(
+        user.char_index.0 as i16,
+        0, // color
+        user.aura_a as i16,
+        user.aura_w as i16,
+        user.aura_e as i16,
+        user.aura_r as i16,
+        user.aura_c as i16,
+        user.levitando,
+        0, // ranking
     )
 }
 
-/// Build AU| packet for broadcasting aura changes to area.
-/// VB6: SendUserAura — sent when equipment with aura is equipped/unequipped.
-pub(super) fn build_aura_packet(user: &UserState) -> String {
-    format!(
-        "AU|{},{},{},{},{},{}",
-        user.char_index.0, user.aura_a, user.aura_w, user.aura_e, user.aura_r, user.aura_c
+/// Build binary AuraUpdate packet for a user.
+pub(super) fn build_aura_binary(user: &UserState) -> Vec<u8> {
+    crate::protocol::binary_packets::write_aura_update(
+        user.char_index.0 as i16,
+        user.aura_a as i16,
+        user.aura_w as i16,
+        user.aura_e as i16,
+        user.aura_r as i16,
+        user.aura_c as i16,
     )
 }
 

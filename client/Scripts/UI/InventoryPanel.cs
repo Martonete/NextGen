@@ -222,7 +222,7 @@ public partial class InventoryPanel : Control
 
                             _selectedSlot = slot;
                             _state.SelectedInvSlot = slot;
-                            _tcp.SendPacket($"QSA{slot + 1},{(Visible ? 1 : 0)}");
+                            _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                         }
                         else
                         {
@@ -249,7 +249,7 @@ public partial class InventoryPanel : Control
                         if (destSlot >= 0 && destSlot < TotalSlots && destSlot != _dragSourceSlot)
                         {
                             // Send SWAP packet (1-indexed)
-                            _tcp.SendPacket($"SWAP{destSlot + 1},{_dragSourceSlot + 1}");
+                            _tcp.SendPacket(ClientPackets.WriteSwapItems((byte)(_dragSourceSlot + 1), (byte)(destSlot + 1)));
                         }
                     }
                     // Always clear drag state on release
@@ -265,7 +265,7 @@ public partial class InventoryPanel : Control
                     _selectedSlot = slot;
                     _state.SelectedInvSlot = slot;
                     // Right click → equip/unequip
-                    _tcp.SendPacket($"EQUI{slot + 1}");
+                    _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
                 }
             }
 
@@ -275,7 +275,7 @@ public partial class InventoryPanel : Control
         {
             if (key.Keycode == Key.E && _selectedSlot >= 0)
             {
-                _tcp.SendPacket($"EQUI{_selectedSlot + 1}");
+                _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(_selectedSlot + 1)));
                 AcceptEvent();
             }
         }

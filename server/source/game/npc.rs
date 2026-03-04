@@ -267,23 +267,32 @@ impl NpcState {
         }
     }
 
-    /// Build CC packet for this NPC.
-    /// VB6 format (MakeNPCChar): body,head,heading,charindex,x,y,weapon,shield,helmet,,,,aura,npcnumber
-    /// NPC has 4 empty fields (10-13) instead of name/status/priv, then aura + npc_number
-    pub fn build_cc_packet(&self) -> String {
-        format!(
-            "CC{},{},{},{},{},{},{},{},{},,,,{},{}",
-            self.body,
-            self.head,
-            self.heading,
-            self.char_index.0,
-            self.x,
-            self.y,
-            self.weapon_anim,
-            self.shield_anim,
-            self.casco_anim,
-            self.aura,
-            self.npc_number,
+    /// Build binary CC (CharacterCreate) packet for this NPC.
+    pub fn build_cc_binary(&self) -> Vec<u8> {
+        crate::protocol::binary_packets::write_character_create(
+            self.char_index.0 as i16,
+            self.body as i16,
+            self.head as i16,
+            self.heading as u8,
+            self.x as u8,
+            self.y as u8,
+            self.weapon_anim as i16,
+            self.shield_anim as i16,
+            self.casco_anim as i16,
+            0, 0, // fx_index, fx_loops (NPCs don't use these in CC)
+            "", // NPCs have no name in CC
+            0, 0, // nick_color, privileges — not used for NPCs
+        )
+    }
+
+    /// Build binary CharData packet for this NPC.
+    pub fn build_cd_binary(&self) -> Vec<u8> {
+        crate::protocol::binary_packets::write_char_data(
+            self.char_index.0 as i16,
+            0, // color
+            self.aura as i16, 0, 0, 0, 0, // aura_a, aura_w, aura_e, aura_r, aura_c
+            false, // levitando
+            0, // ranking
         )
     }
 

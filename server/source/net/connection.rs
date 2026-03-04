@@ -3,26 +3,28 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::TcpStream;
 
-use crate::crypto;
-use crate::crypto::aodef_converter::numero2letra;
-use crate::crypto::aodef_cipher::semilla;
-use super::packet_framing::PacketFramer;
-
 /// Unique identifier for a client connection (maps to VB6 ConnID).
 pub type ConnectionId = u32;
 
 /// Read half of a client connection — runs in a spawned task.
+///
+/// 13.3 binary protocol: raw bytes over TCP, no encryption.
+/// Packets are self-delimiting (known sizes from 1-byte opcode).
+/// We accumulate bytes and forward them as a contiguous buffer.
 pub struct ConnectionReader {
     pub id: ConnectionId,
     reader: OwnedReadHalf,
-    framer: PacketFramer,
-    /// Packet counter for key derivation (VB6: clave2, wraps at 999999)
-    packet_counter: i64,
+    /// Accumulation buffer for partial TCP reads.
+    buffer: Vec<u8>,
 }
 
 impl ConnectionReader {
-    /// Read raw data from the socket and extract complete decrypted packets.
-    /// Returns None if the connection was closed.
+    /// Read raw bytes from the socket.
+    /// Returns the accumulated buffer contents, or None on disconnect.
+    ///
+    /// The game loop's ByteQueue handles parsing individual packets
+    /// from the raw stream (peeking opcode, reading fields, handling
+    /// partial data by saving/restoring position).
     pub async fn read_packets(&mut self) -> Option<Vec<Vec<u8>>> {
         let mut buf = [0u8; 4096];
 
@@ -35,40 +37,17 @@ impl ConnectionReader {
             }
         };
 
-        let raw_packets = self.framer.feed(&buf[..n]);
+        // Append new data to buffer
+        self.buffer.extend_from_slice(&buf[..n]);
 
-        if raw_packets.is_empty() {
+        // Return the entire buffer as one chunk for the dispatcher to parse.
+        // The dispatcher uses ByteQueue to extract individual packets.
+        if self.buffer.is_empty() {
             return Some(Vec::new());
         }
 
-        let mut decrypted_packets = Vec::with_capacity(raw_packets.len());
-
-        for raw in raw_packets {
-            // Advance counter and derive key BEFORE decryption
-            // Mirrors VB6 HandleData: clave2 += 1 → Numero2Letra → Semilla → DeCodificar
-            self.packet_counter += 1;
-            let key = derive_key(self.packet_counter);
-
-            // Debug logging: raw bytes before decrypt
-            let raw_preview: String = raw.iter().take(40).map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
-            tracing::debug!("[CRYPTO] #{} pkt_counter={} raw({} bytes): {}", self.id, self.packet_counter, raw.len(), raw_preview);
-
-            // Decrypt: AoDefDecode(raw) → DeCodificar(result, key)
-            let decrypted = crypto::decrypt_inbound(&raw, &key);
-
-            let dec_preview = String::from_utf8_lossy(&decrypted);
-            let dec_hex: String = decrypted.iter().take(40).map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ");
-            tracing::debug!("[CRYPTO] #{} decrypted({} bytes): {} | text: '{}'", self.id, decrypted.len(), dec_hex, dec_preview.chars().take(60).collect::<String>());
-
-            decrypted_packets.push(decrypted);
-
-            // Wrap counter at 999999 (VB6: If AoDefResult = 999999 Then AoDefResult = 1)
-            if self.packet_counter >= 999999 {
-                self.packet_counter = 1;
-            }
-        }
-
-        Some(decrypted_packets)
+        let data = std::mem::take(&mut self.buffer);
+        Some(vec![data])
     }
 }
 
@@ -80,13 +59,12 @@ pub struct ConnectionWriter {
 }
 
 impl ConnectionWriter {
-    /// Send an encrypted packet to the client.
+    /// Send raw binary bytes to the client.
     ///
-    /// Mirrors VB6: `AoDefEncode(AoDefServEncrypt(data)) + ENDC`
+    /// 13.3 protocol: no encryption, no framing. Raw bytes on the wire.
+    /// The ByteQueue on the client side knows field sizes from the opcode.
     pub async fn send_packet(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
-        let encrypted = crypto::encrypt_outbound(data);
-        let framed = PacketFramer::frame_packet(&encrypted);
-        self.writer.write_all(&framed).await
+        self.writer.write_all(data).await
     }
 
     /// Shutdown the write half.
@@ -111,8 +89,7 @@ pub fn split_connection(
     let reader = ConnectionReader {
         id,
         reader: read_half,
-        framer: PacketFramer::new(),
-        packet_counter: 0,
+        buffer: Vec::with_capacity(2048),
     };
 
     let writer = ConnectionWriter {
@@ -122,18 +99,4 @@ pub fn split_connection(
     };
 
     (reader, writer)
-}
-
-/// Derive encryption key from a packet counter.
-///
-/// Mirrors VB6:
-/// ```vb
-/// SuperClave = AodefConv.Numero2Letra(clave2, , 2, "ZiPPy", "NoPPy", 1, 0)
-/// ' Remove spaces
-/// SuperClave = Semilla(SuperClave)
-/// ```
-fn derive_key(counter: i64) -> String {
-    let text = numero2letra(counter);
-    let text_no_spaces: String = text.chars().filter(|c| *c != ' ').collect();
-    semilla(&text_no_spaces)
 }

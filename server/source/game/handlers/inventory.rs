@@ -5,7 +5,8 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{server_opcodes, font_types, fields::read_field};
+use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::binary_packets;
 use crate::data::objects::{ObjData, ObjType};
 use super::common::*;
 use super::{
@@ -55,8 +56,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if is_mounted {
             match obj_data.obj_type {
                 ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
-                    let msg = format!("{}No puedes cambiar de equipamiento mientras estas montado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO).await;
                     return;
                 }
                 _ => {}
@@ -82,8 +82,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
 
         // Level requirement
         if obj_data.lvl > 0 && user_level < obj_data.lvl && !is_gm {
-            let msg = format!("{}112@{}", server_opcodes::CONSOLE_MSG_ID, obj_data.lvl);
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 112, &obj_data.lvl.to_string()).await;
             return;
         }
 
@@ -91,8 +90,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if !is_gm && !obj_data.class_prohibida.is_empty() {
             let uc = user_class.to_uppercase();
             if obj_data.class_prohibida.iter().any(|c| c.to_uppercase() == uc) {
-                let msg = "||113".to_string(); // TEXTO113: Tu clase, genero o raza no puede usar este objeto
-                state.send_to(conn_id, &msg).await;
+                state.send_msg_id(conn_id, 113, "").await; // TEXTO113: Tu clase, genero o raza no puede usar este objeto
                 return;
             }
         }
@@ -101,15 +99,13 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if !is_gm {
             if obj_data.real {
                 if user_criminal || !user_armada {
-                    let msg = format!("{}Solo miembros de la Armada Real pueden usar este item{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_console(conn_id, "Solo miembros de la Armada Real pueden usar este item", font_index::INFO).await;
                     return;
                 }
             }
             if obj_data.caos {
                 if !user_criminal || !user_caos {
-                    let msg = format!("{}Solo miembros de las Fuerzas del Caos pueden usar este item{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_console(conn_id, "Solo miembros de las Fuerzas del Caos pueden usar este item", font_index::INFO).await;
                     return;
                 }
             }
@@ -141,8 +137,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if is_mounted {
             match obj_data.obj_type {
                 ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
-                    let msg = format!("{}No puedes cambiar de equipamiento mientras estas montado.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO).await;
                     return;
                 }
                 _ => {}
@@ -266,30 +261,51 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     let (map, x, y, char_index, weapon, shield, helmet) = user_data;
 
     // Send updated equipment stats (ANM) to the user
-    let anm = build_anm_packet(state, conn_id);
-    state.send_to(conn_id, &anm).await;
+    {
+        let anm_text = build_anm_packet(state, conn_id);
+        let pkt_anm = binary_packets::write_anim_data(&anm_text);
+        state.send_bytes(conn_id, &pkt_anm).await;
+    }
 
     // Send equipment change packets to area
+    // Get full user data for CP (character change) packet
+    let (body_now, head_now, heading_now) = state.users.get(&conn_id)
+        .map(|u| (u.body, u.head, u.heading))
+        .unwrap_or((0, 0, 0));
     match obj_data.obj_type {
         ObjType::Weapon => {
             // VB6: SND_SACARARMA (25) — draw weapon sound
-            state.send_data(SendTarget::ToArea { map, x, y }, "TW25").await;
-            let pkt = format!("|W{},{}", char_index.0, weapon);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt_wave = binary_packets::write_play_wave(25, x as u8, y as u8);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+            // Send CP (character change) to update weapon appearance
+            let pkt_cp = binary_packets::write_character_change(
+                char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,
+                weapon as i16, shield as i16, helmet as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
         }
         ObjType::Armor => {
-            // VB6: ChangeUserBody sends |B packet with new body
+            // VB6: ChangeUserBody sends CP packet with new body
             let body = state.users.get(&conn_id).map(|u| u.body).unwrap_or(0);
-            let pkt = format!("|B{},{}", char_index.0, body);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt_cp = binary_packets::write_character_change(
+                char_index.0 as i16, body as i16, head_now as i16, heading_now as u8,
+                weapon as i16, shield as i16, helmet as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
         }
         ObjType::Shield => {
-            let pkt = format!("|E{},{}", char_index.0, shield);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt_cp = binary_packets::write_character_change(
+                char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,
+                weapon as i16, shield as i16, helmet as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
         }
         ObjType::Helmet => {
-            let pkt = format!("|C{},{}", char_index.0, helmet);
-            state.send_data(SendTarget::ToArea { map, x, y }, &pkt).await;
+            let pkt_cp = binary_packets::write_character_change(
+                char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,
+                weapon as i16, shield as i16, helmet as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
         }
         _ => {}
     }
@@ -297,8 +313,8 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     // VB6: SendUserAura — broadcast aura change when equipment with aura is changed
     if aura_changed {
         if let Some(user) = state.users.get(&conn_id) {
-            let au_pkt = super::common::build_aura_packet(user);
-            state.send_data(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+            let pkt_au = super::common::build_aura_binary(user);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
         }
     }
 }
@@ -438,7 +454,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
     };
 
     if is_dead && obj_data.obj_type != ObjType::ResurrectPotion && obj_data.obj_type != ObjType::Boat {
-        state.send_to(conn_id, "||5").await; // VB6 TEXTO5: muerto, no puede usar items
+        state.send_msg_id(conn_id, 5, "").await; // VB6 TEXTO5: muerto, no puede usar items
         return;
     }
 
@@ -457,13 +473,11 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     None => return,
                 };
                 if !paralyzed {
-                    let msg = format!("P|No estas paralizado!{}", font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_console(conn_id, "No estas paralizado!", font_index::INFO).await;
                     return;
                 }
                 if min_hp <= 60 {
-                    let msg = format!("P|No tienes suficiente vida para usar la pocion!{}", font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_console(conn_id, "No tienes suficiente vida para usar la pocion!", font_index::INFO).await;
                     return;
                 }
                 // Non-warrior/hunter have 3-round cooldown
@@ -471,8 +485,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 if !is_warrior_or_hunter {
                     let counter_remo = state.users.get(&conn_id).map(|u| u.counter_remo).unwrap_or(0);
                     if counter_remo > 0 {
-                        let msg = format!("P|Debes esperar para usar otra pocion Remo{}", font_types::INFO);
-                        state.send_to(conn_id, &msg).await;
+                        state.send_console(conn_id, "Debes esperar para usar otra pocion Remo", font_index::INFO).await;
                         return;
                     }
                 }
@@ -489,7 +502,8 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     }
                 }
                 // Send PARADOK to toggle paralysis off on client
-                state.send_to(conn_id, "PARADOK").await;
+                let pkt_para = binary_packets::write_paralize_ok();
+                state.send_bytes(conn_id, &pkt_para).await;
                 send_inventory_slot(state, conn_id, idx).await;
                 send_stats_hp(state, conn_id).await;
                 return;
@@ -504,7 +518,8 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             let snd_id = if obj_data.obj_type == ObjType::UseOnce { 7 } else { 46 };
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
-            state.send_data(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &format!("TW{}", snd_id)).await;
+            let pkt_wave = binary_packets::write_play_wave(snd_id as u8, snd_x as u8, snd_y as u8);
+            state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave).await;
 
             // Consume one
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -533,15 +548,15 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // VB6: SND_BEBER (46)
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
-            state.send_data(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, "TW46").await;
+            let pkt_wave = binary_packets::write_play_wave(46, snd_x as u8, snd_y as u8);
+            state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave).await;
             send_inventory_slot(state, conn_id, idx).await;
             send_hunger_thirst(state, conn_id).await;
         }
         ObjType::Key => {
             // Keys are used on doors — they're not "used" from inventory directly
             // The door interaction happens via LC/RC on a door tile
-            let msg = format!("P|Esta llave sirve para abrir una puerta{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "Esta llave sirve para abrir una puerta", font_index::INFO).await;
         }
         ObjType::Boat => {
             // VB6: InvUsuario.bas Case eOBJType.otBarcos + Trabajo.bas DoNavega
@@ -565,7 +580,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                             .map(|g| g.is_tile_free(nx, ny)).unwrap_or(false)
                 });
                 if !has_water_nearby {
-                    state.send_to(conn_id, "||106").await; // TEXTO106
+                    state.send_msg_id(conn_id, 106, "").await; // TEXTO106
                     return;
                 }
             }
@@ -606,16 +621,16 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 }
                 // Notify: mount off
                 let mnt_ci = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
-                let usm_off = format!("USM{},0", mnt_ci);
-                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &usm_off).await;
-                let mvol_off = format!("MVOL{},0", mnt_ci);
-                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &mvol_off).await;
-                let (cd, au) = {
+                let pkt_usm_off = binary_packets::write_user_mount(mnt_ci as i16, false);
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_usm_off).await;
+                let pkt_mvol_off = binary_packets::write_levitate(mnt_ci as i16, false);
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_mvol_off).await;
+                let (pkt_cd, pkt_au) = {
                     let u = state.users.get(&conn_id).unwrap();
-                    (super::common::build_cd_packet(u), super::common::build_aura_packet(u))
+                    (super::common::build_cd_binary(u), super::common::build_aura_binary(u))
                 };
-                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &cd).await;
-                state.send_data(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &au).await;
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_cd).await;
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_au).await;
             }
 
             // VB6 DoNavega: If hidden, reveal first (NOVER)
@@ -627,8 +642,8 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.hidden = false;
                 }
-                let nover = format!("NOVER{},0", char_index_val);
-                state.send_data(SendTarget::ToMap(map_for_nover), &nover).await;
+                let pkt_invis = binary_packets::write_set_invisible(char_index_val as i16, false);
+                state.send_data_bytes(SendTarget::ToMap(map_for_nover), &pkt_invis).await;
             }
 
             if is_navigating {
@@ -695,27 +710,25 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // 1. ChangeUserChar → CP packet to area (including self)
             // 2. NAVEG to self
             // 3. NVG<charindex>,<flag> to ALL players
-            let (cp_pkt, nvg_pkt, map, bx, by) = match state.users.get(&conn_id) {
+            let (cp_bytes, nav_ci, nav_flag, map, bx, by) = match state.users.get(&conn_id) {
                 Some(u) => {
-                    let nav_flag = if u.navigating { 1 } else { 0 };
-                    // VB6 CP format: CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<fx>,<loops>,<helmet>
-                    let cp = format!("CP{},{},{},{},{},{},{},{},{}",
-                        u.char_index.0, u.body, u.head, u.heading,
-                        u.weapon_anim, u.shield_anim,
-                        0, 0, // FX, loops (no active FX during boat toggle)
-                        u.casco_anim,
+                    let nav_flag = u.navigating;
+                    let cp = binary_packets::write_character_change(
+                        u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+                        u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
                     );
-                    let nvg = format!("NVG{},{}", u.char_index.0, nav_flag);
-                    (cp, nvg, u.pos_map, u.pos_x, u.pos_y)
+                    (cp, u.char_index.0, nav_flag, u.pos_map, u.pos_x, u.pos_y)
                 }
                 None => return,
             };
             // CP to area (VB6 SendToUserArea = includes self)
-            state.send_data(SendTarget::ToArea { map, x: bx, y: by }, &cp_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: bx, y: by }, &cp_bytes).await;
             // NAVEG to self (toggle client navigation state)
-            state.send_to(conn_id, "NAVEG").await;
-            // NVG to all (VB6 SendTarget.ToAll)
-            state.send_data(SendTarget::ToAll, &nvg_pkt).await;
+            let pkt_nav = binary_packets::write_navigate_toggle();
+            state.send_bytes(conn_id, &pkt_nav).await;
+            // NVG broadcast to all players
+            let pkt_nvg = binary_packets::write_navigate_broadcast(nav_ci as i16, nav_flag);
+            state.send_data_bytes(SendTarget::ToAll, &pkt_nvg).await;
         }
         ObjType::Instrument => {
             // VB6: Play music instrument — broadcast TW<Snd1> to area
@@ -725,11 +738,10 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 _ => return,
             };
             if wav > 0 {
-                let snd = format!("TW{}", wav);
-                state.send_data(SendTarget::ToArea { map, x, y }, &snd).await;
+                let pkt_wave = binary_packets::write_play_wave(wav as u8, x as u8, y as u8);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
             }
-            let msg = format!("P|Tocas una melodia{}", font_types::INFO);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, "Tocas una melodia", font_index::INFO).await;
         }
         ObjType::Scroll => {
             // Learn spell from scroll
@@ -741,7 +753,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 .map(|u| u.spells.iter().any(|&s| s == spell_id))
                 .unwrap_or(false);
             if already_known {
-                state.send_to(conn_id, "||182").await; // TEXTO182: Ya tenes ese hechizo
+                state.send_msg_id(conn_id, 182, "").await; // TEXTO182: Ya tenes ese hechizo
                 return;
             }
 
@@ -765,16 +777,16 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     .unwrap_or_default();
                 // Send SHS to update the spell slot on client
                 let shs_slot = slot_idx + 1; // 1-based
-                let shs_pkt = format!("SHS{},{},{}", shs_slot, spell_id, spell_name);
-                state.send_to(conn_id, &shs_pkt).await;
-                state.send_to(conn_id, &format!("||832@{}", spell_name)).await; // TEXTO832
+                let pkt_shs = binary_packets::write_change_spell_slot(shs_slot as u8, spell_id as i16, &spell_name);
+                state.send_bytes(conn_id, &pkt_shs).await;
+                state.send_msg_id(conn_id, 832, &spell_name).await; // TEXTO832
             } else {
-                state.send_to(conn_id, "||181").await; // TEXTO181
+                state.send_msg_id(conn_id, 181, "").await; // TEXTO181
             }
         }
         ObjType::EmptyBottle => {
             // Fill at water source — simplified, just inform
-            state.send_to(conn_id, "||103").await; // TEXTO103: No hay agua allí
+            state.send_msg_id(conn_id, 103, "").await; // TEXTO103: No hay agua allí
         }
         ObjType::FullBottle => {
             // Drink from bottle → restore thirst, swap to empty bottle variant
@@ -808,7 +820,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
         ObjType::ResurrectPotion => {
             // Resurrection potion — can only use while dead
             if !is_dead {
-                state.send_to(conn_id, "||117").await; // TEXTO117: Debes estar muerto para utilizar esta poción
+                state.send_msg_id(conn_id, 117, "").await; // TEXTO117: Debes estar muerto para utilizar esta poción
                 return;
             }
             // Consume the item first
@@ -821,7 +833,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             send_inventory_slot(state, conn_id, idx).await;
             // Use shared revive logic (restores body, head, sends CFF + CP)
             revive_user(state, conn_id).await;
-            state.send_to(conn_id, "||119").await; // TEXTO119: Te has resucitado
+            state.send_msg_id(conn_id, 119, "").await; // TEXTO119: Te has resucitado
         }
         ObjType::Mount => {
             // Mount/dismount — land mounts use montado (NOT navigating, which is for boats)
@@ -872,13 +884,16 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 };
                 let cp_nav = {
                     let u = state.users.get(&conn_id).unwrap();
-                    format!("CP{},{},{},{},{},{},0,0,{}", u.char_index.0, u.body, u.head,
-                        u.heading, u.weapon_anim, u.shield_anim, u.casco_anim)
+                    binary_packets::write_character_change(
+                        u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+                        u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                    )
                 };
-                state.send_data(SendTarget::ToArea { map: nav_map, x: nav_x, y: nav_y }, &cp_nav).await;
-                state.send_to(conn_id, "NAVEG").await;
-                let nvg_off = format!("NVG{},0", nav_ci);
-                state.send_data(SendTarget::ToAll, &nvg_off).await;
+                state.send_data_bytes(SendTarget::ToArea { map: nav_map, x: nav_x, y: nav_y }, &cp_nav).await;
+                let pkt_nav = binary_packets::write_navigate_toggle();
+                state.send_bytes(conn_id, &pkt_nav).await;
+                let pkt_nvg_off = binary_packets::write_navigate_broadcast(nav_ci as i16, false);
+                state.send_data_bytes(SendTarget::ToAll, &pkt_nvg_off).await;
             }
 
             let (map, x, y, char_index) = match state.users.get(&conn_id) {
@@ -889,7 +904,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if is_mounted {
                 // Dismount — check tile is not water (can't dismount in water)
                 if state.hay_agua(map, x, y) {
-                    state.send_to(conn_id, &format!("{}No puedes desmontar aqui.{}", server_opcodes::CONSOLE_MSG, font_types::INFO)).await;
+                    state.send_console(conn_id, "No puedes desmontar aqui.", font_index::INFO).await;
                     return;
                 }
 
@@ -957,30 +972,32 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     Some(u) => u,
                     None => return,
                 };
-                format!("CP{},{},{},{},{},{},0,0,{}", user.char_index.0, user.body, user.head, user.heading,
-                    user.weapon_anim, user.shield_anim, user.casco_anim)
+                binary_packets::write_character_change(
+                    user.char_index.0 as i16, user.body as i16, user.head as i16, user.heading as u8,
+                    user.weapon_anim as i16, user.shield_anim as i16, user.casco_anim as i16, 0, 0,
+                )
             };
-            state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
 
             // Send mount state (USM)
             let mounted_now = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
-            let usm = format!("USM{},{}", char_index.0, if mounted_now { 1 } else { 0 });
-            state.send_data(SendTarget::ToArea { map, x, y }, &usm).await;
+            let pkt_usm = binary_packets::write_user_mount(char_index.0 as i16, mounted_now);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm).await;
 
             // Send flying state (MVOL) if flying mount
             if is_flying {
                 let lev = state.users.get(&conn_id).map(|u| u.levitando).unwrap_or(false);
-                let mvol = format!("MVOL{},{}", char_index.0, if lev { 1 } else { 0 });
-                state.send_data(SendTarget::ToArea { map, x, y }, &mvol).await;
+                let pkt_mvol = binary_packets::write_levitate(char_index.0 as i16, lev);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_mvol).await;
             }
 
             // Send [CD (levitando + auras) and AU| (aura update)
-            let (cd, au) = {
+            let (pkt_cd, pkt_au) = {
                 let user = match state.users.get(&conn_id) { Some(u) => u, None => return };
-                (super::common::build_cd_packet(user), super::common::build_aura_packet(user))
+                (super::common::build_cd_binary(user), super::common::build_aura_binary(user))
             };
-            state.send_data(SendTarget::ToArea { map, x, y }, &cd).await;
-            state.send_data(SendTarget::ToArea { map, x, y }, &au).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cd).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
         }
         ObjType::ScrollItem => {
             // VB6: Buff scroll — typeScroll: 1=exp, 2=gold, 3=drop, 4=crystal drop
@@ -993,7 +1010,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 .unwrap_or(false);
 
             if already_active {
-                state.send_to(conn_id, "||928").await; // VB6: scroll already active
+                state.send_msg_id(conn_id, 928, "").await; // VB6: scroll already active
                 return;
             }
 
@@ -1011,8 +1028,8 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             }
 
             // VB6: Send TIS packet + message
-            let tis_pkt = format!("TIS{},{},{}", ts, time_s, time_s);
-            state.send_to(conn_id, &tis_pkt).await;
+            let pkt_tis = binary_packets::write_timer_info(ts as u8, time_s as i32, time_s as i32);
+            state.send_bytes(conn_id, &pkt_tis).await;
 
             let scroll_name = match ts {
                 1 => "Experiencia",
@@ -1021,8 +1038,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 4 => "Drop de Cristales",
                 _ => "Desconocido",
             };
-            let msg = format!("||929@{}@{}@{}", scroll_name, time_s, mult);
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 929, &format!("{}@{}@{}", scroll_name, time_s, mult)).await;
             send_inventory_slot(state, conn_id, idx).await;
         }
         ObjType::Sack => {
@@ -1037,22 +1053,21 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
-            let msg = format!("||930@{}", credits);
-            state.send_to(conn_id, &msg).await;
+            state.send_msg_id(conn_id, 930, &credits.to_string()).await;
             send_inventory_slot(state, conn_id, idx).await;
         }
         ObjType::RenounceHorde => {
             // VB6: Renounce Chaos faction
             let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
             if guild_idx > 0 {
-                state.send_to(conn_id, "||302").await; // Must leave guild first
+                state.send_msg_id(conn_id, 302, "").await; // Must leave guild first
                 return;
             }
             let is_caos = state.users.get(&conn_id)
                 .map(|u| u.criminal || u.fuerzas_caos)
                 .unwrap_or(false);
             if !is_caos {
-                state.send_to(conn_id, "||239").await; // Not in chaos faction
+                state.send_msg_id(conn_id, 239, "").await; // Not in chaos faction
                 return;
             }
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1063,27 +1078,34 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
-            state.send_to(conn_id, "||355").await; // Faction changed
+            state.send_msg_id(conn_id, 355, "").await; // Faction changed
             send_inventory_slot(state, conn_id, idx).await;
-            // Send updated status
-            let cc = state.users.get(&conn_id).map(|u| u.build_cc_packet()).unwrap_or_default();
-            let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-            if !cc.is_empty() {
-                state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+            // Send updated status via CharacterCreate
+            if let Some(u) = state.users.get(&conn_id) {
+                let nick_color: u8 = if u.criminal { 2 } else { 1 };
+                let pkt_cc = binary_packets::write_character_create(
+                    u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+                    u.pos_x as u8, u.pos_y as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16,
+                    0, 0, // fx, loops
+                    &u.char_name, nick_color, u.privileges as u8,
+                );
+                let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
             }
         }
         ObjType::RenounceRoyal => {
             // VB6: Renounce Royal faction
             let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
             if guild_idx > 0 {
-                state.send_to(conn_id, "||302").await;
+                state.send_msg_id(conn_id, 302, "").await;
                 return;
             }
             let is_armada = state.users.get(&conn_id)
                 .map(|u| !u.criminal || u.armada_real)
                 .unwrap_or(false);
             if !is_armada {
-                state.send_to(conn_id, "||239").await;
+                state.send_msg_id(conn_id, 239, "").await;
                 return;
             }
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1094,12 +1116,20 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
-            state.send_to(conn_id, "||355").await;
+            state.send_msg_id(conn_id, 355, "").await;
             send_inventory_slot(state, conn_id, idx).await;
-            let cc = state.users.get(&conn_id).map(|u| u.build_cc_packet()).unwrap_or_default();
-            let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-            if !cc.is_empty() {
-                state.send_data(SendTarget::ToArea { map, x, y }, &cc).await;
+            // Send updated status via CharacterCreate
+            if let Some(u) = state.users.get(&conn_id) {
+                let nick_color: u8 = if u.criminal { 2 } else { 1 };
+                let pkt_cc = binary_packets::write_character_create(
+                    u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+                    u.pos_x as u8, u.pos_y as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16,
+                    0, 0, // fx, loops
+                    &u.char_name, nick_color, u.privileges as u8,
+                );
+                let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
             }
         }
         _ => {
@@ -1208,8 +1238,7 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         .unwrap_or(false);
 
     if is_fixed {
-        let msg = format!("P|No puedes agarrar ese objeto{}", font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "No puedes agarrar ese objeto", font_index::INFO).await;
         return;
     }
 
@@ -1237,7 +1266,7 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     let slot = match free_slot {
         Some(s) => s,
         None => {
-            state.send_to(conn_id, "||108").await; // TEXTO108: No podes cargar mas objetos
+            state.send_msg_id(conn_id, 108, "").await; // TEXTO108: No podes cargar mas objetos
             return;
         }
     };
@@ -1254,8 +1283,8 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     }
 
     // Broadcast BO (erase object) to area
-    let bo_pkt = format!("BO{},{}", x, y);
-    state.send_data(SendTarget::ToArea { map, x, y }, &bo_pkt).await;
+    let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo).await;
 
     // Add to inventory
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1278,7 +1307,7 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         .map(|o| o.name.clone())
         .unwrap_or_else(|| format!("Item #{}", obj_idx));
 
-    state.send_to(conn_id, &format!("||115@{}@{}", amount, item_name)).await; // TEXTO115: Recibiste %1 - %2
+    state.send_msg_id(conn_id, 115, &format!("{}@{}", amount, item_name)).await; // TEXTO115: Recibiste %1 - %2
 }
 
 /// TI<slot>,<amount> — Drop item from inventory to ground.
@@ -1311,8 +1340,7 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     // GM anti-abuse: GMs (Consejero through Gran_Dios) cannot drop items.
     // Only regular users (0) and Director+ (>=9) are allowed.
     if user.privileges > 0 && user.privileges < 9 {
-        let msg = format!("P|Los GMs no pueden tirar items{}", font_types::INFO);
-        state.send_to(conn_id, &msg).await;
+        state.send_console(conn_id, "Los GMs no pueden tirar items", font_index::INFO).await;
         return;
     }
 
@@ -1339,7 +1367,7 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     };
 
     if !can_place {
-        state.send_to(conn_id, "||107").await; // TEXTO107: No hay espacio en el piso
+        state.send_msg_id(conn_id, 107, "").await; // TEXTO107: No hay espacio en el piso
         return;
     }
 
@@ -1356,44 +1384,42 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
             unequip_slot(state, conn_id, idx, &obj_type);
 
             // Extract values needed for packets before borrowing state mutably
-            let (ci, weapon_anim, body, shield_anim, casco_anim, au_pkt) =
+            let (ci, weapon_anim, body, head, heading, shield_anim, casco_anim, au_pkt_bin) =
                 match state.users.get(&conn_id) {
                     Some(user) => (
                         user.char_index.0,
                         user.weapon_anim,
                         user.body,
+                        user.head,
+                        user.heading,
                         user.shield_anim,
                         user.casco_anim,
-                        if had_aura { Some(super::common::build_aura_packet(user)) } else { None },
+                        if had_aura { Some(super::common::build_aura_binary(user)) } else { None },
                     ),
                     None => return,
                 };
 
-            // Broadcast appearance change to area
-            match obj_type {
-                ObjType::Weapon => {
-                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|W{},{}", ci, weapon_anim)).await;
-                }
-                ObjType::Armor => {
-                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|B{},{}", ci, body)).await;
-                }
-                ObjType::Shield => {
-                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|E{},{}", ci, shield_anim)).await;
-                }
-                ObjType::Helmet => {
-                    state.send_data(SendTarget::ToArea { map, x, y }, &format!("|C{},{}", ci, casco_anim)).await;
-                }
-                _ => {}
+            // Broadcast appearance change to area via CP (character change)
+            let send_cp = matches!(obj_type, ObjType::Weapon | ObjType::Armor | ObjType::Shield | ObjType::Helmet);
+            if send_cp {
+                let pkt_cp = binary_packets::write_character_change(
+                    ci as i16, body as i16, head as i16, heading as u8,
+                    weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
             }
 
             // Send aura update if item had an aura
-            if let Some(au) = au_pkt {
-                state.send_data(SendTarget::ToArea { map, x, y }, &au).await;
+            if let Some(pkt_au) = au_pkt_bin {
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
             }
 
             // Send updated ANM (equipment stats) to the user
-            let anm = build_anm_packet(state, conn_id);
-            state.send_to(conn_id, &anm).await;
+            {
+                let anm_text = build_anm_packet(state, conn_id);
+                let pkt_anm = binary_packets::write_anim_data(&anm_text);
+                state.send_bytes(conn_id, &pkt_anm).await;
+            }
         }
     }
 
@@ -1428,19 +1454,22 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                 u.shield_anim = sa;
                 u.casco_anim = ca;
             }
-            let (cp, usm, mvol, cd) = {
+            let (cp_bytes, pkt_usm, pkt_mvol, pkt_cd) = {
                 let u = match state.users.get(&conn_id) { Some(u) => u, None => return };
                 (
-                    format!("CP{},{},{},{},{},{},0,0,{}", u.char_index.0, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
-                    format!("USM{},0", u.char_index.0),
-                    format!("MVOL{},0", u.char_index.0),
-                    super::common::build_cd_packet(u),
+                    binary_packets::write_character_change(
+                        u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+                        u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                    ),
+                    binary_packets::write_user_mount(u.char_index.0 as i16, false),
+                    binary_packets::write_levitate(u.char_index.0 as i16, false),
+                    super::common::build_cd_binary(u),
                 )
             };
-            state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
-            state.send_data(SendTarget::ToArea { map, x, y }, &usm).await;
-            state.send_data(SendTarget::ToArea { map, x, y }, &mvol).await;
-            state.send_data(SendTarget::ToArea { map, x, y }, &cd).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_bytes).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_mvol).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cd).await;
         }
     }
 
@@ -1468,18 +1497,22 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                 u.shield_anim = sa;
                 u.casco_anim = ca;
             }
-            let (cp, naveg, char_idx) = {
+            let (cp_bytes, naveg_ci) = {
                 let u = match state.users.get(&conn_id) { Some(u) => u, None => return };
                 (
-                    format!("CP{},{},{},{},{},{},0,0,{}", u.char_index.0, u.body, u.head, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
-                    format!("NAVEG{},0", u.char_index.0),
+                    binary_packets::write_character_change(
+                        u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+                        u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                    ),
                     u.char_index.0,
                 )
             };
-            state.send_data(SendTarget::ToArea { map, x, y }, &cp).await;
-            state.send_data(SendTarget::ToArea { map, x, y }, &naveg).await;
-            state.send_to(conn_id, &format!("NVG{}", 0)).await;
-            let _ = char_idx; // suppress warning
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_bytes).await;
+            let pkt_naveg = binary_packets::write_navigate_broadcast(naveg_ci as i16, false);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_naveg).await;
+            // Navigate toggle to self (client-side navigation state off)
+            let pkt_nav_self = binary_packets::write_navigate_toggle();
+            state.send_bytes(conn_id, &pkt_nav_self).await;
         }
     }
 
@@ -1521,8 +1554,8 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 
     // Broadcast HO (show object) to area if new item on tile
     if is_new && grh_index > 0 {
-        let ho_pkt = format!("HO{},{},{}", grh_index, x, y);
-        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
     }
 
     // Track for world cleanup (auto-remove after 10 ticks)
@@ -1546,8 +1579,7 @@ pub(super) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
     }
     send_stats_gold(state, conn_id).await;
 
-    let msg = format!("P|Tiraste {} monedas de oro{}", amount, font_types::INFO);
-    state.send_to(conn_id, &msg).await;
+    state.send_console(conn_id, &format!("Tiraste {} monedas de oro", amount), font_index::INFO).await;
 }
 
 /// LC<x>,<y> — Left click on tile (look / inspect).
@@ -1612,18 +1644,18 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                 .map(|t| t.ground_item.amount).unwrap_or(0);
             let msg = if !is_user {
                 if amount > 1 {
-                    format!("N|{} - {} - {}~69~190~156", name, amount, idx)
+                    format!("{} - {} - {}", name, amount, idx)
                 } else {
-                    format!("N|{} - {}~69~190~156", name, idx)
+                    format!("{} - {}", name, idx)
                 }
             } else {
                 if amount > 1 {
-                    format!("N|{} - {}~69~190~156", name, amount)
+                    format!("{} - {}", name, amount)
                 } else {
-                    format!("N|{}~69~190~156", name)
+                    name.to_string()
                 }
             };
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, &msg, font_index::INFO).await;
         }
     }
 
@@ -1730,40 +1762,49 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                 stat.push_str(" [Intacto]");
             }
 
-            // VB6: Color coding by privilege hierarchy (lines 895-956)
-            if priv_target > 11 {
-                stat.push_str(" <Administrador> ~255~255~255~1~0");
+            // Label + font_index by privilege hierarchy (VB6 lines 895-956)
+            let fi = if priv_target > 11 {
+                stat.push_str(" <Administrador>");
+                font_index::BLANCO
             } else if priv_target > 10 {
-                stat.push_str(" <Sub Administrador> ~255~198~0~1~0");
+                stat.push_str(" <Sub Administrador>");
+                font_index::AMARILLO
             } else if priv_target > 9 {
-                stat.push_str(" <Developer> ~128~255~128~1~0");
+                stat.push_str(" <Developer>");
+                font_index::VERDE
             } else if priv_target > 8 {
-                stat.push_str(" <Director de Game Master> ~123~155~0~1~0");
+                stat.push_str(" <Director de Game Master>");
+                font_index::SERVER
             } else if priv_target > 7 {
-                stat.push_str(" <Game Master> <Gran Dios> ~0~225~128~1~0");
+                stat.push_str(" <Game Master> <Gran Dios>");
+                font_index::SERVER
             } else if priv_target > 3 {
-                stat.push_str(" <Game Master> <Dios> ~120~250~250~1~0");
+                stat.push_str(" <Game Master> <Dios>");
+                font_index::CELESTE
             } else if priv_target > 2 {
-                stat.push_str(" <Event Master> ~128~128~64~1~0");
+                stat.push_str(" <Event Master>");
+                font_index::GRIS
             } else if priv_target > 1 {
-                stat.push_str(" <Game Master> <Semi Dios> ~0~170~190~1~0");
+                stat.push_str(" <Game Master> <Semi Dios>");
+                font_index::INFO
             } else if priv_target > 0 {
-                stat.push_str(" <Game Master> <Consejero> ~0~185~0~1~0");
+                stat.push_str(" <Game Master> <Consejero>");
+                font_index::SERVER
             } else if level <= limite_newbie {
-                stat.push_str(" ~255~255~202~1~0");
+                font_index::NEWBIE
             } else if armada {
-                stat.push_str(" ~0~128~255~1~0");
+                font_index::CIUDADANO
             } else if caos {
-                stat.push_str(" ~255~0~0~1~0");
+                font_index::ROJO
             } else if criminal {
-                stat.push_str(" <CRIMINAL> ~255~0~0~1~0");
+                stat.push_str(" <CRIMINAL>");
+                font_index::ROJO
             } else {
-                // Ciudadano (default)
-                stat.push_str(" <CIUDADANO> ~0~128~255~1~0");
-            }
+                stat.push_str(" <CIUDADANO>");
+                font_index::CIUDADANO
+            };
 
-            let msg = format!("N|{}", stat);
-            state.send_to(conn_id, &msg).await;
+            state.send_console(conn_id, &stat, fi).await;
 
             found_something = true;
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1789,9 +1830,9 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
             if alive {
                 // VB6: GM gets detailed NPC info (line 987)
                 if my_privileges > 0 {
-                    let gm_msg = format!("N|Nombre : {} /  Vida : {}/{} Numero de NPC : {}~255~113~255~0~0",
-                        npc_name, npc_min_hp, npc_max_hp, npc_num);
-                    state.send_to(conn_id, &gm_msg).await;
+                    state.send_console(conn_id,
+                        &format!("Nombre : {} /  Vida : {}/{} Numero de NPC : {}", npc_name, npc_min_hp, npc_max_hp, npc_num),
+                        font_index::NPCSX).await;
                 }
 
                 // VB6: Health status based on Survival skill (lines 993-1036)
@@ -1805,18 +1846,15 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                 if npc_desc.len() > 1 {
                     // GM gets extra info line before desc
                     if is_gm {
-                        let gm_extra = format!("N|Nombre: {} Vida: {}/{} Numero de NPC: {} Indice: {}~255~83~255~0~0",
-                            npc_name, npc_min_hp, npc_max_hp, npc_num, npc_idx);
-                        state.send_to(conn_id, &gm_extra).await;
+                        state.send_console(conn_id,
+                            &format!("Nombre: {} Vida: {}/{} Numero de NPC: {} Indice: {}", npc_name, npc_min_hp, npc_max_hp, npc_num, npc_idx),
+                            font_index::NPCSX).await;
                     }
-                    // Speech bubble with desc
-                    let sep = "\u{00B0}"; // chr(176) = °
-                    let msg = format!("N|16777215{}{}{}{}{}", sep, npc_desc, sep, npc_char_index.0, font_types::INFO);
-                    state.send_to(conn_id, &msg).await;
+                    // Speech bubble with desc (overhead white text)
+                    state.send_chat_over_head_to(SendTarget::ToIndex(conn_id), &npc_desc, npc_char_index.0 as i16, 16777215).await;
                 } else {
                     // No desc → show name + health status
-                    let msg = format!("||674@{}@{}", npc_name, estatus);
-                    state.send_to(conn_id, &msg).await;
+                    state.send_msg_id(conn_id, 674, &format!("{}@{}", npc_name, estatus)).await;
                 }
 
                 found_something = true;
@@ -2045,8 +2083,8 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                 if let Some(user) = state.users.get_mut(&conn_id) {
                     user.target_user = target_conn;
                 }
-                let menu_pkt = format!("MENU{},{}", target_name, privileges);
-                state.send_to(conn_id, &menu_pkt).await;
+                let pkt_menu = binary_packets::write_menu_data(&target_name, privileges as u8);
+                state.send_bytes(conn_id, &pkt_menu).await;
                 return;
             }
         }
@@ -2075,46 +2113,48 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                 // VB6 Accion(): First check Comercia, then check NPCtype
                 // Commerce takes priority over type (VB6 line 135)
                 if comercia {
-                    if dead { state.send_to(conn_id, "||3").await; return; }
+                    if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                     if dist > 6 {
-                        state.send_to(conn_id, "||13").await; return;
+                        state.send_msg_id(conn_id, 13, "").await; return;
                     }
                     iniciar_comercio_npc(state, conn_id, npc_idx).await;
                 } else {
                     match npc_type {
                         NpcType::Banker => {
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 10 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||10").await; return;
+                                state.send_msg_id(conn_id, 10, "").await; return;
                             }
                             iniciar_clan_banco(state, conn_id).await;
                         }
                         NpcType::Traveler => {
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
-                            state.send_to(conn_id, "TRAVELS").await;
+                            let pkt_travels = binary_packets::write_travels();
+                            state.send_bytes(conn_id, &pkt_travels).await;
                         }
                         NpcType::Quest | NpcType::QuestNoble => {
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 10 {
-                                state.send_to(conn_id, "||10").await; return;
+                                state.send_msg_id(conn_id, 10, "").await; return;
                             }
-                            state.send_to(conn_id, "DAMEQUEST").await;
+                            let pkt_damequest = binary_packets::write_quest_npc_list();
+                            state.send_bytes(conn_id, &pkt_damequest).await;
                         }
                         NpcType::Reviver => {
                             // VB6 Acciones.bas:408-422 — Revividor NPC
                             // Distance check: <= 10 tiles
                             if dist > 10 {
-                                state.send_to(conn_id, "||12").await; return;
+                                state.send_msg_id(conn_id, 12, "").await; return;
                             }
 
                             // If dead: revive first
@@ -2130,53 +2170,51 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             send_stats_hp(state, conn_id).await;
                         }
                         NpcType::Trainer => {
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 10 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
-                            let msg = format!("{}Habla con el entrenador usando el chat.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                            state.send_to(conn_id, &msg).await;
+                            state.send_console(conn_id, "Habla con el entrenador usando el chat.", font_index::INFO).await;
                         }
                         NpcType::Surgeon => {
                             if dist > 10 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
                             if let Some(user) = state.users.get_mut(&conn_id) {
                                 if user.poisoned {
                                     user.poisoned = false;
-                                    let msg = format!("{}El cirujano te ha curado el veneno.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                                    state.send_to(conn_id, &msg).await;
+                                    state.send_console(conn_id, "El cirujano te ha curado el veneno.", font_index::INFO).await;
                                 } else {
-                                    let msg = format!("{}No necesitas curacion.{}", server_opcodes::CONSOLE_MSG, font_types::INFO);
-                                    state.send_to(conn_id, &msg).await;
+                                    state.send_console(conn_id, "No necesitas curacion.", font_index::INFO).await;
                                 }
                             }
                         }
                         NpcType::Mail => {
                             // VB6: Correos (type 23) — opens mail form
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
-                            state.send_to(conn_id, "CORREO").await;
+                            let pkt_correo = binary_packets::write_mail_open();
+                            state.send_bytes(conn_id, &pkt_correo).await;
                         }
                         NpcType::Citizenship => {
                             // VB6: Ciudadania (type 13)
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
-                            let msg = format!("P|Habla conmigo para cambiar tu ciudadania. Escribe /CIUDADANO para convertirte en ciudadano o /CRIMINAL para renunciar.{}", font_types::INFO);
-                            state.send_to(conn_id, &msg).await;
+                            state.send_console(conn_id, "Habla conmigo para cambiar tu ciudadania. Escribe /CIUDADANO para convertirte en ciudadano o /CRIMINAL para renunciar.", font_index::INFO).await;
                         }
                         NpcType::HouseSeller => {
                             // VB6: ShowCasas (type 15) — MFC packet
-                            if dead { state.send_to(conn_id, "||3").await; return; }
-                            state.send_to(conn_id, "MFC").await;
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            let pkt_mfc = binary_packets::write_friend_dialog();
+                            state.send_bytes(conn_id, &pkt_mfc).await;
                         }
                         NpcType::Arena => {
                             // VB6: Arenas (type 16) — MAR packet with duel names
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             // Build tournament list
                             let mut names = Vec::new();
                             for i in 0..8 {
@@ -2186,49 +2224,46 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                                     names.push(String::new());
                                 }
                             }
-                            let mar_pkt = format!("MAR{}", names.join(","));
-                            state.send_to(conn_id, &mar_pkt).await;
+                            let pkt_mar = binary_packets::write_arena_data(&names.join(","));
+                            state.send_bytes(conn_id, &pkt_mar).await;
                         }
                         NpcType::GodNpc => {
                             // VB6: NpcDioses (type 18)
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 3 {
-                                state.send_to(conn_id, "||14").await; return;
+                                state.send_msg_id(conn_id, 14, "").await; return;
                             }
-                            let msg = format!("P|Acercate mas para hablar con los dioses.{}", font_types::INFO);
-                            state.send_to(conn_id, &msg).await;
+                            state.send_console(conn_id, "Acercate mas para hablar con los dioses.", font_index::INFO).await;
                         }
                         NpcType::Bargomaud => {
                             // VB6: NpcBargomaud (type 20) — check level >= 55, warp to 161,50,53
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||14").await; return;
+                                state.send_msg_id(conn_id, 14, "").await; return;
                             }
                             let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(0);
                             if level < 55 {
-                                state.send_to(conn_id, "||643").await; return;
+                                state.send_msg_id(conn_id, 643, "").await; return;
                             }
                             warp_user(state, conn_id, 161, 50, 53).await;
                             let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                            state.send_to(conn_id, &format!("||651@{}", name)).await;
+                            state.send_msg_id(conn_id, 651, &name).await;
                         }
                         NpcType::QuintaJera => {
                             // VB6: QuintaJera (type 21) — faction rewards
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
-                            let msg = format!("P|Usa los comandos /RECOMPENSA y /ENLISTAR para interactuar.{}", font_types::INFO);
-                            state.send_to(conn_id, &msg).await;
+                            state.send_console(conn_id, "Usa los comandos /RECOMPENSA y /ENLISTAR para interactuar.", font_index::INFO).await;
                         }
                         NpcType::BoxDelivery => {
                             // VB6: EntregaCajas (type 24)
-                            if dead { state.send_to(conn_id, "||3").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
                             if dist > 5 {
-                                state.send_to(conn_id, "||13").await; return;
+                                state.send_msg_id(conn_id, 13, "").await; return;
                             }
-                            let msg = format!("P|Trae las cajas de quest para recibir tu recompensa.{}", font_types::INFO);
-                            state.send_to(conn_id, &msg).await;
+                            state.send_console(conn_id, "Trae las cajas de quest para recibir tu recompensa.", font_index::INFO).await;
                         }
                         _ => {
                             // Non-interactive NPC — description already shown above
@@ -2243,8 +2278,9 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // 4. Ground item interaction
     if tile_obj_idx > 0 {
         if let Some(obj) = state.get_object(tile_obj_idx) {
-            let sele_pkt = format!("SELE{},{},OBJ", obj.obj_type as i32, obj.name);
-            state.send_to(conn_id, &sele_pkt).await;
+            let sele_data = format!("{},{},OBJ", obj.obj_type as i32, obj.name);
+            let pkt_sele = binary_packets::write_select_data(&sele_data);
+            state.send_bytes(conn_id, &pkt_sele).await;
         }
     }
 }
@@ -2265,7 +2301,7 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
 
     // Distance check: must be within 3 tiles (VB6: Distance > 3)
     if (x - user_x).abs() > 3 || (y - user_y).abs() > 3 {
-        state.send_to(conn_id, "||10").await;
+        state.send_msg_id(conn_id, 10, "").await;
         return;
     }
 
@@ -2287,7 +2323,7 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         }).unwrap_or(false);
 
         if !has_key {
-            state.send_to(conn_id, "||652").await;
+            state.send_msg_id(conn_id, 652, "").await;
             return;
         }
     }
@@ -2312,8 +2348,8 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
 
         // Send HO packet with the NEW object's graphic (VB6: after changing ObjIndex)
         let new_grh = state.get_object(new_obj_idx).map(|o| o.grh_index).unwrap_or(0);
-        let ho_pkt = format!("HO{},{},{}", new_grh, x, y);
-        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, new_grh as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
 
         // Read door type from the NEW object (VB6 reads after ObjIndex change)
         let new_obj = state.get_object(new_obj_idx).cloned();
@@ -2332,12 +2368,13 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Unblock tiles and send BQ packets to entire map (VB6: Bloquear SendTarget.toMap)
         for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, false);
-            let bq_pkt = format!("BQ{},{},{}", tx, y, 0);
-            state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
+            let pkt_bq = binary_packets::write_block_position(*tx as u8, y as u8, false);
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq).await;
         }
 
         // Play door sound (VB6: SND_PUERTA = 5)
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW5").await;
+        let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
     } else {
         // Door is OPEN → close it
 
@@ -2358,8 +2395,8 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Send HO packet with the NEW object's graphic
         let closed_obj = state.get_object(new_obj_idx).cloned();
         let new_grh = closed_obj.as_ref().map(|o| o.grh_index).unwrap_or(0);
-        let ho_pkt = format!("HO{},{},{}", new_grh, x, y);
-        state.send_data(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, new_grh as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
 
         // Read door type from the NEW (closed) object
         let is_puerta_doble = closed_obj.as_ref().map(|o| o.puerta_doble == 1).unwrap_or(false);
@@ -2377,12 +2414,13 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Block tiles and send BQ packets to entire map
         for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, true);
-            let bq_pkt = format!("BQ{},{},{}", tx, y, 1);
-            state.send_data(SendTarget::ToMap(map), &bq_pkt).await;
+            let pkt_bq = binary_packets::write_block_position(*tx as u8, y as u8, true);
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq).await;
         }
 
         // Play door sound (VB6: SND_PUERTA = 5)
-        state.send_data(SendTarget::ToArea { map, x, y }, "TW5").await;
+        let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
     }
 
     // VB6: Set TargetObj position (after toggle)
@@ -2409,8 +2447,10 @@ pub(super) async fn handle_safe_toggle(state: &mut GameState, conn_id: Connectio
     }
 
     if safe {
-        state.send_to(conn_id, server_opcodes::SAFE_OFF).await;
+        let pkt = binary_packets::write_safe_off();
+        state.send_bytes(conn_id, &pkt).await;
     } else {
-        state.send_to(conn_id, server_opcodes::SAFE_ON).await;
+        let pkt = binary_packets::write_safe_on();
+        state.send_bytes(conn_id, &pkt).await;
     }
 }
