@@ -88,6 +88,15 @@ public partial class WorldRenderer : Node2D
     private readonly Color[] _litQuadColors = new Color[4];
     private readonly Vector2[] _litQuadUVs = new Vector2[4];
 
+    // VB6 water polygon deformation (modEngine.bas lines 1752-1781)
+    // Two oscillating counters that bounce between -WaterHeight and +WaterHeight.
+    // Creates a triangle wave with phase offset for ripple effect.
+    private const float WaterHeight = 4f;          // max vertex displacement in pixels
+    private const float WaterSpeed = 4f * 0.042f;  // VB6: 4 * 0.042 ≈ 0.168 per frame
+    private float _waterCount0;                     // primary wave
+    private float _waterCount1;                     // secondary wave (phase-offset)
+    private bool _waterDir0;                        // false=rising, true=falling
+
     // Per-frame camera data (computed in _Draw, used by child layer callbacks)
     private int _frameUserX, _frameUserY;
     private float _framePixelOffsetX, _framePixelOffsetY;
@@ -174,6 +183,7 @@ public partial class WorldRenderer : Node2D
     {
         if (_state?.MapData == null) return;
         _deltaMs = (float)delta * 1000f;
+        UpdateWaterWave();
         UpdateRoofFade();
         UpdateAmbientLight();
         QueueRedraw();
@@ -209,6 +219,50 @@ public partial class WorldRenderer : Node2D
         float g = _state.MapColorG / 255f;
         float b = _state.MapColorB / 255f;
         Modulate = new Color(r, g, b, 1f);
+    }
+
+    /// <summary>
+    /// VB6 water polygon wave (modEngine.bas lines 1752-1781).
+    /// Two counters oscillate as triangle waves between -WaterHeight and +WaterHeight.
+    /// polygonCount(1) has a phase offset and is negated, creating a ripple pattern.
+    /// Called once per frame in _Process.
+    /// </summary>
+    private void UpdateWaterWave()
+    {
+        if (!_waterDir0)
+        {
+            _waterCount0 += WaterSpeed;
+            if (_waterCount0 >= WaterHeight)
+            {
+                _waterCount0 = WaterHeight;
+                _waterDir0 = true;
+            }
+        }
+        else
+        {
+            _waterCount0 -= WaterSpeed;
+            if (_waterCount0 <= -WaterHeight)
+            {
+                _waterCount0 = -WaterHeight;
+                _waterDir0 = false;
+            }
+        }
+
+        // VB6: polygonCount(1) = polygonCount(0) ± (waterHeight * 0.5), clamped, then negated
+        _waterCount1 = _waterCount0;
+        if (!_waterDir0)
+        {
+            _waterCount1 += WaterHeight * 0.5f;
+            if (_waterCount1 >= WaterHeight)
+                _waterCount1 = WaterHeight - (_waterCount1 - WaterHeight);
+        }
+        else
+        {
+            _waterCount1 -= WaterHeight * 0.5f;
+            if (_waterCount1 <= -WaterHeight)
+                _waterCount1 = -WaterHeight + Math.Abs(_waterCount1 + WaterHeight);
+        }
+        _waterCount1 = -_waterCount1;
     }
 
     private void UpdateRoofFade()
@@ -318,6 +372,7 @@ public partial class WorldRenderer : Node2D
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
         // ==========================================
+        bool showWaterFx = _state.Config?.ShowWaterEffect ?? true;
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
             for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
@@ -326,15 +381,27 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer1 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+
+                // Water deformation: displace vertices for water tiles
+                bool isWater = showWaterFx
+                    && tile.Layer1 >= 1505 && tile.Layer1 <= 1520 && tile.Layer2 <= 0;
+
                 if (_frameHasLights)
                 {
                     LightSystem.GetTileLightCorners(_state, x, y,
                         out Color tl, out Color tr, out Color br, out Color bl);
-                    DrawTileGrhLit(tile.Layer1, pos, tl, tr, br, bl);
+                    if (isWater)
+                        DrawTileGrhWater(tile.Layer1, pos, x, y, tl, tr, br, bl);
+                    else
+                        DrawTileGrhLit(tile.Layer1, pos, tl, tr, br, bl);
                 }
                 else
                 {
-                    DrawTileGrh(tile.Layer1, pos);
+                    if (isWater)
+                        DrawTileGrhWater(tile.Layer1, pos, x, y,
+                            Colors.White, Colors.White, Colors.White, Colors.White);
+                    else
+                        DrawTileGrh(tile.Layer1, pos);
                 }
             }
         }
@@ -780,6 +847,92 @@ public partial class WorldRenderer : Node2D
         _litQuadColors[3] = bottomLeft;
 
         // UVs normalized to texture size
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
+        DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
+    }
+
+    /// <summary>
+    /// Draw a water tile with vertex Y deformation matching VB6 modEngine.bas.
+    /// Pattern: checkerboard (X%2, Y%2) alternates +/- displacement on top/bottom edges.
+    /// Edges adjacent to non-water tiles are clamped (no displacement) to avoid gaps.
+    /// VB6 vertex layout: 0=TL, 1=TR, 2=BL, 3=BR. Godot quad: 0=TL, 1=TR, 2=BR, 3=BL.
+    /// </summary>
+    private void DrawTileGrhWater(int grhIndex, Vector2 pos, int tileX, int tileY,
+        Color topLeft, Color topRight, Color bottomRight, Color bottomLeft)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        float dx = (float)Math.Round(pos.X);
+        float dy = (float)Math.Round(pos.Y);
+
+        // Edge clamping: don't deform edges adjacent to non-water tiles
+        bool ignoreTop = tileY > 1 && !IsWater(_state!.MapData, tileX, tileY - 1);
+        bool ignoreBottom = tileY < 100 && !IsWater(_state.MapData, tileX, tileY + 1);
+
+        // VB6 checkerboard pattern (X%2, Y%2) determines displacement direction
+        float topL = 0, topR = 0, botL = 0, botR = 0;
+        bool xEven = (tileX % 2) == 0;
+        bool yEven = (tileY % 2) == 0;
+
+        if (xEven && yEven)
+        {
+            if (!ignoreTop) { topL = -_waterCount1; topR = _waterCount1; }
+            if (!ignoreBottom) { botL = _waterCount0; botR = -_waterCount0; }
+        }
+        else if (xEven && !yEven)
+        {
+            if (!ignoreTop) { topL = _waterCount1; topR = -_waterCount1; }
+            if (!ignoreBottom) { botL = -_waterCount0; botR = _waterCount0; }
+        }
+        else if (!xEven && yEven)
+        {
+            if (!ignoreTop) { topL = _waterCount0; topR = -_waterCount0; }
+            if (!ignoreBottom) { botL = -_waterCount1; botR = _waterCount1; }
+        }
+        else // odd, odd
+        {
+            if (!ignoreTop) { topL = -_waterCount0; topR = _waterCount0; }
+            if (!ignoreBottom) { botL = _waterCount1; botR = -_waterCount1; }
+        }
+
+        // Quad vertices with water Y displacement: TL, TR, BR, BL
+        _litQuadPoints[0] = new Vector2(dx, dy + topL);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy + topR);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph + botR);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph + botL);
+
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
+
         float u0 = (float)sx / texW;
         float v0 = (float)sy / texH;
         float u1 = (float)(sx + pw) / texW;
