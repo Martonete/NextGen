@@ -115,9 +115,9 @@ public class KeyBindings
         Binds[(int)GameAction.Drop]        = new KeyBind(Key.T, "T");               // VB6: mKeyDropObject = vbKeyT
         Binds[(int)GameAction.UseItem]     = new KeyBind(Key.U, "U");               // VB6: mKeyUseObject = vbKeyU
         Binds[(int)GameAction.EquipItem]   = new KeyBind(Key.E, "E");               // VB6: mKeyEquipObject = vbKeyE
-        Binds[(int)GameAction.SafetyToggle]= new KeyBind(Key.Q, "Q");               // Seguro PvP
+        Binds[(int)GameAction.SafetyToggle]= new KeyBind(Key.S, "S");               // VB6: mKeySeg = vbKeyS — Seguro PvP
         Binds[(int)GameAction.ShowNames]   = new KeyBind(Key.N, "N");               // VB6: mKeyToggleNames = vbKeyN
-        Binds[(int)GameAction.ResSafety]   = new KeyBind(Key.S, "S");               // VB6: mKeySeg = vbKeyS
+        Binds[(int)GameAction.ResSafety]   = new KeyBind(Key.Minus, "-");           // Seguro Resurrección
         Binds[(int)GameAction.Steal]       = new KeyBind(Key.R, "R");               // VB6: mKeySteal = vbKeyR
         Binds[(int)GameAction.RefreshPos]  = new KeyBind(Key.L, "L");               // VB6: mKeyRequestRefresh = vbKeyL
         Binds[(int)GameAction.Hide]        = new KeyBind(Key.O, "O");               // VB6: mKeyHide = vbKeyO
