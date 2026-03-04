@@ -662,6 +662,12 @@ public partial class Main : Control
                     : Window.ContentScaleAspectEnum.Ignore;
                 DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
             }
+            else
+            {
+                DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+                DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
+                GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+            }
             if (_loginPanel != null)
                 _loginPanel.Visible = true;
             CallDeferred(MethodName.FocusAccountInput);
@@ -1295,6 +1301,12 @@ public partial class Main : Control
         {
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Ignore;
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        }
+        else
+        {
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         }
 
         // Persist so next launch auto-applies
@@ -2694,9 +2706,9 @@ public partial class Main : Control
         }
         else
         {
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-            DisplayServer.WindowSetSize(new Vector2I(800, 600));
         }
 
         GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
@@ -3188,9 +3200,9 @@ public partial class Main : Control
                 }
                 else
                 {
-                    DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+                    DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+                    DisplayServer.WindowSetMode(DisplayServer.WindowMode.Maximized);
                     GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-                    DisplayServer.WindowSetSize(new Vector2I(800, 600));
                 }
                 _state.Config.Fullscreen = goFullscreen;
                 _state.Config.Save(_dataPath);
