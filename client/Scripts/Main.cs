@@ -684,9 +684,7 @@ public partial class Main : Control
             GD.Print("[MAIN] Config loaded from file — applying saved display preference, skipping dialog");
             if (_state.Config.Fullscreen)
             {
-                GetTree().Root.ContentScaleAspect = _state.Config.AspectRatioMode == 1
-                    ? Window.ContentScaleAspectEnum.Keep
-                    : Window.ContentScaleAspectEnum.Ignore;
+                GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
                 DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
             }
             else
@@ -815,6 +813,7 @@ public partial class Main : Control
         var font = new SystemFont();
         font.FontNames = new string[] { fontName };
         font.FontWeight = weight;
+        font.MultichannelSignedDistanceField = true;
         label.AddThemeFontOverride("font", font);
     }
 
@@ -1342,7 +1341,7 @@ public partial class Main : Control
 
         if (!windowed)
         {
-            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Ignore;
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
         }
         else
@@ -1447,7 +1446,7 @@ public partial class Main : Control
         var cfg = _state.Config;
         GetTree().Root.ContentScaleAspect = cfg.AspectRatioMode == 1
             ? Window.ContentScaleAspectEnum.Keep
-            : Window.ContentScaleAspectEnum.Ignore;
+            : Window.ContentScaleAspectEnum.Keep;
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
         // Reset after a short settle so future minimizes work
         GetTree().CreateTimer(0.5).Timeout += () => _restoringFullscreen = false;
@@ -2741,9 +2740,7 @@ public partial class Main : Control
         // Apply display mode
         if (cfg.Fullscreen)
         {
-            GetTree().Root.ContentScaleAspect = cfg.AspectRatioMode == 1
-                ? Window.ContentScaleAspectEnum.Keep
-                : Window.ContentScaleAspectEnum.Ignore;
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
         }
         else
@@ -3241,7 +3238,7 @@ public partial class Main : Control
                 {
                     GetTree().Root.ContentScaleAspect = _state.Config.AspectRatioMode == 1
                         ? Window.ContentScaleAspectEnum.Keep
-                        : Window.ContentScaleAspectEnum.Ignore;
+                        : Window.ContentScaleAspectEnum.Keep;
                     DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
                 }
                 else
