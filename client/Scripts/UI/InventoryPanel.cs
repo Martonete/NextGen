@@ -80,6 +80,10 @@ public partial class InventoryPanel : Control
 
         if (_state == null || _data == null) return;
 
+        // Keep tooltip in sync when inventory data changes (e.g. potion use)
+        if (_hoveredSlot >= 0)
+            UpdateTooltip(_hoveredSlot);
+
         // Try to draw VB6 inventory background GRH
         CharRenderer.DrawGrh(this, _data, GrhInvBackground, 0, Vector2.Zero);
 

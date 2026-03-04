@@ -455,7 +455,8 @@ public partial class Main : Control
         _minimapRect.Position = new Vector2(682, 424);
         _minimapRect.Size = new Vector2(100, 100);
         _minimapRect.StretchMode = TextureRect.StretchModeEnum.Scale;
-        _minimapRect.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _minimapRect.MouseFilter = Control.MouseFilterEnum.Stop;
+        _minimapRect.GuiInput += OnMinimapInput;
         _gameUI.AddChild(_minimapRect);
 
         // VB6: red dot with white border
@@ -2955,6 +2956,20 @@ public partial class Main : Control
             float dotX = _state.UserPosX / 100f * 94f;
             float dotY = _state.UserPosY / 100f * 94f;
             _minimapDot.Position = new Vector2(dotX, dotY);
+        }
+    }
+
+    /// <summary>
+    /// VB6 TSAO: right-click on minimap teleports to that map position (GM only, server validates).
+    /// Minimap is 100x100 px = 100x100 tiles, so click position maps 1:1 to tile coords.
+    /// </summary>
+    private void OnMinimapInput(InputEvent @event)
+    {
+        if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Right)
+        {
+            int tileX = Math.Clamp((int)(mb.Position.X) + 1, 1, 100);
+            int tileY = Math.Clamp((int)(mb.Position.Y) + 1, 1, 100);
+            _tcp?.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {_state.CurrentMap} {tileX} {tileY}"));
         }
     }
 
