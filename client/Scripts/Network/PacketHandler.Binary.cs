@@ -1133,9 +1133,7 @@ public partial class PacketHandler
             ch.AuraIndexR = existing.AuraIndexR;  ch.AuraAngleR = existing.AuraAngleR;
             ch.AuraIndexC = existing.AuraIndexC;  ch.AuraAngleC = existing.AuraAngleC;
             ch.NpcAura = existing.NpcAura;        ch.NpcAuraAngle = existing.NpcAuraAngle;
-            ch.Color = existing.Color;
-            ch.Levitando = existing.Levitando;
-            ch.Ranking = existing.Ranking;
+            ch.Levitating = existing.Levitating;
         }
 
         _state.Characters[charIndex] = ch;
