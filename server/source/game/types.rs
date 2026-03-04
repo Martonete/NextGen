@@ -70,8 +70,6 @@ pub struct UserState {
     pub heading: i32,
     pub char_index: CharIndex,
 
-    /// Movement packets to ignore after a warp (drain buffered client movements).
-    pub warp_move_ignore: u8,
 
     // Character appearance (for CC packet)
     pub body: i32,
@@ -366,7 +364,6 @@ impl UserState {
             pos_y: 0,
             heading: world::HEADING_SOUTH,
             char_index: CharIndex(0),
-            warp_move_ignore: 0,
             body: 0,
             head: 0,
             orig_head: 0,
