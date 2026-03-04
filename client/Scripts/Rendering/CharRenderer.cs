@@ -707,6 +707,7 @@ public static class CharRenderer
         GameData data)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
+        if (ch.Navigating) return; // No auras while on a boat
 
         CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA);
         CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW);
