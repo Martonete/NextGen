@@ -414,18 +414,17 @@ public partial class CommercePanel : Control
         if (qty <= 0) return;
 
         var item = _state.NpcShopItems[_selectedNpcIdx];
+
+        // Clamp to available stock
+        if (qty > item.Amount && item.Amount > 0)
+            qty = item.Amount;
+
         long totalCost = item.Price * qty;
         GD.Print($"[COMMERCE] Buying: '{item.Name}' slot={item.Slot} qty={qty} unitPrice={item.Price} total={totalCost} gold={_state.Gold}");
 
         if (_state.Gold < totalCost)
         {
             _state.ChatMessages.Enqueue(new ChatMessage { Text = "No tienes suficiente oro.", Color = "FF0000" });
-            return;
-        }
-
-        if (qty > item.Amount && item.Amount > 0)
-        {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = "El NPC no tiene esa cantidad.", Color = "FF0000" });
             return;
         }
 
