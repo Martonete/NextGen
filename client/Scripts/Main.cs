@@ -320,8 +320,8 @@ public partial class Main : Control
 
         // GM "CASTI GM" button — ColorRect + Label to bypass Button min height.
         _btnCastiGM = new Control();
-        _btnCastiGM.Position = new Vector2(560, 572);
-        _btnCastiGM.Size = new Vector2(70, 11);
+        _btnCastiGM.Position = new Vector2(560, 577);
+        _btnCastiGM.Size = new Vector2(70, 14);
         _btnCastiGM.Visible = false;
         _btnCastiGM.MouseFilter = Control.MouseFilterEnum.Stop;
         var castiBg = new ColorRect();
