@@ -324,6 +324,7 @@ public partial class Main : Control
         _btnCastiGM.Position = new Vector2(560, 563);
         _btnCastiGM.Size = new Vector2(70, 6);
         _btnCastiGM.AddThemeFontSizeOverride("font_size", 7);
+        _btnCastiGM.FocusMode = Control.FocusModeEnum.None;
         var castiStyle = new StyleBoxFlat();
         castiStyle.BgColor = new Color(0.7f, 0.1f, 0.1f);
         castiStyle.SetContentMarginAll(0);
