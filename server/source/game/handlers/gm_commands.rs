@@ -12,7 +12,7 @@ use super::world;
 
 // Functions from parent module (mod.rs) used by GM commands
 use super::{
-    warp_user, send_warp_fx, user_die, revive_user, check_user_level,
+    warp_user, warp_user_exact, send_warp_fx, user_die, revive_user, check_user_level,
     naked_body, send_inventory_slot, send_full_inventory, llevar_usuarios_cvc,
     spawn_npc_at,
 };
@@ -97,7 +97,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
         }
     };
 
-    warp_user(state, target_id, map, x, y).await;
+    warp_user_exact(state, target_id, map, x, y).await;
     send_warp_fx(state, target_id).await;
     follow_tile_exit_after_warp(state, target_id).await;
 
@@ -137,7 +137,7 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    warp_user(state, conn_id, map, tx, ty).await;
+    warp_user_exact(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -176,7 +176,7 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
         return;
     }
 
-    warp_user(state, conn_id, map, x, y).await;
+    warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -208,7 +208,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
         }
     };
 
-    warp_user(state, conn_id, map, x, y).await;
+    warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado

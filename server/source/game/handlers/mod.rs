@@ -3985,7 +3985,17 @@ async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32, mover_hea
     ).await;
 }
 
+/// Warp variant that skips find_free_pos — places the user exactly at (x,y)
+/// even if blocked/occupied. Used for GM teleport.
+async fn warp_user_exact(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+    warp_user_inner(state, conn_id, new_map, new_x, new_y, true).await;
+}
+
 async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+    warp_user_inner(state, conn_id, new_map, new_x, new_y, false).await;
+}
+
+async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32, exact: bool) {
     let old_data = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y),
         None => return,
@@ -4040,7 +4050,8 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     state.world.remove_user(old_map, old_x, old_y);
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
-    let (final_x, final_y) = find_free_pos(state, new_map, new_x, new_y);
+    // GMs with exact=true skip this — they can stand on blocked tiles.
+    let (final_x, final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
 
     // 5. Update user position
     if let Some(user) = state.users.get_mut(&conn_id) {
