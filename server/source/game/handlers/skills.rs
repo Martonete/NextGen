@@ -1097,50 +1097,83 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
 
 /// DoOcultarse — Hide skill (VB6: Trabajo.bas DoOcultarse).
 /// Skill-based success chance. Thieves/Hunters get bonus. Blocked on special maps.
+/// TSAO mechanic: using ocultarse while invisible (spell) breaks the spell invisibility,
+/// then attempts the normal hide check. This is the "spam O to lose invi" mechanic.
 pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
-    let (map, skill, class, char_index, already_hidden) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => {
-            (u.pos_map, u.skills.get(7).copied().unwrap_or(0), u.class.clone(), u.char_index, u.hidden)
-        }
-        _ => return,
-    };
+    let (map, x, y, skill, class, char_index, already_hidden, is_invisible, navigating) =
+        match state.users.get(&conn_id) {
+            Some(u) if u.logged && !u.dead => {
+                (u.pos_map, u.pos_x, u.pos_y, u.skills.get(7).copied().unwrap_or(0),
+                 u.class.clone(), u.char_index, u.hidden, u.invisible && !u.admin_invisible,
+                 u.navigating)
+            }
+            _ => return,
+        };
 
-    // Blocked on special maps (VB6: 142, 121-123, 31-34)
+    // Blocked on special maps (VB6: OcultarSinEfecto)
     let blocked_maps = [142, 121, 122, 123, 31, 32, 33, 34];
     if blocked_maps.contains(&map) {
         state.send_msg_id(conn_id, 838, "").await;
         return;
     }
 
-    // Suerte (luck) table from VB6
-    let suerte = match skill {
-        0..=10 => 35,
-        11..=20 => 30,
-        21..=30 => 28,
-        31..=40 => 24,
-        41..=50 => 22,
-        51..=60 => 20,
-        61..=70 => 18,
-        71..=80 => 15,
-        81..=90 => 10,
-        91..=100 => 7,
-        _ => 7,
-    };
+    // VB6: Can't hide while navigating (except pirate)
+    if navigating && !class.eq_ignore_ascii_case("Pirata") {
+        state.send_console(conn_id, "No puedes ocultarte navegando.", font_index::INFO).await;
+        return;
+    }
 
-    // Non-thief/hunter get +50 penalty
-    let is_thief_or_hunter = class.eq_ignore_ascii_case("Ladron") || class.eq_ignore_ascii_case("Cazador");
-    let suerte = if is_thief_or_hunter { suerte } else { suerte + 50 };
+    // TSAO mechanic: Using ocultarse while invisible (spell) breaks the spell invisibility.
+    // Then the normal hide check runs — success = hidden via skill, failure = fully visible.
+    if is_invisible {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.invisible = false;
+            user.hidden = false;
+            user.counter_invisible = 0;
+            user.counter_oculto = 0;
+        }
+        // Broadcast visibility restoration to area
+        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+        let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
+        state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+        state.send_bytes(conn_id, &nover).await;
+        // Now fall through to the normal hide check below
+    } else if already_hidden {
+        // Already hidden (not from spell) — "Ya estás oculto."
+        state.send_console(conn_id, "Ya estás oculto.", font_index::INFO).await;
+        return;
+    }
 
-    let res = rand_range(1, suerte);
+    // VB6 DoOcultarse: Suerte formula (polynomial based on skill level)
+    let skill_f = skill as f64;
+    let suerte = (((0.000002 * skill_f - 0.0002) * skill_f + 0.0064) * skill_f + 0.1124) * 100.0;
+    let res = rand_range(1, 100);
 
-    if res <= 5 {
-        // Success — hide
+    if (res as f64) <= suerte {
+        // Success — calculate duration based on skill (VB6 polynomial)
+        let remaining = (100 - skill) as f64;
+        let mut duration = (-0.000001 * remaining.powi(3))
+            + (0.00009229 * remaining.powi(2))
+            + (-0.0088 * remaining)
+            + 0.9571;
+        duration *= state.config.intervalo_oculto as f64;
+
+        // Bandits hide for half time
+        let is_bandit = class.eq_ignore_ascii_case("Bandido");
+        let counter = if is_bandit { (duration / 2.0) as i32 } else { duration as i32 };
+
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.hidden = true;
+            user.counter_oculto = counter;
         }
-        // Send NOVER to make invisible on all clients in map
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
-        state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+        // Send NOVER to make invisible on all clients
+        if !navigating {
+            let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
+            state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+        }
         state.send_msg_id(conn_id, 808, "").await; // "Te has ocultado."
         // Skill gain
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -1149,43 +1182,36 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
     } else {
         // Failure
         state.send_msg_id(conn_id, 809, "").await; // "No has logrado ocultarte."
+        // Skill gain on failure too (VB6 calls SubirSkill with False)
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill(u, 8);
+        }
     }
 }
 
-/// DoPermanecerOculto — Check if hidden user remains hidden (called each tick or on action).
-/// VB6: Trabajo.bas DoPermanecerOculto. Returns false if user was revealed.
+/// DoPermanecerOculto — Timer-based check: returns true if still hidden.
+/// VB6: Trabajo.bas DoPermanecerOculto — decrements TiempoOculto each tick.
+/// Hunter with skill>90 + special armor stays hidden indefinitely.
 pub(super) fn check_permanecer_oculto(user: &mut UserState) -> bool {
     if !user.hidden { return false; }
 
-    let skill = user.skills.get(7).copied().unwrap_or(0); // Ocultarse = eSkill 8, 0-based = 7
-    let suerte = match skill {
-        0..=10 => 35,
-        11..=20 => 30,
-        21..=30 => 28,
-        31..=40 => 24,
-        41..=50 => 22,
-        51..=60 => 20,
-        61..=70 => 18,
-        71..=80 => 15,
-        81..=90 => 10,
-        91..=100 => 10,
-        _ => 10,
-    };
-
-    let is_thief_or_hunter = user.class.eq_ignore_ascii_case("Ladron") || user.class.eq_ignore_ascii_case("Cazador");
-    let suerte = if is_thief_or_hunter { suerte } else { suerte + 50 };
-
-    // Hunter with skill>90 and specific armor stays hidden
+    // Hunter with skill>90 and specific armor stays hidden indefinitely
+    let skill = user.skills.get(7).copied().unwrap_or(0);
     if user.class.eq_ignore_ascii_case("Cazador") && skill > 90 {
-        if user.equip.armor == 648 || user.equip.armor == 360 {
+        let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
+            user.inventory[user.equip.armor - 1].obj_index
+        } else { 0 };
+        if armor_obj == 648 || armor_obj == 360 {
             return true;
         }
     }
 
-    let res = rand_range(1, suerte);
-    if res > 9 {
+    // Decrement timer
+    user.counter_oculto -= 1;
+    if user.counter_oculto <= 0 {
+        user.counter_oculto = 0;
         user.hidden = false;
-        return false; // Revealed
+        return false; // Revealed — timer expired
     }
     true // Still hidden
 }

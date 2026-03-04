@@ -1367,7 +1367,7 @@ pub async fn tick_intervals(state: &mut GameState) {
     // VB6: EfectoInvisibilidad — count up invisibility timer each tick.
     // Only for spell invisibility (not admin_invisible which is permanent).
     let intervalo_invis = state.config.intervalo_invisible;
-    let mut uninvis: Vec<(ConnectionId, i16, i32, i32, i32, bool)> = Vec::new();
+    let mut uninvis: Vec<(ConnectionId, i16, i32, i32, i32, bool, bool)> = Vec::new();
     for (&conn_id, user) in state.users.iter_mut() {
         if user.invisible && !user.admin_invisible {
             if user.counter_invisible < intervalo_invis {
@@ -1375,23 +1375,61 @@ pub async fn tick_intervals(state: &mut GameState) {
             } else {
                 // Timer expired — remove invisibility
                 user.invisible = false;
-                user.hidden = false;
                 user.counter_invisible = 0;
-                uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating));
+                // VB6: only send SetInvisible(false) if Oculto=0 (still hidden → no visibility change)
+                uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.hidden));
             }
         }
     }
-    for (conn_id, ci, map, x, y, navigating) in uninvis {
-        state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
-        if !navigating {
-            // Re-broadcast CC so others see us again
-            let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
-            let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
-            // Tell self we're visible again
-            let nover = binary_packets::write_set_invisible(ci, false, 0);
-            state.send_bytes(conn_id, &nover).await;
+    for (conn_id, ci, map, x, y, navigating, still_hidden) in uninvis {
+        if !still_hidden {
+            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+            if !navigating {
+                // Re-broadcast CC so others see us again
+                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+                let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+                // Tell self we're visible again
+                let nover = binary_packets::write_set_invisible(ci, false, 0);
+                state.send_bytes(conn_id, &nover).await;
+            }
+        }
+    }
+
+    // VB6: DoPermanecerOculto — count down hide timer each tick.
+    // When timer expires, hidden is cleared. Only send SetInvisible(false) if invisible=0.
+    let mut unhide: Vec<(ConnectionId, i16, i32, i32, i32, bool, bool)> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.hidden && !user.admin_invisible {
+            // Hunter with skill>90 + special armor stays hidden indefinitely
+            let skill = user.skills.get(7).copied().unwrap_or(0);
+            let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
+                user.inventory[user.equip.armor - 1].obj_index
+            } else { 0 };
+            if user.class.eq_ignore_ascii_case("Cazador") && skill > 90 && (armor_obj == 648 || armor_obj == 360) {
+                continue;
+            }
+
+            user.counter_oculto -= 1;
+            if user.counter_oculto <= 0 {
+                user.counter_oculto = 0;
+                user.hidden = false;
+                unhide.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.invisible));
+            }
+        }
+    }
+    for (conn_id, ci, map, x, y, navigating, still_invisible) in unhide {
+        if !still_invisible {
+            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+            if !navigating {
+                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+                let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+                let nover = binary_packets::write_set_invisible(ci, false, 0);
+                state.send_bytes(conn_id, &nover).await;
+            }
         }
     }
 

@@ -313,11 +313,10 @@ pub(super) async fn handle_bof(state: &mut GameState, conn_id: ConnectionId, dat
 
 /// UK — Use Skill. VB6: TCP_HandleData1.bas Case "UK".
 /// Robar/Magia/Domar → sends T01<skillID> to client (opens skill tree UI).
-/// Ocultarse → checks navigating/already hidden, then calls do_ocultarse.
+/// Skill use handler (UK packet). do_ocultarse handles all its own checks.
 pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    // Check dead
-    let (dead, navigating, hidden) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.navigating, u.hidden),
+    let dead = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.dead,
         _ => return,
     };
 
@@ -342,15 +341,7 @@ pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data
             let pkt = binary_packets::write_work_mode(skill_num as u8);
             state.send_bytes(conn_id, &pkt).await;
         }
-        8 => { // Ocultarse
-            if navigating {
-                state.send_msg_id(conn_id, 233, "").await;
-                return;
-            }
-            if hidden {
-                state.send_msg_id(conn_id, 234, "").await;
-                return;
-            }
+        8 => { // Ocultarse — all checks handled inside do_ocultarse (TSAO mechanic)
             do_ocultarse(state, conn_id).await;
         }
         _ => {} // Unknown skill, ignore

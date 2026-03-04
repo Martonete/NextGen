@@ -624,9 +624,10 @@ public partial class WorldRenderer : Node2D
                 }
             }
             float inviCurrent = selfCh.InvisibleCountdown;
-            float inviMax = selfCh.InvisibleCountdown > 0 ? inviCurrent : -1;
-            // Use max from when it was first set (approximate: if countdown > 0, use it as reference)
-            DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, "OCULTO",
+            // Spell invisibility has countdown (label "INVISIBLE"), hide skill has no countdown (label "OCULTO")
+            bool isSpellInvi = selfCh.InvisibleMaxCountdown > 0;
+            string inviLabel = isSpellInvi ? "INVISIBLE" : "OCULTO";
+            DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, inviLabel,
                            new Color(0.6f, 0.6f, 1f));
             slot++;
         }
@@ -647,9 +648,8 @@ public partial class WorldRenderer : Node2D
 
         if (_state.UserNavigating)
         {
-            DrawStatusIconTo(canvas, slot, 0, -1, -1, "NAVEGANDO",
-                           new Color(0.3f, 0.7f, 1f));
-            slot++;
+            // Draw on the right side to avoid overlapping countdown bars
+            DrawStatusLabelRight(canvas, "NAVEGANDO", new Color(0.3f, 0.7f, 1f));
         }
     }
 
@@ -685,6 +685,16 @@ public partial class WorldRenderer : Node2D
         {
             _data.Fonts[1]!.DrawText(canvas, (int)baseX, (int)baseY + 2, label, labelColor);
         }
+    }
+
+    /// <summary>
+    /// Draw a status label on the top-right corner of the viewport.
+    /// </summary>
+    private void DrawStatusLabelRight(CanvasItem canvas, string label, Color color)
+    {
+        if (_data?.Fonts?[1] == null) return;
+        float x = 534f - 10f - (label.Length * 8f); // approximate right-align
+        _data.Fonts[1]!.DrawText(canvas, (int)x, 7, label, color);
     }
 
     /// <summary>

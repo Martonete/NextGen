@@ -235,6 +235,7 @@ pub struct UserState {
     pub pending_spell: usize,           // VB6 flags.Hechizo — spell slot selected via LH, cast on next RC click
     pub counter_paralisis: i32,         // VB6 Counters.Paralisis — countdown to auto-remove paralysis
     pub counter_invisible: i32,         // VB6 Counters.Invisibilidad — counts up to IntervaloInvisible
+    pub counter_oculto: i32,            // VB6 Counters.TiempoOculto — counts down to 0 (hide duration)
 
     // Timer counters (incremented each game tick, reset when action fires)
     pub counter_hunger: i32,   // Hunger drain counter
@@ -486,6 +487,7 @@ impl UserState {
             pending_spell: 0,
             counter_paralisis: 0,
             counter_invisible: 0,
+            counter_oculto: 0,
             counter_hunger: 0,
             counter_thirst: 0,
             counter_stamina: 0,

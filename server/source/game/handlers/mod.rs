@@ -1811,6 +1811,30 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         user.heading = heading;
     }
 
+    // VB6 HandleWalk: Moving while hidden (Oculto) reveals non-Thief/non-Bandit classes.
+    // Spell invisibility is NOT broken by movement.
+    let (was_hidden, class_for_hide, is_spell_invis, navigating_for_hide) = match state.users.get(&conn_id) {
+        Some(u) => (u.hidden && !u.admin_invisible, u.class.clone(), u.invisible && !u.admin_invisible, u.navigating),
+        None => (false, String::new(), false, false),
+    };
+    if was_hidden {
+        let is_thief_or_bandit = class_for_hide.eq_ignore_ascii_case("Ladron")
+            || class_for_hide.eq_ignore_ascii_case("Bandido");
+        if !is_thief_or_bandit {
+            // Reveal hidden state
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.hidden = false;
+                user.counter_oculto = 0;
+            }
+            // Only send SetInvisible(false) if spell invisibility is NOT active
+            if !is_spell_invis && !navigating_for_hide {
+                state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+                let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
+                state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+            }
+        }
+    }
+
     // Move on grid
     state.world.remove_user(map, old_x, old_y);
     state.world.place_user(map, new_x, new_y, conn_id);
@@ -1824,7 +1848,7 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
     // Skip if invisible — others must NOT see movement.
-    let is_invisible = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
+    let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
     if !is_invisible {
         let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
         let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
@@ -4320,6 +4344,7 @@ mod db_tests {
             pretoriano_map: 0,
             intervalo_paralizado: 500,
             intervalo_invisible: 500,
+            intervalo_oculto: 500,
             npc_ai_interval_ms: 1300,
         }
     }

@@ -634,17 +634,23 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_au).await;
             }
 
-            // VB6 DoNavega: If hidden, reveal first (NOVER)
-            let (was_hidden, char_index_val, map_for_nover) = match state.users.get(&conn_id) {
-                Some(u) => (u.hidden, u.char_index.0, u.pos_map),
+            // VB6 DoNavega: If hidden (Oculto), clear hiding. Only send SetInvisible(false)
+            // if not also invisible from spell (invisible keeps you hidden on clients).
+            let (was_hidden, is_invisible, char_index_val, map_for_nover) = match state.users.get(&conn_id) {
+                Some(u) => (u.hidden, u.invisible, u.char_index.0, u.pos_map),
                 None => return,
             };
             if was_hidden {
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.hidden = false;
+                    u.counter_oculto = 0;
                 }
-                let pkt_invis = binary_packets::write_set_invisible(char_index_val as i16, false, 0);
-                state.send_data_bytes(SendTarget::ToMap(map_for_nover), &pkt_invis).await;
+                // Only send SetInvisible(false) if spell invisibility is NOT active
+                if !is_invisible {
+                    let pkt_invis = binary_packets::write_set_invisible(char_index_val as i16, false, 0);
+                    state.send_data_bytes(SendTarget::ToMap(map_for_nover), &pkt_invis).await;
+                    state.send_console(conn_id, "¡Has vuelto a ser visible!", font_index::INFO).await;
+                }
             }
 
             if is_navigating {
