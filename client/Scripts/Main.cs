@@ -458,11 +458,19 @@ public partial class Main : Control
         _minimapRect.MouseFilter = Control.MouseFilterEnum.Ignore;
         _gameUI.AddChild(_minimapRect);
 
+        // VB6: red dot with white border
         _minimapDot = new ColorRect();
-        _minimapDot.Color = new Color(1f, 0f, 0f); // VB6: red dot (BackColor=&H000000FF&)
-        _minimapDot.Size = new Vector2(6, 6);
+        _minimapDot.Color = Colors.White;
+        _minimapDot.Size = new Vector2(8, 8);
         _minimapDot.MouseFilter = Control.MouseFilterEnum.Ignore;
         _minimapRect.AddChild(_minimapDot);
+
+        var dotInner = new ColorRect();
+        dotInner.Color = new Color(1f, 0f, 0f);
+        dotInner.Position = new Vector2(1, 1);
+        dotInner.Size = new Vector2(6, 6);
+        dotInner.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _minimapDot.AddChild(dotInner);
 
         // Menu General button — VB6: imgMenuGral at (616, 372, 105, 30)
         var menuGralButton = CreateInvisibleButton(616, 372, 105, 30);
