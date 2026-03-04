@@ -1349,7 +1349,7 @@ public partial class PacketHandler
         short def = bq.ReadInteger();
         float value = bq.ReadSingle();
 
-        // Reset bank when first slot arrives (server sends slots before BankInit)
+        // Reset bank when first slot arrives (server sends all 40 slots before BankInit)
         if (slot == 1)
         {
             for (int i = 0; i < _state.BankItems.Length; i++)
@@ -1357,25 +1357,49 @@ public partial class PacketHandler
             _state.BankItemCount = 0;
         }
 
-        // Skip empty slots
-        if (objIndex == 0) return;
-
-        int idx = _state.BankItemCount;
-        if (idx >= 40) return;
-
-        _state.BankItems[idx] = new BankItem
+        // Search for existing slot to update in-place
+        int existingIdx = -1;
+        for (int i = 0; i < _state.BankItemCount; i++)
         {
-            Slot = slot,
-            ObjIndex = objIndex,
-            Name = name,
-            Amount = amount,
-            GrhIndex = grhIndex,
-            ObjType = objType,
-            MaxHit = maxHit,
-            MinHit = minHit,
-            MaxDef = def,
+            if (_state.BankItems[i].Slot == slot)
+            {
+                existingIdx = i;
+                break;
+            }
+        }
+
+        var item = new BankItem
+        {
+            Slot = slot, ObjIndex = objIndex, Name = name, Amount = amount,
+            GrhIndex = grhIndex, ObjType = objType,
+            MaxHit = maxHit, MinHit = minHit, MaxDef = def,
         };
-        _state.BankItemCount++;
+
+        if (existingIdx >= 0)
+        {
+            if (objIndex <= 0 || amount <= 0)
+            {
+                // Slot emptied — remove by shifting
+                for (int i = existingIdx; i < _state.BankItemCount - 1; i++)
+                    _state.BankItems[i] = _state.BankItems[i + 1];
+                _state.BankItems[_state.BankItemCount - 1] = new BankItem();
+                _state.BankItemCount--;
+            }
+            else
+            {
+                _state.BankItems[existingIdx] = item;
+            }
+        }
+        else
+        {
+            // Skip empty slots during init
+            if (objIndex <= 0) return;
+
+            int idx = _state.BankItemCount;
+            if (idx >= 40) return;
+            _state.BankItems[idx] = item;
+            _state.BankItemCount++;
+        }
     }
 
     private void HandleBinChangeSpellSlot(ByteQueue bq)
@@ -1425,23 +1449,47 @@ public partial class PacketHandler
         short minHit = bq.ReadInteger();
         short def = bq.ReadInteger();
 
-        int idx = _state.NpcShopCount;
-        if (idx >= 50) return;
-
-        _state.NpcShopItems[idx] = new NpcShopItem
+        // Search for existing slot to update in-place
+        int existingIdx = -1;
+        for (int i = 0; i < _state.NpcShopCount; i++)
         {
-            Name = name,
-            Amount = amount,
-            Price = (long)value,
-            GrhIndex = grhIndex,
-            ObjIndex = objIndex,
-            ObjType = objType,
-            MaxHit = maxHit,
-            MinHit = minHit,
-            MaxDef = def,
-            Slot = slot,
+            if (_state.NpcShopItems[i].Slot == slot)
+            {
+                existingIdx = i;
+                break;
+            }
+        }
+
+        var item = new NpcShopItem
+        {
+            Name = name, Amount = amount, Price = (long)value,
+            GrhIndex = grhIndex, ObjIndex = objIndex, ObjType = objType,
+            MaxHit = maxHit, MinHit = minHit, MaxDef = def, Slot = slot,
         };
-        _state.NpcShopCount++;
+
+        if (existingIdx >= 0)
+        {
+            if (amount <= 0 || objIndex <= 0)
+            {
+                // Item depleted — remove by shifting
+                for (int i = existingIdx; i < _state.NpcShopCount - 1; i++)
+                    _state.NpcShopItems[i] = _state.NpcShopItems[i + 1];
+                _state.NpcShopItems[_state.NpcShopCount - 1] = new NpcShopItem();
+                _state.NpcShopCount--;
+            }
+            else
+            {
+                _state.NpcShopItems[existingIdx] = item;
+            }
+        }
+        else
+        {
+            // New slot (init flow) — append
+            int idx = _state.NpcShopCount;
+            if (idx >= 50) return;
+            _state.NpcShopItems[idx] = item;
+            _state.NpcShopCount++;
+        }
     }
 
     // ── Misc stat packets ─────────────────────────────────────────
