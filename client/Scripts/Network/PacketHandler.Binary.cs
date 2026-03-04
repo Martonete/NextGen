@@ -1349,6 +1349,17 @@ public partial class PacketHandler
         short def = bq.ReadInteger();
         float value = bq.ReadSingle();
 
+        // Reset bank when first slot arrives (server sends slots before BankInit)
+        if (slot == 1)
+        {
+            for (int i = 0; i < _state.BankItems.Length; i++)
+                _state.BankItems[i] = new BankItem();
+            _state.BankItemCount = 0;
+        }
+
+        // Skip empty slots
+        if (objIndex == 0) return;
+
         int idx = _state.BankItemCount;
         if (idx >= 40) return;
 

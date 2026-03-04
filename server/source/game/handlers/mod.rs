@@ -385,13 +385,13 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::CommerceBuy => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("COMP{},{}", slot, amount);
+            let text = format!("COMP,{},{}", slot, amount);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::CommerceSell => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("VEND{},{}", slot, amount);
+            let text = format!("VEND,{},{}", slot, amount);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::CommerceClose => {
@@ -426,13 +426,13 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::BankDeposit => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("DEPO{},{}", slot, amount);
+            let text = format!("DEPO,{},{}", slot, amount);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::BankWithdraw => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("RETI{},{}", slot, amount);
+            let text = format!("RETI,{},{}", slot, amount);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::BankClose => {
