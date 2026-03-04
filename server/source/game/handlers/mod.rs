@@ -1722,11 +1722,13 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     };
     let (map, old_x, old_y, char_index, paralyzed, dead, not_move, meditating, navigating) = user_data;
 
-    // Drain post-warp ignore: the client may send a walk packet that was already
-    // in the TCP buffer before the warp was received. Ignore it to avoid +1 tile offset.
+    // Drain post-warp ignore: the client may have sent walk packets that were already
+    // in the TCP buffer before the warp was received. Ignore them to avoid +1 tile offset.
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.warp_move_ignore > 0 {
             user.warp_move_ignore -= 1;
+            info!("[WARP-IGNORE] #{} ignoring buffered walk (remaining={}), forcing PU({},{})",
+                  conn_id, user.warp_move_ignore, old_x, old_y);
             state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
             return;
         }
@@ -1875,7 +1877,10 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     check_update_needed_user(state, conn_id, heading).await;
 
     // VB6 DoTileEvents: check tile exit AFTER successful movement (map transitions)
+    info!("[WALK-DEBUG] #{} walked to map {} ({},{}) heading={}", conn_id, map, new_x, new_y, heading);
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
+        info!("[WALK-DEBUG] #{} tile exit found: map {} ({},{}) → map {} ({},{})",
+              conn_id, map, new_x, new_y, exit_map, exit_x, exit_y);
         // FX if tile has otTeleport object OR particle group (particle teleports)
         let has_teleport_fx = {
             let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
@@ -4051,6 +4056,13 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
     let (final_x, final_y) = find_free_pos(state, new_map, new_x, new_y);
+
+    if final_x != new_x || final_y != new_y {
+        info!("[WARP-DEBUG] #{} find_free_pos moved dest: requested ({},{}) on map {} → got ({},{})",
+              conn_id, new_x, new_y, new_map, final_x, final_y);
+    }
+    info!("[WARP-DEBUG] #{} warp: map {}→{}, pos ({},{})→({},{})",
+          conn_id, old_data.0, new_map, old_data.1, old_data.2, final_x, final_y);
 
     // 5. Update user position
     if let Some(user) = state.users.get_mut(&conn_id) {
