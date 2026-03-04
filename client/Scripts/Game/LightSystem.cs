@@ -26,11 +26,6 @@ public class LightSystem
     private const int MapSize = 100;
     private const int TileSize = 32;
 
-    // VB6 ambient: hardcoded 160,160,160 in LightRender
-    private const float AmbR = 160f / 255f;
-    private const float AmbG = 160f / 255f;
-    private const float AmbB = 160f / 255f;
-
     /// <summary>
     /// Recalculate tile light colors for all active lights.
     /// TileLightColors[x, y, 0..3] = 4 corner colors per tile.
@@ -42,6 +37,14 @@ public class LightSystem
             state.TileLightColors = new Color[MapSize + 1, MapSize + 1, 4];
 
         var grid = state.TileLightColors;
+
+        // Use the map's ambient RGB — tiles without light sources get this color.
+        // WorldRenderer.Modulate already applies the global tint, so light ambient
+        // should be white (1,1,1) to not double-darken. Light sources lerp from
+        // their color toward this ambient at distance.
+        float AmbR = 1f;
+        float AmbG = 1f;
+        float AmbB = 1f;
         var ambient = new Color(AmbR, AmbG, AmbB, 1f);
 
         // Initialize all tiles to AMBIENT (not black).
@@ -109,6 +112,8 @@ public class LightSystem
     /// If dist > range, return existing value unchanged.
     /// Light center uses (lightX + 16, lightY + 16) — center of the light's tile.
     /// Uses MAX blending: lights can only brighten above existing value.
+    /// Ambient is white (1,1,1) — the global map tint is applied separately
+    /// via WorldRenderer.Modulate, so lights don't double-darken.
     /// </summary>
     private static Color CalcCorner(
         float lightX, float lightY,
@@ -127,14 +132,12 @@ public class LightSystem
 
         float factor = dist / rangePx;
 
-        // VB6: D3DXColorLerp(CurrentColor, LightColor, AmbientColor, factor)
-        // Lerp from LightColor (close) to AmbientColor (far)
-        float r = lightR + (AmbR - lightR) * factor;
-        float g = lightG + (AmbG - lightG) * factor;
-        float b = lightB + (AmbB - lightB) * factor;
+        // Lerp from LightColor (close) to white ambient (far)
+        float r = lightR + (1f - lightR) * factor;
+        float g = lightG + (1f - lightG) * factor;
+        float b = lightB + (1f - lightB) * factor;
 
         // MAX blending: lights can only brighten, never darken.
-        // This handles overlapping lights correctly — brightest value wins.
         r = Math.Max(existing.R, r);
         g = Math.Max(existing.G, g);
         b = Math.Max(existing.B, b);
