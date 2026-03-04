@@ -34,6 +34,11 @@ public partial class PacketHandler
     /// Receive buffer for accumulating partial binary packets across TCP reads.
     private readonly List<byte> _recvBuffer = new();
 
+    /// Saved self-character aura state across map changes.
+    /// CharIndex changes between maps, so we save auras here in ChangeMap
+    /// and restore them when the new CC arrives for UserCharIndex.
+    private Character? _savedSelfAuras;
+
     public PacketHandler(GameState state)
     {
         _state = state;

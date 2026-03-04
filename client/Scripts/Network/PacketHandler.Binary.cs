@@ -937,7 +937,11 @@ public partial class PacketHandler
         _state.MapColorG = mapG;
         _state.MapColorB = mapB;
 
-        // Clear all characters except self
+        // Save self aura state before clearing (charIndex changes between maps)
+        if (_state.Characters.TryGetValue(_state.UserCharIndex, out var self))
+            _savedSelfAuras = self;
+
+        // Clear all characters
         var selfIdx = _state.UserCharIndex;
         var toRemove = new System.Collections.Generic.List<int>();
         foreach (var kvp in _state.Characters)
@@ -1124,16 +1128,29 @@ public partial class PacketHandler
             ch.FxFrameCounter[0] = 0;
         }
 
-        // Preserve aura state from existing character (avoids aura animation restart on map change)
-        if (_state.Characters.TryGetValue(charIndex, out var existing))
+        // Preserve aura state across map changes.
+        // CharIndex changes between maps, so we use _savedSelfAuras (saved in ChangeMap)
+        // for the player character, and existing dict entry for same-map re-creates.
+        Character? auraSource = null;
+        if (_savedSelfAuras != null && charIndex == _state.UserCharIndex)
         {
-            ch.AuraIndexA = existing.AuraIndexA;  ch.AuraAngleA = existing.AuraAngleA;
-            ch.AuraIndexW = existing.AuraIndexW;  ch.AuraAngleW = existing.AuraAngleW;
-            ch.AuraIndexE = existing.AuraIndexE;  ch.AuraAngleE = existing.AuraAngleE;
-            ch.AuraIndexR = existing.AuraIndexR;  ch.AuraAngleR = existing.AuraAngleR;
-            ch.AuraIndexC = existing.AuraIndexC;  ch.AuraAngleC = existing.AuraAngleC;
-            ch.NpcAura = existing.NpcAura;        ch.NpcAuraAngle = existing.NpcAuraAngle;
-            ch.Levitating = existing.Levitating;
+            auraSource = _savedSelfAuras;
+            _savedSelfAuras = null; // consumed
+        }
+        else if (_state.Characters.TryGetValue(charIndex, out var existing))
+        {
+            auraSource = existing;
+        }
+
+        if (auraSource != null)
+        {
+            ch.AuraIndexA = auraSource.AuraIndexA;  ch.AuraAngleA = auraSource.AuraAngleA;
+            ch.AuraIndexW = auraSource.AuraIndexW;  ch.AuraAngleW = auraSource.AuraAngleW;
+            ch.AuraIndexE = auraSource.AuraIndexE;  ch.AuraAngleE = auraSource.AuraAngleE;
+            ch.AuraIndexR = auraSource.AuraIndexR;  ch.AuraAngleR = auraSource.AuraAngleR;
+            ch.AuraIndexC = auraSource.AuraIndexC;  ch.AuraAngleC = auraSource.AuraAngleC;
+            ch.NpcAura = auraSource.NpcAura;        ch.NpcAuraAngle = auraSource.NpcAuraAngle;
+            ch.Levitating = auraSource.Levitating;
         }
 
         _state.Characters[charIndex] = ch;
