@@ -251,7 +251,9 @@ public partial class Main : Control
 
         // Set Linear texture filtering on UI layers so fonts/text scale smoothly.
         // Game viewport keeps Nearest (pixel art) via project default_texture_filter=0.
-        GetNode<CanvasLayer>("UILayer").TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+        // UILayer is a CanvasLayer (not CanvasItem), so set filter on its children.
+        foreach (var child in GetNode("UILayer").GetChildren())
+            if (child is CanvasItem ci) ci.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
         GetNode<Control>("GameUI").TextureFilter = CanvasItem.TextureFilterEnum.Linear;
 
         // Grab Login UI nodes
