@@ -193,6 +193,13 @@ async fn main() {
                 if let Some((name, map, x, y, char_index, area_min_x, area_min_y)) = user_info {
                     info!("[DISC] #{} '{}' disconnected — saving charfile", conn_id, name);
 
+                    // VB6: Clear any active FX before removing the character
+                    let fx_clear_pkt = protocol::binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
+                    state.send_data_bytes(
+                        game::types::SendTarget::ToArea { map, x, y },
+                        &fx_clear_pkt,
+                    ).await;
+
                     // VB6 CloseUser: QDL sent to entire map, BP sent to 27×27 area
                     // QDL removes dialog labels — must reach all players on the map (VB6: ToMapButIndex)
                     let qdl_pkt = protocol::binary_packets::write_remove_char_dialog(char_index.0 as i16);

@@ -616,6 +616,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         state.send_bytes(conn_id, &pkt).await;
     }
 
+    // VB6: Clear any active FX on the dying character (meditation, spells, etc.)
+    let fx_clear_pkt = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear_pkt).await;
+
     // Broadcast dead body model change (CP packet) to area
     let heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(2);
     let cp_pkt = binary_packets::write_character_change(

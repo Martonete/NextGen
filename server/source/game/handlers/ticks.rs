@@ -980,7 +980,20 @@ const STAMINA_INTERVAL: i32 = 1;   // Regen stamina every 1 second
 const POISON_INTERVAL: i32 = 1;    // Poison damage every 1 second
 const HUNGER_DRAIN: i32 = 10;      // Drain amount per tick
 const THIRST_DRAIN: i32 = 10;      // Drain amount per tick
-const MEDITATION_FX: i32 = 4;      // FX for meditation
+// VB6 meditation FX by level (Protocol.bas lines 5555-5567)
+const FXMEDITARCHICO: i16 = 4;       // level < 13
+const FXMEDITARMEDIANO: i16 = 5;     // level < 25
+const FXMEDITARGRANDE: i16 = 6;      // level < 35
+const FXMEDITARXGRANDE: i16 = 16;    // level < 42
+const FXMEDITARXXGRANDE: i16 = 34;   // level >= 42
+
+fn meditation_fx_for_level(level: i32) -> i16 {
+    if level < 13 { FXMEDITARCHICO }
+    else if level < 25 { FXMEDITARMEDIANO }
+    else if level < 35 { FXMEDITARGRANDE }
+    else if level < 42 { FXMEDITARXGRANDE }
+    else { FXMEDITARXXGRANDE }
+}
 
 /// ME — Toggle meditation on/off.
 pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
@@ -994,6 +1007,7 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
     let map = user.pos_map;
     let x = user.pos_x;
     let y = user.pos_y;
+    let level = user.level;
 
     if meditating {
         // Stop meditation
@@ -1012,8 +1026,9 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
             user.meditating = true;
         }
 
-        // Send meditation FX to area (999 loops = forever/looping)
-        let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, MEDITATION_FX as i16, 999);
+        // VB6: meditation FX scales by level (5 tiers), 999 loops = forever
+        let med_fx = meditation_fx_for_level(level);
+        let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, med_fx, 999);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
         state.send_msg_id(conn_id, 394, "").await; // Comenzas a meditar
@@ -1110,6 +1125,21 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.min_hp = new_hp;
                 }
                 send_stats_hp(state, conn_id).await;
+
+                // VB6: FXSANGRE (blood FX 14) on poison tick if not meditating/navigating
+                if !meditating {
+                    if let Some(u) = state.users.get(&conn_id) {
+                        if !u.navigating {
+                            let fx_pkt = binary_packets::write_create_fx(
+                                u.char_index.0 as i16, 14, 0, // FXSANGRE = 14
+                            );
+                            state.send_data_bytes(
+                                SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
+                                &fx_pkt,
+                            ).await;
+                        }
+                    }
+                }
 
                 if new_hp <= 0 {
                     user_die(state, conn_id, None).await;
