@@ -1723,13 +1723,11 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let (map, old_x, old_y, char_index, paralyzed, dead, not_move, meditating, navigating) = user_data;
 
     // Drain post-warp ignore: the client may have sent walk packets that were already
-    // in the TCP buffer before the warp was received. Ignore them to avoid +1 tile offset.
+    // in the TCP buffer before the warp was received. Silently drop them — do NOT send
+    // PU corrections, as those reset PendingMoves on the client and cause more walks.
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.warp_move_ignore > 0 {
             user.warp_move_ignore -= 1;
-            info!("[WARP-IGNORE] #{} ignoring buffered walk (remaining={}), forcing PU({},{})",
-                  conn_id, user.warp_move_ignore, old_x, old_y);
-            state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
             return;
         }
     }
