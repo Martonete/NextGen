@@ -690,6 +690,7 @@ pub(super) async fn apply_spell_status(
     // Track what we need to send after dropping the mutable borrow
     let mut send_paradok_on = false;   // paralysis applied → send PARADOK + PU
     let mut send_paradok_off = false;  // paralysis removed → send PARADOK
+    let mut send_invis = false;        // invisibility applied → send BP + SetInvisible
 
     if let Some(target) = state.users.get_mut(&target_id) {
         if spell.cura_veneno {
@@ -714,6 +715,7 @@ pub(super) async fn apply_spell_status(
         if spell.invisibilidad {
             target.invisible = true;
             target.hidden = true;
+            send_invis = true;
         }
     }
 
@@ -730,6 +732,18 @@ pub(super) async fn apply_spell_status(
     if send_paradok_off {
         let pkt = binary_packets::write_paralize_ok();
         state.send_bytes(target_id, &pkt).await;
+    }
+
+    // Invisibility spell — remove from others' screens, tell self
+    if send_invis {
+        if let Some(u) = state.users.get(&target_id) {
+            let ci = u.char_index.0 as i16;
+            let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+            let bp = binary_packets::write_character_remove(ci);
+            state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id: target_id, map, x, y }, &bp).await;
+            let nover = binary_packets::write_set_invisible(ci, true);
+            state.send_bytes(target_id, &nover).await;
+        }
     }
 
     // Resurrection spell
