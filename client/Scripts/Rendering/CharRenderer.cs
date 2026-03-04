@@ -69,18 +69,20 @@ public static class CharRenderer
             Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim}({shieldInfo}) casco={ch.CascoAnim}({cascoInfo})");
         }
 
-        // VB6: TransparenciaBody oscillates 0→100→0 for dead and invisible (self) chars
+        // Pulsing transparency for dead and invisible (self) chars.
+        // Time-based: full cycle ~4s (2s up 0→100, 2s down 100→0).
         if (ch.Dead || ch.Invisible)
         {
+            float speed = deltaMs * 0.05f; // 100 / 2000ms = 0.05 per ms
             if (!ch.Llegoalatransp)
             {
-                ch.TransparenciaBody++;
-                if (ch.TransparenciaBody >= 100) ch.Llegoalatransp = true;
+                ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 100f);
+                if (ch.TransparenciaBody >= 100f) ch.Llegoalatransp = true;
             }
             else
             {
-                ch.TransparenciaBody--;
-                if (ch.TransparenciaBody <= 0) ch.Llegoalatransp = false;
+                ch.TransparenciaBody = Math.Max(ch.TransparenciaBody - speed, 0f);
+                if (ch.TransparenciaBody <= 0f) ch.Llegoalatransp = false;
             }
         }
 

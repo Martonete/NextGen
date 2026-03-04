@@ -381,18 +381,12 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
     };
 
     if is_invisible {
-        // Make visible again — restore old body/head
-        let (old_body, old_head) = {
-            let user = state.users.get(&conn_id).unwrap();
-            (user.old_body, user.old_head)
-        };
+        // Make visible again
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.admin_invisible = false;
             user.invisible = false;
-            user.body = old_body;
-            user.head = old_head;
         }
-        // Broadcast appearance change
+        // Re-broadcast appearance (body/head never changed — still intact)
         let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
         // NOVER packet (visible)
@@ -400,21 +394,17 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
         state.send_console(conn_id, "Sos visible.", font_index::INFO).await;
     } else {
-        // Save current body/head, go invisible
+        // Go invisible — keep body/head intact for self-rendering with pulsing alpha
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.old_body = user.body;
-            user.old_head = user.head;
-            user.body = 0;
-            user.head = 0;
             user.admin_invisible = true;
             user.invisible = true;
         }
-        // Broadcast appearance change (body=0, head=0 = invisible)
-        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
-        // NOVER packet (invisible)
+        // BP — remove character from other players' screens
+        let bp = binary_packets::write_character_remove(char_index.0 as i16);
+        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &bp).await;
+        // NOVER packet — tell self we're invisible (pulsing transparency)
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
+        state.send_bytes(conn_id, &nover).await;
         state.send_console(conn_id, "Sos invisible.", font_index::INFO).await;
     }
 }
