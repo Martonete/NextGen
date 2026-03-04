@@ -314,9 +314,25 @@ public partial class Main : Control
         // GM "CASTI GM" button — hidden by default, shown when Privileges >= 1
         _btnCastiGM = new Button();
         _btnCastiGM.Text = "CASTI GM";
-        _btnCastiGM.Position = new Vector2(560, 540);
-        _btnCastiGM.Size = new Vector2(70, 16);
+        _btnCastiGM.Position = new Vector2(560, 556);
+        _btnCastiGM.Size = new Vector2(70, 12);
         _btnCastiGM.AddThemeFontSizeOverride("font_size", 7);
+        var castiStyle = new StyleBoxFlat();
+        castiStyle.BgColor = new Color(0.7f, 0.1f, 0.1f);
+        castiStyle.SetContentMarginAll(0);
+        castiStyle.SetCornerRadiusAll(1);
+        _btnCastiGM.AddThemeStyleboxOverride("normal", castiStyle);
+        var castiHover = new StyleBoxFlat();
+        castiHover.BgColor = new Color(0.85f, 0.15f, 0.15f);
+        castiHover.SetContentMarginAll(0);
+        castiHover.SetCornerRadiusAll(1);
+        _btnCastiGM.AddThemeStyleboxOverride("hover", castiHover);
+        var castiPressed = new StyleBoxFlat();
+        castiPressed.BgColor = new Color(0.5f, 0.05f, 0.05f);
+        castiPressed.SetContentMarginAll(0);
+        castiPressed.SetCornerRadiusAll(1);
+        _btnCastiGM.AddThemeStyleboxOverride("pressed", castiPressed);
+        _btnCastiGM.AddThemeColorOverride("font_color", Colors.White);
         _btnCastiGM.Visible = false;
         _btnCastiGM.Pressed += () => _tcp?.SendPacket(ClientPackets.WriteTalk("/TELEP YO 104 51 51"));
         GetNode("GameUI").AddChild(_btnCastiGM);
