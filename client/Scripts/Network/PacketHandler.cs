@@ -49,7 +49,8 @@ public partial class PacketHandler
         _recvBuffer.AddRange(data);
 
         // Process all complete packets in the buffer
-        while (_recvBuffer.Count > 0)
+        int safetyLimit = 500; // prevent infinite loop on corrupt data
+        while (_recvBuffer.Count > 0 && safetyLimit-- > 0)
         {
             byte opcode = _recvBuffer[0];
 
@@ -85,14 +86,27 @@ public partial class PacketHandler
                 {
                     HandleBinaryPacket(bq);
                     int consumed = bq.ReadPosition - startPos;
-                    _recvBuffer.RemoveRange(0, consumed);
+                    if (consumed <= 0)
+                    {
+                        // Handler didn't consume any bytes — skip this byte to avoid infinite loop
+                        GD.PrintErr($"[PKT] Handler consumed 0 bytes for opcode={opcode}, skipping 1 byte");
+                        _recvBuffer.RemoveAt(0);
+                    }
+                    else
+                    {
+                        _recvBuffer.RemoveRange(0, consumed);
+                    }
                 }
-                catch (InvalidOperationException)
+                catch (System.InvalidOperationException)
                 {
                     // Incomplete packet — wait for more data
                     break;
                 }
             }
+        }
+        if (safetyLimit <= 0 && _recvBuffer.Count > 0)
+        {
+            GD.PrintErr($"[PKT] Safety limit reached, {_recvBuffer.Count} bytes remaining, first byte={_recvBuffer[0]}");
         }
     }
 

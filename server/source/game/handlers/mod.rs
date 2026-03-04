@@ -3653,12 +3653,8 @@ async fn check_update_needed_user(
         user.area_min_y = new_min_y;
     }
 
-    // Send CA packet — tells client to erase out-of-range entities
-    // Format: "CA" + chr$(x) + chr$(y) — two raw bytes
-    let ca_bytes = [b'C', b'A', pos_x as u8, pos_y as u8];
-    if let Some(writer) = state.writers.get_mut(&conn_id) {
-        let _ = writer.send_packet(&ca_bytes).await;
-    }
+    // Send AreaChanged packet — tells client to erase out-of-range entities
+    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as u8, pos_y as u8)).await;
 
     // Build our CC (binary) for sending to newly visible users
     let my_cc = match state.users.get(&conn_id) {
