@@ -972,13 +972,14 @@ public partial class Main : Control
         _inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
         _inputHandler.OnToggleMusic = () =>
         {
+            _state.Config.MusicEnabled = !_state.Config.MusicEnabled;
             if (_soundManager != null)
             {
-                _soundManager.MusicEnabled = !_soundManager.MusicEnabled;
-                // If re-enabled, resume the current map music
+                _soundManager.MusicEnabled = _state.Config.MusicEnabled;
                 if (_soundManager.MusicEnabled && _state.MusicId > 0)
                     _soundManager.PlayMusic(_state.MusicId);
             }
+            _state.Config.Save(_dataPath);
         };
         _connecting = true;
 
