@@ -38,13 +38,13 @@ public class LightSystem
 
         var grid = state.TileLightColors;
 
-        // Use the map's ambient RGB — tiles without light sources get this color.
-        // WorldRenderer.Modulate already applies the global tint, so light ambient
-        // should be white (1,1,1) to not double-darken. Light sources lerp from
-        // their color toward this ambient at distance.
-        float AmbR = 1f;
-        float AmbG = 1f;
-        float AmbB = 1f;
+        // Bake the map's ambient RGB into vertex colors directly (VB6 base_light).
+        // When lights are active, WorldRenderer sets Modulate = white so vertex
+        // colors are the FINAL look — no double-darkening. Unlit tiles get the
+        // ambient color, lit tiles get bright colors near the light source.
+        float AmbR = state.MapColorR / 255f;
+        float AmbG = state.MapColorG / 255f;
+        float AmbB = state.MapColorB / 255f;
         var ambient = new Color(AmbR, AmbG, AmbB, 1f);
 
         // Initialize all tiles to AMBIENT (not black).
@@ -89,19 +89,19 @@ public class LightSystem
 
                     // Corner 1 (NW) → index 1
                     grid[tx, ty, 1] = CalcCorner(lightPxX, lightPxY, tileX, tileY,
-                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB);
+                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB, AmbR, AmbG, AmbB);
 
                     // Corner 3 (NE) → index 3
                     grid[tx, ty, 3] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY,
-                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB);
+                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB, AmbR, AmbG, AmbB);
 
                     // Corner 0 (SW) → index 0
                     grid[tx, ty, 0] = CalcCorner(lightPxX, lightPxY, tileX, tileY + TileSize,
-                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB);
+                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB, AmbR, AmbG, AmbB);
 
                     // Corner 2 (SE) → index 2
                     grid[tx, ty, 2] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY + TileSize,
-                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB);
+                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB, AmbR, AmbG, AmbB);
                 }
             }
         }
@@ -112,30 +112,28 @@ public class LightSystem
     /// If dist > range, return existing value unchanged.
     /// Light center uses (lightX + 16, lightY + 16) — center of the light's tile.
     /// Uses MAX blending: lights can only brighten above existing value.
-    /// Ambient is white (1,1,1) — the global map tint is applied separately
-    /// via WorldRenderer.Modulate, so lights don't double-darken.
     /// </summary>
     private static Color CalcCorner(
         float lightX, float lightY,
         float cornerX, float cornerY,
         int rangePx,
         Color existing,
-        float lightR, float lightG, float lightB)
+        float lightR, float lightG, float lightB,
+        float ambR, float ambG, float ambB)
     {
-        // VB6: XDist = LightX + 16 - XCoord
         float dx = (lightX + 16f) - cornerX;
         float dy = (lightY + 16f) - cornerY;
         float dist = MathF.Sqrt(dx * dx + dy * dy);
 
         if (dist > rangePx)
-            return existing; // VB6: returns TileLight unchanged
+            return existing;
 
         float factor = dist / rangePx;
 
-        // Lerp from LightColor (close) to white ambient (far)
-        float r = lightR + (1f - lightR) * factor;
-        float g = lightG + (1f - lightG) * factor;
-        float b = lightB + (1f - lightB) * factor;
+        // Lerp from LightColor (close) to map ambient (far)
+        float r = lightR + (ambR - lightR) * factor;
+        float g = lightG + (ambG - lightG) * factor;
+        float b = lightB + (ambB - lightB) * factor;
 
         // MAX blending: lights can only brighten, never darken.
         r = Math.Max(existing.R, r);

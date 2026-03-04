@@ -191,6 +191,20 @@ public partial class WorldRenderer : Node2D
             Modulate = Colors.White;
             return;
         }
+
+        // When lights are active, vertex colors already include the map ambient
+        // (baked in by LightSystem). Set Modulate = white so lights aren't
+        // double-darkened. Characters/objects still get their darkness from
+        // GetTileLight() average which includes the ambient.
+        bool hasLights = (_state.Config?.ShowLights ?? true)
+                         && _state.MapLights.Count > 0
+                         && _state.TileLightColors != null;
+        if (hasLights)
+        {
+            Modulate = Colors.White;
+            return;
+        }
+
         float r = _state.MapColorR / 255f;
         float g = _state.MapColorG / 255f;
         float b = _state.MapColorB / 255f;

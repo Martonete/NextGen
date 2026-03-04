@@ -2856,9 +2856,9 @@ public partial class Main : Control
         // Map
         _state.CurrentMap = 0;
         _state.MapName = "";
-        _state.MapColorR = 200;
-        _state.MapColorG = 200;
-        _state.MapColorB = 200;
+        _state.MapColorR = 160;
+        _state.MapColorG = 160;
+        _state.MapColorB = 160;
         _state.MapData = null;
         _state.NeedMapLoad = false;
 
