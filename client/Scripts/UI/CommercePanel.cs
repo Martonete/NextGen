@@ -285,7 +285,7 @@ public partial class CommercePanel : Control
         font?.DrawText(this, PreviewNameX, PreviewNameY, name, new Color(1f, 0.9f, 0.5f));
 
         // Price
-        font?.DrawText(this, PriceLabelX, PriceLabelY, $"${price}", new Color(1f, 1f, 0f));
+        font?.DrawText(this, PriceLabelX, PriceLabelY, $"{price}", new Color(1f, 1f, 0f));
 
         // Amount
         font?.DrawText(this, AmountLabelX, AmountLabelY, $"x{amount}", Colors.White);
