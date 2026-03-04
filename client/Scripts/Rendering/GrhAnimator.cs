@@ -104,6 +104,26 @@ public class GrhAnimator
     }
 
     /// <summary>
+    /// Like GetCurrentFrame but divides the effective time by a slowdown factor.
+    /// Used for water tiles where the VB6 animation rate looks choppy at 60fps.
+    /// </summary>
+    public int GetCurrentFrameSlowed(int grhIndex, GameData? data, float slowdownFactor)
+    {
+        if (data != null && grhIndex > 0 && grhIndex < data.Grhs.Length)
+        {
+            var grh = data.Grhs[grhIndex];
+            if (grh.NumFrames > 1)
+            {
+                float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                double effectiveTime = _globalTimeMs / slowdownFactor;
+                double fractionalFrame = effectiveTime * grh.NumFrames / speed;
+                return (int)(fractionalFrame % grh.NumFrames);
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
     /// Clear all state (on map change). Resets global clock.
     /// </summary>
     public void Clear()

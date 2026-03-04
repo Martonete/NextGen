@@ -878,7 +878,10 @@ public partial class WorldRenderer : Node2D
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        // Slow down water texture animation: VB6 speed=833 cycles 4 frames in ~833ms
+        // (4.8fps), which looked fine at VB6's ~20fps but choppy at 60fps.
+        // Use 2.5x slower effective time → each frame shows ~520ms (~1.9fps cycle).
+        int frame = _animator.GetCurrentFrameSlowed(grhIndex, _data, 2.5f);
         var resolved = _data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
