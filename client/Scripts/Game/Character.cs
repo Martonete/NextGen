@@ -42,7 +42,8 @@ public class Character
     public bool Llegoalatransp;    // false=increasing, true=decreasing
 
     // Status effect countdown timers (seconds remaining, 0 = no timer/permanent)
-    public int InvisibleCountdown;      // Seconds remaining for spell invisibility
+    public int InvisibleCountdown;        // Seconds remaining for spell invisibility
+    public float InvisibleMaxCountdown;   // Max seconds (for progress bar ratio)
     public float InvisibleCountdownTimer; // Accumulates deltaMs to tick each second
 
     // VB6: EmoticonLoops countdown (separate from FX slots)

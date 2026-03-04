@@ -1634,6 +1634,7 @@ public partial class PacketHandler
             ch.Llegoalatransp = invisible;
             // Countdown timer (0 = permanent/GM, >0 = spell seconds remaining)
             ch.InvisibleCountdown = invisible ? durationSecs : 0;
+            ch.InvisibleMaxCountdown = invisible ? durationSecs : 0;
             ch.InvisibleCountdownTimer = 0f;
         }
     }
@@ -1689,9 +1690,9 @@ public partial class PacketHandler
     {
         short durationSecs = bq.ReadInteger();
         _state.UserParalyzed = !_state.UserParalyzed;
-        // Countdown timer: when becoming paralyzed, set countdown; when unparalyzed, clear
-        _state.ParalysisCountdown = _state.UserParalyzed ? durationSecs : 0;
-        _state.ParalysisCountdownTimer = 0f;
+        // Set countdown bar: when becoming paralyzed use duration; when unparalyzed, clear
+        _state.ParalysisTimer = _state.UserParalyzed ? durationSecs : 0f;
+        _state.ParalysisMaxTimer = _state.UserParalyzed ? durationSecs : 0f;
     }
 
     private void HandleBinTradeOk()

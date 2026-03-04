@@ -3376,17 +3376,6 @@ public partial class Main : Control
         float ticksPerFrame = deltaMs * EngineBaseSpeed;
         float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
 
-        // Paralysis countdown timer (self only)
-        if (_state.UserParalyzed && _state.ParalysisCountdown > 0)
-        {
-            _state.ParalysisCountdownTimer += deltaMs;
-            if (_state.ParalysisCountdownTimer >= 1000f)
-            {
-                _state.ParalysisCountdownTimer -= 1000f;
-                _state.ParalysisCountdown--;
-            }
-        }
-
         // Camera scroll (VB6 ShowNextFrame → OffsetCounterX/Y)
         if (_state.UserMoving)
         {

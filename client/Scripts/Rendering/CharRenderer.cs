@@ -86,17 +86,6 @@ public static class CharRenderer
             }
         }
 
-        // Invisibility countdown timer (spell only, decrements each second)
-        if (ch.Invisible && ch.InvisibleCountdown > 0)
-        {
-            ch.InvisibleCountdownTimer += deltaMs;
-            if (ch.InvisibleCountdownTimer >= 1000f)
-            {
-                ch.InvisibleCountdownTimer -= 1000f;
-                ch.InvisibleCountdown--;
-            }
-        }
-
         // Emoticon loop countdown (VB6: decrements each frame, clears at 0)
         if (ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0)
         {
@@ -957,24 +946,6 @@ public static class CharRenderer
             font.DrawText(canvas, centerX, tagY, clan, nickColor, center: true);
         }
 
-        // Status effect countdowns (rendered below rank/clan tag)
-        int countdownY = tagY + 12;
-
-        // Invisible countdown (spell only, >0 means timed)
-        if (ch.Invisible && ch.InvisibleCountdown > 0)
-        {
-            Color inviColor = new Color(0.6f, 0.85f, 1f, alpha / 255f); // light blue
-            font.DrawText(canvas, centerX, countdownY, $"Invi {ch.InvisibleCountdown}s", inviColor, center: true);
-            countdownY += 12;
-        }
-
-        // Paralysis countdown (self only)
-        if (state != null && ch.CharIndex == state.UserCharIndex
-            && state.UserParalyzed && state.ParalysisCountdown > 0)
-        {
-            Color paraColor = new Color(1f, 0.4f, 0.4f, alpha / 255f); // red
-            font.DrawText(canvas, centerX, countdownY, $"Para {state.ParalysisCountdown}s", paraColor, center: true);
-        }
     }
 
     /// <summary>

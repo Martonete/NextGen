@@ -613,7 +613,20 @@ public partial class WorldRenderer : Node2D
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
-            DrawStatusIconTo(canvas, slot, 23611, -1, -1, "OCULTO",
+            // Decrement invisibility countdown in real seconds
+            if (selfCh.InvisibleCountdown > 0)
+            {
+                selfCh.InvisibleCountdownTimer += _deltaMs;
+                if (selfCh.InvisibleCountdownTimer >= 1000f)
+                {
+                    selfCh.InvisibleCountdownTimer -= 1000f;
+                    selfCh.InvisibleCountdown--;
+                }
+            }
+            float inviCurrent = selfCh.InvisibleCountdown;
+            float inviMax = selfCh.InvisibleCountdown > 0 ? inviCurrent : -1;
+            // Use max from when it was first set (approximate: if countdown > 0, use it as reference)
+            DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, "OCULTO",
                            new Color(0.6f, 0.6f, 1f));
             slot++;
         }
@@ -629,13 +642,6 @@ public partial class WorldRenderer : Node2D
         {
             DrawStatusIconTo(canvas, slot, 0, -1, -1, "DESCANSANDO",
                            new Color(0.4f, 1f, 0.4f));
-            slot++;
-        }
-
-        if (_state.SafeMode)
-        {
-            DrawStatusIconTo(canvas, slot, 0, -1, -1, "SEGURO",
-                           new Color(0f, 1f, 0f));
             slot++;
         }
 
