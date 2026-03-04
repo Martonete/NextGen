@@ -3120,6 +3120,29 @@ public partial class Main : Control
                 return;
             }
 
+            // F12: toggle fullscreen/windowed
+            if (key.Keycode == Key.F12)
+            {
+                bool goFullscreen = DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen;
+                if (goFullscreen)
+                {
+                    GetTree().Root.ContentScaleAspect = _state.Config.AspectRatioMode == 1
+                        ? Window.ContentScaleAspectEnum.Keep
+                        : Window.ContentScaleAspectEnum.Ignore;
+                    DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+                }
+                else
+                {
+                    DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+                    GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+                    DisplayServer.WindowSetSize(new Vector2I(800, 600));
+                }
+                _state.Config.Fullscreen = goFullscreen;
+                _state.Config.Save(_dataPath);
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
         }
 
         // VB6 Form_KeyUp: attack fires on key RELEASE, not key down
@@ -3195,7 +3218,7 @@ public partial class Main : Control
                             _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
                         }
                     }
-                    else if (mb.ButtonIndex == MouseButton.Right)
+                    else if (mb.ButtonIndex == MouseButton.Right && _state.Config.MouseRightClick)
                     {
                         // VB6: right-click sends BOTH LC + RC (DobleClick=1 path)
                         _inputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);

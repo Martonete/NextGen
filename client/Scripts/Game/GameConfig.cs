@@ -35,7 +35,7 @@ public class GameConfig
     public bool DeadCharTransparency = true; // VB6: Alpha_Usar_Transparencias_PJs
 
     // ── Performance ───────────────────────────────────────
-    public int PerformanceLevel = 2;        // VB6: Performance_Level (0=Min,1=Low,2=Med,3=High,4=Max)
+    public int PerformanceLevel = 4;        // VB6: Performance_Level (0=Min,1=Low,2=Med,3=High,4=Max)
     public bool VsyncEnabled = true;        // V-Sync on by default (syncs to monitor refresh rate)
     public int FpsLimit;                     // 0=unlimited, 60, 120, 144, 165, 240
 
@@ -56,7 +56,7 @@ public class GameConfig
 
     // ── Mouse/Input ───────────────────────────────────────
     public bool MouseDoubleClick = true;    // VB6: MouseActions_DClick
-    public bool MouseRightClick;            // VB6: MouseActions_RClick
+    public bool MouseRightClick = true;     // VB6: MouseActions_RClick
     public bool MouseContextMenu = true;    // VB6: MouseActions_Activate
 
     // ── Display ──────────────────────────────────────────

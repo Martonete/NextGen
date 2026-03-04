@@ -55,6 +55,7 @@ public partial class OptionsPanel : PanelContainer
 
     // ── Render tab controls (Display) ──
     private CheckBox? _chkFullscreen;
+    private HBoxContainer? _aspectRow;
     private OptionButton? _optAspect;
 
     // ── Render tab controls ──
@@ -361,19 +362,23 @@ public partial class OptionsPanel : PanelContainer
         vbox.AddChild(SectionLabel("Pantalla"));
 
         _chkFullscreen = MakeCheck("Pantalla Completa");
-        _chkFullscreen.Toggled += _ => ApplyImmediate();
+        _chkFullscreen.Toggled += on =>
+        {
+            if (_aspectRow != null) _aspectRow.Visible = on;
+            ApplyImmediate();
+        };
         vbox.AddChild(_chkFullscreen);
 
-        var aspectRow = new HBoxContainer();
-        aspectRow.AddChild(SmallLabel("Aspecto:"));
+        _aspectRow = new HBoxContainer();
+        _aspectRow.AddChild(SmallLabel("Aspecto:"));
         _optAspect = new OptionButton();
         _optAspect.AddItem("Ratio 4:3", 0);
         _optAspect.AddItem("Ratio 16:9", 1);
         _optAspect.CustomMinimumSize = new Vector2(220, 0);
         _optAspect.AddThemeFontSizeOverride("font_size", 11);
         _optAspect.ItemSelected += _ => ApplyImmediate();
-        aspectRow.AddChild(_optAspect);
-        vbox.AddChild(aspectRow);
+        _aspectRow.AddChild(_optAspect);
+        vbox.AddChild(_aspectRow);
 
         vbox.AddChild(Spacer(8));
 
@@ -583,6 +588,7 @@ public partial class OptionsPanel : PanelContainer
 
         // Render tab — Display
         SetCheck(_chkFullscreen, cfg.Fullscreen);
+        if (_aspectRow != null) _aspectRow.Visible = cfg.Fullscreen;
         if (_optAspect != null) _optAspect.Selected = cfg.AspectRatioMode;
 
         // Render tab
