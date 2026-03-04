@@ -148,7 +148,7 @@ Inside Godot:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "Falló la carga debido a dependencias faltantes" on Main.cs | C# not compiled | Run `dotnet build` in `client/` first |
+| "Failed to load due to missing dependencies" on Main.cs | C# not compiled | Run `dotnet build` in `client/` first |
 | No `C#` option under `Project → Tools` | Wrong Godot version | Download the **.NET** variant of Godot 4.4 |
 | "Failed to build project" in MSBuild panel | .NET version mismatch | Install .NET SDK **8.0** (not 9.0) |
 | `dotnet --version` shows 9.x | .NET 9 installed but not 8 | Install .NET 8.0 SDK alongside it |
