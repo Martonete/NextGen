@@ -264,12 +264,18 @@ public partial class InventoryPanel : Control
             }
             else if (mb.ButtonIndex == MouseButton.Right && mb.Pressed)
             {
-                if (slot >= 0 && slot < TotalSlots)
+                if (slot >= 0 && slot < TotalSlots && _state.Inventory[slot].ObjIndex > 0)
                 {
                     _selectedSlot = slot;
                     _state.SelectedInvSlot = slot;
-                    // Right click → equip/unequip
-                    _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
+                    int objType = _state.Inventory[slot].ObjType;
+                    // Equipable types: 2=weapon, 3=armor, 10=ammo, 16=shield, 17=helmet
+                    bool isEquipable = objType == 2 || objType == 3 || objType == 10
+                                    || objType == 16 || objType == 17;
+                    if (isEquipable)
+                        _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
+                    else
+                        _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                 }
             }
 
