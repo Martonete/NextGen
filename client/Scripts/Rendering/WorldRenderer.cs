@@ -880,9 +880,11 @@ public partial class WorldRenderer : Node2D
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-        // Always use frame 0 — the texture is a single static image.
-        // Animation comes from UV scrolling + vertex deformation, not frame changes.
-        var resolved = _data.ResolveGrh(grhIndex, 0);
+        // Standard frame animation — the 20.png has 4 frame regions with subtle
+        // pixel offsets from the same base texture, so frame changes are nearly
+        // imperceptible. Combined with vertex deformation for smooth water.
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
         var texture = _data.Textures?.GetTexture(resolved.FileNum);
@@ -890,11 +892,17 @@ public partial class WorldRenderer : Node2D
 
         int texW = texture.GetWidth();
         int texH = texture.GetHeight();
-        if (texW <= 0 || texH <= 0) return;
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
 
         float dx = (float)Math.Round(pos.X);
         float dy = (float)Math.Round(pos.Y);
-        const int pw = 32, ph = 32; // tile size
 
         // Edge clamping: don't deform edges adjacent to non-water tiles
         bool ignoreTop = tileY > 1 && !IsWater(_state!.MapData, tileX, tileY - 1);
@@ -939,19 +947,10 @@ public partial class WorldRenderer : Node2D
         _litQuadColors[2] = bottomRight;
         _litQuadColors[3] = bottomLeft;
 
-        // Static UVs from the resolved GRH — no scrolling.
-        // Animation comes purely from vertex deformation (smooth at 60fps).
-        int sx = resolved.SX, sy = resolved.SY;
-        int rpw = resolved.PixelWidth, rph = resolved.PixelHeight;
-        if (texW > 0) sx = sx % texW;
-        if (texH > 0) sy = sy % texH;
-        if (sx + rpw > texW) rpw = texW - sx;
-        if (sy + rph > texH) rph = texH - sy;
-
         float u0 = (float)sx / texW;
         float v0 = (float)sy / texH;
-        float u1 = (float)(sx + rpw) / texW;
-        float v1 = (float)(sy + rph) / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
 
         _litQuadUVs[0] = new Vector2(u0, v0);
         _litQuadUVs[1] = new Vector2(u1, v0);
