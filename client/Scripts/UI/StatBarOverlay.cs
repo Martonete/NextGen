@@ -44,7 +44,7 @@ public partial class StatBarOverlay : Control
     private int _exp, _expNext;
 
     private Font? _font;
-    private int _fontSize = 8; // VB6: Tahoma 6.75pt Bold (+20%)
+    private int _fontSize = 9; // VB6: Tahoma 6.75pt Bold (+1px)
 
     /// <summary>Data path set by Main.cs before AddChild (so _Ready can find bar images).</summary>
     public string DataPath = "";
