@@ -94,13 +94,11 @@ public partial class WorldRenderer : Node2D
     // VB6 used WaterHeight=4 with DX8 shared-vertex triangle strips (no gaps).
     // Godot DrawPolygon draws each tile independently — large displacements cause
     // visible seams. Use smaller amplitude for smoother result.
-    private const float WaterHeight = 2f;
-    // VB6: 4 * 0.042 = 0.168 per frame at ~20fps → scale proportionally for height=2.
-    // 0.168 * (2/4) = 0.084 per frame * 20fps = 1.68/sec → ~4.76s full cycle.
-    private const float WaterSpeedPerSec = 0.084f * 20f;
-    private float _waterCount0;                     // primary wave
-    private float _waterCount1;                     // secondary wave (phase-offset)
-    private bool _waterDir0;                        // false=rising, true=falling
+    // Sine wave water deformation — smooth oscillation without abrupt reversals.
+    // Amplitude kept subtle (1.5px) since the texture is nearly uniform across frames.
+    private const float WaterHeight = 1.5f;
+    // Phase accumulator (radians). ~8 second full cycle.
+    private float _waterPhase;
 
     // Per-frame camera data (computed in _Draw, used by child layer callbacks)
     private int _frameUserX, _frameUserY;
@@ -229,49 +227,14 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// VB6 water polygon wave (modEngine.bas lines 1752-1781).
-    /// Two counters oscillate as triangle waves between -WaterHeight and +WaterHeight.
-    /// polygonCount(1) has a phase offset and is negated, creating a ripple pattern.
-    /// Called once per frame in _Process.
+    /// Sine-based water wave. Smooth oscillation without abrupt direction changes.
+    /// Two sine waves with different phases create organic ripple variation.
+    /// ~8 second full cycle (0.785 rad/sec = 2π / 8).
     /// </summary>
     private void UpdateWaterWave()
     {
-        float step = WaterSpeedPerSec * (_deltaMs / 1000f);
-
-        if (!_waterDir0)
-        {
-            _waterCount0 += step;
-            if (_waterCount0 >= WaterHeight)
-            {
-                _waterCount0 = WaterHeight;
-                _waterDir0 = true;
-            }
-        }
-        else
-        {
-            _waterCount0 -= step;
-            if (_waterCount0 <= -WaterHeight)
-            {
-                _waterCount0 = -WaterHeight;
-                _waterDir0 = false;
-            }
-        }
-
-        // VB6: polygonCount(1) = polygonCount(0) ± (waterHeight * 0.5), clamped, then negated
-        _waterCount1 = _waterCount0;
-        if (!_waterDir0)
-        {
-            _waterCount1 += WaterHeight * 0.5f;
-            if (_waterCount1 >= WaterHeight)
-                _waterCount1 = WaterHeight - (_waterCount1 - WaterHeight);
-        }
-        else
-        {
-            _waterCount1 -= WaterHeight * 0.5f;
-            if (_waterCount1 <= -WaterHeight)
-                _waterCount1 = -WaterHeight + Math.Abs(_waterCount1 + WaterHeight);
-        }
-        _waterCount1 = -_waterCount1;
+        _waterPhase += (_deltaMs / 1000f) * 0.785f; // ~8 sec full cycle
+        if (_waterPhase > 6.2832f) _waterPhase -= 6.2832f; // wrap at 2π
     }
 
     private void UpdateRoofFade()
@@ -908,31 +871,19 @@ public partial class WorldRenderer : Node2D
         bool ignoreTop = tileY > 1 && !IsWater(_state!.MapData, tileX, tileY - 1);
         bool ignoreBottom = tileY < 100 && !IsWater(_state.MapData, tileX, tileY + 1);
 
-        // VB6-style checkerboard vertex displacement (polygon deformation)
-        float topL = 0, topR = 0, botL = 0, botR = 0;
-        bool xEven = (tileX % 2) == 0;
-        bool yEven = (tileY % 2) == 0;
+        // Sine-based vertex displacement — each vertex gets a unique phase
+        // based on tile position, creating an organic undulating pattern.
+        // Adjacent tiles have related phases so the surface flows smoothly.
+        float tilePhase = (tileX * 0.7f + tileY * 1.1f); // spatial variation
+        float s0 = (float)Math.Sin(_waterPhase + tilePhase) * WaterHeight;
+        float s1 = (float)Math.Sin(_waterPhase + tilePhase + 1.5f) * WaterHeight;
+        float s2 = (float)Math.Sin(_waterPhase + tilePhase + 3.0f) * WaterHeight;
+        float s3 = (float)Math.Sin(_waterPhase + tilePhase + 4.5f) * WaterHeight;
 
-        if (xEven && yEven)
-        {
-            if (!ignoreTop) { topL = -_waterCount0; topR = _waterCount0; }
-            if (!ignoreBottom) { botL = -_waterCount1; botR = _waterCount1; }
-        }
-        else if (xEven && !yEven)
-        {
-            if (!ignoreTop) { topL = _waterCount1; topR = -_waterCount1; }
-            if (!ignoreBottom) { botL = _waterCount0; botR = -_waterCount0; }
-        }
-        else if (!xEven && yEven)
-        {
-            if (!ignoreTop) { topL = _waterCount0; topR = -_waterCount0; }
-            if (!ignoreBottom) { botL = _waterCount1; botR = -_waterCount1; }
-        }
-        else
-        {
-            if (!ignoreTop) { topL = -_waterCount1; topR = _waterCount1; }
-            if (!ignoreBottom) { botL = -_waterCount0; botR = _waterCount0; }
-        }
+        float topL = ignoreTop ? 0 : s0;
+        float topR = ignoreTop ? 0 : s1;
+        float botL = ignoreBottom ? 0 : s2;
+        float botR = ignoreBottom ? 0 : s3;
 
         // Pad polygon to prevent gap artifacts between adjacent water tiles
         float pad = WaterHeight;
