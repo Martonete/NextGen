@@ -70,14 +70,14 @@ public static class CharRenderer
         }
 
         // Pulsing transparency for dead and invisible (self) chars.
-        // Time-based: full cycle ~2.5s. Range 15→63 (alpha ~38→160 of 255).
+        // Time-based: full cycle ~2.5s. Range 15→57 (alpha ~38→145 of 255).
         if (ch.Dead || ch.Invisible)
         {
-            float speed = deltaMs * 0.0384f; // 48 / 1250ms = 0.0384 per ms
+            float speed = deltaMs * 0.0336f; // 42 / 1250ms = 0.0336 per ms
             if (!ch.Llegoalatransp)
             {
-                ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 63f);
-                if (ch.TransparenciaBody >= 63f) ch.Llegoalatransp = true;
+                ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 57f);
+                if (ch.TransparenciaBody >= 57f) ch.Llegoalatransp = true;
             }
             else
             {
