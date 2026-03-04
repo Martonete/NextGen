@@ -1,15 +1,24 @@
 #!/usr/bin/env python3
 """
-Fix border tile exits for Map28 adjacency (north/west/east) to match
-the Map28<->Map18 pattern: 1-tile separation between exit and return.
-Also re-copies border tiles with +2 extra tiles for better viewport coverage.
+Fix border tile exits + copy border tiles for seamless Map28 transitions.
 
-Skips exits on blocked tiles.
-Applies to both server and client maps.
+Key insight: the visual border is between the EXIT row and the ARRIVAL row.
+Tiles BEFORE the exit (in the departing map) must show the same graphics as
+tiles BEFORE the exit (in the arriving map), so the viewport looks continuous.
 
-Map28 adjacency reference (Map28<->Map18 = working model):
-  Map28 Y=94 -> Map18 Y=8   (exit row in source)
-  Map18 Y=7  -> Map28 Y=93  (return: 1 tile before arrival, dest = exit-1)
+Map28 adjacency (reference = Map28<->Map18 south):
+  South: Map28 Y=94(exit) -> Map18 Y=8(arrive). Map18 Y=7(exit) -> Map28 Y=93(arrive)
+  North: Map28 Y=7(exit) -> Map90 Y=93(arrive). Map90 Y=94(exit) -> Map28 Y=8(arrive)
+  West:  Map28 X=9(exit) -> Map14 X=90(arrive). Map14 X=91(exit) -> Map28 X=10(arrive)
+  East:  Map28 X=92(exit) -> Map54 X=11(arrive). Map54 X=10(exit) -> Map28 X=91(arrive)
+
+Copy logic:
+  For each border, the two maps share a seam. Copy tiles from each map into
+  the other so that the zone around the seam looks identical from both sides.
+
+  NORTH (seam between Map90 Y=94 and Map28 Y=8):
+    Map28 Y=1..7  -> Map90 Y=87..93  (Map28 north zone appears in Map90 before exit)
+    Map90 Y=94..100 -> Map28 Y=8..14 (Map90 south zone appears in Map28 after arrival)
 """
 import struct
 import sys
@@ -29,7 +38,7 @@ HEADER_SIZE_INF = 10
 def parse_map_tile(data, pos):
     start = pos
     flags = data[pos]; pos += 1
-    pos += 2  # graphic1 (i16, always present)
+    pos += 2
     if flags & 2: pos += 2
     if flags & 4: pos += 2
     if flags & 8: pos += 2
@@ -61,7 +70,6 @@ def rebuild_map(header, tiles):
 
 
 def is_blocked(tiles, x, y):
-    """Check if a tile is blocked in .map data."""
     if (x, y) not in tiles:
         return True
     return bool(tiles[(x, y)][1] & 1)
@@ -107,51 +115,39 @@ def rebuild_inf(header, tiles):
 
 
 def make_exit_data(dest_map, dest_x, dest_y):
-    """Create 6-byte tile exit data: map(i16) + x(i16) + y(i16)."""
     return struct.pack('<hhh', dest_map, dest_x, dest_y)
 
 
 def set_exit(inf_tiles, x, y, dest_map, dest_x, dest_y):
-    """Set a tile exit, preserving NPC/object data."""
     flags, _, npc_data, obj_data = inf_tiles[(x, y)]
-    new_flags = flags | 1  # set exit bit
-    exit_data = make_exit_data(dest_map, dest_x, dest_y)
-    inf_tiles[(x, y)] = (new_flags, exit_data, npc_data, obj_data)
+    inf_tiles[(x, y)] = (flags | 1, make_exit_data(dest_map, dest_x, dest_y), npc_data, obj_data)
 
 
 def clear_exit(inf_tiles, x, y):
-    """Remove a tile exit, preserving NPC/object data."""
     flags, _, npc_data, obj_data = inf_tiles[(x, y)]
-    new_flags = flags & ~1  # clear exit bit
-    inf_tiles[(x, y)] = (new_flags, None, npc_data, obj_data)
+    inf_tiles[(x, y)] = (flags & ~1, None, npc_data, obj_data)
 
 
 def get_exit(inf_tiles, x, y):
-    """Get exit data for a tile, returns (dest_map, dest_x, dest_y) or None."""
     flags, exit_data, _, _ = inf_tiles[(x, y)]
     if flags & 1 and exit_data:
         return struct.unpack('<hhh', exit_data)
     return None
 
 
-# ── Border tile copy ─────────────────────────────────────────
+# ── Tile copy helpers ────────────────────────────────────────
 
 def strip_blocked_flag(tile_bytes):
-    if not tile_bytes:
-        return tile_bytes
     return bytes([tile_bytes[0] & ~1]) + tile_bytes[1:]
 
 
 def set_blocked_flag(tile_bytes, blocked):
-    if not tile_bytes:
-        return tile_bytes
     if blocked:
         return bytes([tile_bytes[0] | 1]) + tile_bytes[1:]
     return bytes([tile_bytes[0] & ~1]) + tile_bytes[1:]
 
 
 def copy_tiles(src_tiles, dst_tiles, tile_pairs):
-    """Copy tile graphics from src to dst, preserving dst blocked flags."""
     copied = 0
     for (sx, sy), (dx, dy) in tile_pairs:
         src_bytes, src_flags = src_tiles[(sx, sy)]
@@ -165,24 +161,19 @@ def copy_tiles(src_tiles, dst_tiles, tile_pairs):
 
 
 def copy_inf_tiles(src_inf, dst_inf, tile_pairs):
-    """Copy NPCs/objects from src to dst inf, preserving dst exits."""
     if src_inf is None or dst_inf is None:
         return 0, 0
     npcs = objs = 0
     for (sx, sy), (dx, dy) in tile_pairs:
         sf, se, sn, so = src_inf[(sx, sy)]
         df, de, dn, do_ = dst_inf[(dx, dy)]
-        new_flags = 0
-        new_exit = new_npc = new_obj = None
-        # Preserve destination exits
-        if df & 1 and de:
+        new_flags = 0; new_exit = new_npc = new_obj = None
+        if df & 1 and de:  # preserve dest exits
             new_flags |= 1; new_exit = de
-        # Copy source NPCs (fallback to dst)
         if sf & 2 and sn:
             new_flags |= 2; new_npc = sn; npcs += 1
         elif df & 2 and dn:
             new_flags |= 2; new_npc = dn
-        # Copy source objects (fallback to dst)
         if sf & 4 and so:
             new_flags |= 4; new_obj = so; objs += 1
         elif df & 4 and do_:
@@ -191,222 +182,264 @@ def copy_inf_tiles(src_inf, dst_inf, tile_pairs):
     return npcs, objs
 
 
-# ── Main ─────────────────────────────────────────────────────
+# ── Main processing ─────────────────────────────────────────
 
-def process_border(map_dir, border_name, src_map_num, dst_map_num,
-                   tile_pairs, exit_configs, dry_run=False):
-    """
-    Process one border: copy tiles + fix exits.
-    exit_configs: list of dicts with keys:
-        map_num, clear_exits, set_exits
-        clear_exits: list of (x, y) to remove exits
-        set_exits: list of (x, y, dest_map, dest_x, dest_y) to add exits
-    """
-    print(f"\n{'='*60}")
-    print(f"{border_name}: {len(tile_pairs)} tile copies")
-    print(f"{'='*60}")
+def process_all(map_dir, dry_run=False):
+    print(f"Map directory: {map_dir}")
 
-    # Load all needed map files
-    maps_data = {}  # map_num -> (map_hdr, map_tiles, inf_hdr, inf_tiles)
-    needed_maps = {src_map_num, dst_map_num}
-    for cfg in exit_configs:
-        needed_maps.add(cfg['map_num'])
-
-    for mn in needed_maps:
+    # Load all needed maps
+    map_nums = [28, 90, 14, 54]
+    maps = {}  # num -> (m_hdr, m_tiles, i_hdr, i_tiles)
+    for mn in map_nums:
         map_path = os.path.join(map_dir, f'Mapa{mn}.map')
         inf_path = os.path.join(map_dir, f'Mapa{mn}.inf')
         m_hdr, m_tiles = parse_all_map_tiles(map_path)
         has_inf = os.path.exists(inf_path) and os.path.getsize(inf_path) > HEADER_SIZE_INF
         i_hdr, i_tiles = parse_all_inf_tiles(inf_path) if has_inf else (None, None)
-        maps_data[mn] = (m_hdr, m_tiles, i_hdr, i_tiles)
+        maps[mn] = (m_hdr, m_tiles, i_hdr, i_tiles)
 
-    # Copy tiles
-    src_tiles = maps_data[src_map_num][1]
-    dst_tiles = maps_data[dst_map_num][1]
-    copied = copy_tiles(src_tiles, dst_tiles, tile_pairs)
-    print(f"  Copied {copied} tiles (graphics)")
+    VIEWPORT_H = 8   # ±6 Y tiles + 2 margin
+    VIEWPORT_W = 10   # ±8 X tiles + 2 margin
+
+    # ══════════════════════════════════════════════════════════
+    # NORTH: Map28 <-> Map90
+    # Seam: Map90 Y=94 (exit south) | Map28 Y=8 (arrival from north)
+    # Also: Map28 Y=7 (exit north) | Map90 Y=93 (arrival from south)
+    # ══════════════════════════════════════════════════════════
+    print(f"\n{'='*60}")
+    print("NORTH: Map28 <-> Map90")
+    print(f"{'='*60}")
+
+    m28_tiles = maps[28][1]
+    m90_tiles = maps[90][1]
+
+    # Copy Map28 north zone into Map90 south zone (before the exit at Y=94)
+    # Map28 Y=1..VIEWPORT_H -> Map90 Y=(94-VIEWPORT_H)..(93)
+    # Map28 Y=1 -> Map90 Y=86, ..., Map28 Y=8 -> Map90 Y=93
+    pairs_28to90 = []
+    for i in range(VIEWPORT_H):
+        src_y = 1 + i           # Map28 Y=1..8
+        dst_y = 94 - VIEWPORT_H + i  # Map90 Y=86..93
+        for x in range(1, MAP_SIZE + 1):
+            pairs_28to90.append(((x, src_y), (x, dst_y)))
+
+    # Copy Map90 south zone into Map28 north zone (after arrival at Y=8)
+    # Map90 Y=94..94+VIEWPORT_H-1 -> Map28 Y=8..8+VIEWPORT_H-1
+    # Map90 Y=94 -> Map28 Y=8, ..., Map90 Y=101? capped at 100
+    pairs_90to28 = []
+    for i in range(VIEWPORT_H):
+        src_y = 94 + i          # Map90 Y=94..101 (cap at 100)
+        dst_y = 8 + i           # Map28 Y=8..15
+        if src_y > MAP_SIZE:
+            break
+        for x in range(1, MAP_SIZE + 1):
+            pairs_90to28.append(((x, src_y), (x, dst_y)))
+
+    c1 = copy_tiles(m28_tiles, m90_tiles, pairs_28to90)
+    c2 = copy_tiles(m90_tiles, m28_tiles, pairs_90to28)
+    print(f"  Map28->Map90: {c1} tiles (Map28 Y=1..{VIEWPORT_H} -> Map90 Y={94-VIEWPORT_H}..93)")
+    print(f"  Map90->Map28: {c2} tiles (Map90 Y=94..{min(94+VIEWPORT_H-1,100)} -> Map28 Y=8..{min(8+VIEWPORT_H-1,100)})")
 
     # Copy inf tiles
-    src_inf = maps_data[src_map_num][3]
-    dst_inf = maps_data[dst_map_num][3]
-    npcs, objs = copy_inf_tiles(src_inf, dst_inf, tile_pairs)
-    print(f"  Copied NPCs: {npcs}, Objects: {objs}")
+    m28_inf = maps[28][3]
+    m90_inf = maps[90][3]
+    n1, o1 = copy_inf_tiles(m28_inf, m90_inf, pairs_28to90) if m28_inf and m90_inf else (0, 0)
+    n2, o2 = copy_inf_tiles(m90_inf, m28_inf, pairs_90to28) if m28_inf and m90_inf else (0, 0)
 
-    # Fix exits
-    for cfg in exit_configs:
-        mn = cfg['map_num']
-        _, m_tiles, i_hdr, i_tiles = maps_data[mn]
-        if i_tiles is None:
-            print(f"  [SKIP] Map{mn} has no .inf — cannot modify exits")
+    # Fix exits (server only — client has no .inf)
+    if m28_inf and m90_inf:
+        # Clear old exits in both maps
+        for x in range(1, 101):
+            for y in range(1, 15):
+                if get_exit(m28_inf, x, y): clear_exit(m28_inf, x, y)
+            for y in range(86, 101):
+                if get_exit(m90_inf, x, y): clear_exit(m90_inf, x, y)
+
+        # Set new exits: Map28 Y=7 -> Map90 Y=93, Map90 Y=94 -> Map28 Y=8
+        added28 = skipped28 = 0
+        added90 = skipped90 = 0
+        for x in range(12, 92):
+            if is_blocked(m28_tiles, x, 7):
+                skipped28 += 1
+            else:
+                set_exit(m28_inf, x, 7, 90, x, 93)
+                added28 += 1
+            if is_blocked(m90_tiles, x, 94):
+                skipped90 += 1
+            else:
+                set_exit(m90_inf, x, 94, 28, x, 8)
+                added90 += 1
+        print(f"  Exits Map28 Y=7->Map90 Y=93: {added28} added, {skipped28} skipped (blocked)")
+        print(f"  Exits Map90 Y=94->Map28 Y=8: {added90} added, {skipped90} skipped (blocked)")
+
+    # ══════════════════════════════════════════════════════════
+    # WEST: Map28 <-> Map14
+    # Seam: Map14 X=91 (exit east) | Map28 X=10 (arrival from west)
+    # Also: Map28 X=9 (exit west) | Map14 X=90 (arrival from east)
+    # ══════════════════════════════════════════════════════════
+    print(f"\n{'='*60}")
+    print("WEST: Map28 <-> Map14")
+    print(f"{'='*60}")
+
+    m14_tiles = maps[14][1]
+
+    # Copy Map28 west zone into Map14 east zone (before exit at X=91)
+    # Map28 X=1..VIEWPORT_W -> Map14 X=(91-VIEWPORT_W)..90
+    pairs_28to14 = []
+    for i in range(VIEWPORT_W):
+        src_x = 1 + i
+        dst_x = 91 - VIEWPORT_W + i
+        for y in range(1, MAP_SIZE + 1):
+            pairs_28to14.append(((src_x, y), (dst_x, y)))
+
+    # Copy Map14 east zone into Map28 west zone (after arrival at X=10)
+    # Map14 X=91..91+VIEWPORT_W-1 -> Map28 X=10..10+VIEWPORT_W-1
+    pairs_14to28 = []
+    for i in range(VIEWPORT_W):
+        src_x = 91 + i
+        dst_x = 10 + i
+        if src_x > MAP_SIZE:
+            break
+        for y in range(1, MAP_SIZE + 1):
+            pairs_14to28.append(((src_x, y), (dst_x, y)))
+
+    c1 = copy_tiles(m28_tiles, m14_tiles, pairs_28to14)
+    c2 = copy_tiles(m14_tiles, m28_tiles, pairs_14to28)
+    print(f"  Map28->Map14: {c1} tiles (Map28 X=1..{VIEWPORT_W} -> Map14 X={91-VIEWPORT_W}..90)")
+    print(f"  Map14->Map28: {c2} tiles (Map14 X=91..{min(91+VIEWPORT_W-1,100)} -> Map28 X=10..{min(10+VIEWPORT_W-1,100)})")
+
+    m14_inf = maps[14][3]
+    n1, o1 = copy_inf_tiles(m28_inf, m14_inf, pairs_28to14) if m28_inf and m14_inf else (0, 0)
+    n2, o2 = copy_inf_tiles(m14_inf, m28_inf, pairs_14to28) if m28_inf and m14_inf else (0, 0)
+
+    if m28_inf and m14_inf:
+        for y in range(1, 101):
+            for x in range(1, 20):
+                if get_exit(m28_inf, x, y): clear_exit(m28_inf, x, y)
+            for x in range(81, 101):
+                if get_exit(m14_inf, x, y): clear_exit(m14_inf, x, y)
+
+        added28 = skipped28 = 0
+        added14 = skipped14 = 0
+        for y in range(12, 94):
+            if is_blocked(m28_tiles, 9, y):
+                skipped28 += 1
+            else:
+                set_exit(m28_inf, 9, y, 14, 90, y)
+                added28 += 1
+            if is_blocked(m14_tiles, 91, y):
+                skipped14 += 1
+            else:
+                set_exit(m14_inf, 91, y, 28, 10, y)
+                added14 += 1
+        print(f"  Exits Map28 X=9->Map14 X=90: {added28} added, {skipped28} skipped")
+        print(f"  Exits Map14 X=91->Map28 X=10: {added14} added, {skipped14} skipped")
+
+    # ══════════════════════════════════════════════════════════
+    # EAST: Map28 <-> Map54
+    # Seam: Map54 X=10 (exit west) | Map28 X=91 (arrival from east)
+    # Also: Map28 X=92 (exit east) | Map54 X=11 (arrival from west)
+    # ══════════════════════════════════════════════════════════
+    print(f"\n{'='*60}")
+    print("EAST: Map28 <-> Map54")
+    print(f"{'='*60}")
+
+    m54_tiles = maps[54][1]
+
+    # Copy Map28 east zone into Map54 west zone (before exit at X=10)
+    # Map28 X=(100-VIEWPORT_W+1)..100 -> Map54 X=(10-VIEWPORT_W)..9
+    # But dest X must be >= 1
+    pairs_28to54 = []
+    for i in range(VIEWPORT_W):
+        src_x = MAP_SIZE - VIEWPORT_W + 1 + i  # Map28 X=91..100
+        dst_x = 10 - VIEWPORT_W + i             # Map54 X=0..9 -> cap at 1
+        if dst_x < 1:
             continue
+        for y in range(1, MAP_SIZE + 1):
+            pairs_28to54.append(((src_x, y), (dst_x, y)))
 
-        # Clear old exits
-        cleared = 0
-        for x, y in cfg.get('clear_exits', []):
-            ex = get_exit(i_tiles, x, y)
-            if ex:
-                clear_exit(i_tiles, x, y)
-                cleared += 1
+    # Copy Map54 west zone into Map28 east zone (after arrival at X=91)
+    # Map54 X=10..10+VIEWPORT_W-1 -> Map28 X=91..91+VIEWPORT_W-1
+    pairs_54to28 = []
+    for i in range(VIEWPORT_W):
+        src_x = 10 + i   # Map54 X=10..19
+        dst_x = 91 + i   # Map28 X=91..100
+        if dst_x > MAP_SIZE:
+            break
+        for y in range(1, MAP_SIZE + 1):
+            pairs_54to28.append(((src_x, y), (dst_x, y)))
 
-        # Set new exits (skip blocked tiles)
-        added = 0
-        skipped_blocked = 0
-        for x, y, dm, dx, dy in cfg.get('set_exits', []):
-            if is_blocked(m_tiles, x, y):
-                skipped_blocked += 1
-                continue
-            set_exit(i_tiles, x, y, dm, dx, dy)
-            added += 1
+    c1 = copy_tiles(m28_tiles, m54_tiles, pairs_28to54)
+    c2 = copy_tiles(m54_tiles, m28_tiles, pairs_54to28)
+    print(f"  Map28->Map54: {c1} tiles")
+    print(f"  Map54->Map28: {c2} tiles")
 
-        print(f"  Map{mn} exits: cleared={cleared}, added={added}, skipped_blocked={skipped_blocked}")
+    m54_inf = maps[54][3]
+    n1, o1 = copy_inf_tiles(m28_inf, m54_inf, pairs_28to54) if m28_inf and m54_inf else (0, 0)
+    n2, o2 = copy_inf_tiles(m54_inf, m28_inf, pairs_54to28) if m28_inf and m54_inf else (0, 0)
 
+    if m28_inf and m54_inf:
+        for y in range(1, 101):
+            for x in range(82, 101):
+                if get_exit(m28_inf, x, y): clear_exit(m28_inf, x, y)
+            for x in range(1, 20):
+                if get_exit(m54_inf, x, y): clear_exit(m54_inf, x, y)
+
+        added28 = skipped28 = 0
+        added54 = skipped54 = 0
+        for y in range(8, 94):
+            if is_blocked(m28_tiles, 92, y):
+                skipped28 += 1
+            else:
+                set_exit(m28_inf, 92, y, 54, 11, y)
+                added28 += 1
+            if is_blocked(m54_tiles, 10, y):
+                skipped54 += 1
+            else:
+                set_exit(m54_inf, 10, y, 28, 91, y)
+                added54 += 1
+        print(f"  Exits Map28 X=92->Map54 X=11: {added28} added, {skipped28} skipped")
+        print(f"  Exits Map54 X=10->Map28 X=91: {added54} added, {skipped54} skipped")
+
+    # ── Write all modified files ──
     if dry_run:
-        print("  [DRY RUN] Not writing files.")
+        print("\n[DRY RUN] Not writing files.")
         return
 
-    # Write modified files
-    for mn in needed_maps:
-        m_hdr, m_tiles, i_hdr, i_tiles = maps_data[mn]
-
-        # Always write .map (tiles may have been copied)
+    print("\nWriting files...")
+    for mn in map_nums:
+        m_hdr, m_tiles, i_hdr, i_tiles = maps[mn]
         map_path = os.path.join(map_dir, f'Mapa{mn}.map')
-        bak = map_path + '.bak'
+        bak = map_path + '.bak2'
         if not os.path.exists(bak):
             shutil.copy2(map_path, bak)
-        new_data = rebuild_map(m_hdr, m_tiles)
+        data = rebuild_map(m_hdr, m_tiles)
         with open(map_path, 'wb') as f:
-            f.write(new_data)
-        print(f"  Wrote Mapa{mn}.map ({len(new_data)} bytes)")
+            f.write(data)
+        print(f"  Mapa{mn}.map ({len(data)} bytes)")
 
-        # Write .inf if we have it
         if i_hdr and i_tiles:
             inf_path = os.path.join(map_dir, f'Mapa{mn}.inf')
-            bak = inf_path + '.bak'
+            bak = inf_path + '.bak2'
             if not os.path.exists(bak):
                 shutil.copy2(inf_path, bak)
-            new_data = rebuild_inf(i_hdr, i_tiles)
+            data = rebuild_inf(i_hdr, i_tiles)
             with open(inf_path, 'wb') as f:
-                f.write(new_data)
-            print(f"  Wrote Mapa{mn}.inf ({len(new_data)} bytes)")
-
-
-def make_row_pairs(src_rows, dst_rows):
-    pairs = []
-    for sr, dr in zip(src_rows, dst_rows):
-        for x in range(1, MAP_SIZE + 1):
-            pairs.append(((x, sr), (x, dr)))
-    return pairs
-
-
-def make_col_pairs(src_cols, dst_cols):
-    pairs = []
-    for sc, dc in zip(src_cols, dst_cols):
-        for y in range(1, MAP_SIZE + 1):
-            pairs.append(((sc, y), (dc, y)))
-    return pairs
-
-
-def run(map_dir, dry_run=False):
-    print(f"Map directory: {map_dir}")
-
-    # ── NORTH: Map28 <-> Map90 ──
-    # Pattern (like Map28<->Map18):
-    #   Map28 Y=7 -> Map90 Y=93 (arrive near south border)
-    #   Map90 Y=94 -> Map28 Y=8 (return: 1 tile south, dest = 1 tile south of exit)
-    # Tile copy: Map28 Y=8..15 -> Map90 Y=91..98 (8 rows = 6+2 extra)
-    # X range for exits: match Map28's existing exit X range (12..91 from current data)
-
-    north_tile_pairs = make_row_pairs(
-        src_rows=range(8, 16),     # Map28 Y=8..15 (8 rows)
-        dst_rows=range(91, 99),    # Map90 Y=91..98
-    )
-
-    # Build exit lists for Map28 and Map90
-    # Map28: clear old Y=7 exits to Map90, set new Y=7 exits -> Map90 Y=93
-    map28_north_clear = [(x, 7) for x in range(1, 101)]
-    map28_north_set = [(x, 7, 90, x, 93) for x in range(12, 92)]  # X=12..91
-
-    # Also clear Map28 Y=10 exits to Map90 (some exist at Y=10)
-    map28_north_clear += [(x, 10) for x in range(1, 101)]
-
-    # Map90: clear old Y=94 exits to Map28, set new Y=94 exits -> Map28 Y=8
-    map90_clear = [(x, 94) for x in range(1, 101)]
-    map90_set = [(x, 94, 28, x, 8) for x in range(12, 92)]
-
-    north_exit_configs = [
-        {'map_num': 28, 'clear_exits': map28_north_clear, 'set_exits': map28_north_set},
-        {'map_num': 90, 'clear_exits': map90_clear, 'set_exits': map90_set},
-    ]
-
-    # ── WEST: Map28 <-> Map14 ──
-    # Pattern:
-    #   Map28 X=9 -> Map14 X=90 (arrive near east border)
-    #   Map14 X=91 -> Map28 X=10 (return: 1 tile east, dest = 1 tile east of exit)
-    # Tile copy: Map28 X=10..19 -> Map14 X=90..99 (10 cols = 8+2 extra)
-    # Y range for exits: match current Y=12..93
-
-    west_tile_pairs = make_col_pairs(
-        src_cols=range(10, 20),    # Map28 X=10..19 (10 cols)
-        dst_cols=range(90, 100),   # Map14 X=90..99
-    )
-
-    # Map28: update X=9 exits dest from Map14 X=89 to X=90
-    map28_west_clear = [(9, y) for y in range(1, 101)]
-    map28_west_set = [(9, y, 14, 90, y) for y in range(12, 94)]  # Y=12..93
-
-    # Map14: move exits from X=92 to X=91, dest from Map28 X=12 to X=10
-    map14_clear = [(92, y) for y in range(1, 101)]
-    map14_set = [(91, y, 28, 10, y) for y in range(12, 94)]
-
-    west_exit_configs = [
-        {'map_num': 28, 'clear_exits': map28_west_clear, 'set_exits': map28_west_set},
-        {'map_num': 14, 'clear_exits': map14_clear, 'set_exits': map14_set},
-    ]
-
-    # ── EAST: Map28 <-> Map54 ──
-    # Pattern:
-    #   Map28 X=92 -> Map54 X=11 (arrive near west border)
-    #   Map54 X=10 -> Map28 X=91 (return: 1 tile west, dest = 1 tile west of exit)
-    # Tile copy: Map28 X=82..91 -> Map54 X=2..11 (10 cols = 8+2 extra)
-    # Y range for exits: match current Y=8..93
-
-    east_tile_pairs = make_col_pairs(
-        src_cols=range(82, 92),    # Map28 X=82..91 (10 cols)
-        dst_cols=range(2, 12),     # Map54 X=2..11
-    )
-
-    # Map28: update X=92 exits dest from Map54 X=12 to X=11
-    map28_east_clear = [(92, y) for y in range(1, 101)]
-    map28_east_set = [(92, y, 54, 11, y) for y in range(8, 94)]  # Y=8..93
-
-    # Map54: move exits from X=9 to X=10, dest from Map28 X=89 to X=91
-    map54_clear = [(9, y) for y in range(1, 101)]
-    map54_set = [(10, y, 28, 91, y) for y in range(8, 94)]
-
-    east_exit_configs = [
-        {'map_num': 28, 'clear_exits': map28_east_clear, 'set_exits': map28_east_set},
-        {'map_num': 54, 'clear_exits': map54_clear, 'set_exits': map54_set},
-    ]
-
-    # Execute
-    process_border(map_dir, "NORTH (Map28<->Map90)", 28, 90, north_tile_pairs, north_exit_configs, dry_run)
-    process_border(map_dir, "WEST (Map28<->Map14)", 28, 14, west_tile_pairs, west_exit_configs, dry_run)
-    process_border(map_dir, "EAST (Map28<->Map54)", 28, 54, east_tile_pairs, east_exit_configs, dry_run)
+                f.write(data)
+            print(f"  Mapa{mn}.inf ({len(data)} bytes)")
 
 
 def main():
     dry_run = '--dry-run' in sys.argv
-
     if '--client' in sys.argv:
-        run(CLIENT_MAP_DIR, dry_run)
+        process_all(CLIENT_MAP_DIR, dry_run)
     elif '--server' in sys.argv:
-        run(SERVER_MAP_DIR, dry_run)
+        process_all(SERVER_MAP_DIR, dry_run)
     else:
-        # Both
         print("### SERVER ###")
-        run(SERVER_MAP_DIR, dry_run)
+        process_all(SERVER_MAP_DIR, dry_run)
         print("\n\n### CLIENT ###")
-        run(CLIENT_MAP_DIR, dry_run)
+        process_all(CLIENT_MAP_DIR, dry_run)
 
 
 if __name__ == '__main__':
