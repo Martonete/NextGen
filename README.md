@@ -446,4 +446,4 @@ Detailed docs in [`docs/`](docs/):
 
 ---
 
-Private repository. All rights reserved.
+This project is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0), consistent with the original Argentum Online open source release by Pablo Márquez (Morgolock).
