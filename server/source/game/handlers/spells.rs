@@ -1009,7 +1009,7 @@ pub(super) async fn apply_spell_teleport(
     };
 
     // Send map change packets
-    let cm_pkt = binary_packets::write_change_map(dest_map as i16, 0);
+    let cm_pkt = binary_packets::write_change_map(dest_map as i16, 0, r as u8, g as u8, b as u8);
     state.send_bytes(caster_id, &cm_pkt).await;
     let pu_pkt = binary_packets::write_pos_update(dest_x as u8, dest_y as u8);
     state.send_bytes(caster_id, &pu_pkt).await;

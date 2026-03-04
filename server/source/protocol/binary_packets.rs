@@ -70,11 +70,14 @@ pub fn write_dice_roll(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8> 
 // ── Map / Position ─────────────────────────────────────────
 
 /// ID 21: Change map.
-pub fn write_change_map(map_num: i16, map_version: i16) -> Vec<u8> {
+pub fn write_change_map(map_num: i16, map_version: i16, r: u8, g: u8, b: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeMap.to_byte());
     pkt.write_integer(map_num);
     pkt.write_integer(map_version);
+    pkt.write_byte(r);
+    pkt.write_byte(g);
+    pkt.write_byte(b);
     pkt.into_bytes()
 }
 

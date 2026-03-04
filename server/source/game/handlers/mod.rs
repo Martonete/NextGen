@@ -1521,7 +1521,7 @@ async fn connect_user(
     // =========================================================
 
     // --- PHASE 1: Map setup (VB6 lines 1552-1555) ---
-    state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0)).await;
+    state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8)).await;
     state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8)).await;
     state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
     state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
@@ -1649,7 +1649,7 @@ async fn connect_user(
         // BKW (fade to black)
         state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
         // CM (change map — client loads the map file)
-        state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0)).await;
+        state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8)).await;
         // XM (music)
         state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
         // N~ (map name display)
@@ -4066,7 +4066,7 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
         (200, 200, 200, 0, format!("Mapa {}", new_map))
     };
 
-    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0)).await;
+    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8)).await;
     state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
     state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
 

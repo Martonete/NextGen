@@ -928,10 +928,14 @@ public partial class PacketHandler
     {
         short mapNum = bq.ReadInteger();
         short mapVersion = bq.ReadInteger();
+        byte mapR = bq.ReadByte();
+        byte mapG = bq.ReadByte();
+        byte mapB = bq.ReadByte();
 
         _state.CurrentMap = mapNum;
-        // Binary ChangeMap doesn't carry RGB — use map header defaults
-        // (the server will send MapMusic/MapName/ambient separately if needed)
+        _state.MapColorR = mapR;
+        _state.MapColorG = mapG;
+        _state.MapColorB = mapB;
 
         // Clear all characters except self
         var selfIdx = _state.UserCharIndex;
