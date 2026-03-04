@@ -125,6 +125,7 @@ pub struct UserState {
     pub dead: bool,
     pub hidden: bool,
     pub paralyzed: bool,
+    pub immobilized: bool,    // VB6 flags.Inmovilizado — separate from paralyzed
     pub meditating: bool,
     pub poisoned: bool,
     pub invisible: bool,
@@ -404,6 +405,7 @@ impl UserState {
             dead: false,
             hidden: false,
             paralyzed: false,
+            immobilized: false,
             meditating: false,
             poisoned: false,
             invisible: false,

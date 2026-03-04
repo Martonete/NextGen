@@ -472,6 +472,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         user.min_sta = 0;
         // Clear status effects
         user.paralyzed = false;
+        user.immobilized = false;
         user.invisible = false;
         user.meditating = false;
         user.montado = false;

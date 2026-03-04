@@ -492,6 +492,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 // Apply: remove paralysis, cost 60 HP, set cooldown
                 if let Some(user) = state.users.get_mut(&conn_id) {
                     user.paralyzed = false;
+                    user.immobilized = false;
                     user.min_hp -= 60;
                     if !is_warrior_or_hunter {
                         user.counter_remo = 3;

@@ -1352,6 +1352,7 @@ pub async fn tick_intervals(state: &mut GameState) {
             } else {
                 // Timer expired — remove paralysis
                 user.paralyzed = false;
+                user.immobilized = false;
                 unparalyze.push(conn_id);
             }
         }

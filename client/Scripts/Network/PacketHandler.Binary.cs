@@ -1628,8 +1628,9 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
         {
             ch.Invisible = invisible;
-            ch.TransparenciaBody = 0;
-            ch.Llegoalatransp = false;
+            // Start from max alpha (135) fading down for a smooth entrance
+            ch.TransparenciaBody = invisible ? 53f : 0f;
+            ch.Llegoalatransp = invisible;
         }
     }
 
