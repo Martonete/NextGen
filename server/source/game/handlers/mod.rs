@@ -4096,6 +4096,12 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
         state.send_bytes(conn_id, &binary_packets::write_user_mount(ci.0 as i16, true)).await;
     }
 
+    // 8c. Re-send invisible state — CC creates a fresh Character with Invisible=false,
+    // so the client loses the pulsing alpha. Send NOVER to restore it.
+    if state.users.get(&conn_id).map(|u| u.admin_invisible).unwrap_or(false) {
+        state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true)).await;
+    }
+
     // 9. PU (position update — tells client where to center camera)
     state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8)).await;
 
@@ -4103,14 +4109,18 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
     make_user_visible(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
-    state.send_data_bytes(
-        SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
-        &own_cc,
-    ).await;
-    state.send_data_bytes(
-        SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
-        &own_cd,
-    ).await;
+    //     Skip if admin_invisible — others must NOT see us.
+    let is_invis = state.users.get(&conn_id).map(|u| u.admin_invisible).unwrap_or(false);
+    if !is_invis {
+        state.send_data_bytes(
+            SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
+            &own_cc,
+        ).await;
+        state.send_data_bytes(
+            SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
+            &own_cd,
+        ).await;
+    }
 
     // 12. Warp FX is NOT sent by default — only when caller sets fx=true
     // (VB6: FX param is Optional, only DoTileEvents sets it when tile has otTeleport object)
