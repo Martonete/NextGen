@@ -376,9 +376,10 @@ public partial class WorldRenderer : Node2D
                     headOffset, heading, _data, _animator);
 
                 // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
-                // Same conditions as normal auras: skip if Navegando, Montado, or Invisible
+                // Skip if Navegando or Montado. Invisible self-char still shows auras.
                 if ((_state.Config?.ShowAuras ?? true)
-                    && !ch.Invisible && !ch.Navigating && !ch.Mounted)
+                    && !ch.Navigating && !ch.Mounted
+                    && (!ch.Invisible || kvp.Key == _state.UserCharIndex))
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
                         new Vector2(charPx, charPy), headOffset, _data);
@@ -402,10 +403,10 @@ public partial class WorldRenderer : Node2D
         foreach (var kvp in _state.Characters)
         {
             var ch = kvp.Value;
-            // VB6: invisible chars skip ALL rendering (body, head, auras, everything)
+            // Invisible chars from OTHER players skip ALL rendering
             if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
-            // VB6: auras not drawn when Navegando, Montado, or Invisible
-            if (ch.Invisible || ch.Navigating || ch.Mounted) continue;
+            // Auras not drawn when Navegando or Montado (equipment hidden)
+            if (ch.Navigating || ch.Mounted) continue;
 
             // Compute character screen position
             var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
@@ -422,9 +423,16 @@ public partial class WorldRenderer : Node2D
             }
 
             // Collect aura draws (updates angle state + queues to _pendingAuraDraws)
+            // When invisible (self only), auras pulse with the same alpha as the body
             if (_state.Config?.ShowAuras ?? true)
             {
-                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
+                float auraAlpha = 1f;
+                if (ch.Invisible)
+                {
+                    // TransparenciaBody ranges 18-53, maps to alpha ~45-135 out of 255
+                    auraAlpha = (ch.TransparenciaBody + 45f) / 255f;
+                }
+                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data, auraAlpha);
             }
         }
 

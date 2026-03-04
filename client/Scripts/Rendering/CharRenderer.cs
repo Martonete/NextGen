@@ -706,22 +706,22 @@ public static class CharRenderer
     /// </summary>
     public static void CollectAuraDraws(
         WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
-        GameData data)
+        GameData data, float alphaOverride = 1f)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
         if (ch.Navigating) return; // No auras while on a boat
 
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle, alphaOverride);
     }
 
     private static void CollectSingleAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
-        GameData data, int auraIndex, ref float angle)
+        GameData data, int auraIndex, ref float angle, float alphaOverride = 1f)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
 
@@ -739,8 +739,8 @@ public static class CharRenderer
         float auraX = pos.X + headOffset.X;
         float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
 
-        // VB6 color: static R,G,B (simplified — full pulsing is cosmetic polish)
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 1f);
+        // VB6 color: static R,G,B. Alpha reduced when invisible (pulsing with body).
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, alphaOverride);
 
         // Resolve animated GRH frame
         int grhIndex = aura.GrhIndex;
