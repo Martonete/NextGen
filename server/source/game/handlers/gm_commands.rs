@@ -333,8 +333,28 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     }
 }
 
+/// Strip accents/diacritics for accent-insensitive search.
+/// "túnica" → "tunica", "ción" → "cion", etc.
+fn strip_accents(s: &str) -> String {
+    s.chars().map(|c| match c {
+        'á' | 'à' | 'ä' | 'â' => 'a',
+        'é' | 'è' | 'ë' | 'ê' => 'e',
+        'í' | 'ì' | 'ï' | 'î' => 'i',
+        'ó' | 'ò' | 'ö' | 'ô' => 'o',
+        'ú' | 'ù' | 'ü' | 'û' => 'u',
+        'Á' | 'À' | 'Ä' | 'Â' => 'A',
+        'É' | 'È' | 'Ë' | 'Ê' => 'E',
+        'Í' | 'Ì' | 'Ï' | 'Î' => 'I',
+        'Ó' | 'Ò' | 'Ö' | 'Ô' => 'O',
+        'Ú' | 'Ù' | 'Ü' | 'Û' => 'U',
+        'ñ' => 'n', 'Ñ' => 'N',
+        _ => c,
+    }).collect()
+}
+
 /// /SOBJ <name> — Search objects by name (VB6 TCP.bas line 3677).
 /// Sends ||748@<name>@<index> for each match. Requires SEMIDIOS+.
+/// Accent-insensitive: "tunica" matches "túnica".
 pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: ConnectionId, search: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
@@ -349,12 +369,12 @@ pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: Connection
         return;
     }
 
-    let search_upper = search.to_uppercase();
+    let search_norm = strip_accents(&search.to_uppercase());
     let mut found = 0;
 
     for i in 0..state.game_data.objects.len() {
-        let name_upper = state.game_data.objects[i].name.to_uppercase();
-        if name_upper.contains(&search_upper) {
+        let name_norm = strip_accents(&state.game_data.objects[i].name.to_uppercase());
+        if name_norm.contains(&search_norm) {
             let name = state.game_data.objects[i].name.clone();
             let idx = state.game_data.objects[i].index;
             state.send_msg_id(conn_id, 748, &format!("{}@{}", name, idx)).await;
