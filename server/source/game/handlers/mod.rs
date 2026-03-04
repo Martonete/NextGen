@@ -1722,6 +1722,16 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     };
     let (map, old_x, old_y, char_index, paralyzed, dead, not_move, meditating, navigating) = user_data;
 
+    // Drain post-warp ignore: the client may send a walk packet that was already
+    // in the TCP buffer before the warp was received. Ignore it to avoid +1 tile offset.
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        if user.warp_move_ignore > 0 {
+            user.warp_move_ignore -= 1;
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
+            return;
+        }
+    }
+
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed and not_move block.
     if paralyzed || not_move {
         // Force client back to server position (prevents ghost movement on client)
@@ -4116,6 +4126,12 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // Tile exits are only triggered by player WALKING onto a tile (DoTileEvents).
     // Warps (map change, GM /WARP, border transitions) should not chain-trigger exits,
     // otherwise border transitions landing on the opposite exit row cause infinite loops.
+
+    // 16. Ignore next movement packet from client — the client may have already
+    // sent a walk packet before receiving the warp, causing an extra step.
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.warp_move_ignore = 1;
+    }
 }
 
 /// Send warp FX (sound + visual) at user's current position.
