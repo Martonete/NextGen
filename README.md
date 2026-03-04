@@ -1,6 +1,6 @@
-# Tierras Sagradas AO — Rust Server + Godot Client
+# Argentum Online — Rust Server + Godot Client
 
-Full rewrite of Argentum Online: **Rust server** (drop-in replacement for VB6 server) + **Godot 4 C# client** (replacing VB6 DirectX8 client). Protocol-compatible with original VB6 clients.
+Full rewrite of Argentum Online: **Rust server** (drop-in replacement for VB6 server) + **Godot 4 C# client** (replacing VB6 DirectX8 client). Based on the [Tierras Sagradas AO](https://github.com/cyphercr0w/Tierras-Sagradas-AO) mod. Protocol-compatible with original VB6 clients.
 
 ---
 
