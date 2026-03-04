@@ -320,7 +320,7 @@ public partial class Main : Control
 
         // GM "CASTI GM" button — ColorRect + Label to bypass Button min height.
         _btnCastiGM = new Control();
-        _btnCastiGM.Position = new Vector2(560, 580);
+        _btnCastiGM.Position = new Vector2(560, 581);
         _btnCastiGM.Size = new Vector2(70, 14);
         _btnCastiGM.Visible = false;
         _btnCastiGM.MouseFilter = Control.MouseFilterEnum.Stop;
@@ -3081,6 +3081,16 @@ public partial class Main : Control
             && _state.CurrentScreen == Screen.CharSelect)
         {
             HandleDisconnect("");
+            return;
+        }
+
+        // Enter on login screen → trigger connect button
+        if (@event is InputEventKey enterLoginKey && enterLoginKey.Pressed && !enterLoginKey.Echo
+            && (enterLoginKey.Keycode == Key.Enter || enterLoginKey.Keycode == Key.KpEnter)
+            && _state.CurrentScreen == Screen.Login
+            && _connectButton != null && !_connectButton.Disabled)
+        {
+            _connectButton.EmitSignal("pressed");
             return;
         }
 
