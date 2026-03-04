@@ -4142,7 +4142,7 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     // 16. Ignore next movement packet from client — the client may have already
     // sent a walk packet before receiving the warp, causing an extra step.
     if let Some(user) = state.users.get_mut(&conn_id) {
-        user.warp_move_ignore = 1;
+        user.warp_move_ignore = 3;
     }
 }
 
