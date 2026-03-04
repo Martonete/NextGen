@@ -320,11 +320,13 @@ public partial class Main : Control
 
         // GM "CASTI GM" button — hidden by default, shown when Privileges >= 1
         _btnCastiGM = new Button();
-        _btnCastiGM.Text = "CASTI GM";
-        _btnCastiGM.Position = new Vector2(560, 563);
-        _btnCastiGM.Size = new Vector2(70, 3);
-        _btnCastiGM.AddThemeFontSizeOverride("font_size", 7);
+        _btnCastiGM.Text = "CASTI";
+        _btnCastiGM.Position = new Vector2(560, 565);
+        _btnCastiGM.CustomMinimumSize = new Vector2(50, 10);
+        _btnCastiGM.Size = new Vector2(50, 10);
+        _btnCastiGM.AddThemeFontSizeOverride("font_size", 5);
         _btnCastiGM.FocusMode = Control.FocusModeEnum.None;
+        _btnCastiGM.ClipText = true;
         var castiStyle = new StyleBoxFlat();
         castiStyle.BgColor = new Color(0.7f, 0.1f, 0.1f);
         castiStyle.SetContentMarginAll(0);
