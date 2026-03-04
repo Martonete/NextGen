@@ -425,7 +425,7 @@ public static class ClientPackets
 
     public static byte[] WriteMiniStats()
     {
-        return new byte[] { ClientPacketId.MiniStats };
+        return new byte[] { ClientPacketId.MiniStatsReq };
     }
 
     public static byte[] WriteSendPoints()

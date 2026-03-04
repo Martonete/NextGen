@@ -69,6 +69,11 @@ public class GameState
     public string UserName = "";
 
     // User status flags
+    public bool Raining;
+    public bool UserBlind;
+    public bool UserDumb;
+    public bool IsNight;
+    public byte UserClass;
     public bool UserParalyzed;
     public float ParalysisTimer;    // Countdown in seconds from server-provided duration
     public float ParalysisMaxTimer; // Max duration for progress bar ratio
