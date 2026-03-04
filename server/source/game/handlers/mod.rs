@@ -285,7 +285,7 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::Whisper => {
             let target = bq.read_ascii_string().unwrap_or_default();
             let msg = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("\\{},{}", target, msg);
+            let text = format!("\\{}@{}", target, msg);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::SlashCommand => {

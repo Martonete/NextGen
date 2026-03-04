@@ -583,6 +583,7 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.TradeCancelOK: // 185
                 _state.Trading = false;
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Comercio cancelado.", Color = "FF0000" });
                 GD.Print("[PKT] TradeCancelOK");
                 break;
 
@@ -683,7 +684,7 @@ public partial class PacketHandler
                 HandleBinStringOnly(bq, "ZsosData");
                 break;
             case ServerPacketId.SbrData: // 234
-                HandleBinStringOnly(bq, "SbrData");
+                HandleBinBankReset(bq);
                 break;
             case ServerPacketId.KfmData: // 235
                 HandleBinKfmData(bq);
@@ -731,7 +732,7 @@ public partial class PacketHandler
                 HandleBinPingRequest();
                 break;
             case ServerPacketId.TravelsOpen: // 251
-                _state.ShowTravelsPanel = true;
+                _state.ShowTravelPanel = true;
                 GD.Print("[PKT] TravelsOpen");
                 break;
             case ServerPacketId.MailOpenTrigger: // 252
@@ -802,10 +803,9 @@ public partial class PacketHandler
                 break;
 
             default:
-                // Unknown opcode — protocol mismatch. Log and discard remaining buffer.
-                GD.PrintErr($"[PKT] Unknown binary opcode={opcode}, discarding buffer");
-                // Consume all remaining bytes so we don't get stuck
-                while (bq.Available > 0) bq.ReadByte();
+                // Unknown opcode — fatal for this packet stream since we don't know
+                // the packet length. Log and skip this single byte, hoping to resync.
+                GD.PrintErr($"[PKT] Unknown binary opcode={opcode}, skipping byte");
                 break;
         }
     }
@@ -2171,7 +2171,26 @@ public partial class PacketHandler
         short srcIndex = bq.ReadInteger();
         short tgtIndex = bq.ReadInteger();
         short grhIndex = bq.ReadInteger();
-        // Arrow visual not yet rendered — log for future implementation.
+
+        // Create visual arrow projectile (same as text FLECHI handler)
+        if (_state.Characters.TryGetValue(srcIndex, out var srcCh) &&
+            _state.Characters.TryGetValue(tgtIndex, out var tgtCh))
+        {
+            float srcPixelX = srcCh.Pos.X * 32f + 16f;
+            float srcPixelY = srcCh.Pos.Y * 32f + 16f;
+            float tgtPixelX = tgtCh.Pos.X * 32f + 16f;
+            float tgtPixelY = tgtCh.Pos.Y * 32f + 16f;
+            _state.ActiveArrows.Add(new ArrowProjectile
+            {
+                ShooterCharIndex = srcIndex,
+                TargetCharIndex = tgtIndex,
+                GrhIndex = grhIndex,
+                X = srcPixelX, Y = srcPixelY,
+                TargetX = tgtPixelX, TargetY = tgtPixelY,
+                Speed = 8f,
+                Active = true,
+            });
+        }
         GD.Print($"[PKT] Arrow: src={srcIndex} tgt={tgtIndex} grh={grhIndex}");
     }
 
@@ -2392,6 +2411,10 @@ public partial class PacketHandler
         _state.AmbientColorR = r;
         _state.AmbientColorG = g;
         _state.AmbientColorB = b;
+        // Also set MapColor fields — WorldRenderer reads these for ambient light
+        _state.MapColorR = r;
+        _state.MapColorG = g;
+        _state.MapColorB = b;
         GD.Print($"[PKT] AmbientColor R={r} G={g} B={b}");
     }
 
@@ -2400,6 +2423,16 @@ public partial class PacketHandler
     /// <summary>
     /// InitBankLegacy (ID 165) — legacy bank init. Wire: string data
     /// </summary>
+    private void HandleBinBankReset(ByteQueue bq)
+    {
+        string data = bq.ReadString(); // consume wire field
+        // Clear all bank slots (same as text SBR handler)
+        for (int i = 0; i < _state.BankItems.Length; i++)
+            _state.BankItems[i] = new BankItem();
+        _state.BankItemCount = 0;
+        GD.Print("[PKT] BankReset (binary)");
+    }
+
     private void HandleBinInitBankLegacy(ByteQueue bq)
     {
         string data = bq.ReadString();
@@ -2613,6 +2646,23 @@ public partial class PacketHandler
         string data = bq.ReadString();
         GD.Print($"[PKT] FriendList (binary): {data.Length} chars");
         _state.FriendListData = data;
+
+        // Parse CSV into FriendsList (same as text LDM handler)
+        _state.FriendsList.Clear();
+        if (!string.IsNullOrEmpty(data))
+        {
+            var parts = data.Split(',');
+            // First field is count — skip it, take names from index 1 onward
+            for (int i = 1; i < parts.Length; i++)
+            {
+                var entry = parts[i].Trim();
+                if (entry.Length == 0) continue;
+                _state.FriendsList.Add(entry);
+            }
+        }
+        while (_state.FriendsList.Count < 20)
+            _state.FriendsList.Add("(NADIE)(OFF)");
+        _state.FriendsListDirty = true;
     }
 
     // ── Misc data ─────────────────────────────────────────────────
