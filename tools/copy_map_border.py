@@ -15,7 +15,9 @@ import sys
 import os
 import shutil
 
-MAP_DIR = os.path.join(os.path.dirname(__file__), '..', 'server', 'maps')
+SERVER_MAP_DIR = os.path.join(os.path.dirname(__file__), '..', 'server', 'maps')
+CLIENT_MAP_DIR = os.path.join(os.path.dirname(__file__), '..', 'client', 'Data', 'Maps')
+MAP_DIR = SERVER_MAP_DIR  # default, overridden by --client flag
 MAP_SIZE = 100
 HEADER_SIZE_MAP = 273
 HEADER_SIZE_INF = 10
@@ -156,9 +158,14 @@ def copy_border(src_map_num, dst_map_num, tile_pairs, dry_run=False):
     src_hdr, src_tiles = parse_all_map_tiles(src_map_path)
     dst_hdr, dst_tiles = parse_all_map_tiles(dst_map_path)
 
-    # Parse source and destination .inf files
-    src_inf_hdr, src_inf_tiles = parse_all_inf_tiles(src_inf_path)
-    dst_inf_hdr, dst_inf_tiles = parse_all_inf_tiles(dst_inf_path)
+    # Parse source and destination .inf files (skip if empty/missing — client maps have no .inf)
+    has_inf = (os.path.exists(src_inf_path) and os.path.getsize(src_inf_path) > HEADER_SIZE_INF
+               and os.path.exists(dst_inf_path) and os.path.getsize(dst_inf_path) > HEADER_SIZE_INF)
+    src_inf_hdr = dst_inf_hdr = None
+    src_inf_tiles = dst_inf_tiles = None
+    if has_inf:
+        src_inf_hdr, src_inf_tiles = parse_all_inf_tiles(src_inf_path)
+        dst_inf_hdr, dst_inf_tiles = parse_all_inf_tiles(dst_inf_path)
 
     tiles_copied = 0
     npcs_copied = 0
@@ -176,39 +183,37 @@ def copy_border(src_map_num, dst_map_num, tile_pairs, dry_run=False):
         new_flags = (src_flags & ~1) | (1 if dst_blocked else 0)
         dst_tiles[(dx, dy)] = (new_tile, new_flags)
 
-        # ── .inf: copy NPCs/objects, preserve exits ──
-        src_inf_flags, src_exit, src_npc, src_obj = src_inf_tiles[(sx, sy)]
-        dst_inf_flags, dst_exit, dst_npc, dst_obj = dst_inf_tiles[(dx, dy)]
+        # ── .inf: copy NPCs/objects, preserve exits (skip if no .inf) ──
+        if has_inf:
+            src_inf_flags, src_exit, src_npc, src_obj = src_inf_tiles[(sx, sy)]
+            dst_inf_flags, dst_exit, dst_npc, dst_obj = dst_inf_tiles[(dx, dy)]
 
-        # Build merged inf tile:
-        # - Keep destination's exit (if any)
-        # - Copy source's NPC and object data
-        new_inf_flags = 0
-        new_exit = None
-        new_npc = None
-        new_obj = None
+            new_inf_flags = 0
+            new_exit = None
+            new_npc = None
+            new_obj = None
 
-        if dst_inf_flags & 1 and dst_exit:
-            new_inf_flags |= 1
-            new_exit = dst_exit
+            if dst_inf_flags & 1 and dst_exit:
+                new_inf_flags |= 1
+                new_exit = dst_exit
 
-        if src_inf_flags & 2 and src_npc:
-            new_inf_flags |= 2
-            new_npc = src_npc
-            npcs_copied += 1
-        elif dst_inf_flags & 2 and dst_npc:
-            new_inf_flags |= 2
-            new_npc = dst_npc
+            if src_inf_flags & 2 and src_npc:
+                new_inf_flags |= 2
+                new_npc = src_npc
+                npcs_copied += 1
+            elif dst_inf_flags & 2 and dst_npc:
+                new_inf_flags |= 2
+                new_npc = dst_npc
 
-        if src_inf_flags & 4 and src_obj:
-            new_inf_flags |= 4
-            new_obj = src_obj
-            objs_copied += 1
-        elif dst_inf_flags & 4 and dst_obj:
-            new_inf_flags |= 4
-            new_obj = dst_obj
+            if src_inf_flags & 4 and src_obj:
+                new_inf_flags |= 4
+                new_obj = src_obj
+                objs_copied += 1
+            elif dst_inf_flags & 4 and dst_obj:
+                new_inf_flags |= 4
+                new_obj = dst_obj
 
-        dst_inf_tiles[(dx, dy)] = (new_inf_flags, new_exit, new_npc, new_obj)
+            dst_inf_tiles[(dx, dy)] = (new_inf_flags, new_exit, new_npc, new_obj)
         tiles_copied += 1
 
     print(f"  Tiles: {tiles_copied}, NPCs: {npcs_copied}, Objects: {objs_copied}")
@@ -224,12 +229,15 @@ def copy_border(src_map_num, dst_map_num, tile_pairs, dry_run=False):
         f.write(new_map)
     print(f"  Wrote {dst_map_path} ({len(new_map)} bytes)")
 
-    # Backup and write .inf
-    shutil.copy2(dst_inf_path, dst_inf_path + '.bak')
-    new_inf = rebuild_inf(dst_inf_hdr, dst_inf_tiles)
-    with open(dst_inf_path, 'wb') as f:
-        f.write(new_inf)
-    print(f"  Wrote {dst_inf_path} ({len(new_inf)} bytes)")
+    # Backup and write .inf (only if we have valid inf data)
+    if has_inf:
+        shutil.copy2(dst_inf_path, dst_inf_path + '.bak')
+        new_inf = rebuild_inf(dst_inf_hdr, dst_inf_tiles)
+        with open(dst_inf_path, 'wb') as f:
+            f.write(new_inf)
+        print(f"  Wrote {dst_inf_path} ({len(new_inf)} bytes)")
+    else:
+        print(f"  Skipped .inf (empty or missing)")
 
 
 def make_row_pairs(src_rows, dst_rows, x_range=(1, 100)):
@@ -251,7 +259,28 @@ def make_col_pairs(src_cols, dst_cols, y_range=(1, 100)):
 
 
 def main():
+    global MAP_DIR
     dry_run = '--dry-run' in sys.argv
+    if '--client' in sys.argv:
+        MAP_DIR = CLIENT_MAP_DIR
+        print(f"Using CLIENT maps: {MAP_DIR}")
+    elif '--server' in sys.argv:
+        MAP_DIR = SERVER_MAP_DIR
+        print(f"Using SERVER maps: {MAP_DIR}")
+    else:
+        # Do both
+        for target in ['--server', '--client']:
+            print(f"\n{'#'*60}")
+            print(f"# Running with {target}")
+            print(f"{'#'*60}")
+            MAP_DIR = SERVER_MAP_DIR if target == '--server' else CLIENT_MAP_DIR
+            run_copies(dry_run)
+        return
+
+    run_copies(dry_run)
+
+
+def run_copies(dry_run=False):
 
     # NORTH: Map28 -> Map90
     # Exit: Map28 Y=7 -> Map90 Y=90
@@ -289,7 +318,7 @@ def main():
     copy_border(28, 14, west_pairs, dry_run)
     copy_border(28, 54, east_pairs, dry_run)
 
-    print("\nDone!")
+    print("\nDone with this target!")
 
 
 if __name__ == '__main__':
