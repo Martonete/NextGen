@@ -1124,6 +1124,20 @@ public partial class PacketHandler
             ch.FxFrameCounter[0] = 0;
         }
 
+        // Preserve aura state from existing character (avoids aura animation restart on map change)
+        if (_state.Characters.TryGetValue(charIndex, out var existing))
+        {
+            ch.AuraIndexA = existing.AuraIndexA;  ch.AuraAngleA = existing.AuraAngleA;
+            ch.AuraIndexW = existing.AuraIndexW;  ch.AuraAngleW = existing.AuraAngleW;
+            ch.AuraIndexE = existing.AuraIndexE;  ch.AuraAngleE = existing.AuraAngleE;
+            ch.AuraIndexR = existing.AuraIndexR;  ch.AuraAngleR = existing.AuraAngleR;
+            ch.AuraIndexC = existing.AuraIndexC;  ch.AuraAngleC = existing.AuraAngleC;
+            ch.NpcAura = existing.NpcAura;        ch.NpcAuraAngle = existing.NpcAuraAngle;
+            ch.Color = existing.Color;
+            ch.Levitando = existing.Levitando;
+            ch.Ranking = existing.Ranking;
+        }
+
         _state.Characters[charIndex] = ch;
         GD.Print($"[CC] {name} idx={charIndex} body={body} head={head} weapon={weapon} shield={shield} casco={helmet} (binary)");
 
