@@ -861,7 +861,7 @@ public partial class Main : Control
     /// <summary>
     /// Apply UI font to a control (label, button, etc.)
     /// </summary>
-    private static void ApplyFont(Control control, bool bold = false)
+    private static void ApplyFont(Control control, bool bold = true)
     {
         var font = bold ? (_uiFontBold ?? _uiFont) : _uiFont;
         if (font == null) return;
