@@ -115,9 +115,7 @@ public partial class WorldRenderer : Node2D
         _data = data;
         _animator = animator;
 
-        // Enable texture repeat for water UV scrolling (UVs may exceed [0,1]).
-        // Non-water tiles always use UVs within [0,1] so this has no side effect.
-        TextureRepeat = TextureRepeatEnum.Enabled;
+
 
         var additiveMat = new CanvasItemMaterial
         {
@@ -941,36 +939,24 @@ public partial class WorldRenderer : Node2D
         _litQuadColors[2] = bottomRight;
         _litQuadColors[3] = bottomLeft;
 
-        // UV scrolling: smooth continuous movement instead of discrete frame jumps.
-        // The 256x256 texture is a seamless pattern — UV wrapping creates infinite tiling.
-        // Each tile samples based on map position + time drift for flowing water.
-        float tileUSize = (float)pw / texW; // 32/256 = 0.125
-        float tileVSize = (float)ph / texH;
+        // Static UVs from the resolved GRH — no scrolling.
+        // Animation comes purely from vertex deformation (smooth at 60fps).
+        int sx = resolved.SX, sy = resolved.SY;
+        int rpw = resolved.PixelWidth, rph = resolved.PixelHeight;
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + rpw > texW) rpw = texW - sx;
+        if (sy + rph > texH) rph = texH - sy;
 
-        // Time-based UV drift — slow diagonal scroll for flowing effect
-        float timeSec = (float)(_animator.GlobalTimeMs / 1000.0);
-        float scrollU = timeSec * 0.008f;
-        float scrollV = timeSec * 0.012f;
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + rpw) / texW;
+        float v1 = (float)(sy + rph) / texH;
 
-        // Per-tile phase from vertex deformation for organic ripple in UVs
-        float phaseU = xEven ? 0.002f * _waterCount0 / WaterHeight : -0.002f * _waterCount1 / WaterHeight;
-        float phaseV = yEven ? 0.002f * _waterCount1 / WaterHeight : -0.002f * _waterCount0 / WaterHeight;
-
-        // Base UV from tile map position (wraps every 8 tiles since 32*8=256)
-        float baseU = (tileX % 8) * tileUSize + scrollU + phaseU;
-        float baseV = (tileY % 8) * tileVSize + scrollV + phaseV;
-
-        // Wrap to [0,1) — texture is seamless so this tiles perfectly
-        baseU = baseU % 1f; if (baseU < 0) baseU += 1f;
-        baseV = baseV % 1f; if (baseV < 0) baseV += 1f;
-
-        float u1 = baseU + tileUSize;
-        float v1 = baseV + tileVSize;
-
-        _litQuadUVs[0] = new Vector2(baseU, baseV);
-        _litQuadUVs[1] = new Vector2(u1, baseV);
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
         _litQuadUVs[2] = new Vector2(u1, v1);
-        _litQuadUVs[3] = new Vector2(baseU, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
 
         DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
     }
