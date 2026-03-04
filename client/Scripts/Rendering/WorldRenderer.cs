@@ -904,25 +904,31 @@ public partial class WorldRenderer : Node2D
         bool xEven = (tileX % 2) == 0;
         bool yEven = (tileY % 2) == 0;
 
+        // VB6 modDx8graphics.bas lines 266-311: vertex displacements per checkerboard cell.
+        // VB6 vertex order: 0=TL, 1=TR, 2=BR, 3=BL — matching our quad layout.
         if (xEven && yEven)
         {
-            if (!ignoreTop) { topL = -_waterCount1; topR = _waterCount1; }
-            if (!ignoreBottom) { botL = _waterCount0; botR = -_waterCount0; }
+            // VB6: TL -= count0, TR += count0, BR += count1, BL -= count1
+            if (!ignoreTop) { topL = -_waterCount0; topR = _waterCount0; }
+            if (!ignoreBottom) { botL = -_waterCount1; botR = _waterCount1; }
         }
         else if (xEven && !yEven)
         {
+            // VB6: TL += count1, TR -= count1, BR -= count0, BL += count0
             if (!ignoreTop) { topL = _waterCount1; topR = -_waterCount1; }
-            if (!ignoreBottom) { botL = -_waterCount0; botR = _waterCount0; }
+            if (!ignoreBottom) { botL = _waterCount0; botR = -_waterCount0; }
         }
         else if (!xEven && yEven)
         {
+            // VB6: TL += count0, TR -= count0, BR -= count1, BL += count1
             if (!ignoreTop) { topL = _waterCount0; topR = -_waterCount0; }
-            if (!ignoreBottom) { botL = -_waterCount1; botR = _waterCount1; }
+            if (!ignoreBottom) { botL = _waterCount1; botR = -_waterCount1; }
         }
         else // odd, odd
         {
-            if (!ignoreTop) { topL = -_waterCount0; topR = _waterCount0; }
-            if (!ignoreBottom) { botL = _waterCount1; botR = -_waterCount1; }
+            // VB6: TL -= count1, TR += count1, BR += count0, BL -= count0
+            if (!ignoreTop) { topL = -_waterCount1; topR = _waterCount1; }
+            if (!ignoreBottom) { botL = -_waterCount0; botR = _waterCount0; }
         }
 
         // Extend polygon by WaterHeight on top and bottom to prevent gap artifacts.
