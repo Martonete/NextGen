@@ -2528,8 +2528,8 @@ public partial class PacketHandler
         byte slot = bq.ReadByte();
         byte tradeType = bq.ReadByte();
         string msg = tradeType == 0
-            ? $"Compra exitosa (slot {slot})."
-            : $"Venta exitosa (slot {slot}).";
+            ? "Compra exitosa."
+            : "Venta exitosa.";
         _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = "00FF00" });
     }
 

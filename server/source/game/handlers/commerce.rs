@@ -251,30 +251,32 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
         if user.gold < 0 { user.gold = 0; }
     }
 
-    // Remove from NPC inventory
-    let mut restocked = false;
+    // Get original slot data for restock before mutating
+    let original_slot = {
+        let npc_number = state.get_npc(target_npc).map(|n| n.npc_number).unwrap_or(0);
+        state.game_data.npcs.get(npc_number)
+            .and_then(|d| d.items.get(slot_idx))
+            .map(|s| (s.obj_index, s.amount))
+    };
+
+    // Remove from NPC inventory and auto-restock the slot if depleted
     if let Some(npc) = state.get_npc_mut(target_npc) {
         npc.inventory[slot_idx].amount -= cantidad;
         if npc.inventory[slot_idx].amount <= 0 {
-            npc.inventory[slot_idx].obj_index = 0;
-            npc.inventory[slot_idx].amount = 0;
-            npc.nro_items -= 1;
-
-            // VB6 parity: auto-replenish when ALL slots emptied and InvReSpawn <> 1
-            if npc.nro_items <= 0 && !npc.inv_respawn {
-                restocked = true;
+            // Slot depleted — immediately restock from original data
+            if let Some((orig_obj, orig_amount)) = original_slot {
+                if orig_obj > 0 {
+                    npc.inventory[slot_idx].obj_index = orig_obj;
+                    npc.inventory[slot_idx].amount = orig_amount;
+                }
             }
         }
-    }
-    if restocked {
-        reload_npc_inventory(state, target_npc);
     }
 
     // Send updates to client
     send_inventory_slot(state, conn_id, user_slot).await;
     send_stats_gold(state, conn_id).await;
-    // After restock: send full NPC inventory (slot=0). Otherwise just the changed slot.
-    enviar_npc_inv(state, conn_id, target_npc, if restocked { 0 } else { slot }).await;
+    enviar_npc_inv(state, conn_id, target_npc, slot).await;
 
     let pkt = binary_packets::write_trans_ok(slot as u8, 0); // 0 = buy
     state.send_bytes(conn_id, &pkt).await;
