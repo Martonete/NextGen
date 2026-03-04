@@ -88,8 +88,8 @@ godot --version
 
 ```bash
 cd ~
-git clone https://github.com/cyphercr0w/server-rust-tsao.git
-cd server-rust-tsao
+git clone https://github.com/cyphercr0w/argentum-nextgen.git
+cd argentum-nextgen
 ```
 
 ---
@@ -97,7 +97,7 @@ cd server-rust-tsao
 ## 6. Start the Server
 
 ```bash
-cd ~/server-rust-tsao
+cd ~/argentum-nextgen
 
 # First time: build the Rust server image + start PostgreSQL
 docker compose up -d --build
@@ -131,7 +131,7 @@ Common commands:
 ### Build (required after every code change)
 
 ```bash
-cd ~/server-rust-tsao/client
+cd ~/argentum-nextgen/client
 dotnet build
 # Should show: "Build succeeded. 0 Warning(s) 0 Error(s)"
 ```
@@ -141,7 +141,7 @@ dotnet build
 ### Quick workflow after `git pull`
 
 ```bash
-cd ~/server-rust-tsao/client
+cd ~/argentum-nextgen/client
 git pull
 dotnet build && godot --path .
 ```
@@ -153,7 +153,7 @@ dotnet build && godot --path .
 ### Option A: From command line (recommended)
 
 ```bash
-cd ~/server-rust-tsao/client
+cd ~/argentum-nextgen/client
 dotnet build          # compile C# changes
 godot --path .        # run the game
 ```
@@ -161,14 +161,14 @@ godot --path .        # run the game
 ### Option B: From Godot editor
 
 ```bash
-godot --path ~/server-rust-tsao/client/  # opens editor
+godot --path ~/argentum-nextgen/client/  # opens editor
 ```
 
 Then press **F5** to run. The editor auto-compiles C# on build (Ctrl+Shift+B) or when you press Play.
 
 Or manually:
 1. Run `godot` in terminal
-2. Click **Import** → navigate to `~/server-rust-tsao/client/` → select `project.godot`
+2. Click **Import** → navigate to `~/argentum-nextgen/client/` → select `project.godot`
 3. Click **Import & Edit**
 4. Press **Ctrl+Shift+B** to build the C# solution
 5. Press **F5** to run

@@ -31,7 +31,7 @@ Full rewrite of Argentum Online: **Rust server** (drop-in replacement for VB6 se
 ## Project Layout
 
 ```
-server-rust-tsao/
+argentum-nextgen/
   server/
     source/          Rust server source code
       main.rs          Entry point
@@ -114,8 +114,8 @@ Works on **Windows, macOS, and Linux** identically.
 ### 2. Clone and start
 
 ```bash
-git clone https://github.com/cyphercr0w/server-rust-tsao.git
-cd server-rust-tsao
+git clone https://github.com/cyphercr0w/argentum-nextgen.git
+cd argentum-nextgen
 
 # Start server + database (first run downloads images and compiles — ~3-5 min)
 docker compose up -d
@@ -190,8 +190,8 @@ Or use `cargo` commands directly (see below).
 #### 4. Clone, configure, and run
 
 ```powershell
-git clone https://github.com/cyphercr0w/server-rust-tsao.git
-cd server-rust-tsao
+git clone https://github.com/cyphercr0w/argentum-nextgen.git
+cd argentum-nextgen
 
 # Configure database connection
 copy .env.example .env
@@ -235,8 +235,8 @@ psql postgres -c "CREATE DATABASE ao_server OWNER ao;"
 #### 3. Clone, configure, and run
 
 ```bash
-git clone https://github.com/cyphercr0w/server-rust-tsao.git
-cd server-rust-tsao
+git clone https://github.com/cyphercr0w/argentum-nextgen.git
+cd argentum-nextgen
 
 cp .env.example .env
 # Edit .env if needed
@@ -281,8 +281,8 @@ sudo -u postgres psql -c "CREATE DATABASE ao_server OWNER ao;"
 #### 3. Clone, configure, and run
 
 ```bash
-git clone https://github.com/cyphercr0w/server-rust-tsao.git
-cd server-rust-tsao
+git clone https://github.com/cyphercr0w/argentum-nextgen.git
+cd argentum-nextgen
 
 cp .env.example .env
 make build && make run
@@ -602,8 +602,8 @@ sudo usermod -aG docker $USER
 newgrp docker
 
 # 3. Clone and start server
-git clone git@github.com:cyphercr0w/server-rust-tsao.git
-cd server-rust-tsao
+git clone git@github.com:cyphercr0w/argentum-nextgen.git
+cd argentum-nextgen
 docker compose up -d
 
 # 4. Verify
