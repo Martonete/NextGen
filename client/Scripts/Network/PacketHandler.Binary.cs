@@ -1625,12 +1625,16 @@ public partial class PacketHandler
     {
         short charIndex = bq.ReadInteger();
         bool invisible = bq.ReadBoolean();
+        short durationSecs = bq.ReadInteger();
         if (_state.Characters.TryGetValue(charIndex, out var ch))
         {
             ch.Invisible = invisible;
             // Start from max alpha (135) fading down for a smooth entrance
             ch.TransparenciaBody = invisible ? 53f : 0f;
             ch.Llegoalatransp = invisible;
+            // Countdown timer (0 = permanent/GM, >0 = spell seconds remaining)
+            ch.InvisibleCountdown = invisible ? durationSecs : 0;
+            ch.InvisibleCountdownTimer = 0f;
         }
     }
 
@@ -1683,8 +1687,11 @@ public partial class PacketHandler
 
     private void HandleBinParalizeOk(ByteQueue bq)
     {
-        // ParalizeOK is a simple toggle in binary (no extra fields)
+        short durationSecs = bq.ReadInteger();
         _state.UserParalyzed = !_state.UserParalyzed;
+        // Countdown timer: when becoming paralyzed, set countdown; when unparalyzed, clear
+        _state.ParalysisCountdown = _state.UserParalyzed ? durationSecs : 0;
+        _state.ParalysisCountdownTimer = 0f;
     }
 
     private void HandleBinTradeOk()

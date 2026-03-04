@@ -390,7 +390,7 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
         let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
         // NOVER packet (visible)
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false);
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
         state.send_console(conn_id, "Sos visible.", font_index::INFO).await;
     } else {
@@ -402,8 +402,8 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
         // BP — remove character from other players' screens
         let bp = binary_packets::write_character_remove(char_index.0 as i16);
         state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &bp).await;
-        // NOVER packet — tell self we're invisible (pulsing transparency)
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
+        // NOVER packet — tell self we're invisible (permanent GM, duration=0)
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
         state.send_bytes(conn_id, &nover).await;
         state.send_console(conn_id, "Sos invisible.", font_index::INFO).await;
     }

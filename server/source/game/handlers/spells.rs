@@ -758,7 +758,8 @@ pub(super) async fn apply_spell_status(
 
     // Send PARADOK + PU outside borrow scope (VB6: lines 759-760)
     if send_paradok_on {
-        let pkt = binary_packets::write_paralize_ok();
+        let para_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
+        let pkt = binary_packets::write_paralize_ok(para_secs);
         state.send_bytes(target_id, &pkt).await;
         // PU forces client position to server-known position (prevents ghost movement)
         if let Some(u) = state.users.get(&target_id) {
@@ -767,7 +768,7 @@ pub(super) async fn apply_spell_status(
         }
     }
     if send_paradok_off {
-        let pkt = binary_packets::write_paralize_ok();
+        let pkt = binary_packets::write_paralize_ok(0);
         state.send_bytes(target_id, &pkt).await;
     }
 
@@ -777,9 +778,10 @@ pub(super) async fn apply_spell_status(
         if let Some(u) = state.users.get(&target_id) {
             let ci = u.char_index.0 as i16;
             let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+            let invis_secs = (state.config.intervalo_invisible as f32 * 0.04) as i16;
             let bp = binary_packets::write_character_remove(ci);
             state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id: target_id, map, x, y }, &bp).await;
-            let nover = binary_packets::write_set_invisible(ci, true);
+            let nover = binary_packets::write_set_invisible(ci, true, invis_secs);
             state.send_bytes(target_id, &nover).await;
         }
     }

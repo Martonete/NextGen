@@ -1580,7 +1580,8 @@ async fn connect_user(
     // PARADOK is a toggle — client starts with UserParalizado=False,
     // so we send one PARADOK to set it to True if the char is paralyzed.
     if char_data.paralyzed {
-        state.send_bytes(conn_id, &binary_packets::write_paralize_ok()).await;
+        let para_secs = (state.users.get(&conn_id).map(|u| u.counter_paralisis).unwrap_or(0) as f32 * 0.04) as i16;
+        state.send_bytes(conn_id, &binary_packets::write_paralize_ok(para_secs)).await;
     }
 
     // --- PHASE 10c: NAVEG if navigating (VB6 TCP.bas lines 1515-1521, 1654) ---
@@ -3794,7 +3795,7 @@ async fn check_update_needed_user(
                 state.send_bytes(conn_id, &other_cd).await;
                 // If the other player is invisible, tell us not to render them
                 if other_invisible {
-                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true)).await;
+                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true, 0)).await;
                 }
                 // Send our CC + [CD to them
                 state.send_bytes(other_id, &my_cc).await;
@@ -3805,7 +3806,7 @@ async fn check_update_needed_user(
                 state.send_bytes(other_id, &my_cd).await;
                 // If we are invisible, tell them not to render us
                 if my_invisible {
-                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true)).await;
+                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true, 0)).await;
                 }
             }
         } else {
@@ -4103,8 +4104,13 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
     // 8c. Re-send invisible state — CC creates a fresh Character with Invisible=false,
     // so the client loses the pulsing alpha. Send NOVER to restore it.
     // Covers both GM /invisible and spell invisibility.
-    if state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false) {
-        state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true)).await;
+    if let Some(u) = state.users.get(&conn_id) {
+        if u.invisible {
+            let remaining = if u.admin_invisible { 0 } else {
+                ((state.config.intervalo_invisible - u.counter_invisible) as f32 * 0.04) as i16
+            };
+            state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining)).await;
+        }
     }
 
     // 9. PU (position update — tells client where to center camera)

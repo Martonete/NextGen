@@ -843,8 +843,8 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
             user.paralyzed = true;
             user.counter_paralisis = state.config.intervalo_paralizado;
         }
-        let duration_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i32;
-        let pkt = binary_packets::write_paralize_ok();
+        let duration_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
+        let pkt = binary_packets::write_paralize_ok(duration_secs);
         state.send_bytes(target_conn, &pkt).await;
     }
 }

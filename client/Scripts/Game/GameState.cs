@@ -77,6 +77,8 @@ public class GameState
     public bool UserParalyzed;
     public float ParalysisTimer;    // Countdown in seconds from server-provided duration
     public float ParalysisMaxTimer; // Max duration for progress bar ratio
+    public int ParalysisCountdown;       // Seconds remaining for paralysis effect
+    public float ParalysisCountdownTimer; // Accumulates deltaMs to tick each second
     public ulong PingSentMs;       // VB6: TimerPing(1) — GetTickCount when /PING sent
     public bool UserNavigating;
     public bool UserMounted;

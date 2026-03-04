@@ -56,7 +56,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             let stayed = check_permanecer_oculto(user);
             if !stayed {
                 // Revealed — broadcast NOVER
-                let pkt = binary_packets::write_set_invisible(char_index.0 as i16, false);
+                let pkt = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
                 state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
                 state.send_msg_id(conn_id, 195, "").await; // Has sido descubierto
             }

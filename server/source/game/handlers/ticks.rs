@@ -1360,7 +1360,7 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // Send PARADOK to users who just got unparalyzed
     for conn_id in unparalyze {
-        let pkt = binary_packets::write_paralize_ok();
+        let pkt = binary_packets::write_paralize_ok(0);
         state.send_bytes(conn_id, &pkt).await;
     }
 
@@ -1390,7 +1390,7 @@ pub async fn tick_intervals(state: &mut GameState) {
             let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
             // Tell self we're visible again
-            let nover = binary_packets::write_set_invisible(ci, false);
+            let nover = binary_packets::write_set_invisible(ci, false, 0);
             state.send_bytes(conn_id, &nover).await;
         }
     }

@@ -1139,7 +1139,7 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             user.hidden = true;
         }
         // Send NOVER to make invisible on all clients in map
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
         state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
         state.send_msg_id(conn_id, 808, "").await; // "Te has ocultado."
         // Skill gain

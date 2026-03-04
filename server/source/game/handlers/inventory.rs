@@ -503,7 +503,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     }
                 }
                 // Send PARADOK to toggle paralysis off on client
-                let pkt_para = binary_packets::write_paralize_ok();
+                let pkt_para = binary_packets::write_paralize_ok(0);
                 state.send_bytes(conn_id, &pkt_para).await;
                 send_inventory_slot(state, conn_id, idx).await;
                 send_stats_hp(state, conn_id).await;
@@ -643,7 +643,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.hidden = false;
                 }
-                let pkt_invis = binary_packets::write_set_invisible(char_index_val as i16, false);
+                let pkt_invis = binary_packets::write_set_invisible(char_index_val as i16, false, 0);
                 state.send_data_bytes(SendTarget::ToMap(map_for_nover), &pkt_invis).await;
             }
 
