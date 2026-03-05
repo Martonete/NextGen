@@ -96,7 +96,12 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Capa 2", 4);
         _viewMenu.AddCheckItem("Capa 3", 5);
         _viewMenu.AddCheckItem("Capa 4", 6);
-        for (int i = 0; i <= 6; i++) _viewMenu.SetItemChecked(i, true);
+        // Set all check items to checked (use GetItemIndex to handle separator offset)
+        for (int id = 0; id <= 6; id++)
+        {
+            int idx = _viewMenu.GetItemIndex(id);
+            if (idx >= 0) _viewMenu.SetItemChecked(idx, true);
+        }
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
 
@@ -328,12 +333,23 @@ public partial class EditorMain : Control
 
         _mapDir = mapsDir;
 
-        // Prefer server maps dir (has .inf/.dat with NPCs/objects/exits)
-        string serverMapsDir = Path.GetFullPath(Path.Combine(dataPath, "..", "server", "maps"));
-        if (Directory.Exists(serverMapsDir))
+        // Find server directory (try ../server and ../../server relative to dataPath)
+        string serverDir = "";
+        foreach (var rel in new[] { "..", "../.." })
         {
-            _mapDir = serverMapsDir;
-            GD.Print($"[Editor] Using server maps: {serverMapsDir}");
+            string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
+            if (Directory.Exists(candidate)) { serverDir = candidate; break; }
+        }
+
+        // Prefer server maps dir (has .inf/.dat with NPCs/objects/exits)
+        if (serverDir.Length > 0)
+        {
+            string serverMapsDir = Path.Combine(serverDir, "maps");
+            if (Directory.Exists(serverMapsDir))
+            {
+                _mapDir = serverMapsDir;
+                GD.Print($"[Editor] Using server maps: {serverMapsDir}");
+            }
         }
 
         // Load particle definitions
@@ -347,11 +363,15 @@ public partial class EditorMain : Control
         _npcBodyGrhs = GameDataLoader.LoadBodyGrhs(personajesInd);
 
         // Load object and NPC data from server dat/
-        string serverDat = Path.GetFullPath(Path.Combine(dataPath, "..", "server", "dat"));
-        string objDat = Path.Combine(serverDat, "Obj.dat");
-        _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
-        string npcDat = Path.Combine(serverDat, "NPCs.dat");
-        _npcBodies = GameDataLoader.LoadNpcBodies(npcDat);
+        if (serverDir.Length > 0)
+        {
+            string datDir = Path.Combine(serverDir, "dat");
+            string objDat = Path.Combine(datDir, "Obj.dat");
+            _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
+            string npcDat = Path.Combine(datDir, "NPCs.dat");
+            _npcBodies = GameDataLoader.LoadNpcBodies(npcDat);
+            GD.Print($"[Editor] Server data: {datDir}");
+        }
 
         _palette!.Grhs = _grhs;
         _palette.Textures = _textures;
@@ -410,12 +430,19 @@ public partial class EditorMain : Control
             case 6: _state.ShowLayer4 = !_state.ShowLayer4; break;
         }
 
-        // Toggle the checkbox visual to match state
+        // Sync checkbox to actual state
         if (_viewMenu != null)
         {
+            bool val = id switch
+            {
+                0 => _state.ShowGrid, 1 => _state.ShowBlocked, 2 => _state.ShowExits,
+                3 => _state.ShowLayer1, 4 => _state.ShowLayer2,
+                5 => _state.ShowLayer3, 6 => _state.ShowLayer4,
+                _ => false
+            };
             int idx = _viewMenu.GetItemIndex((int)id);
             if (idx >= 0)
-                _viewMenu.SetItemChecked(idx, !_viewMenu.IsItemChecked(idx));
+                _viewMenu.SetItemChecked(idx, val);
         }
 
         _viewport?.QueueRedraw();
@@ -615,6 +642,18 @@ public partial class EditorMain : Control
         {
             _viewport.Map = _map;
             _viewport.QueueRedraw();
+
+            // Center view on map middle
+            if (_map != null)
+            {
+                float mapCenterX = (_map.Width / 2f + 1) * 32;
+                float mapCenterY = (_map.Height / 2f + 1) * 32;
+                float vpW = _viewport.Size.X > 0 ? _viewport.Size.X : 800;
+                float vpH = _viewport.Size.Y > 0 ? _viewport.Size.Y : 600;
+                _state.CameraOffset = new Vector2(
+                    vpW / 2f - mapCenterX * _state.Zoom,
+                    vpH / 2f - mapCenterY * _state.Zoom);
+            }
         }
         if (_propsPanel != null)
             _propsPanel.Map = _map;
