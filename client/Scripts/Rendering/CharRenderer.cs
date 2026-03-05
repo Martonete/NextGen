@@ -502,17 +502,44 @@ public static class CharRenderer
         GameData data)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle);
+
+        // Compute mirrorAdj matching DrawReflection so aura aligns with body
+        float mirrorAdj = 0f;
+        if (ch.Mounted)
+        {
+            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+            {
+                var body = data.Bodies[ch.Body];
+                int heading = ch.Heading >= 1 && ch.Heading <= 4 ? ch.Heading : 3;
+                int bodyGrh = body.Walk[heading];
+                if (bodyGrh > 0)
+                {
+                    var resolved = data.ResolveGrh(bodyGrh, 0);
+                    if (resolved != null && resolved.PixelHeight > TileSize)
+                        mirrorAdj = -((resolved.PixelHeight - TileSize) * 0.15f);
+                }
+            }
+        }
+        else if (ch.Head <= 0)
+            mirrorAdj = -2f;
+        else
+        {
+            float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
+            if (absHo >= 28f) mirrorAdj = -2f;
+        }
+        float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
+
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA, mirrorY);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW, mirrorY);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE, mirrorY);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR, mirrorY);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC, mirrorY);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle, mirrorY);
     }
 
     private static void CollectSingleReflAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
-        GameData data, int auraIndex, float angle)
+        GameData data, int auraIndex, float angle, float mirrorY)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
         var aura = data.Auras[auraIndex];
@@ -531,13 +558,13 @@ public static class CharRenderer
             }
         }
 
-        // Pass the BASE aura position (WITHOUT Offset) + mirrorY.
-        // Offset is excluded from the mirror so wings stay at the same relative
-        // depth as non-offset auras — otherwise the mirror reverses the Offset
-        // direction, pushing wings too far from the reflected body.
-        float mirrorY = pos.Y + TileSize - 2f;
+        // Pass the NORMAL aura position (with Offset) + mirrorAdj-adjusted mirrorY.
+        // The DrawSetTransform mirror naturally reverses the Offset direction:
+        //   Offset=0  → closest to reflected body
+        //   Offset=30 → further from reflected body
+        // mirrorAdj ensures the aura's mirror line matches the body's.
         float auraX = pos.X + headOffset.X;
-        float auraY = pos.Y + headOffset.Y + 72; // no Offset — only base position gets mirrored
+        float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.30f);
 
         worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
