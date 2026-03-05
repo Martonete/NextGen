@@ -100,6 +100,7 @@ public partial class EditorMain : Control
         var split = new HSplitContainer();
         split.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         split.SizeFlagsVertical = SizeFlags.ExpandFill;
+        split.SplitOffset = 240;
         mainVBox.AddChild(split);
 
         // Left: Tile palette (fixed width)

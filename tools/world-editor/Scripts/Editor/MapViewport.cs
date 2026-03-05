@@ -46,25 +46,17 @@ public partial class MapViewport : Control
         DrawRect(new Rect2(Vector2.Zero, Size), new Color(0.1f, 0.1f, 0.12f, 1f));
 
         if (_debugCounter++ % 120 == 0)
-        {
-            GD.Print($"[MapViewport] _Draw Size={Size} Map={Map != null} Grhs={Grhs != null} Tex={Textures != null} State={State != null}");
-            if (Map != null && Grhs != null)
-                GD.Print($"[MapViewport] MapW={Map.Width} MapH={Map.Height} GrhCount={Grhs.Length} Zoom={State?.Zoom} Cam={State?.CameraOffset}");
-        }
+            GD.Print($"[MapViewport] Size={Size} Map={Map != null} Grhs={Grhs != null} Tex={Textures != null}");
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
+        // Just draw ALL tiles — no culling. 100x100 = 10k tiles is fine for an editor.
         int mapW = Map.Width;
         int mapH = Map.Height;
-
-        // Calculate visible tile range for culling
-        var viewSize = Size;
-        int startX = Math.Max(1, (int)(-State.CameraOffset.X / (TileSize * State.Zoom)));
-        int startY = Math.Max(1, (int)(-State.CameraOffset.Y / (TileSize * State.Zoom)));
-        int endX = Math.Min(mapW, startX + (int)(viewSize.X / (TileSize * State.Zoom)) + 3);
-        int endY = Math.Min(mapH, startY + (int)(viewSize.Y / (TileSize * State.Zoom)) + 3);
+        int startX = 1, startY = 1;
+        int endX = mapW, endY = mapH;
 
         // Layer 1 - Ground terrain
         if (State.ShowLayer1)
