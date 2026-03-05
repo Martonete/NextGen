@@ -17,6 +17,9 @@ public partial class EditorMain : Control
     private TextureCatalog? _catalog;
     private MapData? _map;
     private ParticleEngine? _particles;
+    private int[]? _objGrhs;     // ObjIndex → GrhIndex
+    private int[]? _npcBodyGrhs; // BodyIndex → south-walk GrhIndex
+    private int[]? _npcBodies;   // NpcIndex → BodyIndex
     private string _dataPath = "";
     private string _mapDir = "";
 
@@ -38,6 +41,7 @@ public partial class EditorMain : Control
     private Label? _layerLabel;
     private Label? _toolLabel;
     private HBoxContainer? _statusBar;
+    private PopupMenu? _viewMenu;
 
     // Map properties dialog
     private AcceptDialog? _mapPropsDialog;
@@ -83,18 +87,18 @@ public partial class EditorMain : Control
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
-        var viewMenu = new PopupMenu { Name = "Ver" };
-        viewMenu.AddCheckItem("Grilla (G)", 0);
-        viewMenu.AddCheckItem("Bloqueados", 1);
-        viewMenu.AddCheckItem("Salidas", 2);
-        viewMenu.AddSeparator();
-        viewMenu.AddCheckItem("Capa 1", 3);
-        viewMenu.AddCheckItem("Capa 2", 4);
-        viewMenu.AddCheckItem("Capa 3", 5);
-        viewMenu.AddCheckItem("Capa 4", 6);
-        for (int i = 0; i <= 6; i++) viewMenu.SetItemChecked(i, true);
-        viewMenu.IdPressed += OnViewMenuId;
-        _menuBar.AddChild(viewMenu);
+        _viewMenu = new PopupMenu { Name = "Ver" };
+        _viewMenu.AddCheckItem("Grilla (G)", 0);
+        _viewMenu.AddCheckItem("Bloqueados", 1);
+        _viewMenu.AddCheckItem("Salidas", 2);
+        _viewMenu.AddSeparator();
+        _viewMenu.AddCheckItem("Capa 1", 3);
+        _viewMenu.AddCheckItem("Capa 2", 4);
+        _viewMenu.AddCheckItem("Capa 3", 5);
+        _viewMenu.AddCheckItem("Capa 4", 6);
+        for (int i = 0; i <= 6; i++) _viewMenu.SetItemChecked(i, true);
+        _viewMenu.IdPressed += OnViewMenuId;
+        _menuBar.AddChild(_viewMenu);
 
         AddChild(_menuBar);
 
@@ -338,6 +342,17 @@ public partial class EditorMain : Control
         if (File.Exists(particlesIni))
             _particles.LoadDefinitions(particlesIni);
 
+        // Load body animations (for NPC preview)
+        string personajesInd = Path.Combine(dataPath, "INIT", "Personajes.ind");
+        _npcBodyGrhs = GameDataLoader.LoadBodyGrhs(personajesInd);
+
+        // Load object and NPC data from server dat/
+        string serverDat = Path.GetFullPath(Path.Combine(dataPath, "..", "server", "dat"));
+        string objDat = Path.Combine(serverDat, "Obj.dat");
+        _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
+        string npcDat = Path.Combine(serverDat, "NPCs.dat");
+        _npcBodies = GameDataLoader.LoadNpcBodies(npcDat);
+
         _palette!.Grhs = _grhs;
         _palette.Textures = _textures;
         _palette.Catalog = _catalog;
@@ -346,6 +361,9 @@ public partial class EditorMain : Control
         _viewport!.Grhs = _grhs;
         _viewport.Textures = _textures;
         _viewport.Particles = _particles;
+        _viewport.ObjGrhs = _objGrhs;
+        _viewport.NpcBodies = _npcBodies;
+        _viewport.NpcBodyGrhs = _npcBodyGrhs;
 
         CreateNewMap(1);
     }
@@ -391,6 +409,15 @@ public partial class EditorMain : Control
             case 5: _state.ShowLayer3 = !_state.ShowLayer3; break;
             case 6: _state.ShowLayer4 = !_state.ShowLayer4; break;
         }
+
+        // Toggle the checkbox visual to match state
+        if (_viewMenu != null)
+        {
+            int idx = _viewMenu.GetItemIndex((int)id);
+            if (idx >= 0)
+                _viewMenu.SetItemChecked(idx, !_viewMenu.IsItemChecked(idx));
+        }
+
         _viewport?.QueueRedraw();
     }
 

@@ -19,6 +19,9 @@ public partial class MapViewport : Control
     public EditorState? State;
     public UndoManager? Undo;
     public ParticleEngine? Particles;
+    public int[]? ObjGrhs;      // ObjIndex → GrhIndex
+    public int[]? NpcBodies;    // NpcIndex → BodyIndex
+    public int[]? NpcBodyGrhs;  // BodyIndex → south-walk GrhIndex
 
     // Interaction state
     private bool _isPainting;
@@ -34,7 +37,19 @@ public partial class MapViewport : Control
 
     private readonly System.Collections.Generic.HashSet<long> _paintedThisStroke = new();
 
-    public override void _Ready() { }
+    // Additive blend child for particles
+    private ParticleOverlay? _particleOverlay;
+
+    public override void _Ready()
+    {
+        _particleOverlay = new ParticleOverlay { Viewport = this };
+        _particleOverlay.Material = new CanvasItemMaterial
+        {
+            BlendMode = CanvasItemMaterial.BlendModeEnum.Add
+        };
+        _particleOverlay.ZIndex = 1;
+        AddChild(_particleOverlay);
+    }
 
     public override void _Draw()
     {
@@ -74,6 +89,34 @@ public partial class MapViewport : Control
                         DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true);
         }
 
+        // ─── Objects on map (drawn as their GRH sprite, centered) ───
+        if (ObjGrhs != null)
+        {
+            for (int y = 1; y <= mapH; y++)
+                for (int x = 1; x <= mapW; x++)
+                {
+                    int objIdx = Map.Tiles[x, y].ObjIndex;
+                    if (objIdx > 0 && objIdx < ObjGrhs.Length && ObjGrhs[objIdx] > 0)
+                        DrawTileGrh(ObjGrhs[objIdx], x, y, center: true);
+                }
+        }
+
+        // ─── NPCs on map (drawn as south-facing body sprite, centered) ───
+        if (NpcBodies != null && NpcBodyGrhs != null)
+        {
+            for (int y = 1; y <= mapH; y++)
+                for (int x = 1; x <= mapW; x++)
+                {
+                    int npcIdx = Map.Tiles[x, y].NpcIndex;
+                    if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) continue;
+                    int bodyIdx = NpcBodies[npcIdx];
+                    if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) continue;
+                    int grhIdx = NpcBodyGrhs[bodyIdx];
+                    if (grhIdx > 0)
+                        DrawTileGrh(grhIdx, x, y, center: true);
+                }
+        }
+
         // ─── Layer 4: Roof (centered, bottom-anchored, semi-transparent) ───
         if (State.ShowLayer4)
         {
@@ -84,13 +127,13 @@ public partial class MapViewport : Control
                             modulate: new Color(1, 1, 1, 0.7f));
         }
 
-        // ─── Particles (live simulation) ───
-        DrawParticles();
-
         // ─── Overlays ───
         DrawOverlays(mapW, mapH);
 
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+
+        // Trigger additive particle layer redraw
+        _particleOverlay?.QueueRedraw();
     }
 
     private void DrawOverlays(int mapW, int mapH)
@@ -314,18 +357,19 @@ public partial class MapViewport : Control
     }
 
     /// <summary>
-    /// Draw all active particle sprites from the ParticleEngine simulation.
-    /// Each particle is a GRH sprite drawn at tile position + particle offset, with color modulate.
+    /// Draw all active particle sprites with additive blend.
+    /// Called by ParticleOverlay._Draw() on its own canvas (which has additive material).
     /// </summary>
-    private void DrawParticles()
+    public void DrawParticlesOn(CanvasItem canvas)
     {
-        if (Particles == null || Grhs == null || Textures == null) return;
+        if (Particles == null || Grhs == null || Textures == null || State == null) return;
+
+        canvas.DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
         foreach (var stream in Particles.Streams)
         {
             if (!stream.Active) continue;
 
-            // Stream origin = tile position in pixels
             float streamX = stream.MapX * TileSize + TileSize / 2f;
             float streamY = stream.MapY * TileSize + TileSize / 2f;
 
@@ -336,7 +380,6 @@ public partial class MapViewport : Control
 
                 var grh = Grhs[p.GrhIndex];
 
-                // Resolve animation to first frame
                 if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
                 {
                     int frameIdx = grh.Frames[0];
@@ -350,16 +393,15 @@ public partial class MapViewport : Control
                 if (texture == null) continue;
 
                 var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-
-                // Center sprite on particle position
                 float drawX = streamX + p.X - grh.PixelWidth / 2f;
                 float drawY = streamY + p.Y - grh.PixelHeight / 2f;
-
                 var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
                 var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                DrawTextureRectRegion(texture, destRect, srcRect, color);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }
+
+        canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
 
     #region Input Handling
@@ -704,4 +746,17 @@ public partial class MapViewport : Control
     }
 
     #endregion
+}
+
+/// <summary>
+/// Child Control with additive blend material for rendering particles.
+/// </summary>
+public partial class ParticleOverlay : Control
+{
+    public MapViewport? Viewport;
+
+    public override void _Draw()
+    {
+        Viewport?.DrawParticlesOn(this);
+    }
 }
