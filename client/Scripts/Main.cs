@@ -3509,14 +3509,39 @@ public partial class Main : Control
             // Load minimap image
             LoadMinimap(_state.CurrentMap);
 
-            // VB6: AgregarParticulasyLuces(MapNum) — add hardcoded map decorations
-            MapEffects.AddParticlesAndLights(_state.CurrentMap, _state);
+            // Load particles and lights embedded in tile data (byFlags bits 5/6)
+            LoadTileParticlesAndLights(_state);
 
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
+        }
+    }
+
+    private void LoadTileParticlesAndLights(GameState state)
+    {
+        if (state.MapData == null) return;
+        var map = state.MapData;
+        for (int y = 1; y <= 100; y++)
+        {
+            for (int x = 1; x <= 100; x++)
+            {
+                ref var tile = ref map.Tiles[x, y];
+                if (tile.ParticleGroup > 0)
+                    ParticleSystem.CreateMapStream(state, tile.ParticleGroup, x, y);
+                if (tile.LightRange > 0)
+                {
+                    state.MapLights.Add(new MapLight
+                    {
+                        X = x, Y = y, Range = tile.LightRange,
+                        R = (byte)tile.LightR, G = (byte)tile.LightG, B = (byte)tile.LightB,
+                        Active = true
+                    });
+                    state.LightsDirty = true;
+                }
+            }
         }
     }
 
