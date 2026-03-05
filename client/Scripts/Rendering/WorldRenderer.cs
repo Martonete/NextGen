@@ -871,19 +871,37 @@ public partial class WorldRenderer : Node2D
         bool ignoreTop = tileY > 1 && !IsWater(_state!.MapData, tileX, tileY - 1);
         bool ignoreBottom = tileY < 100 && !IsWater(_state.MapData, tileX, tileY + 1);
 
-        // Sine-based vertex displacement — each vertex gets a unique phase
-        // based on tile position, creating an organic undulating pattern.
-        // Adjacent tiles have related phases so the surface flows smoothly.
-        float tilePhase = (tileX * 0.7f + tileY * 1.1f); // spatial variation
-        float s0 = (float)Math.Sin(_waterPhase + tilePhase) * WaterHeight;
-        float s1 = (float)Math.Sin(_waterPhase + tilePhase + 1.5f) * WaterHeight;
-        float s2 = (float)Math.Sin(_waterPhase + tilePhase + 3.0f) * WaterHeight;
-        float s3 = (float)Math.Sin(_waterPhase + tilePhase + 4.5f) * WaterHeight;
+        // VB6-style checkerboard with sine wave instead of triangle wave.
+        // Key: left and right vertices get OPPOSING signs so the tile tilts/rocks
+        // rather than translating as a block (which causes the "shaking" effect).
+        // The checkerboard pattern ensures adjacent tiles mirror each other.
+        float wave = (float)Math.Sin(_waterPhase) * WaterHeight;
+        float wave2 = (float)Math.Sin(_waterPhase + 1.5f) * WaterHeight; // phase-offset secondary
 
-        float topL = ignoreTop ? 0 : s0;
-        float topR = ignoreTop ? 0 : s1;
-        float botL = ignoreBottom ? 0 : s2;
-        float botR = ignoreBottom ? 0 : s3;
+        float topL = 0, topR = 0, botL = 0, botR = 0;
+        bool xEven = (tileX % 2) == 0;
+        bool yEven = (tileY % 2) == 0;
+
+        if (xEven && yEven)
+        {
+            if (!ignoreTop) { topL = -wave; topR = wave; }
+            if (!ignoreBottom) { botL = -wave2; botR = wave2; }
+        }
+        else if (xEven && !yEven)
+        {
+            if (!ignoreTop) { topL = wave2; topR = -wave2; }
+            if (!ignoreBottom) { botL = wave; botR = -wave; }
+        }
+        else if (!xEven && yEven)
+        {
+            if (!ignoreTop) { topL = wave; topR = -wave; }
+            if (!ignoreBottom) { botL = wave2; botR = -wave2; }
+        }
+        else
+        {
+            if (!ignoreTop) { topL = -wave2; topR = wave2; }
+            if (!ignoreBottom) { botL = -wave; botR = wave; }
+        }
 
         // Pad polygon to prevent gap artifacts between adjacent water tiles
         float pad = WaterHeight;
