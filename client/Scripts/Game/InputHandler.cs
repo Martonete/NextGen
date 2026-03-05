@@ -393,10 +393,9 @@ public class InputHandler
             // Key RELEASE — check for attack key (VB6: Form_KeyUp → BindKeys(1) → SendData "AT")
             var key = keyEvent.Keycode;
             bool isAttackKey = key == _keys.GetKey(GameAction.Attack) || key == Key.Space;
-            // Support both left and right Ctrl for attack
+            // Support both left and right Ctrl for attack (Godot reports both as Key.Ctrl)
             if (!isAttackKey && _keys.GetKey(GameAction.Attack) == Key.Ctrl)
-                isAttackKey = keyEvent.PhysicalKeycode == PhysicalKeycode.CtrlLeft
-                           || keyEvent.PhysicalKeycode == PhysicalKeycode.CtrlRight;
+                isAttackKey = key == Key.Ctrl || keyEvent.PhysicalKeycode == Key.Ctrl;
             if (isAttackKey)
             {
                 if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
