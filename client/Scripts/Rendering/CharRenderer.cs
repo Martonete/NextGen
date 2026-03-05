@@ -531,11 +531,13 @@ public static class CharRenderer
             }
         }
 
-        // Pass the NORMAL aura position (same as CollectSingleAura) + mirrorY.
-        // The renderer handles the Y-flip via DrawSetTransform, same as character body.
+        // Pass the BASE aura position (WITHOUT Offset) + mirrorY.
+        // Offset is excluded from the mirror so wings stay at the same relative
+        // depth as non-offset auras — otherwise the mirror reverses the Offset
+        // direction, pushing wings too far from the reflected body.
         float mirrorY = pos.Y + TileSize - 2f;
         float auraX = pos.X + headOffset.X;
-        float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
+        float auraY = pos.Y + headOffset.Y + 72; // no Offset — only base position gets mirrored
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.36f);
 
         worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
