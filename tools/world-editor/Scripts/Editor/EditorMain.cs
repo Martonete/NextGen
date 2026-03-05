@@ -575,9 +575,9 @@ public partial class EditorMain : Control
         }
 
         // Update status bar coords
-        if (_viewport?.GetParent() is Control viewPanel)
+        if (_viewport != null)
         {
-            var mousePos = viewPanel.GetLocalMousePosition();
+            var mousePos = _viewport.GetLocalMousePosition();
             int tx = (int)((mousePos.X - _state.CameraOffset.X) / _state.Zoom / 32);
             int ty = (int)((mousePos.Y - _state.CameraOffset.Y) / _state.Zoom / 32);
             _coordLabel!.Text = $"({tx}, {ty})";
