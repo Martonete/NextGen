@@ -728,11 +728,11 @@ public static class CharRenderer
         var aura = data.Auras[auraIndex];
         if (aura.GrhIndex <= 0) return;
 
-        // VB6: Giratoria — angle += 0.004 per frame, wraps at 180
+        // VB6: Giratoria — 0.004 rad/frame at ~24fps = ~0.096 rad/sec.
+        // Use absolute time so rotation speed is FPS-independent.
         if (aura.Giratoria)
         {
-            angle += 0.004f;
-            if (angle >= 180f) angle = 0f;
+            angle = (float)(System.Environment.TickCount64 * 0.000096 % 180.0);
         }
 
         // VB6 position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset

@@ -3,7 +3,7 @@
 //! All functions in this module require privilege > USER unless otherwise noted.
 //! They are called from the `handle_slash_command` dispatcher in mod.rs.
 
-use tracing::info;
+use tracing::{info, error};
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, InventorySlot, EquipSlots, privilege_level};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
@@ -483,18 +483,12 @@ pub(super) async fn handle_slash_ban(state: &mut GameState, conn_id: ConnectionI
         .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
         .map(|u| u.conn_id);
 
-    // Set ban flag in charfile
-    let chr_path = state.base_path.join("charfile").join(format!("{}.chr", nick));
-    if chr_path.exists() {
-        // Write Ban=1 to charfile
-        if let Ok(content) = std::fs::read_to_string(&chr_path) {
-            let updated = content.replace("Ban=0", "Ban=1");
-            let _ = std::fs::write(&chr_path, updated);
-        }
-    } else {
+    // Set ban flag in DB
+    if !crate::db::charfile::character_exists(&state.pool, &nick).await {
         state.send_msg_id(conn_id, 440, "").await;
         return;
     }
+    let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, true).await;
 
     // Broadcast ban notification
     state.send_msg_id_to(SendTarget::ToAdmins, 760, &format!("{}@{}", admin_name, nick)).await;
@@ -519,17 +513,12 @@ pub(super) async fn handle_slash_unban(state: &mut GameState, conn_id: Connectio
     }
 
     let nick = target.replace(['\\', '/'], "");
-    let chr_path = state.base_path.join("charfile").join(format!("{}.chr", nick));
-    if !chr_path.exists() {
+    if !crate::db::charfile::character_exists(&state.pool, &nick).await {
         state.send_msg_id(conn_id, 189, &nick.to_string()).await;
         return;
     }
 
-    // Set Ban=0 in charfile
-    if let Ok(content) = std::fs::read_to_string(&chr_path) {
-        let updated = content.replace("Ban=1", "Ban=0");
-        let _ = std::fs::write(&chr_path, updated);
-    }
+    let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, false).await;
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     state.send_msg_id_to(SendTarget::ToAdmins, 762, &format!("{}@{}", admin_name, nick)).await;
@@ -629,23 +618,11 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
         nick.clone() // Fallback: use nick as account name
     };
 
-    // Ban character
-    let chr_path = state.base_path.join("charfile").join(format!("{}.chr", nick));
-    if chr_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&chr_path) {
-            let updated = content.replace("Ban=0", "Ban=1");
-            let _ = std::fs::write(&chr_path, updated);
-        }
-    }
+    // Ban character in DB
+    let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, true).await;
 
-    // Ban account
-    let acc_path = state.base_path.join("Accounts").join(format!("{}.act", account_name));
-    if acc_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&acc_path) {
-            let updated = content.replace("ban=0", "ban=1").replace("Ban=0", "Ban=1");
-            let _ = std::fs::write(&acc_path, updated);
-        }
-    }
+    // Ban account in DB
+    let _ = crate::db::accounts::set_account_banned(&state.pool, &account_name, true, "BANACC").await;
 
     state.send_msg_id_to(SendTarget::ToAdmins, 760, &format!("{}@{}", admin_name, nick)).await;
     state.send_msg_id_to(SendTarget::ToAdmins, 761, &format!("{}@{}", admin_name, account_name)).await;
@@ -663,23 +640,11 @@ pub(super) async fn handle_slash_unbanacc(state: &mut GameState, conn_id: Connec
     let nick = target.replace(['\\', '/'], "");
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
 
-    // Unban character
-    let chr_path = state.base_path.join("charfile").join(format!("{}.chr", nick));
-    if chr_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&chr_path) {
-            let updated = content.replace("Ban=1", "Ban=0");
-            let _ = std::fs::write(&chr_path, updated);
-        }
-    }
+    // Unban character in DB
+    let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, false).await;
 
     // Try unban account (use nick as account name fallback)
-    let acc_path = state.base_path.join("Accounts").join(format!("{}.act", nick));
-    if acc_path.exists() {
-        if let Ok(content) = std::fs::read_to_string(&acc_path) {
-            let updated = content.replace("ban=1", "ban=0").replace("Ban=1", "Ban=0");
-            let _ = std::fs::write(&acc_path, updated);
-        }
-    }
+    let _ = crate::db::accounts::set_account_banned(&state.pool, &nick, false, "").await;
 
     state.send_msg_id_to(SendTarget::ToAdmins, 763, &format!("{}@{}", admin_name, nick)).await;
     state.send_console(conn_id, &format!("Cuenta de {} desbaneada.", nick), font_index::INFO).await;
@@ -833,14 +798,8 @@ pub(super) async fn handle_slash_advertir(state: &mut GameState, conn_id: Connec
             state.send_msg_id(tc, 743, &format!("{}@{}@{}", admin_name, reason, new_warnings)).await;
 
             if new_warnings >= 5 {
-                // Auto-ban
-                let chr_path = state.base_path.join("charfile").join(format!("{}.chr", nick));
-                if chr_path.exists() {
-                    if let Ok(content) = std::fs::read_to_string(&chr_path) {
-                        let updated = content.replace("Ban=0", "Ban=1");
-                        let _ = std::fs::write(&chr_path, updated);
-                    }
-                }
+                // Auto-ban in DB
+                let _ = crate::db::charfile::set_char_banned(&state.pool, &nick, true).await;
                 state.send_msg_id_to(SendTarget::ToAdmins, 744, &nick.to_string()).await;
                 if let Some(w) = state.writers.get_mut(&tc) {
                     w.shutdown().await;
@@ -1759,17 +1718,14 @@ pub(super) async fn handle_slash_noadv(state: &mut GameState, conn_id: Connectio
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => return,
     }
-    // Clear penalties from charfile
-    let base = state.base_path.clone();
-    let charpath = base.join("charfile").join(format!("{}.chr", target));
-    if charpath.exists() {
-        let chr = charpath.to_str().unwrap_or("");
-        let _ = crate::config::write_var(chr, "PENAS", "Cant", "0");
-        state.send_msg_id(conn_id, 441, "").await;
-        info!("[GM] Cleared penalties for {}", target);
-    } else {
-        state.send_msg_id(conn_id, 196, "").await; // User not found
+    let pool = state.pool.clone();
+    if !crate::db::charfile::character_exists(&pool, target).await {
+        state.send_msg_id(conn_id, 196, "").await;
+        return;
     }
+    let _ = crate::db::charfile::clear_penalties(&pool, target).await;
+    state.send_msg_id(conn_id, 441, "").await;
+    info!("[GM] Cleared penalties for {}", target);
 }
 
 /// /LIBERAR <name> — Release player from prison. Requires Semidios+.
@@ -1800,21 +1756,16 @@ pub(super) async fn handle_slash_penas(state: &mut GameState, conn_id: Connectio
         _ => return,
     }
 
-    let base = state.base_path.clone();
-    let charpath = base.join("charfile").join(format!("{}.chr", target));
-    if !charpath.exists() {
+    if !crate::db::charfile::character_exists(&state.pool, target).await {
         state.send_msg_id(conn_id, 196, "").await;
         return;
     }
-    let chr = charpath.to_str().unwrap_or("");
 
-    let cant: i32 = crate::config::get_var(chr, "PENAS", "Cant")
-        .parse().unwrap_or(0);
-    state.send_msg_id(conn_id, 327, &cant.to_string()).await;
+    let penalties = crate::db::charfile::load_penalties(&state.pool, target).await;
+    state.send_msg_id(conn_id, 327, &penalties.len().to_string()).await;
 
-    for i in 1..=cant {
-        let p = crate::config::get_var(chr, "PENAS", &format!("P{}", i));
-        state.send_msg_id(conn_id, 327, &p.to_string()).await;
+    for p in &penalties {
+        state.send_msg_id(conn_id, 327, p).await;
     }
 }
 
@@ -2311,48 +2262,19 @@ pub(super) async fn handle_slash_borrarpj(state: &mut GameState, conn_id: Connec
         close_connection(state, t_conn).await;
     }
 
-    let base = state.base_path.clone();
+    let pool = state.pool.clone();
 
-    // Find the account that owns this character
-    let charpath = base.join("charfile").join(format!("{}.chr", target));
-    if !charpath.exists() {
-        state.send_msg_id(conn_id, 196, "").await;
-        return;
-    }
-    let chr = charpath.to_str().unwrap_or("");
-    let account_name = crate::config::get_var(chr, "CHAR", "Cuenta");
-    if account_name.is_empty() {
+    // Check character exists in DB
+    if !crate::db::charfile::character_exists(&pool, target).await {
         state.send_msg_id(conn_id, 196, "").await;
         return;
     }
 
-    // Remove from account file
-    let acc_path = base.join("Accounts").join(format!("{}.act", account_name));
-    if acc_path.exists() {
-        let act = acc_path.to_str().unwrap_or("");
-        let num_pjs: i32 = crate::config::get_var(act, "PJS", "NumPjs")
-            .parse().unwrap_or(0);
-        let mut found_idx = 0;
-        for i in 1..=num_pjs {
-            let pj = crate::config::get_var(act, "PJS", &format!("PJ{}", i));
-            if pj.to_uppercase() == target_upper {
-                found_idx = i;
-                break;
-            }
-        }
-        if found_idx > 0 {
-            // Shift remaining characters down
-            for i in found_idx..num_pjs {
-                let next_pj = crate::config::get_var(act, "PJS", &format!("PJ{}", i + 1));
-                let _ = crate::config::write_var(act, "PJS", &format!("PJ{}", i), &next_pj);
-            }
-            let _ = crate::config::write_var(act, "PJS", &format!("PJ{}", num_pjs), "");
-            let _ = crate::config::write_var(act, "PJS", "NumPjs", &(num_pjs - 1).to_string());
-        }
+    // Delete character from DB (CASCADE handles inventory, bank, mail, penalties)
+    if let Err(e) = crate::db::charfile::delete_charfile(&pool, target).await {
+        error!("[GM] Failed to delete character {}: {}", target, e);
+        return;
     }
-
-    // Delete charfile
-    let _ = std::fs::remove_file(&charpath);
 
     // Announce
     state.send_msg_id_to(SendTarget::ToAll, 565, &format!("{}@{}", gm_name, target)).await;
@@ -2386,18 +2308,10 @@ pub(super) async fn handle_slash_banhd(state: &mut GameState, conn_id: Connectio
         None => return,
     };
 
-    // Set ban flag in charfile
-    let base = state.base_path.clone();
-    let charpath = base.join("charfile").join(format!("{}.chr", target));
-    if charpath.exists() {
-        let chr = charpath.to_str().unwrap_or("");
-        let _ = crate::config::write_var(chr, "FLAGS", "Ban", "1");
-        // Add penalty
-        let cant: i32 = crate::config::get_var(chr, "PENAS", "Cant")
-            .parse().unwrap_or(0);
-        let _ = crate::config::write_var(chr, "PENAS", "Cant", &(cant + 1).to_string());
-        let _ = crate::config::write_var(chr, "PENAS", &format!("P{}", cant + 1), "Tolerancia 0.");
-    }
+    // Set ban flag in DB
+    let pool = state.pool.clone();
+    let _ = crate::db::charfile::set_char_banned(&pool, target, true).await;
+    let _ = crate::db::charfile::add_penalty(&pool, target, "Tolerancia 0.").await;
 
     // Ban HD serial
     if !target_hd.is_empty() {

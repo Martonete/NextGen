@@ -109,14 +109,6 @@ pub(super) async fn handle_quest_accept(state: &mut GameState, conn_id: Connecti
         user.quest_num = quest_id;
         user.quest_kills = 0;
     }
-
-    // Save to charfile
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
-    crate::config::write_var(chr, "FLAGS", "Questeando", "1").ok();
-    crate::config::write_var(chr, "FLAGS", "UserNumQuest", &quest_id.to_string()).ok();
-    crate::config::write_var(chr, "FLAGS", "MuereQuest", "0").ok();
 }
 
 /// /QUEST — Show quest info (same as IQUEST)
@@ -142,13 +134,6 @@ pub(super) async fn handle_slash_noquest(state: &mut GameState, conn_id: Connect
         user.quest_num = 0;
         user.quest_kills = 0;
     }
-
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
-    crate::config::write_var(chr, "FLAGS", "Questeando", "0").ok();
-    crate::config::write_var(chr, "FLAGS", "UserNumQuest", "0").ok();
-    crate::config::write_var(chr, "FLAGS", "MuereQuest", "0").ok();
 
     state.send_msg_id(conn_id, 305, "").await;
 }
@@ -178,11 +163,6 @@ pub async fn quest_check_npc_kill(state: &mut GameState, killer_conn: Connection
 
     if new_kills >= target {
         quest_complete(state, killer_conn, &char_name, &quest).await;
-    } else {
-        // Save progress
-        let base = state.base_path.clone();
-        let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-        crate::config::write_var(chr_path.to_str().unwrap_or(""), "FLAGS", "MuereQuest", &new_kills.to_string()).ok();
     }
 }
 
@@ -219,10 +199,6 @@ pub async fn quest_check_player_kill(state: &mut GameState, killer_conn: Connect
 
     if new_kills >= target {
         quest_complete(state, killer_conn, &char_name, &quest).await;
-    } else {
-        let base = state.base_path.clone();
-        let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-        crate::config::write_var(chr_path.to_str().unwrap_or(""), "FLAGS", "MuereQuest", &new_kills.to_string()).ok();
     }
 }
 
@@ -301,16 +277,6 @@ pub(super) async fn quest_complete(state: &mut GameState, conn_id: ConnectionId,
 
     // VB6: SendUserGLD
     send_stats_gold(state, conn_id).await;
-
-    // Save charfile
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
-    crate::config::write_var(chr, "FLAGS", "Questeando", "0").ok();
-    crate::config::write_var(chr, "FLAGS", "UserNumQuest", "0").ok();
-    crate::config::write_var(chr, "FLAGS", "MuereQuest", "0").ok();
-    let completed = state.users.get(&conn_id).map(|u| u.quests_completed).unwrap_or(0);
-    crate::config::write_var(chr, "FLAGS", "QuestCompletadas", &completed.to_string()).ok();
 }
 
 // =====================================================================

@@ -18,8 +18,8 @@ namespace TierrasSagradasAO.Game;
 /// Multiple lights: last one written wins (VB6 doesn't do max — the commented
 /// line `If TileLight > LightCalculate` is disabled in the VB6 source).
 ///
-/// Ground tiles (Layer 1) use per-vertex lighting via DrawPolygon for smooth gradients.
-/// Sprites (objects, trees, roofs) use averaged single-color modulation.
+/// For Godot rendering, we average the 4 corners into a single modulate color
+/// since DrawTextureRectRegion doesn't support per-vertex colors.
 /// </summary>
 public class LightSystem
 {
@@ -38,13 +38,13 @@ public class LightSystem
 
         var grid = state.TileLightColors;
 
-        // Bake the map's ambient RGB into vertex colors directly (VB6 base_light).
-        // When lights are active, WorldRenderer sets Modulate = white so vertex
-        // colors are the FINAL look — no double-darkening. Unlit tiles get the
-        // ambient color, lit tiles get bright colors near the light source.
-        float AmbR = state.MapColorR / 255f;
-        float AmbG = state.MapColorG / 255f;
-        float AmbB = state.MapColorB / 255f;
+        // Use the map's ambient RGB — tiles without light sources get this color.
+        // WorldRenderer.Modulate already applies the global tint, so light ambient
+        // should be white (1,1,1) to not double-darken. Light sources lerp from
+        // their color toward this ambient at distance.
+        float AmbR = 1f;
+        float AmbG = 1f;
+        float AmbB = 1f;
         var ambient = new Color(AmbR, AmbG, AmbB, 1f);
 
         // Initialize all tiles to AMBIENT (not black).
@@ -89,19 +89,19 @@ public class LightSystem
 
                     // Corner 1 (NW) → index 1
                     grid[tx, ty, 1] = CalcCorner(lightPxX, lightPxY, tileX, tileY,
-                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB);
 
                     // Corner 3 (NE) → index 3
                     grid[tx, ty, 3] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY,
-                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB);
 
                     // Corner 0 (SW) → index 0
                     grid[tx, ty, 0] = CalcCorner(lightPxX, lightPxY, tileX, tileY + TileSize,
-                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB);
 
                     // Corner 2 (SE) → index 2
                     grid[tx, ty, 2] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY + TileSize,
-                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB);
                 }
             }
         }
@@ -112,28 +112,30 @@ public class LightSystem
     /// If dist > range, return existing value unchanged.
     /// Light center uses (lightX + 16, lightY + 16) — center of the light's tile.
     /// Uses MAX blending: lights can only brighten above existing value.
+    /// Ambient is white (1,1,1) — the global map tint is applied separately
+    /// via WorldRenderer.Modulate, so lights don't double-darken.
     /// </summary>
     private static Color CalcCorner(
         float lightX, float lightY,
         float cornerX, float cornerY,
         int rangePx,
         Color existing,
-        float lightR, float lightG, float lightB,
-        float ambR, float ambG, float ambB)
+        float lightR, float lightG, float lightB)
     {
+        // VB6: XDist = LightX + 16 - XCoord
         float dx = (lightX + 16f) - cornerX;
         float dy = (lightY + 16f) - cornerY;
         float dist = MathF.Sqrt(dx * dx + dy * dy);
 
         if (dist > rangePx)
-            return existing;
+            return existing; // VB6: returns TileLight unchanged
 
         float factor = dist / rangePx;
 
-        // Lerp from LightColor (close) to map ambient (far)
-        float r = lightR + (ambR - lightR) * factor;
-        float g = lightG + (ambG - lightG) * factor;
-        float b = lightB + (ambB - lightB) * factor;
+        // Lerp from LightColor (close) to white ambient (far)
+        float r = lightR + (1f - lightR) * factor;
+        float g = lightG + (1f - lightG) * factor;
+        float b = lightB + (1f - lightB) * factor;
 
         // MAX blending: lights can only brighten, never darken.
         r = Math.Max(existing.R, r);
@@ -145,7 +147,7 @@ public class LightSystem
 
     /// <summary>
     /// Get the average light color for a tile (average of 4 corners).
-    /// Used for sprites/objects where per-vertex isn't practical.
+    /// Used for PASS 3 objects/trees that need per-tile modulate (not covered by GPU shader).
     /// </summary>
     public static Color GetTileLight(GameState state, int x, int y)
     {
@@ -165,22 +167,51 @@ public class LightSystem
     }
 
     /// <summary>
-    /// Get 4 corner light colors for a tile (for per-vertex interpolation).
-    /// VB6 layout: NW(idx 1), NE(idx 3), SE(idx 2), SW(idx 0).
-    /// Returns in screen quad order: TopLeft, TopRight, BottomRight, BottomLeft.
+    /// Build a 101×101 lightmap Image from TileLightColors.
+    /// Each pixel represents a tile corner. GPU bilinear interpolation
+    /// between corner pixels produces smooth per-vertex-equivalent lighting.
+    ///
+    /// Pixel layout:
+    ///   pixel(x, y) = NW corner of tile (x+1, y+1)
+    ///   Right edge (x=100): NE corner of tile (100, y+1)
+    ///   Bottom edge (y=100): SW corner of tile (x+1, 100)
+    ///   Corner (100,100): SE corner of tile (100, 100)
     /// </summary>
-    public static void GetTileLightCorners(GameState state, int x, int y,
-        out Color topLeft, out Color topRight, out Color bottomRight, out Color bottomLeft)
+    public static Image BuildLightmapImage(Color[,,] tileLightColors)
     {
-        if (state.TileLightColors == null || x < 1 || x > MapSize || y < 1 || y > MapSize)
+        const int Size = MapSize + 1; // 101
+        var img = Image.CreateEmpty(Size, Size, false, Image.Format.Rgb8);
+
+        for (int py = 0; py < Size; py++)
         {
-            topLeft = topRight = bottomRight = bottomLeft = Colors.White;
-            return;
+            for (int px = 0; px < Size; px++)
+            {
+                Color c;
+                if (px < MapSize && py < MapSize)
+                {
+                    // NW corner of tile (px+1, py+1) = index 1
+                    c = tileLightColors[px + 1, py + 1, 1];
+                }
+                else if (px == MapSize && py < MapSize)
+                {
+                    // Right edge: NE corner of tile (100, py+1) = index 3
+                    c = tileLightColors[MapSize, py + 1, 3];
+                }
+                else if (px < MapSize && py == MapSize)
+                {
+                    // Bottom edge: SW corner of tile (px+1, 100) = index 0
+                    c = tileLightColors[px + 1, MapSize, 0];
+                }
+                else
+                {
+                    // Corner (100,100): SE corner of tile (100, 100) = index 2
+                    c = tileLightColors[MapSize, MapSize, 2];
+                }
+
+                img.SetPixel(px, py, new Color(c.R, c.G, c.B, 1f));
+            }
         }
 
-        topLeft     = state.TileLightColors[x, y, 1]; // NW
-        topRight    = state.TileLightColors[x, y, 3]; // NE
-        bottomRight = state.TileLightColors[x, y, 2]; // SE
-        bottomLeft  = state.TileLightColors[x, y, 0]; // SW
+        return img;
     }
 }

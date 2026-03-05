@@ -549,6 +549,14 @@ pub struct CharSaveData {
     pub puntos_donacion: i64,
     pub puntos_torneo: i64,
     pub ts_points: i64,
+    pub recompensas_real: i32,
+    pub recompensas_caos: i32,
+    pub reenlistadas: bool,
+    pub questeando: bool,
+    pub quest_num: i32,
+    pub quest_kills: i32,
+    pub quests_completed: i32,
+    pub description: String,
 }
 
 /// Save full character state back to DB (called on disconnect / auto-save).
@@ -584,6 +592,9 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             puntos_donacion = $49, puntos_torneo = $50, ts_points = $51,
             barco_slot = $52,
             montado = $53, levitando = $54, montado_body = $55,
+            recompensas_real = $56, recompensas_caos = $57, reenlistadas = $58,
+            questeando = $59, quest_num = $60, quest_kills = $61, quests_completed = $62,
+            description = $63,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -608,6 +619,9 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(data.puntos_donacion).bind(data.puntos_torneo).bind(data.ts_points)
     .bind(data.barco_slot as i32)
     .bind(data.montado).bind(data.levitando).bind(data.montado_body)
+    .bind(data.recompensas_real).bind(data.recompensas_caos).bind(data.reenlistadas)
+    .bind(data.questeando).bind(data.quest_num).bind(data.quest_kills).bind(data.quests_completed)
+    .bind(&data.description)
     .execute(pool)
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;
@@ -692,6 +706,79 @@ pub async fn update_guild_index(pool: &PgPool, char_name: &str, guild_index: i32
         .await
         .map_err(|e| format!("DB error: {}", e))?;
     Ok(())
+}
+
+/// Set banned flag for a character (online or offline).
+pub async fn set_char_banned(pool: &PgPool, char_name: &str, banned: bool) -> Result<(), String> {
+    sqlx::query("UPDATE characters SET banned = $1 WHERE UPPER(name) = UPPER($2)")
+        .bind(banned)
+        .bind(char_name)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?;
+    Ok(())
+}
+
+/// Add a penalty to a character.
+pub async fn add_penalty(pool: &PgPool, char_name: &str, text: &str) -> Result<(), String> {
+    let char_id = get_char_id(pool, char_name).await?;
+    sqlx::query(
+        "INSERT INTO character_penalties (character_id, penalty_text) VALUES ($1, $2)"
+    )
+    .bind(char_id)
+    .bind(text)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("DB error: {}", e))?;
+    Ok(())
+}
+
+/// Clear all penalties for a character.
+pub async fn clear_penalties(pool: &PgPool, char_name: &str) -> Result<(), String> {
+    let char_id = get_char_id(pool, char_name).await?;
+    sqlx::query("DELETE FROM character_penalties WHERE character_id = $1")
+        .bind(char_id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("DB error: {}", e))?;
+    Ok(())
+}
+
+/// Count penalties for a character.
+pub async fn count_penalties(pool: &PgPool, char_name: &str) -> i32 {
+    let char_id = match get_char_id(pool, char_name).await {
+        Ok(id) => id,
+        Err(_) => return 0,
+    };
+    sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM character_penalties WHERE character_id = $1"
+    )
+    .bind(char_id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0) as i32
+}
+
+/// Remove a character from its account (for /BORRAR command).
+/// This deletes the character record entirely.
+pub async fn remove_char_from_account(pool: &PgPool, char_name: &str) -> Result<(), String> {
+    delete_charfile(pool, char_name).await
+}
+
+/// Load penalties for a character.
+pub async fn load_penalties(pool: &PgPool, char_name: &str) -> Vec<String> {
+    let char_id = match get_char_id(pool, char_name).await {
+        Ok(id) => id,
+        Err(_) => return Vec::new(),
+    };
+    let rows: Vec<(String,)> = sqlx::query_as(
+        "SELECT penalty_text FROM character_penalties WHERE character_id = $1 ORDER BY id"
+    )
+    .bind(char_id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+    rows.into_iter().map(|(t,)| t).collect()
 }
 
 // --- Starter data helpers (same as data/charfile.rs) ---

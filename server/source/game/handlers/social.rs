@@ -69,8 +69,6 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    let base = state.base_path.clone();
-
     if !criminal {
         // Try to join Royal Army
         if crim_killed < 50 {
@@ -81,12 +79,6 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.armada_real = true;
         }
-
-        // Save to charfile
-        let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-        let chr = chr_path.to_str().unwrap_or("");
-        crate::config::write_var(chr, "FACCIONES", "EjercitoReal", "1").ok();
-        crate::config::write_var(chr, "FACCIONES", "rExReal", "1").ok();
 
         // Award initial XP (50000)
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -105,21 +97,9 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
             return;
         }
 
-        // Cannot join chaos if ever received royal XP
-        let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-        let chr = chr_path.to_str().unwrap_or("");
-        let had_royal_xp = crate::config::get_var(chr, "FACCIONES", "rExReal") == "1";
-        if had_royal_xp {
-            state.send_console(conn_id, "No puedes unirte al Caos habiendo sido parte de la Armada.", font_index::INFO).await;
-            return;
-        }
-
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.fuerzas_caos = true;
         }
-
-        crate::config::write_var(chr, "FACCIONES", "EjercitoCaos", "1").ok();
-        crate::config::write_var(chr, "FACCIONES", "rExCaos", "1").ok();
 
         // Award initial XP (50000)
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -231,10 +211,6 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         return;
     }
 
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
-
     if armada {
         let current_tier = rec_real;
         if current_tier >= 4 {
@@ -253,7 +229,6 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.recompensas_real = new_tier;
         }
-        crate::config::write_var(chr, "FACCIONES", "recReal", &new_tier.to_string()).ok();
 
         state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, true)), font_index::GUILD_MSG).await;
     } else {
@@ -273,7 +248,6 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.recompensas_caos = new_tier;
         }
-        crate::config::write_var(chr, "FACCIONES", "recCaos", &new_tier.to_string()).ok();
 
         state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, false)), font_index::GUILD_MSG).await;
     }
@@ -301,19 +275,11 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
         return;
     }
 
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
-
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.armada_real = false;
         user.fuerzas_caos = false;
         user.reenlistadas = true; // Can never re-enlist
     }
-
-    crate::config::write_var(chr, "FACCIONES", "EjercitoReal", "0").ok();
-    crate::config::write_var(chr, "FACCIONES", "EjercitoCaos", "0").ok();
-    crate::config::write_var(chr, "FACCIONES", "Reenlistadas", "1").ok();
 
     state.send_console(conn_id, "Has renunciado a tu faccion.", font_index::INFO).await;
 }
@@ -412,33 +378,24 @@ pub(super) async fn handle_mail_send(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
-    // Load recipient's mail count
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", recipient_name.to_uppercase()));
-    let chr = chr_path.to_str().unwrap_or("");
-    let num_mails: usize = crate::config::get_var(chr, "CORREO", "NUMCORREOS").parse().unwrap_or(0);
-
-    if num_mails >= MAX_MAILS {
-        state.send_msg_id(conn_id, 629, "").await;
-        return;
-    }
-
-    // Add mail to recipient's charfile
-    let new_slot = num_mails + 1;
-    // Current date (VB6: Format(Now, "dd/mm/yyyy hh:nn"))
+    let pool = state.pool.clone();
     let now = chrono_like_date();
-    let mail_content = format!("{}${}${}${}$", sender_name, subject, message, now);
 
-    crate::config::write_var(chr, "CORREO", "NUMCORREOS", &new_slot.to_string()).ok();
-    crate::config::write_var(chr, "CORREO", &format!("CORREONUM{}", new_slot), &mail_content).ok();
-    crate::config::write_var(chr, "CORREO", &format!("NUECORREOS{}", new_slot), "1").ok(); // Mark as new
-
-    // Notify recipient if online
-    if let Some(&target_conn) = state.online_names.get(&recipient_name.to_uppercase()) {
-        state.send_msg_id(target_conn, 631, "").await;
+    match crate::db::mail::send_mail(&pool, recipient_name, &sender_name, subject, message, &now).await {
+        Ok(()) => {
+            // Notify recipient if online
+            if let Some(&target_conn) = state.online_names.get(&recipient_name.to_uppercase()) {
+                state.send_msg_id(target_conn, 631, "").await;
+            }
+            state.send_console(conn_id, &format!("Correo enviado a {}.", recipient_name), font_index::INFO).await;
+        }
+        Err(e) if e.contains("full") => {
+            state.send_msg_id(conn_id, 629, "").await;
+        }
+        Err(_) => {
+            state.send_console(conn_id, "Error al enviar correo.", font_index::INFO).await;
+        }
     }
-
-    state.send_console(conn_id, &format!("Correo enviado a {}.", recipient_name), font_index::INFO).await;
 }
 
 /// CZC — Open/read mail slot.
@@ -452,23 +409,25 @@ pub(super) async fn handle_mail_open(state: &mut GameState, conn_id: ConnectionI
     };
 
     if slot == 0 {
-        // Request mail list
         send_mail_list(state, conn_id, &char_name).await;
         return;
     }
 
-    // Read specific mail
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
+    let pool = state.pool.clone();
+    let char_id = match charfile::get_char_id(&pool, &char_name).await {
+        Ok(id) => id,
+        Err(_) => return,
+    };
 
-    let content = crate::config::get_var(chr, "CORREO", &format!("CORREONUM{}", slot));
-    if content.is_empty() { return; }
+    let mails = crate::db::mail::load_mails(&pool, char_id).await;
+    let idx = slot - 1;
+    if idx >= mails.len() { return; }
 
-    // Mark as read
-    crate::config::write_var(chr, "CORREO", &format!("NUECORREOS{}", slot), "0").ok();
+    let mail = &mails[idx];
+    crate::db::mail::mark_read(&pool, mail.id).await;
 
-    // Send content: ILO<remitente>$<asunto>$<mensaje>$<fecha>$
+    // Send content in VB6 format: sender$subject$message$date$
+    let content = format!("{}${}${}${}$", mail.sender, mail.subject, mail.message, mail.sent_at);
     let pkt = binary_packets::write_mail_content(&content);
     state.send_bytes(conn_id, &pkt).await;
 }
@@ -483,27 +442,18 @@ pub(super) async fn handle_mail_delete(state: &mut GameState, conn_id: Connectio
         _ => return,
     };
 
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
+    let pool = state.pool.clone();
+    let char_id = match charfile::get_char_id(&pool, &char_name).await {
+        Ok(id) => id,
+        Err(_) => return,
+    };
 
-    let num_mails: usize = crate::config::get_var(chr, "CORREO", "NUMCORREOS").parse().unwrap_or(0);
-    if slot == 0 || slot > num_mails { return; }
+    let mails = crate::db::mail::load_mails(&pool, char_id).await;
+    let idx = slot - 1;
+    if slot == 0 || idx >= mails.len() { return; }
 
-    // Shift mails down to compact
-    for i in slot..num_mails {
-        let next = crate::config::get_var(chr, "CORREO", &format!("CORREONUM{}", i + 1));
-        let next_new = crate::config::get_var(chr, "CORREO", &format!("NUECORREOS{}", i + 1));
-        crate::config::write_var(chr, "CORREO", &format!("CORREONUM{}", i), &next).ok();
-        crate::config::write_var(chr, "CORREO", &format!("NUECORREOS{}", i), &next_new).ok();
-    }
+    crate::db::mail::delete_mail(&pool, mails[idx].id).await;
 
-    // Clear last slot and decrement count
-    crate::config::write_var(chr, "CORREO", &format!("CORREONUM{}", num_mails), "").ok();
-    crate::config::write_var(chr, "CORREO", &format!("NUECORREOS{}", num_mails), "0").ok();
-    crate::config::write_var(chr, "CORREO", "NUMCORREOS", &(num_mails - 1).to_string()).ok();
-
-    // Refresh mail list
     send_mail_list(state, conn_id, &char_name).await;
 }
 
@@ -514,21 +464,20 @@ pub(super) async fn handle_mail_extract(state: &mut GameState, conn_id: Connecti
 
 /// Send mail list to player.
 pub(super) async fn send_mail_list(state: &mut GameState, conn_id: ConnectionId, char_name: &str) {
-    let base = state.base_path.clone();
-    let chr_path = base.join("charfile").join(format!("{}.chr", char_name));
-    let chr = chr_path.to_str().unwrap_or("");
+    let pool = state.pool.clone();
+    let char_id = match charfile::get_char_id(&pool, char_name).await {
+        Ok(id) => id,
+        Err(_) => return,
+    };
 
-    let num_mails: usize = crate::config::get_var(chr, "CORREO", "NUMCORREOS").parse().unwrap_or(0);
+    let mails = crate::db::mail::load_mails(&pool, char_id).await;
 
     let mut entries = Vec::new();
-    for i in 1..=MAX_MAILS {
-        if i <= num_mails {
-            let content = crate::config::get_var(chr, "CORREO", &format!("CORREONUM{}", i));
-            let is_new = crate::config::get_var(chr, "CORREO", &format!("NUECORREOS{}", i)) == "1";
-            // Extract sender name (first field before $)
-            let sender = content.split('$').next().unwrap_or("???");
-            let new_tag = if is_new { " (NUEVO)" } else { "" };
-            entries.push(format!("{}{}", sender, new_tag));
+    for i in 0..MAX_MAILS {
+        if i < mails.len() {
+            let mail = &mails[i];
+            let new_tag = if mail.is_new { " (NUEVO)" } else { "" };
+            entries.push(format!("{}{}", mail.sender, new_tag));
         } else {
             entries.push(String::new());
         }
@@ -550,7 +499,7 @@ pub(super) async fn broadcast_friend_connect(state: &mut GameState, conn_id: Con
         _ => return,
     };
 
-    let base = state.base_path.clone();
+    let pool = state.pool.clone();
 
     // Collect all other logged users' conn_ids and account names
     let others: Vec<(ConnectionId, String)> = state.users.iter()
@@ -559,11 +508,9 @@ pub(super) async fn broadcast_friend_connect(state: &mut GameState, conn_id: Con
         .collect();
 
     for (other_conn, account) in others {
-        if is_friend_of_account(&base, &account, &char_name) {
-            // Send KFM notification
+        if crate::db::friends::is_friend_of_account_name(&pool, &account, &char_name).await {
             let kfm = binary_packets::write_friend_online(&char_name);
             state.send_bytes(other_conn, &kfm).await;
-            // Send updated friend list so their ON/OFF status refreshes
             send_friend_list(state, other_conn).await;
         }
     }
@@ -577,7 +524,7 @@ pub async fn broadcast_friend_disconnect(state: &mut GameState, conn_id: Connect
         _ => return,
     };
 
-    let base = state.base_path.clone();
+    let pool = state.pool.clone();
 
     let others: Vec<(ConnectionId, String)> = state.users.iter()
         .filter(|&(&cid, ref u)| cid != conn_id && u.logged)
@@ -585,7 +532,7 @@ pub async fn broadcast_friend_disconnect(state: &mut GameState, conn_id: Connect
         .collect();
 
     for (other_conn, account) in others {
-        if is_friend_of_account(&base, &account, &char_name) {
+        if crate::db::friends::is_friend_of_account_name(&pool, &account, &char_name).await {
             let dfm = binary_packets::write_friend_offline(&char_name);
             state.send_bytes(other_conn, &dfm).await;
             send_friend_list(state, other_conn).await;
@@ -593,26 +540,12 @@ pub async fn broadcast_friend_disconnect(state: &mut GameState, conn_id: Connect
     }
 }
 
-/// Check if `name` is in the friend list of the account file for `account_name`.
-fn is_friend_of_account(base: &std::path::Path, account_name: &str, name: &str) -> bool {
-    let act_path = base.join("Accounts").join(format!("{}.act", account_name));
-    let act = act_path.to_str().unwrap_or("");
-    let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
-    for i in 1..=count {
-        let friend = crate::config::get_var(act, "AMIGOS", &format!("A{}", i));
-        if friend.to_uppercase() == name.to_uppercase() {
-            return true;
-        }
-    }
-    false
-}
-
 /// ADDCON<name> — Add friend.
 pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let friend_name = strip_opcode(data, 6).trim().to_string();
 
-    let account_name = match state.users.get(&conn_id) {
-        Some(u) if u.logged => u.account_name.clone(),
+    let account_id = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.account_id,
         _ => return,
     };
 
@@ -631,7 +564,6 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
     }
 
     // VB6: Can't add GMs
-    // Check if the target character has privileges by loading their charfile
     if let Ok(char_data) = charfile::load_charfile(&state.pool, &friend_name).await {
         if char_data.privileges > 0 {
             let pkt = binary_packets::write_message_box("No podes agregar GM's.");
@@ -640,40 +572,17 @@ pub(super) async fn handle_friend_add(state: &mut GameState, conn_id: Connection
         }
     }
 
-    // Load friend list from account file
-    let base = state.base_path.clone();
-    let accounts_dir = base.join("Accounts");
-    // Ensure Accounts directory exists
-    let _ = std::fs::create_dir_all(&accounts_dir);
-    let act_path = accounts_dir.join(format!("{}.act", account_name));
-    let act = act_path.to_str().unwrap_or("");
-
-    let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
-    if count >= 20 {
-        let pkt = binary_packets::write_message_box("Lista de amigos llena, solo puedes agregar 20.");
-        state.send_bytes(conn_id, &pkt).await;
-        return;
-    }
-
-    // Check not duplicate
-    for i in 1..=count {
-        let existing = crate::config::get_var(act, "AMIGOS", &format!("A{}", i));
-        if existing.to_uppercase() == friend_name.to_uppercase() {
-            let pkt = binary_packets::write_message_box("El usuario ya esta en tu lista de amigos.");
+    let pool = state.pool.clone();
+    match crate::db::friends::add_friend(&pool, account_id, &friend_name).await {
+        Ok(()) => {
+            send_friend_list(state, conn_id).await;
+            state.send_console(conn_id, &format!("{} agregado a tu lista de amigos.", friend_name), font_index::INFO).await;
+        }
+        Err(msg) => {
+            let pkt = binary_packets::write_message_box(&msg);
             state.send_bytes(conn_id, &pkt).await;
-            return;
         }
     }
-
-    // Add friend
-    let new_count = count + 1;
-    crate::config::write_var(act, "AMIGOS", "CANT", &new_count.to_string()).ok();
-    crate::config::write_var(act, "AMIGOS", &format!("A{}", new_count), &friend_name).ok();
-
-    // Send updated list
-    send_friend_list(state, conn_id).await;
-
-    state.send_console(conn_id, &format!("{} agregado a tu lista de amigos.", friend_name), font_index::INFO).await;
 }
 
 /// BORRAC<index> — Remove friend by slot.
@@ -681,27 +590,13 @@ pub(super) async fn handle_friend_remove(state: &mut GameState, conn_id: Connect
     let payload = strip_opcode(data, 6);
     let slot: usize = payload.trim().parse().unwrap_or(0);
 
-    let account_name = match state.users.get(&conn_id) {
-        Some(u) if u.logged => u.account_name.clone(),
+    let account_id = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.account_id,
         _ => return,
     };
 
-    let base = state.base_path.clone();
-    let accounts_dir = base.join("Accounts");
-    let _ = std::fs::create_dir_all(&accounts_dir);
-    let act_path = accounts_dir.join(format!("{}.act", account_name));
-    let act = act_path.to_str().unwrap_or("");
-
-    let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
-    if slot == 0 || slot > count { return; }
-
-    // Shift friends down
-    for i in slot..count {
-        let next = crate::config::get_var(act, "AMIGOS", &format!("A{}", i + 1));
-        crate::config::write_var(act, "AMIGOS", &format!("A{}", i), &next).ok();
-    }
-    crate::config::write_var(act, "AMIGOS", &format!("A{}", count), "").ok();
-    crate::config::write_var(act, "AMIGOS", "CANT", &(count - 1).to_string()).ok();
+    let pool = state.pool.clone();
+    let _ = crate::db::friends::remove_friend(&pool, account_id, slot).await;
 
     send_friend_list(state, conn_id).await;
 }
@@ -709,27 +604,21 @@ pub(super) async fn handle_friend_remove(state: &mut GameState, conn_id: Connect
 /// Send friend list to player (VB6 SendFriendList in modGuilds.bas).
 /// Format: LDM<count>,name1(ON),name2(OFF),...
 pub(super) async fn send_friend_list(state: &mut GameState, conn_id: ConnectionId) {
-    let account_name = match state.users.get(&conn_id) {
-        Some(u) if u.logged => u.account_name.clone(),
+    let account_id = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.account_id,
         _ => return,
     };
 
-    let base = state.base_path.clone();
-    let accounts_dir = base.join("Accounts");
-    let _ = std::fs::create_dir_all(&accounts_dir);
-    let act_path = accounts_dir.join(format!("{}.act", account_name));
-    let act = act_path.to_str().unwrap_or("");
-
-    let count: usize = crate::config::get_var(act, "AMIGOS", "CANT").parse().unwrap_or(0);
+    let pool = state.pool.clone();
+    let friends = crate::db::friends::load_friends(&pool, account_id).await;
+    let count = friends.len();
 
     // Build VB6 format: "count,name1(ON),name2(OFF),"
     let mut result = format!("{},", count);
-    for i in 1..=count {
-        let friend_name = crate::config::get_var(act, "AMIGOS", &format!("A{}", i));
+    for friend_name in &friends {
         if friend_name.is_empty() || friend_name.to_uppercase() == "(NADIE)" {
             result.push_str("(NADIE)(OFF),");
         } else {
-            // Check if friend is online
             let is_online = state.users.values()
                 .any(|u| u.logged && u.char_name.to_uppercase() == friend_name.to_uppercase());
             if is_online {

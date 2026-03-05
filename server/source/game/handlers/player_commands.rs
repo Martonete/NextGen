@@ -34,10 +34,9 @@ pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: Connection
         return;
     }
 
-    let base = state.base_path.clone();
-    let charpath = base.join("charfile").join(format!("{}.chr", name));
-    let chr = charpath.to_str().unwrap_or("");
-    let _ = crate::config::write_var(chr, "CHAR", "Desc", desc);
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.desc = desc.to_string();
+    }
 
     state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO).await;
 }
@@ -59,6 +58,10 @@ pub(super) async fn handle_slash_comerciar(state: &mut GameState, conn_id: Conne
     }
     if target_user == 0 {
         state.send_console(conn_id, "Primero selecciona un jugador.", font_index::INFO).await;
+        return;
+    }
+    if target_user == conn_id {
+        state.send_console(conn_id, "No puedes comerciar contigo mismo.", font_index::INFO).await;
         return;
     }
 
@@ -282,15 +285,10 @@ pub(super) async fn handle_slash_nick_check(state: &mut GameState, conn_id: Conn
 
     if let Some(&_t_conn) = state.online_names.get(&target_upper) {
         state.send_console(conn_id, &format!("{} esta ONLINE.", name), font_index::INFO).await;
+    } else if charfile::character_exists(&state.pool, name).await {
+        state.send_console(conn_id, &format!("{} existe pero esta OFFLINE.", name), font_index::INFO).await;
     } else {
-        // Check if charfile exists
-        let base = state.base_path.clone();
-        let charpath = base.join("charfile").join(format!("{}.chr", name));
-        if charpath.exists() {
-            state.send_console(conn_id, &format!("{} existe pero esta OFFLINE.", name), font_index::INFO).await;
-        } else {
-            state.send_console(conn_id, &format!("{} no existe.", name), font_index::INFO).await;
-        }
+        state.send_console(conn_id, &format!("{} no existe.", name), font_index::INFO).await;
     }
 }
 
@@ -301,20 +299,16 @@ pub(super) async fn handle_slash_advertencias(state: &mut GameState, conn_id: Co
         _ => return,
     };
 
-    let base = state.base_path.clone();
-    let charpath = base.join("charfile").join(format!("{}.chr", name));
-    let chr = charpath.to_str().unwrap_or("");
-
-    let cant: i32 = crate::config::get_var(chr, "PENAS", "Cant").parse().unwrap_or(0);
-    if cant == 0 {
+    let pool = state.pool.clone();
+    let penalties = charfile::load_penalties(&pool, &name).await;
+    if penalties.is_empty() {
         state.send_console(conn_id, "No tenes advertencias.", font_index::INFO).await;
         return;
     }
 
-    state.send_console(conn_id, &format!("Tenes {} advertencias:", cant), font_index::INFO).await;
-    for i in 1..=cant {
-        let p = crate::config::get_var(chr, "PENAS", &format!("P{}", i));
-        state.send_console(conn_id, &format!("{}: {}", i, p), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Tenes {} advertencias:", penalties.len()), font_index::INFO).await;
+    for (i, p) in penalties.iter().enumerate() {
+        state.send_console(conn_id, &format!("{}: {}", i + 1, p), font_index::INFO).await;
     }
 }
 

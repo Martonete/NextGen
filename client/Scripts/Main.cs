@@ -17,10 +17,6 @@ public partial class Main : Control
 
     private readonly GameData _gameData = new();
     private readonly GameState _state = new();
-
-    // UI fonts loaded from Data/Fonts/
-    private static Font? _uiFont;
-    private static Font? _uiFontBold;
     private AoTcpClient? _tcp;
     private PacketHandler? _packetHandler;
     private InputHandler? _inputHandler;
@@ -226,9 +222,6 @@ public partial class Main : Control
         // Load key bindings (Teclas.tsao)
         _state.Keys = KeyBindings.Load(dataPath);
 
-        // Load UI fonts from filesystem
-        LoadUIFonts(dataPath);
-
         if (!_gameData.IsLoaded)
         {
             GD.PrintErr("[MAIN] Failed to load game data — aborting");
@@ -286,14 +279,9 @@ public partial class Main : Control
         consoleStyle.ContentMarginTop = 1;
         consoleStyle.ContentMarginBottom = 6;
         _console.AddThemeStyleboxOverride("normal", consoleStyle);
-        ApplyFont(_console, bold: true);
-        _console.AddThemeFontSizeOverride("normal_font_size", 9);
-        _console.AddThemeFontSizeOverride("bold_font_size", 9);
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
         _chatInput.MaxLength = 160; // VB6: frmMain.frm txtChat MaxLength=160
-        ApplyFont(_chatInput);
-        _chatInput.AddThemeFontSizeOverride("font_size", 9);
         // Dark background + thin border — sits below the game viewport, no overlap
         var chatBox = new StyleBoxFlat();
         chatBox.BgColor = new Color(0, 0, 0, 0.85f);
@@ -311,24 +299,24 @@ public partial class Main : Control
         _expLabel = GetNode<Label>("GameUI/ExpLabel");
 
         // VB6 frmMain.frm exact fonts per label:
-        // GldLbl: VB6 Arial 8.25pt Bold = ~11px
+        // GldLbl: Tahoma 6pt Bold, ForeColor &H0080FFFF& = RGB(255,255,128) light yellow
         ApplyFont(_goldLabel, "Tahoma", 700);
-        _goldLabel.AddThemeFontSizeOverride("font_size", 9);
+        _goldLabel.AddThemeFontSizeOverride("font_size", 8);
         _goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
-        // LvlLbl: VB6 Arial 8.25pt Bold = ~11px
-        ApplyFont(_levelLabel, "Tahoma", 700);
+        // LvlLbl: Cambria 8.25pt Bold, White
+        ApplyFont(_levelLabel, "Cambria", 700);
 
-        // NameLabel: VB6 Arial 8.25pt Bold
+        // NameLabel: (not in VB6 form as label — keep current Tahoma Bold)
         ApplyFont(_nameLabel, "Tahoma", 700);
 
-        // ONLINES: VB6 Arial 8.25pt Bold = ~11px (kept smaller to fit)
+        // ONLINES: Tahoma 6pt Bold, White
         ApplyFont(_onlineLabel, "Tahoma", 700);
-        _onlineLabel.AddThemeFontSizeOverride("font_size", 8);
+        _onlineLabel.AddThemeFontSizeOverride("font_size", 7);
 
-        // Coord: VB6 Arial 8.25pt Bold = ~11px
+        // Coord: Tahoma 5.25pt Bold, White
         ApplyFont(_coordsLabel, "Tahoma", 700);
-        _coordsLabel.AddThemeFontSizeOverride("font_size", 11);
+        _coordsLabel.AddThemeFontSizeOverride("font_size", 9);
 
         // GM "CASTI GM" button — ColorRect + Label to bypass Button min height.
         _btnCastiGM = new Control();
@@ -347,7 +335,6 @@ public partial class Main : Control
         castiLabel.VerticalAlignment = VerticalAlignment.Center;
         castiLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
         castiLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        ApplyFont(castiLabel);
         castiLabel.AddThemeFontSizeOverride("font_size", 7);
         castiLabel.AddThemeColorOverride("font_color", Colors.White);
         castiLabel.ClipContents = true;
@@ -458,37 +445,36 @@ public partial class Main : Control
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
-        // === Bottom bar stat labels (VB6: Arial 8.25pt Bold = ~11px) ===
-        _armaLabel = CreateStatLabel(112, 556, 57, 15, Colors.White, 11);
+        // === Bottom bar stat labels (VB6: inherited form font Tahoma 8.25 Bold) ===
+        _armaLabel = CreateStatLabel(112, 557, 57, 13, Colors.White, 10);
         _gameUI.AddChild(_armaLabel);
 
-        _defMagLabel = CreateStatLabel(200, 556, 57, 15, Colors.White, 11);
+        _defMagLabel = CreateStatLabel(200, 557, 57, 13, Colors.White, 10);
         _gameUI.AddChild(_defMagLabel);
 
-        _defensaLabel = CreateStatLabel(284, 556, 57, 15, Colors.White, 11);
+        _defensaLabel = CreateStatLabel(284, 557, 57, 13, Colors.White, 10);
         _gameUI.AddChild(_defensaLabel);
 
         // Fuerza: VB6 ForeColor &H0000FF00& = RGB(0,255,0) Green
-        _fuerzaLabel = CreateStatLabel(384, 556, 33, 17, new Color(0, 1, 0), 11);
+        _fuerzaLabel = CreateStatLabel(384, 557, 33, 17, new Color(0, 1, 0), 10);
         _gameUI.AddChild(_fuerzaLabel);
 
         // Agilidad: VB6 ForeColor &H0000FFFF& = RGB(255,255,0) Yellow
-        _agilidadLabel = CreateStatLabel(447, 556, 33, 17, new Color(1f, 1f, 0f), 11);
+        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(1f, 1f, 0f), 10);
         _gameUI.AddChild(_agilidadLabel);
 
         // Reputation: VB6 Cambria 8.25 Normal (Weight=400, NOT bold), White
-        _repLabel = CreateStatLabel(616, 52, 32, 14, Colors.White, 11, "Cambria", 400);
+        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 10, "Cambria", 400);
         _gameUI.AddChild(_repLabel);
 
         // FPS: VB6 Tahoma 6pt Bold, center, White
-        _fpsLabel = CreateStatLabel(37, 576, 37, 10, Colors.White, 8);
+        _fpsLabel = CreateStatLabel(37, 576, 37, 10, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Friends list — VB6: ChatContacts at (396,2,137,88), Tahoma 9, light blue
         _friendsList = new ItemList();
         _friendsList.Position = new Vector2(396, 2);
         _friendsList.Size = new Vector2(137, 88);
-        ApplyFont(_friendsList);
         _friendsList.AddThemeFontSizeOverride("font_size", 9);
         _friendsList.AddThemeColorOverride("font_color", new Color(0.753f, 0.878f, 1f)); // VB6: &H00C0E0FF&
         var friendsBg = new StyleBoxFlat();
@@ -831,62 +817,13 @@ public partial class Main : Control
     /// Uses a SystemFont with weight 700 overriding the theme font.
     /// </summary>
     /// Apply a specific font to a label (VB6 parity: exact font family + weight).
-    private static void LoadUIFonts(string dataPath)
+    private static void ApplyFont(Label label, string fontName = "Tahoma", int weight = 700)
     {
-        string fontsDir = System.IO.Path.Combine(dataPath, "Fonts");
-        string regularPath = System.IO.Path.Combine(fontsDir, "LiberationSans-Regular.ttf");
-        string boldPath = System.IO.Path.Combine(fontsDir, "LiberationSans-Bold.ttf");
-
-        if (System.IO.File.Exists(regularPath))
-        {
-            var fontData = new FontFile();
-            fontData.LoadDynamicFont(regularPath);
-            _uiFont = fontData;
-            GD.Print($"[MAIN] UI font loaded: {regularPath}");
-        }
-        else
-        {
-            GD.PrintErr($"[MAIN] UI font not found: {regularPath}");
-        }
-
-        if (System.IO.File.Exists(boldPath))
-        {
-            var fontData = new FontFile();
-            fontData.LoadDynamicFont(boldPath);
-            _uiFontBold = fontData;
-            GD.Print($"[MAIN] UI bold font loaded: {boldPath}");
-        }
-    }
-
-    /// <summary>
-    /// Apply UI font to a control (label, button, etc.)
-    /// </summary>
-    private static void ApplyFont(Control control, bool bold = true)
-    {
-        var font = bold ? (_uiFontBold ?? _uiFont) : _uiFont;
-        if (font == null) return;
-
-        if (control is Label label)
-            label.AddThemeFontOverride("font", font);
-        else if (control is Button button)
-            button.AddThemeFontOverride("font", font);
-        else if (control is LineEdit lineEdit)
-            lineEdit.AddThemeFontOverride("font", font);
-        else if (control is RichTextLabel rtl)
-        {
-            rtl.AddThemeFontOverride("normal_font", font);
-            var boldFont = _uiFontBold ?? font;
-            rtl.AddThemeFontOverride("bold_font", boldFont);
-        }
-        else if (control is ItemList itemList)
-            itemList.AddThemeFontOverride("font", font);
-    }
-
-    /// <summary>Legacy overload kept for stat labels that specify fontName.</summary>
-    private static void ApplyFont(Label label, string fontName, int weight = 700)
-    {
-        // Use our custom font instead of system font
-        ApplyFont((Control)label, weight >= 600);
+        var font = new SystemFont();
+        font.FontNames = new string[] { fontName };
+        font.FontWeight = weight;
+        font.MultichannelSignedDistanceField = true;
+        label.AddThemeFontOverride("font", font);
     }
 
     private static Label CreateStatLabel(float x, float y, float w, float h, Color color, int fontSize,
@@ -2578,15 +2515,6 @@ public partial class Main : Control
             _state.LoginError = "";
         }
 
-        // Safety: sync panel-open flags with actual visibility.
-        // If a panel flag is stuck true but the panel isn't visible, the user is frozen.
-        if (_state.MacroPanelOpen && _macroPanel != null && !_macroPanel.Visible)
-            _state.MacroPanelOpen = false;
-        if (_state.OptionsPanelOpen && _optionsPanel != null && !_optionsPanel.Visible)
-            _state.OptionsPanelOpen = false;
-        if (_state.KeyBindPanelOpen && _keyBindPanel != null && !_keyBindPanel.Visible)
-            _state.KeyBindPanelOpen = false;
-
         // Show Mensaje dialog (VB6: Mensaje form — ERR, ERO, !! packets)
         if (!string.IsNullOrEmpty(_state.MensajeText))
         {
@@ -2928,9 +2856,9 @@ public partial class Main : Control
         // Map
         _state.CurrentMap = 0;
         _state.MapName = "";
-        _state.MapColorR = 160;
-        _state.MapColorG = 160;
-        _state.MapColorB = 160;
+        _state.MapColorR = 200;
+        _state.MapColorG = 200;
+        _state.MapColorB = 200;
         _state.MapData = null;
         _state.NeedMapLoad = false;
 
@@ -3247,25 +3175,10 @@ public partial class Main : Control
                 return;
             }
 
-            // Allow F9/F10 to toggle their own panels even when a form is open.
-            // Without this, opening a panel blocks F9/F10 from closing it, freezing input.
-            if (key.Keycode == Key.F9 && !_state.ChatActive && _state.MacroPanelOpen)
-            {
-                _macroPanel?.Close();
-                GetViewport().SetInputAsHandled();
-                return;
-            }
-            if (key.Keycode == Key.F10 && !_state.ChatActive && _state.OptionsPanelOpen)
-            {
-                _optionsPanel?.Close();
-                GetViewport().SetInputAsHandled();
-                return;
-            }
-
             // Block game keys when any form is open or a text field has focus.
-            // Escape (above) and F9/F10 toggles (above) are still allowed.
-            // This prevents Enter from toggling chat, and numpad from switching
-            // chat modes while typing in a form input.
+            // Escape (above) is still allowed so panels can be closed.
+            // This prevents Enter from toggling chat, F9/F10 from opening panels,
+            // and numpad from switching chat modes while typing in a form input.
             //
             // IMPORTANT: Do NOT call SetInputAsHandled() when a LineEdit has focus —
             // Godot processes _Input() BEFORE GUI input routing, so consuming the
@@ -3580,7 +3493,7 @@ public partial class Main : Control
             // VB6: AgregarParticulasyLuces(MapNum) — add hardcoded map decorations
             MapEffects.AddParticlesAndLights(_state.CurrentMap, _state);
 
-            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK — particles: {_state.MapParticles.Count}, lights: {_state.MapLights.Count}, particleDefs: {_state.ParticleDefs.Length}");
+            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)
         {

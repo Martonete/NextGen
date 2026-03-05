@@ -298,6 +298,14 @@ async fn main() {
                             puntos_donacion: user.puntos_donacion,
                             puntos_torneo: user.puntos_torneo,
                             ts_points: user.ts_points,
+                            recompensas_real: user.recompensas_real,
+                            recompensas_caos: user.recompensas_caos,
+                            reenlistadas: user.reenlistadas,
+                            questeando: user.questeando,
+                            quest_num: user.quest_num,
+                            quest_kills: user.quest_kills,
+                            quests_completed: user.quests_completed,
+                            description: user.desc.clone(),
                         };
                         let pool = state.pool.clone();
                         match db::charfile::save_charfile(&pool, &name, &save_data).await {
