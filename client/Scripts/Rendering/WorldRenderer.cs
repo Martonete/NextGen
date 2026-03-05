@@ -384,14 +384,15 @@ void fragment() {
         }
 
         // ==========================================
-        // PASS 1: Layer 1 (Ground) — shader handles light, no per-tile modulate needed
+        // PASS 1: Layer 1 — ONLY water tiles. Non-water tiles are drawn once
+        // by NonWaterMaskLayer (PASS 1b), avoiding the double-draw that killed FPS.
         // ==========================================
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
             for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
-                if (tile.Layer1 <= 0) continue;
+                if (tile.Layer1 < 1505 || tile.Layer1 > 1520) continue; // only water
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
                 DrawTileGrh(tile.Layer1, pos, center: false);
@@ -848,14 +849,13 @@ void fragment() {
     }
 
     /// <summary>
-    /// Draw PASS 1b: redraw non-water L1 tiles ADJACENT to water to mask reflection overflow.
-    /// Only redraws tiles in the precomputed water border mask (~20-50 tiles) instead of ALL
-    /// non-water tiles (~300+). Called by NonWaterMaskLayer._Draw().
+    /// Draw PASS 1b: all non-water L1 tiles. PASS 1 only draws water, so this
+    /// is the sole draw for terrain — no double-drawing. Also naturally masks
+    /// any reflection overflow onto land.
     /// </summary>
     public void DrawNonWaterMask(CanvasItem canvas)
     {
         if (_state?.MapData == null || _data == null || _animator == null) return;
-        if (!_frameAnyReflection) return;
 
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
