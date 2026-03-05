@@ -841,12 +841,12 @@ public partial class WorldRenderer : Node2D
         float dx = (float)Math.Round(pos.X);
         float dy = (float)Math.Round(pos.Y);
 
-        // No vertex deformation — wave effect comes purely from texture
-        // frame animation (4 frames with subtle diagonal shifts).
-        _litQuadPoints[0] = new Vector2(dx, dy);
-        _litQuadPoints[1] = new Vector2(dx + pw, dy);
-        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph);
-        _litQuadPoints[3] = new Vector2(dx, dy + ph);
+        // 1px overlap on all edges to prevent subpixel gaps between water tiles.
+        const float pad = 1f;
+        _litQuadPoints[0] = new Vector2(dx - pad, dy - pad);
+        _litQuadPoints[1] = new Vector2(dx + pw + pad, dy - pad);
+        _litQuadPoints[2] = new Vector2(dx + pw + pad, dy + ph + pad);
+        _litQuadPoints[3] = new Vector2(dx - pad, dy + ph + pad);
 
         _litQuadColors[0] = topLeft;
         _litQuadColors[1] = topRight;
