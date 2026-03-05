@@ -157,9 +157,13 @@ public partial class MapViewport : Control
 
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
-        // Trigger additive particle layer redraw
-        if (State.ShowParticles)
-            _particleOverlay?.QueueRedraw();
+        // Trigger additive particle layer redraw (hide when toggled off)
+        if (_particleOverlay != null)
+        {
+            _particleOverlay.Visible = State.ShowParticles;
+            if (State.ShowParticles)
+                _particleOverlay.QueueRedraw();
+        }
     }
 
     private void DrawOverlays(int mapW, int mapH)
