@@ -90,11 +90,55 @@ public partial class WorldRenderer : Node2D
     private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
     private bool _frameHasLights;
 
+    // GPU lightmap shader — samples a 101×101 texture for smooth per-vertex lighting.
+    // Bilinear interpolation between corner pixels eliminates visible tile edges.
+    private ShaderMaterial? _lightmapMaterial;
+    private ImageTexture? _lightmapTexture;
+    private bool _lightmapDirty;
+
+    private const string LightmapShaderCode = @"
+shader_type canvas_item;
+uniform sampler2D lightmap : filter_linear, repeat_disable;
+uniform vec2 world_origin;
+uniform bool use_lightmap;
+varying vec2 v_world_px;
+
+void vertex() {
+    v_world_px = VERTEX + world_origin;
+}
+
+void fragment() {
+    if (use_lightmap) {
+        vec2 uv = (v_world_px - 32.0) / 3200.0;
+        vec3 light = texture(lightmap, uv).rgb;
+        COLOR.rgb *= light;
+    }
+}
+";
+
+    /// <summary>
+    /// Called by Main after RecalculateLights() to trigger lightmap texture rebuild.
+    /// </summary>
+    public void MarkLightmapDirty() => _lightmapDirty = true;
+
     public void Init(GameState state, GameData data, GrhAnimator animator)
     {
         _state = state;
         _data = data;
         _animator = animator;
+
+        // Create lightmap shader + material (shared across terrain layers)
+        var shader = new Shader();
+        shader.Code = LightmapShaderCode;
+        _lightmapMaterial = new ShaderMaterial();
+        _lightmapMaterial.Shader = shader;
+        _lightmapTexture = ImageTexture.CreateFromImage(
+            Image.CreateEmpty(101, 101, false, Image.Format.Rgb8));
+        _lightmapMaterial.SetShaderParameter("lightmap", _lightmapTexture);
+        _lightmapMaterial.SetShaderParameter("use_lightmap", false);
+
+        // Apply lightmap shader to terrain layers (self, mask, L2, roof)
+        Material = _lightmapMaterial;
 
         var additiveMat = new CanvasItemMaterial
         {
@@ -114,6 +158,7 @@ public partial class WorldRenderer : Node2D
         // to cover body reflection + reflected aura overflow onto land)
         _maskLayer = new NonWaterMaskLayer();
         _maskLayer.Name = "NonWaterMaskLayer";
+        _maskLayer.Material = _lightmapMaterial;
         _maskLayer.ZIndex = 0;
         _maskLayer.SetRenderer(this);
         AddChild(_maskLayer);
@@ -122,6 +167,7 @@ public partial class WorldRenderer : Node2D
         // occluding reflected auras under border opaque portions)
         _layer2Layer = new Layer2Layer();
         _layer2Layer.Name = "Layer2Layer";
+        _layer2Layer.Material = _lightmapMaterial;
         _layer2Layer.ZIndex = 0;
         _layer2Layer.SetRenderer(this);
         AddChild(_layer2Layer);
@@ -160,9 +206,11 @@ public partial class WorldRenderer : Node2D
         // Roof layer: standard blend, z=3 (on top of everything)
         _roofLayer = new RoofLayer();
         _roofLayer.Name = "RoofLayer";
+        _roofLayer.Material = _lightmapMaterial;
         _roofLayer.ZIndex = 3;
         _roofLayer.SetRenderer(this);
         AddChild(_roofLayer);
+
     }
 
     public override void _Process(double delta)
@@ -247,6 +295,8 @@ public partial class WorldRenderer : Node2D
         return new Vector2(px, py);
     }
 
+
+
     /// <summary>
     /// Main _Draw: renders PASS 1 (L1 ground) + PASS 1.5 (body reflections).
     /// PASS 1b (mask), L2, and auras are handled by child layers drawn after this.
@@ -296,8 +346,45 @@ public partial class WorldRenderer : Node2D
         _frameHasLights = (_state.Config?.ShowLights ?? true)
                           && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
+        // GPU lightmap: when lights active, the shader handles ambient + light tinting
+        // on terrain layers. Modulate = white so shader is the sole color source.
+        // ContentLayer gets map ambient via its own Modulate (characters stay tinted).
+        if (_frameHasLights)
+        {
+            if (_lightmapDirty && _state.TileLightColors != null)
+            {
+                var img = LightSystem.BuildLightmapImage(_state.TileLightColors);
+                _lightmapTexture?.Update(img);
+                _lightmapDirty = false;
+            }
+            _lightmapMaterial?.SetShaderParameter("use_lightmap", true);
+            float originX = (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX;
+            float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
+            _lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
+            Modulate = Colors.White;
+            // Parent is white → ContentLayer inherits white → full brightness. No correction needed.
+            if (_contentLayer != null) _contentLayer.SelfModulate = Colors.White;
+        }
+        else
+        {
+            _lightmapMaterial?.SetShaderParameter("use_lightmap", false);
+            UpdateAmbientLight();
+            // Parent Modulate = map ambient → ContentLayer inherits dark tint.
+            // Cancel it with inverse SelfModulate so characters draw at full brightness.
+            if (_contentLayer != null)
+            {
+                float r = _state.MapColorR / 255f;
+                float g = _state.MapColorG / 255f;
+                float b = _state.MapColorB / 255f;
+                _contentLayer.SelfModulate = new Color(
+                    r > 0.01f ? 1f / r : 1f,
+                    g > 0.01f ? 1f / g : 1f,
+                    b > 0.01f ? 1f / b : 1f, 1f);
+            }
+        }
+
         // ==========================================
-        // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
+        // PASS 1: Layer 1 (Ground) — shader handles light, no per-tile modulate needed
         // ==========================================
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
@@ -307,15 +394,7 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer1 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                if (_frameHasLights)
-                {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
-                }
-                else
-                {
-                    DrawTileGrh(tile.Layer1, pos, center: false);
-                }
+                DrawTileGrh(tile.Layer1, pos, center: false);
             }
         }
 
@@ -458,7 +537,7 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        // Collect roof draws
+        // Collect roof draws — shader handles light, only need alpha for fade
         if (_roofAlpha > 0)
         {
             float roofA = _roofAlpha / 255f;
@@ -471,15 +550,7 @@ public partial class WorldRenderer : Node2D
                     if (tile.Layer4 <= 0) continue;
 
                     Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                    if (_frameHasLights)
-                    {
-                        Color tl = LightSystem.GetTileLight(_state, x, y);
-                        _pendingRoofDraws.Add((tile.Layer4, pos, new Color(tl.R, tl.G, tl.B, roofA)));
-                    }
-                    else
-                    {
-                        _pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
-                    }
+                    _pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
                 }
             }
         }
@@ -512,9 +583,7 @@ public partial class WorldRenderer : Node2D
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                Color tileLight = _frameHasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
-
-                // Ground objects (apply same tree alpha as Layer 3)
+                // Ground objects
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
                     bool objNearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
@@ -523,12 +592,11 @@ public partial class WorldRenderer : Node2D
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
                     {
-                        Color objLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objLight);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: tileLight);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
                     }
                 }
 
@@ -543,7 +611,6 @@ public partial class WorldRenderer : Node2D
                     float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
                     float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
-                    // Pass 'this' as worldRenderer so CharRenderer can queue particle draws
                     CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
                                                _data, _animator, _deltaMs, _state, this,
                                                charTileX: x, charTileY: y);
@@ -558,12 +625,11 @@ public partial class WorldRenderer : Node2D
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
                     {
-                        Color treeLight = new Color(tileLight.R, tileLight.G, tileLight.B, 120f / 255f);
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: treeLight);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: tileLight);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true);
                     }
                 }
             }
@@ -782,8 +848,9 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
-    /// Draw PASS 1b: redraw all non-water L1 tiles to mask reflection + reflected aura overflow.
-    /// Called by NonWaterMaskLayer._Draw().
+    /// Draw PASS 1b: redraw non-water L1 tiles ADJACENT to water to mask reflection overflow.
+    /// Only redraws tiles in the precomputed water border mask (~20-50 tiles) instead of ALL
+    /// non-water tiles (~300+). Called by NonWaterMaskLayer._Draw().
     /// </summary>
     public void DrawNonWaterMask(CanvasItem canvas)
     {
@@ -800,21 +867,13 @@ public partial class WorldRenderer : Node2D
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
                                             _framePixelOffsetX, _framePixelOffsetY);
-                if (_frameHasLights)
-                {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false, modulate: lightColor);
-                }
-                else
-                {
-                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
-                }
+                DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
             }
         }
     }
 
     /// <summary>
-    /// Draw PASS 2: Layer 2 tiles.
+    /// Draw PASS 2: Layer 2 tiles with per-tile light modulate.
     /// Called by Layer2Layer._Draw().
     /// </summary>
     public void DrawLayer2(CanvasItem canvas)
@@ -829,15 +888,7 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer2 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                if (_frameHasLights)
-                {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false, modulate: lightColor);
-                }
-                else
-                {
-                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false);
-                }
+                DrawTileGrhTo(canvas, tile.Layer2, pos, center: false);
             }
         }
     }
