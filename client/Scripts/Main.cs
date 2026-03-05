@@ -986,6 +986,8 @@ public partial class Main : Control
 
     private void OnConnectPressed()
     {
+        if (_connecting) return;
+
         string account = _accountInput!.Text.Trim();
         string password = _passwordInput!.Text.Trim();
 
