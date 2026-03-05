@@ -53,7 +53,10 @@ public partial class MapViewport : Node2D
         int mapH = Map.Height;
 
         // Calculate visible tile range for culling
-        var viewSize = GetViewportRect().Size;
+        // Get size from parent Panel (if any), else fall back to viewport
+        var viewSize = GetParent() is Control parentCtrl
+            ? parentCtrl.Size
+            : GetViewportRect().Size;
         int startX = Math.Max(1, (int)(-State.CameraOffset.X / (TileSize * State.Zoom)));
         int startY = Math.Max(1, (int)(-State.CameraOffset.Y / (TileSize * State.Zoom)));
         int endX = Math.Min(mapW, startX + (int)(viewSize.X / (TileSize * State.Zoom)) + 3);
@@ -242,7 +245,7 @@ public partial class MapViewport : Node2D
 
     #region Input Handling
 
-    public override void _UnhandledInput(InputEvent @event)
+    public override void _Input(InputEvent @event)
     {
         if (Map == null || State == null) return;
 
@@ -252,25 +255,52 @@ public partial class MapViewport : Node2D
                 _spaceHeld = ek.Pressed;
         }
         else if (@event is InputEventMouseButton mb)
+        {
+            // Only handle mouse events inside our parent panel
+            if (GetParent() is Control parent)
+            {
+                var localPos = parent.GetLocalMousePosition();
+                if (localPos.X < 0 || localPos.Y < 0 ||
+                    localPos.X > parent.Size.X || localPos.Y > parent.Size.Y)
+                    return;
+            }
             HandleMouseButton(mb);
+        }
         else if (@event is InputEventMouseMotion mm)
+        {
+            if (GetParent() is Control parent2)
+            {
+                var localPos = parent2.GetLocalMousePosition();
+                if (localPos.X < 0 || localPos.Y < 0 ||
+                    localPos.X > parent2.Size.X || localPos.Y > parent2.Size.Y)
+                    return;
+            }
             HandleMouseMotion(mm);
+        }
     }
 
     private Vector2I ScreenToTile(Vector2 screenPos)
     {
-        // DrawSetTransform(CameraOffset, 0, Zoom) means:
-        //   screenPos = CameraOffset + Zoom * tileWorldPos
-        // Inverse: tileWorldPos = (screenPos - CameraOffset) / Zoom
+        // Convert window-space mouse pos to panel-local coordinates
+        if (GetParent() is Control parent)
+            screenPos -= parent.GlobalPosition;
+
         int tx = (int)((screenPos.X - State!.CameraOffset.X) / State.Zoom / TileSize);
         int ty = (int)((screenPos.Y - State.CameraOffset.Y) / State.Zoom / TileSize);
         return new Vector2I(tx, ty);
     }
 
+    private Vector2 ToLocal(Vector2 screenPos)
+    {
+        if (GetParent() is Control parent)
+            return screenPos - parent.GlobalPosition;
+        return screenPos;
+    }
+
     private void StartPan(Vector2 position)
     {
         _isPanning = true;
-        _panStart = position;
+        _panStart = ToLocal(position);
         _panCameraStart = State!.CameraOffset;
     }
 
@@ -285,9 +315,10 @@ public partial class MapViewport : Node2D
             else
                 State.Zoom = Math.Max(State.Zoom / 1.15f, 0.15f);
 
-            // Zoom towards mouse position
+            // Zoom towards mouse position (in panel-local coords)
+            var localPos = ToLocal(mb.Position);
             float zoomRatio = State.Zoom / oldZoom;
-            State.CameraOffset = mb.Position - (mb.Position - State.CameraOffset) * zoomRatio;
+            State.CameraOffset = localPos - (localPos - State.CameraOffset) * zoomRatio;
             QueueRedraw();
             return;
         }
@@ -394,7 +425,7 @@ public partial class MapViewport : Node2D
     {
         if (_isPanning)
         {
-            State!.CameraOffset = _panCameraStart + (mm.Position - _panStart);
+            State!.CameraOffset = _panCameraStart + (ToLocal(mm.Position) - _panStart);
             QueueRedraw();
             return;
         }

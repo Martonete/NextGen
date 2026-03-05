@@ -107,26 +107,16 @@ public partial class EditorMain : Control
         _palette.CustomMinimumSize = new Vector2(240, 0);
         split.AddChild(_palette);
 
-        // Right: Viewport (fills all remaining space)
-        var svc = new SubViewportContainer();
-        svc.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        svc.SizeFlagsVertical = SizeFlags.ExpandFill;
-        svc.Stretch = true;
-        split.AddChild(svc);
-
-        var subViewport = new SubViewport();
-        subViewport.HandleInputLocally = true;
-        subViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
-        subViewport.TransparentBg = false;
-        subViewport.OwnWorld3D = true;
-        svc.AddChild(subViewport);
-
-        // Dark background for viewport
-        var bg = new ColorRect();
-        bg.Color = new Color(0.1f, 0.1f, 0.12f, 1f);
-        bg.AnchorsPreset = (int)LayoutPreset.FullRect;
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        subViewport.AddChild(bg);
+        // Right: Panel with ClipContents (no SubViewport needed)
+        var rightPanel = new Panel();
+        rightPanel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        rightPanel.SizeFlagsVertical = SizeFlags.ExpandFill;
+        rightPanel.ClipContents = true;
+        // Dark background via StyleBox
+        var panelStyle = new StyleBoxFlat();
+        panelStyle.BgColor = new Color(0.1f, 0.1f, 0.12f, 1f);
+        rightPanel.AddThemeStyleboxOverride("panel", panelStyle);
+        split.AddChild(rightPanel);
 
         _viewport = new MapViewport
         {
@@ -136,7 +126,7 @@ public partial class EditorMain : Control
             State = _state,
             Undo = _undo,
         };
-        subViewport.AddChild(_viewport);
+        rightPanel.AddChild(_viewport);
 
         // ─── Status bar (compact, single line) ───
         var statusBar = new HBoxContainer();
@@ -584,10 +574,10 @@ public partial class EditorMain : Control
             }
         }
 
-        // Update status bar info
-        if (_viewport != null)
+        // Update status bar coords
+        if (_viewport?.GetParent() is Control viewPanel)
         {
-            var mousePos = _viewport.GetLocalMousePosition();
+            var mousePos = viewPanel.GetLocalMousePosition();
             int tx = (int)((mousePos.X - _state.CameraOffset.X) / _state.Zoom / 32);
             int ty = (int)((mousePos.Y - _state.CameraOffset.Y) / _state.Zoom / 32);
             _coordLabel!.Text = $"({tx}, {ty})";
