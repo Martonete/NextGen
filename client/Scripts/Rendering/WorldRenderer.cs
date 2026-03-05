@@ -819,8 +819,8 @@ public partial class WorldRenderer : Node2D
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-        // Simple frame animation — 8 frames with 16px shifts for smooth motion.
-        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        // Slightly faster water animation.
+        int frame = _animator.GetCurrentFrameSlowed(grhIndex, _data, 0.85f);
         var resolved = _data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
