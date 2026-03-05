@@ -818,26 +818,24 @@ public partial class WorldRenderer : Node2D
     {
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
-        var grh = _data.Grhs[grhIndex];
-        if (grh.NumFrames <= 1) return;
 
-        // Get fractional frame for smooth crossfade between frames.
-        double frac = _animator.GetFractionalFrame(grhIndex, _data, 1.4f);
-        int frameA = (int)frac;
-        int frameB = (frameA + 1) % grh.NumFrames;
-        float blend = (float)(frac - frameA); // 0..1 blend factor
+        // Simple frame animation — 8 frames with 16px shifts for smooth motion.
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
 
-        var resolvedA = _data.ResolveGrh(grhIndex, frameA);
-        var resolvedB = _data.ResolveGrh(grhIndex, frameB);
-        if (resolvedA == null || resolvedA.FileNum <= 0) return;
-        if (resolvedB == null || resolvedB.FileNum <= 0) return;
-
-        var texture = _data.Textures?.GetTexture(resolvedA.FileNum);
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
         if (texture == null) return;
 
         int texW = texture.GetWidth();
         int texH = texture.GetHeight();
-        int pw = resolvedA.PixelWidth, ph = resolvedA.PixelHeight;
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
         if (pw <= 0 || ph <= 0) return;
 
         float dx = (float)Math.Round(pos.X);
@@ -850,44 +848,21 @@ public partial class WorldRenderer : Node2D
         _litQuadPoints[2] = new Vector2(dx + pw + pad, dy + ph + pad);
         _litQuadPoints[3] = new Vector2(dx - pad, dy + ph + pad);
 
-        _litQuadUVs[0] = new Vector2(0, 0);
-        _litQuadUVs[1] = new Vector2(1, 0);
-        _litQuadUVs[2] = new Vector2(1, 1);
-        _litQuadUVs[3] = new Vector2(0, 1);
-
-        // Draw frame A at full opacity
-        int sxA = resolvedA.SX, syA = resolvedA.SY;
-        if (texW > 0) sxA %= texW;
-        if (texH > 0) syA %= texH;
-        float u0A = (float)sxA / texW, v0A = (float)syA / texH;
-        float u1A = (float)(sxA + pw) / texW, v1A = (float)(syA + ph) / texH;
-        _litQuadUVs[0] = new Vector2(u0A, v0A);
-        _litQuadUVs[1] = new Vector2(u1A, v0A);
-        _litQuadUVs[2] = new Vector2(u1A, v1A);
-        _litQuadUVs[3] = new Vector2(u0A, v1A);
-
-        // Frame A: always full opacity (base layer)
         _litQuadColors[0] = topLeft;
         _litQuadColors[1] = topRight;
         _litQuadColors[2] = bottomRight;
         _litQuadColors[3] = bottomLeft;
-        DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
 
-        // Draw frame B on top with blend alpha
-        int sxB = resolvedB.SX, syB = resolvedB.SY;
-        if (texW > 0) sxB %= texW;
-        if (texH > 0) syB %= texH;
-        float u0B = (float)sxB / texW, v0B = (float)syB / texH;
-        float u1B = (float)(sxB + pw) / texW, v1B = (float)(syB + ph) / texH;
-        _litQuadUVs[0] = new Vector2(u0B, v0B);
-        _litQuadUVs[1] = new Vector2(u1B, v0B);
-        _litQuadUVs[2] = new Vector2(u1B, v1B);
-        _litQuadUVs[3] = new Vector2(u0B, v1B);
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
 
-        _litQuadColors[0] = new Color(topLeft.R, topLeft.G, topLeft.B, topLeft.A * blend);
-        _litQuadColors[1] = new Color(topRight.R, topRight.G, topRight.B, topRight.A * blend);
-        _litQuadColors[2] = new Color(bottomRight.R, bottomRight.G, bottomRight.B, bottomRight.A * blend);
-        _litQuadColors[3] = new Color(bottomLeft.R, bottomLeft.G, bottomLeft.B, bottomLeft.A * blend);
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
         DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
     }
 
