@@ -89,10 +89,6 @@ public partial class WorldRenderer : Node2D
     private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
     private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
 
-    // Water border mask — precomputed on map load, true for non-water tiles within 2 of water
-    private bool[,]? _waterBorderMask;
-    private MapData? _lastMapData; // detect map changes
-
     public void Init(GameState state, GameData data, GrhAnimator animator)
     {
         _state = state;
@@ -251,36 +247,6 @@ public partial class WorldRenderer : Node2D
         return new Vector2(px, py);
     }
 
-    /// <summary>
-    /// Precompute which non-water tiles are within 2 tiles of water.
-    /// Only these tiles need to be redrawn in the mask pass.
-    /// Called once per map change instead of checking adjacency every frame.
-    /// </summary>
-    private void PrecomputeWaterBorder()
-    {
-        _waterBorderMask = new bool[101, 101]; // 1-indexed
-        var tiles = _state!.MapData!.Tiles;
-
-        for (int y = 1; y <= 100; y++)
-        {
-            for (int x = 1; x <= 100; x++)
-            {
-                // Skip water tiles themselves (they're not masked)
-                if (tiles[x, y].Layer1 >= 1505 && tiles[x, y].Layer1 <= 1520) continue;
-
-                // Check if any tile within 2-tile radius is water
-                bool nearWater = false;
-                int yMin = Math.Max(1, y - 2), yMax = Math.Min(100, y + 2);
-                int xMin = Math.Max(1, x - 2), xMax = Math.Min(100, x + 2);
-                for (int ny = yMin; ny <= yMax && !nearWater; ny++)
-                    for (int nx = xMin; nx <= xMax && !nearWater; nx++)
-                        if (tiles[nx, ny].Layer1 >= 1505 && tiles[nx, ny].Layer1 <= 1520)
-                            nearWater = true;
-
-                _waterBorderMask[x, y] = nearWater;
-            }
-        }
-    }
 
 
     /// <summary>
@@ -328,13 +294,6 @@ public partial class WorldRenderer : Node2D
         _frameL1MaxX = Math.Min(100, screenMaxX + 2);
         _frameL1MinY = Math.Max(1, screenMinY - 2);
         _frameL1MaxY = Math.Min(100, screenMaxY + 2);
-
-        // Precompute water border mask on map change
-        if (_state.MapData != _lastMapData)
-        {
-            _lastMapData = _state.MapData;
-            PrecomputeWaterBorder();
-        }
 
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
@@ -811,16 +770,14 @@ public partial class WorldRenderer : Node2D
     {
         if (_state?.MapData == null || _data == null || _animator == null) return;
         if (!_frameAnyReflection) return;
-        if (_waterBorderMask == null) return;
 
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
             for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
             {
-                if (!_waterBorderMask[x, y]) continue; // skip tiles far from water
-
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
+                if (tile.Layer1 >= 1505 && tile.Layer1 <= 1520) continue; // skip water
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
                                             _framePixelOffsetX, _framePixelOffsetY);
