@@ -323,6 +323,14 @@ public partial class EditorMain : Control
 
         _mapDir = mapsDir;
 
+        // Prefer server maps dir (has .inf/.dat with NPCs/objects/exits)
+        string serverMapsDir = Path.GetFullPath(Path.Combine(dataPath, "..", "server", "maps"));
+        if (Directory.Exists(serverMapsDir))
+        {
+            _mapDir = serverMapsDir;
+            GD.Print($"[Editor] Using server maps: {serverMapsDir}");
+        }
+
         _palette!.Grhs = _grhs;
         _palette.Textures = _textures;
         _palette.Catalog = _catalog;
