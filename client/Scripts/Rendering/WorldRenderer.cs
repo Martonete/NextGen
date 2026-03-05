@@ -866,12 +866,11 @@ public partial class WorldRenderer : Node2D
         _litQuadUVs[2] = new Vector2(u1A, v1A);
         _litQuadUVs[3] = new Vector2(u0A, v1A);
 
-        // Frame A: fade out as blend increases
-        float alphaA = 1f - blend;
-        _litQuadColors[0] = new Color(topLeft.R, topLeft.G, topLeft.B, topLeft.A * alphaA);
-        _litQuadColors[1] = new Color(topRight.R, topRight.G, topRight.B, topRight.A * alphaA);
-        _litQuadColors[2] = new Color(bottomRight.R, bottomRight.G, bottomRight.B, bottomRight.A * alphaA);
-        _litQuadColors[3] = new Color(bottomLeft.R, bottomLeft.G, bottomLeft.B, bottomLeft.A * alphaA);
+        // Frame A: always full opacity (base layer)
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
         DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
 
         // Draw frame B on top with blend alpha
