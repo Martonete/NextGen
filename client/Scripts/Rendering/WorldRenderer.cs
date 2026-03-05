@@ -10,12 +10,13 @@ namespace TierrasSagradasAO.Rendering;
 /// Renders the game world matching VB6 RenderScreen.
 ///
 /// Layer architecture (children of WorldRenderer, drawn after parent _Draw):
-///   WorldRenderer._Draw()         → PASS 1 (layer 1) + PASS 1.5 (reflections)
-///   ReflectedAuraLayer (z=-3, additive) → reflected auras (clipped by mask + L2)
-///   NonWaterMaskLayer (z=-2)      → PASS 1b (non-water L1 mask, covers reflection/aura overflow)
-///   Layer2Layer (z=-1)            → PASS 2 (layer 2, covers aura under border opaque portions)
-///   AuraLayer (z=0, additive)     → normal auras
-///   ContentLayer (z=0)            → PASS 3 (ground objects + characters + layer 3)
+///   WorldRenderer._Draw()         → PASS 1 (water tiles) + collect reflection data
+///   ReflectedAuraLayer (additive) → reflected auras (behind body)
+///   ReflectionBodyLayer           → reflected character body + FX (on top of auras)
+///   NonWaterMaskLayer             → PASS 1b (non-water L1 mask, covers reflection overflow)
+///   Layer2Layer                   → PASS 2 (layer 2, covers overlap)
+///   AuraLayer (additive)          → normal auras
+///   ContentLayer                  → PASS 3 (ground objects + characters + layer 3)
 ///   DialogOverlayLayer (z=1)     → dialog text (above all characters/NPCs)
 ///   AdditiveParticleLayer (z=2)   → particles (VB6: D3DBLEND_ONE/ONE)
 ///   RoofLayer (z=3)               → PASS 4 (roof with fade)
@@ -32,6 +33,7 @@ public partial class WorldRenderer : Node2D
 
     // Child layers
     private ReflectedAuraLayer? _reflAuraLayer;
+    private ReflectionBodyLayer? _reflBodyLayer;
     private NonWaterMaskLayer? _maskLayer;
     private Layer2Layer? _layer2Layer;
     private AuraAdditiveLayer? _auraLayer;
@@ -72,6 +74,8 @@ public partial class WorldRenderer : Node2D
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
     // Reflected auras — normal position + mirrorY, renderer does the Y-flip via DrawSetTransform
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, float mirrorY)> _pendingReflAuraDraws = new();
+    // Reflected body draws — queued in parent _Draw, drawn by ReflectionBodyLayer child
+    private readonly List<(Character ch, Vector2 pos, Vector2 headOffset, int heading)> _pendingReflBodyDraws = new();
 
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
@@ -154,7 +158,14 @@ void fragment() {
         _reflAuraLayer.SetRenderer(this);
         AddChild(_reflAuraLayer);
 
-        // Non-water mask layer: standard blend, z=-2 (redraws non-water L1 tiles
+        // Reflection body layer: draws character body/FX reflections AFTER auras
+        _reflBodyLayer = new ReflectionBodyLayer();
+        _reflBodyLayer.Name = "ReflectionBodyLayer";
+        _reflBodyLayer.ZIndex = 0;
+        _reflBodyLayer.SetRenderer(this);
+        AddChild(_reflBodyLayer);
+
+        // Non-water mask layer: standard blend (redraws non-water L1 tiles
         // to cover body reflection + reflected aura overflow onto land)
         _maskLayer = new NonWaterMaskLayer();
         _maskLayer.Name = "NonWaterMaskLayer";
@@ -311,6 +322,7 @@ void fragment() {
         _pendingCharParticleDraws.Clear();
         _pendingAuraDraws.Clear();
         _pendingReflAuraDraws.Clear();
+        _pendingReflBodyDraws.Clear();
         _pendingDialogDraws.Clear();
         _pendingRoofDraws.Clear();
 
@@ -448,15 +460,10 @@ void fragment() {
                     headOffset = new Vector2(body.HeadOffsetX, body.HeadOffsetY);
                 }
 
-                CharRenderer.DrawReflection(this, ch, new Vector2(charPx, charPy),
-                    headOffset, heading, _data, _animator);
+                // Queue body reflection for ReflectionBodyLayer (draws AFTER reflected auras)
+                _pendingReflBodyDraws.Add((ch, new Vector2(charPx, charPy), headOffset, heading));
 
-                // Reflected FX overlays (same Y-flip, same pass as body reflection)
-                CharRenderer.DrawReflectionFx(this, ch, new Vector2(charPx, charPy),
-                    headOffset, heading, _data, _animator);
-
-                // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
-                // Skip if Navegando or Montado. Invisible self-char still shows auras.
+                // Collect reflected auras (drawn by ReflectedAuraLayer BEFORE body)
                 if ((_state.Config?.ShowAuras ?? true)
                     && !ch.Navigating && !ch.Mounted
                     && (!ch.Invisible || kvp.Key == _state.UserCharIndex))
@@ -855,6 +862,21 @@ void fragment() {
     }
 
     /// <summary>
+    /// Draw queued character body reflections (+ FX). Called by ReflectionBodyLayer,
+    /// which draws AFTER ReflectedAuraLayer so auras are behind the body.
+    /// </summary>
+    public void DrawReflectionBodies(Node2D canvas)
+    {
+        if (_data == null || _animator == null) return;
+
+        foreach (var (ch, pos, headOffset, heading) in _pendingReflBodyDraws)
+        {
+            CharRenderer.DrawReflection(canvas, ch, pos, headOffset, heading, _data, _animator);
+            CharRenderer.DrawReflectionFx(canvas, ch, pos, headOffset, heading, _data, _animator);
+        }
+    }
+
+    /// <summary>
     /// Draw PASS 1b: all non-water L1 tiles. PASS 1 only draws water, so this
     /// is the sole draw for terrain — no double-drawing. Also naturally masks
     /// any reflection overflow onto land.
@@ -1037,10 +1059,27 @@ void fragment() {
 }
 
 /// <summary>
+/// Child Node2D for character body reflections. Draws AFTER ReflectedAuraLayer
+/// so auras appear behind the reflected body (same order as normal rendering).
+/// </summary>
+public partial class ReflectionBodyLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawReflectionBodies(this);
+    }
+}
+
+/// <summary>
 /// Child Node2D with additive blend material. Draws reflected auras.
-/// z_index=-3, draws AFTER parent _Draw (body reflections) but BEFORE mask and L2.
-/// NonWaterMaskLayer (z=-2) covers overflow onto land.
-/// Layer2Layer (z=-1) covers overlap under border opaque portions.
+/// Draws BEFORE ReflectionBodyLayer so auras are behind the body.
 /// </summary>
 public partial class ReflectedAuraLayer : Node2D
 {

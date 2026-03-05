@@ -329,7 +329,7 @@ public static class CharRenderer
         // Reflection alpha: body/head most transparent, equipment more visible, helmet most opaque
         Color reflColor = new Color(1f, 1f, 1f, 60f / 255f);
         Color equipColor = new Color(1f, 1f, 1f, 112f / 255f);
-        Color helmetColor = new Color(1f, 1f, 1f, 125f / 255f);
+        Color helmetColor = new Color(1f, 1f, 1f, 0.50f);
 
         DrawCharParts(canvas, ch, pos, headOffset, heading, data, animator,
                       null, reflColor, equipColor, helmetColor);
@@ -538,7 +538,7 @@ public static class CharRenderer
         float mirrorY = pos.Y + TileSize - 2f;
         float auraX = pos.X + headOffset.X;
         float auraY = pos.Y + headOffset.Y + 72; // no Offset — only base position gets mirrored
-        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.36f);
+        Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.30f);
 
         worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
                                          aura.Giratoria ? angle : 0f, mirrorY);
