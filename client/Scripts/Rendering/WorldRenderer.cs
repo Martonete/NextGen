@@ -184,6 +184,7 @@ void fragment() {
 
         _contentLayer = new ContentLayer();
         _contentLayer.Name = "ContentLayer";
+        _contentLayer.Material = _lightmapMaterial;
         _contentLayer.ZIndex = 0;
         _contentLayer.SetRenderer(this);
         AddChild(_contentLayer);
@@ -362,17 +363,11 @@ void fragment() {
             float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
             _lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
             Modulate = Colors.White;
-            // Characters keep the map ambient tint via ContentLayer's own Modulate
-            if (_contentLayer != null)
-                _contentLayer.Modulate = new Color(_state.MapColorR / 255f, _state.MapColorG / 255f,
-                                                    _state.MapColorB / 255f, 1f);
         }
         else
         {
             _lightmapMaterial?.SetShaderParameter("use_lightmap", false);
             UpdateAmbientLight();
-            if (_contentLayer != null)
-                _contentLayer.Modulate = Colors.White;
         }
 
         // ==========================================
