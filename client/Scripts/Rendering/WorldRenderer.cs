@@ -819,8 +819,7 @@ public partial class WorldRenderer : Node2D
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-        // Speed up water animation slightly (factor < 1 = faster).
-        int frame = _animator.GetCurrentFrameSlowed(grhIndex, _data, 0.7f);
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
         var resolved = _data.ResolveGrh(grhIndex, frame);
         if (resolved == null || resolved.FileNum <= 0) return;
 
