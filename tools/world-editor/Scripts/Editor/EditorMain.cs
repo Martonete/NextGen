@@ -107,7 +107,7 @@ public partial class EditorMain : Control
         _palette.CustomMinimumSize = new Vector2(240, 0);
         split.AddChild(_palette);
 
-        // Right: MapViewport directly in split (no wrapper)
+        // Right: MapViewport directly in split
         _viewport = new MapViewport
         {
             Map = _map,
@@ -117,6 +117,7 @@ public partial class EditorMain : Control
             Undo = _undo,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             SizeFlagsVertical = SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(200, 200),
             ClipContents = true,
         };
         split.AddChild(_viewport);
