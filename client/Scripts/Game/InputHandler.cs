@@ -52,6 +52,9 @@ public class InputHandler
     private const float KeyCooldownMs = 300f;
     private float _keyCooldown;
 
+    // Track Ctrl state for release detection (both left and right Ctrl)
+    private bool _ctrlWasPressed;
+
     /// <summary>Callback invoked when the player presses the music toggle key.</summary>
     public Action? OnToggleMusic;
 
@@ -80,6 +83,21 @@ public class InputHandler
         if (_attackTimer > 0) _attackTimer -= deltaMs;
         if (_refreshTimer > 0) _refreshTimer -= deltaMs;
         if (_keyCooldown > 0) _keyCooldown -= deltaMs;
+
+        // Detect Ctrl release by polling (supports both left and right Ctrl reliably)
+        if (_keys.GetKey(GameAction.Attack) == Key.Ctrl)
+        {
+            bool ctrlNow = Input.IsKeyPressed(Key.Ctrl);
+            if (_ctrlWasPressed && !ctrlNow && !_state.ChatActive)
+            {
+                if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
+                {
+                    _tcp.SendPacket(ClientPackets.WriteAttack());
+                    _attackTimer = AttackCooldownMs;
+                }
+            }
+            _ctrlWasPressed = ctrlNow;
+        }
 
         // VB6: paralyzed users can attack and cast spells, only movement is blocked
         if (!_state.UserParalyzed)
@@ -391,12 +409,9 @@ public class InputHandler
         if (@event is InputEventKey keyEvent && !keyEvent.Pressed && !keyEvent.Echo)
         {
             // Key RELEASE — check for attack key (VB6: Form_KeyUp → BindKeys(1) → SendData "AT")
+            // Note: Ctrl attack is handled in Process() via polling for left+right Ctrl support
             var key = keyEvent.Keycode;
-            bool isAttackKey = key == _keys.GetKey(GameAction.Attack) || key == Key.Space;
-            // Support both left and right Ctrl for attack (Godot reports both as Key.Ctrl)
-            if (!isAttackKey && _keys.GetKey(GameAction.Attack) == Key.Ctrl)
-                isAttackKey = key == Key.Ctrl || keyEvent.PhysicalKeycode == Key.Ctrl;
-            if (isAttackKey)
+            if (key == _keys.GetKey(GameAction.Attack) || key == Key.Space)
             {
                 if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
                 {
