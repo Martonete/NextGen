@@ -16,6 +16,7 @@ public partial class EditorMain : Control
     private TextureManager? _textures;
     private TextureCatalog? _catalog;
     private MapData? _map;
+    private ParticleEngine? _particles;
     private string _dataPath = "";
     private string _mapDir = "";
 
@@ -331,6 +332,12 @@ public partial class EditorMain : Control
             GD.Print($"[Editor] Using server maps: {serverMapsDir}");
         }
 
+        // Load particle definitions
+        string particlesIni = Path.Combine(dataPath, "INIT", "Particles.ini");
+        _particles = new ParticleEngine();
+        if (File.Exists(particlesIni))
+            _particles.LoadDefinitions(particlesIni);
+
         _palette!.Grhs = _grhs;
         _palette.Textures = _textures;
         _palette.Catalog = _catalog;
@@ -338,6 +345,7 @@ public partial class EditorMain : Control
 
         _viewport!.Grhs = _grhs;
         _viewport.Textures = _textures;
+        _viewport.Particles = _particles;
 
         CreateNewMap(1);
     }
@@ -583,6 +591,8 @@ public partial class EditorMain : Control
         }
         if (_propsPanel != null)
             _propsPanel.Map = _map;
+        if (_particles != null && _map != null)
+            _particles.BuildStreamsFromMap(_map);
     }
 
     private void SetStatus(string msg)
@@ -608,6 +618,9 @@ public partial class EditorMain : Control
                     (int)GetViewportRect().Size.X - 300, 60);
             }
         }
+
+        // Update particle simulation
+        _particles?.Update((float)delta);
 
         // Update status bar coords
         if (_viewport != null)

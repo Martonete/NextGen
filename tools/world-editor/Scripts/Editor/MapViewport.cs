@@ -18,6 +18,7 @@ public partial class MapViewport : Control
     public TextureManager? Textures;
     public EditorState? State;
     public UndoManager? Undo;
+    public ParticleEngine? Particles;
 
     // Interaction state
     private bool _isPainting;
@@ -82,6 +83,9 @@ public partial class MapViewport : Control
                         DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
                             modulate: new Color(1, 1, 1, 0.7f));
         }
+
+        // ─── Particles (live simulation) ───
+        DrawParticles();
 
         // ─── Overlays ───
         DrawOverlays(mapW, mapH);
@@ -307,6 +311,55 @@ public partial class MapViewport : Control
 
         var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
+    }
+
+    /// <summary>
+    /// Draw all active particle sprites from the ParticleEngine simulation.
+    /// Each particle is a GRH sprite drawn at tile position + particle offset, with color modulate.
+    /// </summary>
+    private void DrawParticles()
+    {
+        if (Particles == null || Grhs == null || Textures == null) return;
+
+        foreach (var stream in Particles.Streams)
+        {
+            if (!stream.Active) continue;
+
+            // Stream origin = tile position in pixels
+            float streamX = stream.MapX * TileSize + TileSize / 2f;
+            float streamY = stream.MapY * TileSize + TileSize / 2f;
+
+            foreach (var p in stream.Particles)
+            {
+                if (!p.Alive || p.GrhIndex <= 0) continue;
+                if (p.GrhIndex >= Grhs.Length) continue;
+
+                var grh = Grhs[p.GrhIndex];
+
+                // Resolve animation to first frame
+                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+                {
+                    int frameIdx = grh.Frames[0];
+                    if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
+                    grh = Grhs[frameIdx];
+                }
+
+                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+
+                var texture = Textures.GetTexture(grh.FileNum);
+                if (texture == null) continue;
+
+                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+
+                // Center sprite on particle position
+                float drawX = streamX + p.X - grh.PixelWidth / 2f;
+                float drawY = streamY + p.Y - grh.PixelHeight / 2f;
+
+                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                DrawTextureRectRegion(texture, destRect, srcRect, color);
+            }
+        }
     }
 
     #region Input Handling
