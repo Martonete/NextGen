@@ -299,6 +299,14 @@ public partial class WorldRenderer : Node2D
         _frameHasLights = (_state.Config?.ShowLights ?? true)
                           && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
+        // When lights are active, the LightSystem bakes the map ambient into
+        // TileLightColors, so set Modulate to white to avoid double-darkening.
+        // When no lights, Modulate handles the ambient as usual.
+        if (_frameHasLights)
+            Modulate = Colors.White;
+        else
+            UpdateAmbientLight();
+
         // ==========================================
         // PASS 1: Layer 1 (Ground) — per-tile light modulate on terrain only
         // ==========================================
