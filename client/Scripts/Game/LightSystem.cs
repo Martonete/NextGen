@@ -146,24 +146,51 @@ public class LightSystem
     }
 
     /// <summary>
-    /// Get the average light color for a tile (average of 4 corners).
-    /// When lights exist, all tiles have at least ambient color.
+    /// Build a 101×101 lightmap Image from TileLightColors.
+    /// Each pixel represents a tile corner. GPU bilinear interpolation
+    /// between corner pixels produces smooth per-vertex-equivalent lighting.
+    ///
+    /// Pixel layout:
+    ///   pixel(x, y) = NW corner of tile (x+1, y+1)
+    ///   Right edge (x=100): NE corner of tile (100, y+1)
+    ///   Bottom edge (y=100): SW corner of tile (x+1, 100)
+    ///   Corner (100,100): SE corner of tile (100, 100)
     /// </summary>
-    public static Color GetTileLight(GameState state, int x, int y)
+    public static Image BuildLightmapImage(Color[,,] tileLightColors)
     {
-        if (state.TileLightColors == null) return Colors.White;
-        if (x < 1 || x > MapSize || y < 1 || y > MapSize) return Colors.White;
+        const int Size = MapSize + 1; // 101
+        var img = Image.CreateEmpty(Size, Size, false, Image.Format.Rgb8);
 
-        var c0 = state.TileLightColors[x, y, 0];
-        var c1 = state.TileLightColors[x, y, 1];
-        var c2 = state.TileLightColors[x, y, 2];
-        var c3 = state.TileLightColors[x, y, 3];
+        for (int py = 0; py < Size; py++)
+        {
+            for (int px = 0; px < Size; px++)
+            {
+                Color c;
+                if (px < MapSize && py < MapSize)
+                {
+                    // NW corner of tile (px+1, py+1) = index 1
+                    c = tileLightColors[px + 1, py + 1, 1];
+                }
+                else if (px == MapSize && py < MapSize)
+                {
+                    // Right edge: NE corner of tile (100, py+1) = index 3
+                    c = tileLightColors[MapSize, py + 1, 3];
+                }
+                else if (px < MapSize && py == MapSize)
+                {
+                    // Bottom edge: SW corner of tile (px+1, 100) = index 0
+                    c = tileLightColors[px + 1, MapSize, 0];
+                }
+                else
+                {
+                    // Corner (100,100): SE corner of tile (100, 100) = index 2
+                    c = tileLightColors[MapSize, MapSize, 2];
+                }
 
-        // Average 4 corners for single-color modulation
-        float r = (c0.R + c1.R + c2.R + c3.R) * 0.25f;
-        float g = (c0.G + c1.G + c2.G + c3.G) * 0.25f;
-        float b = (c0.B + c1.B + c2.B + c3.B) * 0.25f;
+                img.SetPixel(px, py, new Color(c.R, c.G, c.B, 1f));
+            }
+        }
 
-        return new Color(r, g, b, 1f);
+        return img;
     }
 }

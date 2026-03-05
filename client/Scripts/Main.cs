@@ -2569,6 +2569,7 @@ public partial class Main : Control
         {
             _lightSystem.RecalculateLights(_state);
             _state.LightsDirty = false;
+            _worldRenderer?.MarkLightmapDirty();
         }
 
         if (_state.CurrentScreen == Screen.Game)
