@@ -96,19 +96,25 @@ public partial class EditorMain : Control
 
         mainVBox.AddChild(menuBar);
 
-        // ─── Main content: palette (left, fixed) | viewport (right, fills all) ───
-        var hbox = new HBoxContainer();
-        hbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        hbox.SizeFlagsVertical = SizeFlags.ExpandFill;
-        hbox.AddThemeConstantOverride("separation", 4);
-        mainVBox.AddChild(hbox);
+        // ─── Content area: manual layout with anchors ───
+        var content = new Control();
+        content.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        content.SizeFlagsVertical = SizeFlags.ExpandFill;
+        mainVBox.AddChild(content);
 
-        // Left: Tile palette (fixed width, no horizontal expand)
+        // Left: Tile palette (fixed 300px wide, full height)
         _palette = new TilePalette { State = _state };
-        _palette.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        hbox.AddChild(_palette);
+        _palette.AnchorLeft = 0;
+        _palette.AnchorTop = 0;
+        _palette.AnchorRight = 0;
+        _palette.AnchorBottom = 1;
+        _palette.OffsetLeft = 0;
+        _palette.OffsetTop = 0;
+        _palette.OffsetRight = 300;
+        _palette.OffsetBottom = 0;
+        content.AddChild(_palette);
 
-        // Right: MapViewport fills ALL remaining space
+        // Right: MapViewport from 304px to right edge, full height
         _viewport = new MapViewport
         {
             Map = _map,
@@ -116,11 +122,17 @@ public partial class EditorMain : Control
             Textures = _textures,
             State = _state,
             Undo = _undo,
-            SizeFlagsHorizontal = SizeFlags.ExpandFill,
-            SizeFlagsVertical = SizeFlags.ExpandFill,
             ClipContents = true,
         };
-        hbox.AddChild(_viewport);
+        _viewport.AnchorLeft = 0;
+        _viewport.AnchorTop = 0;
+        _viewport.AnchorRight = 1;
+        _viewport.AnchorBottom = 1;
+        _viewport.OffsetLeft = 304;
+        _viewport.OffsetTop = 0;
+        _viewport.OffsetRight = 0;
+        _viewport.OffsetBottom = 0;
+        content.AddChild(_viewport);
 
         // ─── Status bar (compact, single line) ───
         var statusBar = new HBoxContainer();
