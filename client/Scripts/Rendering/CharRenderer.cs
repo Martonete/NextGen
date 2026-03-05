@@ -520,13 +520,8 @@ public static class CharRenderer
                 }
             }
         }
-        else if (ch.Head <= 0)
-            mirrorAdj = -2f;
         else
-        {
-            float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-            if (absHo >= 28f) mirrorAdj = -2f;
-        }
+            mirrorAdj = -2f; // all races: pull mirror 2px closer to body
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
         CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA, mirrorY);
