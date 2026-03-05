@@ -829,9 +829,9 @@ void fragment() {
 
             if (angle != 0f)
             {
-                // Rotating reflected aura — DrawSetTransform with Y-flip around sprite center
+                // Rotating reflected aura — Y-flip via scale around sprite center
                 float cx = drawX + pw / 2f;
-                float cy = drawY + ph / 2f;
+                float cy = drawY - ph / 2f;
                 ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle, new Vector2(1f, -1f));
                 var srcRect = new Rect2(sx, sy, pw, ph);
                 var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
@@ -840,9 +840,9 @@ void fragment() {
             }
             else
             {
-                // Non-rotating reflected aura — flip Y via negative height in destRect
+                // Non-rotating reflected aura — flip Y via negative height
                 var srcRect = new Rect2(sx, sy, pw, ph);
-                var destRect = new Rect2(drawX, drawY + ph, pw, -ph);
+                var destRect = new Rect2(drawX, drawY, pw, -ph);
                 canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }
