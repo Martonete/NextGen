@@ -15,25 +15,25 @@ public partial class EditorMain : Control
     private TextureManager? _textures;
     private TextureCatalog? _catalog;
     private MapData? _map;
-    private string _dataPath = "";  // Path to client Data/ folder
-    private string _mapDir = "";    // Path where maps are loaded/saved
+    private string _dataPath = "";
+    private string _mapDir = "";
 
     // Editor
     private readonly EditorState _state = new();
     private readonly UndoManager _undo = new();
-    private bool _unsavedChanges;
 
     // UI components
-    private ToolBar? _toolBar;
     private TilePalette? _palette;
     private MapViewport? _viewport;
+    private Window? _propsWindow;
     private TilePropertiesPanel? _propsPanel;
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
     private Label? _statusLabel;
-    private AcceptDialog? _mapNumberDialog;
-    private SpinBox? _mapNumberSpin;
+    private Label? _coordLabel;
+    private Label? _layerLabel;
+    private Label? _toolLabel;
 
     // Map properties dialog
     private AcceptDialog? _mapPropsDialog;
@@ -44,9 +44,7 @@ public partial class EditorMain : Control
 
     public override void _Ready()
     {
-        // Full window layout
         AnchorsPreset = (int)LayoutPreset.FullRect;
-
         BuildUI();
         TryAutoDetectDataPath();
     }
@@ -55,20 +53,22 @@ public partial class EditorMain : Control
     {
         var mainVBox = new VBoxContainer();
         mainVBox.AnchorsPreset = (int)LayoutPreset.FullRect;
+        mainVBox.AddThemeConstantOverride("separation", 0);
         AddChild(mainVBox);
 
-        // Menu bar
+        // ─── Menu bar ───
         var menuBar = new MenuBar();
         var fileMenu = new PopupMenu { Name = "Archivo" };
-        fileMenu.AddItem("Nuevo Mapa", 0);
-        fileMenu.AddItem("Abrir Mapa...", 1);
+        fileMenu.AddItem("Nuevo Mapa (Ctrl+N)", 0);
+        fileMenu.AddItem("Abrir Mapa... (Ctrl+O)", 1);
         fileMenu.AddSeparator();
-        fileMenu.AddItem("Guardar", 2);
+        fileMenu.AddItem("Guardar (Ctrl+S)", 2);
         fileMenu.AddItem("Guardar Como...", 3);
         fileMenu.AddSeparator();
         fileMenu.AddItem("Propiedades del Mapa...", 4);
+        fileMenu.AddItem("Propiedades de Tile (T)", 5);
         fileMenu.AddSeparator();
-        fileMenu.AddItem("Configurar Ruta de Datos...", 5);
+        fileMenu.AddItem("Configurar Ruta de Datos...", 6);
         fileMenu.IdPressed += OnFileMenuId;
         menuBar.AddChild(fileMenu);
 
@@ -76,44 +76,57 @@ public partial class EditorMain : Control
         editMenu.AddItem("Deshacer (Ctrl+Z)", 0);
         editMenu.AddItem("Rehacer (Ctrl+Y)", 1);
         editMenu.AddSeparator();
-        editMenu.AddItem("Copiar Seleccion (Ctrl+C)", 2);
+        editMenu.AddItem("Copiar (Ctrl+C)", 2);
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.IdPressed += OnEditMenuId;
         menuBar.AddChild(editMenu);
 
+        var viewMenu = new PopupMenu { Name = "Ver" };
+        viewMenu.AddCheckItem("Grilla (G)", 0);
+        viewMenu.AddCheckItem("Bloqueados", 1);
+        viewMenu.AddCheckItem("Salidas", 2);
+        viewMenu.AddSeparator();
+        viewMenu.AddCheckItem("Capa 1", 3);
+        viewMenu.AddCheckItem("Capa 2", 4);
+        viewMenu.AddCheckItem("Capa 3", 5);
+        viewMenu.AddCheckItem("Capa 4", 6);
+        for (int i = 0; i <= 6; i++) viewMenu.SetItemChecked(i, true);
+        viewMenu.IdPressed += OnViewMenuId;
+        menuBar.AddChild(viewMenu);
+
         mainVBox.AddChild(menuBar);
 
-        // Toolbar
-        _toolBar = new ToolBar { State = _state };
-        _toolBar.NewMapRequested += OnNewMap;
-        _toolBar.OpenMapRequested += OnOpenMap;
-        _toolBar.SaveMapRequested += OnSaveMap;
-        _toolBar.SaveAsMapRequested += OnSaveAsMap;
-        _toolBar.UndoRequested += () => { _undo.Undo(_map!); _viewport?.QueueRedraw(); };
-        _toolBar.RedoRequested += () => { _undo.Redo(_map!); _viewport?.QueueRedraw(); };
-        mainVBox.AddChild(_toolBar);
-
-        // Main content: palette | viewport | properties
-        var hbox = new HSplitContainer();
-        hbox.SizeFlagsVertical = SizeFlags.ExpandFill;
-        mainVBox.AddChild(hbox);
+        // ─── Main split: palette (left, narrow) | viewport (right, fills) ───
+        var split = new HSplitContainer();
+        split.SizeFlagsVertical = SizeFlags.ExpandFill;
+        split.SplitOffset = 260;
+        mainVBox.AddChild(split);
 
         // Left: Tile palette
         _palette = new TilePalette { State = _state };
-        hbox.AddChild(_palette);
+        _palette.CustomMinimumSize = new Vector2(240, 0);
+        split.AddChild(_palette);
 
-        // Center: Map viewport using SubViewport for proper rendering + clipping
+        // Right: Viewport (fills all remaining space)
         var svc = new SubViewportContainer();
         svc.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         svc.SizeFlagsVertical = SizeFlags.ExpandFill;
         svc.Stretch = true;
-        hbox.AddChild(svc);
+        split.AddChild(svc);
 
         var subViewport = new SubViewport();
         subViewport.HandleInputLocally = true;
         subViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
-        subViewport.TransparentBg = true;
+        subViewport.TransparentBg = false;
+        subViewport.OwnWorld3D = true;
         svc.AddChild(subViewport);
+
+        // Dark background for viewport
+        var bg = new ColorRect();
+        bg.Color = new Color(0.1f, 0.1f, 0.12f, 1f);
+        bg.AnchorsPreset = (int)LayoutPreset.FullRect;
+        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        subViewport.AddChild(bg);
 
         _viewport = new MapViewport
         {
@@ -125,24 +138,55 @@ public partial class EditorMain : Control
         };
         subViewport.AddChild(_viewport);
 
-        // Right: Tile properties
+        // ─── Status bar (compact, single line) ───
+        var statusBar = new HBoxContainer();
+        statusBar.AddThemeConstantOverride("separation", 16);
+
+        _toolLabel = new Label { Text = "Pintar" };
+        _toolLabel.AddThemeFontSizeOverride("font_size", 11);
+        _toolLabel.AddThemeColorOverride("font_color", new Color(0.5f, 1f, 0.5f));
+        statusBar.AddChild(_toolLabel);
+
+        _layerLabel = new Label { Text = "Capa 1" };
+        _layerLabel.AddThemeFontSizeOverride("font_size", 11);
+        _layerLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.8f, 1f));
+        statusBar.AddChild(_layerLabel);
+
+        _coordLabel = new Label { Text = "(0, 0)" };
+        _coordLabel.AddThemeFontSizeOverride("font_size", 11);
+        statusBar.AddChild(_coordLabel);
+
+        _statusLabel = new Label { Text = "Listo" };
+        _statusLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _statusLabel.HorizontalAlignment = HorizontalAlignment.Right;
+        _statusLabel.AddThemeFontSizeOverride("font_size", 11);
+        _statusLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
+        statusBar.AddChild(_statusLabel);
+
+        mainVBox.AddChild(statusBar);
+
+        // ─── Tile Properties as floating Window ───
+        _propsWindow = new Window
+        {
+            Title = "Propiedades de Tile",
+            Size = new Vector2I(280, 500),
+            Visible = false,
+            Exclusive = false,
+            AlwaysOnTop = true,
+            Unresizable = false,
+        };
+        _propsWindow.CloseRequested += () => _propsWindow.Visible = false;
+        AddChild(_propsWindow);
+
         _propsPanel = new TilePropertiesPanel
         {
             Map = _map,
             State = _state,
             Undo = _undo,
         };
-        hbox.AddChild(_propsPanel);
+        _propsWindow.AddChild(_propsPanel);
 
-        // Status bar
-        var statusBar = new HBoxContainer();
-        _statusLabel = new Label { Text = "Listo. Configure la ruta de datos para comenzar." };
-        _statusLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _statusLabel.AddThemeFontSizeOverride("font_size", 11);
-        statusBar.AddChild(_statusLabel);
-        mainVBox.AddChild(statusBar);
-
-        // File dialogs
+        // ─── File dialogs ───
         _openDialog = new FileDialog
         {
             FileMode = FileDialog.FileModeEnum.OpenFile,
@@ -175,16 +219,6 @@ public partial class EditorMain : Control
         _dataPathDialog.DirSelected += OnDataPathSelected;
         AddChild(_dataPathDialog);
 
-        // Map number dialog for new/open
-        _mapNumberDialog = new AcceptDialog { Title = "Numero de Mapa" };
-        var numVBox = new VBoxContainer();
-        numVBox.AddChild(new Label { Text = "Numero de mapa:" });
-        _mapNumberSpin = new SpinBox { MinValue = 1, MaxValue = 999, Value = 1 };
-        numVBox.AddChild(_mapNumberSpin);
-        _mapNumberDialog.AddChild(numVBox);
-        AddChild(_mapNumberDialog);
-
-        // Map properties dialog
         BuildMapPropsDialog();
     }
 
@@ -197,23 +231,18 @@ public partial class EditorMain : Control
         grid.AddChild(new Label { Text = "Nombre:" });
         _mapNameEdit = new LineEdit { CustomMinimumSize = new Vector2(200, 0) };
         grid.AddChild(_mapNameEdit);
-
         grid.AddChild(new Label { Text = "Musica:" });
         _mapMusicSpin = new SpinBox { MinValue = 0, MaxValue = 999 };
         grid.AddChild(_mapMusicSpin);
-
         grid.AddChild(new Label { Text = "PvP:" });
         _mapPkCheck = new CheckBox();
         grid.AddChild(_mapPkCheck);
-
         grid.AddChild(new Label { Text = "Ambient R:" });
         _mapAmbR = new SpinBox { MinValue = 0, MaxValue = 255, Value = 180 };
         grid.AddChild(_mapAmbR);
-
         grid.AddChild(new Label { Text = "Ambient G:" });
         _mapAmbG = new SpinBox { MinValue = 0, MaxValue = 255, Value = 180 };
         grid.AddChild(_mapAmbG);
-
         grid.AddChild(new Label { Text = "Ambient B:" });
         _mapAmbB = new SpinBox { MinValue = 0, MaxValue = 255, Value = 180 };
         grid.AddChild(_mapAmbB);
@@ -228,11 +257,10 @@ public partial class EditorMain : Control
 
     private void TryAutoDetectDataPath()
     {
-        // Try common relative paths
         string[] candidates = {
-            "../../client/Data",                  // tools/world-editor → client/Data
-            "../../../client/Data",               // fallback
-            Path.Combine(OS.GetUserDataDir(), "Data"), // Godot user data
+            "../../client/Data",
+            "../../../client/Data",
+            Path.Combine(OS.GetUserDataDir(), "Data"),
         };
 
         foreach (var candidate in candidates)
@@ -245,7 +273,7 @@ public partial class EditorMain : Control
             }
         }
 
-        SetStatus("No se encontro la carpeta Data/. Use Archivo > Configurar Ruta de Datos.");
+        SetStatus("Data/ no encontrada. Archivo > Configurar Ruta de Datos");
     }
 
     private void LoadDataPath(string dataPath)
@@ -258,30 +286,26 @@ public partial class EditorMain : Control
 
         if (!File.Exists(graficosInd))
         {
-            SetStatus($"ERROR: No se encontro {graficosInd}");
+            SetStatus($"ERROR: {graficosInd} no encontrado");
             return;
         }
 
-        // Load GRH data
         _grhs = GrhLoader.Load(graficosInd);
         _textures = new TextureManager(graficosDir);
 
-        // Load texture catalog
         if (File.Exists(indicesIni))
         {
             _catalog = TextureCatalog.LoadFromFile(indicesIni);
-            SetStatus($"Cargado: {_grhs.Length} GRHs, {_catalog.AllRefs.Count} texturas en {_catalog.Categories.Count} categorias");
+            SetStatus($"{_grhs.Length} GRHs, {_catalog.AllRefs.Count} texturas, {_catalog.Categories.Count} categorias");
         }
         else
         {
             _catalog = new TextureCatalog();
-            SetStatus($"Cargado: {_grhs.Length} GRHs. (indices.ini no encontrado — palette vacio)");
+            SetStatus($"{_grhs.Length} GRHs (indices.ini no encontrado)");
         }
 
-        // Set map directory
         _mapDir = mapsDir;
 
-        // Update UI components
         _palette!.Grhs = _grhs;
         _palette.Textures = _textures;
         _palette.Catalog = _catalog;
@@ -290,7 +314,6 @@ public partial class EditorMain : Control
         _viewport!.Grhs = _grhs;
         _viewport.Textures = _textures;
 
-        // Create default empty map
         CreateNewMap(1);
     }
 
@@ -307,7 +330,8 @@ public partial class EditorMain : Control
             case 2: OnSaveMap(); break;
             case 3: OnSaveAsMap(); break;
             case 4: ShowMapProperties(); break;
-            case 5: _dataPathDialog?.Popup(); break;
+            case 5: ToggleTileProperties(); break;
+            case 6: _dataPathDialog?.Popup(); break;
         }
     }
 
@@ -322,14 +346,27 @@ public partial class EditorMain : Control
         }
     }
 
+    private void OnViewMenuId(long id)
+    {
+        var menu = GetNode<MenuBar>("%MenuBar")?.GetChild(2) as PopupMenu;
+        // Can't easily get the menu by path, so toggle directly
+        switch (id)
+        {
+            case 0: _state.ShowGrid = !_state.ShowGrid; break;
+            case 1: _state.ShowBlocked = !_state.ShowBlocked; break;
+            case 2: _state.ShowExits = !_state.ShowExits; break;
+            case 3: _state.ShowLayer1 = !_state.ShowLayer1; break;
+            case 4: _state.ShowLayer2 = !_state.ShowLayer2; break;
+            case 5: _state.ShowLayer3 = !_state.ShowLayer3; break;
+            case 6: _state.ShowLayer4 = !_state.ShowLayer4; break;
+        }
+        _viewport?.QueueRedraw();
+    }
+
     private void OnNewMap()
     {
-        _mapNumberDialog!.Confirmed += () =>
-        {
-            CreateNewMap((int)_mapNumberSpin!.Value);
-            _mapNumberDialog.Confirmed -= null!; // one-shot
-        };
-        _mapNumberDialog.PopupCentered();
+        // Simple: just create map 1. TODO: dialog for map number
+        CreateNewMap(1);
     }
 
     private void CreateNewMap(int mapNumber)
@@ -338,30 +375,24 @@ public partial class EditorMain : Control
         _map.MapNumber = mapNumber;
         _map.Name = $"Mapa {mapNumber}";
 
-        // Fill with default terrain (GRH 1 = empty/grass)
         for (int y = 1; y <= 100; y++)
             for (int x = 1; x <= 100; x++)
                 _map.Tiles[x, y].Layer1 = 1;
 
         _undo.Clear();
         UpdateViewport();
-        SetStatus($"Nuevo mapa {mapNumber} creado (100x100)");
+        SetStatus($"Mapa {mapNumber} (100x100)");
     }
 
     private void OnOpenMap()
     {
-        if (string.IsNullOrEmpty(_mapDir) || !Directory.Exists(_mapDir))
-        {
-            _openDialog?.Popup();
-            return;
-        }
-        _openDialog!.CurrentDir = _mapDir;
-        _openDialog.Popup();
+        if (!string.IsNullOrEmpty(_mapDir) && Directory.Exists(_mapDir))
+            _openDialog!.CurrentDir = _mapDir;
+        _openDialog!.Popup();
     }
 
     private void OnMapFileSelected(string path)
     {
-        // Extract map number from filename
         string filename = Path.GetFileNameWithoutExtension(path);
         if (filename.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase))
         {
@@ -372,25 +403,19 @@ public partial class EditorMain : Control
                 _map = MapLoader.Load(dir, mapNum);
                 _undo.Clear();
                 UpdateViewport();
-                SetStatus($"Mapa {mapNum} cargado desde {dir}");
+                SetStatus($"Mapa {mapNum} cargado");
                 return;
             }
         }
-        SetStatus($"ERROR: No se pudo determinar el numero de mapa de '{filename}'");
+        SetStatus($"ERROR: nombre invalido '{filename}'");
     }
 
     private void OnSaveMap()
     {
         if (_map == null) return;
-        if (string.IsNullOrEmpty(_mapDir))
-        {
-            OnSaveAsMap();
-            return;
-        }
-
+        if (string.IsNullOrEmpty(_mapDir)) { OnSaveAsMap(); return; }
         MapLoader.Save(_mapDir, _map);
-        _unsavedChanges = false;
-        SetStatus($"Mapa {_map.MapNumber} guardado en {_mapDir}");
+        SetStatus($"Mapa {_map.MapNumber} guardado");
     }
 
     private void OnSaveAsMap()
@@ -407,18 +432,14 @@ public partial class EditorMain : Control
         string dir = Path.GetDirectoryName(path) ?? _mapDir;
         _mapDir = dir;
         MapLoader.Save(dir, _map);
-        _unsavedChanges = false;
-        SetStatus($"Mapa {_map.MapNumber} guardado en {dir}");
+        SetStatus($"Mapa {_map.MapNumber} guardado");
     }
 
-    private void OnDataPathSelected(string path)
-    {
-        LoadDataPath(path);
-    }
+    private void OnDataPathSelected(string path) => LoadDataPath(path);
 
     #endregion
 
-    #region Map Properties
+    #region Map Properties / Tile Properties
 
     private void ShowMapProperties()
     {
@@ -441,7 +462,16 @@ public partial class EditorMain : Control
         _map.AmbientR = (byte)_mapAmbR!.Value;
         _map.AmbientG = (byte)_mapAmbG!.Value;
         _map.AmbientB = (byte)_mapAmbB!.Value;
-        SetStatus($"Propiedades actualizadas: {_map.Name}");
+        SetStatus($"Props: {_map.Name}");
+    }
+
+    private void ToggleTileProperties()
+    {
+        if (_propsWindow == null) return;
+        _propsWindow.Visible = !_propsWindow.Visible;
+        if (_propsWindow.Visible)
+            _propsWindow.Position = new Vector2I(
+                (int)GetViewportRect().Size.X - 300, 60);
     }
 
     #endregion
@@ -460,7 +490,6 @@ public partial class EditorMain : Control
                 int dx = _state.SelX1 + x;
                 int dy = _state.SelY1 + y;
                 if (!_map.InBounds(dx, dy)) continue;
-
                 var before = _map.Tiles[dx, dy];
                 _map.Tiles[dx, dy] = _state.Clipboard[x + 1, y + 1];
                 _undo.RecordTileChange(dx, dy, before, _map.Tiles[dx, dy]);
@@ -474,6 +503,11 @@ public partial class EditorMain : Control
 
     #region Input
 
+    private static readonly string[] ToolNames = {
+        "Pintar", "Borrar", "Seleccionar", "Mover", "Rellenar",
+        "Cuentagotas", "Bloquear", "Luz", "Salida", "NPC", "Objeto", "Trigger"
+    };
+
     public override void _UnhandledKeyInput(InputEvent @event)
     {
         if (@event is not InputEventKey key || !key.Pressed) return;
@@ -484,51 +518,33 @@ public partial class EditorMain : Control
         {
             switch (key.Keycode)
             {
-                case Key.Z:
-                    _undo.Undo(_map!);
-                    _viewport?.QueueRedraw();
-                    break;
-                case Key.Y:
-                    _undo.Redo(_map!);
-                    _viewport?.QueueRedraw();
-                    break;
-                case Key.S:
-                    OnSaveMap();
-                    break;
-                case Key.O:
-                    OnOpenMap();
-                    break;
-                case Key.N:
-                    OnNewMap();
-                    break;
-                case Key.C:
-                    _state.CopySelection(_map!);
-                    SetStatus("Seleccion copiada");
-                    break;
-                case Key.V:
-                    PasteClipboard();
-                    break;
+                case Key.Z: _undo.Undo(_map!); _viewport?.QueueRedraw(); break;
+                case Key.Y: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
+                case Key.S: OnSaveMap(); break;
+                case Key.O: OnOpenMap(); break;
+                case Key.N: OnNewMap(); break;
+                case Key.C: _state.CopySelection(_map!); SetStatus("Copiado"); break;
+                case Key.V: PasteClipboard(); break;
             }
         }
         else
         {
-            // Tool shortcuts
             switch (key.Keycode)
             {
                 case Key.P: _state.ActiveTool = EditorTool.Paint; break;
                 case Key.E: _state.ActiveTool = EditorTool.Erase; break;
-                case Key.S: _state.ActiveTool = EditorTool.Select; break;
+                case Key.R: _state.ActiveTool = EditorTool.Select; break;
                 case Key.M: _state.ActiveTool = EditorTool.Move; break;
                 case Key.F: _state.ActiveTool = EditorTool.Fill; break;
                 case Key.I: _state.ActiveTool = EditorTool.Eyedrop; break;
                 case Key.B: _state.ActiveTool = EditorTool.Block; break;
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
+                case Key.T: ToggleTileProperties(); break;
                 case Key.Key1: _state.ActiveLayer = 1; break;
                 case Key.Key2: _state.ActiveLayer = 2; break;
                 case Key.Key3: _state.ActiveLayer = 3; break;
                 case Key.Key4: _state.ActiveLayer = 4; break;
             }
-            _toolBar?.HighlightActiveTool();
         }
     }
 
@@ -555,23 +571,32 @@ public partial class EditorMain : Control
 
     public override void _Process(double delta)
     {
-        // Update tile properties panel when a tile is selected
+        // Open tile properties when a tile is clicked with property tools
         if (_state.ShowTileProperties && _propsPanel != null && _map != null)
         {
             _propsPanel.LoadTile(_state.PropTileX, _state.PropTileY);
             _state.ShowTileProperties = false;
+            if (_propsWindow != null && !_propsWindow.Visible)
+            {
+                _propsWindow.Visible = true;
+                _propsWindow.Position = new Vector2I(
+                    (int)GetViewportRect().Size.X - 300, 60);
+            }
         }
 
-        // Update coords in toolbar from mouse position
-        if (_viewport != null && _state != null)
+        // Update status bar info
+        if (_viewport != null)
         {
             var mousePos = _viewport.GetLocalMousePosition();
             int tx = (int)((mousePos.X - _state.CameraOffset.X) / _state.Zoom / 32);
             int ty = (int)((mousePos.Y - _state.CameraOffset.Y) / _state.Zoom / 32);
-            _toolBar?.UpdateCoords(tx, ty);
+            _coordLabel!.Text = $"({tx}, {ty})";
         }
 
-        // Continuous redraw for viewport (panning/zooming feel)
+        int toolIdx = (int)_state.ActiveTool;
+        _toolLabel!.Text = toolIdx < ToolNames.Length ? ToolNames[toolIdx] : "?";
+        _layerLabel!.Text = $"Capa {_state.ActiveLayer}";
+
         _viewport?.QueueRedraw();
     }
 
