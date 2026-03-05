@@ -565,6 +565,7 @@ void fragment() {
 
         // Trigger child layer redraws
         _reflAuraLayer?.QueueRedraw();
+        _reflBodyLayer?.QueueRedraw();
         _maskLayer?.QueueRedraw();
         _layer2Layer?.QueueRedraw();
         _auraLayer?.QueueRedraw();
