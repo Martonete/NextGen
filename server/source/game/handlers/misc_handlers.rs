@@ -55,6 +55,8 @@ pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, da
         else if user.equip.helmet == slot2 { user.equip.helmet = slot1; }
         if user.equip.municion == slot1 { user.equip.municion = slot2; }
         else if user.equip.municion == slot2 { user.equip.municion = slot1; }
+        if user.equip.ring == slot1 { user.equip.ring = slot2; }
+        else if user.equip.ring == slot2 { user.equip.ring = slot1; }
     }
     send_full_inventory(state, conn_id).await;
 }

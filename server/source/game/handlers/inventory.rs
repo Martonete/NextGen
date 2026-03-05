@@ -177,6 +177,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
             ObjType::Armor => state.users.get(&conn_id).map(|u| u.equip.armor).unwrap_or(0),
             ObjType::Shield => state.users.get(&conn_id).map(|u| u.equip.shield).unwrap_or(0),
             ObjType::Helmet => state.users.get(&conn_id).map(|u| u.equip.helmet).unwrap_or(0),
+            ObjType::Tool => state.users.get(&conn_id).map(|u| u.equip.ring).unwrap_or(0),
             _ => 0,
         };
 
@@ -239,6 +240,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                     }
                 }
                 ObjType::Tool => {
+                    user.equip.ring = slot;
                     if obj_data.crea_aura > 0 {
                         user.aura_r = obj_data.crea_aura;
                         aura_changed = true;
@@ -365,6 +367,7 @@ pub(super) fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: us
                 }
             }
             ObjType::Tool => {
+                user.equip.ring = 0;
                 if item_aura > 0 && user.aura_r == item_aura {
                     user.aura_r = 0;
                 }

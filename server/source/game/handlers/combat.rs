@@ -517,6 +517,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         user.equip.shield = 0;
         user.equip.helmet = 0;
         user.equip.municion = 0;
+        user.equip.ring = 0;
         // Mark inventory items as not equipped
         for slot in user.inventory.iter_mut() {
             slot.equipped = false;

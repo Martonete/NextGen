@@ -39,6 +39,7 @@ pub struct EquipSlots {
     pub shield: usize,   // EscudoEqpSlot
     pub helmet: usize,   // CascoEqpSlot
     pub municion: usize, // MunicionEqpSlot (arrows)
+    pub ring: usize,     // AnilloEqpSlot (ring/tool)
 }
 
 /// Per-connection user state (tracks the login flow and in-game state).

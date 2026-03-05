@@ -1414,12 +1414,25 @@ async fn connect_user(
                 };
             }
         }
+        // Reconstruct ring equip slot from inventory (equipped Tool/Ring item)
+        let mut ring_slot = 0usize;
+        for (i, inv) in user.inventory.iter().enumerate() {
+            if inv.equipped && inv.obj_index > 0 {
+                if let Some(obj) = state.game_data.objects.get((inv.obj_index - 1) as usize) {
+                    if obj.obj_type == crate::data::objects::ObjType::Tool {
+                        ring_slot = i + 1;
+                        break;
+                    }
+                }
+            }
+        }
         user.equip = EquipSlots {
             weapon: char_data.weapon_eqp_slot,
             armor: char_data.armour_eqp_slot,
             shield: char_data.shield_eqp_slot,
             helmet: char_data.helmet_eqp_slot,
             municion: char_data.municion_eqp_slot,
+            ring: ring_slot,
         };
 
         // Bank
