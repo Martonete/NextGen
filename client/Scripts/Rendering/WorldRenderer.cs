@@ -592,20 +592,21 @@ void fragment() {
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects
+                // Ground objects — slightly dimmed (220/255) to blend with environment
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
+                    const float objBright = 220f / 255f;
                     bool objNearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
                                        && IsTree(objGrh)
                                        && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 1f));
                     }
                 }
 
@@ -625,20 +626,21 @@ void fragment() {
                                                charTileX: x, charTileY: y);
                 }
 
-                // Layer 3 (trees/objects)
+                // Layer 3 (trees/objects) — slightly dimmed (220/255)
                 if (tile.Layer3 > 0)
                 {
+                    const float treeBright = 220f / 255f;
                     bool nearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
                                    && IsTree(tile.Layer3)
                                    && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, 1f));
                     }
                 }
             }
