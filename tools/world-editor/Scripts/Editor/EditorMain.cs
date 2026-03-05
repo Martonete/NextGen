@@ -96,17 +96,17 @@ public partial class EditorMain : Control
 
         mainVBox.AddChild(menuBar);
 
-        // ─── Main split: palette (left, narrow) | viewport (right, fills all) ───
-        var split = new HSplitContainer();
-        split.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        split.SizeFlagsVertical = SizeFlags.ExpandFill;
-        split.SplitOffset = 240;
-        mainVBox.AddChild(split);
+        // ─── Main content: palette (left, fixed) | viewport (right, fills all) ───
+        var hbox = new HBoxContainer();
+        hbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        hbox.SizeFlagsVertical = SizeFlags.ExpandFill;
+        hbox.AddThemeConstantOverride("separation", 4);
+        mainVBox.AddChild(hbox);
 
-        // Left: Tile palette (fixed width)
+        // Left: Tile palette (fixed width, no horizontal expand)
         _palette = new TilePalette { State = _state };
-        _palette.CustomMinimumSize = new Vector2(240, 0);
-        split.AddChild(_palette);
+        _palette.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+        hbox.AddChild(_palette);
 
         // Right: MapViewport fills ALL remaining space
         _viewport = new MapViewport
@@ -120,7 +120,7 @@ public partial class EditorMain : Control
             SizeFlagsVertical = SizeFlags.ExpandFill,
             ClipContents = true,
         };
-        split.AddChild(_viewport);
+        hbox.AddChild(_viewport);
 
         // ─── Status bar (compact, single line) ───
         var statusBar = new HBoxContainer();
