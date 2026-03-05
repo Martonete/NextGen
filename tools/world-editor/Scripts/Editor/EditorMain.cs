@@ -107,17 +107,7 @@ public partial class EditorMain : Control
         _palette.CustomMinimumSize = new Vector2(240, 0);
         split.AddChild(_palette);
 
-        // Right: Panel with ClipContents (no SubViewport needed)
-        var rightPanel = new Panel();
-        rightPanel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        rightPanel.SizeFlagsVertical = SizeFlags.ExpandFill;
-        rightPanel.ClipContents = true;
-        // Dark background via StyleBox
-        var panelStyle = new StyleBoxFlat();
-        panelStyle.BgColor = new Color(0.1f, 0.1f, 0.12f, 1f);
-        rightPanel.AddThemeStyleboxOverride("panel", panelStyle);
-        split.AddChild(rightPanel);
-
+        // Right: MapViewport directly in split (no wrapper)
         _viewport = new MapViewport
         {
             Map = _map,
@@ -125,8 +115,11 @@ public partial class EditorMain : Control
             Textures = _textures,
             State = _state,
             Undo = _undo,
+            SizeFlagsHorizontal = SizeFlags.ExpandFill,
+            SizeFlagsVertical = SizeFlags.ExpandFill,
+            ClipContents = true,
         };
-        rightPanel.AddChild(_viewport);
+        split.AddChild(_viewport);
 
         // ─── Status bar (compact, single line) ───
         var statusBar = new HBoxContainer();

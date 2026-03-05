@@ -34,20 +34,25 @@ public partial class MapViewport : Control
     // Track painted tiles in current stroke to avoid duplicates
     private readonly System.Collections.Generic.HashSet<long> _paintedThisStroke = new();
 
+    private int _debugCounter;
+
     public override void _Ready()
     {
-        // Fill parent panel
-        AnchorsPreset = (int)LayoutPreset.FullRect;
-        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
     }
 
     public override void _Draw()
     {
-        if (Map == null || Grhs == null || Textures == null || State == null) return;
+        // Dark background
+        DrawRect(new Rect2(Vector2.Zero, Size), new Color(0.1f, 0.1f, 0.12f, 1f));
 
-        var transform = Transform2D.Identity
-            .Scaled(new Vector2(State.Zoom, State.Zoom))
-            .Translated(State.CameraOffset);
+        if (_debugCounter++ % 120 == 0)
+        {
+            GD.Print($"[MapViewport] _Draw Size={Size} Map={Map != null} Grhs={Grhs != null} Tex={Textures != null} State={State != null}");
+            if (Map != null && Grhs != null)
+                GD.Print($"[MapViewport] MapW={Map.Width} MapH={Map.Height} GrhCount={Grhs.Length} Zoom={State?.Zoom} Cam={State?.CameraOffset}");
+        }
+
+        if (Map == null || Grhs == null || Textures == null || State == null) return;
 
         DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
