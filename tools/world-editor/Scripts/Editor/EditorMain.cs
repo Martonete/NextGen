@@ -736,6 +736,7 @@ public partial class EditorMain : Control
         int toolIdx = (int)_state.ActiveTool;
         _toolLabel!.Text = toolIdx < ToolNames.Length ? ToolNames[toolIdx] : "?";
         _layerLabel!.Text = $"Capa {_state.ActiveLayer}";
+        _palette?.SyncLayerUI();
 
         _viewport?.QueueRedraw();
     }

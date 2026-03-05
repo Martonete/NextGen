@@ -11,6 +11,7 @@ namespace AOWorldEditor.Editor;
 /// </summary>
 public partial class TilePalette : VBoxContainer
 {
+    private OptionButton? _layerSelect;
     private TabBar? _tabBar;
     private ScrollContainer? _scrollContainer;
     private GridContainer? _grid;
@@ -28,6 +29,23 @@ public partial class TilePalette : VBoxContainer
     public override void _Ready()
     {
         CustomMinimumSize = new Vector2(300, 0);
+
+        // Layer selector
+        var layerBox = new HBoxContainer();
+        var layerLbl = new Label { Text = "Capa:" };
+        layerLbl.AddThemeFontSizeOverride("font_size", 12);
+        layerBox.AddChild(layerLbl);
+
+        _layerSelect = new OptionButton();
+        _layerSelect.AddItem("1 - Terreno", 0);
+        _layerSelect.AddItem("2 - Mascara", 1);
+        _layerSelect.AddItem("3 - Objetos/Arboles", 2);
+        _layerSelect.AddItem("4 - Techos", 3);
+        _layerSelect.Selected = 0;
+        _layerSelect.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _layerSelect.ItemSelected += OnLayerSelected;
+        layerBox.AddChild(_layerSelect);
+        AddChild(layerBox);
 
         // Category tab bar
         _tabBar = new TabBar();
@@ -111,6 +129,25 @@ public partial class TilePalette : VBoxContainer
             btn.Pressed += () => OnTextureSelected(capturedRef);
 
             _grid.AddChild(btn);
+        }
+    }
+
+    private void OnLayerSelected(long index)
+    {
+        if (State != null)
+            State.ActiveLayer = (int)index + 1;
+    }
+
+    /// <summary>
+    /// Sync the dropdown if layer was changed externally (keyboard 1-4).
+    /// </summary>
+    public void SyncLayerUI()
+    {
+        if (_layerSelect != null && State != null)
+        {
+            int idx = State.ActiveLayer - 1;
+            if (idx >= 0 && idx < 4 && _layerSelect.Selected != idx)
+                _layerSelect.Selected = idx;
         }
     }
 
