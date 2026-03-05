@@ -3229,7 +3229,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
 
             state.send_data_bytes(
                 SendTarget::ToArea { map, x, y },
-                &binary_packets::write_create_fx(char_index as i16, 58, 0),
+                &binary_packets::write_char_particle_create(char_index as i16, 58),
             ).await;
 
             // VB6: ClassBonus.dat options at levels 53, 56, 60
@@ -3363,7 +3363,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
         state.send_data_bytes(
             SendTarget::ToArea { map, x, y },
-            &binary_packets::write_create_fx(char_index as i16, 58, 0),
+            &binary_packets::write_char_particle_create(char_index as i16, 58),
         ).await;
 
         // VB6: ||67 = "Has subido de nivel!"
