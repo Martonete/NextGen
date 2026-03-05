@@ -127,6 +127,26 @@ public class GrhAnimator
     }
 
     /// <summary>
+    /// Returns the fractional frame position for smooth crossfade between frames.
+    /// E.g. 1.7 means 70% blend from frame 1 to frame 2.
+    /// </summary>
+    public double GetFractionalFrame(int grhIndex, GameData? data, float slowdownFactor)
+    {
+        if (data != null && grhIndex > 0 && grhIndex < data.Grhs.Length)
+        {
+            var grh = data.Grhs[grhIndex];
+            if (grh.NumFrames > 1)
+            {
+                float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                double effectiveTime = _globalTimeMs / slowdownFactor;
+                double fractionalFrame = effectiveTime * grh.NumFrames / speed;
+                return fractionalFrame % grh.NumFrames;
+            }
+        }
+        return 0;
+    }
+
+    /// <summary>
     /// Clear all state (on map change). Resets global clock.
     /// </summary>
     public void Clear()
