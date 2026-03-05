@@ -1640,9 +1640,9 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
             }
             // Send stat updates
             let u = state.users.get(&tc).unwrap();
-            let hp_pkt = binary_packets::write_update_hp(u.min_hp as i16);
-            let mana_pkt = binary_packets::write_update_mana(u.min_mana as i16);
-            let sta_pkt = binary_packets::write_update_sta(u.min_sta as i16);
+            let hp_pkt = binary_packets::write_update_hp(u.max_hp as i16, u.min_hp as i16);
+            let mana_pkt = binary_packets::write_update_mana(u.max_mana as i16, u.min_mana as i16);
+            let sta_pkt = binary_packets::write_update_sta(u.max_sta as i16, u.min_sta as i16);
             state.send_bytes(tc, &hp_pkt).await;
             state.send_bytes(tc, &mana_pkt).await;
             state.send_bytes(tc, &sta_pkt).await;

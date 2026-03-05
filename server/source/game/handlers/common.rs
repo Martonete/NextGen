@@ -95,21 +95,21 @@ pub(super) fn health_description(current: i32, max: i32, dead: bool) -> &'static
 
 pub(super) async fn send_stats_hp(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = binary_packets::write_update_hp(u.min_hp as i16);
+        let pkt = binary_packets::write_update_hp(u.max_hp as i16, u.min_hp as i16);
         state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_stats_mana(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = binary_packets::write_update_mana(u.min_mana as i16);
+        let pkt = binary_packets::write_update_mana(u.max_mana as i16, u.min_mana as i16);
         state.send_bytes(conn_id, &pkt).await;
     }
 }
 
 pub(super) async fn send_stats_sta(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
-        let pkt = binary_packets::write_update_sta(u.min_sta as i16);
+        let pkt = binary_packets::write_update_sta(u.max_sta as i16, u.min_sta as i16);
         state.send_bytes(conn_id, &pkt).await;
     }
 }

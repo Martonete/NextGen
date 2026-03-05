@@ -888,19 +888,25 @@ public partial class PacketHandler
 
     private void HandleBinUpdateSta(ByteQueue bq)
     {
+        short maxSta = bq.ReadInteger();
         short minSta = bq.ReadInteger();
+        _state.MaxSta = maxSta;
         _state.MinSta = minSta;
     }
 
     private void HandleBinUpdateMana(ByteQueue bq)
     {
+        short maxMana = bq.ReadInteger();
         short minMana = bq.ReadInteger();
+        _state.MaxMana = maxMana;
         _state.MinMana = minMana;
     }
 
     private void HandleBinUpdateHp(ByteQueue bq)
     {
+        short maxHp = bq.ReadInteger();
         short minHp = bq.ReadInteger();
+        _state.MaxHp = maxHp;
         _state.MinHp = minHp;
     }
 

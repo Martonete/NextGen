@@ -319,26 +319,29 @@ pub fn write_guild_chat(chat: &str) -> Vec<u8> {
 
 // ── Stats ──────────────────────────────────────────────────
 
-/// ID 17: Update HP.
-pub fn write_update_hp(min_hp: i16) -> Vec<u8> {
+/// ID 17: Update HP (VB6: [H]MaxHP,MinHP).
+pub fn write_update_hp(max_hp: i16, min_hp: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateHP.to_byte());
+    pkt.write_integer(max_hp);
     pkt.write_integer(min_hp);
     pkt.into_bytes()
 }
 
-/// ID 16: Update Mana.
-pub fn write_update_mana(min_mana: i16) -> Vec<u8> {
+/// ID 16: Update Mana (VB6: [M]MaxMAN,MinMAN).
+pub fn write_update_mana(max_mana: i16, min_mana: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateMana.to_byte());
+    pkt.write_integer(max_mana);
     pkt.write_integer(min_mana);
     pkt.into_bytes()
 }
 
-/// ID 15: Update Stamina.
-pub fn write_update_sta(min_sta: i16) -> Vec<u8> {
+/// ID 15: Update Stamina (VB6: [E]MaxSta,MinSta).
+pub fn write_update_sta(max_sta: i16, min_sta: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateSta.to_byte());
+    pkt.write_integer(max_sta);
     pkt.write_integer(min_sta);
     pkt.into_bytes()
 }
