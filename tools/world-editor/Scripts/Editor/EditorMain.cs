@@ -96,18 +96,18 @@ public partial class EditorMain : Control
 
         mainVBox.AddChild(menuBar);
 
-        // ─── Main split: palette (left, narrow) | viewport (right, fills) ───
+        // ─── Main split: palette (left, narrow) | viewport (right, fills all) ───
         var split = new HSplitContainer();
+        split.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         split.SizeFlagsVertical = SizeFlags.ExpandFill;
-        split.SplitOffset = 260;
         mainVBox.AddChild(split);
 
-        // Left: Tile palette
+        // Left: Tile palette (fixed width)
         _palette = new TilePalette { State = _state };
         _palette.CustomMinimumSize = new Vector2(240, 0);
         split.AddChild(_palette);
 
-        // Right: MapViewport directly in split
+        // Right: MapViewport fills ALL remaining space
         _viewport = new MapViewport
         {
             Map = _map,
@@ -117,7 +117,6 @@ public partial class EditorMain : Control
             Undo = _undo,
             SizeFlagsHorizontal = SizeFlags.ExpandFill,
             SizeFlagsVertical = SizeFlags.ExpandFill,
-            CustomMinimumSize = new Vector2(200, 200),
             ClipContents = true,
         };
         split.AddChild(_viewport);
