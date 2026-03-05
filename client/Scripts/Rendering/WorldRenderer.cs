@@ -362,17 +362,25 @@ void fragment() {
             float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
             _lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
             Modulate = Colors.White;
-            // ContentLayer has no shader — give it the map ambient so characters stay tinted
-            if (_contentLayer != null)
-                _contentLayer.Modulate = new Color(_state.MapColorR / 255f, _state.MapColorG / 255f,
-                                                    _state.MapColorB / 255f, 1f);
+            // Parent is white → ContentLayer inherits white → full brightness. No correction needed.
+            if (_contentLayer != null) _contentLayer.SelfModulate = Colors.White;
         }
         else
         {
             _lightmapMaterial?.SetShaderParameter("use_lightmap", false);
             UpdateAmbientLight();
+            // Parent Modulate = map ambient → ContentLayer inherits dark tint.
+            // Cancel it with inverse SelfModulate so characters draw at full brightness.
             if (_contentLayer != null)
-                _contentLayer.Modulate = Colors.White;
+            {
+                float r = _state.MapColorR / 255f;
+                float g = _state.MapColorG / 255f;
+                float b = _state.MapColorB / 255f;
+                _contentLayer.SelfModulate = new Color(
+                    r > 0.01f ? 1f / r : 1f,
+                    g > 0.01f ? 1f / g : 1f,
+                    b > 0.01f ? 1f / b : 1f, 1f);
+            }
         }
 
         // ==========================================
@@ -575,23 +583,6 @@ void fragment() {
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Per-tile light ratio: how much brighter than ambient this tile is.
-                // ContentLayer.Modulate already provides the base ambient tint,
-                // so we divide by ambient to get just the extra light contribution.
-                // lightRatio = GetTileLight / ambient. Near torch → >1, far → =1.
-                Color lightRatio = Colors.White;
-                if (_frameHasLights)
-                {
-                    Color tl = LightSystem.GetTileLight(_state, x, y);
-                    float ambR = _state.MapColorR / 255f;
-                    float ambG = _state.MapColorG / 255f;
-                    float ambB = _state.MapColorB / 255f;
-                    lightRatio = new Color(
-                        ambR > 0.001f ? tl.R / ambR : 1f,
-                        ambG > 0.001f ? tl.G / ambG : 1f,
-                        ambB > 0.001f ? tl.B / ambB : 1f, 1f);
-                }
-
                 // Ground objects
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
@@ -601,12 +592,11 @@ void fragment() {
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true,
-                            modulate: new Color(lightRatio.R, lightRatio.G, lightRatio.B, 120f / 255f));
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: lightRatio);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
                     }
                 }
 
@@ -621,11 +611,9 @@ void fragment() {
                     float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
                     float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
-                    // Pass 'this' as worldRenderer so CharRenderer can queue particle draws
                     CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
                                                _data, _animator, _deltaMs, _state, this,
-                                               charTileX: x, charTileY: y,
-                                               lightModulate: lightRatio);
+                                               charTileX: x, charTileY: y);
                 }
 
                 // Layer 3 (trees/objects)
@@ -637,12 +625,11 @@ void fragment() {
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true,
-                            modulate: new Color(lightRatio.R, lightRatio.G, lightRatio.B, 120f / 255f));
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: lightRatio);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true);
                     }
                 }
             }
