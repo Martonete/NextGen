@@ -89,16 +89,6 @@ public partial class WorldRenderer : Node2D
     private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
     private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
 
-    // Whether lights are active this frame (used by PASS 3 for objects/trees modulate)
-    private bool _frameHasLights;
-
-    // GPU lightmap shader — replaces per-tile modulate lighting with single GPU pass
-    private Shader? _lightmapShader;
-    private ShaderMaterial? _lightmapMaterial;
-    private ImageTexture? _lightmapTexture;
-    private Image? _lightmapImage;
-    private bool _lightmapDirty;
-
     // Water border mask — precomputed on map load, true for non-water tiles within 2 of water
     private bool[,]? _waterBorderMask;
     private MapData? _lastMapData; // detect map changes
@@ -177,35 +167,6 @@ public partial class WorldRenderer : Node2D
         _roofLayer.SetRenderer(this);
         AddChild(_roofLayer);
 
-        // GPU lightmap shader — applied to terrain layers, NOT additive layers
-        // VERTEX only exists in vertex(), must pass to fragment() via varying.
-        // GPU bilinear interpolation on the 101x101 lightmap = smooth per-vertex lighting.
-        _lightmapShader = new Shader();
-        _lightmapShader.Code = @"
-shader_type canvas_item;
-uniform sampler2D lightmap : filter_linear, repeat_disable;
-uniform vec2 world_origin;
-varying vec2 v_world_px;
-
-void vertex() {
-    v_world_px = VERTEX + world_origin;
-}
-
-void fragment() {
-    vec2 lm_uv = (v_world_px - 32.0) / 3200.0;
-    vec3 light = texture(lightmap, lm_uv).rgb;
-    COLOR.rgb *= light;
-}
-";
-        _lightmapMaterial = new ShaderMaterial();
-        _lightmapMaterial.Shader = _lightmapShader;
-
-        // Create initial white lightmap (no lighting effect)
-        _lightmapImage = Image.CreateEmpty(101, 101, false, Image.Format.Rgb8);
-        _lightmapImage.Fill(Colors.White);
-        _lightmapTexture = ImageTexture.CreateFromImage(_lightmapImage);
-        _lightmapMaterial.SetShaderParameter("lightmap", _lightmapTexture);
-        _lightmapMaterial.SetShaderParameter("world_origin", Vector2.Zero);
     }
 
     public override void _Process(double delta)
@@ -321,60 +282,6 @@ void fragment() {
         }
     }
 
-    /// <summary>
-    /// Mark the lightmap as dirty so it gets rebuilt next frame.
-    /// Called from Main.cs after RecalculateLights().
-    /// </summary>
-    public void MarkLightmapDirty()
-    {
-        _lightmapDirty = true;
-    }
-
-    /// <summary>
-    /// Update the lightmap shader: rebuild texture when dirty, update world_origin every frame.
-    /// Enables/disables shader material on lit layers based on whether lights are active.
-    /// </summary>
-    private void UpdateLightmapShader()
-    {
-        bool hasLights = (_state!.Config?.ShowLights ?? true)
-                         && _state.MapLights.Count > 0 && _state.TileLightColors != null;
-
-        if (hasLights)
-        {
-            // Rebuild lightmap texture when dirty
-            if (_lightmapDirty && _state.TileLightColors != null)
-            {
-                _lightmapImage = LightSystem.BuildLightmapImage(_state.TileLightColors);
-                _lightmapTexture?.Update(_lightmapImage);
-                _lightmapDirty = false;
-            }
-
-            // Update world_origin uniform every frame (camera moves)
-            // VERTEX is in canvas local space. To get world pixel:
-            //   screenX = (tileX - userX + 8) * 32 + pixelOffsetX
-            //   worldX  = tileX * 32 = screenX + (userX - 8) * 32 - pixelOffsetX
-            // So world_origin = ((userX - 8) * 32 - pixelOffsetX, (userY - 6) * 32 - pixelOffsetY)
-            var origin = new Vector2(
-                (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX,
-                (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY
-            );
-            _lightmapMaterial?.SetShaderParameter("world_origin", origin);
-
-            // Apply shader to tile-only layers (NOT ContentLayer — characters shouldn't be lit)
-            if (Material != _lightmapMaterial) Material = _lightmapMaterial;
-            if (_maskLayer?.Material != _lightmapMaterial) _maskLayer!.Material = _lightmapMaterial;
-            if (_layer2Layer?.Material != _lightmapMaterial) _layer2Layer!.Material = _lightmapMaterial;
-            if (_roofLayer?.Material != _lightmapMaterial) _roofLayer!.Material = _lightmapMaterial;
-        }
-        else
-        {
-            // No lights — remove shader material from tile layers
-            if (Material != null) Material = null;
-            if (_maskLayer?.Material != null) _maskLayer!.Material = null;
-            if (_layer2Layer?.Material != null) _layer2Layer!.Material = null;
-            if (_roofLayer?.Material != null) _roofLayer!.Material = null;
-        }
-    }
 
     /// <summary>
     /// Main _Draw: renders PASS 1 (L1 ground) + PASS 1.5 (body reflections).
@@ -428,13 +335,6 @@ void fragment() {
             _lastMapData = _state.MapData;
             PrecomputeWaterBorder();
         }
-
-        // Track whether lights are active (used by PASS 3 for object/tree modulate)
-        _frameHasLights = (_state.Config?.ShowLights ?? true)
-                          && _state.MapLights.Count > 0 && _state.TileLightColors != null;
-
-        // Update lightmap shader (enables/disables, rebuilds texture, updates origin)
-        UpdateLightmapShader();
 
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
@@ -637,21 +537,20 @@ void fragment() {
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects — per-tile light modulate (no GPU shader on ContentLayer)
+                // Ground objects
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
-                    Color objLight = _frameHasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
                     bool objNearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
                                        && IsTree(objGrh)
                                        && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objLight.R, objLight.G, objLight.B, 120f / 255f));
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objLight);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
                     }
                 }
 
@@ -672,21 +571,20 @@ void fragment() {
                                                charTileX: x, charTileY: y);
                 }
 
-                // Layer 3 (trees/objects) — per-tile light modulate (no GPU shader on ContentLayer)
+                // Layer 3 (trees/objects)
                 if (tile.Layer3 > 0)
                 {
-                    Color treeLight = _frameHasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
                     bool nearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
                                    && IsTree(tile.Layer3)
                                    && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeLight.R, treeLight.G, treeLight.B, 120f / 255f));
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: treeLight);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true);
                     }
                 }
             }
