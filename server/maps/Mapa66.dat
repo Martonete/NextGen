@@ -10,9 +10,9 @@ Zona=CAMPO
 Restringir=NO
 BackUp= 1
 Pk=0
-R=180
-G=180
-B=180
+R=160
+G=160
+B=160
 [REY]
 MagiaSinefecto=0
 InviSinEfecto=0

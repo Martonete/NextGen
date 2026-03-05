@@ -174,11 +174,12 @@ pub fn write_character_change(
 }
 
 /// ID 66: Set invisible.
-pub fn write_set_invisible(char_index: i16, invisible: bool) -> Vec<u8> {
+pub fn write_set_invisible(char_index: i16, invisible: bool, duration_secs: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::SetInvisible.to_byte());
     pkt.write_integer(char_index);
     pkt.write_boolean(invisible);
+    pkt.write_integer(duration_secs); // 0 = permanent (GM), >0 = spell countdown in seconds
     pkt.into_bytes()
 }
 
@@ -762,9 +763,10 @@ pub fn write_dumb_no_more() -> Vec<u8> {
 }
 
 /// ID 82: Paralize OK.
-pub fn write_paralize_ok() -> Vec<u8> {
+pub fn write_paralize_ok(duration_secs: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ParalizeOK.to_byte());
+    pkt.write_integer(duration_secs); // 0 = toggle off, >0 = paralysis countdown in seconds
     pkt.into_bytes()
 }
 

@@ -1580,7 +1580,8 @@ async fn connect_user(
     // PARADOK is a toggle — client starts with UserParalizado=False,
     // so we send one PARADOK to set it to True if the char is paralyzed.
     if char_data.paralyzed {
-        state.send_bytes(conn_id, &binary_packets::write_paralize_ok()).await;
+        let para_secs = (state.users.get(&conn_id).map(|u| u.counter_paralisis).unwrap_or(0) as f32 * 0.04) as i16;
+        state.send_bytes(conn_id, &binary_packets::write_paralize_ok(para_secs)).await;
     }
 
     // --- PHASE 10c: NAVEG if navigating (VB6 TCP.bas lines 1515-1521, 1654) ---
@@ -1810,6 +1811,30 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         user.heading = heading;
     }
 
+    // VB6 HandleWalk: Moving while hidden (Oculto) reveals non-Thief/non-Bandit classes.
+    // Spell invisibility is NOT broken by movement.
+    let (was_hidden, class_for_hide, is_spell_invis, navigating_for_hide) = match state.users.get(&conn_id) {
+        Some(u) => (u.hidden && !u.admin_invisible, u.class.clone(), u.invisible && !u.admin_invisible, u.navigating),
+        None => (false, String::new(), false, false),
+    };
+    if was_hidden {
+        let is_thief_or_bandit = class_for_hide.eq_ignore_ascii_case("Ladron")
+            || class_for_hide.eq_ignore_ascii_case("Bandido");
+        if !is_thief_or_bandit {
+            // Reveal hidden state
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.hidden = false;
+                user.counter_oculto = 0;
+            }
+            // Only send SetInvisible(false) if spell invisibility is NOT active
+            if !is_spell_invis && !navigating_for_hide {
+                state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+                let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
+                state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+            }
+        }
+    }
+
     // Move on grid
     state.world.remove_user(map, old_x, old_y);
     state.world.place_user(map, new_x, new_y, conn_id);
@@ -1822,37 +1847,41 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
-    let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
-    let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
-        Some(u) => (u.area_min_x, u.area_min_y),
-        None => (0, 0),
-    };
-    if area_min_x > 0 || area_min_y > 0 {
-        let amx = area_min_x.max(1);
-        let amy = area_min_y.max(1);
-        let axx = (area_min_x + 26).min(100);
-        let axy = (area_min_y + 26).min(100);
-        let mut targets: Vec<ConnectionId> = Vec::new();
-        if let Some(grid) = state.world.grid(map) {
-            for sy in amy..=axy {
-                for sx in amx..=axx {
-                    if let Some(tile) = grid.tile(sx, sy) {
-                        if let Some(c) = tile.user_conn {
-                            if c != conn_id { targets.push(c); }
+    // Skip if invisible — others must NOT see movement.
+    let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
+    if !is_invisible {
+        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
+        let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
+            Some(u) => (u.area_min_x, u.area_min_y),
+            None => (0, 0),
+        };
+        if area_min_x > 0 || area_min_y > 0 {
+            let amx = area_min_x.max(1);
+            let amy = area_min_y.max(1);
+            let axx = (area_min_x + 26).min(100);
+            let axy = (area_min_y + 26).min(100);
+            let mut targets: Vec<ConnectionId> = Vec::new();
+            if let Some(grid) = state.world.grid(map) {
+                for sy in amy..=axy {
+                    for sx in amx..=axx {
+                        if let Some(tile) = grid.tile(sx, sy) {
+                            if let Some(c) = tile.user_conn {
+                                if c != conn_id { targets.push(c); }
+                            }
                         }
                     }
                 }
             }
+            for c in targets {
+                state.send_bytes(c, &move_pkt).await;
+            }
+        } else {
+            // Fallback: use standard area broadcast
+            state.send_data_bytes(
+                SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
+                &move_pkt,
+            ).await;
         }
-        for c in targets {
-            state.send_bytes(c, &move_pkt).await;
-        }
-    } else {
-        // Fallback: use standard area broadcast
-        state.send_data_bytes(
-            SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
-            &move_pkt,
-        ).await;
     }
 
     // VB6: ZonaCura check — auto-heal/revive if near a Revividor NPC (Sacerdotes automáticos)
@@ -3790,7 +3819,7 @@ async fn check_update_needed_user(
                 state.send_bytes(conn_id, &other_cd).await;
                 // If the other player is invisible, tell us not to render them
                 if other_invisible {
-                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true)).await;
+                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true, 0)).await;
                 }
                 // Send our CC + [CD to them
                 state.send_bytes(other_id, &my_cc).await;
@@ -3801,7 +3830,7 @@ async fn check_update_needed_user(
                 state.send_bytes(other_id, &my_cd).await;
                 // If we are invisible, tell them not to render us
                 if my_invisible {
-                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true)).await;
+                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true, 0)).await;
                 }
             }
         } else {
@@ -3985,7 +4014,17 @@ async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32, mover_hea
     ).await;
 }
 
+/// Warp variant that skips find_free_pos — places the user exactly at (x,y)
+/// even if blocked/occupied. Used for GM teleport.
+async fn warp_user_exact(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+    warp_user_inner(state, conn_id, new_map, new_x, new_y, true).await;
+}
+
 async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32) {
+    warp_user_inner(state, conn_id, new_map, new_x, new_y, false).await;
+}
+
+async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32, exact: bool) {
     let old_data = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y),
         None => return,
@@ -4040,7 +4079,8 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     state.world.remove_user(old_map, old_x, old_y);
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
-    let (final_x, final_y) = find_free_pos(state, new_map, new_x, new_y);
+    // GMs with exact=true skip this — they can stand on blocked tiles.
+    let (final_x, final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
 
     // 5. Update user position
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -4085,6 +4125,18 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
         state.send_bytes(conn_id, &binary_packets::write_user_mount(ci.0 as i16, true)).await;
     }
 
+    // 8c. Re-send invisible state — CC creates a fresh Character with Invisible=false,
+    // so the client loses the pulsing alpha. Send NOVER to restore it.
+    // Covers both GM /invisible and spell invisibility.
+    if let Some(u) = state.users.get(&conn_id) {
+        if u.invisible {
+            let remaining = if u.admin_invisible { 0 } else {
+                ((state.config.intervalo_invisible - u.counter_invisible) as f32 * 0.04) as i16
+            };
+            state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining)).await;
+        }
+    }
+
     // 9. PU (position update — tells client where to center camera)
     state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8)).await;
 
@@ -4092,14 +4144,18 @@ async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_map: i32, n
     make_user_visible(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
-    state.send_data_bytes(
-        SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
-        &own_cc,
-    ).await;
-    state.send_data_bytes(
-        SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
-        &own_cd,
-    ).await;
+    //     Skip if invisible (GM or spell) — others must NOT see us.
+    let is_invis = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
+    if !is_invis {
+        state.send_data_bytes(
+            SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
+            &own_cc,
+        ).await;
+        state.send_data_bytes(
+            SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
+            &own_cd,
+        ).await;
+    }
 
     // 12. Warp FX is NOT sent by default — only when caller sets fx=true
     // (VB6: FX param is Optional, only DoTileEvents sets it when tile has otTeleport object)
@@ -4287,6 +4343,8 @@ mod db_tests {
             notice: notice.to_string(),
             pretoriano_map: 0,
             intervalo_paralizado: 500,
+            intervalo_invisible: 500,
+            intervalo_oculto: 500,
             npc_ai_interval_ms: 1300,
         }
     }

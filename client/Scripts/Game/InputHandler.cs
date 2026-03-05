@@ -200,7 +200,7 @@ public class InputHandler
         // Hide/Stealth (VB6: UK9 — eSkill.Ocultarse)
         else if (_keys.IsActionPressed(GameAction.Hide))
         {
-            _tcp.SendPacket(ClientPackets.WriteUseSkill(9));
+            _tcp.SendPacket(ClientPackets.WriteUseSkill(8));
             _keyCooldown = KeyCooldownMs;
         }
         // Refresh position (VB6: RPU)
@@ -225,8 +225,8 @@ public class InputHandler
             _tcp.SendPacket(ClientPackets.WriteSafeToggle());
             _keyCooldown = KeyCooldownMs;
         }
-        // Resurrection safety toggle (VB6: /SEGR)
-        else if (_keys.IsActionPressed(GameAction.ResSafety))
+        // Resurrection safety toggle (VB6: /SEGR) — accepts both keyboard minus and numpad minus
+        else if (_keys.IsActionPressed(GameAction.ResSafety) || Input.IsKeyPressed(Key.KpSubtract))
         {
             _tcp.SendPacket(ClientPackets.WriteTalk("/SEGR"));
             _keyCooldown = KeyCooldownMs;

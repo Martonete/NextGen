@@ -58,7 +58,7 @@ public class GameState
     // Map
     public int CurrentMap;
     public string MapName = "";
-    public int MapColorR = 200, MapColorG = 200, MapColorB = 200;
+    public int MapColorR = 160, MapColorG = 160, MapColorB = 160;
     public MapData? MapData;
     public bool NeedMapLoad;
 

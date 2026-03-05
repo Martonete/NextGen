@@ -9,7 +9,7 @@ use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
 use crate::data::npcs::NpcType;
 use crate::db::charfile;
 use crate::game::npc;
-use crate::protocol::binary_packets;
+use crate::protocol::{binary_packets, font_index};
 use super::common::*;
 use super::world;
 
@@ -980,7 +980,20 @@ const STAMINA_INTERVAL: i32 = 1;   // Regen stamina every 1 second
 const POISON_INTERVAL: i32 = 1;    // Poison damage every 1 second
 const HUNGER_DRAIN: i32 = 10;      // Drain amount per tick
 const THIRST_DRAIN: i32 = 10;      // Drain amount per tick
-const MEDITATION_FX: i32 = 4;      // FX for meditation
+// VB6 meditation FX by level (Protocol.bas lines 5555-5567)
+const FXMEDITARCHICO: i16 = 4;       // level < 13
+const FXMEDITARMEDIANO: i16 = 5;     // level < 25
+const FXMEDITARGRANDE: i16 = 6;      // level < 35
+const FXMEDITARXGRANDE: i16 = 16;    // level < 42
+const FXMEDITARXXGRANDE: i16 = 34;   // level >= 42
+
+fn meditation_fx_for_level(level: i32) -> i16 {
+    if level < 13 { FXMEDITARCHICO }
+    else if level < 25 { FXMEDITARMEDIANO }
+    else if level < 35 { FXMEDITARGRANDE }
+    else if level < 42 { FXMEDITARXGRANDE }
+    else { FXMEDITARXXGRANDE }
+}
 
 /// ME — Toggle meditation on/off.
 pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
@@ -994,6 +1007,7 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
     let map = user.pos_map;
     let x = user.pos_x;
     let y = user.pos_y;
+    let level = user.level;
 
     if meditating {
         // Stop meditation
@@ -1012,8 +1026,9 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
             user.meditating = true;
         }
 
-        // Send meditation FX to area (999 loops = forever/looping)
-        let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, MEDITATION_FX as i16, 999);
+        // VB6: meditation FX scales by level (5 tiers), 999 loops = forever
+        let med_fx = meditation_fx_for_level(level);
+        let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, med_fx, 999);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
         state.send_msg_id(conn_id, 394, "").await; // Comenzas a meditar
@@ -1110,6 +1125,21 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.min_hp = new_hp;
                 }
                 send_stats_hp(state, conn_id).await;
+
+                // VB6: FXSANGRE (blood FX 14) on poison tick if not meditating/navigating
+                if !meditating {
+                    if let Some(u) = state.users.get(&conn_id) {
+                        if !u.navigating {
+                            let fx_pkt = binary_packets::write_create_fx(
+                                u.char_index.0 as i16, 14, 0, // FXSANGRE = 14
+                            );
+                            state.send_data_bytes(
+                                SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
+                                &fx_pkt,
+                            ).await;
+                        }
+                    }
+                }
 
                 if new_hp <= 0 {
                     user_die(state, conn_id, None).await;
@@ -1352,6 +1382,7 @@ pub async fn tick_intervals(state: &mut GameState) {
             } else {
                 // Timer expired — remove paralysis
                 user.paralyzed = false;
+                user.immobilized = false;
                 unparalyze.push(conn_id);
             }
         }
@@ -1359,8 +1390,77 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // Send PARADOK to users who just got unparalyzed
     for conn_id in unparalyze {
-        let pkt = binary_packets::write_paralize_ok();
+        let pkt = binary_packets::write_paralize_ok(0);
         state.send_bytes(conn_id, &pkt).await;
+    }
+
+    // VB6: EfectoInvisibilidad — count up invisibility timer each tick.
+    // Only for spell invisibility (not admin_invisible which is permanent).
+    let intervalo_invis = state.config.intervalo_invisible;
+    let mut uninvis: Vec<(ConnectionId, i16, i32, i32, i32, bool, bool)> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.invisible && !user.admin_invisible {
+            if user.counter_invisible < intervalo_invis {
+                user.counter_invisible += 1;
+            } else {
+                // Timer expired — remove invisibility
+                user.invisible = false;
+                user.counter_invisible = 0;
+                // VB6: only send SetInvisible(false) if Oculto=0 (still hidden → no visibility change)
+                uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.hidden));
+            }
+        }
+    }
+    for (conn_id, ci, map, x, y, navigating, still_hidden) in uninvis {
+        if !still_hidden {
+            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+            if !navigating {
+                // Re-broadcast CC so others see us again
+                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+                let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+                // Tell self we're visible again
+                let nover = binary_packets::write_set_invisible(ci, false, 0);
+                state.send_bytes(conn_id, &nover).await;
+            }
+        }
+    }
+
+    // VB6: DoPermanecerOculto — count down hide timer each tick.
+    // When timer expires, hidden is cleared. Only send SetInvisible(false) if invisible=0.
+    let mut unhide: Vec<(ConnectionId, i16, i32, i32, i32, bool, bool)> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.hidden && !user.admin_invisible {
+            // Hunter with skill>90 + special armor stays hidden indefinitely
+            let skill = user.skills.get(7).copied().unwrap_or(0);
+            let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
+                user.inventory[user.equip.armor - 1].obj_index
+            } else { 0 };
+            if user.class.eq_ignore_ascii_case("Cazador") && skill > 90 && (armor_obj == 648 || armor_obj == 360) {
+                continue;
+            }
+
+            user.counter_oculto -= 1;
+            if user.counter_oculto <= 0 {
+                user.counter_oculto = 0;
+                user.hidden = false;
+                unhide.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.invisible));
+            }
+        }
+    }
+    for (conn_id, ci, map, x, y, navigating, still_invisible) in unhide {
+        if !still_invisible {
+            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+            if !navigating {
+                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+                let cd = super::common::build_cd_binary(state.users.get(&conn_id).unwrap());
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+                let nover = binary_packets::write_set_invisible(ci, false, 0);
+                state.send_bytes(conn_id, &nover).await;
+            }
+        }
     }
 
     // NPC paralysis countdown (same 40ms tick as user paralysis)

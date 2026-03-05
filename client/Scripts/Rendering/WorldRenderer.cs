@@ -83,6 +83,11 @@ public partial class WorldRenderer : Node2D
     // Whether any reflection was drawn this frame (used by PASS 1b mask)
     private bool _frameAnyReflection;
 
+    // Reusable arrays for DrawTileGrhLit (avoids per-tile allocation)
+    private readonly Vector2[] _litQuadPoints = new Vector2[4];
+    private readonly Color[] _litQuadColors = new Color[4];
+    private readonly Vector2[] _litQuadUVs = new Vector2[4];
+
     // Per-frame camera data (computed in _Draw, used by child layer callbacks)
     private int _frameUserX, _frameUserY;
     private float _framePixelOffsetX, _framePixelOffsetY;
@@ -95,6 +100,8 @@ public partial class WorldRenderer : Node2D
         _state = state;
         _data = data;
         _animator = animator;
+
+
 
         var additiveMat = new CanvasItemMaterial
         {
@@ -186,6 +193,20 @@ public partial class WorldRenderer : Node2D
             Modulate = Colors.White;
             return;
         }
+
+        // When lights are active, vertex colors already include the map ambient
+        // (baked in by LightSystem). Set Modulate = white so lights aren't
+        // double-darkened. Characters/objects still get their darkness from
+        // GetTileLight() average which includes the ambient.
+        bool hasLights = (_state.Config?.ShowLights ?? true)
+                         && _state.MapLights.Count > 0
+                         && _state.TileLightColors != null;
+        if (hasLights)
+        {
+            Modulate = Colors.White;
+            return;
+        }
+
         float r = _state.MapColorR / 255f;
         float g = _state.MapColorG / 255f;
         float b = _state.MapColorB / 255f;
@@ -299,6 +320,7 @@ public partial class WorldRenderer : Node2D
         // ==========================================
         // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
         // ==========================================
+        bool showWaterFx = _state.Config?.ShowWaterEffect ?? true;
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
             for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
@@ -307,14 +329,27 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer1 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+
+                // Water deformation: displace vertices for water tiles
+                bool isWater = showWaterFx
+                    && tile.Layer1 >= 1505 && tile.Layer1 <= 1520 && tile.Layer2 <= 0;
+
                 if (_frameHasLights)
                 {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrh(tile.Layer1, pos, center: false, modulate: lightColor);
+                    LightSystem.GetTileLightCorners(_state, x, y,
+                        out Color tl, out Color tr, out Color br, out Color bl);
+                    if (isWater)
+                        DrawTileGrhWater(tile.Layer1, pos, x, y, tl, tr, br, bl);
+                    else
+                        DrawTileGrhLit(tile.Layer1, pos, tl, tr, br, bl);
                 }
                 else
                 {
-                    DrawTileGrh(tile.Layer1, pos, center: false);
+                    if (isWater)
+                        DrawTileGrhWater(tile.Layer1, pos, x, y,
+                            Colors.White, Colors.White, Colors.White, Colors.White);
+                    else
+                        DrawTileGrh(tile.Layer1, pos);
                 }
             }
         }
@@ -376,9 +411,10 @@ public partial class WorldRenderer : Node2D
                     headOffset, heading, _data, _animator);
 
                 // Collect reflected auras (drawn by ReflectedAuraLayer child with additive blend)
-                // Same conditions as normal auras: skip if Navegando, Montado, or Invisible
+                // Skip if Navegando or Montado. Invisible self-char still shows auras.
                 if ((_state.Config?.ShowAuras ?? true)
-                    && !ch.Invisible && !ch.Navigating && !ch.Mounted)
+                    && !ch.Navigating && !ch.Mounted
+                    && (!ch.Invisible || kvp.Key == _state.UserCharIndex))
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
                         new Vector2(charPx, charPy), headOffset, _data);
@@ -402,10 +438,10 @@ public partial class WorldRenderer : Node2D
         foreach (var kvp in _state.Characters)
         {
             var ch = kvp.Value;
-            // VB6: invisible chars skip ALL rendering (body, head, auras, everything)
+            // Invisible chars from OTHER players skip ALL rendering
             if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
-            // VB6: auras not drawn when Navegando, Montado, or Invisible
-            if (ch.Invisible || ch.Navigating || ch.Mounted) continue;
+            // Auras not drawn when Navegando or Montado (equipment hidden)
+            if (ch.Navigating || ch.Mounted) continue;
 
             // Compute character screen position
             var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
@@ -422,9 +458,16 @@ public partial class WorldRenderer : Node2D
             }
 
             // Collect aura draws (updates angle state + queues to _pendingAuraDraws)
+            // When invisible (self only), auras pulse with the same alpha as the body
             if (_state.Config?.ShowAuras ?? true)
             {
-                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data);
+                float auraAlpha = 1f;
+                if (ch.Invisible)
+                {
+                    // TransparenciaBody ranges 18-53, maps to alpha ~45-135 out of 255
+                    auraAlpha = (ch.TransparenciaBody + 45f) / 255f;
+                }
+                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data, auraAlpha);
             }
         }
 
@@ -613,7 +656,21 @@ public partial class WorldRenderer : Node2D
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
-            DrawStatusIconTo(canvas, slot, 23611, -1, -1, "OCULTO",
+            // Decrement invisibility countdown in real seconds
+            if (selfCh.InvisibleCountdown > 0)
+            {
+                selfCh.InvisibleCountdownTimer += _deltaMs;
+                if (selfCh.InvisibleCountdownTimer >= 1000f)
+                {
+                    selfCh.InvisibleCountdownTimer -= 1000f;
+                    selfCh.InvisibleCountdown--;
+                }
+            }
+            float inviCurrent = selfCh.InvisibleCountdown;
+            // Spell invisibility has countdown (label "INVISIBLE"), hide skill has no countdown (label "OCULTO")
+            bool isSpellInvi = selfCh.InvisibleMaxCountdown > 0;
+            string inviLabel = isSpellInvi ? "INVISIBLE" : "OCULTO";
+            DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, inviLabel,
                            new Color(0.6f, 0.6f, 1f));
             slot++;
         }
@@ -632,18 +689,10 @@ public partial class WorldRenderer : Node2D
             slot++;
         }
 
-        if (_state.SafeMode)
-        {
-            DrawStatusIconTo(canvas, slot, 0, -1, -1, "SEGURO",
-                           new Color(0f, 1f, 0f));
-            slot++;
-        }
-
         if (_state.UserNavigating)
         {
-            DrawStatusIconTo(canvas, slot, 0, -1, -1, "NAVEGANDO",
-                           new Color(0.3f, 0.7f, 1f));
-            slot++;
+            // Draw on the right side to avoid overlapping countdown bars
+            DrawStatusLabelRight(canvas, "NAVEGANDO", new Color(0.3f, 0.7f, 1f));
         }
     }
 
@@ -682,15 +731,139 @@ public partial class WorldRenderer : Node2D
     }
 
     /// <summary>
+    /// Draw a status label on the top-right corner of the viewport.
+    /// </summary>
+    private void DrawStatusLabelRight(CanvasItem canvas, string label, Color color)
+    {
+        if (_data?.Fonts?[1] == null) return;
+        float x = 534f - 10f - (label.Length * 8f); // approximate right-align
+        _data.Fonts[1]!.DrawText(canvas, (int)x, 7, label, color);
+    }
+
+    /// <summary>
     /// Draw a tile GRH on this WorldRenderer's canvas (for terrain passes).
     /// </summary>
-    private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
+    private void DrawTileGrh(int grhIndex, Vector2 pos)
     {
         if (_data == null || _animator == null) return;
         if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
         int frame = _animator.GetCurrentFrame(grhIndex, _data);
-        CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center, modulate);
+        CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center: false);
+    }
+
+    /// <summary>
+    /// Draw a ground tile with per-vertex lighting (4 corner colors).
+    /// Uses DrawPolygon for smooth light gradients matching VB6 DX8 behavior.
+    /// </summary>
+    private void DrawTileGrhLit(int grhIndex, Vector2 pos,
+        Color topLeft, Color topRight, Color bottomRight, Color bottomLeft)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        float dx = (float)Math.Round(pos.X);
+        float dy = (float)Math.Round(pos.Y);
+
+        // Quad vertices: TL, TR, BR, BL
+        _litQuadPoints[0] = new Vector2(dx, dy);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph);
+
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
+
+        // UVs normalized to texture size
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
+        DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
+    }
+
+    /// <summary>
+    /// Draw a water tile with vertex Y deformation matching VB6 modEngine.bas.
+    /// Pattern: checkerboard (X%2, Y%2) alternates +/- displacement on top/bottom edges.
+    /// Edges adjacent to non-water tiles are clamped (no displacement) to avoid gaps.
+    /// VB6 vertex layout: 0=TL, 1=TR, 2=BL, 3=BR. Godot quad: 0=TL, 1=TR, 2=BR, 3=BL.
+    /// </summary>
+    private void DrawTileGrhWater(int grhIndex, Vector2 pos, int tileX, int tileY,
+        Color topLeft, Color topRight, Color bottomRight, Color bottomLeft)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        // Slightly faster water animation.
+        int frame = _animator.GetCurrentFrameSlowed(grhIndex, _data, 0.85f);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        float dx = (float)Math.Round(pos.X);
+        float dy = (float)Math.Round(pos.Y);
+
+        // 1px overlap on all edges to prevent subpixel gaps between water tiles.
+        const float pad = 1f;
+        _litQuadPoints[0] = new Vector2(dx - pad, dy - pad);
+        _litQuadPoints[1] = new Vector2(dx + pw + pad, dy - pad);
+        _litQuadPoints[2] = new Vector2(dx + pw + pad, dy + ph + pad);
+        _litQuadPoints[3] = new Vector2(dx - pad, dy + ph + pad);
+
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
+
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
+        DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
     }
 
     /// <summary>
@@ -703,6 +876,59 @@ public partial class WorldRenderer : Node2D
 
         int frame = _animator.GetCurrentFrame(grhIndex, _data);
         CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, center, modulate);
+    }
+
+    /// <summary>
+    /// Draw a ground tile with per-vertex lighting on a specific canvas.
+    /// Used by child layers (mask, L2) that need the same smooth gradients as PASS 1.
+    /// </summary>
+    private void DrawTileGrhLitTo(CanvasItem canvas, int grhIndex, Vector2 pos,
+        Color topLeft, Color topRight, Color bottomRight, Color bottomLeft)
+    {
+        if (_data == null || _animator == null) return;
+        if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
+
+        int frame = _animator.GetCurrentFrame(grhIndex, _data);
+        var resolved = _data.ResolveGrh(grhIndex, frame);
+        if (resolved == null || resolved.FileNum <= 0) return;
+
+        var texture = _data.Textures?.GetTexture(resolved.FileNum);
+        if (texture == null) return;
+
+        int texW = texture.GetWidth();
+        int texH = texture.GetHeight();
+        int sx = resolved.SX, sy = resolved.SY;
+        int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+
+        if (texW > 0) sx = sx % texW;
+        if (texH > 0) sy = sy % texH;
+        if (sx + pw > texW) pw = texW - sx;
+        if (sy + ph > texH) ph = texH - sy;
+        if (pw <= 0 || ph <= 0) return;
+
+        float dx = (float)Math.Round(pos.X);
+        float dy = (float)Math.Round(pos.Y);
+
+        _litQuadPoints[0] = new Vector2(dx, dy);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph);
+
+        _litQuadColors[0] = topLeft;
+        _litQuadColors[1] = topRight;
+        _litQuadColors[2] = bottomRight;
+        _litQuadColors[3] = bottomLeft;
+
+        float u0 = (float)sx / texW;
+        float v0 = (float)sy / texH;
+        float u1 = (float)(sx + pw) / texW;
+        float v1 = (float)(sy + ph) / texH;
+        _litQuadUVs[0] = new Vector2(u0, v0);
+        _litQuadUVs[1] = new Vector2(u1, v0);
+        _litQuadUVs[2] = new Vector2(u1, v1);
+        _litQuadUVs[3] = new Vector2(u0, v1);
+
+        canvas.DrawPolygon(_litQuadPoints, _litQuadColors, _litQuadUVs, texture);
     }
 
     /// <summary>
@@ -778,8 +1004,9 @@ public partial class WorldRenderer : Node2D
                                             _framePixelOffsetX, _framePixelOffsetY);
                 if (_frameHasLights)
                 {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false, modulate: lightColor);
+                    LightSystem.GetTileLightCorners(_state, x, y,
+                        out Color tl, out Color tr, out Color br, out Color bl);
+                    DrawTileGrhLitTo(canvas, tile.Layer1, pos, tl, tr, br, bl);
                 }
                 else
                 {
@@ -807,8 +1034,9 @@ public partial class WorldRenderer : Node2D
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
                 if (_frameHasLights)
                 {
-                    Color lightColor = LightSystem.GetTileLight(_state, x, y);
-                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false, modulate: lightColor);
+                    LightSystem.GetTileLightCorners(_state, x, y,
+                        out Color tl, out Color tr, out Color br, out Color bl);
+                    DrawTileGrhLitTo(canvas, tile.Layer2, pos, tl, tr, br, bl);
                 }
                 else
                 {

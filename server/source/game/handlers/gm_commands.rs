@@ -12,7 +12,7 @@ use super::world;
 
 // Functions from parent module (mod.rs) used by GM commands
 use super::{
-    warp_user, send_warp_fx, user_die, revive_user, check_user_level,
+    warp_user, warp_user_exact, send_warp_fx, user_die, revive_user, check_user_level,
     naked_body, send_inventory_slot, send_full_inventory, llevar_usuarios_cvc,
     spawn_npc_at,
 };
@@ -97,7 +97,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
         }
     };
 
-    warp_user(state, target_id, map, x, y).await;
+    warp_user_exact(state, target_id, map, x, y).await;
     send_warp_fx(state, target_id).await;
     follow_tile_exit_after_warp(state, target_id).await;
 
@@ -137,7 +137,7 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    warp_user(state, conn_id, map, tx, ty).await;
+    warp_user_exact(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -176,7 +176,7 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
         return;
     }
 
-    warp_user(state, conn_id, map, x, y).await;
+    warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -208,7 +208,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
         }
     };
 
-    warp_user(state, conn_id, map, x, y).await;
+    warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
     state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
@@ -333,8 +333,28 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     }
 }
 
+/// Strip accents/diacritics for accent-insensitive search.
+/// "túnica" → "tunica", "ción" → "cion", etc.
+fn strip_accents(s: &str) -> String {
+    s.chars().map(|c| match c {
+        'á' | 'à' | 'ä' | 'â' => 'a',
+        'é' | 'è' | 'ë' | 'ê' => 'e',
+        'í' | 'ì' | 'ï' | 'î' => 'i',
+        'ó' | 'ò' | 'ö' | 'ô' => 'o',
+        'ú' | 'ù' | 'ü' | 'û' => 'u',
+        'Á' | 'À' | 'Ä' | 'Â' => 'A',
+        'É' | 'È' | 'Ë' | 'Ê' => 'E',
+        'Í' | 'Ì' | 'Ï' | 'Î' => 'I',
+        'Ó' | 'Ò' | 'Ö' | 'Ô' => 'O',
+        'Ú' | 'Ù' | 'Ü' | 'Û' => 'U',
+        'ñ' => 'n', 'Ñ' => 'N',
+        _ => c,
+    }).collect()
+}
+
 /// /SOBJ <name> — Search objects by name (VB6 TCP.bas line 3677).
 /// Sends ||748@<name>@<index> for each match. Requires SEMIDIOS+.
+/// Accent-insensitive: "tunica" matches "túnica".
 pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: ConnectionId, search: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
@@ -349,12 +369,12 @@ pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: Connection
         return;
     }
 
-    let search_upper = search.to_uppercase();
+    let search_norm = strip_accents(&search.to_uppercase());
     let mut found = 0;
 
     for i in 0..state.game_data.objects.len() {
-        let name_upper = state.game_data.objects[i].name.to_uppercase();
-        if name_upper.contains(&search_upper) {
+        let name_norm = strip_accents(&state.game_data.objects[i].name.to_uppercase());
+        if name_norm.contains(&search_norm) {
             let name = state.game_data.objects[i].name.clone();
             let idx = state.game_data.objects[i].index;
             state.send_msg_id(conn_id, 748, &format!("{}@{}", name, idx)).await;
@@ -381,40 +401,30 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
     };
 
     if is_invisible {
-        // Make visible again — restore old body/head
-        let (old_body, old_head) = {
-            let user = state.users.get(&conn_id).unwrap();
-            (user.old_body, user.old_head)
-        };
+        // Make visible again
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.admin_invisible = false;
             user.invisible = false;
-            user.body = old_body;
-            user.head = old_head;
         }
-        // Broadcast appearance change
+        // Re-broadcast appearance (body/head never changed — still intact)
         let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
         // NOVER packet (visible)
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false);
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
         state.send_console(conn_id, "Sos visible.", font_index::INFO).await;
     } else {
-        // Save current body/head, go invisible
+        // Go invisible — keep body/head intact for self-rendering with pulsing alpha
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.old_body = user.body;
-            user.old_head = user.head;
-            user.body = 0;
-            user.head = 0;
             user.admin_invisible = true;
             user.invisible = true;
         }
-        // Broadcast appearance change (body=0, head=0 = invisible)
-        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
-        // NOVER packet (invisible)
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
+        // BP — remove character from other players' screens
+        let bp = binary_packets::write_character_remove(char_index.0 as i16);
+        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &bp).await;
+        // NOVER packet — tell self we're invisible (permanent GM, duration=0)
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
+        state.send_bytes(conn_id, &nover).await;
         state.send_console(conn_id, "Sos invisible.", font_index::INFO).await;
     }
 }
@@ -1355,6 +1365,7 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
 /// Check if an object is a map fixture (not player-droppable).
 /// VB6: ItemNoEsDeMapa — returns TRUE if item is NOT a map fixture (i.e. can be cleaned).
 /// Map fixtures: Doors(6), Trees(4), Signs(8), Forums(10), Minerals(23), Teleports(19).
+/// Check if an object is a map fixture that should NOT be cleaned by /MASSDEST.
 fn is_map_fixture(state: &GameState, obj_index: i32) -> bool {
     use crate::data::objects::ObjType;
     match state.get_object(obj_index) {
@@ -1362,47 +1373,58 @@ fn is_map_fixture(state: &GameState, obj_index: i32) -> bool {
             ObjType::Door | ObjType::Trees | ObjType::Sign |
             ObjType::Forum | ObjType::Mineral | ObjType::Teleport
         ),
-        None => false, // Unknown object — safe to clean
+        None => false,
     }
 }
 
-/// /LIMPIAR or /LMAP — Clean dropped ground items on current map.
-/// Skips map fixtures (doors, trees, signs, forums, minerals, teleports).
-/// VB6: LimpiarMapa / LimpiarMundoEntero — only cleans items in tClearWorld.
+/// /LIMPIAR or /LMAP — Clean items tracked in the TrashCollector (clean_world).
+/// VB6: LimpiarMundo (General.bas) — iterates TrashCollector, calls EraseObj
+/// on each entry, then clears the list. Does NOT scan the map for all items.
+/// Only items explicitly added via clean_world_add_item (NPC drops, player drops,
+/// campfires, etc.) are cleaned. Map fixtures (trees, flowers, signs, doors,
+/// minerals, etc.) placed by the map editor are never touched.
 pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: ConnectionId) {
-    let map = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => u.pos_map,
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => return,
-    };
-
-    // Collect items to clean (skip map fixtures)
-    let mut to_clean: Vec<(i32, i32)> = Vec::new();
-    if let Some(grid) = state.world.grid(map) {
-        for y in 1..=100i32 {
-            for x in 1..=100i32 {
-                if let Some(tile) = grid.tile(x, y) {
-                    if tile.ground_item.obj_index > 0 && !is_map_fixture(state, tile.ground_item.obj_index) {
-                        to_clean.push((x, y));
-                    }
-                }
-            }
-        }
     }
 
-    // Remove items and send BO packets
-    for &(x, y) in &to_clean {
+    // Collect active TrashCollector entries (VB6: iterate TrashCollector in reverse)
+    let mut cleaned = 0i32;
+    for i in 0..state.clean_world.len() {
+        let entry = &state.clean_world[i];
+        if entry.map == 0 && entry.x == 0 && entry.y == 0 {
+            continue; // empty slot
+        }
+
+        let map = entry.map;
+        let x = entry.x;
+        let y = entry.y;
+
+        // VB6: EraseObj(1, d.Map, d.X, d.Y) — remove 1 unit from ground
         let grid = state.world.grid_mut(map);
         if let Some(tile) = grid.tile_mut(x, y) {
-            tile.ground_item = world::GroundItem::default();
+            if tile.ground_item.obj_index > 0 {
+                tile.ground_item.amount -= 1;
+                if tile.ground_item.amount <= 0 {
+                    tile.ground_item = world::GroundItem::default();
+                }
+                // Send BO (object delete) to everyone on that map
+                let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+                state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+                cleaned += 1;
+            }
         }
-        // VB6: EraseObj sends BO to map
-        let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+
+        // Clear the entry
+        state.clean_world[i] = crate::game::types::CleanWorldEntry::default();
     }
 
+    // VB6 also calls SecurityIp.IpSecurityMantenimientoLista — no equivalent needed
+
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    info!("[GM] {} used /LIMPIAR on map {} — cleaned {} items", gm_name, map, to_clean.len());
-    state.send_console(conn_id, &format!("{} items del suelo limpiados en mapa {}.", to_clean.len(), map), font_index::INFO).await;
+    info!("[GM] {} used /LIMPIAR — cleaned {} tracked items", gm_name, cleaned);
+    state.send_console(conn_id, &format!("{} items limpiados del TrashCollector.", cleaned), font_index::INFO).await;
 }
 
 /// /NICK2IP nick — Get IP of user.

@@ -27,6 +27,7 @@ public class GameConfig
     public bool ShowDayNight = true;        // VB6: Alpha_Use_Dia_Noche
     public bool ShowNames = true;           // VB6: General_Show_Nicks
     public bool ShowLights = true;          // (not in VB6, but useful toggle)
+    public bool ShowWaterEffect = true;    // VB6: polygon water deformation
 
     // ── Transparency ──────────────────────────────────────
     public bool UiTransparency;             // VB6: Alpha_Interfaz_Activar
@@ -92,6 +93,7 @@ public class GameConfig
         ShowDayNight = other.ShowDayNight;
         ShowNames = other.ShowNames;
         ShowLights = other.ShowLights;
+        ShowWaterEffect = other.ShowWaterEffect;
 
         UiTransparency = other.UiTransparency;
         UiTransparencyLevel = other.UiTransparencyLevel;
@@ -182,6 +184,7 @@ public class GameConfig
                     case "ShowDayNight": cfg.ShowDayNight = val == "1"; break;
                     case "ShowNames": cfg.ShowNames = val == "1"; break;
                     case "ShowLights": cfg.ShowLights = val == "1"; break;
+                    case "ShowWaterEffect": cfg.ShowWaterEffect = val == "1"; break;
 
                     // Transparency
                     case "UiTransparency": cfg.UiTransparency = val == "1"; break;
@@ -261,6 +264,7 @@ public class GameConfig
             sb.AppendLine($"ShowDayNight={(ShowDayNight ? "1" : "0")}");
             sb.AppendLine($"ShowNames={(ShowNames ? "1" : "0")}");
             sb.AppendLine($"ShowLights={(ShowLights ? "1" : "0")}");
+            sb.AppendLine($"ShowWaterEffect={(ShowWaterEffect ? "1" : "0")}");
 
             // Transparency
             sb.AppendLine($"UiTransparency={(UiTransparency ? "1" : "0")}");
@@ -324,6 +328,7 @@ public class GameConfig
                 ShowReflections = false;
                 ShowDayNight = false;
                 ShowLights = false;
+                ShowWaterEffect = false;
                 TreeRoofTransparency = false;
                 DeadCharTransparency = false;
                 break;
@@ -335,6 +340,7 @@ public class GameConfig
                 ShowReflections = false;
                 ShowDayNight = false;
                 ShowLights = true;
+                ShowWaterEffect = false;
                 TreeRoofTransparency = true;
                 DeadCharTransparency = false;
                 break;
@@ -346,6 +352,7 @@ public class GameConfig
                 ShowReflections = false;
                 ShowDayNight = true;
                 ShowLights = true;
+                ShowWaterEffect = true;
                 TreeRoofTransparency = true;
                 DeadCharTransparency = true;
                 break;
@@ -357,6 +364,7 @@ public class GameConfig
                 ShowReflections = true;
                 ShowDayNight = true;
                 ShowLights = true;
+                ShowWaterEffect = true;
                 TreeRoofTransparency = true;
                 DeadCharTransparency = true;
                 break;
@@ -368,6 +376,7 @@ public class GameConfig
                 ShowReflections = true;
                 ShowDayNight = true;
                 ShowLights = true;
+                ShowWaterEffect = true;
                 TreeRoofTransparency = true;
                 DeadCharTransparency = true;
                 break;

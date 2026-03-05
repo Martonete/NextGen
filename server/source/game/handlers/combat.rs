@@ -19,7 +19,7 @@ use super::{
 };
 use super::npcs::fire_elemental_react;
 use super::skills::{
-    check_permanecer_oculto, calc_apunalar_damage, try_desarmar, try_level_skill,
+    calc_apunalar_damage, try_desarmar, try_level_skill,
 };
 
 // =====================================================================
@@ -49,18 +49,23 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
-    // VB6: Attacking reveals hidden users (DoPermanecerOculto)
-    let was_hidden = state.users.get(&conn_id).map(|u| u.hidden).unwrap_or(false);
-    if was_hidden {
+    // VB6: Attacking ALWAYS reveals hidden users (no chance check).
+    // Also clears spell invisibility when attacking.
+    let (was_hidden, was_invisible) = state.users.get(&conn_id)
+        .map(|u| (u.hidden && !u.admin_invisible, u.invisible && !u.admin_invisible))
+        .unwrap_or((false, false));
+    if was_hidden || was_invisible {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            let stayed = check_permanecer_oculto(user);
-            if !stayed {
-                // Revealed — broadcast NOVER
-                let pkt = binary_packets::write_set_invisible(char_index.0 as i16, false);
-                state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
-                state.send_msg_id(conn_id, 195, "").await; // Has sido descubierto
-            }
+            user.hidden = false;
+            user.counter_oculto = 0;
+            user.invisible = false;
+            user.counter_invisible = 0;
         }
+        // Broadcast visibility restoration
+        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
+        state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+        state.send_bytes(conn_id, &nover).await;
+        state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
     }
 
     // Anti-cheat: check melee cooldown
@@ -472,6 +477,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         user.min_sta = 0;
         // Clear status effects
         user.paralyzed = false;
+        user.immobilized = false;
         user.invisible = false;
         user.meditating = false;
         user.montado = false;
@@ -609,6 +615,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         let pkt = binary_packets::write_dead();
         state.send_bytes(conn_id, &pkt).await;
     }
+
+    // VB6: Clear any active FX on the dying character (meditation, spells, etc.)
+    let fx_clear_pkt = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear_pkt).await;
 
     // Broadcast dead body model change (CP packet) to area
     let heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(2);
