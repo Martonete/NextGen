@@ -102,11 +102,18 @@ public partial class EditorMain : Control
         _palette = new TilePalette { State = _state };
         hbox.AddChild(_palette);
 
-        // Center: Map viewport (in a SubViewportContainer for proper rendering)
-        var viewportPanel = new Panel();
-        viewportPanel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        viewportPanel.ClipContents = true;
-        hbox.AddChild(viewportPanel);
+        // Center: Map viewport using SubViewport for proper rendering + clipping
+        var svc = new SubViewportContainer();
+        svc.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        svc.SizeFlagsVertical = SizeFlags.ExpandFill;
+        svc.Stretch = true;
+        hbox.AddChild(svc);
+
+        var subViewport = new SubViewport();
+        subViewport.HandleInputLocally = true;
+        subViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+        subViewport.TransparentBg = true;
+        svc.AddChild(subViewport);
 
         _viewport = new MapViewport
         {
@@ -116,7 +123,7 @@ public partial class EditorMain : Control
             State = _state,
             Undo = _undo,
         };
-        viewportPanel.AddChild(_viewport);
+        subViewport.AddChild(_viewport);
 
         // Right: Tile properties
         _propsPanel = new TilePropertiesPanel

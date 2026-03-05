@@ -10,6 +10,7 @@ config/features=PackedStringArray("4.4", "C#")
 
 window/size/viewport_width=1280
 window/size/viewport_height=720
+window/size/mode=2
 window/size/resizable=true
 window/stretch/mode="canvas_items"
 

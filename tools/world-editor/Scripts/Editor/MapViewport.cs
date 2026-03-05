@@ -24,6 +24,7 @@ public partial class MapViewport : Node2D
     private bool _isPanning;
     private bool _isSelecting;
     private bool _isDragging;
+    private bool _spaceHeld; // Space key held for pan mode
     private Vector2 _panStart;
     private Vector2 _panCameraStart;
     private Vector2I _selectStart;
@@ -245,7 +246,12 @@ public partial class MapViewport : Node2D
     {
         if (Map == null || State == null) return;
 
-        if (@event is InputEventMouseButton mb)
+        if (@event is InputEventKey ek)
+        {
+            if (ek.Keycode == Key.Space)
+                _spaceHeld = ek.Pressed;
+        }
+        else if (@event is InputEventMouseButton mb)
             HandleMouseButton(mb);
         else if (@event is InputEventMouseMotion mm)
             HandleMouseMotion(mm);
@@ -253,71 +259,63 @@ public partial class MapViewport : Node2D
 
     private Vector2I ScreenToTile(Vector2 screenPos)
     {
-        float worldX = (screenPos.X - State!.CameraOffset.X * State.Zoom) / State.Zoom;
-        float worldY = (screenPos.Y - State.CameraOffset.Y * State.Zoom) / State.Zoom;
-        // Undo the DrawSetTransform: pos = offset + zoom * worldTile
-        // screenPos = zoom * (tile * TileSize + offset)
-        // Actually: DrawSetTransform(offset, 0, zoom), so drawn pos = offset + zoom * drawPos
-        // drawPos = tileX * TileSize
-        // screenPos = State.CameraOffset * State.Zoom + State.Zoom * tileX * TileSize  ... no
-        // DrawSetTransform applies: drawn = offset + scale * local
-        // So screen coords of tile (tx,ty) = State.CameraOffset + State.Zoom * (tx * TileSize)
-        // Inverse: tx = (screenPos / State.Zoom - State.CameraOffset) / TileSize  ... not right either
-
-        // Let's think simply: DrawSetTransform(CameraOffset, 0, Zoom)
-        // This means: position on screen = CameraOffset + Zoom * localPos
-        // So: localPos = (screenPos - CameraOffset) / Zoom  ... but screenPos is already in local coords for _Draw
-        // Actually _UnhandledInput gives screen coords. And DrawSetTransform transforms the draw calls.
-        // The draw transform is: screenPos = Zoom * (drawCoord) + CameraOffset (in the Node2D space)
-        // But Node2D also has its own transform...
-
-        // Simplify: tile world position = tileX * TileSize
-        // In _Draw we do DrawSetTransform(CameraOffset, 0, Zoom)
-        // So screen position = CameraOffset + Zoom * (tileX * TileSize) [relative to the Node2D position]
-        // Node2D is at (0,0) since we don't move it.
-        // Input event position is in viewport coords.
-        // So: tileX = ((screenPos.X - CameraOffset.X) / Zoom) / TileSize
-
+        // DrawSetTransform(CameraOffset, 0, Zoom) means:
+        //   screenPos = CameraOffset + Zoom * tileWorldPos
+        // Inverse: tileWorldPos = (screenPos - CameraOffset) / Zoom
         int tx = (int)((screenPos.X - State!.CameraOffset.X) / State.Zoom / TileSize);
         int ty = (int)((screenPos.Y - State.CameraOffset.Y) / State.Zoom / TileSize);
         return new Vector2I(tx, ty);
     }
 
+    private void StartPan(Vector2 position)
+    {
+        _isPanning = true;
+        _panStart = position;
+        _panCameraStart = State!.CameraOffset;
+    }
+
     private void HandleMouseButton(InputEventMouseButton mb)
     {
-        // Zoom
-        if (mb.ButtonIndex == MouseButton.WheelUp)
+        // Zoom (towards mouse cursor)
+        if (mb.ButtonIndex == MouseButton.WheelUp || mb.ButtonIndex == MouseButton.WheelDown)
         {
-            State!.Zoom = Math.Min(State.Zoom * 1.15f, 4f);
-            QueueRedraw();
-            return;
-        }
-        if (mb.ButtonIndex == MouseButton.WheelDown)
-        {
-            State!.Zoom = Math.Max(State.Zoom / 1.15f, 0.15f);
+            float oldZoom = State!.Zoom;
+            if (mb.ButtonIndex == MouseButton.WheelUp)
+                State.Zoom = Math.Min(State.Zoom * 1.15f, 4f);
+            else
+                State.Zoom = Math.Max(State.Zoom / 1.15f, 0.15f);
+
+            // Zoom towards mouse position
+            float zoomRatio = State.Zoom / oldZoom;
+            State.CameraOffset = mb.Position - (mb.Position - State.CameraOffset) * zoomRatio;
             QueueRedraw();
             return;
         }
 
-        // Pan with middle mouse
-        if (mb.ButtonIndex == MouseButton.Middle)
+        // Pan with middle mouse OR right mouse
+        if (mb.ButtonIndex == MouseButton.Middle ||
+            (mb.ButtonIndex == MouseButton.Right && !_isPainting))
         {
             if (mb.Pressed)
-            {
-                _isPanning = true;
-                _panStart = mb.Position;
-                _panCameraStart = State!.CameraOffset;
-            }
+                StartPan(mb.Position);
             else
-            {
                 _isPanning = false;
-            }
             return;
         }
 
-        // Left click — tool action
+        // Left click
         if (mb.ButtonIndex == MouseButton.Left)
         {
+            // Space+Left = pan
+            if (_spaceHeld)
+            {
+                if (mb.Pressed)
+                    StartPan(mb.Position);
+                else
+                    _isPanning = false;
+                return;
+            }
+
             var tile = ScreenToTile(mb.Position);
             if (mb.Pressed)
             {
@@ -386,24 +384,8 @@ public partial class MapViewport : Node2D
                     if (delta != Vector2I.Zero)
                         MoveTiles(delta.X, delta.Y);
                 }
-            }
-        }
-
-        // Right click — erase shortcut
-        if (mb.ButtonIndex == MouseButton.Right)
-        {
-            var tile = ScreenToTile(mb.Position);
-            if (mb.Pressed)
-            {
-                _isPainting = true;
-                _paintedThisStroke.Clear();
-                Undo?.BeginBatch("Erase");
-                EraseAt(tile.X, tile.Y);
-            }
-            else
-            {
-                _isPainting = false;
-                Undo?.EndBatch();
+                if (_isPanning)
+                    _isPanning = false;
             }
         }
     }
@@ -412,7 +394,7 @@ public partial class MapViewport : Node2D
     {
         if (_isPanning)
         {
-            State!.CameraOffset = _panCameraStart + (mm.Position - _panStart) / State.Zoom;
+            State!.CameraOffset = _panCameraStart + (mm.Position - _panStart);
             QueueRedraw();
             return;
         }
