@@ -268,8 +268,16 @@ public partial class InventoryPanel : Control
                 {
                     _selectedSlot = slot;
                     _state.SelectedInvSlot = slot;
-                    // VB6 parity: always send UseItem (QSA) — server decides equip vs use
-                    _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
+                    int objType = _state.Inventory[slot].ObjType;
+                    // Server-side equippable types (inventory.rs): Weapon=2, Armor=3,
+                    // Shield=16, Helmet=17, Tool/Ring=18, Instrument=26, Arrow=32
+                    bool isEquipable = objType == 2 || objType == 3 || objType == 16
+                                    || objType == 17 || objType == 18 || objType == 26
+                                    || objType == 32;
+                    if (isEquipable)
+                        _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
+                    else
+                        _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                 }
             }
 
