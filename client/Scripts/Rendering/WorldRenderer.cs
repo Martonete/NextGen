@@ -88,6 +88,7 @@ public partial class WorldRenderer : Node2D
     private float _framePixelOffsetX, _framePixelOffsetY;
     private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
     private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
+    private bool _frameHasLights;
 
     public void Init(GameState state, GameData data, GrhAnimator animator)
     {
@@ -295,9 +296,11 @@ public partial class WorldRenderer : Node2D
         _frameL1MinY = Math.Max(1, screenMinY - 2);
         _frameL1MaxY = Math.Min(100, screenMaxY + 2);
 
+        _frameHasLights = (_state.Config?.ShowLights ?? true)
+                          && _state.MapLights.Count > 0 && _state.TileLightColors != null;
+
         // ==========================================
-        // PASS 1: Layer 1 (Ground) — visible area +2 tile margin
-        // All lighting handled by GPU lightmap shader — no per-tile light modulation needed.
+        // PASS 1: Layer 1 (Ground) — per-tile light modulate on terrain only
         // ==========================================
         for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
         {
@@ -307,7 +310,15 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer1 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                DrawTileGrh(tile.Layer1, pos, center: false);
+                if (_frameHasLights)
+                {
+                    Color lc = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrh(tile.Layer1, pos, center: false, modulate: lc);
+                }
+                else
+                {
+                    DrawTileGrh(tile.Layer1, pos, center: false);
+                }
             }
         }
 
@@ -450,7 +461,7 @@ public partial class WorldRenderer : Node2D
             }
         }
 
-        // Collect roof draws — lighting handled by GPU shader on RoofLayer
+        // Collect roof draws with per-tile light modulate
         if (_roofAlpha > 0)
         {
             float roofA = _roofAlpha / 255f;
@@ -463,7 +474,15 @@ public partial class WorldRenderer : Node2D
                     if (tile.Layer4 <= 0) continue;
 
                     Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                    _pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
+                    if (_frameHasLights)
+                    {
+                        Color tl = LightSystem.GetTileLight(_state, x, y);
+                        _pendingRoofDraws.Add((tile.Layer4, pos, new Color(tl.R, tl.G, tl.B, roofA)));
+                    }
+                    else
+                    {
+                        _pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
+                    }
                 }
             }
         }
@@ -781,13 +800,21 @@ public partial class WorldRenderer : Node2D
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
                                             _framePixelOffsetX, _framePixelOffsetY);
-                DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
+                if (_frameHasLights)
+                {
+                    Color lc = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false, modulate: lc);
+                }
+                else
+                {
+                    DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
+                }
             }
         }
     }
 
     /// <summary>
-    /// Draw PASS 2: Layer 2 tiles. Lighting handled by GPU shader.
+    /// Draw PASS 2: Layer 2 tiles with per-tile light modulate.
     /// Called by Layer2Layer._Draw().
     /// </summary>
     public void DrawLayer2(CanvasItem canvas)
@@ -802,7 +829,15 @@ public partial class WorldRenderer : Node2D
                 if (tile.Layer2 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                DrawTileGrhTo(canvas, tile.Layer2, pos, center: false);
+                if (_frameHasLights)
+                {
+                    Color lc = LightSystem.GetTileLight(_state, x, y);
+                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false, modulate: lc);
+                }
+                else
+                {
+                    DrawTileGrhTo(canvas, tile.Layer2, pos, center: false);
+                }
             }
         }
     }
