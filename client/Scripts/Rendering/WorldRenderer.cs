@@ -89,6 +89,9 @@ public partial class WorldRenderer : Node2D
     private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
     private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
 
+    // Whether lights are active this frame (used by PASS 3 for objects/trees modulate)
+    private bool _frameHasLights;
+
     // GPU lightmap shader — replaces per-tile modulate lighting with single GPU pass
     private Shader? _lightmapShader;
     private ShaderMaterial? _lightmapMaterial;
@@ -357,20 +360,18 @@ void fragment() {
             );
             _lightmapMaterial?.SetShaderParameter("world_origin", origin);
 
-            // Apply shader to lit layers (self + mask + L2 + content + roof)
+            // Apply shader to tile-only layers (NOT ContentLayer — characters shouldn't be lit)
             if (Material != _lightmapMaterial) Material = _lightmapMaterial;
             if (_maskLayer?.Material != _lightmapMaterial) _maskLayer!.Material = _lightmapMaterial;
             if (_layer2Layer?.Material != _lightmapMaterial) _layer2Layer!.Material = _lightmapMaterial;
-            if (_contentLayer?.Material != _lightmapMaterial) _contentLayer!.Material = _lightmapMaterial;
             if (_roofLayer?.Material != _lightmapMaterial) _roofLayer!.Material = _lightmapMaterial;
         }
         else
         {
-            // No lights — remove shader material from all layers
+            // No lights — remove shader material from tile layers
             if (Material != null) Material = null;
             if (_maskLayer?.Material != null) _maskLayer!.Material = null;
             if (_layer2Layer?.Material != null) _layer2Layer!.Material = null;
-            if (_contentLayer?.Material != null) _contentLayer!.Material = null;
             if (_roofLayer?.Material != null) _roofLayer!.Material = null;
         }
     }
@@ -427,6 +428,10 @@ void fragment() {
             _lastMapData = _state.MapData;
             PrecomputeWaterBorder();
         }
+
+        // Track whether lights are active (used by PASS 3 for object/tree modulate)
+        _frameHasLights = (_state.Config?.ShowLights ?? true)
+                          && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
         // Update lightmap shader (enables/disables, rebuilds texture, updates origin)
         UpdateLightmapShader();
@@ -632,21 +637,21 @@ void fragment() {
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects (apply same tree alpha as Layer 3)
-                // Lighting handled by GPU shader — only alpha modulation needed for trees
+                // Ground objects — per-tile light modulate (no GPU shader on ContentLayer)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
+                    Color objLight = _frameHasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
                     bool objNearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
                                        && IsTree(objGrh)
                                        && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objLight.R, objLight.G, objLight.B, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objLight);
                     }
                 }
 
@@ -667,20 +672,21 @@ void fragment() {
                                                charTileX: x, charTileY: y);
                 }
 
-                // Layer 3 (trees/objects) — lighting handled by GPU shader
+                // Layer 3 (trees/objects) — per-tile light modulate (no GPU shader on ContentLayer)
                 if (tile.Layer3 > 0)
                 {
+                    Color treeLight = _frameHasLights ? LightSystem.GetTileLight(_state, x, y) : Colors.White;
                     bool nearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
                                    && IsTree(tile.Layer3)
                                    && y > (_frameUserY - 2) && y < (_frameUserY + 7)
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(1, 1, 1, 120f / 255f));
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeLight.R, treeLight.G, treeLight.B, 120f / 255f));
                     }
                     else
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true);
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: treeLight);
                     }
                 }
             }

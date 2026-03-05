@@ -146,6 +146,27 @@ public class LightSystem
     }
 
     /// <summary>
+    /// Get the average light color for a tile (average of 4 corners).
+    /// Used for PASS 3 objects/trees that need per-tile modulate (not covered by GPU shader).
+    /// </summary>
+    public static Color GetTileLight(GameState state, int x, int y)
+    {
+        if (state.TileLightColors == null) return Colors.White;
+        if (x < 1 || x > MapSize || y < 1 || y > MapSize) return Colors.White;
+
+        var c0 = state.TileLightColors[x, y, 0];
+        var c1 = state.TileLightColors[x, y, 1];
+        var c2 = state.TileLightColors[x, y, 2];
+        var c3 = state.TileLightColors[x, y, 3];
+
+        float r = (c0.R + c1.R + c2.R + c3.R) * 0.25f;
+        float g = (c0.G + c1.G + c2.G + c3.G) * 0.25f;
+        float b = (c0.B + c1.B + c2.B + c3.B) * 0.25f;
+
+        return new Color(r, g, b, 1f);
+    }
+
+    /// <summary>
     /// Build a 101×101 lightmap Image from TileLightColors.
     /// Each pixel represents a tile corner. GPU bilinear interpolation
     /// between corner pixels produces smooth per-vertex-equivalent lighting.
