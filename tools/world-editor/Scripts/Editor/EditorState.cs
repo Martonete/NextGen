@@ -35,6 +35,10 @@ public class EditorState
     public bool ShowLayer2 = true;
     public bool ShowLayer3 = true;
     public bool ShowLayer4 = true;
+    public bool ShowNpcs = true;
+    public bool ShowObjects = true;
+    public bool ShowParticles = true;
+    public bool ShowLights = true;
 
     // Tile property editing
     public bool ShowTileProperties;

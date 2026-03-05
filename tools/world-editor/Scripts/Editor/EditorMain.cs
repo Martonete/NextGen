@@ -96,8 +96,13 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Capa 2", 4);
         _viewMenu.AddCheckItem("Capa 3", 5);
         _viewMenu.AddCheckItem("Capa 4", 6);
+        _viewMenu.AddSeparator();
+        _viewMenu.AddCheckItem("NPCs", 7);
+        _viewMenu.AddCheckItem("Objetos", 8);
+        _viewMenu.AddCheckItem("Particulas", 9);
+        _viewMenu.AddCheckItem("Luces", 10);
         // Set all check items to checked (use GetItemIndex to handle separator offset)
-        for (int id = 0; id <= 6; id++)
+        for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
             if (idx >= 0) _viewMenu.SetItemChecked(idx, true);
@@ -428,6 +433,10 @@ public partial class EditorMain : Control
             case 4: _state.ShowLayer2 = !_state.ShowLayer2; break;
             case 5: _state.ShowLayer3 = !_state.ShowLayer3; break;
             case 6: _state.ShowLayer4 = !_state.ShowLayer4; break;
+            case 7: _state.ShowNpcs = !_state.ShowNpcs; break;
+            case 8: _state.ShowObjects = !_state.ShowObjects; break;
+            case 9: _state.ShowParticles = !_state.ShowParticles; break;
+            case 10: _state.ShowLights = !_state.ShowLights; break;
         }
 
         // Sync checkbox to actual state
@@ -438,6 +447,8 @@ public partial class EditorMain : Control
                 0 => _state.ShowGrid, 1 => _state.ShowBlocked, 2 => _state.ShowExits,
                 3 => _state.ShowLayer1, 4 => _state.ShowLayer2,
                 5 => _state.ShowLayer3, 6 => _state.ShowLayer4,
+                7 => _state.ShowNpcs, 8 => _state.ShowObjects,
+                9 => _state.ShowParticles, 10 => _state.ShowLights,
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);

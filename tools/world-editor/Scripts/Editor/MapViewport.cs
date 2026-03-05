@@ -48,6 +48,7 @@ public partial class MapViewport : Control
             BlendMode = CanvasItemMaterial.BlendModeEnum.Add
         };
         _particleOverlay.ZIndex = 1;
+        _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
     }
 
@@ -90,7 +91,7 @@ public partial class MapViewport : Control
         }
 
         // ─── Objects on map (drawn as their GRH sprite, centered) ───
-        if (ObjGrhs != null)
+        if (State.ShowObjects && ObjGrhs != null)
         {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
@@ -102,7 +103,7 @@ public partial class MapViewport : Control
         }
 
         // ─── NPCs on map (drawn as south-facing body sprite, centered) ───
-        if (NpcBodies != null && NpcBodyGrhs != null)
+        if (State.ShowNpcs && NpcBodies != null && NpcBodyGrhs != null)
         {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
@@ -133,7 +134,8 @@ public partial class MapViewport : Control
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
         // Trigger additive particle layer redraw
-        _particleOverlay?.QueueRedraw();
+        if (State.ShowParticles)
+            _particleOverlay?.QueueRedraw();
     }
 
     private void DrawOverlays(int mapW, int mapH)
@@ -181,6 +183,7 @@ public partial class MapViewport : Control
         }
 
         // Light sources — colored circle with range ring
+        if (State.ShowLights)
         for (int y = 1; y <= mapH; y++)
         {
             for (int x = 1; x <= mapW; x++)
@@ -206,6 +209,7 @@ public partial class MapViewport : Control
         }
 
         // Particle indicators
+        if (State.ShowParticles)
         for (int y = 1; y <= mapH; y++)
         {
             for (int x = 1; x <= mapW; x++)
@@ -229,6 +233,7 @@ public partial class MapViewport : Control
         }
 
         // NPC indicators
+        if (State.ShowNpcs)
         for (int y = 1; y <= mapH; y++)
         {
             for (int x = 1; x <= mapW; x++)
@@ -246,6 +251,7 @@ public partial class MapViewport : Control
         }
 
         // Object indicators
+        if (State.ShowObjects)
         for (int y = 1; y <= mapH; y++)
         {
             for (int x = 1; x <= mapW; x++)
@@ -754,6 +760,13 @@ public partial class MapViewport : Control
 public partial class ParticleOverlay : Control
 {
     public MapViewport? Viewport;
+
+    public override void _Process(double delta)
+    {
+        // Match parent size so draws aren't clipped
+        if (Viewport != null)
+            Size = Viewport.Size;
+    }
 
     public override void _Draw()
     {
