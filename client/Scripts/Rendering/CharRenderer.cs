@@ -30,7 +30,8 @@ public static class CharRenderer
         GameState? state = null,
         WorldRenderer? worldRenderer = null,
         int charTileX = 0,
-        int charTileY = 0)
+        int charTileY = 0,
+        Color? lightModulate = null)
     {
         int heading = ch.Heading;
         if (heading < 1 || heading > 4) heading = 3;
@@ -144,9 +145,25 @@ public static class CharRenderer
         if (ch.Invisible)
             invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f);
 
+        // Combine light modulate with invisible override
+        Color? finalOverride = invisOverride;
+        if (lightModulate.HasValue && lightModulate.Value != Colors.White)
+        {
+            var lm = lightModulate.Value;
+            if (finalOverride.HasValue)
+            {
+                var fo = finalOverride.Value;
+                finalOverride = new Color(lm.R * fo.R, lm.G * fo.G, lm.B * fo.B, fo.A);
+            }
+            else
+            {
+                finalOverride = lm;
+            }
+        }
+
         // Heading-dependent draw order (VB6: dibujarPersonaje)
         DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
-                      colorOverride: invisOverride);
+                      colorOverride: finalOverride);
 
         // Mark equipment debug as logged (after first full draw)
         if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
