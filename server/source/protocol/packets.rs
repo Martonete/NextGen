@@ -391,6 +391,9 @@ pub enum ServerPacketID {
     // Friends
     FriendList = 210,
 
+    // Character particles
+    CharParticleCreate = 211,
+
     // Misc
     StopDancing = 220,
     MenuData = 221,

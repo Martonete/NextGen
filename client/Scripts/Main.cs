@@ -1358,6 +1358,12 @@ public partial class Main : Control
         else
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+            var winSize = new Vector2I(800, 600);
+            DisplayServer.WindowSetSize(winSize);
+            var screenSize = DisplayServer.ScreenGetSize();
+            DisplayServer.WindowSetPosition(new Vector2I(
+                (screenSize.X - winSize.X) / 2,
+                (screenSize.Y - winSize.Y) / 2));
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         }
 
@@ -2759,7 +2765,12 @@ public partial class Main : Control
         {
             DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
             DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-            DisplayServer.WindowSetSize(new Vector2I(800, 600));
+            var winSize = new Vector2I(800, 600);
+            DisplayServer.WindowSetSize(winSize);
+            var screenSize = DisplayServer.ScreenGetSize();
+            DisplayServer.WindowSetPosition(new Vector2I(
+                (screenSize.X - winSize.X) / 2,
+                (screenSize.Y - winSize.Y) / 2));
             GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         }
 
@@ -3267,7 +3278,12 @@ public partial class Main : Control
                 {
                     DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
                     DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-                    DisplayServer.WindowSetSize(new Vector2I(800, 600));
+                    var winSize = new Vector2I(800, 600);
+                    DisplayServer.WindowSetSize(winSize);
+                    var screenSize = DisplayServer.ScreenGetSize();
+                    DisplayServer.WindowSetPosition(new Vector2I(
+                        (screenSize.X - winSize.X) / 2,
+                        (screenSize.Y - winSize.Y) / 2));
                     GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
                 }
                 _state.Config.Fullscreen = goFullscreen;

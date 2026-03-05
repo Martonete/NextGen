@@ -3035,10 +3035,10 @@ async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
 
-    // Resurrection FX (VB6: CFF charindex, 65, 0)
+    // Resurrection particle effect (VB6: CFF charindex, 65, 0)
     state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
-        &binary_packets::write_create_fx(char_index.0 as i16, 65, 0),
+        &binary_packets::write_char_particle_create(char_index.0 as i16, 65),
     ).await;
 
     // Broadcast character model change (VB6: ChangeUserChar → CP packet)

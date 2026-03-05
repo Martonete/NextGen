@@ -1717,6 +1717,17 @@ pub fn write_particle_create(particle_group: i16, x: u8, y: u8, layer: u8) -> Ve
     pkt.into_bytes()
 }
 
+/// ID 211: Character particle stream (CFF/PCB).
+/// Wire: i16 charIndex, i16 particleStreamId
+/// particleStreamId=0 clears all character particles.
+pub fn write_char_particle_create(char_index: i16, particle_stream_id: i16) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::CharParticleCreate.to_byte());
+    pkt.write_integer(char_index);
+    pkt.write_integer(particle_stream_id);
+    pkt.into_bytes()
+}
+
 /// ID 244: Create light (PCL).
 pub fn write_light_create(x: u8, y: u8, range: u8, r: u8, g: u8, b: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();

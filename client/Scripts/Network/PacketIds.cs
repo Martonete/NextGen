@@ -308,6 +308,9 @@ public static class ServerPacketId
     /// TimerInfo — scroll/timer slot data (TIS text opcode). ID 246.
     public const byte TimerInfo = 246;
 
+    /// CharParticleCreate — character particle stream (CFF/PCB). ID 211.
+    public const byte CharParticleCreate = 211;
+
     /// ParticleCreate — map particle effect (PCF text opcode). ID 243.
     public const byte ParticleCreate = 243;
 

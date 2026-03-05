@@ -795,6 +795,9 @@ public partial class PacketHandler
                 break;
 
             // ── Particles / Lights ────────────────────────────────
+            case ServerPacketId.CharParticleCreate: // 211
+                HandleBinCharParticleCreate(bq);
+                break;
             case ServerPacketId.ParticleCreate: // 243
                 HandleBinParticleCreate(bq);
                 break;
@@ -2176,6 +2179,37 @@ public partial class PacketHandler
     }
 
     // ── Particles / Lights ───────────────────────────────────────────
+
+    /// <summary>
+    /// CharParticleCreate (ID 211) — character particle stream (CFF/PCB).
+    /// Wire: i16 charIndex, i16 particleStreamId
+    /// particleStreamId=0 clears all character particles.
+    /// </summary>
+    private void HandleBinCharParticleCreate(ByteQueue bq)
+    {
+        short charIdx = bq.ReadInteger();
+        short streamId = bq.ReadInteger();
+
+        if (streamId == 0)
+        {
+            // Clear all particle streams attached to this character
+            for (int i = _state.MapParticles.Count - 1; i >= 0; i--)
+            {
+                if (_state.MapParticles[i].CharIndex == charIdx && _state.MapParticles[i].CharIndex > 0)
+                    _state.MapParticles.RemoveAt(i);
+            }
+            return;
+        }
+
+        // Remove existing char particles before creating new ones (VB6: replaces stream)
+        for (int i = _state.MapParticles.Count - 1; i >= 0; i--)
+        {
+            if (_state.MapParticles[i].CharIndex == charIdx && _state.MapParticles[i].CharIndex > 0)
+                _state.MapParticles.RemoveAt(i);
+        }
+
+        ParticleSystem.CreateCharStream(_state, streamId, charIdx);
+    }
 
     /// <summary>
     /// ParticleCreate (ID 243) — map particle stream (PCF opcode).
