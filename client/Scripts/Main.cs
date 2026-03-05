@@ -986,6 +986,8 @@ public partial class Main : Control
 
     private void OnConnectPressed()
     {
+        if (_connecting) return;
+
         string account = _accountInput!.Text.Trim();
         string password = _passwordInput!.Text.Trim();
 
@@ -2569,6 +2571,7 @@ public partial class Main : Control
         {
             _lightSystem.RecalculateLights(_state);
             _state.LightsDirty = false;
+            _worldRenderer?.MarkLightmapDirty();
         }
 
         if (_state.CurrentScreen == Screen.Game)
