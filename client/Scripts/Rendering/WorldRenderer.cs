@@ -88,18 +88,6 @@ public partial class WorldRenderer : Node2D
     private readonly Color[] _litQuadColors = new Color[4];
     private readonly Vector2[] _litQuadUVs = new Vector2[4];
 
-    // VB6 water polygon deformation (modEngine.bas lines 1752-1781)
-    // Two oscillating counters that bounce between -WaterHeight and +WaterHeight.
-    // Creates a triangle wave with phase offset for ripple effect.
-    // VB6 used WaterHeight=4 with DX8 shared-vertex triangle strips (no gaps).
-    // Godot DrawPolygon draws each tile independently — large displacements cause
-    // visible seams. Use smaller amplitude for smoother result.
-    // Sine wave water deformation — smooth oscillation without abrupt reversals.
-    // Amplitude kept subtle (1.5px) since the texture is nearly uniform across frames.
-    private const float WaterHeight = 1.5f;
-    // Phase accumulator (radians). ~8 second full cycle.
-    private float _waterPhase;
-
     // Per-frame camera data (computed in _Draw, used by child layer callbacks)
     private int _frameUserX, _frameUserY;
     private float _framePixelOffsetX, _framePixelOffsetY;
@@ -188,7 +176,6 @@ public partial class WorldRenderer : Node2D
     {
         if (_state?.MapData == null) return;
         _deltaMs = (float)delta * 1000f;
-        UpdateWaterWave();
         UpdateRoofFade();
         UpdateAmbientLight();
         QueueRedraw();
@@ -224,17 +211,6 @@ public partial class WorldRenderer : Node2D
         float g = _state.MapColorG / 255f;
         float b = _state.MapColorB / 255f;
         Modulate = new Color(r, g, b, 1f);
-    }
-
-    /// <summary>
-    /// Sine-based water wave. Smooth oscillation without abrupt direction changes.
-    /// Two sine waves with different phases create organic ripple variation.
-    /// ~8 second full cycle (0.785 rad/sec = 2π / 8).
-    /// </summary>
-    private void UpdateWaterWave()
-    {
-        _waterPhase += (_deltaMs / 1000f) * 0.785f; // ~8 sec full cycle
-        if (_waterPhase > 6.2832f) _waterPhase -= 6.2832f; // wrap at 2π
     }
 
     private void UpdateRoofFade()
@@ -867,49 +843,12 @@ public partial class WorldRenderer : Node2D
         float dx = (float)Math.Round(pos.X);
         float dy = (float)Math.Round(pos.Y);
 
-        // Edge clamping: don't deform edges adjacent to non-water tiles
-        bool ignoreTop = tileY > 1 && !IsWater(_state!.MapData, tileX, tileY - 1);
-        bool ignoreBottom = tileY < 100 && !IsWater(_state.MapData, tileX, tileY + 1);
-
-        // VB6-style checkerboard with sine wave instead of triangle wave.
-        // Key: left and right vertices get OPPOSING signs so the tile tilts/rocks
-        // rather than translating as a block (which causes the "shaking" effect).
-        // The checkerboard pattern ensures adjacent tiles mirror each other.
-        float wave = (float)Math.Sin(_waterPhase) * WaterHeight;
-        float wave2 = (float)Math.Sin(_waterPhase + 1.5f) * WaterHeight; // phase-offset secondary
-
-        float topL = 0, topR = 0, botL = 0, botR = 0;
-        bool xEven = (tileX % 2) == 0;
-        bool yEven = (tileY % 2) == 0;
-
-        if (xEven && yEven)
-        {
-            if (!ignoreTop) { topL = -wave; topR = wave; }
-            if (!ignoreBottom) { botL = -wave2; botR = wave2; }
-        }
-        else if (xEven && !yEven)
-        {
-            if (!ignoreTop) { topL = wave2; topR = -wave2; }
-            if (!ignoreBottom) { botL = wave; botR = -wave; }
-        }
-        else if (!xEven && yEven)
-        {
-            if (!ignoreTop) { topL = wave; topR = -wave; }
-            if (!ignoreBottom) { botL = wave2; botR = -wave2; }
-        }
-        else
-        {
-            if (!ignoreTop) { topL = -wave2; topR = wave2; }
-            if (!ignoreBottom) { botL = -wave; botR = wave; }
-        }
-
-        // Pad polygon to prevent gap artifacts between adjacent water tiles
-        float pad = WaterHeight;
-
-        _litQuadPoints[0] = new Vector2(dx, dy - pad + topL);
-        _litQuadPoints[1] = new Vector2(dx + pw, dy - pad + topR);
-        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph + pad + botR);
-        _litQuadPoints[3] = new Vector2(dx, dy + ph + pad + botL);
+        // No vertex deformation — wave effect comes purely from texture
+        // frame animation (4 frames with subtle diagonal shifts).
+        _litQuadPoints[0] = new Vector2(dx, dy);
+        _litQuadPoints[1] = new Vector2(dx + pw, dy);
+        _litQuadPoints[2] = new Vector2(dx + pw, dy + ph);
+        _litQuadPoints[3] = new Vector2(dx, dy + ph);
 
         _litQuadColors[0] = topLeft;
         _litQuadColors[1] = topRight;
