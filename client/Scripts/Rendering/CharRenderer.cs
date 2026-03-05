@@ -531,11 +531,12 @@ public static class CharRenderer
             }
         }
 
-        // Mirror the normal aura position around the character's feet (mirrorY).
-        // The renderer flips the sprite vertically, so we only need to mirror the
-        // top-left corner: reflY = 2*mirrorY - normalY (the flip handles the rest).
+        // Mirror the base aura position (without Offset) around the character's feet,
+        // then apply Offset in the SAME direction as normal rendering (toward the head).
+        // This keeps the wings at the same relative distance from the reflected body,
+        // rather than pure mathematical mirror which pushes offset auras too far away.
         float mirrorY = pos.Y + TileSize - 2f;
-        float normalAuraY = pos.Y + headOffset.Y + 72 - aura.Offset;
+        float baseAuraY = pos.Y + headOffset.Y + 72; // without Offset
         float tileOff = 0f;
         var resolved = data.ResolveGrh(grhIndex, frame);
         if (resolved != null)
@@ -543,7 +544,7 @@ public static class CharRenderer
             if (resolved.TileHeight > 1f)
                 tileOff = (int)(resolved.TileHeight * TileSize) - TileSize;
         }
-        float reflAuraY = 2f * mirrorY - normalAuraY + tileOff;
+        float reflAuraY = 2f * mirrorY - baseAuraY + tileOff - aura.Offset;
 
         float auraX = pos.X + headOffset.X;
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.36f);
