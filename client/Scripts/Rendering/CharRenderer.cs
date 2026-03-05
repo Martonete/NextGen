@@ -531,28 +531,15 @@ public static class CharRenderer
             }
         }
 
-        // Mirror the base aura position (without Offset) around the character's feet,
-        // then apply Offset in the SAME direction as normal rendering (toward the head).
-        // This keeps the wings at the same relative distance from the reflected body,
-        // rather than pure mathematical mirror which pushes offset auras too far away.
+        // Pass the NORMAL aura position (same as CollectSingleAura) + mirrorY.
+        // The renderer handles the Y-flip via DrawSetTransform, same as character body.
         float mirrorY = pos.Y + TileSize - 2f;
-        float baseAuraY = pos.Y + headOffset.Y + 72; // without Offset
-        float tileOff = 0f;
-        var resolved = data.ResolveGrh(grhIndex, frame);
-        if (resolved != null)
-        {
-            if (resolved.TileHeight > 1f)
-                tileOff = (int)(resolved.TileHeight * TileSize) - TileSize;
-        }
-        float reflAuraY = 2f * mirrorY - baseAuraY + tileOff - aura.Offset;
-
         float auraX = pos.X + headOffset.X;
+        float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
         Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, 0.36f);
 
-        // Queue on the reflected aura list (no tileHeight offset applied by renderer)
-        // Same rotation angle as normal aura — water reflection only flips Y, not X
-        worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, reflAuraY), color,
-                                         aura.Giratoria ? angle : 0f);
+        worldRenderer.QueueReflAuraDraw(grhIndex, frame, new Vector2(auraX, auraY), color,
+                                         aura.Giratoria ? angle : 0f, mirrorY);
     }
 
     private static void DrawBody(

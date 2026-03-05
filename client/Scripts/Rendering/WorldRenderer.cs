@@ -70,8 +70,8 @@ public partial class WorldRenderer : Node2D
 
     // Pending aura draws for the aura additive layer (VB6: D3DBLEND_ONE/ONE)
     private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingAuraDraws = new();
-    // Reflected auras — pre-computed final position, no tileHeight offset applied
-    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle)> _pendingReflAuraDraws = new();
+    // Reflected auras — normal position + mirrorY, renderer does the Y-flip via DrawSetTransform
+    private readonly List<(int grhIndex, int frame, Vector2 pos, Color color, float angle, float mirrorY)> _pendingReflAuraDraws = new();
 
     // Pending roof tile draws (queued in _Draw, drawn by RoofLayer child node AFTER particles)
     private readonly List<(int grhIndex, Vector2 pos, Color modulate)> _pendingRoofDraws = new();
@@ -798,41 +798,47 @@ void fragment() {
 
     /// <summary>
     /// Draw pending reflected auras on a given canvas (used by ReflectedAuraLayer).
-    /// No per-tile clipping needed — NonWaterMaskLayer covers land overflow,
-    /// Layer2Layer covers border opaque portions.
+    /// Uses DrawSetTransform Y-flip (same as character body reflection) so that
+    /// tileHeight centering and Offset are handled identically to normal auras.
     /// </summary>
     public void DrawPendingReflAuras(CanvasItem canvas)
     {
         if (_data == null) return;
 
-        foreach (var (grhIndex, frame, pos, color, angle) in _pendingReflAuraDraws)
+        foreach (var (grhIndex, frame, pos, color, angle, mirrorY) in _pendingReflAuraDraws)
         {
-            var resolved = _data.ResolveGrh(grhIndex, frame);
-            if (resolved == null || resolved.FileNum <= 0) continue;
-            var texture = _data.Textures?.GetTexture(resolved.FileNum);
-            if (texture == null) continue;
-
-            int sx = resolved.SX, sy = resolved.SY;
-            int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
-            int texW = texture.GetWidth(), texH = texture.GetHeight();
-            if (texW > 0) sx = sx % texW;
-            if (texH > 0) sy = sy % texH;
-            if (sx + pw > texW) pw = texW - sx;
-            if (sy + ph > texH) ph = texH - sy;
-            if (pw <= 0 || ph <= 0) continue;
-
-            // Only tileWidth centering — tileHeight is baked into the reflected Y position
-            float drawX = pos.X;
-            float drawY = pos.Y;
-            if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
-                drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
-
+            // Set Y-flip transform around mirrorY (same as DrawReflection for body)
             if (angle != 0f)
             {
-                // Rotating reflected aura — Y-flip via scale around sprite center
+                // Rotating: combine rotation + Y-flip
+                // We need to draw centered, so resolve sprite dimensions for center calc
+                var resolved = _data.ResolveGrh(grhIndex, frame);
+                if (resolved == null || resolved.FileNum <= 0) continue;
+                var texture = _data.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) continue;
+
+                int sx = resolved.SX, sy = resolved.SY;
+                int pw = resolved.PixelWidth, ph = resolved.PixelHeight;
+                int texW = texture.GetWidth(), texH = texture.GetHeight();
+                if (texW > 0) sx = sx % texW;
+                if (texH > 0) sy = sy % texH;
+                if (sx + pw > texW) pw = texW - sx;
+                if (sy + ph > texH) ph = texH - sy;
+                if (pw <= 0 || ph <= 0) continue;
+
+                // Compute draw position with centering (same as DrawGrh center=true)
+                float drawX = pos.X;
+                float drawY = pos.Y;
+                if (resolved.TileWidth != 1f && resolved.TileWidth > 0)
+                    drawX -= (int)(resolved.TileWidth * (TileSize / 2)) - TileSize / 2;
+                if (resolved.TileHeight != 1f && resolved.TileHeight > 0)
+                    drawY -= (int)(resolved.TileHeight * TileSize) - TileSize;
+
+                // Mirror the sprite center, then apply rotation + Y-flip
                 float cx = drawX + pw / 2f;
-                float cy = drawY - ph / 2f;
-                ((Node2D)canvas).DrawSetTransform(new Vector2(cx, cy), angle, new Vector2(1f, -1f));
+                float cy = drawY + ph / 2f;
+                float reflCy = 2f * mirrorY - cy;
+                ((Node2D)canvas).DrawSetTransform(new Vector2(cx, reflCy), angle, new Vector2(1f, -1f));
                 var srcRect = new Rect2(sx, sy, pw, ph);
                 var destRect = new Rect2(-pw / 2f, -ph / 2f, pw, ph);
                 canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
@@ -840,10 +846,10 @@ void fragment() {
             }
             else
             {
-                // Non-rotating reflected aura — flip Y via negative height
-                var srcRect = new Rect2(sx, sy, pw, ph);
-                var destRect = new Rect2(drawX, drawY, pw, -ph);
-                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                // Non-rotating: use global Y-flip transform (same as character body)
+                ((Node2D)canvas).DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
+                CharRenderer.DrawGrh(canvas, _data, grhIndex, frame, pos, true, color);
+                ((Node2D)canvas).DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
             }
         }
     }
@@ -979,11 +985,12 @@ void fragment() {
     }
 
     /// <summary>
-    /// Queue a reflected aura draw. Position is pre-computed final (no tileHeight offset applied).
+    /// Queue a reflected aura draw. Position is the NORMAL aura position (same as regular aura).
+    /// The renderer mirrors it using DrawSetTransform, same as character body reflection.
     /// </summary>
-    public void QueueReflAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle)
+    public void QueueReflAuraDraw(int grhIndex, int frame, Vector2 pos, Color color, float angle, float mirrorY)
     {
-        _pendingReflAuraDraws.Add((grhIndex, frame, pos, color, angle));
+        _pendingReflAuraDraws.Add((grhIndex, frame, pos, color, angle, mirrorY));
     }
 
     /// <summary>
