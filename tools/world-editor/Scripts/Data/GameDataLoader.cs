@@ -41,12 +41,13 @@ public static class GameDataLoader
     }
 
     /// <summary>
-    /// Load NPC body GRH indices from NPCs.dat. Returns array indexed by NPC number (1-based).
-    /// Body is a body animation index — maps to walking animation GRHs.
+    /// Load NPC body and head indices from NPCs.dat.
+    /// Returns (bodies, heads) arrays indexed by NPC number (1-based).
     /// </summary>
-    public static int[] LoadNpcBodies(string npcDatPath)
+    public static (int[] bodies, int[] heads) LoadNpcData(string npcDatPath)
     {
-        if (!File.Exists(npcDatPath)) return Array.Empty<int>();
+        if (!File.Exists(npcDatPath))
+            return (Array.Empty<int>(), Array.Empty<int>());
 
         var sections = ParseIniFile(npcDatPath);
 
@@ -55,48 +56,86 @@ public static class GameDataLoader
             if (init.TryGetValue("NumNPCs", out var n))
                 int.TryParse(n, out numNpcs);
 
-        if (numNpcs <= 0) return Array.Empty<int>();
+        if (numNpcs <= 0)
+            return (Array.Empty<int>(), Array.Empty<int>());
 
         var bodies = new int[numNpcs + 1];
+        var heads = new int[numNpcs + 1];
         for (int i = 1; i <= numNpcs; i++)
         {
             if (sections.TryGetValue($"NPC{i}", out var sec))
+            {
                 if (sec.TryGetValue("Body", out var b))
                     int.TryParse(b, out bodies[i]);
+                if (sec.TryGetValue("Head", out var h))
+                    int.TryParse(h, out heads[i]);
+            }
         }
 
-        GD.Print($"[GameData] Loaded {numNpcs} NPC body indices");
-        return bodies;
+        GD.Print($"[GameData] Loaded {numNpcs} NPC body+head indices");
+        return (bodies, heads);
     }
 
     /// <summary>
-    /// Load Personajes.ind binary — returns south-facing walk GRH for each body index.
+    /// Load Personajes.ind binary — returns south-facing walk GRH and head offsets.
     /// Format: 263B header + i16 count + (i16[4] walk + i16 headOfsX + i16 headOfsY) per entry.
     /// </summary>
-    public static int[] LoadBodyGrhs(string personajesPath)
+    public static (int[] grhs, int[] headOfsX, int[] headOfsY) LoadBodyData(string personajesPath)
     {
-        if (!File.Exists(personajesPath)) return Array.Empty<int>();
+        if (!File.Exists(personajesPath))
+            return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
 
         var data = File.ReadAllBytes(personajesPath);
         using var reader = new BinaryReader(new MemoryStream(data));
 
         reader.BaseStream.Seek(263, SeekOrigin.Begin); // MiCabecera
         short count = reader.ReadInt16();
-        if (count <= 0) return Array.Empty<int>();
+        if (count <= 0)
+            return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
 
-        var bodies = new int[count + 1];
+        var grhs = new int[count + 1];
+        var ofsX = new int[count + 1];
+        var ofsY = new int[count + 1];
         for (int i = 1; i <= count; i++)
         {
             reader.ReadInt16(); // Walk North
             reader.ReadInt16(); // Walk East
-            bodies[i] = reader.ReadInt16(); // Walk South — used for preview
+            grhs[i] = reader.ReadInt16(); // Walk South — used for preview
             reader.ReadInt16(); // Walk West
-            reader.ReadInt16(); // HeadOffsetX
-            reader.ReadInt16(); // HeadOffsetY
+            ofsX[i] = reader.ReadInt16(); // HeadOffsetX
+            ofsY[i] = reader.ReadInt16(); // HeadOffsetY
         }
 
-        GD.Print($"[GameData] Loaded {count} body south-walk GRHs");
-        return bodies;
+        GD.Print($"[GameData] Loaded {count} body data (GRH + head offsets)");
+        return (grhs, ofsX, ofsY);
+    }
+
+    /// <summary>
+    /// Load Cabezas.ind binary — returns south-facing head GRH for each head index.
+    /// Format: 263B header + i16 count + (i16[4] per direction) per entry.
+    /// </summary>
+    public static int[] LoadHeadGrhs(string cabezasPath)
+    {
+        if (!File.Exists(cabezasPath)) return Array.Empty<int>();
+
+        var data = File.ReadAllBytes(cabezasPath);
+        using var reader = new BinaryReader(new MemoryStream(data));
+
+        reader.BaseStream.Seek(263, SeekOrigin.Begin);
+        short count = reader.ReadInt16();
+        if (count <= 0) return Array.Empty<int>();
+
+        var heads = new int[count + 1];
+        for (int i = 1; i <= count; i++)
+        {
+            reader.ReadInt16(); // North
+            reader.ReadInt16(); // East
+            heads[i] = reader.ReadInt16(); // South — used for preview
+            reader.ReadInt16(); // West
+        }
+
+        GD.Print($"[GameData] Loaded {count} head south-facing GRHs");
+        return heads;
     }
 
     private static Dictionary<string, Dictionary<string, string>> ParseIniFile(string path)

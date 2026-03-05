@@ -17,9 +17,13 @@ public partial class EditorMain : Control
     private TextureCatalog? _catalog;
     private MapData? _map;
     private ParticleEngine? _particles;
-    private int[]? _objGrhs;     // ObjIndex → GrhIndex
-    private int[]? _npcBodyGrhs; // BodyIndex → south-walk GrhIndex
-    private int[]? _npcBodies;   // NpcIndex → BodyIndex
+    private int[]? _objGrhs;       // ObjIndex → GrhIndex
+    private int[]? _npcBodyGrhs;   // BodyIndex → south-walk GrhIndex
+    private int[]? _npcHeadOfsX;   // BodyIndex → head offset X
+    private int[]? _npcHeadOfsY;   // BodyIndex → head offset Y
+    private int[]? _npcBodies;     // NpcIndex → BodyIndex
+    private int[]? _npcHeads;      // NpcIndex → HeadIndex
+    private int[]? _headGrhs;      // HeadIndex → south-facing GrhIndex
     private string _dataPath = "";
     private string _mapDir = "";
 
@@ -363,9 +367,12 @@ public partial class EditorMain : Control
         if (File.Exists(particlesIni))
             _particles.LoadDefinitions(particlesIni);
 
-        // Load body animations (for NPC preview)
+        // Load body + head animations (for NPC preview)
         string personajesInd = Path.Combine(dataPath, "INIT", "Personajes.ind");
-        _npcBodyGrhs = GameDataLoader.LoadBodyGrhs(personajesInd);
+        (_npcBodyGrhs, _npcHeadOfsX, _npcHeadOfsY) = GameDataLoader.LoadBodyData(personajesInd);
+
+        string cabezasInd = Path.Combine(dataPath, "INIT", "Cabezas.ind");
+        _headGrhs = GameDataLoader.LoadHeadGrhs(cabezasInd);
 
         // Load object and NPC data from server dat/
         if (serverDir.Length > 0)
@@ -374,7 +381,7 @@ public partial class EditorMain : Control
             string objDat = Path.Combine(datDir, "Obj.dat");
             _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
             string npcDat = Path.Combine(datDir, "NPCs.dat");
-            _npcBodies = GameDataLoader.LoadNpcBodies(npcDat);
+            (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
             GD.Print($"[Editor] Server data: {datDir}");
         }
 
@@ -388,7 +395,11 @@ public partial class EditorMain : Control
         _viewport.Particles = _particles;
         _viewport.ObjGrhs = _objGrhs;
         _viewport.NpcBodies = _npcBodies;
+        _viewport.NpcHeads = _npcHeads;
         _viewport.NpcBodyGrhs = _npcBodyGrhs;
+        _viewport.NpcHeadOfsX = _npcHeadOfsX;
+        _viewport.NpcHeadOfsY = _npcHeadOfsY;
+        _viewport.HeadGrhs = _headGrhs;
 
         CreateNewMap(1);
     }
@@ -669,7 +680,21 @@ public partial class EditorMain : Control
         if (_propsPanel != null)
             _propsPanel.Map = _map;
         if (_particles != null && _map != null)
+        {
             _particles.BuildStreamsFromMap(_map);
+
+            // Count map features for status
+            int pCount = 0, lCount = 0, nCount = 0, oCount = 0;
+            for (int y = 1; y <= _map.Height; y++)
+                for (int x = 1; x <= _map.Width; x++)
+                {
+                    if (_map.Tiles[x, y].ParticleGroup > 0) pCount++;
+                    if (_map.Tiles[x, y].HasLight) lCount++;
+                    if (_map.Tiles[x, y].HasNpc) nCount++;
+                    if (_map.Tiles[x, y].HasObject) oCount++;
+                }
+            GD.Print($"[Editor] Map features: {nCount} NPCs, {oCount} objects, {pCount} particles, {lCount} lights");
+        }
     }
 
     private void SetStatus(string msg)

@@ -21,7 +21,11 @@ public partial class MapViewport : Control
     public ParticleEngine? Particles;
     public int[]? ObjGrhs;      // ObjIndex → GrhIndex
     public int[]? NpcBodies;    // NpcIndex → BodyIndex
+    public int[]? NpcHeads;     // NpcIndex → HeadIndex
     public int[]? NpcBodyGrhs;  // BodyIndex → south-walk GrhIndex
+    public int[]? NpcHeadOfsX;  // BodyIndex → head offset X
+    public int[]? NpcHeadOfsY;  // BodyIndex → head offset Y
+    public int[]? HeadGrhs;     // HeadIndex → south-facing GrhIndex
 
     // Interaction state
     private bool _isPainting;
@@ -102,7 +106,7 @@ public partial class MapViewport : Control
                 }
         }
 
-        // ─── NPCs on map (drawn as south-facing body sprite, centered) ───
+        // ─── NPCs on map (body + head, south-facing) ───
         if (State.ShowNpcs && NpcBodies != null && NpcBodyGrhs != null)
         {
             for (int y = 1; y <= mapH; y++)
@@ -112,9 +116,29 @@ public partial class MapViewport : Control
                     if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) continue;
                     int bodyIdx = NpcBodies[npcIdx];
                     if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) continue;
-                    int grhIdx = NpcBodyGrhs[bodyIdx];
-                    if (grhIdx > 0)
-                        DrawTileGrh(grhIdx, x, y, center: true);
+
+                    // Draw body
+                    int bodyGrh = NpcBodyGrhs[bodyIdx];
+                    if (bodyGrh > 0)
+                        DrawTileGrh(bodyGrh, x, y, center: true);
+
+                    // Draw head on top of body
+                    if (NpcHeads != null && HeadGrhs != null &&
+                        NpcHeadOfsX != null && NpcHeadOfsY != null &&
+                        npcIdx < NpcHeads.Length)
+                    {
+                        int headIdx = NpcHeads[npcIdx];
+                        if (headIdx > 0 && headIdx < HeadGrhs.Length)
+                        {
+                            int headGrh = HeadGrhs[headIdx];
+                            if (headGrh > 0)
+                            {
+                                int ofsX = bodyIdx < NpcHeadOfsX.Length ? NpcHeadOfsX[bodyIdx] : 0;
+                                int ofsY = bodyIdx < NpcHeadOfsY.Length ? NpcHeadOfsY[bodyIdx] : 0;
+                                DrawTileGrhOffset(headGrh, x, y, ofsX, ofsY);
+                            }
+                        }
+                    }
                 }
         }
 
@@ -360,6 +384,39 @@ public partial class MapViewport : Control
 
         var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
+    }
+
+    /// <summary>
+    /// Draw a GRH at tile position with pixel offset (used for NPC heads).
+    /// Centered horizontally, bottom-anchored like body, then offset applied.
+    /// </summary>
+    private void DrawTileGrhOffset(int grhIndex, int tileX, int tileY, int ofsX, int ofsY)
+    {
+        if (grhIndex <= 0 || Grhs == null || Textures == null) return;
+        if (grhIndex >= Grhs.Length) return;
+
+        var grh = Grhs[grhIndex];
+
+        if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+        {
+            int frameIdx = grh.Frames[0];
+            if (frameIdx <= 0 || frameIdx >= Grhs.Length) return;
+            grh = Grhs[frameIdx];
+        }
+
+        if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) return;
+
+        var texture = Textures.GetTexture(grh.FileNum);
+        if (texture == null) return;
+
+        var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+
+        // Center on tile like body, then apply head offset
+        float drawX = tileX * TileSize + (TileSize - grh.PixelWidth) / 2f + ofsX;
+        float drawY = tileY * TileSize + (TileSize - grh.PixelHeight) + ofsY;
+
+        var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+        DrawTextureRectRegion(texture, destRect, srcRect, Colors.White);
     }
 
     /// <summary>
@@ -761,11 +818,11 @@ public partial class ParticleOverlay : Control
 {
     public MapViewport? Viewport;
 
-    public override void _Process(double delta)
+    public override void _Ready()
     {
-        // Match parent size so draws aren't clipped
-        if (Viewport != null)
-            Size = Viewport.Size;
+        // Fill entire parent area
+        SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        MouseFilter = MouseFilterEnum.Ignore;
     }
 
     public override void _Draw()
