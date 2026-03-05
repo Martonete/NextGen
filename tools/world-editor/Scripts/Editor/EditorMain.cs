@@ -7,6 +7,7 @@ namespace AOWorldEditor.Editor;
 
 /// <summary>
 /// Main editor controller. Builds UI, loads data, handles file operations.
+/// All layout is manual (Position + Size in _Process) — no containers for the main areas.
 /// </summary>
 public partial class EditorMain : Control
 {
@@ -23,6 +24,7 @@ public partial class EditorMain : Control
     private readonly UndoManager _undo = new();
 
     // UI components
+    private MenuBar? _menuBar;
     private TilePalette? _palette;
     private MapViewport? _viewport;
     private Window? _propsWindow;
@@ -34,6 +36,7 @@ public partial class EditorMain : Control
     private Label? _coordLabel;
     private Label? _layerLabel;
     private Label? _toolLabel;
+    private HBoxContainer? _statusBar;
 
     // Map properties dialog
     private AcceptDialog? _mapPropsDialog;
@@ -42,22 +45,20 @@ public partial class EditorMain : Control
     private CheckBox? _mapPkCheck;
     private SpinBox? _mapAmbR, _mapAmbG, _mapAmbB;
 
+    private const float PaletteWidth = 300;
+    private const float StatusHeight = 24;
+
     public override void _Ready()
     {
-        AnchorsPreset = (int)LayoutPreset.FullRect;
         BuildUI();
         TryAutoDetectDataPath();
     }
 
     private void BuildUI()
     {
-        var mainVBox = new VBoxContainer();
-        mainVBox.AnchorsPreset = (int)LayoutPreset.FullRect;
-        mainVBox.AddThemeConstantOverride("separation", 0);
-        AddChild(mainVBox);
+        // ─── Menu bar (direct child, will be positioned manually) ───
+        _menuBar = new MenuBar();
 
-        // ─── Menu bar ───
-        var menuBar = new MenuBar();
         var fileMenu = new PopupMenu { Name = "Archivo" };
         fileMenu.AddItem("Nuevo Mapa (Ctrl+N)", 0);
         fileMenu.AddItem("Abrir Mapa... (Ctrl+O)", 1);
@@ -70,7 +71,7 @@ public partial class EditorMain : Control
         fileMenu.AddSeparator();
         fileMenu.AddItem("Configurar Ruta de Datos...", 6);
         fileMenu.IdPressed += OnFileMenuId;
-        menuBar.AddChild(fileMenu);
+        _menuBar.AddChild(fileMenu);
 
         var editMenu = new PopupMenu { Name = "Editar" };
         editMenu.AddItem("Deshacer (Ctrl+Z)", 0);
@@ -79,7 +80,7 @@ public partial class EditorMain : Control
         editMenu.AddItem("Copiar (Ctrl+C)", 2);
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.IdPressed += OnEditMenuId;
-        menuBar.AddChild(editMenu);
+        _menuBar.AddChild(editMenu);
 
         var viewMenu = new PopupMenu { Name = "Ver" };
         viewMenu.AddCheckItem("Grilla (G)", 0);
@@ -92,29 +93,15 @@ public partial class EditorMain : Control
         viewMenu.AddCheckItem("Capa 4", 6);
         for (int i = 0; i <= 6; i++) viewMenu.SetItemChecked(i, true);
         viewMenu.IdPressed += OnViewMenuId;
-        menuBar.AddChild(viewMenu);
+        _menuBar.AddChild(viewMenu);
 
-        mainVBox.AddChild(menuBar);
+        AddChild(_menuBar);
 
-        // ─── Content area: manual layout with anchors ───
-        var content = new Control();
-        content.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        content.SizeFlagsVertical = SizeFlags.ExpandFill;
-        mainVBox.AddChild(content);
-
-        // Left: Tile palette (fixed 300px wide, full height)
+        // ─── Tile palette (direct child) ───
         _palette = new TilePalette { State = _state };
-        _palette.AnchorLeft = 0;
-        _palette.AnchorTop = 0;
-        _palette.AnchorRight = 0;
-        _palette.AnchorBottom = 1;
-        _palette.OffsetLeft = 0;
-        _palette.OffsetTop = 0;
-        _palette.OffsetRight = 300;
-        _palette.OffsetBottom = 0;
-        content.AddChild(_palette);
+        AddChild(_palette);
 
-        // Right: MapViewport from 304px to right edge, full height
+        // ─── Map viewport (direct child) ───
         _viewport = new MapViewport
         {
             Map = _map,
@@ -124,42 +111,34 @@ public partial class EditorMain : Control
             Undo = _undo,
             ClipContents = true,
         };
-        _viewport.AnchorLeft = 0;
-        _viewport.AnchorTop = 0;
-        _viewport.AnchorRight = 1;
-        _viewport.AnchorBottom = 1;
-        _viewport.OffsetLeft = 304;
-        _viewport.OffsetTop = 0;
-        _viewport.OffsetRight = 0;
-        _viewport.OffsetBottom = 0;
-        content.AddChild(_viewport);
+        AddChild(_viewport);
 
-        // ─── Status bar (compact, single line) ───
-        var statusBar = new HBoxContainer();
-        statusBar.AddThemeConstantOverride("separation", 16);
+        // ─── Status bar (direct child) ───
+        _statusBar = new HBoxContainer();
+        _statusBar.AddThemeConstantOverride("separation", 16);
 
         _toolLabel = new Label { Text = "Pintar" };
         _toolLabel.AddThemeFontSizeOverride("font_size", 11);
         _toolLabel.AddThemeColorOverride("font_color", new Color(0.5f, 1f, 0.5f));
-        statusBar.AddChild(_toolLabel);
+        _statusBar.AddChild(_toolLabel);
 
         _layerLabel = new Label { Text = "Capa 1" };
         _layerLabel.AddThemeFontSizeOverride("font_size", 11);
         _layerLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.8f, 1f));
-        statusBar.AddChild(_layerLabel);
+        _statusBar.AddChild(_layerLabel);
 
         _coordLabel = new Label { Text = "(0, 0)" };
         _coordLabel.AddThemeFontSizeOverride("font_size", 11);
-        statusBar.AddChild(_coordLabel);
+        _statusBar.AddChild(_coordLabel);
 
         _statusLabel = new Label { Text = "Listo" };
         _statusLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _statusLabel.HorizontalAlignment = HorizontalAlignment.Right;
         _statusLabel.AddThemeFontSizeOverride("font_size", 11);
         _statusLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
-        statusBar.AddChild(_statusLabel);
+        _statusBar.AddChild(_statusLabel);
 
-        mainVBox.AddChild(statusBar);
+        AddChild(_statusBar);
 
         // ─── Tile Properties as floating Window ───
         _propsWindow = new Window
@@ -216,6 +195,48 @@ public partial class EditorMain : Control
         AddChild(_dataPathDialog);
 
         BuildMapPropsDialog();
+    }
+
+    /// <summary>
+    /// Manual layout — called every frame to size/position all UI elements.
+    /// </summary>
+    private void DoLayout()
+    {
+        var win = GetViewportRect().Size;
+
+        // Menu bar: top, full width
+        float menuH = _menuBar?.GetMinimumSize().Y ?? 30;
+        if (_menuBar != null)
+        {
+            _menuBar.Position = Vector2.Zero;
+            _menuBar.Size = new Vector2(win.X, menuH);
+        }
+
+        float contentTop = menuH;
+        float contentBottom = win.Y - StatusHeight;
+        float contentH = contentBottom - contentTop;
+
+        // Palette: left side, fixed width
+        if (_palette != null)
+        {
+            _palette.Position = new Vector2(0, contentTop);
+            _palette.Size = new Vector2(PaletteWidth, contentH);
+        }
+
+        // Viewport: right of palette, fills everything else
+        if (_viewport != null)
+        {
+            float vpX = PaletteWidth + 2;
+            _viewport.Position = new Vector2(vpX, contentTop);
+            _viewport.Size = new Vector2(win.X - vpX, contentH);
+        }
+
+        // Status bar: bottom
+        if (_statusBar != null)
+        {
+            _statusBar.Position = new Vector2(0, contentBottom);
+            _statusBar.Size = new Vector2(win.X, StatusHeight);
+        }
     }
 
     private void BuildMapPropsDialog()
@@ -344,8 +365,6 @@ public partial class EditorMain : Control
 
     private void OnViewMenuId(long id)
     {
-        var menu = GetNode<MenuBar>("%MenuBar")?.GetChild(2) as PopupMenu;
-        // Can't easily get the menu by path, so toggle directly
         switch (id)
         {
             case 0: _state.ShowGrid = !_state.ShowGrid; break;
@@ -361,7 +380,6 @@ public partial class EditorMain : Control
 
     private void OnNewMap()
     {
-        // Simple: just create map 1. TODO: dialog for map number
         CreateNewMap(1);
     }
 
@@ -567,6 +585,9 @@ public partial class EditorMain : Control
 
     public override void _Process(double delta)
     {
+        // Manual layout every frame (handles window resize)
+        DoLayout();
+
         // Open tile properties when a tile is clicked with property tools
         if (_state.ShowTileProperties && _propsPanel != null && _map != null)
         {
