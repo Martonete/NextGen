@@ -310,7 +310,11 @@ async fn main() {
                         let pool = state.pool.clone();
                         match db::charfile::save_charfile(&pool, &name, &save_data).await {
                             Ok(()) => info!("[DISC] Character saved for '{}'", name),
-                            Err(e) => error!("[DISC] Failed to save character '{}': {}", name, e),
+                            Err(e) => {
+                                error!("[DISC] Failed to save character '{}': {}", name, e);
+                                // Fallback: at least clear the logged flag so the user can reconnect
+                                let _ = db::charfile::set_logged_flag(&pool, &name, false).await;
+                            }
                         }
                     }
                 } else {
