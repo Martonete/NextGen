@@ -73,7 +73,7 @@ public partial class EditorMain : Control
     private const float PaletteWidth = 300;
     private const float StatusHeight = 24;
     private const float NavBarHeight = 28;
-    private const float ToolBarHeight = 32;
+    private const float ToolBarHeight = 44;
     private const float TileInfoHeight = 110;
 
     public override void _Ready()
@@ -218,14 +218,7 @@ public partial class EditorMain : Control
         for (int i = 0; i < toolDefs.Length; i++)
         {
             var (tool, icon, label, shortcut) = toolDefs[i];
-            var btn = new Button
-            {
-                Text = icon,
-                TooltipText = $"{label} ({shortcut})",
-                ToggleMode = true,
-                CustomMinimumSize = new Vector2(ToolBarHeight, ToolBarHeight - 4),
-            };
-            btn.AddThemeFontSizeOverride("font_size", 16);
+            var btn = CreateToolButton(icon, label, $"{label} ({shortcut})");
             var capturedTool = tool;
             btn.Pressed += () =>
             {
@@ -251,14 +244,7 @@ public partial class EditorMain : Control
         for (int i = 0; i < propToolDefs.Length; i++)
         {
             var (tool, icon, label) = propToolDefs[i];
-            var btn = new Button
-            {
-                Text = icon,
-                TooltipText = label,
-                ToggleMode = true,
-                CustomMinimumSize = new Vector2(ToolBarHeight, ToolBarHeight - 4),
-            };
-            btn.AddThemeFontSizeOverride("font_size", 16);
+            var btn = CreateToolButton(icon, label, label);
             btn.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.7f));
             var capturedTool = tool;
             btn.Pressed += () =>
@@ -1080,6 +1066,47 @@ public partial class EditorMain : Control
     #endregion
 
     #region Helpers
+
+    /// <summary>
+    /// Creates a toolbar button with an icon on top and a small label below.
+    /// </summary>
+    private static Button CreateToolButton(string icon, string label, string tooltip)
+    {
+        var btn = new Button
+        {
+            TooltipText = tooltip,
+            ToggleMode = true,
+            CustomMinimumSize = new Vector2(46, ToolBarHeight - 2),
+        };
+        // Use a VBoxContainer to stack icon + label
+        var vbox = new VBoxContainer();
+        vbox.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        vbox.AddThemeConstantOverride("separation", -2);
+        vbox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.MouseFilter = Control.MouseFilterEnum.Ignore;
+
+        var iconLabel = new Label
+        {
+            Text = icon,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        iconLabel.AddThemeFontSizeOverride("font_size", 16);
+        vbox.AddChild(iconLabel);
+
+        var textLabel = new Label
+        {
+            Text = label,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+        };
+        textLabel.AddThemeFontSizeOverride("font_size", 8);
+        textLabel.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
+        vbox.AddChild(textLabel);
+
+        btn.AddChild(vbox);
+        return btn;
+    }
 
     // Maps toolbar button index to EditorTool
     private static readonly EditorTool[] ToolBarOrder = {
