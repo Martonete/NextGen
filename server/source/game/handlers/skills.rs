@@ -1169,10 +1169,24 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             user.hidden = true;
             user.counter_oculto = counter;
         }
-        // Send NOVER to make invisible on all clients
+        // Send NOVER to make invisible on all clients (TSAO: clanmates still see us)
         if !navigating {
-            let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
-            state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+            let ci = char_index.0 as i16;
+            let nover = binary_packets::write_set_invisible(ci, true, 0);
+            let bp_remove = binary_packets::write_character_remove(ci);
+            let (px, py) = state.users.get(&conn_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((1, 1));
+            let area_users = state.get_area_users(map, px, py, conn_id);
+            for other_id in area_users {
+                if same_clan(state, conn_id, other_id) {
+                    // Clanmate: SetInvisible → they see character semi-transparent
+                    state.send_bytes(other_id, &nover).await;
+                } else {
+                    // Non-clanmate: remove character entirely
+                    state.send_bytes(other_id, &bp_remove).await;
+                }
+            }
+            // Tell self we're invisible
+            state.send_bytes(conn_id, &nover).await;
         }
         state.send_msg_id(conn_id, 808, "").await; // "Te has ocultado."
         // Skill gain

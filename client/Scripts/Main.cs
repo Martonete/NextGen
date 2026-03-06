@@ -104,6 +104,10 @@ public partial class Main : Control
     private VaultPanel? _vaultPanel;
     private bool _lastBanqueando;
 
+    // Guild panels
+    private GuildPanel? _guildPanel;
+    private GuildFoundationPanel? _guildFoundationPanel;
+
     // Travel panel (frmViajar)
     private TravelPanel? _travelPanel;
 
@@ -560,6 +564,18 @@ public partial class Main : Control
         _vaultPanel.Position = new Vector2(42, 64);
         _vaultPanel.Visible = false;
         _gameUI.AddChild(_vaultPanel);
+
+        // Guild panel (frmGuildInfo) — centered on viewport
+        _guildPanel = new GuildPanel();
+        _guildPanel.Position = new Vector2(60, 100);
+        _guildPanel.Visible = false;
+        _gameUI.AddChild(_guildPanel);
+
+        // Guild foundation panel (frmGuildFoundation) — centered on viewport
+        _guildFoundationPanel = new GuildFoundationPanel();
+        _guildFoundationPanel.Position = new Vector2(80, 80);
+        _guildFoundationPanel.Visible = false;
+        _gameUI.AddChild(_guildFoundationPanel);
 
         // Travel panel (frmViajar) — centered on viewport
         _travelPanel = new TravelPanel();
@@ -2624,6 +2640,18 @@ public partial class Main : Control
                 _travelPanel?.OpenTravel();
             }
 
+            // Guild panels
+            if (_state.ShowGuildPanel)
+            {
+                _state.ShowGuildPanel = false;
+                _guildPanel?.ShowView(_state.GuildInfoType);
+            }
+            if (_state.ShowGuildFoundation)
+            {
+                _state.ShowGuildFoundation = false;
+                _guildFoundationPanel?.Show();
+            }
+
             // Death panel — show when player dies, hide on revive
             if (_state.ShowDeathPanel)
             {
@@ -2715,6 +2743,8 @@ public partial class Main : Control
                     _vaultPanel!.Init(_state, _gameData, _tcp);
                     _travelPanel!.Init(_state, _tcp, _dataPath);
                     _deathPanel!.Init(_state, _tcp, _dataPath);
+                    _guildPanel!.Init(_state, _tcp);
+                    _guildFoundationPanel!.Init(_state, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -2817,11 +2847,13 @@ public partial class Main : Control
         // Close escape menu
         HideEscapeMenu();
 
-        // Close commerce, bank, and travel panels
+        // Close commerce, bank, guild, and travel panels
         _commercePanel?.CloseShop();
         _lastComerciando = false;
         _bankPanel?.CloseBank();
         _vaultPanel?.CloseVault();
+        _guildPanel?.Hide();
+        _guildFoundationPanel?.Hide();
         _lastBanqueando = false;
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();

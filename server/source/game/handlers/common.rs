@@ -17,6 +17,18 @@ pub(super) const NINGUN_ESCUDO: i32 = 2;
 pub(super) const NINGUN_CASCO: i32 = 2;
 
 // =====================================================================
+// Clan helpers
+// =====================================================================
+
+/// VB6 SameClan: returns true if both users are logged, share the same guild (>0).
+pub(super) fn same_clan(state: &GameState, a: ConnectionId, b: ConnectionId) -> bool {
+    let ga = state.users.get(&a).map(|u| u.guild_index).unwrap_or(0);
+    if ga == 0 { return false; }
+    let gb = state.users.get(&b).map(|u| u.guild_index).unwrap_or(0);
+    ga == gb
+}
+
+// =====================================================================
 // Map tile helpers
 // =====================================================================
 

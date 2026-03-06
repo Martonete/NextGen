@@ -1357,6 +1357,12 @@ async fn connect_user(
         user.hidden = char_data.hidden;
         user.navigating = char_data.navigating;
         user.guild_index = char_data.guild_index;
+        // Cache guild name for CC packet clan tag
+        if char_data.guild_index > 0 {
+            if let Some(g) = crate::db::guilds::load_guild(&state.pool, char_data.guild_index).await {
+                user.guild_name = g.name;
+            }
+        }
         user.armada_real = char_data.armada_real;
         user.fuerzas_caos = char_data.fuerzas_caos;
         user.criminales_matados = char_data.criminales_matados;
@@ -1842,8 +1848,16 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
             // Only send SetInvisible(false) if spell invisibility is NOT active
             if !is_spell_invis && !navigating_for_hide {
                 state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+                // Re-broadcast CC+CD so non-clanmates (who had CharacterRemove) see us again
+                if let Some(u) = state.users.get(&conn_id) {
+                    let cc = u.build_cc_binary();
+                    let cd = build_cd_binary(u);
+                    let (px, py) = (u.pos_x, u.pos_y);
+                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc).await;
+                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd).await;
+                }
                 let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
-                state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
+                state.send_bytes(conn_id, &nover).await;
             }
         }
     }
@@ -1860,9 +1874,9 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
 
     // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
-    // Skip if invisible — others must NOT see movement.
+    // TSAO: when invisible, still send movement to same-clan members.
     let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
-    if !is_invisible {
+    {
         let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
         let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
             Some(u) => (u.area_min_x, u.area_min_y),
@@ -1879,7 +1893,12 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
                     for sx in amx..=axx {
                         if let Some(tile) = grid.tile(sx, sy) {
                             if let Some(c) = tile.user_conn {
-                                if c != conn_id { targets.push(c); }
+                                if c != conn_id {
+                                    // If we're invisible, only send to clanmates
+                                    if !is_invisible || same_clan(state, conn_id, c) {
+                                        targets.push(c);
+                                    }
+                                }
                             }
                         }
                     }
@@ -1888,8 +1907,8 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
             for c in targets {
                 state.send_bytes(c, &move_pkt).await;
             }
-        } else {
-            // Fallback: use standard area broadcast
+        } else if !is_invisible {
+            // Fallback: use standard area broadcast (no clan filter in fallback)
             state.send_data_bytes(
                 SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
                 &move_pkt,
@@ -2380,6 +2399,8 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_cerrarclan(state, conn_id).await;
     } else if cmd_upper.starts_with("/SALIRCLAN") {
         handle_slash_salirclan(state, conn_id).await;
+    } else if cmd_upper == "/SEGUROCLAN" {
+        handle_slash_seguroclan(state, conn_id).await;
     } else if cmd_upper.starts_with("/HACLIDER ") {
         let target = cmd[10..].trim();
         handle_slash_haclider(state, conn_id, target).await;
@@ -3814,24 +3835,26 @@ async fn check_update_needed_user(
         }
     }
 
-    // Get self char_index and invisible flag for [CD and NOVER
+    // Get self char_index and invisible/hidden flags for [CD and NOVER
     let (my_char_idx, my_invisible, my_privileges) = match state.users.get(&conn_id) {
-        Some(u) => (u.char_index.0, u.admin_invisible, u.privileges),
+        Some(u) => (u.char_index.0, u.admin_invisible || u.invisible || u.hidden, u.privileges),
         None => return,
     };
 
     // Send mutual CC + [CD + NOVER to newly visible users
+    // TSAO: clanmates can see each other even when invisible/hidden.
     for other_id in new_users {
         if let Some(other) = state.users.get(&other_id) {
             if other.logged {
                 let other_cc = other.build_cc_binary();
                 let other_char_idx = other.char_index.0;
-                let other_invisible = other.admin_invisible;
+                let other_invisible = other.admin_invisible || other.invisible || other.hidden;
                 let other_cd = build_cd_binary(other);
+                let are_clanmates = same_clan(state, conn_id, other_id);
                 state.send_bytes(conn_id, &other_cc).await;
                 state.send_bytes(conn_id, &other_cd).await;
-                // If the other player is invisible, tell us not to render them
-                if other_invisible {
+                // If the other player is invisible, tell us not to render them (unless clanmates)
+                if other_invisible && !are_clanmates {
                     state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true, 0)).await;
                 }
                 // Send our CC + [CD to them
@@ -3841,8 +3864,8 @@ async fn check_update_needed_user(
                     None => continue,
                 };
                 state.send_bytes(other_id, &my_cd).await;
-                // If we are invisible, tell them not to render us
-                if my_invisible {
+                // If we are invisible, tell them not to render us (unless clanmates)
+                if my_invisible && !are_clanmates {
                     state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true, 0)).await;
                 }
             }
@@ -4157,7 +4180,7 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
     make_user_visible(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
-    //     Skip if invisible (GM or spell) — others must NOT see us.
+    //     Skip if invisible (GM or spell) — others must NOT see us (TSAO: except clanmates).
     let is_invis = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
     if !is_invis {
         state.send_data_bytes(
@@ -4168,6 +4191,21 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
             SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
             &own_cd,
         ).await;
+    } else {
+        // Invisible but clanmates should still see us
+        let area_users = state.get_area_users(new_map, final_x, final_y, conn_id);
+        for other_id in area_users {
+            if same_clan(state, conn_id, other_id) {
+                state.send_bytes(other_id, &own_cc).await;
+                let cd = match state.users.get(&conn_id) {
+                    Some(u) => build_cd_binary(u),
+                    None => continue,
+                };
+                state.send_bytes(other_id, &cd).await;
+                // Tell clanmate we're invisible (semi-transparent rendering)
+                state.send_bytes(other_id, &binary_packets::write_set_invisible(ci.0 as i16, true, 0)).await;
+            }
+        }
     }
 
     // 12. Warp FX is NOT sent by default — only when caller sets fx=true

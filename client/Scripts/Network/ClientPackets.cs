@@ -360,6 +360,54 @@ public static class ClientPackets
         return new byte[] { ClientPacketId.GuildInfo };
     }
 
+    /// <summary>Guild creation form data: CIG &lt;desc&gt;BF&lt;name&gt;BF&lt;url&gt;BF&lt;codexCount&gt;BF&lt;codex...&gt;</summary>
+    public static byte[] WriteGuildCreate(string data)
+    {
+        return WriteStringPacket(ClientPacketId.GuildCreate, data);
+    }
+
+    /// <summary>Update guild codex/desc: DESCOD data</summary>
+    public static byte[] WriteGuildUpdateCodex(string data)
+    {
+        return WriteStringPacket(ClientPacketId.GuildUpdateCodex, data);
+    }
+
+    /// <summary>Accept applicant: ACEPTARI name</summary>
+    public static byte[] WriteGuildAccept(string applicantName)
+    {
+        return WriteStringPacket(ClientPacketId.GuildAccept, applicantName);
+    }
+
+    /// <summary>Reject applicant: RECHAZAR name,reason</summary>
+    public static byte[] WriteGuildReject(string data)
+    {
+        return WriteStringPacket(ClientPacketId.GuildReject, data);
+    }
+
+    /// <summary>Expel member: ECHARCLA name</summary>
+    public static byte[] WriteGuildExpel(string memberName)
+    {
+        return WriteStringPacket(ClientPacketId.GuildExpel, memberName);
+    }
+
+    /// <summary>Update guild news: ACTGNEWS text</summary>
+    public static byte[] WriteGuildNews(string news)
+    {
+        return WriteStringPacket(ClientPacketId.GuildNewsReq, news);
+    }
+
+    /// <summary>Apply to join guild: SOLICITUD guildName,petition</summary>
+    public static byte[] WriteGuildApply(string data)
+    {
+        return WriteStringPacket(ClientPacketId.GuildApply, data);
+    }
+
+    /// <summary>Request guild details: CLANDETAILS guildName</summary>
+    public static byte[] WriteGuildDetails(string guildName)
+    {
+        return WriteStringPacket(ClientPacketId.GuildDetails, guildName);
+    }
+
     public static byte[] WriteStringPacket(byte packetId, string data)
     {
         var bq = new ByteQueue();

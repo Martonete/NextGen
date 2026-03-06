@@ -1090,16 +1090,9 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             }
             state.send_msg_id(conn_id, 355, "").await; // Faction changed
             send_inventory_slot(state, conn_id, idx).await;
-            // Send updated status via CharacterCreate
+            // Send updated status via CharacterCreate (includes clan tag)
             if let Some(u) = state.users.get(&conn_id) {
-                let nick_color: u8 = if u.criminal { 2 } else { 1 };
-                let pkt_cc = binary_packets::write_character_create(
-                    u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
-                    u.pos_x as u8, u.pos_y as u8,
-                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16,
-                    0, 0, // fx, loops
-                    &u.char_name, nick_color, u.privileges as u8,
-                );
+                let pkt_cc = u.build_cc_binary();
                 let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
             }
@@ -1128,16 +1121,9 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             }
             state.send_msg_id(conn_id, 355, "").await;
             send_inventory_slot(state, conn_id, idx).await;
-            // Send updated status via CharacterCreate
+            // Send updated status via CharacterCreate (includes clan tag)
             if let Some(u) = state.users.get(&conn_id) {
-                let nick_color: u8 = if u.criminal { 2 } else { 1 };
-                let pkt_cc = binary_packets::write_character_create(
-                    u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
-                    u.pos_x as u8, u.pos_y as u8,
-                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16,
-                    0, 0, // fx, loops
-                    &u.char_name, nick_color, u.privileges as u8,
-                );
+                let pkt_cc = u.build_cc_binary();
                 let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
             }

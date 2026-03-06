@@ -148,7 +148,13 @@ public partial class PacketHandler
 
             // ── Guild ─────────────────────────────────────────────
             case ServerPacketId.GuildList: // 39
-                { string _ = bq.ReadString(); GD.Print("[PKT] GuildList (binary)"); }
+                {
+                    string data = bq.ReadString();
+                    _state.GuildListData = data;
+                    _state.ShowGuildPanel = true;
+                    _state.GuildInfoType = "List";
+                    GD.Print($"[PKT] GuildList (binary): {data.Length} chars");
+                }
                 break;
 
             // ── Toggles / Area ────────────────────────────────────
@@ -247,7 +253,15 @@ public partial class PacketHandler
                 { string _ = bq.ReadString(); GD.Print("[PKT] TrainerCreatureList (binary)"); }
                 break;
             case ServerPacketId.GuildNews: // 73
-                { string news = bq.ReadString(); string motd = bq.ReadString(); string codex = bq.ReadString(); GD.Print($"[PKT] GuildNews (binary)"); }
+                {
+                    string news = bq.ReadString();
+                    string motd = bq.ReadString();
+                    string codex = bq.ReadString();
+                    _state.GuildNewsText = news;
+                    _state.GuildMotdText = motd;
+                    _state.GuildCodexText = codex;
+                    GD.Print($"[PKT] GuildNews: news={news.Length}c motd={motd.Length}c codex={codex.Length}c");
+                }
                 break;
             case ServerPacketId.PrivilegeLevel: // 74
                 _state.Privileges = bq.ReadByte();
@@ -274,6 +288,7 @@ public partial class PacketHandler
                 HandleBinParalizeOk(bq);
                 break;
             case ServerPacketId.ShowGuildFundationForm: // 83
+                _state.ShowGuildFoundation = true;
                 GD.Print("[PKT] ShowGuildFundationForm (binary)");
                 break;
             case ServerPacketId.TradeOK: // 84
@@ -2705,6 +2720,8 @@ public partial class PacketHandler
         string data = bq.ReadString();
         GD.Print($"[PKT] GuildInfo{tag} (binary): {data.Length} chars");
         _state.GuildInfoData = data;
+        _state.GuildInfoType = tag;
+        _state.ShowGuildPanel = true;
     }
 
     /// <summary>

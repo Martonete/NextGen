@@ -61,9 +61,15 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             user.invisible = false;
             user.counter_invisible = 0;
         }
-        // Broadcast visibility restoration
+        // Re-broadcast CC+CD so non-clanmates (who had CharacterRemove) see us again
+        if let Some(u) = state.users.get(&conn_id) {
+            let cc = u.build_cc_binary();
+            let cd = build_cd_binary(u);
+            let (px, py) = (u.pos_x, u.pos_y);
+            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd).await;
+        }
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
-        state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
         state.send_bytes(conn_id, &nover).await;
         state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
     }
@@ -94,6 +100,15 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // PvP attack
         if safe_on {
             state.send_msg_id(conn_id, 207, "").await; // Escribe /SEG para quitar el seguro
+            return;
+        }
+
+        // Clan safe check — prevent attacking clanmates when seguro_clan is ON
+        let (attacker_guild, attacker_seguro) = state.users.get(&conn_id)
+            .map(|u| (u.guild_index, u.seguro_clan)).unwrap_or((0, false));
+        let victim_guild = state.users.get(&victim_id).map(|u| u.guild_index).unwrap_or(0);
+        if attacker_guild > 0 && attacker_guild == victim_guild && attacker_seguro {
+            state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO).await;
             return;
         }
 
