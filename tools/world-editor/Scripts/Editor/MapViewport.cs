@@ -40,6 +40,12 @@ public partial class MapViewport : Control
 
     private readonly System.Collections.Generic.HashSet<long> _paintedThisStroke = new();
 
+    // Move tool: live snapshot system
+    private MapTile[,]? _moveSnapshot;   // Full map state before drag started
+    private MapTile[,]? _moveBuffer;     // Tiles being moved (selection copy)
+    private int _moveSelX1, _moveSelY1;  // Original selection top-left
+    private int _moveSelW, _moveSelH;    // Selection dimensions
+
     private ParticleOverlay? _particleOverlay;
 
     public override void _Ready()
@@ -136,9 +142,16 @@ public partial class MapViewport : Control
         // Overlays
         DrawOverlays(mapW, mapH);
 
-        // Move tool: ghost preview of dragged selection
+        // Move tool: selection outline at current drag position (map is live-modified)
         if (_isDragging && State.HasSelection)
-            DrawMoveGhost(mapW, mapH);
+        {
+            var delta = _dragCurrent - _dragStart;
+            var moveRect = new Rect2(
+                (_moveSelX1 + delta.X) * TileSize, (_moveSelY1 + delta.Y) * TileSize,
+                _moveSelW * TileSize, _moveSelH * TileSize);
+            DrawRect(moveRect, new Color(0.2f, 1f, 0.5f, 0.15f));
+            DrawRect(moveRect, new Color(0.2f, 1f, 0.5f, 0.7f), false, 2f);
+        }
 
         // Pick tool: highlight source + ghost at drag position
         DrawPickOverlay();
@@ -154,40 +167,36 @@ public partial class MapViewport : Control
         }
     }
 
-    private void DrawMoveGhost(int mapW, int mapH)
+    /// <summary>
+    /// Live move: restore map from snapshot, clear source, place buffer at current drag position.
+    /// Called on drag start and each drag motion update.
+    /// </summary>
+    private void ApplyLiveMove()
     {
-        if (Map == null || State == null) return;
+        if (Map == null || _moveSnapshot == null || _moveBuffer == null) return;
+
+        // Restore entire map from snapshot
+        Array.Copy(_moveSnapshot, Map.Tiles, Map.Tiles.Length);
+
         var delta = _dragCurrent - _dragStart;
-        int w = State.SelX2 - State.SelX1 + 1;
-        int h = State.SelY2 - State.SelY1 + 1;
 
-        var ghostColor = new Color(1, 1, 1, 0.45f);
-
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
+        // Clear source area (set to default ground)
+        for (int y = 0; y < _moveSelH; y++)
+            for (int x = 0; x < _moveSelW; x++)
             {
-                int srcX = State.SelX1 + x;
-                int srcY = State.SelY1 + y;
-                int dstX = srcX + delta.X;
-                int dstY = srcY + delta.Y;
-                if (!Map.InBounds(srcX, srcY)) continue;
-
-                ref var tile = ref Map.Tiles[srcX, srcY];
-                // Draw each layer at destination position
-                if (tile.Layer1 != 0)
-                    DrawTileGrh(tile.Layer1, dstX, dstY, modulate: ghostColor);
-                if (tile.Layer2 != 0)
-                    DrawTileGrh(tile.Layer2, dstX, dstY, center: true, modulate: ghostColor);
-                if (tile.Layer3 != 0)
-                    DrawTileGrh(tile.Layer3, dstX, dstY, center: true, modulate: ghostColor);
+                int sx = _moveSelX1 + x, sy = _moveSelY1 + y;
+                if (Map.InBounds(sx, sy))
+                    Map.Tiles[sx, sy] = new MapTile { Layer1 = 1 };
             }
 
-        // Ghost selection outline
-        var ghostRect = new Rect2(
-            (State.SelX1 + delta.X) * TileSize, (State.SelY1 + delta.Y) * TileSize,
-            w * TileSize, h * TileSize);
-        DrawRect(ghostRect, new Color(0.2f, 1f, 0.5f, 0.3f));
-        DrawRect(ghostRect, new Color(0.2f, 1f, 0.5f, 0.7f), false, 2f);
+        // Place buffer at destination
+        for (int y = 0; y < _moveSelH; y++)
+            for (int x = 0; x < _moveSelW; x++)
+            {
+                int dstX = _moveSelX1 + x + delta.X, dstY = _moveSelY1 + y + delta.Y;
+                if (Map.InBounds(dstX, dstY))
+                    Map.Tiles[dstX, dstY] = _moveBuffer[x, y];
+            }
     }
 
     private void DrawPickOverlay()
@@ -620,11 +629,29 @@ public partial class MapViewport : Control
                         _dragCurrent = tile;
                         break;
                     case EditorTool.Move:
-                        if (State.HasSelection)
+                        if (State.HasSelection && Map != null)
                         {
                             _isDragging = true;
                             _dragStart = tile;
                             _dragCurrent = tile;
+
+                            // Snapshot entire map for live restore during drag
+                            _moveSelX1 = State.SelX1;
+                            _moveSelY1 = State.SelY1;
+                            _moveSelW = State.SelX2 - State.SelX1 + 1;
+                            _moveSelH = State.SelY2 - State.SelY1 + 1;
+                            _moveSnapshot = new MapTile[Map.Width + 1, Map.Height + 1];
+                            Array.Copy(Map.Tiles, _moveSnapshot, Map.Tiles.Length);
+
+                            // Copy selection tiles to buffer
+                            _moveBuffer = new MapTile[_moveSelW, _moveSelH];
+                            for (int y = 0; y < _moveSelH; y++)
+                                for (int x = 0; x < _moveSelW; x++)
+                                    if (Map.InBounds(_moveSelX1 + x, _moveSelY1 + y))
+                                        _moveBuffer[x, y] = Map.Tiles[_moveSelX1 + x, _moveSelY1 + y];
+
+                            // Apply live: clear source on map
+                            ApplyLiveMove();
                         }
                         break;
                     case EditorTool.Pick:
@@ -660,7 +687,31 @@ public partial class MapViewport : Control
                 {
                     _isDragging = false;
                     var delta = tile - _dragStart;
-                    if (delta != Vector2I.Zero) MoveTiles(delta.X, delta.Y);
+                    if (delta != Vector2I.Zero && _moveSnapshot != null)
+                    {
+                        // Record undo: compare snapshot vs current state
+                        Undo?.BeginBatch("Move");
+                        for (int uy = 1; uy <= Map!.Height; uy++)
+                            for (int ux = 1; ux <= Map.Width; ux++)
+                                if (!Map.Tiles[ux, uy].Equals(_moveSnapshot[ux, uy]))
+                                    Undo?.RecordTileChange(ux, uy, _moveSnapshot[ux, uy], Map.Tiles[ux, uy]);
+                        Undo?.EndBatch();
+
+                        // Move selection to follow
+                        State!.SetSelection(
+                            _moveSelX1 + delta.X, _moveSelY1 + delta.Y,
+                            _moveSelX1 + _moveSelW - 1 + delta.X, _moveSelY1 + _moveSelH - 1 + delta.Y);
+
+                        // Rebuild particle streams at new positions
+                        Particles?.BuildStreamsFromMap(Map);
+                    }
+                    else if (_moveSnapshot != null)
+                    {
+                        // No movement — restore original state
+                        Array.Copy(_moveSnapshot, Map!.Tiles, Map.Tiles.Length);
+                    }
+                    _moveSnapshot = null;
+                    _moveBuffer = null;
                 }
                 if (State!.Pick.IsDragging)
                 {
@@ -708,6 +759,7 @@ public partial class MapViewport : Control
         if (_isDragging)
         {
             _dragCurrent = hoverTile;
+            ApplyLiveMove();
             QueueRedraw();
         }
 
@@ -740,6 +792,8 @@ public partial class MapViewport : Control
             pick.Target = PickTarget.Npc;
         else if (tile.HasObject)
             pick.Target = PickTarget.Object;
+        else if (tile.ParticleGroup > 0)
+            pick.Target = PickTarget.Particle;
         else if (tile.Layer3 != 0)
             pick.Target = PickTarget.Layer3;
         else if (tile.Layer4 != 0)
@@ -793,11 +847,19 @@ public partial class MapViewport : Control
                 Map.Tiles[sx, sy].ObjIndex = 0;
                 Map.Tiles[sx, sy].ObjAmount = 0;
                 break;
+            case PickTarget.Particle:
+                Map.Tiles[tx, ty].ParticleGroup = Map.Tiles[sx, sy].ParticleGroup;
+                Map.Tiles[sx, sy].ParticleGroup = 0;
+                break;
         }
 
         Undo?.RecordTileChange(sx, sy, beforeSrc, Map.Tiles[sx, sy]);
         Undo?.RecordTileChange(tx, ty, beforeDst, Map.Tiles[tx, ty]);
         Undo?.EndBatch();
+
+        // Rebuild particle streams if a particle was moved
+        if (pick.Target == PickTarget.Particle)
+            Particles?.BuildStreamsFromMap(Map);
 
         pick.Clear();
         QueueRedraw();
@@ -851,27 +913,20 @@ public partial class MapViewport : Control
         {
             if (State.SelectedTexture != null)
             {
-                var texRef = State.SelectedTexture;
-                int tw = Math.Max(texRef.TileWidth, 1);
-                int th = Math.Max(texRef.TileHeight, 1);
-                int baseX = tx - ((tx - 1) % tw);
-                int baseY = ty - ((ty - 1) % th);
-
-                long key = (long)baseX << 32 | (uint)baseY;
+                if (!Map.InBounds(tx, ty)) return;
+                long key = (long)tx << 32 | (uint)ty;
                 if (_paintedThisStroke.Contains(key)) return;
                 _paintedThisStroke.Add(key);
 
-                for (int py = 0; py < th; py++)
-                    for (int px = 0; px < tw; px++)
-                    {
-                        int tileX = baseX + px;
-                        int tileY = baseY + py;
-                        if (!Map.InBounds(tileX, tileY)) continue;
-                        var before = Map.Tiles[tileX, tileY];
-                        int grhIdx = texRef.GetGrhAt(px, py);
-                        SetLayerGrh(ref Map.Tiles[tileX, tileY], State.ActiveLayer, (short)grhIdx);
-                        Undo?.RecordTileChange(tileX, tileY, before, Map.Tiles[tileX, tileY]);
-                    }
+                // VB6 mosaic formula: each tile gets its GRH based on map position
+                var texRef = State.SelectedTexture;
+                int tw = Math.Max(texRef.TileWidth, 1);
+                int th = Math.Max(texRef.TileHeight, 1);
+                int grhIdx = texRef.GrhIndex + (((ty - 1) % th) * tw) + ((tx - 1) % tw);
+
+                var before = Map.Tiles[tx, ty];
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)grhIdx);
+                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
             }
             else if (State.EyedropGrh > 0)
             {
@@ -967,15 +1022,25 @@ public partial class MapViewport : Control
         int layer = State.ActiveLayer;
         short targetGrh = GetLayerGrh(ref Map.Tiles[startX, startY], layer);
 
-        short fillGrh = 0;
-        if (State.SelectedTexture != null)
-            fillGrh = (short)State.SelectedTexture.GrhIndex;
-        else if (State.EyedropGrh > 0)
-            fillGrh = (short)State.EyedropGrh;
+        // Determine fill source (mosaic-aware or single GRH)
+        var texRef = State.SelectedTexture;
+        short singleFillGrh = 0;
+        if (texRef == null)
+        {
+            if (State.EyedropGrh > 0)
+                singleFillGrh = (short)State.EyedropGrh;
+            else
+                return;
+            if (targetGrh == singleFillGrh) return;
+        }
         else
-            return;
-
-        if (targetGrh == fillGrh) return;
+        {
+            // Check no-op: would the start tile get the same GRH?
+            int tw = Math.Max(texRef.TileWidth, 1);
+            int th = Math.Max(texRef.TileHeight, 1);
+            int startFillGrh = texRef.GrhIndex + (((startY - 1) % th) * tw) + ((startX - 1) % tw);
+            if (targetGrh == (short)startFillGrh) return;
+        }
 
         Undo?.BeginBatch("Fill");
         var visited = new System.Collections.Generic.HashSet<long>();
@@ -994,6 +1059,19 @@ public partial class MapViewport : Control
             if (GetLayerGrh(ref Map.Tiles[x, y], layer) != targetGrh) continue;
 
             var before = Map.Tiles[x, y];
+            short fillGrh;
+            if (texRef != null)
+            {
+                // VB6 mosaic: per-tile GRH based on map position
+                int tw = Math.Max(texRef.TileWidth, 1);
+                int th = Math.Max(texRef.TileHeight, 1);
+                fillGrh = (short)(texRef.GrhIndex + (((y - 1) % th) * tw) + ((x - 1) % tw));
+            }
+            else
+            {
+                fillGrh = singleFillGrh;
+            }
+
             SetLayerGrh(ref Map.Tiles[x, y], layer, fillGrh);
             Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
             filled++;
@@ -1001,51 +1079,6 @@ public partial class MapViewport : Control
             queue.Enqueue((x + 1, y)); queue.Enqueue((x - 1, y));
             queue.Enqueue((x, y + 1)); queue.Enqueue((x, y - 1));
         }
-
-        Undo?.EndBatch();
-        QueueRedraw();
-    }
-
-    private void MoveTiles(int dx, int dy)
-    {
-        if (Map == null || State == null || !State.HasSelection) return;
-
-        Undo?.BeginBatch("Move");
-
-        int w = State.SelX2 - State.SelX1 + 1;
-        int h = State.SelY2 - State.SelY1 + 1;
-        var buffer = new MapTile[w, h];
-
-        // Copy source tiles to buffer
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-                if (Map.InBounds(State.SelX1 + x, State.SelY1 + y))
-                    buffer[x, y] = Map.Tiles[State.SelX1 + x, State.SelY1 + y];
-
-        // Clear source area
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-            {
-                int sx = State.SelX1 + x, sy = State.SelY1 + y;
-                if (!Map.InBounds(sx, sy)) continue;
-                var before = Map.Tiles[sx, sy];
-                Map.Tiles[sx, sy] = new MapTile { Layer1 = 1 }; // Reset to default ground
-                Undo?.RecordTileChange(sx, sy, before, Map.Tiles[sx, sy]);
-            }
-
-        // Place at destination
-        for (int y = 0; y < h; y++)
-            for (int x = 0; x < w; x++)
-            {
-                int dstX = State.SelX1 + x + dx, dstY = State.SelY1 + y + dy;
-                if (!Map.InBounds(dstX, dstY)) continue;
-                var before = Map.Tiles[dstX, dstY];
-                Map.Tiles[dstX, dstY] = buffer[x, y];
-                Undo?.RecordTileChange(dstX, dstY, before, Map.Tiles[dstX, dstY]);
-            }
-
-        // Move selection to follow
-        State.SetSelection(State.SelX1 + dx, State.SelY1 + dy, State.SelX2 + dx, State.SelY2 + dy);
 
         Undo?.EndBatch();
         QueueRedraw();

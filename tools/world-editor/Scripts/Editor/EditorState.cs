@@ -157,10 +157,11 @@ public class PickState
 public enum PickTarget
 {
     None,
-    Layer3,  // tree/object graphic
-    Layer4,  // roof
+    Layer3,    // tree/object graphic
+    Layer4,    // roof
     Npc,
     Object,
+    Particle,  // particle group
 }
 
 public enum EditorTool
