@@ -110,8 +110,11 @@ public partial class EditorMain : Control
         editMenu.AddItem("Deshacer (Ctrl+Z)", 0);
         editMenu.AddItem("Rehacer (Ctrl+Y)", 1);
         editMenu.AddSeparator();
+        editMenu.AddItem("Cortar (Ctrl+X)", 4);
         editMenu.AddItem("Copiar (Ctrl+C)", 2);
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
+        editMenu.AddSeparator();
+        editMenu.AddItem("Eliminar (Supr)", 5);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -199,30 +202,30 @@ public partial class EditorMain : Control
         _toolBar = new HBoxContainer();
         _toolBar.AddThemeConstantOverride("separation", 2);
 
-        var toolDefs = new (EditorTool tool, string label, string shortcut)[]
+        var toolDefs = new (EditorTool tool, string icon, string label, string shortcut)[]
         {
-            (EditorTool.Hand,    "Mano",        "H"),
-            (EditorTool.Paint,   "Pintar",      "P"),
-            (EditorTool.Erase,   "Borrar",      "E"),
-            (EditorTool.Select,  "Seleccionar", "R"),
-            (EditorTool.Move,    "Mover",       "M"),
-            (EditorTool.Pick,    "Agarrar",     "V"),
-            (EditorTool.Fill,    "Rellenar",    "F"),
-            (EditorTool.Eyedrop, "Cuentagotas", "I"),
-            (EditorTool.Block,   "Bloquear",    "B"),
+            (EditorTool.Hand,    "\u270b", "Mano",        "H"),
+            (EditorTool.Paint,   "\u270f", "Pintar",      "P"),
+            (EditorTool.Erase,   "\u232b", "Borrar",      "E"),
+            (EditorTool.Select,  "\u25a1", "Seleccionar", "R"),
+            (EditorTool.Move,    "\u2725", "Mover",       "M"),
+            (EditorTool.Pick,    "\u261d", "Agarrar",     "V"),
+            (EditorTool.Fill,    "\u25a8", "Rellenar",    "F"),
+            (EditorTool.Eyedrop, "\u25ce", "Cuentagotas", "I"),
+            (EditorTool.Block,   "\u2298", "Bloquear",    "B"),
         };
         _toolBarButtons = new Button[toolDefs.Length];
         for (int i = 0; i < toolDefs.Length; i++)
         {
-            var (tool, label, shortcut) = toolDefs[i];
+            var (tool, icon, label, shortcut) = toolDefs[i];
             var btn = new Button
             {
-                Text = label,
+                Text = icon,
                 TooltipText = $"{label} ({shortcut})",
                 ToggleMode = true,
-                CustomMinimumSize = new Vector2(0, ToolBarHeight - 4),
+                CustomMinimumSize = new Vector2(ToolBarHeight, ToolBarHeight - 4),
             };
-            btn.AddThemeFontSizeOverride("font_size", 11);
+            btn.AddThemeFontSizeOverride("font_size", 16);
             var capturedTool = tool;
             btn.Pressed += () =>
             {
@@ -236,25 +239,26 @@ public partial class EditorMain : Control
 
         // Separator + property tools
         _toolBar.AddChild(new VSeparator());
-        var propToolDefs = new (EditorTool tool, string label)[]
+        var propToolDefs = new (EditorTool tool, string icon, string label)[]
         {
-            (EditorTool.Light,   "Luz"),
-            (EditorTool.Exit,    "Salida"),
-            (EditorTool.Npc,     "NPC"),
-            (EditorTool.Object,  "Objeto"),
-            (EditorTool.Trigger, "Trigger"),
+            (EditorTool.Light,   "\u2600", "Luz"),
+            (EditorTool.Exit,    "\u2197", "Salida"),
+            (EditorTool.Npc,     "\u265f", "NPC"),
+            (EditorTool.Object,  "\u25c6", "Objeto"),
+            (EditorTool.Trigger, "\u26a1", "Trigger"),
         };
         var extButtons = new Button[propToolDefs.Length];
         for (int i = 0; i < propToolDefs.Length; i++)
         {
-            var (tool, label) = propToolDefs[i];
+            var (tool, icon, label) = propToolDefs[i];
             var btn = new Button
             {
-                Text = label,
+                Text = icon,
+                TooltipText = label,
                 ToggleMode = true,
-                CustomMinimumSize = new Vector2(0, ToolBarHeight - 4),
+                CustomMinimumSize = new Vector2(ToolBarHeight, ToolBarHeight - 4),
             };
-            btn.AddThemeFontSizeOverride("font_size", 10);
+            btn.AddThemeFontSizeOverride("font_size", 16);
             btn.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.7f));
             var capturedTool = tool;
             btn.Pressed += () =>
@@ -674,6 +678,8 @@ public partial class EditorMain : Control
             case 1: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
             case 2: _state.CopySelection(_map!); SetStatus("Copiado"); break;
             case 3: PasteClipboard(); break;
+            case 4: CutSelection(); break;
+            case 5: DeleteSelection(); break;
         }
     }
 
@@ -896,6 +902,33 @@ public partial class EditorMain : Control
 
     #region Clipboard
 
+    private void DeleteSelection()
+    {
+        if (_map == null || !_state.HasSelection) return;
+
+        _undo.BeginBatch("Delete");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                _map.Tiles[x, y] = new MapTile { Layer1 = 1 };
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+        _state.ClearSelection();
+        _viewport?.QueueRedraw();
+        SetStatus("Seleccion eliminada");
+    }
+
+    private void CutSelection()
+    {
+        if (_map == null || !_state.HasSelection) return;
+        _state.CopySelection(_map);
+        DeleteSelection();
+        SetStatus("Cortado");
+    }
+
     private void PasteClipboard()
     {
         if (_map == null || _state.Clipboard == null || !_state.HasSelection) return;
@@ -1001,6 +1034,7 @@ public partial class EditorMain : Control
                 case Key.S: OnSaveMap(); break;
                 case Key.O: RequestOpenMap(); break;
                 case Key.N: RequestNewMap(); break;
+                case Key.X: CutSelection(); break;
                 case Key.C: _state.CopySelection(_map!); SetStatus("Copiado"); break;
                 case Key.V: PasteClipboard(); break;
             }
@@ -1024,6 +1058,9 @@ public partial class EditorMain : Control
                 case Key.Key2: _state.ActiveLayer = 2; break;
                 case Key.Key3: _state.ActiveLayer = 3; break;
                 case Key.Key4: _state.ActiveLayer = 4; break;
+                case Key.Delete:
+                    DeleteSelection();
+                    break;
                 case Key.Escape:
                     _state.ClearSelection();
                     _state.Pick.Clear();
