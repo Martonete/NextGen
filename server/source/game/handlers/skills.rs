@@ -12,7 +12,7 @@ use crate::data::objects::{ObjData, ObjType};
 use super::common::*;
 use super::{
     send_inventory_slot, user_die, do_cast_spell,
-    calc_attack_power, calc_defense_power, calc_armor_absorption,
+    calc_attack_power, calc_attack_power_with_balance, calc_defense_power, calc_armor_absorption,
     class_damage_modifier, class_damage_modifier_from_balance,
     check_user_level, quest_check_npc_kill,
 };
@@ -797,9 +797,10 @@ pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
 }
 
 /// Ranged attack (bow + arrows).
-/// VB6: TCP_HandleData1.bas case Proyectiles. Requires bow equipped (proyectil=1) and arrows.
-/// Consumes 1 arrow per shot, sends FLECHI packet for visual, then resolves hit via normal combat.
-const OBJ_TYPE_FLECHAS: i32 = 32;
+/// VB6: TCP_HandleData1.bas case Proyectiles + SistemaCombate.bas UsuarioAtacaUsuario/Npc.
+/// Requires bow equipped (proyectil=1) and arrows. Consumes 1 arrow per shot.
+/// Uses Proyectiles skill (19) + mod_poder_ataque_proyectiles + mod_dano_clase_proyectiles.
+const MAXDISTANCIAARCO: i32 = 18;
 
 pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     // Anti-cheat: check arrow cooldown
@@ -818,6 +819,13 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
     };
     let (map, ux, uy, char_index, weapon_slot, municion_slot, sta,
          safe_toggle, target_user, target_npc_idx) = user_data;
+
+    // VB6: MAXDISTANCIAARCO range check
+    let dist = ((ux - tx).abs()).max((uy - ty).abs());
+    if dist > MAXDISTANCIAARCO {
+        state.send_console(conn_id, "Estás demasiado lejos para disparar.", font_index::INFO).await;
+        return;
+    }
 
     // Check weapon is a bow (proyectil=1)
     let weapon_obj_idx = if weapon_slot > 0 && weapon_slot <= MAX_INVENTORY_SLOTS {
@@ -860,7 +868,12 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
-    // Stamina cost (1-10)
+    // Get arrow properties (damage + poison flag)
+    let (arrow_min_hit, arrow_max_hit, arrow_envenena) = state.get_object(municion_obj_idx)
+        .map(|o| (o.min_hit, o.max_hit, o.envenena))
+        .unwrap_or((0, 0, false));
+
+    // Stamina cost (VB6: min 10 required, 1-10 consumed)
     if sta < 10 {
         state.send_msg_id(conn_id, 17, "").await;
         return;
@@ -906,12 +919,11 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
             let flechi = binary_packets::write_arrow(char_index.0 as i16, npc_char as i16, arrow_grh as i16);
             state.send_data_bytes(SendTarget::ToMap(map), &flechi).await;
 
-            // Store target for combat resolution, then call standard attack
+            // Store target for combat resolution
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.target_npc_idx = npc_idx;
             }
-            // Reuse melee hit resolution (damage calc is the same for ranged in VB6)
-            resolve_attack_npc(state, conn_id, npc_idx).await;
+            resolve_ranged_attack_npc(state, conn_id, npc_idx, arrow_min_hit, arrow_max_hit).await;
         }
     } else if let Some(target) = target_user_tile {
         if target != conn_id {
@@ -926,24 +938,28 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.target_user = target;
             }
-            resolve_attack_user(state, conn_id, target).await;
+            resolve_ranged_attack_user(state, conn_id, target, arrow_min_hit, arrow_max_hit, arrow_envenena).await;
         }
     }
 }
 
-/// Resolve ranged/melee attack against NPC — shared damage calculation.
-/// Extracted from handle_attack for reuse in ranged attacks.
-pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: ConnectionId, npc_idx: usize) {
+/// Resolve ranged attack against NPC.
+/// VB6: SistemaCombate.bas UsuarioAtacaNpc — uses Proyectiles skill + projectile class modifiers.
+/// arrow_min/max add to bow weapon damage (VB6: DañoArma += RandomNumber(Ammo.MinHIT, Ammo.MaxHIT)).
+async fn resolve_ranged_attack_npc(
+    state: &mut GameState, conn_id: ConnectionId, npc_idx: usize,
+    arrow_min_hit: i32, arrow_max_hit: i32,
+) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged && !u.dead => {
             (u.pos_map, u.pos_x, u.pos_y, u.char_index,
              u.level, u.attributes[0], u.attributes[1],
-             u.min_hit, u.max_hit, u.skills[1], u.char_name.clone(), u.class.clone())
+             u.min_hit, u.max_hit, u.skills[19], u.char_name.clone(), u.class.clone())
         }
         _ => return,
     };
     let (map, x, y, char_index, level, strength, agility,
-         min_hit, max_hit, skill_armas, attacker_name, class) = user_data;
+         min_hit, max_hit, skill_proyectiles, attacker_name, class) = user_data;
 
     let npc_data = match state.get_npc(npc_idx) {
         Some(n) if n.active && n.attackable => {
@@ -952,27 +968,42 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
         }
         _ => return,
     };
-    let (npc_char, npc_def, npc_evasion, npc_hp, npc_max_hp,
-         npc_exp, npc_number, npc_name) = npc_data;
+    let (npc_char, npc_def, npc_evasion, _npc_hp, _npc_max_hp,
+         npc_exp, npc_number, _npc_name) = npc_data;
 
-    // Hit check
-    let attack_power = calc_attack_power(skill_armas, agility, level);
+    // Hit check — VB6: PoderAtaqueProyectil uses Proyectiles skill + mod_poder_ataque_proyectiles
+    let class_idx = crate::data::balance::class_name_to_index(&class).unwrap_or(0);
+    let atk_class_mod = state.game_data.balance.mod_poder_ataque_proyectiles[class_idx];
+    let atk_mod = if atk_class_mod > 0.0 { atk_class_mod } else { 1.0 };
+    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod as f32);
     let hit_prob = ((50.0 + (attack_power - npc_evasion as f64) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
         let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
-        state.send_bytes(conn_id, &pkt).await; // Miss
-        // VB6: floating red "¡Fallo!" above the NPC that was attacked
+        state.send_bytes(conn_id, &pkt).await;
         state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char.0 as i16, 255).await;
+        // VB6: Level Proyectiles skill even on miss
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill(u, 19);
+        }
         return;
     }
 
-    // Damage
-    let weapon_dmg = rand_range(min_hit.max(1), max_hit.max(1));
-    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
-    let base_dmg = 3 * weapon_dmg + str_bonus + rand_range(min_hit, max_hit);
-    let class_mod = class_damage_modifier(&class);
-    let mut damage = ((base_dmg as f64) * class_mod) as i32;
+    // VB6 CalcularDaño: DañoArma = Rand(Bow.MinHIT, Bow.MaxHIT) + Rand(Arrow.MinHIT, Arrow.MaxHIT)
+    let bow_dmg = rand_range(min_hit.max(1), max_hit.max(1));
+    let ammo_dmg = if arrow_max_hit > 0 { rand_range(arrow_min_hit.max(0), arrow_max_hit.max(1)) } else { 0 };
+    let weapon_dmg = bow_dmg + ammo_dmg;
+
+    // VB6: StrBonus = (MaxHIT/5) * max(0, Strength-15), UserDmg = Rand(MinHIT, MaxHIT)
+    let total_max_hit = max_hit + arrow_max_hit;
+    let str_bonus = ((total_max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
+    let user_dmg = rand_range(min_hit, max_hit);
+    let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
+
+    // VB6: ModClase.DañoProyectiles (not DañoArmas)
+    let dmg_class_mod = state.game_data.balance.mod_dano_clase_proyectiles[class_idx];
+    let dmg_mod = if dmg_class_mod > 0.0 { dmg_class_mod as f64 } else { class_damage_modifier(&class) };
+    let mut damage = (base_dmg as f64 * dmg_mod) as i32;
     damage = (damage - npc_def).max(1);
 
     // Apply damage
@@ -983,23 +1014,22 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
         return;
     };
 
-    // Send hit packet
     let u2_pkt = binary_packets::write_multi_user_hit_npc(damage as i32);
     state.send_bytes(conn_id, &u2_pkt).await;
-
-    // VB6: floating yellow damage number above NPC
     state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), npc_char.0 as i16, 65535).await;
 
+    // Level Proyectiles skill on hit
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        try_level_skill(u, 19);
+    }
+
     if new_hp <= 0 {
-        // NPC killed
         if let Some(u) = state.users.get_mut(&conn_id) {
-            let exp_gained = npc_exp as i64;
-            u.exp += exp_gained;
+            u.exp += npc_exp as i64;
         }
         send_stats_exp(state, conn_id).await;
         check_user_level(state, conn_id).await;
 
-        // Kill NPC
         let npc_ci = state.get_npc(npc_idx).map(|n| n.char_index.0).unwrap_or(0);
         let bp_pkt = binary_packets::write_character_remove(npc_ci as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
@@ -1009,19 +1039,23 @@ pub(super) async fn resolve_attack_npc(state: &mut GameState, conn_id: Connectio
     }
 }
 
-/// Resolve ranged/melee attack against user — shared PvP damage calculation.
-pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: ConnectionId, victim_id: ConnectionId) {
+/// Resolve ranged attack against user — VB6: SistemaCombate.bas UsuarioAtacaUsuario (ranged path).
+/// Uses Proyectiles skill + projectile class modifiers + arrow poison application.
+async fn resolve_ranged_attack_user(
+    state: &mut GameState, conn_id: ConnectionId, victim_id: ConnectionId,
+    arrow_min_hit: i32, arrow_max_hit: i32, arrow_envenena: bool,
+) {
     let att_data = match state.users.get(&conn_id) {
         Some(u) if u.logged && !u.dead => {
             (u.pos_map, u.pos_x, u.pos_y, u.char_index,
              u.level, u.attributes[0], u.attributes[1],
-             u.min_hit, u.max_hit, u.skills[1], u.char_name.clone(), u.class.clone(),
+             u.min_hit, u.max_hit, u.skills[19], u.char_name.clone(), u.class.clone(),
              u.safe_toggle)
         }
         _ => return,
     };
     let (map, x, y, _char_index, level, strength, agility,
-         min_hit, max_hit, skill_armas, attacker_name, class, safe_on) = att_data;
+         min_hit, max_hit, skill_proyectiles, attacker_name, class, safe_on) = att_data;
 
     if safe_on {
         state.send_msg_id(conn_id, 207, "").await;
@@ -1038,8 +1072,11 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
 
     if v_privs > 0 { return; }
 
-    // Hit check
-    let attack_power = calc_attack_power(skill_armas, agility, level);
+    // Hit check — VB6: PoderAtaqueProyectil + mod_poder_ataque_proyectiles
+    let class_idx = crate::data::balance::class_name_to_index(&class).unwrap_or(0);
+    let atk_class_mod = state.game_data.balance.mod_poder_ataque_proyectiles[class_idx];
+    let atk_mod = if atk_class_mod > 0.0 { atk_class_mod } else { 1.0 };
+    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod as f32);
     let defense_power = calc_defense_power(v_tacticas, v_agility, v_level);
     let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
 
@@ -1048,22 +1085,34 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
         state.send_bytes(victim_id, &pkt).await;
         let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
         state.send_bytes(conn_id, &pkt).await;
-        // VB6: floating red "¡Fallo!" above victim
         state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255).await;
+        // VB6: Level Proyectiles skill even on miss
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill(u, 19);
+        }
         return;
     }
 
-    // Damage calculation (VB6: CalcularDaño + UserDañoUser)
-    let weapon_dmg = rand_range(min_hit.max(1), max_hit.max(1));
-    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
-    let base_dmg = 3 * weapon_dmg + str_bonus + rand_range(min_hit, max_hit);
-    let class_mod = class_damage_modifier_from_balance(state, &class);
-    let mut damage = ((base_dmg as f64) * class_mod) as i32;
+    // VB6 CalcularDaño: DañoArma = Rand(Bow.MinHIT, Bow.MaxHIT) + Rand(Arrow.MinHIT, Arrow.MaxHIT)
+    let bow_dmg = rand_range(min_hit.max(1), max_hit.max(1));
+    let ammo_dmg = if arrow_max_hit > 0 { rand_range(arrow_min_hit.max(0), arrow_max_hit.max(1)) } else { 0 };
+    let weapon_dmg = bow_dmg + ammo_dmg;
+
+    // VB6: StrBonus uses combined max, UserDmg from user stats
+    let total_max_hit = max_hit + arrow_max_hit;
+    let str_bonus = ((total_max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
+    let user_dmg = rand_range(min_hit, max_hit);
+    let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
+
+    // VB6: ModClase.DañoProyectiles
+    let dmg_class_mod = state.game_data.balance.mod_dano_clase_proyectiles[class_idx];
+    let dmg_mod = if dmg_class_mod > 0.0 { dmg_class_mod as f64 } else { class_damage_modifier(&class) };
+    let mut damage = (base_dmg as f64 * dmg_mod) as i32;
 
     // Body part hit (1=head, 2-6=body)
     let body_part = rand_range(1, 6);
 
-    // Armor absorption (VB6: victim's armor reduces damage)
+    // Armor absorption
     let absorption = calc_armor_absorption(state, victim_id, body_part);
     damage -= absorption;
 
@@ -1083,8 +1132,25 @@ pub(super) async fn resolve_attack_user(state: &mut GameState, conn_id: Connecti
     let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, body_part as u8, damage as i16);
     state.send_bytes(conn_id, &n5_pkt).await;
 
-    // VB6: floating yellow damage number above victim
     state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535).await;
+
+    // VB6: Arrow poison (60% chance if ammo has Envenena=1) — SistemaCombate.bas UserEnvenena
+    if arrow_envenena && rand_range(1, 100) <= 60 {
+        let already_poisoned = state.users.get(&victim_id).map(|u| u.poisoned).unwrap_or(true);
+        if !already_poisoned {
+            if let Some(victim) = state.users.get_mut(&victim_id) {
+                victim.poisoned = true;
+                victim.counter_poison = 0;
+            }
+            state.send_msg_id(victim_id, 171, &attacker_name).await;
+            state.send_msg_id(conn_id, 172, &victim_name).await;
+        }
+    }
+
+    // Level Proyectiles skill on hit
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        try_level_skill(u, 19);
+    }
 
     send_stats_hp(state, victim_id).await;
 
