@@ -895,23 +895,21 @@ public partial class OptionsPanel : PanelContainer
         infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         infoLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
         infoLabel.AddThemeFontSizeOverride("font_size", 11);
-        infoLabel.Text = $"Nivel: {guildLevel} | Puntos: {guildPoints}\n" +
-            $"Lider: {leader}\n" +
-            $"Sub-lideres: {sub1}, {sub2}\n" +
-            $"Reputacion: {reputation} | CvC: {cvcW}W / {cvcL}L";
-        _clanContent.AddChild(infoLabel);
-
-        _clanContent.AddChild(Spacer(6));
-
-        // SeguroClan toggle
-        var seguroCheck = MakeCheck("Seguro de clan (no atacar clanmates)");
-        seguroCheck.ButtonPressed = _state.SeguroClan;
-        seguroCheck.Toggled += on =>
+        string infoText = $"Nivel: {guildLevel} | Puntos: {guildPoints}\n" +
+            $"Lider: {leader}\n";
+        // Only show sub-líderes if at least one is set
+        bool hasSub1 = !string.IsNullOrEmpty(sub1) && sub1 != "default" && sub1 != "Fermin";
+        bool hasSub2 = !string.IsNullOrEmpty(sub2) && sub2 != "default" && sub2 != "Fermin";
+        if (hasSub1 || hasSub2)
         {
-            if (_tcp != null)
-                _tcp.SendPacket(ClientPackets.WriteTalk("/SEGUROCLAN"));
-        };
-        _clanContent.AddChild(seguroCheck);
+            var subs = new List<string>();
+            if (hasSub1) subs.Add(sub1);
+            if (hasSub2) subs.Add(sub2);
+            infoText += $"Sub-lideres: {string.Join(", ", subs)}\n";
+        }
+        infoText += $"Reputacion: {reputation} | CvC: {cvcW}W / {cvcL}L";
+        infoLabel.Text = infoText;
+        _clanContent.AddChild(infoLabel);
 
         _clanContent.AddChild(Spacer(6));
 
@@ -946,7 +944,8 @@ public partial class OptionsPanel : PanelContainer
         guildList.AddThemeFontSizeOverride("font_size", 10);
         foreach (var g in guildNames)
         {
-            var gf = g.Split('-');
+            // Leader format: name$align$level
+            var gf = g.Split('$');
             guildList.AddItem(gf.Length >= 1 ? gf[0] : g);
         }
         leftCol.AddChild(guildList);
@@ -957,7 +956,7 @@ public partial class OptionsPanel : PanelContainer
             guildList.Clear();
             foreach (var g in guildNames)
             {
-                var gf = g.Split('-');
+                var gf = g.Split('$');
                 string name = gf.Length >= 1 ? gf[0] : g;
                 if (string.IsNullOrEmpty(filter) || name.Contains(filter, StringComparison.OrdinalIgnoreCase))
                     guildList.AddItem(name);
@@ -1138,24 +1137,21 @@ public partial class OptionsPanel : PanelContainer
         infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         infoLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
         infoLabel.AddThemeFontSizeOverride("font_size", 11);
-        infoLabel.Text = $"Clan: {_state.UserGuildName}\n" +
+        string infoText = $"Clan: {_state.UserGuildName}\n" +
             $"Nivel: {guildLevel} | Puntos: {guildPoints}\n" +
-            $"Lider: {leader}\n" +
-            $"Sub-lideres: {sub1}, {sub2}\n" +
-            $"Reputacion: {reputation}";
-        _clanContent.AddChild(infoLabel);
-
-        _clanContent.AddChild(Spacer(6));
-
-        // SeguroClan toggle
-        var seguroCheck = MakeCheck("Seguro de clan (no atacar clanmates)");
-        seguroCheck.ButtonPressed = _state.SeguroClan;
-        seguroCheck.Toggled += on =>
+            $"Lider: {leader}\n";
+        bool hasSub1 = !string.IsNullOrEmpty(sub1) && sub1 != "default" && sub1 != "Fermin";
+        bool hasSub2 = !string.IsNullOrEmpty(sub2) && sub2 != "default" && sub2 != "Fermin";
+        if (hasSub1 || hasSub2)
         {
-            if (_tcp != null)
-                _tcp.SendPacket(ClientPackets.WriteTalk("/SEGUROCLAN"));
-        };
-        _clanContent.AddChild(seguroCheck);
+            var subs = new List<string>();
+            if (hasSub1) subs.Add(sub1);
+            if (hasSub2) subs.Add(sub2);
+            infoText += $"Sub-lideres: {string.Join(", ", subs)}\n";
+        }
+        infoText += $"Reputacion: {reputation}";
+        infoLabel.Text = infoText;
+        _clanContent.AddChild(infoLabel);
 
         _clanContent.AddChild(Spacer(6));
 
@@ -1319,12 +1315,21 @@ public partial class OptionsPanel : PanelContainer
         detailsLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         detailsLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
         detailsLabel.AddThemeFontSizeOverride("font_size", 11);
-        detailsLabel.Text = $"Nombre: {clanName}\n" +
+        string detailsText = $"Nombre: {clanName}\n" +
             $"Nivel: {level} | Alineacion: {alignment}\n" +
             $"Fundador: {founder} | Fecha: {date}\n" +
-            $"Lider: {clanLeader}\n" +
-            $"Sub-lideres: {sub1}, {sub2}\n" +
-            $"Miembros: {memberCount} | Reputacion: {repu}";
+            $"Lider: {clanLeader}\n";
+        bool dHasSub1 = !string.IsNullOrEmpty(sub1) && sub1 != "default" && sub1 != "Fermin";
+        bool dHasSub2 = !string.IsNullOrEmpty(sub2) && sub2 != "default" && sub2 != "Fermin";
+        if (dHasSub1 || dHasSub2)
+        {
+            var subs = new List<string>();
+            if (dHasSub1) subs.Add(sub1);
+            if (dHasSub2) subs.Add(sub2);
+            detailsText += $"Sub-lideres: {string.Join(", ", subs)}\n";
+        }
+        detailsText += $"Miembros: {memberCount} | Reputacion: {repu}";
+        detailsLabel.Text = detailsText;
         _clanContent.AddChild(detailsLabel);
 
         if (!string.IsNullOrEmpty(desc))
