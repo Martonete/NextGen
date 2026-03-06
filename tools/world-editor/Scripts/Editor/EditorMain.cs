@@ -220,12 +220,7 @@ public partial class EditorMain : Control
             var (tool, icon, label, shortcut) = toolDefs[i];
             var btn = CreateToolButton(icon, label, $"{label} ({shortcut})");
             var capturedTool = tool;
-            btn.Pressed += () =>
-            {
-                _state.ActiveTool = capturedTool;
-                _state.Pick.Clear();
-                SyncToolBar();
-            };
+            btn.Pressed += () => SetActiveTool(capturedTool);
             _toolBar.AddChild(btn);
             _toolBarButtons[i] = btn;
         }
@@ -247,12 +242,7 @@ public partial class EditorMain : Control
             var btn = CreateToolButton(icon, label, label);
             btn.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.7f));
             var capturedTool = tool;
-            btn.Pressed += () =>
-            {
-                _state.ActiveTool = capturedTool;
-                _state.Pick.Clear();
-                SyncToolBar();
-            };
+            btn.Pressed += () => SetActiveTool(capturedTool);
             _toolBar.AddChild(btn);
             extButtons[i] = btn;
         }
@@ -1057,15 +1047,23 @@ public partial class EditorMain : Control
 
         if (newTool.HasValue)
         {
-            _state.ActiveTool = newTool.Value;
-            _state.Pick.Clear();
-            SyncToolBar();
+            SetActiveTool(newTool.Value);
         }
     }
 
     #endregion
 
     #region Helpers
+
+    private void SetActiveTool(EditorTool tool)
+    {
+        _state.ActiveTool = tool;
+        _state.Pick.Clear();
+        // Clear selection when switching away from Select/Move
+        if (tool != EditorTool.Select && tool != EditorTool.Move)
+            _state.ClearSelection();
+        SyncToolBar();
+    }
 
     /// <summary>
     /// Creates a toolbar button with an icon on top and a small label below.
