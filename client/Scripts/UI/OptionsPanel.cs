@@ -14,7 +14,7 @@ namespace TierrasSagradasAO.UI;
 public partial class OptionsPanel : PanelContainer
 {
     private const int PanelW = 420;
-    private const int PanelH = 480;
+    private const int MaxPanelH = 560; // cap so panel never exceeds 600px window
     private const int TitleBarH = 28;
 
     private GameState? _state;
@@ -105,7 +105,9 @@ public partial class OptionsPanel : PanelContainer
     public override void _Ready()
     {
         CustomMinimumSize = new Vector2(PanelW, 0);
+        Size = new Vector2(PanelW, MaxPanelH);
         MouseFilter = MouseFilterEnum.Stop;
+        ClipContents = true;
 
         // Panel style
         var style = new StyleBoxFlat();
@@ -117,7 +119,7 @@ public partial class OptionsPanel : PanelContainer
         AddThemeStyleboxOverride("panel", style);
 
         var root = new VBoxContainer();
-        root.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
 
         // Title bar with close button
         var titleBar = new HBoxContainer();
@@ -179,16 +181,27 @@ public partial class OptionsPanel : PanelContainer
         root.AddChild(sep);
         root.AddChild(Spacer(4));
 
-        // Tab content area — auto-sizes to visible tab
+        // Tab content area — scroll if content exceeds max height
+        var scroll = new ScrollContainer();
+        scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        scroll.VerticalScrollMode = ScrollContainer.ScrollMode.Auto;
+
+        var tabHost = new VBoxContainer();
+        tabHost.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
         _gameTab = BuildGameTab();
         _controlsTab = BuildControlsTab();
         _renderTab = BuildRenderTab();
         _clanTab = BuildClanTab();
 
-        root.AddChild(_gameTab);
-        root.AddChild(_controlsTab);
-        root.AddChild(_renderTab);
-        root.AddChild(_clanTab);
+        tabHost.AddChild(_gameTab);
+        tabHost.AddChild(_controlsTab);
+        tabHost.AddChild(_renderTab);
+        tabHost.AddChild(_clanTab);
+
+        scroll.AddChild(tabHost);
+        root.AddChild(scroll);
 
         AddChild(root);
 

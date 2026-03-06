@@ -600,7 +600,7 @@ public partial class Main : Control
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
-        _optionsPanel.Position = new Vector2((534 - 420) / 2, 124 + (408 - 480) / 2);
+        _optionsPanel.Position = new Vector2((534 - 420) / 2, 20);
         _optionsPanel.Visible = false;
         _gameUI.AddChild(_optionsPanel);
         _optionsPanel.Init(_state, _state.Config, _dataPath);
