@@ -173,16 +173,24 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::NLOGIN => {
             // Read all fields from binary
             let char_name = bq.read_ascii_string().unwrap_or_default();
-            let race = bq.read_byte().unwrap_or(0);
+            let race_id = bq.read_byte().unwrap_or(0);
             let gender = bq.read_byte().unwrap_or(0);
-            let class = bq.read_byte().unwrap_or(0);
+            let class_id = bq.read_byte().unwrap_or(0);
             let head = bq.read_integer().unwrap_or(0);
             let homeland = bq.read_byte().unwrap_or(0);
             let account = bq.read_ascii_string().unwrap_or_default();
-            // Handler reads: field1=name, field2=race, field4=gender(string), field5=class, field6=homeland, field7=account, field8=head
-            // VB6 client had extra field3 (description?) and gender as "Hombre"/"Mujer"
+            // Client sends byte IDs — convert to name strings matching client ClassNames/RaceNames arrays
+            let race_name = match race_id {
+                1 => "Humano", 2 => "Elfo", 3 => "Elfo Oscuro", 4 => "Enano", 5 => "Gnomo",
+                _ => "Humano",
+            };
+            let class_name = match class_id {
+                1 => "Mago", 2 => "Clerigo", 3 => "Guerrero", 4 => "Asesino",
+                5 => "Bardo", 6 => "Druida", 7 => "Paladin", 8 => "Cazador",
+                _ => "Guerrero",
+            };
             let gender_str = if gender == 1 { "Hombre" } else { "Mujer" };
-            let text = format!("NLOGIN{},{},0,{},{},{},{},{}", char_name, race, gender_str, class, homeland, account, head);
+            let text = format!("NLOGIN{},{},0,{},{},{},{},{}", char_name, race_name, gender_str, class_name, homeland, account, head);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::OOLOGI => {
