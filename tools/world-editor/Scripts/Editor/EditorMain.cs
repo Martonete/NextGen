@@ -51,6 +51,10 @@ public partial class EditorMain : Control
     private Button[] _mapNavButtons = Array.Empty<Button>();
     private const int NavButtonCount = 11; // show ±5 maps around current
 
+    // Tool bar (Excalidraw-style)
+    private HBoxContainer? _toolBar;
+    private Button[] _toolBarButtons = Array.Empty<Button>();
+
     // Tile info panel (bottom of left sidebar)
     private VBoxContainer? _tileInfoPanel;
     private Label? _tileInfoLabel;
@@ -69,6 +73,7 @@ public partial class EditorMain : Control
     private const float PaletteWidth = 300;
     private const float StatusHeight = 24;
     private const float NavBarHeight = 28;
+    private const float ToolBarHeight = 32;
     private const float TileInfoHeight = 110;
 
     public override void _Ready()
@@ -189,6 +194,92 @@ public partial class EditorMain : Control
         _mapNavBar.AddChild(goBtn);
 
         AddChild(_mapNavBar);
+
+        // --- Tool bar (Excalidraw-style) ---
+        _toolBar = new HBoxContainer();
+        _toolBar.AddThemeConstantOverride("separation", 2);
+
+        var toolDefs = new (EditorTool tool, string label, string shortcut)[]
+        {
+            (EditorTool.Hand,    "Mano",        "H"),
+            (EditorTool.Paint,   "Pintar",      "P"),
+            (EditorTool.Erase,   "Borrar",      "E"),
+            (EditorTool.Select,  "Seleccionar", "R"),
+            (EditorTool.Move,    "Mover",       "M"),
+            (EditorTool.Pick,    "Agarrar",     "V"),
+            (EditorTool.Fill,    "Rellenar",    "F"),
+            (EditorTool.Eyedrop, "Cuentagotas", "I"),
+            (EditorTool.Block,   "Bloquear",    "B"),
+        };
+        _toolBarButtons = new Button[toolDefs.Length];
+        for (int i = 0; i < toolDefs.Length; i++)
+        {
+            var (tool, label, shortcut) = toolDefs[i];
+            var btn = new Button
+            {
+                Text = label,
+                TooltipText = $"{label} ({shortcut})",
+                ToggleMode = true,
+                CustomMinimumSize = new Vector2(0, ToolBarHeight - 4),
+            };
+            btn.AddThemeFontSizeOverride("font_size", 11);
+            var capturedTool = tool;
+            btn.Pressed += () =>
+            {
+                _state.ActiveTool = capturedTool;
+                _state.Pick.Clear();
+                SyncToolBar();
+            };
+            _toolBar.AddChild(btn);
+            _toolBarButtons[i] = btn;
+        }
+
+        // Separator + property tools
+        _toolBar.AddChild(new VSeparator());
+        var propToolDefs = new (EditorTool tool, string label)[]
+        {
+            (EditorTool.Light,   "Luz"),
+            (EditorTool.Exit,    "Salida"),
+            (EditorTool.Npc,     "NPC"),
+            (EditorTool.Object,  "Objeto"),
+            (EditorTool.Trigger, "Trigger"),
+        };
+        var extButtons = new Button[propToolDefs.Length];
+        for (int i = 0; i < propToolDefs.Length; i++)
+        {
+            var (tool, label) = propToolDefs[i];
+            var btn = new Button
+            {
+                Text = label,
+                ToggleMode = true,
+                CustomMinimumSize = new Vector2(0, ToolBarHeight - 4),
+            };
+            btn.AddThemeFontSizeOverride("font_size", 10);
+            btn.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.7f));
+            var capturedTool = tool;
+            btn.Pressed += () =>
+            {
+                _state.ActiveTool = capturedTool;
+                _state.Pick.Clear();
+                SyncToolBar();
+            };
+            _toolBar.AddChild(btn);
+            extButtons[i] = btn;
+        }
+        // Merge all tool buttons for sync
+        var allBtns = new Button[_toolBarButtons.Length + extButtons.Length];
+        Array.Copy(_toolBarButtons, allBtns, _toolBarButtons.Length);
+        Array.Copy(extButtons, 0, allBtns, _toolBarButtons.Length, extButtons.Length);
+        _toolBarButtons = allBtns;
+
+        // Layer selector in toolbar
+        _toolBar.AddChild(new VSeparator());
+        var tbLayerLabel = new Label { Text = "Capa:" };
+        tbLayerLabel.AddThemeFontSizeOverride("font_size", 11);
+        _toolBar.AddChild(tbLayerLabel);
+
+        AddChild(_toolBar);
+        SyncToolBar();
 
         // --- Tile palette (left sidebar) ---
         _palette = new TilePalette { State = _state };
@@ -325,7 +416,14 @@ public partial class EditorMain : Control
             _mapNavBar.Size = new Vector2(win.X, NavBarHeight);
         }
 
-        float contentTop = navTop + NavBarHeight;
+        float tbTop = navTop + NavBarHeight;
+        if (_toolBar != null)
+        {
+            _toolBar.Position = new Vector2(0, tbTop);
+            _toolBar.Size = new Vector2(win.X, ToolBarHeight);
+        }
+
+        float contentTop = tbTop + ToolBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
 
@@ -883,8 +981,8 @@ public partial class EditorMain : Control
     #region Input
 
     private static readonly string[] ToolNames = {
-        "Pintar", "Borrar", "Seleccionar", "Mover", "Rellenar",
-        "Cuentagotas", "Bloquear", "Luz", "Salida", "NPC", "Objeto", "Trigger"
+        "Mano", "Pintar", "Borrar", "Seleccionar", "Mover", "Agarrar",
+        "Rellenar", "Cuentagotas", "Bloquear", "Luz", "Salida", "NPC", "Objeto", "Trigger"
     };
 
     public override void _UnhandledKeyInput(InputEvent @event)
@@ -892,6 +990,7 @@ public partial class EditorMain : Control
         if (@event is not InputEventKey key || !key.Pressed) return;
 
         bool ctrl = key.CtrlPressed;
+        EditorTool? newTool = null;
 
         if (ctrl)
         {
@@ -910,27 +1009,59 @@ public partial class EditorMain : Control
         {
             switch (key.Keycode)
             {
-                case Key.P: _state.ActiveTool = EditorTool.Paint; break;
-                case Key.E: _state.ActiveTool = EditorTool.Erase; break;
-                case Key.R: _state.ActiveTool = EditorTool.Select; break;
-                case Key.M: _state.ActiveTool = EditorTool.Move; break;
-                case Key.F: _state.ActiveTool = EditorTool.Fill; break;
-                case Key.I: _state.ActiveTool = EditorTool.Eyedrop; break;
-                case Key.B: _state.ActiveTool = EditorTool.Block; break;
+                case Key.H: newTool = EditorTool.Hand; break;
+                case Key.P: newTool = EditorTool.Paint; break;
+                case Key.E: newTool = EditorTool.Erase; break;
+                case Key.R: newTool = EditorTool.Select; break;
+                case Key.M: newTool = EditorTool.Move; break;
+                case Key.V: newTool = EditorTool.Pick; break;
+                case Key.F: newTool = EditorTool.Fill; break;
+                case Key.I: newTool = EditorTool.Eyedrop; break;
+                case Key.B: newTool = EditorTool.Block; break;
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.Key1: _state.ActiveLayer = 1; break;
                 case Key.Key2: _state.ActiveLayer = 2; break;
                 case Key.Key3: _state.ActiveLayer = 3; break;
                 case Key.Key4: _state.ActiveLayer = 4; break;
-                case Key.Escape: _state.ClearSelection(); _viewport?.QueueRedraw(); break;
+                case Key.Escape:
+                    _state.ClearSelection();
+                    _state.Pick.Clear();
+                    _viewport?.QueueRedraw();
+                    break;
             }
+        }
+
+        if (newTool.HasValue)
+        {
+            _state.ActiveTool = newTool.Value;
+            _state.Pick.Clear();
+            SyncToolBar();
         }
     }
 
     #endregion
 
     #region Helpers
+
+    // Maps toolbar button index to EditorTool
+    private static readonly EditorTool[] ToolBarOrder = {
+        EditorTool.Hand, EditorTool.Paint, EditorTool.Erase,
+        EditorTool.Select, EditorTool.Move, EditorTool.Pick,
+        EditorTool.Fill, EditorTool.Eyedrop, EditorTool.Block,
+        // property tools (after separator)
+        EditorTool.Light, EditorTool.Exit, EditorTool.Npc,
+        EditorTool.Object, EditorTool.Trigger,
+    };
+
+    private void SyncToolBar()
+    {
+        for (int i = 0; i < _toolBarButtons.Length && i < ToolBarOrder.Length; i++)
+        {
+            bool active = _state.ActiveTool == ToolBarOrder[i];
+            _toolBarButtons[i].ButtonPressed = active;
+        }
+    }
 
     private void OnDirtyChanged(bool isDirty)
     {
@@ -1043,6 +1174,7 @@ public partial class EditorMain : Control
         UpdateTileInfo();
 
         _palette?.SyncLayerUI();
+        SyncToolBar();
         _viewport?.QueueRedraw();
     }
 

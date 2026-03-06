@@ -140,6 +140,9 @@ public partial class MapViewport : Control
         if (_isDragging && State.HasSelection)
             DrawMoveGhost(mapW, mapH);
 
+        // Pick tool: highlight source + ghost at drag position
+        DrawPickOverlay();
+
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
         // Particles
@@ -185,6 +188,31 @@ public partial class MapViewport : Control
             w * TileSize, h * TileSize);
         DrawRect(ghostRect, new Color(0.2f, 1f, 0.5f, 0.3f));
         DrawRect(ghostRect, new Color(0.2f, 1f, 0.5f, 0.7f), false, 2f);
+    }
+
+    private void DrawPickOverlay()
+    {
+        if (State == null || !State.Pick.HasPick) return;
+        var pick = State.Pick;
+
+        // Highlight source tile with yellow outline
+        var srcRect = new Rect2(pick.SourceX * TileSize, pick.SourceY * TileSize, TileSize, TileSize);
+        DrawRect(srcRect, new Color(1f, 0.9f, 0.2f, 0.25f));
+        DrawRect(srcRect, new Color(1f, 0.9f, 0.2f, 0.8f), false, 2f);
+
+        // Ghost of entity at drag position
+        if (pick.IsDragging && (pick.DragX != pick.SourceX || pick.DragY != pick.SourceY))
+        {
+            int grh = GetPickGrh();
+            if (grh > 0)
+                DrawTileGrh(grh, pick.DragX, pick.DragY, center: true,
+                    modulate: new Color(1, 1, 1, 0.5f));
+
+            // Destination outline
+            var dstRect = new Rect2(pick.DragX * TileSize, pick.DragY * TileSize, TileSize, TileSize);
+            DrawRect(dstRect, new Color(0.2f, 1f, 0.5f, 0.3f));
+            DrawRect(dstRect, new Color(0.2f, 1f, 0.5f, 0.7f), false, 2f);
+        }
     }
 
     private void DrawOverlays(int mapW, int mapH)
@@ -523,7 +551,7 @@ public partial class MapViewport : Control
             return;
         }
 
-        // Pan with middle mouse
+        // Pan with middle mouse (always)
         if (mb.ButtonIndex == MouseButton.Middle)
         {
             if (mb.Pressed) StartPan(mb.Position);
@@ -536,11 +564,6 @@ public partial class MapViewport : Control
         {
             if (mb.Pressed && !_isPainting)
             {
-                if (_spaceHeld)
-                {
-                    StartPan(mb.Position);
-                    return;
-                }
                 var tile = ScreenToTile(mb.Position);
                 EyedropAt(tile.X, tile.Y);
             }
@@ -554,6 +577,7 @@ public partial class MapViewport : Control
         // Left click
         if (mb.ButtonIndex == MouseButton.Left)
         {
+            // Space always pans regardless of tool
             if (_spaceHeld)
             {
                 if (mb.Pressed) StartPan(mb.Position);
@@ -565,8 +589,7 @@ public partial class MapViewport : Control
 
             if (mb.Pressed)
             {
-                // Double-click detection: follow exits
-                double now = Time.GetTicksMsec() / 1000.0;
+                // Double-click: follow exits (any tool)
                 if (mb.DoubleClick && Map!.InBounds(tile.X, tile.Y))
                 {
                     ref var t = ref Map.Tiles[tile.X, tile.Y];
@@ -576,11 +599,12 @@ public partial class MapViewport : Control
                         return;
                     }
                 }
-                _lastClickTime = now;
-                _lastClickTile = tile;
 
                 switch (State!.ActiveTool)
                 {
+                    case EditorTool.Hand:
+                        StartPan(mb.Position);
+                        break;
                     case EditorTool.Paint:
                     case EditorTool.Erase:
                     case EditorTool.Block:
@@ -603,6 +627,9 @@ public partial class MapViewport : Control
                             _dragCurrent = tile;
                         }
                         break;
+                    case EditorTool.Pick:
+                        PickStartAt(tile.X, tile.Y);
+                        break;
                     case EditorTool.Fill:
                         FloodFill(tile.X, tile.Y);
                         break;
@@ -620,7 +647,7 @@ public partial class MapViewport : Control
                         break;
                 }
             }
-            else
+            else // Left button released
             {
                 if (_isPainting) { _isPainting = false; Undo?.EndBatch(); }
                 if (_isSelecting)
@@ -634,6 +661,10 @@ public partial class MapViewport : Control
                     _isDragging = false;
                     var delta = tile - _dragStart;
                     if (delta != Vector2I.Zero) MoveTiles(delta.X, delta.Y);
+                }
+                if (State!.Pick.IsDragging)
+                {
+                    PickDropAt(tile.X, tile.Y);
                 }
                 if (_isPanning) _isPanning = false;
             }
@@ -679,6 +710,133 @@ public partial class MapViewport : Control
             _dragCurrent = hoverTile;
             QueueRedraw();
         }
+
+        // Pick tool drag
+        if (State!.Pick.IsDragging)
+        {
+            State.Pick.DragX = hoverTile.X;
+            State.Pick.DragY = hoverTile.Y;
+            QueueRedraw();
+        }
+    }
+
+    #endregion
+
+    #region Pick Tool
+
+    /// <summary>
+    /// Detect what entity is at tile (x,y) and start dragging it.
+    /// Priority: NPC > Object > Layer3 > Layer4.
+    /// </summary>
+    private void PickStartAt(int tx, int ty)
+    {
+        if (Map == null || State == null || !Map.InBounds(tx, ty)) return;
+        ref var tile = ref Map.Tiles[tx, ty];
+
+        var pick = State.Pick;
+        pick.Clear();
+
+        if (tile.HasNpc)
+            pick.Target = PickTarget.Npc;
+        else if (tile.HasObject)
+            pick.Target = PickTarget.Object;
+        else if (tile.Layer3 != 0)
+            pick.Target = PickTarget.Layer3;
+        else if (tile.Layer4 != 0)
+            pick.Target = PickTarget.Layer4;
+        else
+            return; // nothing to pick
+
+        pick.HasPick = true;
+        pick.SourceX = tx;
+        pick.SourceY = ty;
+        pick.IsDragging = true;
+        pick.DragX = tx;
+        pick.DragY = ty;
+        QueueRedraw();
+    }
+
+    /// <summary>
+    /// Drop the picked entity at destination tile.
+    /// </summary>
+    private void PickDropAt(int tx, int ty)
+    {
+        if (Map == null || State == null) return;
+        var pick = State.Pick;
+        if (!pick.HasPick) { pick.Clear(); return; }
+
+        int sx = pick.SourceX, sy = pick.SourceY;
+        if (tx == sx && ty == sy) { pick.Clear(); return; } // dropped on itself
+        if (!Map.InBounds(tx, ty)) { pick.Clear(); return; }
+
+        Undo?.BeginBatch($"Pick Move {pick.Target}");
+        var beforeSrc = Map.Tiles[sx, sy];
+        var beforeDst = Map.Tiles[tx, ty];
+
+        switch (pick.Target)
+        {
+            case PickTarget.Layer3:
+                Map.Tiles[tx, ty].Layer3 = Map.Tiles[sx, sy].Layer3;
+                Map.Tiles[sx, sy].Layer3 = 0;
+                break;
+            case PickTarget.Layer4:
+                Map.Tiles[tx, ty].Layer4 = Map.Tiles[sx, sy].Layer4;
+                Map.Tiles[sx, sy].Layer4 = 0;
+                break;
+            case PickTarget.Npc:
+                Map.Tiles[tx, ty].NpcIndex = Map.Tiles[sx, sy].NpcIndex;
+                Map.Tiles[sx, sy].NpcIndex = 0;
+                break;
+            case PickTarget.Object:
+                Map.Tiles[tx, ty].ObjIndex = Map.Tiles[sx, sy].ObjIndex;
+                Map.Tiles[tx, ty].ObjAmount = Map.Tiles[sx, sy].ObjAmount;
+                Map.Tiles[sx, sy].ObjIndex = 0;
+                Map.Tiles[sx, sy].ObjAmount = 0;
+                break;
+        }
+
+        Undo?.RecordTileChange(sx, sy, beforeSrc, Map.Tiles[sx, sy]);
+        Undo?.RecordTileChange(tx, ty, beforeDst, Map.Tiles[tx, ty]);
+        Undo?.EndBatch();
+
+        pick.Clear();
+        QueueRedraw();
+    }
+
+    /// <summary>
+    /// Get the GRH index of the picked entity (for ghost rendering during drag).
+    /// </summary>
+    private int GetPickGrh()
+    {
+        if (Map == null || State == null) return 0;
+        var pick = State.Pick;
+        if (!pick.HasPick || !Map.InBounds(pick.SourceX, pick.SourceY)) return 0;
+        ref var tile = ref Map.Tiles[pick.SourceX, pick.SourceY];
+
+        return pick.Target switch
+        {
+            PickTarget.Layer3 => tile.Layer3,
+            PickTarget.Layer4 => tile.Layer4,
+            PickTarget.Npc => GetNpcBodyGrh(tile.NpcIndex),
+            PickTarget.Object => GetObjGrh(tile.ObjIndex),
+            _ => 0,
+        };
+    }
+
+    private int GetNpcBodyGrh(int npcIdx)
+    {
+        if (NpcBodies == null || NpcBodyGrhs == null) return 0;
+        if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) return 0;
+        int bodyIdx = NpcBodies[npcIdx];
+        if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) return 0;
+        return NpcBodyGrhs[bodyIdx];
+    }
+
+    private int GetObjGrh(int objIdx)
+    {
+        if (ObjGrhs == null) return 0;
+        if (objIdx <= 0 || objIdx >= ObjGrhs.Length) return 0;
+        return ObjGrhs[objIdx];
     }
 
     #endregion

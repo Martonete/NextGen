@@ -46,6 +46,9 @@ public class EditorState
     public bool ShowTileProperties;
     public int PropTileX, PropTileY;
 
+    // Pick tool state
+    public readonly PickState Pick = new();
+
     // View
     public float Zoom = 1.0f;
     public Vector2 CameraOffset = Vector2.Zero;
@@ -135,18 +138,45 @@ public class EditorState
     }
 }
 
-public enum EditorTool
+// Pick tool state: tracks the entity being dragged
+public class PickState
 {
-    Paint,
-    Erase,
-    Select,
-    Move,
-    Fill,
-    Eyedrop,
-    Block,
-    Light,
-    Exit,
+    public bool HasPick;
+    public int SourceX, SourceY;
+    public PickTarget Target;
+    public bool IsDragging;
+    public int DragX, DragY; // current drag tile position
+
+    public void Clear()
+    {
+        HasPick = false;
+        IsDragging = false;
+    }
+}
+
+public enum PickTarget
+{
+    None,
+    Layer3,  // tree/object graphic
+    Layer4,  // roof
     Npc,
     Object,
-    Trigger,
+}
+
+public enum EditorTool
+{
+    Hand,     // Pan: click+drag moves the camera
+    Paint,    // Draw: click+drag paints with selected texture
+    Erase,    // Erase: click+drag clears active layer
+    Select,   // Rectangle select for copy/paste/move
+    Move,     // Drag selected rectangle to new position
+    Pick,     // Click on entity (L3/NPC/obj) → drag to move
+    Fill,     // Flood fill with texture
+    Eyedrop,  // Sample GRH from tile
+    Block,    // Toggle blocked flag
+    Light,    // Place/edit light source (opens properties)
+    Exit,     // Place/edit tile exit (opens properties)
+    Npc,      // Place NPC (opens properties)
+    Object,   // Place Object (opens properties)
+    Trigger,  // Set trigger type (opens properties)
 }
