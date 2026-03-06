@@ -104,6 +104,10 @@ public partial class Main : Control
     private VaultPanel? _vaultPanel;
     private bool _lastBanqueando;
 
+    // Guild panels
+    private GuildPanel? _guildPanel;
+    private GuildFoundationPanel? _guildFoundationPanel;
+
     // Travel panel (frmViajar)
     private TravelPanel? _travelPanel;
 
@@ -561,6 +565,18 @@ public partial class Main : Control
         _vaultPanel.Visible = false;
         _gameUI.AddChild(_vaultPanel);
 
+        // Guild panel (frmGuildInfo) — centered on viewport
+        _guildPanel = new GuildPanel();
+        _guildPanel.Position = new Vector2(60, 100);
+        _guildPanel.Visible = false;
+        _gameUI.AddChild(_guildPanel);
+
+        // Guild foundation panel (frmGuildFoundation) — centered on viewport
+        _guildFoundationPanel = new GuildFoundationPanel();
+        _guildFoundationPanel.Position = new Vector2(80, 80);
+        _guildFoundationPanel.Visible = false;
+        _gameUI.AddChild(_guildFoundationPanel);
+
         // Travel panel (frmViajar) — centered on viewport
         _travelPanel = new TravelPanel();
         // Center: (534 - 450) / 2 = 42, y: 124 + (408 - 350) / 2 = 153
@@ -584,7 +600,7 @@ public partial class Main : Control
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
-        _optionsPanel.Position = new Vector2((534 - 420) / 2, 124 + (408 - 480) / 2);
+        _optionsPanel.Position = new Vector2((534 - 420) / 2, 20);
         _optionsPanel.Visible = false;
         _gameUI.AddChild(_optionsPanel);
         _optionsPanel.Init(_state, _state.Config, _dataPath);
@@ -2624,6 +2640,22 @@ public partial class Main : Control
                 _travelPanel?.OpenTravel();
             }
 
+            // Guild panels — update clan tab in options panel
+            if (_state.ShowGuildPanel)
+            {
+                _state.ShowGuildPanel = false;
+                _optionsPanel?.UpdateClanContent();
+                // Also open options on Clanes tab if not already visible
+                if (_optionsPanel != null && !_state.OptionsPanelOpen)
+                    _optionsPanel.OpenClanTab();
+            }
+            if (_state.ShowGuildFoundation)
+            {
+                _state.ShowGuildFoundation = false;
+                _optionsPanel?.Close();
+                _guildFoundationPanel?.Show();
+            }
+
             // Death panel — show when player dies, hide on revive
             if (_state.ShowDeathPanel)
             {
@@ -2715,6 +2747,9 @@ public partial class Main : Control
                     _vaultPanel!.Init(_state, _gameData, _tcp);
                     _travelPanel!.Init(_state, _tcp, _dataPath);
                     _deathPanel!.Init(_state, _tcp, _dataPath);
+                    _guildPanel!.Init(_state, _tcp);
+                    _guildFoundationPanel!.Init(_state, _tcp);
+                    _optionsPanel!.Init(_state, _state.Config, _dataPath, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -2817,11 +2852,13 @@ public partial class Main : Control
         // Close escape menu
         HideEscapeMenu();
 
-        // Close commerce, bank, and travel panels
+        // Close commerce, bank, guild, and travel panels
         _commercePanel?.CloseShop();
         _lastComerciando = false;
         _bankPanel?.CloseBank();
         _vaultPanel?.CloseVault();
+        _guildPanel?.Hide();
+        _guildFoundationPanel?.Hide();
         _lastBanqueando = false;
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();

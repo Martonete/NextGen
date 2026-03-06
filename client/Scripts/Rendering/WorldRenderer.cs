@@ -919,7 +919,7 @@ void fragment() {
                 if (tile.Layer2 <= 0) continue;
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-                DrawTileGrhTo(canvas, tile.Layer2, pos, center: false);
+                DrawTileGrhTo(canvas, tile.Layer2, pos, center: true);
             }
         }
     }

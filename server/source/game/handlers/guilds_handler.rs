@@ -14,6 +14,26 @@ use super::{send_inventory_slot, send_full_inventory};
 // Guild system handlers (modGuilds.bas / clsClan.cls)
 // =====================================================================
 
+/// Re-send CC packet for user to area (VB6: RefreshCharStatus).
+/// Called after guild join/leave so the clan tag updates for nearby players.
+async fn refresh_user_cc(state: &mut GameState, conn_id: ConnectionId) {
+    let (cc_pkt, map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.build_cc_binary(), u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
+}
+
+/// Clear guild state from user and refresh CC.
+async fn clear_user_guild(state: &mut GameState, conn_id: ConnectionId) {
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.guild_index = 0;
+        user.guild_name.clear();
+        user.seguro_clan = true;
+    }
+    refresh_user_cc(state, conn_id).await;
+}
+
 /// BF delimiter (char 191 = inverted question mark) used in guild packets
 const BF: char = '\u{00BF}';
 
@@ -209,6 +229,7 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
     // Update user state
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.guild_index = guild_num;
+        user.guild_name = name.to_string();
     }
 
     // Update character guild in DB
@@ -217,6 +238,9 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
     // Broadcast creation
     let args = format!("{}@{}@{}", char_name, name, guilds::alignment_name(alignment));
     state.send_msg_id_to(SendTarget::ToAll, 264, &args).await;
+
+    // Re-send CC with clan tag to nearby players
+    refresh_user_cc(state, conn_id).await;
 
     // Send updated inventory
     send_full_inventory(state, conn_id).await;
@@ -303,10 +327,8 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     // Dissolve
     guilds::dissolve_guild(&state.pool, guild_index).await;
 
-    // Clear user guild state
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        user.guild_index = 0;
-    }
+    // Clear user guild state and refresh CC
+    clear_user_guild(state, conn_id).await;
 
     // Update character guild in DB
     crate::db::charfile::update_guild_index(&state.pool, &char_name, 0).await.ok();
@@ -367,10 +389,8 @@ pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: Connecti
     // Remove from members file
     guilds::remove_member(&state.pool, &guild.name, char_name).await;
 
-    // Clear user state
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        user.guild_index = 0;
-    }
+    // Clear user state and refresh CC
+    clear_user_guild(state, conn_id).await;
 
     // Update character guild in DB
     crate::db::charfile::update_guild_index(&state.pool, char_name, 0).await.ok();
@@ -535,6 +555,30 @@ pub(super) async fn handle_slash_clan_list(state: &mut GameState, conn_id: Conne
     }
 }
 
+/// /SEGUROCLAN — Toggle clan safe mode (prevents attacking clanmates).
+pub(super) async fn handle_slash_seguroclan(state: &mut GameState, conn_id: ConnectionId) {
+    let guild_index = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
+        _ => {
+            state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let new_state = if let Some(user) = state.users.get_mut(&conn_id) {
+        user.seguro_clan = !user.seguro_clan;
+        user.seguro_clan
+    } else {
+        return;
+    };
+
+    if new_state {
+        state.send_console(conn_id, "Seguro de clan ACTIVADO. No podras atacar a miembros de tu clan.", font_index::GUILD_MSG).await;
+    } else {
+        state.send_console(conn_id, "Seguro de clan DESACTIVADO. Ahora puedes atacar a miembros de tu clan.", font_index::GUILD_MSG).await;
+    }
+}
+
 /// /CMSG <text> — Send clan chat message.
 pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
     let (guild_index, char_name) = match state.users.get(&conn_id) {
@@ -647,14 +691,16 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
     // Update applicant's guild in DB
     crate::db::charfile::update_guild_index(&state.pool, &applicant_name, guild_index).await.ok();
 
-    // If applicant is online, update their state
+    // If applicant is online, update their state and refresh CC
     if let Some(&target_conn) = state.online_names.get(&applicant_name.to_uppercase()) {
         if let Some(user) = state.users.get_mut(&target_conn) {
             user.guild_index = guild_index;
+            user.guild_name = guild.name.clone();
             user.puede_retirar_obj = false;
             user.puede_retirar_oro = false;
         }
         state.send_msg_id(target_conn, 501, "").await;
+        refresh_user_cc(state, target_conn).await;
 
         let sound = binary_packets::write_play_wave(43, 0, 0);
         state.send_bytes(target_conn, &sound).await;
@@ -737,11 +783,9 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
     // Update character guild in DB
     crate::db::charfile::update_guild_index(&state.pool, &target_name, 0).await.ok();
 
-    // If online, update state
+    // If online, update state and refresh CC
     if let Some(&target_conn) = state.online_names.get(&target_name.to_uppercase()) {
-        if let Some(user) = state.users.get_mut(&target_conn) {
-            user.guild_index = 0;
-        }
+        clear_user_guild(state, target_conn).await;
         state.send_console(target_conn, "Has sido expulsado del clan.", font_index::INFO).await;
     }
 

@@ -82,7 +82,7 @@ public partial class MapViewport : Control
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].Layer2 != 0)
-                        DrawTileGrh(Map.Tiles[x, y].Layer2, x, y);
+                        DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true);
         }
 
         // ─── Layer 3: Objects/trees (centered, bottom-anchored) ───

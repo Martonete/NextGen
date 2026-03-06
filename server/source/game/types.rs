@@ -154,7 +154,9 @@ pub struct UserState {
 
     // Guild
     pub guild_index: i32,       // 0 = no guild
+    pub guild_name: String,     // Cached clan name (empty if no guild)
     pub guild_creating_alignment: i32, // Temp: alignment during guild creation flow
+    pub seguro_clan: bool,      // Clan safe toggle — prevents attacking clanmates
     pub puede_retirar_obj: bool, // Guild bank: can withdraw items
     pub puede_retirar_oro: bool, // Guild bank: can withdraw gold
     pub cuenta_bancaria: String, // Guild name when clan bank is open (lock)
@@ -430,7 +432,9 @@ impl UserState {
             trade_gold: 0,
             trade_items: Vec::new(),
             guild_index: 0,
+            guild_name: String::new(),
             guild_creating_alignment: 0,
+            seguro_clan: true, // Default ON — safe from clanmate attacks
             puede_retirar_obj: false,
             puede_retirar_oro: false,
             cuenta_bancaria: String::new(),
@@ -562,8 +566,14 @@ impl UserState {
     }
 
     /// Build binary CC (CharacterCreate) packet for this user.
+    /// VB6: Name includes clan tag as "Nick <ClanName>" when guild_index > 0.
     pub fn build_cc_binary(&self) -> Vec<u8> {
         let nick_color = if self.criminal { 2u8 } else { 1u8 };
+        let display_name = if self.guild_index > 0 && !self.guild_name.is_empty() {
+            format!("{} <{}>", self.char_name, self.guild_name)
+        } else {
+            self.char_name.clone()
+        };
         crate::protocol::binary_packets::write_character_create(
             self.char_index.0 as i16,
             self.body as i16,
@@ -575,7 +585,7 @@ impl UserState {
             self.shield_anim as i16,
             self.casco_anim as i16,
             0, 0, // fx_index, fx_loops
-            &self.char_name,
+            &display_name,
             nick_color,
             self.privileges as u8,
         )
@@ -1164,6 +1174,18 @@ impl GameState {
         }
     }
 
+    /// Get all user connection IDs in the area around (x,y) on a map, excluding `exclude_id`.
+    pub fn get_area_users(&self, map: i32, x: i32, y: i32, exclude_id: ConnectionId) -> Vec<ConnectionId> {
+        if let Some(grid) = self.world.grid(map) {
+            world::get_users_in_area(grid, x, y)
+                .into_iter()
+                .filter(|id| *id != exclude_id)
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Send binary bytes and then close the connection.
     pub async fn send_bytes_and_close(&mut self, conn_id: ConnectionId, data: &[u8]) {
         self.send_bytes(conn_id, data).await;
@@ -1257,20 +1279,6 @@ impl GameState {
         }
     }
 
-    /// Look up guild name by guild index (1-based). Blocking call for sync context.
-    /// For async context, use db::guilds::load_guild() directly.
-    pub fn get_guild_name(&self, guild_index: i32) -> Option<String> {
-        if guild_index <= 0 {
-            return None;
-        }
-        // Use a blocking call to avoid requiring async here.
-        // This is only used in sync formatting contexts.
-        let pool = self.pool.clone();
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            crate::db::guilds::load_guild(&pool, guild_index).await.map(|g| g.name)
-        })
-    }
 
     pub fn get_object(&self, obj_index: i32) -> Option<&crate::data::objects::ObjData> {
         if obj_index >= 1 {

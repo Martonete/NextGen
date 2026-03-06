@@ -206,11 +206,20 @@ public class GameState
     public string BattleTeamScores = ""; // BattleTeamScores (ID 163)
     public byte AmbientColorR = 200, AmbientColorG = 200, AmbientColorB = 200; // AmbientColor (ID 164)
 
-    // Guild bank
+    // Guild
     public long GuildBankGold;
     public bool GuildBankCanObj;
     public bool GuildBankCanGold;
     public string GuildInfoData = ""; // raw guild info string from server
+    public string GuildInfoType = ""; // "Leader", "Member", "Details" — which panel to show
+    public string GuildListData = ""; // raw guild list from server
+    public bool ShowGuildPanel;       // Trigger to open guild panel
+    public bool ShowGuildFoundation;  // Trigger to open guild creation form
+    public bool SeguroClan = true;    // Clan safe toggle (local mirror)
+    public string UserGuildName = ""; // Current user's guild name (from CC tag)
+    public string GuildNewsText = ""; // Guild news from server
+    public string GuildMotdText = ""; // Guild MOTD from server
+    public string GuildCodexText = ""; // Guild codex from server
 
     // Quest
     public string QuestData = ""; // raw quest data string from server

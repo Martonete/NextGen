@@ -45,7 +45,8 @@ pub(super) async fn send_lookat_user_info(state: &mut GameState, conn_id: Connec
         let limite_newbie = 9;
         if level <= limite_newbie { stat.push_str(" <NEWBIE>"); }
         if guild_idx > 0 {
-            if let Some(gn) = state.get_guild_name(guild_idx) {
+            let gn = state.users.get(&target_conn).map(|u| u.guild_name.clone()).unwrap_or_default();
+            if !gn.is_empty() {
                 stat.push_str(&format!(" <{}>", gn));
             }
         }
@@ -319,6 +320,12 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             }
             if t_privs > 0 {
                 state.send_msg_id(conn_id, 155, "").await;
+                return;
+            }
+            // TSAO: Clan safe check — can't cast offensive spells on clanmates with seguro_clan on
+            let caster_seguro = state.users.get(&conn_id).map(|u| u.seguro_clan).unwrap_or(false);
+            if caster_seguro && same_clan(state, conn_id, target_id) {
+                state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO).await;
                 return;
             }
         }
@@ -774,15 +781,27 @@ pub(super) async fn apply_spell_status(
 
     // Invisibility spell — remove from others' screens, tell self
     // VB6: skip SetInvisible packet if navigating (boat already hides char)
+    // TSAO: clanmates see the character as semi-transparent instead of removing it.
     if send_invis && !target_navigating {
         if let Some(u) = state.users.get(&target_id) {
             let ci = u.char_index.0 as i16;
             let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
             let invis_secs = (state.config.intervalo_invisible as f32 * 0.04) as i16;
-            let bp = binary_packets::write_character_remove(ci);
-            state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id: target_id, map, x, y }, &bp).await;
-            let nover = binary_packets::write_set_invisible(ci, true, invis_secs);
-            state.send_bytes(target_id, &nover).await;
+            let bp_remove = binary_packets::write_character_remove(ci);
+            let nover_pkt = binary_packets::write_set_invisible(ci, true, invis_secs);
+            // Collect area users and decide per-user
+            let area_users = state.get_area_users(map, x, y, target_id);
+            for other_id in area_users {
+                if same_clan(state, target_id, other_id) {
+                    // Clanmate: send SetInvisible so they see transparency, but don't remove
+                    state.send_bytes(other_id, &nover_pkt).await;
+                } else {
+                    // Non-clanmate: remove character from their screen
+                    state.send_bytes(other_id, &bp_remove).await;
+                }
+            }
+            // Tell self about invisibility status
+            state.send_bytes(target_id, &nover_pkt).await;
         }
     }
 
