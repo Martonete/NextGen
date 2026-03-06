@@ -139,6 +139,9 @@ public partial class MapViewport : Control
                         DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
                             modulate: new Color(1, 1, 1, 0.7f));
 
+        // Paint tool: ghost preview at cursor position (Sims-style)
+        DrawPaintPreview();
+
         // Overlays
         DrawOverlays(mapW, mapH);
 
@@ -197,6 +200,66 @@ public partial class MapViewport : Control
                 if (Map.InBounds(dstX, dstY))
                     Map.Tiles[dstX, dstY] = _moveBuffer[x, y];
             }
+    }
+
+    /// <summary>
+    /// Draw a semi-transparent preview of the selected texture at the cursor position.
+    /// Like Sims construction mode — shows what will be placed before clicking.
+    /// </summary>
+    private void DrawPaintPreview()
+    {
+        if (State == null || Map == null || _isPainting || _isDragging) return;
+        if (State.ActiveTool != EditorTool.Paint) return;
+        if (!State.HoverValid) return;
+
+        int hx = State.HoverX, hy = State.HoverY;
+        if (!Map.InBounds(hx, hy)) return;
+
+        var previewColor = new Color(1, 1, 1, 0.55f);
+        bool centerOnTile = State.ActiveLayer >= 2;
+
+        if (State.SelectedTexture != null)
+        {
+            var texRef = State.SelectedTexture;
+            int tw = Math.Max(texRef.TileWidth, 1);
+            int th = Math.Max(texRef.TileHeight, 1);
+
+            if (tw == 1 && th == 1)
+            {
+                // Single tile preview
+                DrawTileGrh(texRef.GrhIndex, hx, hy, center: centerOnTile, modulate: previewColor);
+            }
+            else
+            {
+                // Multi-tile mosaic: show a preview area around cursor
+                // Highlight which pattern tile corresponds to hover position
+                int curPx = (hx - 1) % tw;
+                int curPy = (hy - 1) % th;
+                // Show the full pattern anchored so the cursor tile is correct
+                int baseX = hx - curPx;
+                int baseY = hy - curPy;
+                for (int py = 0; py < th; py++)
+                    for (int px = 0; px < tw; px++)
+                    {
+                        int tx = baseX + px;
+                        int ty = baseY + py;
+                        if (!Map.InBounds(tx, ty)) continue;
+                        int grhIdx = texRef.GrhIndex + (py * tw) + px;
+                        DrawTileGrh(grhIdx, tx, ty, center: centerOnTile, modulate: previewColor);
+                    }
+
+                // Outline showing the pattern footprint
+                var patternRect = new Rect2(
+                    baseX * TileSize, baseY * TileSize,
+                    tw * TileSize, th * TileSize);
+                DrawRect(patternRect, new Color(1f, 1f, 0.3f, 0.3f), false, 1.5f);
+            }
+        }
+        else if (State.EyedropGrh > 0)
+        {
+            // Single raw GRH preview
+            DrawTileGrh(State.EyedropGrh, hx, hy, center: centerOnTile, modulate: previewColor);
+        }
     }
 
     private void DrawPickOverlay()
