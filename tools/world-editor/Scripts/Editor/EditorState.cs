@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -66,6 +67,11 @@ public class EditorState
 
     // Event fired when user wants to follow an exit
     public event Action<int, int, int>? ExitFollowRequested; // mapNum, x, y
+
+    public void RequestExitFollow(int mapNum, int x, int y)
+    {
+        ExitFollowRequested?.Invoke(mapNum, x, y);
+    }
 
     public void MarkDirty()
     {

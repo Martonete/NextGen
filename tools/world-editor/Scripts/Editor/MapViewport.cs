@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using Godot;
 using AOWorldEditor.Data;
@@ -571,7 +572,7 @@ public partial class MapViewport : Control
                     ref var t = ref Map.Tiles[tile.X, tile.Y];
                     if (t.HasExit)
                     {
-                        State!.ExitFollowRequested?.Invoke(t.ExitMap, t.ExitX, t.ExitY);
+                        State!.RequestExitFollow(t.ExitMap, t.ExitX, t.ExitY);
                         return;
                     }
                 }

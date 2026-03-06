@@ -1,3 +1,4 @@
+#nullable enable
 using System;
 using System.IO;
 using Godot;
@@ -87,10 +88,10 @@ public partial class EditorMain : Control
         _menuBar = new MenuBar();
 
         var fileMenu = new PopupMenu { Name = "Archivo" };
-        fileMenu.AddItem("Nuevo Mapa", 0, Key.N | KeyModifierMask.MaskCtrl);
-        fileMenu.AddItem("Abrir Mapa...", 1, Key.O | KeyModifierMask.MaskCtrl);
+        fileMenu.AddItem("Nuevo Mapa (Ctrl+N)", 0);
+        fileMenu.AddItem("Abrir Mapa... (Ctrl+O)", 1);
         fileMenu.AddSeparator();
-        fileMenu.AddItem("Guardar", 2, Key.S | KeyModifierMask.MaskCtrl);
+        fileMenu.AddItem("Guardar (Ctrl+S)", 2);
         fileMenu.AddItem("Guardar Como...", 3);
         fileMenu.AddSeparator();
         fileMenu.AddItem("Propiedades del Mapa...", 4);
@@ -101,11 +102,11 @@ public partial class EditorMain : Control
         _menuBar.AddChild(fileMenu);
 
         var editMenu = new PopupMenu { Name = "Editar" };
-        editMenu.AddItem("Deshacer", 0, Key.Z | KeyModifierMask.MaskCtrl);
-        editMenu.AddItem("Rehacer", 1, Key.Y | KeyModifierMask.MaskCtrl);
+        editMenu.AddItem("Deshacer (Ctrl+Z)", 0);
+        editMenu.AddItem("Rehacer (Ctrl+Y)", 1);
         editMenu.AddSeparator();
-        editMenu.AddItem("Copiar", 2, Key.C | KeyModifierMask.MaskCtrl);
-        editMenu.AddItem("Pegar", 3, Key.V | KeyModifierMask.MaskCtrl);
+        editMenu.AddItem("Copiar (Ctrl+C)", 2);
+        editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
