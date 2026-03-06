@@ -4,10 +4,6 @@ using AOWorldEditor.Data;
 
 namespace AOWorldEditor.Editor;
 
-/// <summary>
-/// Renders the 100x100 map with all 4 layers, grid, overlays.
-/// Handles panning, zooming, and tile interaction (paint, select, move).
-/// </summary>
 public partial class MapViewport : Control
 {
     private const int TileSize = 32;
@@ -19,13 +15,13 @@ public partial class MapViewport : Control
     public EditorState? State;
     public UndoManager? Undo;
     public ParticleEngine? Particles;
-    public int[]? ObjGrhs;      // ObjIndex → GrhIndex
-    public int[]? NpcBodies;    // NpcIndex → BodyIndex
-    public int[]? NpcHeads;     // NpcIndex → HeadIndex
-    public int[]? NpcBodyGrhs;  // BodyIndex → south-walk GrhIndex
-    public int[]? NpcHeadOfsX;  // BodyIndex → head offset X
-    public int[]? NpcHeadOfsY;  // BodyIndex → head offset Y
-    public int[]? HeadGrhs;     // HeadIndex → south-facing GrhIndex
+    public int[]? ObjGrhs;
+    public int[]? NpcBodies;
+    public int[]? NpcHeads;
+    public int[]? NpcBodyGrhs;
+    public int[]? NpcHeadOfsX;
+    public int[]? NpcHeadOfsY;
+    public int[]? HeadGrhs;
 
     // Interaction state
     private bool _isPainting;
@@ -38,10 +34,11 @@ public partial class MapViewport : Control
     private Vector2I _selectStart;
     private Vector2I _dragStart;
     private Vector2I _dragCurrent;
+    private double _lastClickTime;
+    private Vector2I _lastClickTile;
 
     private readonly System.Collections.Generic.HashSet<long> _paintedThisStroke = new();
 
-    // Additive blend child for particles
     private ParticleOverlay? _particleOverlay;
 
     public override void _Ready()
@@ -58,7 +55,6 @@ public partial class MapViewport : Control
 
     public override void _Draw()
     {
-        // Dark background
         DrawRect(new Rect2(Vector2.Zero, Size), new Color(0.1f, 0.1f, 0.12f, 1f));
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
@@ -68,35 +64,28 @@ public partial class MapViewport : Control
         int mapW = Map.Width;
         int mapH = Map.Height;
 
-        // ─── Layer 1: Ground terrain ───
+        // Layer 1: Ground
         if (State.ShowLayer1)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     DrawTileGrh(Map.Tiles[x, y].Layer1, x, y);
-        }
 
-        // ─── Layer 2: Mask/overlay (borders, paths, water edges) ───
+        // Layer 2: Mask
         if (State.ShowLayer2)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].Layer2 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true);
-        }
 
-        // ─── Layer 3: Objects/trees (centered, bottom-anchored) ───
+        // Layer 3: Objects/trees
         if (State.ShowLayer3)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].Layer3 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true);
-        }
 
-        // ─── Objects on map (drawn as their GRH sprite, centered) ───
+        // Objects on map
         if (State.ShowObjects && ObjGrhs != null)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                 {
@@ -104,11 +93,9 @@ public partial class MapViewport : Control
                     if (objIdx > 0 && objIdx < ObjGrhs.Length && ObjGrhs[objIdx] > 0)
                         DrawTileGrh(ObjGrhs[objIdx], x, y, center: true);
                 }
-        }
 
-        // ─── NPCs on map (body + head, south-facing) ───
+        // NPCs on map
         if (State.ShowNpcs && NpcBodies != null && NpcBodyGrhs != null)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                 {
@@ -116,13 +103,9 @@ public partial class MapViewport : Control
                     if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) continue;
                     int bodyIdx = NpcBodies[npcIdx];
                     if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) continue;
-
-                    // Draw body
                     int bodyGrh = NpcBodyGrhs[bodyIdx];
                     if (bodyGrh > 0)
                         DrawTileGrh(bodyGrh, x, y, center: true);
-
-                    // Draw head on top of body
                     if (NpcHeads != null && HeadGrhs != null &&
                         NpcHeadOfsX != null && NpcHeadOfsY != null &&
                         npcIdx < NpcHeads.Length)
@@ -140,30 +123,67 @@ public partial class MapViewport : Control
                         }
                     }
                 }
-        }
 
-        // ─── Layer 4: Roof (centered, bottom-anchored, semi-transparent) ───
+        // Layer 4: Roof
         if (State.ShowLayer4)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].Layer4 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
                             modulate: new Color(1, 1, 1, 0.7f));
-        }
 
-        // ─── Overlays ───
+        // Overlays
         DrawOverlays(mapW, mapH);
+
+        // Move tool: ghost preview of dragged selection
+        if (_isDragging && State.HasSelection)
+            DrawMoveGhost(mapW, mapH);
 
         DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
 
-        // Trigger additive particle layer redraw (hide when toggled off)
+        // Particles
         if (_particleOverlay != null)
         {
             _particleOverlay.Visible = State.ShowParticles;
             if (State.ShowParticles)
                 _particleOverlay.QueueRedraw();
         }
+    }
+
+    private void DrawMoveGhost(int mapW, int mapH)
+    {
+        if (Map == null || State == null) return;
+        var delta = _dragCurrent - _dragStart;
+        int w = State.SelX2 - State.SelX1 + 1;
+        int h = State.SelY2 - State.SelY1 + 1;
+
+        var ghostColor = new Color(1, 1, 1, 0.45f);
+
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+            {
+                int srcX = State.SelX1 + x;
+                int srcY = State.SelY1 + y;
+                int dstX = srcX + delta.X;
+                int dstY = srcY + delta.Y;
+                if (!Map.InBounds(srcX, srcY)) continue;
+
+                ref var tile = ref Map.Tiles[srcX, srcY];
+                // Draw each layer at destination position
+                if (tile.Layer1 != 0)
+                    DrawTileGrh(tile.Layer1, dstX, dstY, modulate: ghostColor);
+                if (tile.Layer2 != 0)
+                    DrawTileGrh(tile.Layer2, dstX, dstY, center: true, modulate: ghostColor);
+                if (tile.Layer3 != 0)
+                    DrawTileGrh(tile.Layer3, dstX, dstY, center: true, modulate: ghostColor);
+            }
+
+        // Ghost selection outline
+        var ghostRect = new Rect2(
+            (State.SelX1 + delta.X) * TileSize, (State.SelY1 + delta.Y) * TileSize,
+            w * TileSize, h * TileSize);
+        DrawRect(ghostRect, new Color(0.2f, 1f, 0.5f, 0.3f));
+        DrawRect(ghostRect, new Color(0.2f, 1f, 0.5f, 0.7f), false, 2f);
     }
 
     private void DrawOverlays(int mapW, int mapH)
@@ -194,114 +214,87 @@ public partial class MapViewport : Control
 
         // Exits
         if (State.ShowExits)
-        {
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].HasExit)
                     {
                         DrawRect(new Rect2(x * TileSize, y * TileSize, TileSize, TileSize),
                             new Color(0, 1, 0, 0.25f));
-                        // Small label with destination
-                        var exit = Map.Tiles[x, y];
                         DrawString(ThemeDB.FallbackFont,
                             new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
-                            $"M{exit.ExitMap}", HorizontalAlignment.Left, -1, 7,
+                            $"M{Map.Tiles[x, y].ExitMap}", HorizontalAlignment.Left, -1, 7,
                             new Color(0.5f, 1f, 0.5f, 0.8f));
                     }
-        }
 
-        // Light sources — colored circle with range ring
+        // Lights
         if (State.ShowLights)
-        for (int y = 1; y <= mapH; y++)
-        {
-            for (int x = 1; x <= mapW; x++)
-            {
-                if (Map.Tiles[x, y].HasLight)
-                {
-                    ref var tile = ref Map.Tiles[x, y];
-                    var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                    float radius = tile.LightRange * TileSize * 0.5f;
-                    var lightCol = new Color(tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f);
-
-                    // Filled glow
-                    DrawCircle(center, Math.Max(radius, TileSize * 0.4f),
-                        new Color(lightCol.R, lightCol.G, lightCol.B, 0.15f));
-                    // Center dot
-                    DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.8f));
-                    // Range ring
-                    if (radius > TileSize * 0.5f)
-                        DrawArc(center, radius, 0, MathF.Tau, 24,
-                            new Color(lightCol.R, lightCol.G, lightCol.B, 0.3f), 1f);
-                }
-            }
-        }
+            for (int y = 1; y <= mapH; y++)
+                for (int x = 1; x <= mapW; x++)
+                    if (Map.Tiles[x, y].HasLight)
+                    {
+                        ref var tile = ref Map.Tiles[x, y];
+                        var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
+                        float radius = tile.LightRange * TileSize * 0.5f;
+                        var lightCol = new Color(tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f);
+                        DrawCircle(center, Math.Max(radius, TileSize * 0.4f),
+                            new Color(lightCol.R, lightCol.G, lightCol.B, 0.15f));
+                        DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.8f));
+                        if (radius > TileSize * 0.5f)
+                            DrawArc(center, radius, 0, MathF.Tau, 24,
+                                new Color(lightCol.R, lightCol.G, lightCol.B, 0.3f), 1f);
+                    }
 
         // Particle indicators
         if (State.ShowParticles)
-        for (int y = 1; y <= mapH; y++)
-        {
-            for (int x = 1; x <= mapW; x++)
-            {
-                if (Map.Tiles[x, y].ParticleGroup > 0)
-                {
-                    var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                    // Cyan diamond shape
-                    var particleCol = new Color(0, 0.9f, 0.9f, 0.5f);
-                    float s = TileSize * 0.25f;
-                    DrawLine(center + new Vector2(0, -s), center + new Vector2(s, 0), particleCol, 1.5f);
-                    DrawLine(center + new Vector2(s, 0), center + new Vector2(0, s), particleCol, 1.5f);
-                    DrawLine(center + new Vector2(0, s), center + new Vector2(-s, 0), particleCol, 1.5f);
-                    DrawLine(center + new Vector2(-s, 0), center + new Vector2(0, -s), particleCol, 1.5f);
-                    DrawString(ThemeDB.FallbackFont,
-                        new Vector2(x * TileSize + 2, y * TileSize + 10),
-                        $"P{Map.Tiles[x, y].ParticleGroup}", HorizontalAlignment.Left, -1, 7,
-                        new Color(0, 0.9f, 0.9f, 0.7f));
-                }
-            }
-        }
+            for (int y = 1; y <= mapH; y++)
+                for (int x = 1; x <= mapW; x++)
+                    if (Map.Tiles[x, y].ParticleGroup > 0)
+                    {
+                        var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
+                        var particleCol = new Color(0, 0.9f, 0.9f, 0.5f);
+                        float s = TileSize * 0.25f;
+                        DrawLine(center + new Vector2(0, -s), center + new Vector2(s, 0), particleCol, 1.5f);
+                        DrawLine(center + new Vector2(s, 0), center + new Vector2(0, s), particleCol, 1.5f);
+                        DrawLine(center + new Vector2(0, s), center + new Vector2(-s, 0), particleCol, 1.5f);
+                        DrawLine(center + new Vector2(-s, 0), center + new Vector2(0, -s), particleCol, 1.5f);
+                        DrawString(ThemeDB.FallbackFont,
+                            new Vector2(x * TileSize + 2, y * TileSize + 10),
+                            $"P{Map.Tiles[x, y].ParticleGroup}", HorizontalAlignment.Left, -1, 7,
+                            new Color(0, 0.9f, 0.9f, 0.7f));
+                    }
 
         // NPC indicators
         if (State.ShowNpcs)
-        for (int y = 1; y <= mapH; y++)
-        {
-            for (int x = 1; x <= mapW; x++)
-            {
-                if (Map.Tiles[x, y].HasNpc)
-                {
-                    var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                    DrawCircle(center, TileSize * 0.3f, new Color(1, 0.5f, 0, 0.4f));
-                    DrawString(ThemeDB.FallbackFont,
-                        new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
-                        $"N{Map.Tiles[x, y].NpcIndex}", HorizontalAlignment.Left, -1, 7,
-                        new Color(1f, 0.7f, 0.3f, 0.8f));
-                }
-            }
-        }
+            for (int y = 1; y <= mapH; y++)
+                for (int x = 1; x <= mapW; x++)
+                    if (Map.Tiles[x, y].HasNpc)
+                    {
+                        DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
+                            TileSize * 0.3f, new Color(1, 0.5f, 0, 0.4f));
+                        DrawString(ThemeDB.FallbackFont,
+                            new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
+                            $"N{Map.Tiles[x, y].NpcIndex}", HorizontalAlignment.Left, -1, 7,
+                            new Color(1f, 0.7f, 0.3f, 0.8f));
+                    }
 
         // Object indicators
         if (State.ShowObjects)
-        for (int y = 1; y <= mapH; y++)
-        {
-            for (int x = 1; x <= mapW; x++)
-            {
-                if (Map.Tiles[x, y].HasObject)
-                {
-                    var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                    DrawCircle(center, TileSize * 0.2f, new Color(0.5f, 0, 1, 0.4f));
-                    var obj = Map.Tiles[x, y];
-                    DrawString(ThemeDB.FallbackFont,
-                        new Vector2(x * TileSize + 2, y * TileSize + 10),
-                        $"O{obj.ObjIndex}x{obj.ObjAmount}", HorizontalAlignment.Left, -1, 7,
-                        new Color(0.7f, 0.4f, 1f, 0.8f));
-                }
-            }
-        }
+            for (int y = 1; y <= mapH; y++)
+                for (int x = 1; x <= mapW; x++)
+                    if (Map.Tiles[x, y].HasObject)
+                    {
+                        DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
+                            TileSize * 0.2f, new Color(0.5f, 0, 1, 0.4f));
+                        var obj = Map.Tiles[x, y];
+                        DrawString(ThemeDB.FallbackFont,
+                            new Vector2(x * TileSize + 2, y * TileSize + 10),
+                            $"O{obj.ObjIndex}x{obj.ObjAmount}", HorizontalAlignment.Left, -1, 7,
+                            new Color(0.7f, 0.4f, 1f, 0.8f));
+                    }
 
-        // Trigger indicators
+        // Triggers
         for (int y = 1; y <= mapH; y++)
-        {
             for (int x = 1; x <= mapW; x++)
-            {
                 if (Map.Tiles[x, y].Trigger > 0)
                 {
                     short trig = Map.Tiles[x, y].Trigger;
@@ -321,7 +314,14 @@ public partial class MapViewport : Control
                         trigName, HorizontalAlignment.Left, -1, 6,
                         new Color(trigColor.R, trigColor.G, trigColor.B, 0.8f));
                 }
-            }
+
+        // Hover highlight
+        if (State.HoverValid && Map.InBounds(State.HoverX, State.HoverY))
+        {
+            DrawRect(new Rect2(State.HoverX * TileSize, State.HoverY * TileSize,
+                TileSize, TileSize), new Color(1, 1, 1, 0.15f));
+            DrawRect(new Rect2(State.HoverX * TileSize, State.HoverY * TileSize,
+                TileSize, TileSize), new Color(1, 1, 1, 0.4f), false, 1f);
         }
 
         // Selection rectangle
@@ -349,10 +349,8 @@ public partial class MapViewport : Control
         }
     }
 
-    /// <summary>
-    /// Draw a GRH at tile position. Resolves animations to first frame.
-    /// center=true anchors large sprites at bottom-center (trees, roofs).
-    /// </summary>
+    #region GRH Drawing
+
     private void DrawTileGrh(int grhIndex, int tileX, int tileY,
         bool center = false, Color? modulate = null)
     {
@@ -360,8 +358,6 @@ public partial class MapViewport : Control
         if (grhIndex >= Grhs.Length) return;
 
         var grh = Grhs[grhIndex];
-
-        // For animations, resolve to first frame
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
             int frameIdx = grh.Frames[0];
@@ -369,9 +365,7 @@ public partial class MapViewport : Control
             grh = Grhs[frameIdx];
         }
 
-        // Now check the resolved (static) GRH
         if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) return;
-
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
@@ -381,7 +375,6 @@ public partial class MapViewport : Control
 
         if (center)
         {
-            // Center horizontally, anchor at bottom (VB6 behavior for L3/L4)
             drawX += (TileSize - grh.PixelWidth) / 2f;
             drawY += (TileSize - grh.PixelHeight);
         }
@@ -390,17 +383,12 @@ public partial class MapViewport : Control
         DrawTextureRectRegion(texture, destRect, srcRect, modulate ?? Colors.White);
     }
 
-    /// <summary>
-    /// Draw a GRH at tile position with pixel offset (used for NPC heads).
-    /// Centered horizontally, bottom-anchored like body, then offset applied.
-    /// </summary>
     private void DrawTileGrhOffset(int grhIndex, int tileX, int tileY, int ofsX, int ofsY)
     {
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
         if (grhIndex >= Grhs.Length) return;
 
         var grh = Grhs[grhIndex];
-
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
             int frameIdx = grh.Frames[0];
@@ -409,53 +397,42 @@ public partial class MapViewport : Control
         }
 
         if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) return;
-
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
         var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-
-        // Center on tile like body, then apply head offset
         float drawX = tileX * TileSize + (TileSize - grh.PixelWidth) / 2f + ofsX;
         float drawY = tileY * TileSize + (TileSize - grh.PixelHeight) + ofsY;
-
         var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, destRect, srcRect, Colors.White);
     }
 
-    /// <summary>
-    /// Draw all active particle sprites with additive blend.
-    /// Called by ParticleOverlay._Draw() on its own canvas (which has additive material).
-    /// </summary>
+    #endregion
+
+    #region Particle Drawing
+
     public void DrawParticlesOn(CanvasItem canvas)
     {
         if (Particles == null || Grhs == null || Textures == null || State == null) return;
-
         canvas.DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
         foreach (var stream in Particles.Streams)
         {
             if (!stream.Active) continue;
-
             float streamX = stream.MapX * TileSize + TileSize / 2f;
             float streamY = stream.MapY * TileSize + TileSize / 2f;
 
             foreach (var p in stream.Particles)
             {
-                if (!p.Alive || p.GrhIndex <= 0) continue;
-                if (p.GrhIndex >= Grhs.Length) continue;
-
+                if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
                 var grh = Grhs[p.GrhIndex];
-
                 if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
                 {
                     int frameIdx = grh.Frames[0];
                     if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
                     grh = Grhs[frameIdx];
                 }
-
                 if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
-
                 var texture = Textures.GetTexture(grh.FileNum);
                 if (texture == null) continue;
 
@@ -467,9 +444,10 @@ public partial class MapViewport : Control
                 canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
         }
-
         canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
     }
+
+    #endregion
 
     #region Input Handling
 
@@ -485,19 +463,25 @@ public partial class MapViewport : Control
         else if (@event is InputEventMouseButton mb)
         {
             var localPos = ToPanel(mb.Position);
-            if (localPos.X < 0 || localPos.Y < 0 ||
-                localPos.X > Size.X || localPos.Y > Size.Y)
-                return;
+            if (!IsInViewport(localPos)) return;
             HandleMouseButton(mb);
         }
         else if (@event is InputEventMouseMotion mm)
         {
             var localPos = ToPanel(mm.Position);
-            if (localPos.X < 0 || localPos.Y < 0 ||
-                localPos.X > Size.X || localPos.Y > Size.Y)
+            if (!IsInViewport(localPos))
+            {
+                State.HoverValid = false;
                 return;
+            }
             HandleMouseMotion(mm);
         }
+    }
+
+    private bool IsInViewport(Vector2 localPos)
+    {
+        return localPos.X >= 0 && localPos.Y >= 0 &&
+               localPos.X <= Size.X && localPos.Y <= Size.Y;
     }
 
     private Vector2I ScreenToTile(Vector2 screenPos)
@@ -538,14 +522,31 @@ public partial class MapViewport : Control
             return;
         }
 
-        // Pan with middle/right mouse
-        if (mb.ButtonIndex == MouseButton.Middle ||
-            (mb.ButtonIndex == MouseButton.Right && !_isPainting))
+        // Pan with middle mouse
+        if (mb.ButtonIndex == MouseButton.Middle)
         {
-            if (mb.Pressed)
-                StartPan(mb.Position);
-            else
+            if (mb.Pressed) StartPan(mb.Position);
+            else _isPanning = false;
+            return;
+        }
+
+        // Right click: eyedrop (capture GRH from tile)
+        if (mb.ButtonIndex == MouseButton.Right)
+        {
+            if (mb.Pressed && !_isPainting)
+            {
+                if (_spaceHeld)
+                {
+                    StartPan(mb.Position);
+                    return;
+                }
+                var tile = ScreenToTile(mb.Position);
+                EyedropAt(tile.X, tile.Y);
+            }
+            else if (!mb.Pressed && _isPanning)
+            {
                 _isPanning = false;
+            }
             return;
         }
 
@@ -560,8 +561,23 @@ public partial class MapViewport : Control
             }
 
             var tile = ScreenToTile(mb.Position);
+
             if (mb.Pressed)
             {
+                // Double-click detection: follow exits
+                double now = Time.GetTicksMsec() / 1000.0;
+                if (mb.DoubleClick && Map!.InBounds(tile.X, tile.Y))
+                {
+                    ref var t = ref Map.Tiles[tile.X, tile.Y];
+                    if (t.HasExit)
+                    {
+                        State!.ExitFollowRequested?.Invoke(t.ExitMap, t.ExitX, t.ExitY);
+                        return;
+                    }
+                }
+                _lastClickTime = now;
+                _lastClickTile = tile;
+
                 switch (State!.ActiveTool)
                 {
                     case EditorTool.Paint:
@@ -579,7 +595,12 @@ public partial class MapViewport : Control
                         _dragCurrent = tile;
                         break;
                     case EditorTool.Move:
-                        if (State.HasSelection) { _isDragging = true; _dragStart = tile; }
+                        if (State.HasSelection)
+                        {
+                            _isDragging = true;
+                            _dragStart = tile;
+                            _dragCurrent = tile;
+                        }
                         break;
                     case EditorTool.Fill:
                         FloodFill(tile.X, tile.Y);
@@ -620,6 +641,15 @@ public partial class MapViewport : Control
 
     private void HandleMouseMotion(InputEventMouseMotion mm)
     {
+        // Update hover position
+        var hoverTile = ScreenToTile(mm.Position);
+        if (State != null)
+        {
+            State.HoverX = hoverTile.X;
+            State.HoverY = hoverTile.Y;
+            State.HoverValid = Map != null && Map.InBounds(hoverTile.X, hoverTile.Y);
+        }
+
         if (_isPanning)
         {
             State!.CameraOffset = _panCameraStart + (ToPanel(mm.Position) - _panStart);
@@ -627,10 +657,9 @@ public partial class MapViewport : Control
             return;
         }
 
-        var tile = ScreenToTile(mm.Position);
-
         if (_isPainting)
         {
+            var tile = ScreenToTile(mm.Position);
             if (State!.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Block)
                 ApplyToolAt(tile.X, tile.Y);
             else
@@ -638,7 +667,17 @@ public partial class MapViewport : Control
             return;
         }
 
-        if (_isSelecting) { _dragCurrent = tile; QueueRedraw(); }
+        if (_isSelecting)
+        {
+            _dragCurrent = hoverTile;
+            QueueRedraw();
+        }
+
+        if (_isDragging)
+        {
+            _dragCurrent = hoverTile;
+            QueueRedraw();
+        }
     }
 
     #endregion
@@ -649,32 +688,43 @@ public partial class MapViewport : Control
     {
         if (Map == null || State == null) return;
 
-        if (State.ActiveTool == EditorTool.Paint && State.SelectedTexture != null)
+        if (State.ActiveTool == EditorTool.Paint)
         {
-            var texRef = State.SelectedTexture;
-            int tw = Math.Max(texRef.TileWidth, 1);
-            int th = Math.Max(texRef.TileHeight, 1);
-
-            int baseX = tx - ((tx - 1) % tw);
-            int baseY = ty - ((ty - 1) % th);
-
-            long key = (long)baseX << 32 | (uint)baseY;
-            if (_paintedThisStroke.Contains(key)) return;
-            _paintedThisStroke.Add(key);
-
-            for (int py = 0; py < th; py++)
+            if (State.SelectedTexture != null)
             {
-                for (int px = 0; px < tw; px++)
-                {
-                    int tileX = baseX + px;
-                    int tileY = baseY + py;
-                    if (!Map.InBounds(tileX, tileY)) continue;
+                var texRef = State.SelectedTexture;
+                int tw = Math.Max(texRef.TileWidth, 1);
+                int th = Math.Max(texRef.TileHeight, 1);
+                int baseX = tx - ((tx - 1) % tw);
+                int baseY = ty - ((ty - 1) % th);
 
-                    var before = Map.Tiles[tileX, tileY];
-                    int grhIdx = texRef.GetGrhAt(px, py);
-                    SetLayerGrh(ref Map.Tiles[tileX, tileY], State.ActiveLayer, (short)grhIdx);
-                    Undo?.RecordTileChange(tileX, tileY, before, Map.Tiles[tileX, tileY]);
-                }
+                long key = (long)baseX << 32 | (uint)baseY;
+                if (_paintedThisStroke.Contains(key)) return;
+                _paintedThisStroke.Add(key);
+
+                for (int py = 0; py < th; py++)
+                    for (int px = 0; px < tw; px++)
+                    {
+                        int tileX = baseX + px;
+                        int tileY = baseY + py;
+                        if (!Map.InBounds(tileX, tileY)) continue;
+                        var before = Map.Tiles[tileX, tileY];
+                        int grhIdx = texRef.GetGrhAt(px, py);
+                        SetLayerGrh(ref Map.Tiles[tileX, tileY], State.ActiveLayer, (short)grhIdx);
+                        Undo?.RecordTileChange(tileX, tileY, before, Map.Tiles[tileX, tileY]);
+                    }
+            }
+            else if (State.EyedropGrh > 0)
+            {
+                // Paint with raw GRH captured by eyedrop
+                if (!Map.InBounds(tx, ty)) return;
+                long key = (long)tx << 32 | (uint)ty;
+                if (_paintedThisStroke.Contains(key)) return;
+                _paintedThisStroke.Add(key);
+
+                var before = Map.Tiles[tx, ty];
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)State.EyedropGrh);
+                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
             }
         }
         else if (State.ActiveTool == EditorTool.Block)
@@ -695,7 +745,6 @@ public partial class MapViewport : Control
     private void EraseAt(int tx, int ty)
     {
         if (Map == null || State == null || !Map.InBounds(tx, ty)) return;
-
         long key = (long)tx << 32 | (uint)ty;
         if (_paintedThisStroke.Contains(key)) return;
         _paintedThisStroke.Add(key);
@@ -729,17 +778,44 @@ public partial class MapViewport : Control
     private void EyedropAt(int tx, int ty)
     {
         if (Map == null || State == null || !Map.InBounds(tx, ty)) return;
-        State.ActiveTool = EditorTool.Paint;
+
+        // Capture the GRH from the active layer
+        short grh = GetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer);
+
+        // If active layer is empty, try layers top-down (4→1)
+        if (grh == 0)
+        {
+            for (int l = 4; l >= 1; l--)
+            {
+                grh = GetLayerGrh(ref Map.Tiles[tx, ty], l);
+                if (grh != 0) break;
+            }
+        }
+
+        if (grh > 0)
+        {
+            State.EyedropGrh = grh;
+            State.SelectedTexture = null; // Clear catalog selection, use raw GRH
+            State.ActiveTool = EditorTool.Paint;
+        }
     }
 
     private void FloodFill(int startX, int startY)
     {
-        if (Map == null || State == null || State.SelectedTexture == null) return;
+        if (Map == null || State == null) return;
         if (!Map.InBounds(startX, startY)) return;
 
         int layer = State.ActiveLayer;
         short targetGrh = GetLayerGrh(ref Map.Tiles[startX, startY], layer);
-        short fillGrh = (short)State.SelectedTexture.GrhIndex;
+
+        short fillGrh = 0;
+        if (State.SelectedTexture != null)
+            fillGrh = (short)State.SelectedTexture.GrhIndex;
+        else if (State.EyedropGrh > 0)
+            fillGrh = (short)State.EyedropGrh;
+        else
+            return;
+
         if (targetGrh == fillGrh) return;
 
         Undo?.BeginBatch("Fill");
@@ -781,31 +857,35 @@ public partial class MapViewport : Control
         int h = State.SelY2 - State.SelY1 + 1;
         var buffer = new MapTile[w, h];
 
+        // Copy source tiles to buffer
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
                 if (Map.InBounds(State.SelX1 + x, State.SelY1 + y))
                     buffer[x, y] = Map.Tiles[State.SelX1 + x, State.SelY1 + y];
 
+        // Clear source area
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
                 int sx = State.SelX1 + x, sy = State.SelY1 + y;
                 if (!Map.InBounds(sx, sy)) continue;
                 var before = Map.Tiles[sx, sy];
-                Map.Tiles[sx, sy] = new MapTile();
+                Map.Tiles[sx, sy] = new MapTile { Layer1 = 1 }; // Reset to default ground
                 Undo?.RecordTileChange(sx, sy, before, Map.Tiles[sx, sy]);
             }
 
+        // Place at destination
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
             {
-                int dx2 = State.SelX1 + x + dx, dy2 = State.SelY1 + y + dy;
-                if (!Map.InBounds(dx2, dy2)) continue;
-                var before = Map.Tiles[dx2, dy2];
-                Map.Tiles[dx2, dy2] = buffer[x, y];
-                Undo?.RecordTileChange(dx2, dy2, before, Map.Tiles[dx2, dy2]);
+                int dstX = State.SelX1 + x + dx, dstY = State.SelY1 + y + dy;
+                if (!Map.InBounds(dstX, dstY)) continue;
+                var before = Map.Tiles[dstX, dstY];
+                Map.Tiles[dstX, dstY] = buffer[x, y];
+                Undo?.RecordTileChange(dstX, dstY, before, Map.Tiles[dstX, dstY]);
             }
 
+        // Move selection to follow
         State.SetSelection(State.SelX1 + dx, State.SelY1 + dy, State.SelX2 + dx, State.SelY2 + dy);
 
         Undo?.EndBatch();
@@ -815,16 +895,12 @@ public partial class MapViewport : Control
     #endregion
 }
 
-/// <summary>
-/// Child Control with additive blend material for rendering particles.
-/// </summary>
 public partial class ParticleOverlay : Control
 {
     public MapViewport? Viewport;
 
     public override void _Ready()
     {
-        // Fill entire parent area
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Ignore;
     }

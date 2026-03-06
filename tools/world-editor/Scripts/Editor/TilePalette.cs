@@ -149,16 +149,20 @@ public partial class TilePalette : VBoxContainer
             if (idx >= 0 && idx < 4 && _layerSelect.Selected != idx)
                 _layerSelect.Selected = idx;
         }
+
+        // Show eyedrop GRH info when no catalog texture is selected
+        if (_infoLabel != null && State != null && State.SelectedTexture == null && State.EyedropGrh > 0)
+            _infoLabel.Text = $"Eyedrop GRH {State.EyedropGrh}";
     }
 
     private void OnTextureSelected(TextureRef texRef)
     {
         if (State == null) return;
         State.SelectedTexture = texRef;
+        State.EyedropGrh = 0; // Clear raw eyedrop when selecting from catalog
         State.ActiveTool = EditorTool.Paint;
         _infoLabel!.Text = $"{texRef.Name} | GRH {texRef.GrhIndex} | {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
 
-        // Refresh button highlights
         PopulateGrid();
     }
 

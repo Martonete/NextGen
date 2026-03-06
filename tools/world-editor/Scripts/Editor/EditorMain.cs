@@ -5,10 +5,6 @@ using AOWorldEditor.Data;
 
 namespace AOWorldEditor.Editor;
 
-/// <summary>
-/// Main editor controller. Builds UI, loads data, handles file operations.
-/// All layout is manual (Position + Size in _Process) — no containers for the main areas.
-/// </summary>
 public partial class EditorMain : Control
 {
     // Data
@@ -17,15 +13,14 @@ public partial class EditorMain : Control
     private TextureCatalog? _catalog;
     private MapData? _map;
     private ParticleEngine? _particles;
-    private int[]? _objGrhs;       // ObjIndex → GrhIndex
-    private int[]? _npcBodyGrhs;   // BodyIndex → south-walk GrhIndex
-    private int[]? _npcHeadOfsX;   // BodyIndex → head offset X
-    private int[]? _npcHeadOfsY;   // BodyIndex → head offset Y
-    private int[]? _npcBodies;     // NpcIndex → BodyIndex
-    private int[]? _npcHeads;      // NpcIndex → HeadIndex
-    private int[]? _headGrhs;      // HeadIndex → south-facing GrhIndex
+    private int[]? _objGrhs;
+    private int[]? _npcBodyGrhs;
+    private int[]? _npcHeadOfsX;
+    private int[]? _npcHeadOfsY;
+    private int[]? _npcBodies;
+    private int[]? _npcHeads;
+    private int[]? _headGrhs;
     private string _dataPath = "";
-    private string _mapDir = "";
 
     // Editor
     private readonly EditorState _state = new();
@@ -40,12 +35,24 @@ public partial class EditorMain : Control
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
+    private PopupMenu? _viewMenu;
+
+    // Status bar
+    private HBoxContainer? _statusBar;
     private Label? _statusLabel;
     private Label? _coordLabel;
     private Label? _layerLabel;
     private Label? _toolLabel;
-    private HBoxContainer? _statusBar;
-    private PopupMenu? _viewMenu;
+
+    // Map navigation bar
+    private HBoxContainer? _mapNavBar;
+    private SpinBox? _mapNumSpin;
+    private Button[] _mapNavButtons = Array.Empty<Button>();
+    private const int NavButtonCount = 11; // show ±5 maps around current
+
+    // Tile info panel (bottom of left sidebar)
+    private VBoxContainer? _tileInfoPanel;
+    private Label? _tileInfoLabel;
 
     // Map properties dialog
     private AcceptDialog? _mapPropsDialog;
@@ -54,25 +61,36 @@ public partial class EditorMain : Control
     private CheckBox? _mapPkCheck;
     private SpinBox? _mapAmbR, _mapAmbG, _mapAmbB;
 
+    // Unsaved changes dialog
+    private ConfirmationDialog? _unsavedDialog;
+    private Action? _pendingAfterSaveCheck;
+
     private const float PaletteWidth = 300;
     private const float StatusHeight = 24;
+    private const float NavBarHeight = 28;
+    private const float TileInfoHeight = 110;
 
     public override void _Ready()
     {
+        // Wire dirty tracking
+        _undo.Changed += () => _state.MarkDirty();
+        _state.DirtyChanged += OnDirtyChanged;
+        _state.ExitFollowRequested += OnExitFollow;
+
         BuildUI();
         TryAutoDetectDataPath();
     }
 
     private void BuildUI()
     {
-        // ─── Menu bar (direct child, will be positioned manually) ───
+        // --- Menu bar ---
         _menuBar = new MenuBar();
 
         var fileMenu = new PopupMenu { Name = "Archivo" };
-        fileMenu.AddItem("Nuevo Mapa (Ctrl+N)", 0);
-        fileMenu.AddItem("Abrir Mapa... (Ctrl+O)", 1);
+        fileMenu.AddItem("Nuevo Mapa", 0, Key.N | KeyModifierMask.MaskCtrl);
+        fileMenu.AddItem("Abrir Mapa...", 1, Key.O | KeyModifierMask.MaskCtrl);
         fileMenu.AddSeparator();
-        fileMenu.AddItem("Guardar (Ctrl+S)", 2);
+        fileMenu.AddItem("Guardar", 2, Key.S | KeyModifierMask.MaskCtrl);
         fileMenu.AddItem("Guardar Como...", 3);
         fileMenu.AddSeparator();
         fileMenu.AddItem("Propiedades del Mapa...", 4);
@@ -83,11 +101,11 @@ public partial class EditorMain : Control
         _menuBar.AddChild(fileMenu);
 
         var editMenu = new PopupMenu { Name = "Editar" };
-        editMenu.AddItem("Deshacer (Ctrl+Z)", 0);
-        editMenu.AddItem("Rehacer (Ctrl+Y)", 1);
+        editMenu.AddItem("Deshacer", 0, Key.Z | KeyModifierMask.MaskCtrl);
+        editMenu.AddItem("Rehacer", 1, Key.Y | KeyModifierMask.MaskCtrl);
         editMenu.AddSeparator();
-        editMenu.AddItem("Copiar (Ctrl+C)", 2);
-        editMenu.AddItem("Pegar (Ctrl+V)", 3);
+        editMenu.AddItem("Copiar", 2, Key.C | KeyModifierMask.MaskCtrl);
+        editMenu.AddItem("Pegar", 3, Key.V | KeyModifierMask.MaskCtrl);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -105,7 +123,6 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Objetos", 8);
         _viewMenu.AddCheckItem("Particulas", 9);
         _viewMenu.AddCheckItem("Luces", 10);
-        // Set all check items to checked (use GetItemIndex to handle separator offset)
         for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
@@ -116,11 +133,83 @@ public partial class EditorMain : Control
 
         AddChild(_menuBar);
 
-        // ─── Tile palette (direct child) ───
+        // --- Map navigation bar ---
+        _mapNavBar = new HBoxContainer();
+        _mapNavBar.AddThemeConstantOverride("separation", 2);
+
+        var navLabel = new Label { Text = "Mapa:" };
+        navLabel.AddThemeFontSizeOverride("font_size", 11);
+        _mapNavBar.AddChild(navLabel);
+
+        // Left arrow
+        var btnPrev = new Button { Text = "<", CustomMinimumSize = new Vector2(28, 0) };
+        btnPrev.Pressed += () => NavigateMapOffset(-NavButtonCount);
+        _mapNavBar.AddChild(btnPrev);
+
+        // Map number buttons
+        _mapNavButtons = new Button[NavButtonCount];
+        for (int i = 0; i < NavButtonCount; i++)
+        {
+            var btn = new Button
+            {
+                CustomMinimumSize = new Vector2(48, 0),
+                SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
+            };
+            btn.AddThemeFontSizeOverride("font_size", 10);
+            int capturedIdx = i;
+            btn.Pressed += () => OnNavButtonPressed(capturedIdx);
+            _mapNavBar.AddChild(btn);
+            _mapNavButtons[i] = btn;
+        }
+
+        // Right arrow
+        var btnNext = new Button { Text = ">", CustomMinimumSize = new Vector2(28, 0) };
+        btnNext.Pressed += () => NavigateMapOffset(NavButtonCount);
+        _mapNavBar.AddChild(btnNext);
+
+        // Separator
+        _mapNavBar.AddChild(new VSeparator());
+
+        // Quick jump
+        var goLabel = new Label { Text = "Ir a:" };
+        goLabel.AddThemeFontSizeOverride("font_size", 11);
+        _mapNavBar.AddChild(goLabel);
+
+        _mapNumSpin = new SpinBox
+        {
+            MinValue = 1, MaxValue = 999, Value = 1,
+            CustomMinimumSize = new Vector2(70, 0),
+        };
+        _mapNumSpin.AddThemeFontSizeOverride("font_size", 11);
+        _mapNavBar.AddChild(_mapNumSpin);
+
+        var goBtn = new Button { Text = "Ir" };
+        goBtn.Pressed += () => RequestLoadMap((int)_mapNumSpin.Value);
+        _mapNavBar.AddChild(goBtn);
+
+        AddChild(_mapNavBar);
+
+        // --- Tile palette (left sidebar) ---
         _palette = new TilePalette { State = _state };
         AddChild(_palette);
 
-        // ─── Map viewport (direct child) ───
+        // --- Tile info panel (bottom of left sidebar) ---
+        _tileInfoPanel = new VBoxContainer();
+        _tileInfoPanel.AddThemeConstantOverride("separation", 1);
+
+        var infoHeader = new Label { Text = "Info del Tile" };
+        infoHeader.AddThemeFontSizeOverride("font_size", 11);
+        infoHeader.AddThemeColorOverride("font_color", new Color(0.7f, 0.85f, 1f));
+        _tileInfoPanel.AddChild(infoHeader);
+
+        _tileInfoLabel = new Label();
+        _tileInfoLabel.AddThemeFontSizeOverride("font_size", 10);
+        _tileInfoLabel.AddThemeColorOverride("font_color", new Color(0.75f, 0.75f, 0.75f));
+        _tileInfoPanel.AddChild(_tileInfoLabel);
+
+        AddChild(_tileInfoPanel);
+
+        // --- Map viewport ---
         _viewport = new MapViewport
         {
             Map = _map,
@@ -132,7 +221,7 @@ public partial class EditorMain : Control
         };
         AddChild(_viewport);
 
-        // ─── Status bar (direct child) ───
+        // --- Status bar ---
         _statusBar = new HBoxContainer();
         _statusBar.AddThemeConstantOverride("separation", 16);
 
@@ -159,7 +248,7 @@ public partial class EditorMain : Control
 
         AddChild(_statusBar);
 
-        // ─── Tile Properties as floating Window ───
+        // --- Tile Properties floating Window ---
         _propsWindow = new Window
         {
             Title = "Propiedades de Tile",
@@ -180,7 +269,7 @@ public partial class EditorMain : Control
         };
         _propsWindow.AddChild(_propsPanel);
 
-        // ─── File dialogs ───
+        // --- File dialogs ---
         _openDialog = new FileDialog
         {
             FileMode = FileDialog.FileModeEnum.OpenFile,
@@ -214,16 +303,13 @@ public partial class EditorMain : Control
         AddChild(_dataPathDialog);
 
         BuildMapPropsDialog();
+        BuildUnsavedDialog();
     }
 
-    /// <summary>
-    /// Manual layout — called every frame to size/position all UI elements.
-    /// </summary>
     private void DoLayout()
     {
         var win = GetViewportRect().Size;
 
-        // Menu bar: top, full width
         float menuH = _menuBar?.GetMinimumSize().Y ?? 30;
         if (_menuBar != null)
         {
@@ -231,18 +317,34 @@ public partial class EditorMain : Control
             _menuBar.Size = new Vector2(win.X, menuH);
         }
 
-        float contentTop = menuH;
+        float navTop = menuH;
+        if (_mapNavBar != null)
+        {
+            _mapNavBar.Position = new Vector2(0, navTop);
+            _mapNavBar.Size = new Vector2(win.X, NavBarHeight);
+        }
+
+        float contentTop = navTop + NavBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
 
-        // Palette: left side, fixed width
+        // Left sidebar: palette + tile info
+        float tileInfoH = Math.Min(TileInfoHeight, contentH * 0.2f);
+        float paletteH = contentH - tileInfoH;
+
         if (_palette != null)
         {
             _palette.Position = new Vector2(0, contentTop);
-            _palette.Size = new Vector2(PaletteWidth, contentH);
+            _palette.Size = new Vector2(PaletteWidth, paletteH);
         }
 
-        // Viewport: right of palette, fills everything else
+        if (_tileInfoPanel != null)
+        {
+            _tileInfoPanel.Position = new Vector2(4, contentTop + paletteH);
+            _tileInfoPanel.Size = new Vector2(PaletteWidth - 4, tileInfoH);
+        }
+
+        // Viewport
         if (_viewport != null)
         {
             float vpX = PaletteWidth + 2;
@@ -250,7 +352,7 @@ public partial class EditorMain : Control
             _viewport.Size = new Vector2(win.X - vpX, contentH);
         }
 
-        // Status bar: bottom
+        // Status bar
         if (_statusBar != null)
         {
             _statusBar.Position = new Vector2(0, contentBottom);
@@ -262,8 +364,8 @@ public partial class EditorMain : Control
     {
         _mapPropsDialog = new AcceptDialog { Title = "Propiedades del Mapa", Size = new Vector2I(400, 300) };
         var vbox = new VBoxContainer();
-
         var grid = new GridContainer { Columns = 2 };
+
         grid.AddChild(new Label { Text = "Nombre:" });
         _mapNameEdit = new LineEdit { CustomMinimumSize = new Vector2(200, 0) };
         grid.AddChild(_mapNameEdit);
@@ -289,10 +391,41 @@ public partial class EditorMain : Control
         AddChild(_mapPropsDialog);
     }
 
+    private void BuildUnsavedDialog()
+    {
+        _unsavedDialog = new ConfirmationDialog
+        {
+            Title = "Cambios sin guardar",
+            DialogText = "El mapa tiene cambios sin guardar. ¿Qué desea hacer?",
+            Size = new Vector2I(400, 150),
+            OkButtonText = "Guardar",
+        };
+        _unsavedDialog.AddButton("Descartar", true, "discard");
+        _unsavedDialog.Confirmed += () =>
+        {
+            // "Guardar" pressed
+            OnSaveMap();
+            _pendingAfterSaveCheck?.Invoke();
+            _pendingAfterSaveCheck = null;
+        };
+        _unsavedDialog.CustomAction += (action) =>
+        {
+            if (action == "discard")
+            {
+                _unsavedDialog.Hide();
+                _pendingAfterSaveCheck?.Invoke();
+                _pendingAfterSaveCheck = null;
+            }
+        };
+        _unsavedDialog.Canceled += () => { _pendingAfterSaveCheck = null; };
+        AddChild(_unsavedDialog);
+    }
+
     #region Data Loading
 
     private void TryAutoDetectDataPath()
     {
+        // Try relative paths from the editor project
         string[] candidates = {
             "../../client/Data",
             "../../../client/Data",
@@ -340,9 +473,9 @@ public partial class EditorMain : Control
             SetStatus($"{_grhs.Length} GRHs (indices.ini no encontrado)");
         }
 
-        _mapDir = mapsDir;
+        _state.MapDir = mapsDir;
 
-        // Find server directory (try ../server and ../../server relative to dataPath)
+        // Find server directory
         string serverDir = "";
         foreach (var rel in new[] { "..", "../.." })
         {
@@ -350,13 +483,13 @@ public partial class EditorMain : Control
             if (Directory.Exists(candidate)) { serverDir = candidate; break; }
         }
 
-        // Prefer server maps dir (has .inf/.dat with NPCs/objects/exits)
+        // Prefer server maps dir
         if (serverDir.Length > 0)
         {
             string serverMapsDir = Path.Combine(serverDir, "maps");
             if (Directory.Exists(serverMapsDir))
             {
-                _mapDir = serverMapsDir;
+                _state.MapDir = serverMapsDir;
                 GD.Print($"[Editor] Using server maps: {serverMapsDir}");
             }
         }
@@ -367,7 +500,7 @@ public partial class EditorMain : Control
         if (File.Exists(particlesIni))
             _particles.LoadDefinitions(particlesIni);
 
-        // Load body + head animations (for NPC preview)
+        // Load body + head data
         string personajesInd = Path.Combine(dataPath, "INIT", "Personajes.ind");
         (_npcBodyGrhs, _npcHeadOfsX, _npcHeadOfsY) = GameDataLoader.LoadBodyData(personajesInd);
 
@@ -385,12 +518,26 @@ public partial class EditorMain : Control
             GD.Print($"[Editor] Server data: {datDir}");
         }
 
+        // Push data to palette
         _palette!.Grhs = _grhs;
         _palette.Textures = _textures;
         _palette.Catalog = _catalog;
         _palette.Rebuild();
 
-        _viewport!.Grhs = _grhs;
+        // Push data to viewport
+        SyncViewportData();
+
+        // Scan available maps and update nav bar
+        _state.ScanAvailableMaps(_state.MapDir);
+        GD.Print($"[Editor] Found {_state.AvailableMaps.Count} maps in {_state.MapDir}");
+
+        CreateNewMap(1);
+    }
+
+    private void SyncViewportData()
+    {
+        if (_viewport == null) return;
+        _viewport.Grhs = _grhs;
         _viewport.Textures = _textures;
         _viewport.Particles = _particles;
         _viewport.ObjGrhs = _objGrhs;
@@ -400,8 +547,6 @@ public partial class EditorMain : Control
         _viewport.NpcHeadOfsX = _npcHeadOfsX;
         _viewport.NpcHeadOfsY = _npcHeadOfsY;
         _viewport.HeadGrhs = _headGrhs;
-
-        CreateNewMap(1);
     }
 
     #endregion
@@ -412,8 +557,8 @@ public partial class EditorMain : Control
     {
         switch (id)
         {
-            case 0: OnNewMap(); break;
-            case 1: OnOpenMap(); break;
+            case 0: RequestNewMap(); break;
+            case 1: RequestOpenMap(); break;
             case 2: OnSaveMap(); break;
             case 3: OnSaveAsMap(); break;
             case 4: ShowMapProperties(); break;
@@ -428,7 +573,7 @@ public partial class EditorMain : Control
         {
             case 0: _undo.Undo(_map!); _viewport?.QueueRedraw(); break;
             case 1: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
-            case 2: _state.CopySelection(_map!); break;
+            case 2: _state.CopySelection(_map!); SetStatus("Copiado"); break;
             case 3: PasteClipboard(); break;
         }
     }
@@ -450,7 +595,6 @@ public partial class EditorMain : Control
             case 10: _state.ShowLights = !_state.ShowLights; break;
         }
 
-        // Sync checkbox to actual state
         if (_viewMenu != null)
         {
             bool val = id switch
@@ -463,16 +607,51 @@ public partial class EditorMain : Control
                 _ => false
             };
             int idx = _viewMenu.GetItemIndex((int)id);
-            if (idx >= 0)
-                _viewMenu.SetItemChecked(idx, val);
+            if (idx >= 0) _viewMenu.SetItemChecked(idx, val);
         }
 
         _viewport?.QueueRedraw();
     }
 
-    private void OnNewMap()
+    /// <summary>
+    /// Checks for unsaved changes before executing an action.
+    /// If dirty, shows the save/discard/cancel dialog.
+    /// If clean, executes immediately.
+    /// </summary>
+    private void CheckDirtyThen(Action action)
     {
-        CreateNewMap(1);
+        if (_state.IsDirty)
+        {
+            _pendingAfterSaveCheck = action;
+            _unsavedDialog!.DialogText =
+                $"Mapa {_state.CurrentMapNumber} tiene cambios sin guardar.\n¿Qué desea hacer?";
+            _unsavedDialog.PopupCentered();
+        }
+        else
+        {
+            action();
+        }
+    }
+
+    private void RequestNewMap()
+    {
+        CheckDirtyThen(() => CreateNewMap(_state.CurrentMapNumber));
+    }
+
+    private void RequestOpenMap()
+    {
+        CheckDirtyThen(() =>
+        {
+            if (!string.IsNullOrEmpty(_state.MapDir) && Directory.Exists(_state.MapDir))
+                _openDialog!.CurrentDir = _state.MapDir;
+            _openDialog!.Popup();
+        });
+    }
+
+    private void RequestLoadMap(int mapNumber)
+    {
+        if (mapNumber == _state.CurrentMapNumber && _map != null) return;
+        CheckDirtyThen(() => LoadMapByNumber(mapNumber));
     }
 
     private void CreateNewMap(int mapNumber)
@@ -485,16 +664,32 @@ public partial class EditorMain : Control
             for (int x = 1; x <= 100; x++)
                 _map.Tiles[x, y].Layer1 = 1;
 
+        _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
+        _state.ResetDirty();
         UpdateViewport();
-        SetStatus($"Mapa {mapNumber} (100x100)");
+        UpdateNavBar();
+        SetStatus($"Mapa {mapNumber} nuevo (100x100)");
     }
 
-    private void OnOpenMap()
+    private void LoadMapByNumber(int mapNumber)
     {
-        if (!string.IsNullOrEmpty(_mapDir) && Directory.Exists(_mapDir))
-            _openDialog!.CurrentDir = _mapDir;
-        _openDialog!.Popup();
+        if (string.IsNullOrEmpty(_state.MapDir)) return;
+        string mapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.map");
+        if (!File.Exists(mapFile))
+        {
+            SetStatus($"Mapa{mapNumber}.map no existe en {_state.MapDir}");
+            return;
+        }
+
+        _map = MapLoader.Load(_state.MapDir, mapNumber);
+        _state.CurrentMapNumber = mapNumber;
+        _undo.Clear();
+        _state.ResetDirty();
+        UpdateViewport();
+        UpdateNavBar();
+        if (_mapNumSpin != null) _mapNumSpin.Value = mapNumber;
+        SetStatus($"Mapa {mapNumber} cargado — {_map.Name}");
     }
 
     private void OnMapFileSelected(string path)
@@ -505,11 +700,17 @@ public partial class EditorMain : Control
             string numStr = filename.Substring(4);
             if (int.TryParse(numStr, out int mapNum))
             {
-                string dir = Path.GetDirectoryName(path) ?? _mapDir;
+                string dir = Path.GetDirectoryName(path) ?? _state.MapDir;
+                _state.MapDir = dir;
+                _state.ScanAvailableMaps(dir);
                 _map = MapLoader.Load(dir, mapNum);
+                _state.CurrentMapNumber = mapNum;
                 _undo.Clear();
+                _state.ResetDirty();
                 UpdateViewport();
-                SetStatus($"Mapa {mapNum} cargado");
+                UpdateNavBar();
+                if (_mapNumSpin != null) _mapNumSpin.Value = mapNum;
+                SetStatus($"Mapa {mapNum} cargado — {_map.Name}");
                 return;
             }
         }
@@ -519,15 +720,18 @@ public partial class EditorMain : Control
     private void OnSaveMap()
     {
         if (_map == null) return;
-        if (string.IsNullOrEmpty(_mapDir)) { OnSaveAsMap(); return; }
-        MapLoader.Save(_mapDir, _map);
+        if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
+        MapLoader.Save(_state.MapDir, _map);
+        _state.ResetDirty();
+        _state.ScanAvailableMaps(_state.MapDir);
+        UpdateNavBar();
         SetStatus($"Mapa {_map.MapNumber} guardado");
     }
 
     private void OnSaveAsMap()
     {
-        if (!string.IsNullOrEmpty(_mapDir))
-            _saveDialog!.CurrentDir = _mapDir;
+        if (!string.IsNullOrEmpty(_state.MapDir))
+            _saveDialog!.CurrentDir = _state.MapDir;
         _saveDialog!.CurrentFile = $"Mapa{_map?.MapNumber ?? 1}.map";
         _saveDialog.Popup();
     }
@@ -535,13 +739,21 @@ public partial class EditorMain : Control
     private void OnSaveFileSelected(string path)
     {
         if (_map == null) return;
-        string dir = Path.GetDirectoryName(path) ?? _mapDir;
-        _mapDir = dir;
+        string dir = Path.GetDirectoryName(path) ?? _state.MapDir;
+        _state.MapDir = dir;
         MapLoader.Save(dir, _map);
-        SetStatus($"Mapa {_map.MapNumber} guardado");
+        _state.ResetDirty();
+        _state.ScanAvailableMaps(dir);
+        UpdateNavBar();
+        SetStatus($"Mapa {_map.MapNumber} guardado en {dir}");
     }
 
     private void OnDataPathSelected(string path) => LoadDataPath(path);
+
+    private void OnExitFollow(int mapNum, int x, int y)
+    {
+        RequestLoadMap(mapNum);
+    }
 
     #endregion
 
@@ -568,6 +780,7 @@ public partial class EditorMain : Control
         _map.AmbientR = (byte)_mapAmbR!.Value;
         _map.AmbientG = (byte)_mapAmbG!.Value;
         _map.AmbientB = (byte)_mapAmbB!.Value;
+        _state.MarkDirty();
         SetStatus($"Props: {_map.Name}");
     }
 
@@ -590,7 +803,6 @@ public partial class EditorMain : Control
 
         _undo.BeginBatch("Paste");
         for (int y = 0; y < _state.ClipHeight; y++)
-        {
             for (int x = 0; x < _state.ClipWidth; x++)
             {
                 int dx = _state.SelX1 + x;
@@ -600,9 +812,69 @@ public partial class EditorMain : Control
                 _map.Tiles[dx, dy] = _state.Clipboard[x + 1, y + 1];
                 _undo.RecordTileChange(dx, dy, before, _map.Tiles[dx, dy]);
             }
-        }
         _undo.EndBatch();
         _viewport?.QueueRedraw();
+    }
+
+    #endregion
+
+    #region Map Navigation Bar
+
+    private int _navOffset; // offset for paging through maps
+
+    private void UpdateNavBar()
+    {
+        if (_mapNavButtons.Length == 0) return;
+        int center = _state.CurrentMapNumber + _navOffset;
+        int half = NavButtonCount / 2;
+
+        for (int i = 0; i < NavButtonCount; i++)
+        {
+            int mapNum = center - half + i;
+            var btn = _mapNavButtons[i];
+            if (mapNum < 1)
+            {
+                btn.Text = "";
+                btn.Disabled = true;
+                btn.Modulate = Colors.White;
+                continue;
+            }
+
+            btn.Text = mapNum.ToString();
+            btn.Disabled = false;
+
+            if (mapNum == _state.CurrentMapNumber)
+            {
+                btn.Modulate = new Color(0.5f, 1f, 0.5f); // Green = current
+            }
+            else if (_state.AvailableMaps.Contains(mapNum))
+            {
+                btn.Modulate = new Color(0.9f, 0.9f, 1f); // Bright = exists
+            }
+            else
+            {
+                btn.Modulate = new Color(0.4f, 0.4f, 0.4f); // Dim = doesn't exist
+            }
+        }
+    }
+
+    private void OnNavButtonPressed(int buttonIndex)
+    {
+        int center = _state.CurrentMapNumber + _navOffset;
+        int half = NavButtonCount / 2;
+        int mapNum = center - half + buttonIndex;
+        if (mapNum < 1) return;
+
+        if (_state.AvailableMaps.Contains(mapNum))
+            RequestLoadMap(mapNum);
+        else
+            SetStatus($"Mapa{mapNum}.map no existe");
+    }
+
+    private void NavigateMapOffset(int delta)
+    {
+        _navOffset += delta;
+        UpdateNavBar();
     }
 
     #endregion
@@ -627,8 +899,8 @@ public partial class EditorMain : Control
                 case Key.Z: _undo.Undo(_map!); _viewport?.QueueRedraw(); break;
                 case Key.Y: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
                 case Key.S: OnSaveMap(); break;
-                case Key.O: OnOpenMap(); break;
-                case Key.N: OnNewMap(); break;
+                case Key.O: RequestOpenMap(); break;
+                case Key.N: RequestNewMap(); break;
                 case Key.C: _state.CopySelection(_map!); SetStatus("Copiado"); break;
                 case Key.V: PasteClipboard(); break;
             }
@@ -650,6 +922,7 @@ public partial class EditorMain : Control
                 case Key.Key2: _state.ActiveLayer = 2; break;
                 case Key.Key3: _state.ActiveLayer = 3; break;
                 case Key.Key4: _state.ActiveLayer = 4; break;
+                case Key.Escape: _state.ClearSelection(); _viewport?.QueueRedraw(); break;
             }
         }
     }
@@ -658,6 +931,21 @@ public partial class EditorMain : Control
 
     #region Helpers
 
+    private void OnDirtyChanged(bool isDirty)
+    {
+        UpdateTitle();
+    }
+
+    private void UpdateTitle()
+    {
+        string title = $"AO World Editor — Mapa {_state.CurrentMapNumber}";
+        if (_map != null && !string.IsNullOrEmpty(_map.Name))
+            title += $" ({_map.Name})";
+        if (_state.IsDirty)
+            title += " *";
+        GetWindow().Title = title;
+    }
+
     private void UpdateViewport()
     {
         if (_viewport != null)
@@ -665,7 +953,6 @@ public partial class EditorMain : Control
             _viewport.Map = _map;
             _viewport.QueueRedraw();
 
-            // Center view on map middle
             if (_map != null)
             {
                 float mapCenterX = (_map.Width / 2f + 1) * 32;
@@ -682,8 +969,6 @@ public partial class EditorMain : Control
         if (_particles != null && _map != null)
         {
             _particles.BuildStreamsFromMap(_map);
-
-            // Count map features for status
             int pCount = 0, lCount = 0, nCount = 0, oCount = 0;
             for (int y = 1; y <= _map.Height; y++)
                 for (int x = 1; x <= _map.Width; x++)
@@ -695,6 +980,7 @@ public partial class EditorMain : Control
                 }
             GD.Print($"[Editor] Map features: {nCount} NPCs, {oCount} objects, {pCount} particles, {lCount} lights");
         }
+        UpdateTitle();
     }
 
     private void SetStatus(string msg)
@@ -703,12 +989,35 @@ public partial class EditorMain : Control
         GD.Print($"[Editor] {msg}");
     }
 
+    private void UpdateTileInfo()
+    {
+        if (_tileInfoLabel == null || _map == null || !_state.HoverValid) return;
+        int x = _state.HoverX, y = _state.HoverY;
+        if (!_map.InBounds(x, y))
+        {
+            _tileInfoLabel.Text = "Fuera del mapa";
+            return;
+        }
+
+        ref var tile = ref _map.Tiles[x, y];
+        var lines = new System.Text.StringBuilder();
+        lines.AppendLine($"Tile ({x}, {y})");
+        lines.AppendLine($"L1:{tile.Layer1}  L2:{tile.Layer2}  L3:{tile.Layer3}  L4:{tile.Layer4}");
+        if (tile.Blocked) lines.AppendLine("Bloqueado");
+        if (tile.Trigger > 0) lines.AppendLine($"Trigger: {tile.Trigger}");
+        if (tile.HasExit) lines.AppendLine($"Exit: M{tile.ExitMap} ({tile.ExitX},{tile.ExitY})");
+        if (tile.HasNpc) lines.AppendLine($"NPC: {tile.NpcIndex}");
+        if (tile.HasObject) lines.AppendLine($"Obj: {tile.ObjIndex} x{tile.ObjAmount}");
+        if (tile.HasLight) lines.AppendLine($"Luz: R{tile.LightRange} ({tile.LightR},{tile.LightG},{tile.LightB})");
+        if (tile.ParticleGroup > 0) lines.AppendLine($"Particula: {tile.ParticleGroup}");
+        _tileInfoLabel.Text = lines.ToString().TrimEnd();
+    }
+
     public override void _Process(double delta)
     {
-        // Manual layout every frame (handles window resize)
         DoLayout();
 
-        // Open tile properties when a tile is clicked with property tools
+        // Open tile properties when clicked with property tools
         if (_state.ShowTileProperties && _propsPanel != null && _map != null)
         {
             _propsPanel.LoadTile(_state.PropTileX, _state.PropTileY);
@@ -721,24 +1030,32 @@ public partial class EditorMain : Control
             }
         }
 
-        // Update particle simulation
         _particles?.Update((float)delta);
 
-        // Update status bar coords
-        if (_viewport != null)
-        {
-            var mousePos = _viewport.GetLocalMousePosition();
-            int tx = (int)((mousePos.X - _state.CameraOffset.X) / _state.Zoom / 32);
-            int ty = (int)((mousePos.Y - _state.CameraOffset.Y) / _state.Zoom / 32);
-            _coordLabel!.Text = $"({tx}, {ty})";
-        }
-
+        // Update status bar
+        _coordLabel!.Text = _state.HoverValid ? $"({_state.HoverX}, {_state.HoverY})" : "";
         int toolIdx = (int)_state.ActiveTool;
         _toolLabel!.Text = toolIdx < ToolNames.Length ? ToolNames[toolIdx] : "?";
         _layerLabel!.Text = $"Capa {_state.ActiveLayer}";
-        _palette?.SyncLayerUI();
 
+        // Update tile info
+        UpdateTileInfo();
+
+        _palette?.SyncLayerUI();
         _viewport?.QueueRedraw();
+    }
+
+    public override void _Notification(int what)
+    {
+        // Intercept window close to check for unsaved changes
+        if (what == NotificationWMCloseRequest)
+        {
+            if (_state.IsDirty)
+            {
+                CheckDirtyThen(() => GetTree().Quit());
+                GetTree().AutoAcceptQuit = false;
+            }
+        }
     }
 
     #endregion
