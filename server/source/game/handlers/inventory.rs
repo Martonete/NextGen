@@ -1711,8 +1711,9 @@ pub(super) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
 
             // VB6: Guild tag
             if guild_idx > 0 {
-                if let Some(guild_name) = state.get_guild_name(guild_idx) {
-                    stat.push_str(&format!(" <{}>", guild_name));
+                let gn = state.users.get(&target).map(|u| u.guild_name.clone()).unwrap_or_default();
+                if !gn.is_empty() {
+                    stat.push_str(&format!(" <{}>", gn));
                 }
             }
 

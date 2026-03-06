@@ -1279,20 +1279,6 @@ impl GameState {
         }
     }
 
-    /// Look up guild name by guild index (1-based). Blocking call for sync context.
-    /// For async context, use db::guilds::load_guild() directly.
-    pub fn get_guild_name(&self, guild_index: i32) -> Option<String> {
-        if guild_index <= 0 {
-            return None;
-        }
-        // Use a blocking call to avoid requiring async here.
-        // This is only used in sync formatting contexts.
-        let pool = self.pool.clone();
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async {
-            crate::db::guilds::load_guild(&pool, guild_index).await.map(|g| g.name)
-        })
-    }
 
     pub fn get_object(&self, obj_index: i32) -> Option<&crate::data::objects::ObjData> {
         if obj_index >= 1 {

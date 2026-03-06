@@ -45,7 +45,8 @@ pub(super) async fn send_lookat_user_info(state: &mut GameState, conn_id: Connec
         let limite_newbie = 9;
         if level <= limite_newbie { stat.push_str(" <NEWBIE>"); }
         if guild_idx > 0 {
-            if let Some(gn) = state.get_guild_name(guild_idx) {
+            let gn = state.users.get(&target_conn).map(|u| u.guild_name.clone()).unwrap_or_default();
+            if !gn.is_empty() {
                 stat.push_str(&format!(" <{}>", gn));
             }
         }
