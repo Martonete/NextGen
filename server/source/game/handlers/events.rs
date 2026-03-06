@@ -898,28 +898,15 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
         if min_mana >= max_mana { return; }
 
         // VB6: Send level-based meditation FX
-        let (ci, map, x, y, level, transformed) = match state.users.get(&conn_id) {
-            Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y, u.level, u.transformed),
+        let (ci, map, x, y, level) = match state.users.get(&conn_id) {
+            Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y, u.level),
             None => return,
         };
 
-        let fx_id = if transformed {
-            16 // FXMEDITARTRANSFO
-        } else if level < 15 {
-            4  // FXMEDITARCHICO
-        } else if level < 30 {
-            5  // FXMEDITARMEDIANO
-        } else if level < 50 {
-            6  // FXMEDITARGRANDE
-        } else if level <= 59 {
-            43 // FXMEDITARXGRANDE
-        } else {
-            // Level 60+ — faction-based
-            103 // FXNUEVATPNEUTRAL (default)
-        };
+        // VB6: Declares.bas FX IDs by level (same table as ticks.rs)
+        let fx_id = super::ticks::meditation_fx_for_level(level);
 
-        let loops = 999; // LoopAdEternum
-        let pkt = binary_packets::write_create_fx(ci as i16, fx_id as i16, loops as i16);
+        let pkt = binary_packets::write_create_fx(ci as i16, fx_id, 999);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
     } else {
         // Stopping meditation — VB6: ||205 + MEDOK + clear FX

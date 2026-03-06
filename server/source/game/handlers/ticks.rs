@@ -980,14 +980,14 @@ const STAMINA_INTERVAL: i32 = 1;   // Regen stamina every 1 second
 const POISON_INTERVAL: i32 = 1;    // Poison damage every 1 second
 const HUNGER_DRAIN: i32 = 10;      // Drain amount per tick
 const THIRST_DRAIN: i32 = 10;      // Drain amount per tick
-// VB6 meditation FX by level (Protocol.bas lines 5555-5567)
+// VB6 meditation FX by level (Declares.bas lines 204-211)
 const FXMEDITARCHICO: i16 = 4;       // level < 13
-const FXMEDITARMEDIANO: i16 = 5;     // level < 25
-const FXMEDITARGRANDE: i16 = 6;      // level < 35
-const FXMEDITARXGRANDE: i16 = 16;    // level < 42
+const FXMEDITARMEDIANO: i16 = 5;     // level 13-24
+const FXMEDITARGRANDE: i16 = 6;      // level 25-34
+const FXMEDITARXGRANDE: i16 = 16;    // level 35-41
 const FXMEDITARXXGRANDE: i16 = 34;   // level >= 42
 
-fn meditation_fx_for_level(level: i32) -> i16 {
+pub fn meditation_fx_for_level(level: i32) -> i16 {
     if level < 13 { FXMEDITARCHICO }
     else if level < 25 { FXMEDITARMEDIANO }
     else if level < 35 { FXMEDITARGRANDE }
@@ -1010,11 +1010,14 @@ pub(super) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
     let level = user.level;
 
     if meditating {
-        // Stop meditation
+        // Stop meditation — clear FX
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
         state.send_msg_id(conn_id, 205, "").await; // Dejas de meditar
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+        let fx_clear = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear).await;
     } else {
         // Check if mana is already full
         if user.min_mana >= user.max_mana {
@@ -1224,24 +1227,27 @@ pub async fn tick_player_passive(state: &mut GameState) {
 
         // Anti-cheat intervals now decremented in tick_intervals (40ms tick)
 
-        // --- Meditation (mana regen) ---
+        // --- Meditation (mana regen) — VB6: Trabajo.bas DoMeditar ---
         if meditating && min_mana < max_mana {
-            // Skill-based chance (higher skill = higher chance)
-            let chance = match meditate_skill {
-                0..=10 => 3,    // ~3% per second
-                11..=20 => 5,
-                21..=30 => 7,
-                31..=40 => 10,
-                41..=50 => 12,
-                51..=60 => 15,
+            // VB6: Skill-based "1 in N" chance per tick (lower N = better)
+            let suerte = match meditate_skill {
+                0..=10 => 35,
+                11..=20 => 30,
+                21..=30 => 28,
+                31..=40 => 24,
+                41..=50 => 22,
+                51..=60 => 20,
                 61..=70 => 18,
-                71..=80 => 22,
-                81..=90 => 30,
-                _ => 40,        // 91-100: 40%
+                71..=80 => 15,
+                81..=90 => 10,
+                91..=99 => 7,
+                _ => 5, // skill 100
             };
 
-            if rand_range(1, 100) <= chance {
-                let regen = (max_mana as f64 * 0.02) as i32; // 2% of max mana
+            if rand_range(1, suerte) == 1 {
+                // VB6: cant = Porcentaje(MaxMAN, PorcentajeRecuperoMana)
+                // PorcentajeRecuperoMana is typically 5 from Balance.dat
+                let regen = ((max_mana as f64 * 5.0) / 100.0) as i32;
                 let regen = regen.max(1);
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.min_mana = (u.min_mana + regen).min(u.max_mana);
@@ -1251,10 +1257,18 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 }
                 send_stats_mana(state, conn_id).await;
 
-                // Stop meditation when full
-                if let Some(u) = state.users.get(&conn_id) {
-                    if !u.meditating {
-                        state.send_msg_id(conn_id, 829, "").await; // Has terminado de meditar
+                // Stop meditation when full — clear FX + notify
+                let stopped = state.users.get(&conn_id).map(|u| !u.meditating).unwrap_or(false);
+                if stopped {
+                    state.send_msg_id(conn_id, 829, "").await; // Has terminado de meditar
+                    state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+                    // Clear FX for area
+                    if let Some(u) = state.users.get(&conn_id) {
+                        let fx_clear = binary_packets::write_create_fx(u.char_index.0 as i16, 0, 0);
+                        state.send_data_bytes(
+                            SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
+                            &fx_clear,
+                        ).await;
                     }
                 }
             }
