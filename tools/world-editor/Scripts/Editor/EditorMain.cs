@@ -291,6 +291,8 @@ public partial class EditorMain : Control
             Undo = _undo,
             ClipContents = true,
         };
+        _viewport.OnPendingAccept += CommitPendingPlacement;
+        _viewport.OnPendingCancel += CancelPendingPlacement;
         AddChild(_viewport);
 
         // --- Status bar ---
@@ -908,8 +910,9 @@ public partial class EditorMain : Control
     private void PasteClipboard()
     {
         if (_map == null || _state.Clipboard == null) return;
+        if (_state.Pending.Active) return; // Already in pending mode
 
-        // Paste origin: selection top-left if available, otherwise hover cursor position
+        // Paste origin: selection top-left if available, otherwise hover cursor
         int originX, originY;
         if (_state.HasSelection)
         {
@@ -923,26 +926,110 @@ public partial class EditorMain : Control
         }
         else
         {
-            SetStatus("Posiciona el cursor donde quieras pegar");
-            return;
+            originX = 1;
+            originY = 1;
         }
 
-        _undo.BeginBatch("Paste");
+        // Copy clipboard into a 0-based tile buffer for pending placement
+        var buf = new MapTile[_state.ClipWidth, _state.ClipHeight];
         for (int y = 0; y < _state.ClipHeight; y++)
             for (int x = 0; x < _state.ClipWidth; x++)
-            {
-                int dx = originX + x;
-                int dy = originY + y;
-                if (!_map.InBounds(dx, dy)) continue;
-                var before = _map.Tiles[dx, dy];
-                _map.Tiles[dx, dy] = _state.Clipboard[x + 1, y + 1];
-                _undo.RecordTileChange(dx, dy, before, _map.Tiles[dx, dy]);
-            }
-        _undo.EndBatch();
-        _state.MarkDirty();
-        SetStatus($"Pegado {_state.ClipWidth}x{_state.ClipHeight} tiles en ({originX},{originY})");
+                buf[x, y] = _state.Clipboard[x + 1, y + 1];
+
+        _state.Pending.Begin(buf, _state.ClipWidth, _state.ClipHeight, originX, originY);
+        SetStatus($"Pegando {_state.ClipWidth}x{_state.ClipHeight} — mueve y ✓ para aceptar, ✗ para cancelar");
         _viewport?.QueueRedraw();
     }
+
+    /// <summary>
+    /// Commit the pending placement to the map (called from viewport accept button).
+    /// </summary>
+    public void CommitPendingPlacement()
+    {
+        if (_map == null || !_state.Pending.Active || _state.Pending.Tiles == null) return;
+
+        var p = _state.Pending;
+
+        // For move operations, restore map from snapshot first, then apply
+        if (p.IsMove && p.MoveSnapshot != null)
+        {
+            _undo.BeginBatch("Move");
+            // Record all changes: snapshot → cleared source + placed destination
+            Array.Copy(p.MoveSnapshot, _map.Tiles, _map.Tiles.Length);
+
+            // Clear source area
+            for (int y = 0; y < p.Height; y++)
+                for (int x = 0; x < p.Width; x++)
+                {
+                    int sx = p.SourceX + x, sy = p.SourceY + y;
+                    if (_map.InBounds(sx, sy))
+                    {
+                        var before = _map.Tiles[sx, sy];
+                        _map.Tiles[sx, sy] = new MapTile { Layer1 = 1 };
+                        _undo.RecordTileChange(sx, sy, before, _map.Tiles[sx, sy]);
+                    }
+                }
+
+            // Place at destination
+            for (int y = 0; y < p.Height; y++)
+                for (int x = 0; x < p.Width; x++)
+                {
+                    int dx = p.OriginX + x, dy = p.OriginY + y;
+                    if (_map.InBounds(dx, dy))
+                    {
+                        var before = _map.Tiles[dx, dy];
+                        _map.Tiles[dx, dy] = p.Tiles[x, y];
+                        _undo.RecordTileChange(dx, dy, before, _map.Tiles[dx, dy]);
+                    }
+                }
+            _undo.EndBatch();
+
+            // Update selection to new position
+            _state.SetSelection(p.OriginX, p.OriginY,
+                p.OriginX + p.Width - 1, p.OriginY + p.Height - 1);
+
+            _particles?.BuildStreamsFromMap(_map);
+        }
+        else
+        {
+            // Normal paste
+            _undo.BeginBatch("Paste");
+            for (int y = 0; y < p.Height; y++)
+                for (int x = 0; x < p.Width; x++)
+                {
+                    int dx = p.OriginX + x, dy = p.OriginY + y;
+                    if (!_map.InBounds(dx, dy)) continue;
+                    var before = _map.Tiles[dx, dy];
+                    _map.Tiles[dx, dy] = p.Tiles[x, y];
+                    _undo.RecordTileChange(dx, dy, before, _map.Tiles[dx, dy]);
+                }
+            _undo.EndBatch();
+        }
+
+        _state.MarkDirty();
+        SetStatus($"Aplicado {p.Width}x{p.Height} tiles en ({p.OriginX},{p.OriginY})");
+        p.Cancel();
+        _viewport?.QueueRedraw();
+    }
+
+    /// <summary>
+    /// Cancel the pending placement (restore map if move).
+    /// </summary>
+    public void CancelPendingPlacement()
+    {
+        if (!_state.Pending.Active) return;
+
+        var p = _state.Pending;
+        if (p.IsMove && p.MoveSnapshot != null && _map != null)
+        {
+            // Restore original map state
+            Array.Copy(p.MoveSnapshot, _map.Tiles, _map.Tiles.Length);
+        }
+        p.Cancel();
+        SetStatus("Cancelado");
+        _viewport?.QueueRedraw();
+    }
+
 
     #endregion
 
@@ -1057,9 +1144,22 @@ public partial class EditorMain : Control
                 case Key.Delete:
                     DeleteSelection();
                     break;
+                case Key.Enter:
+                case Key.KpEnter:
+                    if (_state.Pending.Active)
+                    {
+                        CommitPendingPlacement();
+                        _viewport?.QueueRedraw();
+                    }
+                    break;
                 case Key.Escape:
-                    _state.ClearSelection();
-                    _state.Pick.Clear();
+                    if (_state.Pending.Active)
+                        CancelPendingPlacement();
+                    else
+                    {
+                        _state.ClearSelection();
+                        _state.Pick.Clear();
+                    }
                     _viewport?.QueueRedraw();
                     break;
             }

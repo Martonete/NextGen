@@ -16,6 +16,8 @@ public partial class MapViewport : Control
     public EditorState? State;
     public UndoManager? Undo;
     public ParticleEngine? Particles;
+    public Action? OnPendingAccept;   // Fire when user clicks ✓ on pending placement
+    public Action? OnPendingCancel;   // Fire when user clicks ✗ on pending placement
     public int[]? ObjGrhs;
     public int[]? NpcBodies;
     public int[]? NpcHeads;
@@ -146,6 +148,9 @@ public partial class MapViewport : Control
         // Paint tool: ghost preview at cursor position (Sims-style)
         DrawPaintPreview();
 
+        // Pending placement: floating preview with accept/cancel buttons
+        DrawPendingPlacement();
+
         // Overlays
         DrawOverlays(mapW, mapH);
 
@@ -241,6 +246,7 @@ public partial class MapViewport : Control
     private void DrawPaintPreview()
     {
         if (State == null || Map == null || _isPainting || _isDragging) return;
+        if (State.Pending.Active) return; // Don't show paint preview during pending placement
         if (State.ActiveTool != EditorTool.Paint && !_mosaicHandleDrag) return;
         if (!State.HoverValid && !_mosaicHandleDrag) return;
 
@@ -315,6 +321,108 @@ public partial class MapViewport : Control
             // Single raw GRH preview
             DrawTileGrh(State.EyedropGrh, hx, hy, center: centerOnTile, modulate: previewColor);
         }
+    }
+
+    /// <summary>
+    /// Draw the pending placement as a semi-transparent overlay with ✓ (accept) and ✗ (cancel) buttons.
+    /// The user can drag the placement to reposition it before committing.
+    /// </summary>
+    private void DrawPendingPlacement()
+    {
+        if (State == null || Map == null || !State.Pending.Active || State.Pending.Tiles == null) return;
+
+        var p = State.Pending;
+        var previewColor = new Color(1, 1, 1, 0.6f);
+
+        // Draw each tile of the pending buffer at current origin
+        for (int py = 0; py < p.Height; py++)
+            for (int px = 0; px < p.Width; px++)
+            {
+                int tx = p.OriginX + px, ty = p.OriginY + py;
+                if (!Map.InBounds(tx, ty)) continue;
+                ref var t = ref p.Tiles[px, py];
+                if (t.Layer1 > 0) DrawTileGrh(t.Layer1, tx, ty, modulate: previewColor);
+                if (t.Layer2 > 0) DrawTileGrh(t.Layer2, tx, ty, center: true, modulate: previewColor);
+                if (t.Layer3 > 0) DrawTileGrh(t.Layer3, tx, ty, center: true, modulate: previewColor);
+                if (t.Layer4 > 0) DrawTileGrh(t.Layer4, tx, ty, center: true, modulate: new Color(1, 1, 1, 0.4f));
+            }
+
+        // Outline around the placement area
+        var placementRect = new Rect2(
+            p.OriginX * TileSize, p.OriginY * TileSize,
+            p.Width * TileSize, p.Height * TileSize);
+        DrawRect(placementRect, new Color(0.2f, 0.8f, 1f, 0.15f));
+        DrawRect(placementRect, new Color(0.2f, 0.8f, 1f, 0.8f), false, 2f);
+
+        // Buttons at top of the placement area
+        float btnSize = TileSize * 0.55f;
+        float margin = 3f;
+
+        // ✓ Accept button (green, top-right)
+        _pendingAcceptRect = new Rect2(
+            (p.OriginX + p.Width) * TileSize - btnSize - margin,
+            p.OriginY * TileSize - btnSize - margin,
+            btnSize, btnSize);
+        DrawRect(_pendingAcceptRect, new Color(0.2f, 0.85f, 0.3f, 0.9f));
+        DrawRect(_pendingAcceptRect, new Color(0, 0, 0, 0.5f), false, 1f);
+        // Checkmark icon
+        float cx = _pendingAcceptRect.Position.X, cy = _pendingAcceptRect.Position.Y;
+        float s = btnSize;
+        DrawLine(new Vector2(cx + s * 0.2f, cy + s * 0.55f),
+                 new Vector2(cx + s * 0.4f, cy + s * 0.75f), Colors.White, 2f);
+        DrawLine(new Vector2(cx + s * 0.4f, cy + s * 0.75f),
+                 new Vector2(cx + s * 0.8f, cy + s * 0.25f), Colors.White, 2f);
+
+        // ✗ Cancel button (red, top-left)
+        _pendingCancelRect = new Rect2(
+            p.OriginX * TileSize + margin,
+            p.OriginY * TileSize - btnSize - margin,
+            btnSize, btnSize);
+        DrawRect(_pendingCancelRect, new Color(0.85f, 0.2f, 0.2f, 0.9f));
+        DrawRect(_pendingCancelRect, new Color(0, 0, 0, 0.5f), false, 1f);
+        // X icon
+        float cx2 = _pendingCancelRect.Position.X, cy2 = _pendingCancelRect.Position.Y;
+        float p2 = btnSize * 0.25f;
+        DrawLine(new Vector2(cx2 + p2, cy2 + p2), new Vector2(cx2 + s - p2, cy2 + s - p2), Colors.White, 2f);
+        DrawLine(new Vector2(cx2 + s - p2, cy2 + p2), new Vector2(cx2 + p2, cy2 + s - p2), Colors.White, 2f);
+
+        // Drag handle hint (move arrows) at center-top
+        float hx = placementRect.Position.X + placementRect.Size.X / 2 - btnSize / 2;
+        float hy = p.OriginY * TileSize - btnSize - margin;
+        var handleRect = new Rect2(hx, hy, btnSize, btnSize);
+        DrawRect(handleRect, new Color(1f, 0.85f, 0.2f, 0.85f));
+        DrawRect(handleRect, new Color(0, 0, 0, 0.5f), false, 1f);
+        float hcx = hx + btnSize / 2, hcy = hy + btnSize / 2;
+        float ar = btnSize * 0.3f;
+        var arrCol = new Color(0, 0, 0, 0.7f);
+        DrawLine(new Vector2(hcx - ar, hcy), new Vector2(hcx + ar, hcy), arrCol, 1.5f);
+        DrawLine(new Vector2(hcx, hcy - ar), new Vector2(hcx, hcy + ar), arrCol, 1.5f);
+    }
+
+    // Cached button rects for click detection (world-space coords set during _Draw)
+    private Rect2 _pendingAcceptRect;
+    private Rect2 _pendingCancelRect;
+
+    // Pending placement dragging state
+    private bool _pendingDrag;
+    private Vector2I _pendingDragStart;
+
+    /// <summary>
+    /// Check if a screen-space click hits the pending accept button.
+    /// </summary>
+    private bool IsPendingAcceptClick(Vector2 screenPos)
+    {
+        var world = ScreenToWorld(screenPos);
+        return _pendingAcceptRect.HasPoint(world);
+    }
+
+    /// <summary>
+    /// Check if a screen-space click hits the pending cancel button.
+    /// </summary>
+    private bool IsPendingCancelClick(Vector2 screenPos)
+    {
+        var world = ScreenToWorld(screenPos);
+        return _pendingCancelRect.HasPoint(world);
     }
 
     private void DrawPickOverlay()
@@ -778,6 +886,40 @@ public partial class MapViewport : Control
 
             var tile = ScreenToTile(mb.Position);
 
+            // Pending placement interaction: accept, cancel, or drag to reposition
+            if (State!.Pending.Active)
+            {
+                if (mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                {
+                    if (IsPendingAcceptClick(mb.Position))
+                    {
+                        OnPendingAccept?.Invoke();
+                        return;
+                    }
+                    if (IsPendingCancelClick(mb.Position))
+                    {
+                        OnPendingCancel?.Invoke();
+                        return;
+                    }
+                    // Start dragging the pending placement
+                    _pendingDrag = true;
+                    _pendingDragStart = tile;
+                    return;
+                }
+                if (!mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+                {
+                    _pendingDrag = false;
+                    return;
+                }
+                // Escape to cancel (handled in _UnhandledKeyInput, but also right-click)
+                if (mb.Pressed && mb.ButtonIndex == MouseButton.Right)
+                {
+                    OnPendingCancel?.Invoke();
+                    return;
+                }
+                return; // Block all other input while pending
+            }
+
             if (mb.Pressed)
             {
                 // Double-click: follow exits (any tool)
@@ -886,29 +1028,19 @@ public partial class MapViewport : Control
                 if (_isDragging)
                 {
                     _isDragging = false;
-                    var delta = tile - _dragStart;
-                    if (delta != Vector2I.Zero && _moveSnapshot != null)
+                    if (_moveBuffer != null && _moveSnapshot != null && Map != null)
                     {
-                        // Record undo: compare snapshot vs current state
-                        Undo?.BeginBatch("Move");
-                        for (int uy = 1; uy <= Map!.Height; uy++)
-                            for (int ux = 1; ux <= Map.Width; ux++)
-                                if (!Map.Tiles[ux, uy].Equals(_moveSnapshot[ux, uy]))
-                                    Undo?.RecordTileChange(ux, uy, _moveSnapshot[ux, uy], Map.Tiles[ux, uy]);
-                        Undo?.EndBatch();
+                        // Restore map to original before entering pending mode
+                        Array.Copy(_moveSnapshot, Map.Tiles, Map.Tiles.Length);
 
-                        // Move selection to follow
-                        State!.SetSelection(
-                            _moveSelX1 + delta.X, _moveSelY1 + delta.Y,
-                            _moveSelX1 + _moveSelW - 1 + delta.X, _moveSelY1 + _moveSelH - 1 + delta.Y);
+                        var delta = tile - _dragStart;
+                        int destX = _moveSelX1 + delta.X;
+                        int destY = _moveSelY1 + delta.Y;
 
-                        // Rebuild particle streams at new positions
-                        Particles?.BuildStreamsFromMap(Map);
-                    }
-                    else if (_moveSnapshot != null)
-                    {
-                        // No movement — restore original state
-                        Array.Copy(_moveSnapshot, Map!.Tiles, Map.Tiles.Length);
+                        // Enter pending placement mode (user confirms with ✓ or cancels with ✗)
+                        State!.Pending.Begin(_moveBuffer, _moveSelW, _moveSelH,
+                            destX, destY, isMove: true, snapshot: _moveSnapshot,
+                            srcX: _moveSelX1, srcY: _moveSelY1);
                     }
                     _moveSnapshot = null;
                     _moveBuffer = null;
@@ -931,6 +1063,20 @@ public partial class MapViewport : Control
             State.HoverX = hoverTile.X;
             State.HoverY = hoverTile.Y;
             State.HoverValid = Map != null && Map.InBounds(hoverTile.X, hoverTile.Y);
+        }
+
+        // Pending placement drag: reposition tile-by-tile
+        if (_pendingDrag && State!.Pending.Active)
+        {
+            var delta = hoverTile - _pendingDragStart;
+            if (delta != Vector2I.Zero)
+            {
+                State.Pending.OriginX += delta.X;
+                State.Pending.OriginY += delta.Y;
+                _pendingDragStart = hoverTile;
+                QueueRedraw();
+            }
+            return;
         }
 
         if (_isPanning)
@@ -984,6 +1130,10 @@ public partial class MapViewport : Control
             State.Pick.DragY = hoverTile.Y;
             QueueRedraw();
         }
+
+        // Redraw on hover for paint preview and pending placement
+        if (State.ActiveTool == EditorTool.Paint || State.Pending.Active)
+            QueueRedraw();
     }
 
     #endregion

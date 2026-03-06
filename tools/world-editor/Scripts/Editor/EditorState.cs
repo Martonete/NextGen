@@ -32,6 +32,9 @@ public class EditorState
     public MapTile[,]? Clipboard;
     public int ClipWidth, ClipHeight;
 
+    // Pending placement: floating preview before committing (paste or move)
+    public readonly PendingPlacement Pending = new();
+
     // Grid / overlay toggles
     public bool ShowGrid = true;
     public bool ShowBlocked = true;
@@ -165,6 +168,42 @@ public enum PickTarget
     Npc,
     Object,
     Particle,  // particle group
+}
+
+/// Floating tile buffer that the user can reposition before committing.
+/// Used by Paste (Ctrl+V) and Move tool release.
+public class PendingPlacement
+{
+    public bool Active;
+    public MapTile[,]? Tiles;      // [0..W-1, 0..H-1]
+    public int Width, Height;
+    public int OriginX, OriginY;   // Current top-left position on the map
+    public bool IsMove;            // True if this came from a move (clears source on commit)
+    public int SourceX, SourceY;   // Original position of moved tiles (for clearing source)
+    public MapTile[,]? MoveSnapshot; // Original map state for move operations
+
+    public void Begin(MapTile[,] tiles, int w, int h, int ox, int oy,
+                      bool isMove = false, MapTile[,]? snapshot = null,
+                      int srcX = 0, int srcY = 0)
+    {
+        Active = true;
+        Tiles = tiles;
+        Width = w;
+        Height = h;
+        OriginX = ox;
+        OriginY = oy;
+        IsMove = isMove;
+        SourceX = srcX;
+        SourceY = srcY;
+        MoveSnapshot = snapshot;
+    }
+
+    public void Cancel()
+    {
+        Active = false;
+        Tiles = null;
+        MoveSnapshot = null;
+    }
 }
 
 public enum EditorTool
