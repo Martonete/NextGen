@@ -652,7 +652,7 @@ public partial class EditorMain : Control
         {
             case 0: _undo.Undo(_map!); _viewport?.QueueRedraw(); break;
             case 1: _undo.Redo(_map!); _viewport?.QueueRedraw(); break;
-            case 2: _state.CopySelection(_map!); SetStatus("Copiado"); break;
+            case 2: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
             case 5: DeleteSelection(); break;
@@ -907,20 +907,40 @@ public partial class EditorMain : Control
 
     private void PasteClipboard()
     {
-        if (_map == null || _state.Clipboard == null || !_state.HasSelection) return;
+        if (_map == null || _state.Clipboard == null) return;
+
+        // Paste origin: selection top-left if available, otherwise hover cursor position
+        int originX, originY;
+        if (_state.HasSelection)
+        {
+            originX = _state.SelX1;
+            originY = _state.SelY1;
+        }
+        else if (_state.HoverValid)
+        {
+            originX = _state.HoverX;
+            originY = _state.HoverY;
+        }
+        else
+        {
+            SetStatus("Posiciona el cursor donde quieras pegar");
+            return;
+        }
 
         _undo.BeginBatch("Paste");
         for (int y = 0; y < _state.ClipHeight; y++)
             for (int x = 0; x < _state.ClipWidth; x++)
             {
-                int dx = _state.SelX1 + x;
-                int dy = _state.SelY1 + y;
+                int dx = originX + x;
+                int dy = originY + y;
                 if (!_map.InBounds(dx, dy)) continue;
                 var before = _map.Tiles[dx, dy];
                 _map.Tiles[dx, dy] = _state.Clipboard[x + 1, y + 1];
                 _undo.RecordTileChange(dx, dy, before, _map.Tiles[dx, dy]);
             }
         _undo.EndBatch();
+        _state.MarkDirty();
+        SetStatus($"Pegado {_state.ClipWidth}x{_state.ClipHeight} tiles en ({originX},{originY})");
         _viewport?.QueueRedraw();
     }
 
@@ -1011,7 +1031,7 @@ public partial class EditorMain : Control
                 case Key.O: RequestOpenMap(); break;
                 case Key.N: RequestNewMap(); break;
                 case Key.X: CutSelection(); break;
-                case Key.C: _state.CopySelection(_map!); SetStatus("Copiado"); break;
+                case Key.C: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
                 case Key.V: PasteClipboard(); break;
             }
         }
