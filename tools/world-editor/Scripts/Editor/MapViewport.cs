@@ -283,21 +283,31 @@ public partial class MapViewport : Control
                     tw * TileSize, th * TileSize);
                 DrawRect(patternRect, new Color(1f, 1f, 0.3f, 0.3f), false, 1.5f);
 
-                // Draggable handle at top-left corner
-                float hs = TileSize * 0.35f; // handle size
+                // Draggable handle at top-left corner (move pattern)
+                float hs = TileSize * 0.35f;
                 float hpx = baseX * TileSize + 1;
                 float hpy = baseY * TileSize + 1;
                 var handleBg = _mosaicHandleDrag
-                    ? new Color(1f, 0.4f, 0.1f, 0.9f)   // orange when dragging
-                    : new Color(1f, 0.85f, 0.2f, 0.85f); // yellow normally
+                    ? new Color(1f, 0.4f, 0.1f, 0.9f)
+                    : new Color(1f, 0.85f, 0.2f, 0.85f);
                 DrawRect(new Rect2(hpx, hpy, hs, hs), handleBg);
                 DrawRect(new Rect2(hpx, hpy, hs, hs), new Color(0, 0, 0, 0.5f), false, 1f);
-                // Arrow icon: small cross inside handle
                 float cx = hpx + hs / 2f, cy = hpy + hs / 2f;
                 float ar = hs * 0.3f;
                 var arrowCol = new Color(0, 0, 0, 0.7f);
                 DrawLine(new Vector2(cx - ar, cy), new Vector2(cx + ar, cy), arrowCol, 1.5f);
                 DrawLine(new Vector2(cx, cy - ar), new Vector2(cx, cy + ar), arrowCol, 1.5f);
+
+                // Fill/stamp button at top-right corner
+                float fpx = (baseX + tw) * TileSize - hs - 1;
+                float fpy = baseY * TileSize + 1;
+                var fillBg = new Color(0.3f, 0.85f, 0.4f, 0.85f); // green
+                DrawRect(new Rect2(fpx, fpy, hs, hs), fillBg);
+                DrawRect(new Rect2(fpx, fpy, hs, hs), new Color(0, 0, 0, 0.5f), false, 1f);
+                // Fill icon: small filled square inside
+                float fi = hs * 0.25f;
+                DrawRect(new Rect2(fpx + fi, fpy + fi, hs - fi * 2, hs - fi * 2),
+                    new Color(0, 0, 0, 0.6f));
             }
         }
         else if (State.EyedropGrh > 0)
@@ -644,27 +654,67 @@ public partial class MapViewport : Control
     }
 
     /// <summary>
-    /// Check if a screen-space click is within the mosaic handle area.
-    /// The handle is at the top-left corner of the pattern preview.
+    /// Convert screen position to world coordinates.
+    /// </summary>
+    private Vector2 ScreenToWorld(Vector2 screenPos)
+    {
+        var local = ToPanel(screenPos);
+        return (local - State!.CameraOffset) / State.Zoom;
+    }
+
+    /// <summary>
+    /// Check if a screen-space click is within the mosaic move handle (top-left corner).
     /// </summary>
     private bool IsMosaicHandleClick(Vector2 screenPos, TextureRef texRef)
     {
         if (State == null || Map == null || !State.HoverValid) return false;
         var (baseX, baseY) = GetMosaicBase(State.HoverX, State.HoverY, texRef);
-
-        // Handle world position (top-left of base tile)
-        float handleWorldX = baseX * TileSize;
-        float handleWorldY = baseY * TileSize;
-
-        // Click in world coordinates
-        var local = ToPanel(screenPos);
-        float clickWorldX = (local.X - State.CameraOffset.X) / State.Zoom;
-        float clickWorldY = (local.Y - State.CameraOffset.Y) / State.Zoom;
-
-        // Hit test: handle is a small square at the corner
+        var click = ScreenToWorld(screenPos);
         float hs = TileSize * 0.45f;
-        return clickWorldX >= handleWorldX && clickWorldX <= handleWorldX + hs &&
-               clickWorldY >= handleWorldY && clickWorldY <= handleWorldY + hs;
+        float hx = baseX * TileSize;
+        float hy = baseY * TileSize;
+        return click.X >= hx && click.X <= hx + hs && click.Y >= hy && click.Y <= hy + hs;
+    }
+
+    /// <summary>
+    /// Check if a screen-space click is within the mosaic fill button (top-right corner).
+    /// </summary>
+    private bool IsMosaicFillClick(Vector2 screenPos, TextureRef texRef)
+    {
+        if (State == null || Map == null || !State.HoverValid) return false;
+        int tw = Math.Max(texRef.TileWidth, 1);
+        var (baseX, baseY) = GetMosaicBase(State.HoverX, State.HoverY, texRef);
+        var click = ScreenToWorld(screenPos);
+        float hs = TileSize * 0.45f;
+        float fx = (baseX + tw) * TileSize - hs;
+        float fy = baseY * TileSize;
+        return click.X >= fx && click.X <= fx + hs && click.Y >= fy && click.Y <= fy + hs;
+    }
+
+    /// <summary>
+    /// Stamp the entire NxM mosaic pattern at the current preview position.
+    /// </summary>
+    private void StampMosaicPattern(TextureRef texRef, int hoverX, int hoverY)
+    {
+        if (Map == null || State == null) return;
+        int tw = Math.Max(texRef.TileWidth, 1);
+        int th = Math.Max(texRef.TileHeight, 1);
+        var (baseX, baseY) = GetMosaicBase(hoverX, hoverY, texRef);
+
+        Undo?.BeginBatch("Stamp Pattern");
+        for (int py = 0; py < th; py++)
+            for (int px = 0; px < tw; px++)
+            {
+                int tx = baseX + px;
+                int ty = baseY + py;
+                if (!Map.InBounds(tx, ty)) continue;
+                var before = Map.Tiles[tx, ty];
+                int grhIdx = texRef.GrhIndex + (py * tw) + px;
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)grhIdx);
+                Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
+            }
+        Undo?.EndBatch();
+        QueueRedraw();
     }
 
     private void StartPan(Vector2 position)
@@ -747,14 +797,21 @@ public partial class MapViewport : Control
                         StartPan(mb.Position);
                         break;
                     case EditorTool.Paint:
-                        // Check if clicking the mosaic handle (multi-tile offset drag)
+                        // Multi-tile: check mosaic buttons first
                         if (State.SelectedTexture != null &&
-                            Math.Max(State.SelectedTexture.TileWidth, 1) > 1 &&
-                            IsMosaicHandleClick(mb.Position, State.SelectedTexture))
+                            Math.Max(State.SelectedTexture.TileWidth, 1) > 1)
                         {
-                            _mosaicHandleDrag = true;
-                            _mosaicHandleDragStart = tile;
-                            break;
+                            if (IsMosaicHandleClick(mb.Position, State.SelectedTexture))
+                            {
+                                _mosaicHandleDrag = true;
+                                _mosaicHandleDragStart = tile;
+                                break;
+                            }
+                            if (IsMosaicFillClick(mb.Position, State.SelectedTexture))
+                            {
+                                StampMosaicPattern(State.SelectedTexture, tile.X, tile.Y);
+                                break;
+                            }
                         }
                         goto case EditorTool.Block; // fall through to paint
                     case EditorTool.Erase:
