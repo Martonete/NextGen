@@ -216,6 +216,7 @@ public class GameState
     public bool ShowGuildPanel;       // Trigger to open guild panel
     public bool ShowGuildFoundation;  // Trigger to open guild creation form
     public bool SeguroClan = true;    // Clan safe toggle (local mirror)
+    public string UserGuildName = ""; // Current user's guild name (from CC tag)
     public string GuildNewsText = ""; // Guild news from server
     public string GuildMotdText = ""; // Guild MOTD from server
     public string GuildCodexText = ""; // Guild codex from server

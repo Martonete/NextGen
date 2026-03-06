@@ -1179,6 +1179,14 @@ public partial class PacketHandler
         }
 
         _state.Characters[charIndex] = ch;
+
+        // Extract guild name for own character
+        if (charIndex == _state.UserCharIndex)
+        {
+            int ltIdx = name.IndexOf('<');
+            _state.UserGuildName = ltIdx >= 0 ? name[(ltIdx + 1)..] : "";
+        }
+
         GD.Print($"[CC] {name} idx={charIndex} body={body} head={head} weapon={weapon} shield={shield} casco={helmet} (binary)");
 
         if (body <= 0)

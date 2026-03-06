@@ -2640,11 +2640,14 @@ public partial class Main : Control
                 _travelPanel?.OpenTravel();
             }
 
-            // Guild panels
+            // Guild panels — update clan tab in options panel
             if (_state.ShowGuildPanel)
             {
                 _state.ShowGuildPanel = false;
-                _guildPanel?.ShowView(_state.GuildInfoType);
+                _optionsPanel?.UpdateClanContent();
+                // Also open options on Clanes tab if not already visible
+                if (_optionsPanel != null && !_state.OptionsPanelOpen)
+                    _optionsPanel.OpenClanTab();
             }
             if (_state.ShowGuildFoundation)
             {
@@ -2745,6 +2748,7 @@ public partial class Main : Control
                     _deathPanel!.Init(_state, _tcp, _dataPath);
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
+                    _optionsPanel!.Init(_state, _state.Config, _dataPath, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
