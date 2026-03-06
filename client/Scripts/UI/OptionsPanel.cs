@@ -1100,6 +1100,21 @@ public partial class OptionsPanel : PanelContainer
         };
         actionRow.AddChild(expelBtn);
 
+        var closeGuildBtn = new Button();
+        closeGuildBtn.Text = "Cerrar Clan";
+        closeGuildBtn.AddThemeFontSizeOverride("font_size", 10);
+        closeGuildBtn.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+        closeGuildBtn.Pressed += () =>
+        {
+            if (_tcp != null)
+            {
+                _tcp.SendPacket(ClientPackets.WriteTalk("/CERRARCLAN"));
+                _clanTabRequested = false;
+                CallDeferred(nameof(RefreshClanTab));
+            }
+        };
+        actionRow.AddChild(closeGuildBtn);
+
         _clanContent.AddChild(actionRow);
     }
 
