@@ -21,6 +21,9 @@ public class EditorState
     // Raw GRH for painting (set by eyedrop when no TextureRef match)
     public int EyedropGrh;
 
+    // Mosaic offset: shifts the multi-tile pattern alignment on the map
+    public int MosaicOffsetX, MosaicOffsetY;
+
     // Selection rectangle (tile coords, inclusive)
     public bool HasSelection;
     public int SelX1, SelY1, SelX2, SelY2;

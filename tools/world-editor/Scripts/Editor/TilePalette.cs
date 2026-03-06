@@ -173,22 +173,71 @@ public partial class TilePalette : VBoxContainer
         int grhIndex = texRef.GrhIndex;
         if (grhIndex <= 0 || grhIndex >= Grhs.Length) return null;
 
+        int tw = Math.Max(texRef.TileWidth, 1);
+        int th = Math.Max(texRef.TileHeight, 1);
+
+        if (tw == 1 && th == 1)
+        {
+            // Single tile: crop from source texture (original behavior)
+            return GenerateSingleGrhPreview(grhIndex);
+        }
+
+        // Multi-tile: compose NxM pattern into a single preview image
+        int fullW = tw * 32;
+        int fullH = th * 32;
+        var composite = Image.CreateEmpty(fullW, fullH, false, Image.Format.Rgba8);
+
+        for (int py = 0; py < th; py++)
+            for (int px = 0; px < tw; px++)
+            {
+                int subGrh = grhIndex + py * tw + px;
+                if (subGrh <= 0 || subGrh >= Grhs.Length) continue;
+
+                var grh = Grhs[subGrh];
+                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+                {
+                    int fIdx = grh.Frames[0];
+                    if (fIdx > 0 && fIdx < Grhs.Length) grh = Grhs[fIdx];
+                }
+                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+
+                var srcTex = Textures.GetTexture(grh.FileNum);
+                if (srcTex == null) continue;
+                var srcImg = srcTex.GetImage();
+                if (srcImg == null) continue;
+
+                int cropW = Math.Min(grh.PixelWidth, srcImg.GetWidth() - grh.SX);
+                int cropH = Math.Min(grh.PixelHeight, srcImg.GetHeight() - grh.SY);
+                if (cropW <= 0 || cropH <= 0) continue;
+
+                var tileImg = srcImg.GetRegion(new Rect2I(grh.SX, grh.SY, cropW, cropH));
+                composite.BlitRect(tileImg, new Rect2I(0, 0, cropW, cropH),
+                    new Vector2I(px * 32, py * 32));
+            }
+
+        // Scale down to preview size (maintain aspect ratio)
+        composite.Resize(PreviewSize, PreviewSize, Image.Interpolation.Nearest);
+        return ImageTexture.CreateFromImage(composite);
+    }
+
+    private Texture2D? GenerateSingleGrhPreview(int grhIndex)
+    {
+        if (Grhs == null || Textures == null) return null;
+        if (grhIndex <= 0 || grhIndex >= Grhs.Length) return null;
+
         var grh = Grhs[grhIndex];
         if (grh.NumFrames <= 0) return null;
 
-        // For animations, use first frame
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
             int fIdx = grh.Frames[0];
-            if (fIdx > 0 && fIdx < Grhs.Length)
-                grh = Grhs[fIdx];
+            if (fIdx > 0 && fIdx < Grhs.Length) grh = Grhs[fIdx];
         }
 
         if (grh.FileNum <= 0) return null;
         var srcTex = Textures.GetTexture(grh.FileNum);
         if (srcTex == null) return null;
 
-        // Create preview by cropping from source texture
         var srcImg = srcTex.GetImage();
         if (srcImg == null) return null;
 

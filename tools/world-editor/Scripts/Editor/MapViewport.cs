@@ -40,6 +40,10 @@ public partial class MapViewport : Control
 
     private readonly System.Collections.Generic.HashSet<long> _paintedThisStroke = new();
 
+    // Mosaic handle drag (reposition multi-tile pattern)
+    private bool _mosaicHandleDrag;
+    private Vector2I _mosaicHandleDragStart;
+
     // Move tool: live snapshot system
     private MapTile[,]? _moveSnapshot;   // Full map state before drag started
     private MapTile[,]? _moveBuffer;     // Tiles being moved (selection copy)
@@ -203,17 +207,45 @@ public partial class MapViewport : Control
     }
 
     /// <summary>
+    /// Get the GRH index for a tile position using the mosaic formula with user offset.
+    /// </summary>
+    private int GetMosaicGrh(TextureRef texRef, int tileX, int tileY)
+    {
+        int tw = Math.Max(texRef.TileWidth, 1);
+        int th = Math.Max(texRef.TileHeight, 1);
+        int offX = State!.MosaicOffsetX;
+        int offY = State.MosaicOffsetY;
+        int px = (((tileX - 1 - offX) % tw) + tw) % tw;
+        int py = (((tileY - 1 - offY) % th) + th) % th;
+        return texRef.GrhIndex + py * tw + px;
+    }
+
+    /// <summary>
+    /// Get the top-left tile of the pattern instance nearest to the given tile.
+    /// </summary>
+    private (int baseX, int baseY) GetMosaicBase(int hoverX, int hoverY, TextureRef texRef)
+    {
+        int tw = Math.Max(texRef.TileWidth, 1);
+        int th = Math.Max(texRef.TileHeight, 1);
+        int offX = State!.MosaicOffsetX;
+        int offY = State.MosaicOffsetY;
+        int curPx = (((hoverX - 1 - offX) % tw) + tw) % tw;
+        int curPy = (((hoverY - 1 - offY) % th) + th) % th;
+        return (hoverX - curPx, hoverY - curPy);
+    }
+
+    /// <summary>
     /// Draw a semi-transparent preview of the selected texture at the cursor position.
     /// Like Sims construction mode — shows what will be placed before clicking.
     /// </summary>
     private void DrawPaintPreview()
     {
         if (State == null || Map == null || _isPainting || _isDragging) return;
-        if (State.ActiveTool != EditorTool.Paint) return;
-        if (!State.HoverValid) return;
+        if (State.ActiveTool != EditorTool.Paint && !_mosaicHandleDrag) return;
+        if (!State.HoverValid && !_mosaicHandleDrag) return;
 
         int hx = State.HoverX, hy = State.HoverY;
-        if (!Map.InBounds(hx, hy)) return;
+        if (!Map.InBounds(hx, hy) && !_mosaicHandleDrag) return;
 
         var previewColor = new Color(1, 1, 1, 0.55f);
         bool centerOnTile = State.ActiveLayer >= 2;
@@ -231,13 +263,10 @@ public partial class MapViewport : Control
             }
             else
             {
-                // Multi-tile mosaic: show a preview area around cursor
-                // Highlight which pattern tile corresponds to hover position
-                int curPx = (hx - 1) % tw;
-                int curPy = (hy - 1) % th;
-                // Show the full pattern anchored so the cursor tile is correct
-                int baseX = hx - curPx;
-                int baseY = hy - curPy;
+                // Multi-tile mosaic with user-adjustable offset
+                var (baseX, baseY) = GetMosaicBase(hx, hy, texRef);
+
+                // Draw pattern preview
                 for (int py = 0; py < th; py++)
                     for (int px = 0; px < tw; px++)
                     {
@@ -248,11 +277,27 @@ public partial class MapViewport : Control
                         DrawTileGrh(grhIdx, tx, ty, center: centerOnTile, modulate: previewColor);
                     }
 
-                // Outline showing the pattern footprint
+                // Pattern outline
                 var patternRect = new Rect2(
                     baseX * TileSize, baseY * TileSize,
                     tw * TileSize, th * TileSize);
                 DrawRect(patternRect, new Color(1f, 1f, 0.3f, 0.3f), false, 1.5f);
+
+                // Draggable handle at top-left corner
+                float hs = TileSize * 0.35f; // handle size
+                float hpx = baseX * TileSize + 1;
+                float hpy = baseY * TileSize + 1;
+                var handleBg = _mosaicHandleDrag
+                    ? new Color(1f, 0.4f, 0.1f, 0.9f)   // orange when dragging
+                    : new Color(1f, 0.85f, 0.2f, 0.85f); // yellow normally
+                DrawRect(new Rect2(hpx, hpy, hs, hs), handleBg);
+                DrawRect(new Rect2(hpx, hpy, hs, hs), new Color(0, 0, 0, 0.5f), false, 1f);
+                // Arrow icon: small cross inside handle
+                float cx = hpx + hs / 2f, cy = hpy + hs / 2f;
+                float ar = hs * 0.3f;
+                var arrowCol = new Color(0, 0, 0, 0.7f);
+                DrawLine(new Vector2(cx - ar, cy), new Vector2(cx + ar, cy), arrowCol, 1.5f);
+                DrawLine(new Vector2(cx, cy - ar), new Vector2(cx, cy + ar), arrowCol, 1.5f);
             }
         }
         else if (State.EyedropGrh > 0)
@@ -598,6 +643,30 @@ public partial class MapViewport : Control
         return screenPos - GlobalPosition;
     }
 
+    /// <summary>
+    /// Check if a screen-space click is within the mosaic handle area.
+    /// The handle is at the top-left corner of the pattern preview.
+    /// </summary>
+    private bool IsMosaicHandleClick(Vector2 screenPos, TextureRef texRef)
+    {
+        if (State == null || Map == null || !State.HoverValid) return false;
+        var (baseX, baseY) = GetMosaicBase(State.HoverX, State.HoverY, texRef);
+
+        // Handle world position (top-left of base tile)
+        float handleWorldX = baseX * TileSize;
+        float handleWorldY = baseY * TileSize;
+
+        // Click in world coordinates
+        var local = ToPanel(screenPos);
+        float clickWorldX = (local.X - State.CameraOffset.X) / State.Zoom;
+        float clickWorldY = (local.Y - State.CameraOffset.Y) / State.Zoom;
+
+        // Hit test: handle is a small square at the corner
+        float hs = TileSize * 0.45f;
+        return clickWorldX >= handleWorldX && clickWorldX <= handleWorldX + hs &&
+               clickWorldY >= handleWorldY && clickWorldY <= handleWorldY + hs;
+    }
+
     private void StartPan(Vector2 position)
     {
         _isPanning = true;
@@ -678,6 +747,16 @@ public partial class MapViewport : Control
                         StartPan(mb.Position);
                         break;
                     case EditorTool.Paint:
+                        // Check if clicking the mosaic handle (multi-tile offset drag)
+                        if (State.SelectedTexture != null &&
+                            Math.Max(State.SelectedTexture.TileWidth, 1) > 1 &&
+                            IsMosaicHandleClick(mb.Position, State.SelectedTexture))
+                        {
+                            _mosaicHandleDrag = true;
+                            _mosaicHandleDragStart = tile;
+                            break;
+                        }
+                        goto case EditorTool.Block; // fall through to paint
                     case EditorTool.Erase:
                     case EditorTool.Block:
                         _isPainting = true;
@@ -739,6 +818,7 @@ public partial class MapViewport : Control
             }
             else // Left button released
             {
+                if (_mosaicHandleDrag) { _mosaicHandleDrag = false; QueueRedraw(); }
                 if (_isPainting) { _isPainting = false; Undo?.EndBatch(); }
                 if (_isSelecting)
                 {
@@ -800,6 +880,20 @@ public partial class MapViewport : Control
         {
             State!.CameraOffset = _panCameraStart + (ToPanel(mm.Position) - _panStart);
             QueueRedraw();
+            return;
+        }
+
+        // Mosaic handle drag: adjust offset tile by tile
+        if (_mosaicHandleDrag)
+        {
+            var delta = hoverTile - _mosaicHandleDragStart;
+            if (delta != Vector2I.Zero)
+            {
+                State!.MosaicOffsetX += delta.X;
+                State.MosaicOffsetY += delta.Y;
+                _mosaicHandleDragStart = hoverTile;
+                QueueRedraw();
+            }
             return;
         }
 
@@ -981,11 +1075,8 @@ public partial class MapViewport : Control
                 if (_paintedThisStroke.Contains(key)) return;
                 _paintedThisStroke.Add(key);
 
-                // VB6 mosaic formula: each tile gets its GRH based on map position
-                var texRef = State.SelectedTexture;
-                int tw = Math.Max(texRef.TileWidth, 1);
-                int th = Math.Max(texRef.TileHeight, 1);
-                int grhIdx = texRef.GrhIndex + (((ty - 1) % th) * tw) + ((tx - 1) % tw);
+                // Mosaic formula with user-adjustable offset
+                int grhIdx = GetMosaicGrh(State.SelectedTexture, tx, ty);
 
                 var before = Map.Tiles[tx, ty];
                 SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)grhIdx);
@@ -1099,9 +1190,7 @@ public partial class MapViewport : Control
         else
         {
             // Check no-op: would the start tile get the same GRH?
-            int tw = Math.Max(texRef.TileWidth, 1);
-            int th = Math.Max(texRef.TileHeight, 1);
-            int startFillGrh = texRef.GrhIndex + (((startY - 1) % th) * tw) + ((startX - 1) % tw);
+            int startFillGrh = GetMosaicGrh(texRef, startX, startY);
             if (targetGrh == (short)startFillGrh) return;
         }
 
@@ -1125,10 +1214,8 @@ public partial class MapViewport : Control
             short fillGrh;
             if (texRef != null)
             {
-                // VB6 mosaic: per-tile GRH based on map position
-                int tw = Math.Max(texRef.TileWidth, 1);
-                int th = Math.Max(texRef.TileHeight, 1);
-                fillGrh = (short)(texRef.GrhIndex + (((y - 1) % th) * tw) + ((x - 1) % tw));
+                // Mosaic with user offset
+                fillGrh = (short)GetMosaicGrh(texRef, x, y);
             }
             else
             {
