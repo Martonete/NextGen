@@ -2652,6 +2652,7 @@ public partial class Main : Control
             if (_state.ShowGuildFoundation)
             {
                 _state.ShowGuildFoundation = false;
+                _optionsPanel?.Close();
                 _guildFoundationPanel?.Show();
             }
 
