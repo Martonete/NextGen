@@ -385,7 +385,8 @@ mod tests {
 
     #[test]
     fn load_real_npcs() {
-        let base = Path::new("/workspace/Tierras-Sagradas-AO/server-rust/server");
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
+        let base = base.as_path();
         if !base.join("dat").join("NPCs.dat").exists() {
             return;
         }

@@ -4341,7 +4341,9 @@ mod db_tests {
     use tokio::net::{TcpListener, TcpStream};
 
     /// Real server base path (contains dat/, maps/ etc.)
-    const SERVER_BASE: &str = "/workspace/Tierras-Sagradas-AO/server-rust/server";
+    fn server_base() -> std::path::PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("server")
+    }
 
     /// Create a temp test directory with symlinks to real game data.
     fn setup_test_dir(test_name: &str) -> PathBuf {
@@ -4350,7 +4352,8 @@ mod db_tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         // Symlink data directories from the real server
-        let base = Path::new(SERVER_BASE);
+        let base = server_base();
+        let base = base.as_path();
         for subdir in &["dat", "maps"] {
             let src = base.join(subdir);
             let dst = dir.join(subdir);

@@ -459,7 +459,7 @@ comHacerCambio executes:
 
 ## File References
 
-- **Main logic**: `/workspace/Tierras-Sagradas-AO/Servidor/Codigo/AA_ComercioUsuarios.bas`
-- **Opcode routing**: `/workspace/Tierras-Sagradas-AO/Servidor/Codigo/TCP_HandleData1.bas` (lines 1578-1602)
-- **Trade initiation**: `/workspace/Tierras-Sagradas-AO/Servidor/Codigo/TCP_HandleData2.bas` (lines 1755-1786)
-- **Data structures**: `/workspace/Tierras-Sagradas-AO/Servidor/Codigo/Declares.bas` (lines 1565-1573, 1327)
+- **Main logic**: `Servidor/Codigo/AA_ComercioUsuarios.bas`
+- **Opcode routing**: `Servidor/Codigo/TCP_HandleData1.bas` (lines 1578-1602)
+- **Trade initiation**: `Servidor/Codigo/TCP_HandleData2.bas` (lines 1755-1786)
+- **Data structures**: `Servidor/Codigo/Declares.bas` (lines 1565-1573, 1327)
