@@ -104,8 +104,7 @@ public partial class OptionsPanel : PanelContainer
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        CustomMinimumSize = new Vector2(PanelW, 0);
         MouseFilter = MouseFilterEnum.Stop;
 
         // Panel style
@@ -118,7 +117,7 @@ public partial class OptionsPanel : PanelContainer
         AddThemeStyleboxOverride("panel", style);
 
         var root = new VBoxContainer();
-        root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        root.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
         // Title bar with close button
         var titleBar = new HBoxContainer();
@@ -180,27 +179,16 @@ public partial class OptionsPanel : PanelContainer
         root.AddChild(sep);
         root.AddChild(Spacer(4));
 
-        // Tab content area (ScrollContainer for overflow)
-        var scroll = new ScrollContainer();
-        scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-
-        var tabHost = new Control();
-        tabHost.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        tabHost.SizeFlagsVertical = SizeFlags.ExpandFill;
-
+        // Tab content area — auto-sizes to visible tab
         _gameTab = BuildGameTab();
         _controlsTab = BuildControlsTab();
         _renderTab = BuildRenderTab();
         _clanTab = BuildClanTab();
 
-        tabHost.AddChild(_gameTab);
-        tabHost.AddChild(_controlsTab);
-        tabHost.AddChild(_renderTab);
-        tabHost.AddChild(_clanTab);
-
-        scroll.AddChild(tabHost);
-        root.AddChild(scroll);
+        root.AddChild(_gameTab);
+        root.AddChild(_controlsTab);
+        root.AddChild(_renderTab);
+        root.AddChild(_clanTab);
 
         AddChild(root);
 
