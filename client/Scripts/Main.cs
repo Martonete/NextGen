@@ -1601,7 +1601,9 @@ public partial class Main : Control
 
     private static readonly string[] RaceNames = { "Humano", "Elfo", "Elfo Oscuro", "Enano", "Gnomo" };
     private static readonly string[] GenderNames = { "Hombre", "Mujer" };
-    private static readonly string[] ClassNames = { "Mago", "Clerigo", "Guerrero", "Asesino", "Bardo", "Druida", "Paladin", "Cazador" };
+    // VB6 eClass order: 1=Mago,2=Clerigo,3=Guerrero,4=Asesino,5=Ladron,6=Bardo,
+    //   7=Druida,8=Bandido,9=Paladin,10=Cazador,11=Trabajador,12=Pirata
+    private static readonly string[] ClassNames = { "Mago", "Clerigo", "Guerrero", "Asesino", "Ladron", "Bardo", "Druida", "Bandido", "Paladin", "Cazador", "Trabajador", "Pirata" };
     private static readonly string[] FactionNames = { "Armada Real", "Fuerzas del Caos" };
 
     // Head ranges per race (1-5) and gender (1=M, 2=F) from VB6 DameOpciones

@@ -178,9 +178,12 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
                 1 => "Humano", 2 => "Elfo", 3 => "Elfo Oscuro", 4 => "Enano", 5 => "Gnomo",
                 _ => "Humano",
             };
+            // VB6 eClass: 1=Mago,2=Clerigo,3=Guerrero,4=Asesino,5=Ladron,6=Bardo,
+            //   7=Druida,8=Bandido,9=Paladin,10=Cazador,11=Trabajador,12=Pirata
             let class_name = match class_id {
                 1 => "Mago", 2 => "Clerigo", 3 => "Guerrero", 4 => "Asesino",
-                5 => "Bardo", 6 => "Druida", 7 => "Paladin", 8 => "Cazador",
+                5 => "Ladron", 6 => "Bardo", 7 => "Druida", 8 => "Bandido",
+                9 => "Paladin", 10 => "Cazador", 11 => "Trabajador", 12 => "Pirata",
                 _ => "Guerrero",
             };
             let gender_str = if gender == 1 { "Hombre" } else { "Mujer" };
