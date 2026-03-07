@@ -221,6 +221,14 @@ pub struct ObjData {
 
     // Aura (VB6: CreaAura — aura index from Auras.dat, 0 = no aura)
     pub crea_aura: i32,
+
+    // Magic defense (VB6: DefensaMagicaMin/Max — helmets and rings)
+    pub defensa_magica_min: i32,
+    pub defensa_magica_max: i32,
+
+    // Staff fields (VB6: StaffPower, StaffDamageBonus — mage weapons)
+    pub staff_power: i32,
+    pub staff_damage_bonus: i32,
 }
 
 impl Default for ObjData {
@@ -293,6 +301,10 @@ impl Default for ObjData {
             cant_credits: 0,
             paraliza: false,
             crea_aura: 0,
+            defensa_magica_min: 0,
+            defensa_magica_max: 0,
+            staff_power: 0,
+            staff_damage_bonus: 0,
         }
     }
 }
@@ -395,6 +407,10 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             cant_credits: get_int("cantCredits"),
             paraliza: get_bool("Paraliza"),
             crea_aura: get_int("CreaAura"),
+            defensa_magica_min: get_int("DefensaMagicaMin"),
+            defensa_magica_max: get_int("DefensaMagicaMax"),
+            staff_power: get_int("StaffPower"),
+            staff_damage_bonus: get_int("StaffDamageBonus"),
             ..Default::default()
         };
 

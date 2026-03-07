@@ -101,6 +101,7 @@ pub struct NpcData {
     pub min_hit: i32,
     pub max_hit: i32,
     pub def: i32,
+    pub def_m: i32,         // VB6: DEFm — magic defense vs spells
     pub poder_ataque: i32,
     pub poder_evasion: i32,
 
@@ -184,7 +185,7 @@ impl Default for NpcData {
             movement: 0, attackable: false, hostile: false,
             respawn: false, domable: 0, comercia: false,
             min_hp: 0, max_hp: 0, min_hit: 0, max_hit: 0,
-            def: 0, poder_ataque: 0, poder_evasion: 0,
+            def: 0, def_m: 0, poder_ataque: 0, poder_evasion: 0,
             give_exp: 0, give_gld: 0, give_gld_min: 0, give_gld_max: 0,
             inflacion: 0, tipo_items: 0, inv_respawn: false,
             nro_items: 0, items: Vec::new(), alineacion: 0,
@@ -241,6 +242,7 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         min_hit: get_int("MinHIT"),
         max_hit: get_int("MaxHIT"),
         def: get_int("DEF"),
+        def_m: get_int("DEFm"),
         poder_ataque: get_int("PoderAtaque"),
         poder_evasion: get_int("PoderEvasion"),
         give_exp: get_int("GiveEXP"),

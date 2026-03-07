@@ -182,11 +182,35 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         state.send_msg_id(conn_id, 18, "").await; // Not enough mana
         return;
     }
+    // VB6: Stamina check (modHechizos.bas lines 468-475)
+    if spell.sta_requerido > 0 {
+        let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
+        if sta < spell.sta_requerido {
+            state.send_msg_id(conn_id, 18, "").await; // Not enough stamina
+            return;
+        }
+    }
     if spell.min_skill > 0 {
         let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0);
         if magic_skill < spell.min_skill {
             state.send_msg_id(conn_id, 834, "").await; // Magic skill too low
             return;
+        }
+    }
+    // VB6: Staff power check for Mages (modHechizos.bas lines 449-460)
+    if spell.need_staff > 0 {
+        let (class, weapon_slot, inv) = state.users.get(&conn_id)
+            .map(|u| (u.class.clone(), u.equip.weapon, u.inventory.clone()))
+            .unwrap_or_default();
+        if class.eq_ignore_ascii_case("Mago") {
+            let staff_power = if weapon_slot > 0 && weapon_slot <= inv.len() {
+                let obj_idx = inv[weapon_slot - 1].obj_index;
+                state.game_data.objects.get(obj_idx as usize).map(|o| o.staff_power).unwrap_or(0)
+            } else { 0 };
+            if staff_power < spell.need_staff {
+                state.send_msg_id(conn_id, 835, "").await; // Staff too weak
+                return;
+            }
         }
     }
 
@@ -421,12 +445,35 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 
 /// Consume mana and stamina after a successful spell cast.
 /// VB6: Only consumed if b=True (spell succeeded), and only for normal users (not GMs).
+/// VB6: Druid with Flauta Élfica gets mana discounts (modHechizos.bas lines 733-752).
+const APOCALIPSIS_SPELL_INDEX: i32 = 25;
+
 pub(super) async fn consume_spell_mana(state: &mut GameState, conn_id: ConnectionId,
                              spell: &crate::data::spells::SpellData, privileges: i32) {
     if privileges == 0 {
-        // Normal user — consume mana and stamina
+        let mut mana_cost = spell.mana_requerido;
+
+        // VB6: Druid mana bonuses with Flauta Élfica
+        if let Some(user) = state.users.get(&conn_id) {
+            if user.class.eq_ignore_ascii_case("Druida") {
+                let ring_slot = user.equip.ring;
+                let ring_obj = if ring_slot > 0 && ring_slot <= user.inventory.len() {
+                    user.inventory[ring_slot - 1].obj_index
+                } else { 0 };
+                if ring_obj == FLAUTAELFICA {
+                    if spell.mimetiza {
+                        // Mimicry: 50% less mana
+                        mana_cost = (mana_cost as f64 * 0.5) as i32;
+                    } else if spell.index as i32 != APOCALIPSIS_SPELL_INDEX {
+                        // Other spells (except Apocalypse): 10% less mana
+                        mana_cost = (mana_cost as f64 * 0.9) as i32;
+                    }
+                }
+            }
+        }
+
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.min_mana = (user.min_mana - spell.mana_requerido).max(0);
+            user.min_mana = (user.min_mana - mana_cost).max(0);
             user.min_sta = (user.min_sta - spell.sta_requerido).max(0);
         }
     }
@@ -520,16 +567,25 @@ pub(super) async fn apply_spell_properties_npc(
     npc_idx: usize,
     spell: &crate::data::spells::SpellData,
 ) {
+    // VB6: SubeHP=1 heals NPC (pet healing), SubeHP=2 damages
+    if spell.sube_hp == 1 {
+        // Heal NPC (VB6: HechizoPropNPC heal path)
+        let heal = calc_spell_heal(state, caster_id, spell);
+        if let Some(npc) = state.get_npc_mut(npc_idx) {
+            npc.min_hp = (npc.min_hp + heal).min(npc.max_hp);
+        }
+        return;
+    }
     if spell.sube_hp != 2 {
-        // Only damage spells (SubeHP=2) apply to NPCs
-        // Heal spells on hostile NPCs don't make sense in VB6 either
         return;
     }
 
-    let mut damage = rand_range(spell.min_hp, spell.max_hp);
+    // VB6: Damage = base + level scaling + staff + lute - NPC.defM
+    let mut damage = calc_spell_damage(state, caster_id, spell);
 
-    // VB6: spell damage * 1.4 on NPCs
-    damage = (damage as f64 * 1.4) as i32;
+    // Subtract NPC magic defense (VB6: daño = daño - .Stats.defM)
+    let npc_def_m = state.get_npc(npc_idx).map(|n| n.def_m).unwrap_or(0);
+    damage = (damage - npc_def_m).max(0);
 
     // Get NPC data for damage number display and exp calculation
     let npc_data = state.get_npc(npc_idx).map(|n| (n.char_index.0, n.map, n.x, n.y, n.give_exp, n.max_hp));
@@ -618,10 +674,102 @@ pub(super) async fn apply_spell_status_npc(
     }
 }
 
+/// VB6 spell damage/heal constants.
+const SUPERANILLO: i32 = 700;
+const LAUDELFICO: i32 = 1049;
+const FLAUTAELFICA: i32 = 1050;
+const LAUDMAGICO: i32 = 696;
+
+/// Get the obj_index of the item equipped in a given slot (0 if none).
+fn get_equipped_obj_index(state: &GameState, conn_id: ConnectionId, slot: usize) -> i32 {
+    state.users.get(&conn_id).map(|u| {
+        if slot > 0 && slot <= u.inventory.len() {
+            u.inventory[slot - 1].obj_index
+        } else { 0 }
+    }).unwrap_or(0)
+}
+
+/// VB6 Porcentaje: (total * porc) / 100
+fn porcentaje(total: i32, porc: i32) -> i32 {
+    (total as i64 * porc as i64 / 100) as i32
+}
+
+/// Calculate spell damage with VB6 13.3 formula (modHechizos.bas lines 1890-1918).
+/// Used for user→user and user→NPC.
+fn calc_spell_damage(state: &GameState, caster_id: ConnectionId, spell: &crate::data::spells::SpellData) -> i32 {
+    let mut damage = rand_range(spell.min_hp, spell.max_hp);
+
+    // Level scaling: damage + damage * (3 * caster_level / 100)
+    let level = state.users.get(&caster_id).map(|u| u.level).unwrap_or(1);
+    damage += porcentaje(damage, 3 * level);
+
+    // Staff damage bonus for Mages (VB6: StaffAffected check)
+    if spell.staff_affected {
+        let class = state.users.get(&caster_id).map(|u| u.class.clone()).unwrap_or_default();
+        if class.eq_ignore_ascii_case("Mago") {
+            let weapon_slot = state.users.get(&caster_id).map(|u| u.equip.weapon).unwrap_or(0);
+            let weapon_obj = get_equipped_obj_index(state, caster_id, weapon_slot);
+            if weapon_obj > 0 {
+                let staff_bonus = state.game_data.objects.get(weapon_obj as usize)
+                    .map(|o| o.staff_damage_bonus).unwrap_or(0);
+                damage = (damage as i64 * (staff_bonus as i64 + 70) / 100) as i32;
+            } else {
+                // No staff = 70% damage
+                damage = (damage as f64 * 0.7) as i32;
+            }
+        }
+    }
+
+    // Bard/Druid lute bonus: +4% with Laud Élfico or Flauta Élfica
+    let ring_slot = state.users.get(&caster_id).map(|u| u.equip.ring).unwrap_or(0);
+    let ring_obj = get_equipped_obj_index(state, caster_id, ring_slot);
+    if ring_obj == LAUDELFICO || ring_obj == FLAUTAELFICA {
+        damage = (damage as f64 * 1.04) as i32;
+    }
+
+    damage
+}
+
+/// Calculate spell heal with VB6 13.3 formula (modHechizos.bas lines 1864-1866).
+fn calc_spell_heal(state: &GameState, caster_id: ConnectionId, spell: &crate::data::spells::SpellData) -> i32 {
+    let mut heal = rand_range(spell.min_hp, spell.max_hp);
+    let level = state.users.get(&caster_id).map(|u| u.level).unwrap_or(1);
+    heal += porcentaje(heal, 3 * level);
+    heal
+}
+
+/// Subtract magic defense from equipped helmet + ring (VB6: DefensaMagicaMin/Max).
+fn subtract_magic_defense(state: &GameState, target_id: ConnectionId, damage: i32) -> i32 {
+    let (helmet_slot, ring_slot) = state.users.get(&target_id)
+        .map(|u| (u.equip.helmet, u.equip.ring))
+        .unwrap_or((0, 0));
+    let mut d = damage;
+    // Helmet magic defense
+    let helmet_obj = get_equipped_obj_index(state, target_id, helmet_slot);
+    if helmet_obj > 0 {
+        if let Some(obj) = state.game_data.objects.get(helmet_obj as usize) {
+            if obj.defensa_magica_max > 0 {
+                d -= rand_range(obj.defensa_magica_min, obj.defensa_magica_max);
+            }
+        }
+    }
+    // Ring magic defense
+    let ring_obj = get_equipped_obj_index(state, target_id, ring_slot);
+    if ring_obj > 0 {
+        if let Some(obj) = state.game_data.objects.get(ring_obj as usize) {
+            if obj.defensa_magica_max > 0 {
+                d -= rand_range(obj.defensa_magica_min, obj.defensa_magica_max);
+            }
+        }
+    }
+    d.max(0)
+}
+
 /// Apply property-type spell effects (HP, Mana, Stamina modifications).
+/// VB6: HechizoPropUsuario (modHechizos.bas lines 1860-1920).
 pub(super) async fn apply_spell_properties(
     state: &mut GameState,
-    _caster_id: ConnectionId,
+    caster_id: ConnectionId,
     target_id: ConnectionId,
     spell: &crate::data::spells::SpellData,
 ) {
@@ -631,28 +779,35 @@ pub(super) async fn apply_spell_properties(
 
     let mut damage_dealt = 0i32;
 
-    if let Some(target) = state.users.get_mut(&target_id) {
-        // HP effect
-        if spell.sube_hp == 1 {
-            // Heal
-            let amount = rand_range(spell.min_hp, spell.max_hp);
+    // HP effect
+    if spell.sube_hp == 1 {
+        // Heal — VB6 level-scaled
+        let amount = calc_spell_heal(state, caster_id, spell);
+        if let Some(target) = state.users.get_mut(&target_id) {
             target.min_hp = (target.min_hp + amount).min(target.max_hp);
-        } else if spell.sube_hp == 2 {
-            // Damage
-            let amount = rand_range(spell.min_hp, spell.max_hp);
-            target.min_hp -= amount;
-            damage_dealt = amount;
         }
+    } else if spell.sube_hp == 2 {
+        // Damage — VB6 level-scaled + staff + lute, then subtract magic defense
+        let base_damage = calc_spell_damage(state, caster_id, spell);
+        let final_damage = subtract_magic_defense(state, target_id, base_damage);
+        if let Some(target) = state.users.get_mut(&target_id) {
+            target.min_hp -= final_damage;
+        }
+        damage_dealt = final_damage;
+    }
 
-        // Mana effect
-        if spell.sube_mana == 1 {
-            let amount = rand_range(spell.min_mana, spell.max_mana);
+    // Mana effect
+    if spell.sube_mana == 1 {
+        let amount = rand_range(spell.min_mana, spell.max_mana);
+        if let Some(target) = state.users.get_mut(&target_id) {
             target.min_mana = (target.min_mana + amount).min(target.max_mana);
         }
+    }
 
-        // Stamina effect
-        if spell.sube_sta == 1 {
-            let amount = rand_range(spell.min_sta, spell.max_sta);
+    // Stamina effect
+    if spell.sube_sta == 1 {
+        let amount = rand_range(spell.min_sta, spell.max_sta);
+        if let Some(target) = state.users.get_mut(&target_id) {
             target.min_sta = (target.min_sta + amount).min(target.max_sta);
         }
     }
@@ -672,7 +827,7 @@ pub(super) async fn apply_spell_properties(
     // Check death from damage spell
     let hp = state.users.get(&target_id).map(|u| u.min_hp).unwrap_or(0);
     if hp <= 0 {
-        user_die(state, target_id, Some(_caster_id)).await;
+        user_die(state, target_id, Some(caster_id)).await;
     }
 }
 
@@ -691,6 +846,18 @@ pub(super) async fn apply_spell_status(
     // VB6: Can't poison yourself
     if spell.envenena && caster_id == target_id {
         return;
+    }
+
+    // VB6: Super Anillo (700) blocks paralysis, poison, curse, blindness, stun
+    // modHechizos.bas lines 141-143, 166, 186
+    if spell.paraliza || spell.inmoviliza || spell.envenena || spell.maldicion
+        || spell.estupidez || spell.ceguera {
+        let ring_slot = state.users.get(&target_id).map(|u| u.equip.ring).unwrap_or(0);
+        let ring_obj = get_equipped_obj_index(state, target_id, ring_slot);
+        if ring_obj == SUPERANILLO {
+            state.send_console(caster_id, "El Super Anillo rechaza el hechizo.", font_index::INFO).await;
+            return;
+        }
     }
 
     // Pre-read target state for validation checks
@@ -749,6 +916,27 @@ pub(super) async fn apply_spell_status(
         }
         if spell.envenena {
             target.poisoned = true;
+        }
+        if spell.maldicion {
+            target.cursed = true;
+        }
+        if spell.remover_maldicion {
+            target.cursed = false;
+        }
+        if spell.bendicion {
+            target.blessed = true;
+        }
+        if spell.estupidez {
+            target.stunned = true;
+            target.counter_stun = state.config.intervalo_paralizado; // VB6: same duration
+        }
+        if spell.remover_estupidez {
+            target.stunned = false;
+            target.counter_stun = 0;
+        }
+        if spell.ceguera {
+            target.blind = true;
+            target.counter_blind = state.config.intervalo_paralizado / 3; // VB6: IntervaloParalizado / 3
         }
         if spell.invisibilidad {
             target.invisible = true;
@@ -860,7 +1048,6 @@ pub(super) async fn apply_spell_buffs(
     target_id: ConnectionId,
     spell: &crate::data::spells::SpellData,
 ) {
-    const MAX_ATTR: i32 = 35;
     const MIN_ATTR: i32 = 1;
 
     // SubeAgilidad: 1=buff, 2=debuff
@@ -872,9 +1059,10 @@ pub(super) async fn apply_spell_buffs(
                 target.attributes_backup = target.attributes;
             }
             if spell.sube_agilidad == 1 {
-                // Buff: increase agility
-                target.attributes[1] = (target.attributes[1] + amount).min(MAX_ATTR); // [1] = Agi
-                target.duracion_efecto = 7000;
+                // Buff: increase agility, VB6: cap at base*2 (MAXATRIBUTOS in VB6)
+                let max_cap = (target.attributes_backup[1] * 2).min(50);
+                target.attributes[1] = (target.attributes[1] + amount).min(max_cap); // [1] = Agi
+                target.duracion_efecto = 1200; // VB6: DuracionEfecto = 1200
             } else {
                 // Debuff: decrease agility
                 target.attributes[1] = (target.attributes[1] - amount).max(MIN_ATTR);
@@ -892,7 +1080,8 @@ pub(super) async fn apply_spell_buffs(
                 target.attributes_backup = target.attributes;
             }
             if spell.sube_fuerza == 1 {
-                target.attributes[0] = (target.attributes[0] + amount).min(MAX_ATTR); // [0] = Str
+                let max_cap = (target.attributes_backup[0] * 2).min(50);
+                target.attributes[0] = (target.attributes[0] + amount).min(max_cap); // [0] = Str
                 target.duracion_efecto = 1200;
             } else {
                 target.attributes[0] = (target.attributes[0] - amount).max(MIN_ATTR);

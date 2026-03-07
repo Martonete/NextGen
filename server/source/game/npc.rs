@@ -83,6 +83,7 @@ pub struct NpcState {
     pub max_hit: i32,
     pub min_hit: i32,
     pub def: i32,
+    pub def_m: i32,             // VB6: DEFm — magic defense vs spells
     pub poder_ataque: i32,
     pub poder_evasion: i32,
     pub alineacion: i32,
@@ -207,6 +208,7 @@ impl NpcState {
             max_hit: data.max_hit,
             min_hit: data.min_hit,
             def: data.def,
+            def_m: data.def_m,
             poder_ataque: data.poder_ataque,
             poder_evasion: data.poder_evasion,
             alineacion: data.alineacion,

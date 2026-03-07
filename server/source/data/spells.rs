@@ -109,6 +109,16 @@ pub struct SpellData {
     pub remover_paralisis: bool,
     pub revivir: bool,
     pub resis: bool,        // Resistible
+    pub estupidez: bool,    // VB6: Stun/dumb effect
+    pub ceguera: bool,      // VB6: Blindness effect
+    pub mimetiza: bool,     // VB6: Druid mimicry
+    pub remover_maldicion: bool, // VB6: Remove curse
+    pub remover_estupidez: bool, // VB6: Remove stun
+    pub warp: bool,         // VB6: Warp pet to caster
+
+    // Staff requirement (VB6: NeedStaff, StaffAffected)
+    pub need_staff: i32,
+    pub staff_affected: bool,
 
     // Invocation/summon
     pub num_npc: i32,       // NPC index to summon
@@ -150,6 +160,9 @@ impl Default for SpellData {
             invisibilidad: false, paraliza: false, inmoviliza: false,
             envenena: false, maldicion: false, bendicion: false,
             cura_veneno: false, remover_paralisis: false, revivir: false, resis: false,
+            estupidez: false, ceguera: false, mimetiza: false,
+            remover_maldicion: false, remover_estupidez: false, warp: false,
+            need_staff: 0, staff_affected: false,
             num_npc: 0, cant: 0,
             portal_map: 0, portal_x: 0, portal_y: 0,
             wav: 0, fx_grh: 0, loops: 0,
@@ -227,6 +240,14 @@ pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
             remover_paralisis: get_bool("RemoverParalisis"),
             revivir: get_bool("Revivir"),
             resis: get_bool("Resis"),
+            estupidez: get_bool("Estupidez"),
+            ceguera: get_bool("Ceguera"),
+            mimetiza: get_bool("Mimetiza"),
+            remover_maldicion: get_bool("RemoverMaldicion"),
+            remover_estupidez: get_bool("RemoverEstupidez"),
+            warp: get_bool("Warp"),
+            need_staff: get_int("NeedStaff"),
+            staff_affected: get_bool("StaffAffected"),
             num_npc: get_int("numNPC"),
             cant: get_int("Cant"),
             portal_map: get_int("PortalMap"),

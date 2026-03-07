@@ -131,6 +131,12 @@ pub struct UserState {
     pub meditating: bool,
     pub poisoned: bool,
     pub invisible: bool,
+    pub cursed: bool,       // VB6: flags.Maldicion
+    pub blessed: bool,      // VB6: flags.Bendicion
+    pub stunned: bool,      // VB6: flags.Estupidez
+    pub counter_stun: i32,  // Ticks remaining for stun
+    pub blind: bool,        // VB6: flags.Ceguera
+    pub counter_blind: i32, // Ticks remaining for blindness
     pub safe_toggle: bool,  // PvP safety (SEG)
     pub criminal: bool,
     pub navigating: bool,   // On a boat
@@ -331,6 +337,12 @@ impl UserState {
             meditating: false,
             poisoned: false,
             invisible: false,
+            cursed: false,
+            blessed: false,
+            stunned: false,
+            counter_stun: 0,
+            blind: false,
+            counter_blind: 0,
             safe_toggle: true, // Safety ON by default
             criminal: false,
             navigating: false,
