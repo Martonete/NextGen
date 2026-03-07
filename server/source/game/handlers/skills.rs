@@ -14,7 +14,7 @@ use super::{
     send_inventory_slot, user_die, do_cast_spell,
     calc_attack_power, calc_attack_power_with_balance, calc_defense_power, calc_armor_absorption,
     class_damage_modifier, class_damage_modifier_from_balance,
-    check_user_level, quest_check_npc_kill,
+    check_user_level,
 };
 
 pub(super) mod skill_id {
@@ -77,8 +77,16 @@ const ESFUERZO_PESCAR_GENERAL: i32 = 3;
 const ESFUERZO_EXCAVAR_RECOLECTOR: i32 = 2;
 const ESFUERZO_EXCAVAR_GENERAL: i32 = 5;
 
-/// Common luck table for skill success checks (VB6 pattern).
+/// VB6 13.3: Suerte = Int(-0.00125 * Skill^2 - 0.3 * Skill + 49)
+/// Used for resource extraction (fishing, mining, woodcutting).
 pub(super) fn luck_denominator(skill: i32) -> i32 {
+    let s = skill as f64;
+    let suerte = (-0.00125 * s * s - 0.3 * s + 49.0) as i32;
+    suerte.max(1) // Ensure at least 1 to avoid div by zero
+}
+
+/// VB6 13.3: Lookup-based luck for steal, meditate, and other skills.
+pub(super) fn luck_denominator_lookup(skill: i32) -> i32 {
     match skill {
         0..=10 => 35,
         11..=20 => 30,
@@ -88,47 +96,108 @@ pub(super) fn luck_denominator(skill: i32) -> i32 {
         51..=60 => 20,
         61..=70 => 18,
         71..=80 => 15,
-        81..=90 => 13,
-        91..=100 => 7,
+        81..=90 => 10,
+        91..=99 => 7,
+        100.. => 5,
         _ => 35,
     }
+}
+
+/// VB6 13.3: MaxItemsExtraibles(Level) = Max(1, Int((Level - 2) * 0.2)) + 1
+/// Used to determine how many resources a Worker class gets per extraction.
+fn max_items_extraibles(level: i32) -> i32 {
+    ((level - 2) as f64 * 0.2).floor().max(1.0) as i32 + 1
 }
 
 /// Simple random number in range [min, max] inclusive.
 // random_number — moved to common.rs
 
-/// Try to level up a skill (VB6: SubirSkill).
-/// Returns true if skill increased.
+// VB6 13.3 skill constants (Declares.bas)
+const MAXSKILLPOINTS: i32 = 100;
+const EXP_ACIERTO_SKILL: i32 = 50;  // XP on successful skill use
+const EXP_FALLO_SKILL: i32 = 20;    // XP on failed skill use
+const ELU_SKILL_INICIAL: i32 = 200;  // Base ELU for skill progression
+
+/// VB6 13.3 level cap table for skills (General.bas:347-397).
+/// LevelSkill[n].LevelValue — skill points capped at this value per character level.
+fn skill_level_cap(char_level: i32) -> i32 {
+    match char_level {
+        1..=2 => 3,
+        3 => 5,
+        4 => 7,
+        5 => 10,
+        6 => 13,
+        7 => 15,
+        8 => 17,
+        9 => 20,
+        10 => 23,
+        11 => 25,
+        12 => 27,
+        13 => 30,
+        14 => 33,
+        15 => 35,
+        16 => 37,
+        17 => 40,
+        18 => 43,
+        19 => 45,
+        20 => 47,
+        _ => 100, // Level 21+ = no cap (100 max)
+    }
+}
+
+/// VB6 13.3: CheckEluSkill — calculate ELU for a skill (Modulo_UsUaRiOs.bas:2468-2490).
+/// ELU = 200 * 1.05^current_skill_level
+pub(super) fn calc_elu_skill(skill_level: i32) -> i32 {
+    if skill_level >= MAXSKILLPOINTS { return 0; }
+    (ELU_SKILL_INICIAL as f64 * 1.05f64.powi(skill_level)) as i32
+}
+
+/// VB6 13.3: SubirSkill — gain skill XP from use (Modulo_UsUaRiOs.bas:1327-1376).
+/// `hit` = true if the skill action succeeded, false if it failed.
+/// Returns true if skill leveled up.
 pub(super) fn try_level_skill(user: &mut UserState, skill_idx: usize) -> bool {
+    try_level_skill_with_hit(user, skill_idx, true)
+}
+
+pub(super) fn try_level_skill_with_hit(user: &mut UserState, skill_idx: usize, hit: bool) -> bool {
     if skill_idx == 0 || skill_idx > 21 { return false; }
-    let idx = skill_idx - 1; // Convert to 0-based
+    let idx = skill_idx - 1; // 0-based
 
     // Must not be hungry or thirsty
     if user.min_ham <= 0 || user.min_agua <= 0 { return false; }
 
-    // Max skill points
-    if user.skills[idx] >= 100 { return false; }
+    // Max skill check
+    if user.skills[idx] >= MAXSKILLPOINTS { return false; }
 
-    // Level cap: min(level * 3, 100)
-    let cap = (user.level * 3).min(100);
+    // Level cap check
+    let cap = skill_level_cap(user.level);
     if user.skills[idx] >= cap { return false; }
 
-    // Probability based on level
-    let prob = match user.level {
-        1..=3 => 25,
-        4..=5 => 35,
-        6..=9 => 40,
-        10..=19 => 45,
-        _ => 50,
-    };
+    // Add skill XP based on success/failure
+    let xp_gain = if hit { EXP_ACIERTO_SKILL } else { EXP_FALLO_SKILL };
+    user.exp_skills[idx] += xp_gain;
 
-    let roll = random_number(1, prob);
-    if roll == 7 {
+    // Check if enough XP to level up
+    if user.elu_skills[idx] <= 0 {
+        user.elu_skills[idx] = calc_elu_skill(user.skills[idx]);
+    }
+
+    if user.exp_skills[idx] >= user.elu_skills[idx] {
+        user.exp_skills[idx] -= user.elu_skills[idx];
         user.skills[idx] += 1;
-        user.exp += 50;
+        user.exp += 50; // VB6: +50 character XP on skill up
+        // Recalculate ELU for new skill level
+        user.elu_skills[idx] = calc_elu_skill(user.skills[idx]);
         return true;
     }
     false
+}
+
+/// Initialize ELU values for all skills (call on login).
+pub(super) fn init_elu_skills(user: &mut UserState) {
+    for i in 0..22 {
+        user.elu_skills[i] = calc_elu_skill(user.skills[i]);
+    }
 }
 
 /// Check if user has the right tool equipped for a skill.
@@ -149,9 +218,9 @@ pub(super) fn equipped_weapon_obj(user: &UserState) -> i32 {
     0
 }
 
-/// Check if class is RECOLECTOR (resource gatherer class).
+/// Check if class is Worker/Trabajador (VB6: eClass.Worker = 11).
 pub(super) fn is_recolector(class: &str) -> bool {
-    class.eq_ignore_ascii_case("Recolector")
+    class.eq_ignore_ascii_case("Trabajador")
 }
 
 /// WLC — Work Left Click (main skill dispatch).
@@ -299,23 +368,32 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     let suerte = luck_denominator(skill);
     let roll = random_number(1, suerte);
 
-    if roll < 6 {
-        // Success: give fish (VB6: always 1 fish regardless of class)
-        let amount = 1;
+    if roll <= 6 {
+        // VB6: Worker class gets MaxItemsExtraibles, others get 1
+        let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
+        let amount = if is_recolector(&class) {
+            random_number(1, max_items_extraibles(level))
+        } else {
+            1
+        };
 
-        // Find inventory slot
         let slot = find_or_add_inv_slot(state, conn_id, PESCADO_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
             state.send_msg_id(conn_id, 813, "").await;
         }
+
+        // VB6: SubirSkill on success
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 12, true); // Pesca = index 12
+        }
     } else {
         state.send_msg_id(conn_id, 814, "").await;
-    }
 
-    // Try level skill + send stat updates
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 13);
+        // VB6: SubirSkill on failure
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 12, false);
+        }
     }
     send_stats_sta(state, conn_id).await;
 }
@@ -393,19 +471,29 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let suerte = luck_denominator(skill);
     let roll = random_number(1, suerte);
 
-    if roll < 6 {
-        let amount = if is_recolector(&class) { random_number(1, 5) } else { 1 };
+    if roll <= 6 {
+        // VB6: Worker class gets MaxItemsExtraibles, others get 1
+        let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
+        let amount = if is_recolector(&class) {
+            random_number(1, max_items_extraibles(level))
+        } else {
+            1
+        };
         let slot = find_or_add_inv_slot(state, conn_id, LENA_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
             state.send_msg_id(conn_id, 825, "").await;
         }
+
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 9, true); // Talar = index 9
+        }
     } else {
         state.send_msg_id(conn_id, 826, "").await;
-    }
 
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 10);
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 9, false);
+        }
     }
     send_stats_sta(state, conn_id).await;
 }
@@ -486,25 +574,35 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     let roll = random_number(1, suerte);
 
     if roll <= 5 {
-        // Determine mineral type from yacimiento
+        // VB6: Mining threshold is 5 (slightly harder than fishing's 6)
         let mineral_item = if mineral_data.mineral_index > 0 {
             mineral_data.mineral_index
         } else {
-            HIERRO_CRUDO // Default to iron
+            HIERRO_CRUDO
         };
 
-        let amount = if is_recolector(&class) { random_number(1, 6) } else { 1 };
+        // VB6: Worker class gets MaxItemsExtraibles, others get 1
+        let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
+        let amount = if is_recolector(&class) {
+            random_number(1, max_items_extraibles(level))
+        } else {
+            1
+        };
         let slot = find_or_add_inv_slot(state, conn_id, mineral_item, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
             state.send_msg_id(conn_id, 827, "").await;
         }
+
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 13, true); // Mineria = index 13
+        }
     } else {
         state.send_msg_id(conn_id, 828, "").await;
-    }
 
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 14);
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 13, false);
+        }
     }
     send_stats_sta(state, conn_id).await;
 }
@@ -548,32 +646,77 @@ pub(super) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         return;
     }
 
-    // Calculate taming power
-    let (carisma, skill_domar, class) = match state.users.get(&conn_id) {
-        Some(u) => (u.attributes[3], u.skills[17], u.class.clone()), // Cha=3, Domar=17 (1-based 18)
+    // VB6 13.3: DoDomar formula
+    let (carisma, skill_domar) = match state.users.get(&conn_id) {
+        Some(u) => (u.attributes[3], u.skills[17]), // Cha=3, Domar=17 (1-based 18)
         None => return,
     };
 
-    let mod_domar = match class.to_lowercase().as_str() {
-        "druida" | "cazador" => 6,
-        "clerigo" => 7,
-        _ => 10,
+    // VB6: puntosDomar = Int(Carisma) * Int(UserSkills(Domar))
+    let puntos_domar = carisma as i64 * skill_domar as i64;
+
+    // VB6: Flute modifiers (ring slot check)
+    const FLAUTA_MAGICA: i32 = 208;
+    const FLAUTA_ELFICA: i32 = 1050;
+    let ring_obj = state.users.get(&conn_id)
+        .and_then(|u| {
+            if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
+                Some(u.inventory[u.equip.ring - 1].obj_index)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(0);
+
+    let modifier = if ring_obj == FLAUTA_ELFICA {
+        0.8 // 20% bonus
+    } else if ring_obj == FLAUTA_MAGICA {
+        0.89 // 11% bonus
+    } else {
+        1.0 // No flute
     };
 
-    let poder = carisma * (skill_domar / mod_domar)
-        + random_number(1, carisma.max(1) / 3 + 1)
-        + random_number(1, carisma.max(1) / 3 + 1)
-        + random_number(1, carisma.max(1) / 3 + 1);
+    // VB6: puntosRequeridos = Domable * modifier
+    let puntos_requeridos = (domable as f64 * modifier) as i64;
 
-    if poder >= domable {
-        state.send_console(conn_id, "Has domado a la criatura", font_index::INFO).await;
-        // Note: Full pet system (NPC follows owner) not yet implemented
+    // VB6: Success = (puntosRequeridos <= puntosDomar) AND (RandomNumber(1, 5) = 1)
+    let success = puntos_requeridos <= puntos_domar && random_number(1, 5) == 1;
+
+    if success {
+        // VB6: Check max pets (MAXMASCOTAS = 3)
+        let num_pets = state.users.get(&conn_id).map(|u| u.nro_mascotas).unwrap_or(0);
+        if num_pets >= 3 {
+            state.send_console(conn_id, "No puedes tener más mascotas!", font_index::INFO).await;
+        } else {
+            // Assign pet to user
+            if let Some(npc) = state.get_npc_mut(npc_idx) {
+                npc.maestro_user = Some(conn_id);
+                npc.hostile = false;
+                npc.target = None;
+            }
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                u.nro_mascotas += 1;
+                // Store in pet slots
+                for i in 0..3 {
+                    if u.mascotas_index[i] == 0 {
+                        u.mascotas_index[i] = npc_idx;
+                        break;
+                    }
+                }
+            }
+            state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO).await;
+
+            // VB6: SubirSkill on success
+            if let Some(u) = state.users.get_mut(&conn_id) {
+                try_level_skill_with_hit(u, 17, true); // Domar = index 17
+            }
+        }
     } else {
-        state.send_console(conn_id, "No has podido domar a la criatura", font_index::INFO).await;
-    }
+        state.send_console(conn_id, "No has podido domar a la criatura.", font_index::INFO).await;
 
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 18);
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 17, false);
+        }
     }
 }
 
@@ -681,12 +824,12 @@ pub(super) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
         }
     };
 
-    // Minerals per ingot
+    // VB6 13.3: Minerals per ingot (HierroCrudo=14, PlataCruda=20, OroCrudo=35)
     let minerals_needed = match mineral_obj {
-        HIERRO_CRUDO => 13,
-        PLATA_CRUDA => 25,
-        ORO_CRUDO => 50,
-        _ => 13,
+        HIERRO_CRUDO => 14,
+        PLATA_CRUDA => 20,
+        ORO_CRUDO => 35,
+        _ => 14,
     };
 
     if amount < minerals_needed {
@@ -726,10 +869,12 @@ pub(super) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     }
 }
 
-/// Stealing (DoRobar).
+/// VB6 13.3: DoRobar — Stealing from other players.
+/// Requires 15 stamina. Level-based gold theft for Thief/Bandit with gloves.
+/// 50% chance item theft (Thief only), 50% gold theft.
 pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
-    let (map, ux, uy, skill, class) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.skills[2], u.class.clone()), // Robar = 2 (1-based 3)
+    let (map, ux, uy, skill, class, level) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.skills[2], u.class.clone(), u.level),
         None => return,
     };
 
@@ -737,6 +882,18 @@ pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
     if (tx - ux).abs() > 2 || (ty - uy).abs() > 2 {
         return;
     }
+
+    // VB6: 15 stamina cost
+    if let Some(u) = state.users.get(&conn_id) {
+        if u.min_sta < 15 {
+            state.send_msg_id(conn_id, 17, "").await;
+            return;
+        }
+    }
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.min_sta -= 15;
+    }
+    send_stats_sta(state, conn_id).await;
 
     // Find target user on tile
     let target_conn = state.world.grid(map)
@@ -751,48 +908,121 @@ pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
         }
     };
 
-    // Luck roll
-    let suerte = luck_denominator(skill);
+    // VB6: Luck roll using lookup table (not polynomial)
+    let suerte = luck_denominator_lookup(skill);
     let roll = random_number(1, suerte);
 
     if roll < 3 {
-        // Steal gold
-        let is_ladron = class.eq_ignore_ascii_case("Ladron") || class.eq_ignore_ascii_case("Asesino");
-        let gold_amount = if is_ladron { random_number(100, 1000) } else { random_number(1, 100) };
+        // VB6: 50% chance item theft (Thief class only), 50% gold theft
+        let is_ladron = class.eq_ignore_ascii_case("Ladron");
+        let steal_item = is_ladron && random_number(1, 2) == 1;
 
-        let victim_gold = state.users.get(&target_conn).map(|u| u.gold).unwrap_or(0);
-        let stolen = (gold_amount as i64).min(victim_gold);
+        if steal_item {
+            // VB6: RobarObjeto — steal 5-10% of a random item stack
+            let mut stolen_something = false;
+            if let Some(victim) = state.users.get(&target_conn) {
+                // Find a stealable item in victim's inventory
+                let mut stealable_slots: Vec<usize> = Vec::new();
+                for (i, slot) in victim.inventory.iter().enumerate() {
+                    if slot.obj_index > 0 && slot.amount > 0 && !slot.equipped {
+                        // Check item isn't newbie/key/special
+                        let ok = state.get_object(slot.obj_index)
+                            .map(|o| !o.newbie && o.obj_type != ObjType::Key)
+                            .unwrap_or(false);
+                        if ok {
+                            stealable_slots.push(i);
+                        }
+                    }
+                }
+                if !stealable_slots.is_empty() {
+                    let idx = stealable_slots[random_number(0, stealable_slots.len() as i32 - 1) as usize];
+                    let (obj_idx, amount) = (victim.inventory[idx].obj_index, victim.inventory[idx].amount);
+                    // VB6: 5-10% of stack, min 1
+                    let pct = random_number(5, 10) as f64 / 100.0;
+                    let steal_amount = ((amount as f64 * pct).floor() as i32).max(1);
 
-        if stolen > 0 {
-            if let Some(victim) = state.users.get_mut(&target_conn) {
-                victim.gold -= stolen;
+                    // Take from victim
+                    if let Some(v) = state.users.get_mut(&target_conn) {
+                        v.inventory[idx].amount -= steal_amount;
+                        if v.inventory[idx].amount <= 0 {
+                            v.inventory[idx] = InventorySlot::default();
+                        }
+                    }
+                    send_inventory_slot(state, target_conn, idx).await;
+
+                    // Give to thief
+                    let slot = find_or_add_inv_slot(state, conn_id, obj_idx, steal_amount);
+                    if let Some(s) = slot {
+                        send_inventory_slot(state, conn_id, s).await;
+                    }
+
+                    let obj_name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_default();
+                    let victim_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+                    state.send_console(conn_id, &format!("Has robado {} {} a {}!", steal_amount, obj_name, victim_name), font_index::FIGHT).await;
+                    stolen_something = true;
+                }
             }
-            if let Some(thief) = state.users.get_mut(&conn_id) {
-                thief.gold = (thief.gold + stolen).min(MAX_GOLD);
+            if !stolen_something {
+                state.send_msg_id(conn_id, 818, "").await;
             }
-
-            // TEXTO816: Le has robado %1 monedas de oro a %2
-            let victim_name_for_rob = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_msg_id(conn_id, 816, &format!("{}@{}", stolen, victim_name_for_rob)).await;
-            // TEXTO819: %1 ha intentado robarte!
-            let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_msg_id(target_conn, 819, &thief_name).await;
-
-            send_stats_gold(state, conn_id).await;
-            send_stats_gold(state, target_conn).await;
         } else {
-            state.send_msg_id(conn_id, 818, "").await;
+            // VB6: Gold theft — amount based on level and class
+            let has_gloves = state.users.get(&conn_id)
+                .map(|u| {
+                    if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
+                        u.inventory[u.equip.ring - 1].obj_index == 873 // GUANTE_HURTO
+                    } else {
+                        false
+                    }
+                })
+                .unwrap_or(false);
+
+            let gold_amount = if is_ladron && has_gloves {
+                random_number(level * 50, level * 100) as i64
+            } else if is_ladron {
+                random_number(level * 25, level * 50) as i64
+            } else {
+                random_number(1, 100) as i64
+            };
+
+            let victim_gold = state.users.get(&target_conn).map(|u| u.gold).unwrap_or(0);
+            let stolen = gold_amount.min(victim_gold);
+
+            if stolen > 0 {
+                if let Some(victim) = state.users.get_mut(&target_conn) {
+                    victim.gold -= stolen;
+                }
+                if let Some(thief) = state.users.get_mut(&conn_id) {
+                    thief.gold = (thief.gold + stolen).min(MAX_GOLD);
+                }
+
+                let victim_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+                state.send_msg_id(conn_id, 816, &format!("{}@{}", stolen, victim_name)).await;
+
+                send_stats_gold(state, conn_id).await;
+                send_stats_gold(state, target_conn).await;
+            } else {
+                state.send_msg_id(conn_id, 818, "").await;
+            }
+        }
+
+        // VB6: Notify victim on success
+        let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        state.send_msg_id(target_conn, 819, &thief_name).await;
+
+        // VB6: SubirSkill on success
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 2, true); // Robar = index 2
         }
     } else {
         // Fail — notify victim
         let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
         state.send_msg_id(conn_id, 818, "").await;
-
         state.send_console(target_conn, &format!("{} ha intentado robarte!", thief_name), font_index::FIGHT).await;
-    }
 
-    if let Some(u) = state.users.get_mut(&conn_id) {
-        try_level_skill(u, 3);
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 2, false);
+        }
     }
 }
 
@@ -971,11 +1201,9 @@ async fn resolve_ranged_attack_npc(
     let (npc_char, npc_def, npc_evasion, _npc_hp, _npc_max_hp,
          npc_exp, npc_number, _npc_name) = npc_data;
 
-    // Hit check — VB6: PoderAtaqueProyectil uses Proyectiles skill + mod_poder_ataque_proyectiles
-    let class_idx = crate::data::balance::class_name_to_index(&class).unwrap_or(0);
-    let atk_class_mod = state.game_data.balance.mod_poder_ataque_proyectiles[class_idx];
-    let atk_mod = if atk_class_mod > 0.0 { atk_class_mod } else { 1.0 };
-    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod as f32);
+    // Hit check — VB6: PoderAtaqueProyectil uses Proyectiles skill + ModClase.AtaqueProyectiles
+    let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles(&class);
+    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
     let hit_prob = ((50.0 + (attack_power - npc_evasion as f64) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
@@ -1001,8 +1229,7 @@ async fn resolve_ranged_attack_npc(
     let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
 
     // VB6: ModClase.DañoProyectiles (not DañoArmas)
-    let dmg_class_mod = state.game_data.balance.mod_dano_clase_proyectiles[class_idx];
-    let dmg_mod = if dmg_class_mod > 0.0 { dmg_class_mod as f64 } else { class_damage_modifier(&class) };
+    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles(&class) as f64;
     let mut damage = (base_dmg as f64 * dmg_mod) as i32;
     damage = (damage - npc_def).max(1);
 
@@ -1035,7 +1262,6 @@ async fn resolve_ranged_attack_npc(
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
 
         state.kill_npc(npc_idx);
-        quest_check_npc_kill(state, conn_id, npc_number as i32).await;
     }
 }
 
@@ -1072,11 +1298,9 @@ async fn resolve_ranged_attack_user(
 
     if v_privs > 0 { return; }
 
-    // Hit check — VB6: PoderAtaqueProyectil + mod_poder_ataque_proyectiles
-    let class_idx = crate::data::balance::class_name_to_index(&class).unwrap_or(0);
-    let atk_class_mod = state.game_data.balance.mod_poder_ataque_proyectiles[class_idx];
-    let atk_mod = if atk_class_mod > 0.0 { atk_class_mod } else { 1.0 };
-    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod as f32);
+    // Hit check — VB6: PoderAtaqueProyectil + ModClase.AtaqueProyectiles
+    let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles(&class);
+    let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
     let defense_power = calc_defense_power(v_tacticas, v_agility, v_level);
     let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
 
@@ -1105,8 +1329,7 @@ async fn resolve_ranged_attack_user(
     let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
 
     // VB6: ModClase.DañoProyectiles
-    let dmg_class_mod = state.game_data.balance.mod_dano_clase_proyectiles[class_idx];
-    let dmg_mod = if dmg_class_mod > 0.0 { dmg_class_mod as f64 } else { class_damage_modifier(&class) };
+    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles(&class) as f64;
     let mut damage = (base_dmg as f64 * dmg_mod) as i32;
 
     // Body part hit (1=head, 2-6=body)
@@ -1116,11 +1339,7 @@ async fn resolve_ranged_attack_user(
     let absorption = calc_armor_absorption(state, victim_id, body_part);
     damage -= absorption;
 
-    // Critical hit (20% chance — VB6: RandomNumber(1,5) == 1)
-    if rand_range(1, 5) == 1 {
-        damage *= 2;
-    }
-
+    // VB6 13.3: No generic crit in ranged PvP — DoGolpeCritico is Bandido+EspadaVikinga only (melee)
     let damage = damage.max(1);
 
     // Apply damage
@@ -1255,16 +1474,14 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             state.send_bytes(conn_id, &nover).await;
         }
         state.send_msg_id(conn_id, 808, "").await; // "Te has ocultado."
-        // Skill gain
         if let Some(u) = state.users.get_mut(&conn_id) {
-            try_level_skill(u, 8); // Ocultarse = eSkill 8 (1-based)
+            try_level_skill_with_hit(u, 7, true); // Ocultarse = index 7
         }
     } else {
         // Failure
         state.send_msg_id(conn_id, 809, "").await; // "No has logrado ocultarte."
-        // Skill gain on failure too (VB6 calls SubirSkill with False)
         if let Some(u) = state.users.get_mut(&conn_id) {
-            try_level_skill(u, 8);
+            try_level_skill_with_hit(u, 7, false);
         }
     }
 }
@@ -1294,51 +1511,6 @@ pub(super) fn check_permanecer_oculto(user: &mut UserState) -> bool {
         return false; // Revealed — timer expired
     }
     true // Still hidden
-}
-
-/// DoApuñalar — Backstab skill (VB6: Trabajo.bas DoApuñalar).
-/// Called during melee attack when attacker has Apuñalar skill and same heading as victim.
-/// Applies 1.5x damage to players, 2x to NPCs.
-pub(super) fn calc_apunalar_damage(skill: i32, class: &str, attacker_heading: i32, victim_heading: i32, base_damage: i32, is_npc_target: bool) -> Option<i32> {
-    let suerte = match skill {
-        0..=10 => 200,
-        11..=20 => 190,
-        21..=30 => 180,
-        31..=40 => 170,
-        41..=50 => 160,
-        51..=60 => 150,
-        61..=70 => 140,
-        71..=80 => 130,
-        81..=90 => 120,
-        91..=99 => 110,
-        100.. => 100,
-        _ => 200,
-    };
-
-    let res = if class.eq_ignore_ascii_case("Asesino") {
-        // Assassin gets better odds (0-95 range)
-        rand_range(0, 95)
-    } else {
-        rand_range(0, suerte)
-    };
-
-    // Assassin backstab from same heading = auto-success
-    let res = if class.eq_ignore_ascii_case("Asesino") && attacker_heading == victim_heading {
-        1 // Guaranteed success
-    } else {
-        res
-    };
-
-    if res < 15 {
-        let multiplied = if is_npc_target {
-            (base_damage as f64 * 2.0) as i32
-        } else {
-            (base_damage as f64 * 1.5) as i32
-        };
-        Some(multiplied)
-    } else {
-        None // Failed
-    }
 }
 
 /// Desarmar — Disarm skill (VB6: Trabajo.bas Desarmar).

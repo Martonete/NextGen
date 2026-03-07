@@ -9,15 +9,19 @@ use crate::game::npc;
 use crate::protocol::binary_packets;
 use crate::data::experience::MAX_LEVEL;
 use super::common::*;
+use crate::game::types::MAX_INVENTORY_SLOTS;
+use crate::protocol::font_index;
 use super::{
     user_die, check_user_level, send_inventory_slot,
-    quest_check_npc_kill,
     calc_attack_power, calc_defense_power, calc_armor_absorption,
     class_damage_modifier,
-    pretoriano_check_death, aram_check_tower_death,
-    try_spawn_ancalagon_dragon, es_pretoriano,
+    poder_ataque_arma, poder_ataque_proyectil, poder_ataque_wrestling,
+    calcular_dano, get_weapon_info, get_ring_info,
+    do_apunalar, do_golpe_critico, puede_apunalar,
+    pretoriano_check_death, es_pretoriano,
     remove_pet_from_owner,
 };
+use super::skills::try_level_skill_with_hit;
 
 // =====================================================================
 // NPC system — spawning, AI, combat
@@ -156,13 +160,6 @@ pub(super) async fn puede_atacar_npc(
     //   if npc_number == 966 && (user.status_mith == 1 || is_alianza) { block }
     //   if npc_number == 967 && (user.status_mith == 2 || is_horda) { block }
 
-    // VB6: King's guards protection (Map 123, NPC 937, GuardiasRey <= 3)
-    // Can't attack pre-dragon while guardians are still alive
-    if npc_map == 123 && npc_number == 937 && state.ancalagon_guardians < 4 {
-        state.send_msg_id(conn_id, 168, "").await;
-        return false;
-    }
-
     // VB6: Castle King / NPC 615 — guild ownership checks
     if npc_type == crate::data::npcs::NpcType::CastleKing || npc_number == 615 {
         // Must be in a guild to attack castle kings
@@ -214,36 +211,81 @@ pub(super) async fn user_attack_npc(
     };
     let (npc_evasion, npc_char_index, npc_name, npc_give_exp, npc_max_hp) = npc_data;
 
-    // Hit/miss calculation
-    let attack_power = calc_attack_power(skill_armas, agility, level);
-    let defense_power = npc_evasion as f64;
-    let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
+    // VB6: UserImpactoNpc — determine weapon type and calculate attack power
+    let weapon_info = get_weapon_info(state, conn_id);
+    let (attack_power, attack_skill_idx) = if weapon_info.obj_index > 0 {
+        if weapon_info.is_proyectil {
+            let mod_atk = state.game_data.balance.class_mod_ataque_proyectiles(class);
+            (poder_ataque_proyectil(
+                state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0),
+                agility, level, mod_atk,
+            ), 5usize)
+        } else {
+            let mod_atk = state.game_data.balance.class_mod_ataque_armas(class);
+            (poder_ataque_arma(skill_armas, agility, level, mod_atk), 1usize)
+        }
+    } else {
+        let mod_atk = state.game_data.balance.class_mod_ataque_wrestling(class);
+        let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
+        (poder_ataque_wrestling(wrestling_sk, agility, level, mod_atk), 20usize)
+    };
 
-    if rand_range(1, 100) > hit_prob {
-        // Miss — VB6: SND_SWING to area
+    let defense_power = npc_evasion as i64;
+    let hit_prob = ((50.0 + (attack_power - defense_power) as f64 * 0.4) as i32).clamp(10, 90);
+    let hit = rand_range(1, 100) <= hit_prob;
+
+    // VB6: SubirSkill on hit/miss
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        try_level_skill_with_hit(u, attack_skill_idx, hit);
+    }
+
+    if !hit {
         let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
         state.send_bytes(conn_id, &pkt).await;
-        // VB6: floating red "¡Fallo!" above the NPC that was attacked
         state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char_index.0 as i16, 255).await;
         return;
     }
 
-    // Damage calculation
-    let weapon_dmg = rand_range(min_hit.max(1), max_hit.max(1));
-    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
-    let base_dmg = 3 * weapon_dmg + str_bonus + rand_range(min_hit, max_hit);
-    let class_mod = class_damage_modifier(class);
-    let mut damage = ((base_dmg as f64) * class_mod) as i32;
-    damage = damage.max(1);
+    // VB6: CalcularDaño(UserIndex, NpcIndex) — with proper weapon type class modifier
+    let class_mod_damage = if weapon_info.obj_index > 0 {
+        if weapon_info.is_proyectil {
+            state.game_data.balance.class_mod_dano_proyectiles(class) as f64
+        } else {
+            state.game_data.balance.class_mod_dano_armas(class) as f64
+        }
+    } else {
+        state.game_data.balance.class_mod_dano_wrestling(class) as f64
+    };
 
-    // Critical hit (VB6: RandomNumber(1,5) == 1 or 4 → 40% chance, double damage)
-    let crit_roll = rand_range(1, 5);
-    let is_critical = crit_roll == 1 || crit_roll == 4;
-    if is_critical {
-        damage *= 2;
-    }
+    let (ring_idx, ring_guante, ring_min, ring_max) = get_ring_info(state, conn_id);
+    let base_damage = calcular_dano(
+        weapon_info.obj_index, weapon_info.is_proyectil,
+        weapon_info.min_hit, weapon_info.max_hit,
+        weapon_info.has_ammo, weapon_info.ammo_min_hit, weapon_info.ammo_max_hit,
+        min_hit, max_hit,
+        strength, class_mod_damage,
+        ring_idx, ring_guante, ring_min, ring_max,
+    );
+
+    // VB6: UserDañoNpc — boat damage bonus
+    let boat_bonus = if state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false) {
+        let boat_slot = state.users.get(&conn_id).map(|u| u.barco_slot).unwrap_or(0);
+        if boat_slot > 0 && boat_slot <= MAX_INVENTORY_SLOTS {
+            let boat_idx = state.users.get(&conn_id).map(|u| u.inventory[boat_slot - 1].obj_index).unwrap_or(0);
+            match state.get_object(boat_idx) {
+                Some(obj) => rand_range(obj.min_hit.max(0), obj.max_hit.max(0)) as i64,
+                None => 0,
+            }
+        } else { 0 }
+    } else { 0 };
+
+    let damage_before_def = base_damage + boat_bonus;
+
+    // VB6: damage = DañoBase - NPC.Stats.def
+    let npc_def = state.get_npc(npc_idx).map(|n| n.def).unwrap_or(0) as i64;
+    let damage = (damage_before_def - npc_def).max(0) as i32;
 
     // Check attacker GM status BEFORE taking mutable NPC borrow
     let attacker_is_gm = state.users.get(&conn_id)
@@ -286,11 +328,6 @@ pub(super) async fn user_attack_npc(
     let u2_pkt = binary_packets::write_multi_user_hit_npc(damage);
     state.send_bytes(conn_id, &u2_pkt).await;
 
-    // Critical hit notification (VB6: ||138 — "Has dado un golpe critico!")
-    if is_critical {
-        state.send_msg_id(conn_id, 138, "").await;
-    }
-
     // VB6: floating yellow damage number above NPC (vbYellow=65535)
     state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), npc_char_index.0 as i16, 65535).await;
 
@@ -316,16 +353,57 @@ pub(super) async fn user_attack_npc(
     let fx_pkt = binary_packets::write_create_fx(npc_char_index.0 as i16, 14, 0); // VB6: FXSANGRE = 14
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
 
+    // VB6: If NPC still alive after initial hit, try backstab and critical
+    let npc_still_alive = state.get_npc(npc_idx).map(|n| n.min_hp > 0).unwrap_or(false);
+    if npc_still_alive {
+        let user_heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(0);
+        let npc_heading = state.get_npc(npc_idx).map(|n| n.heading).unwrap_or(0);
+        let apunalar_sk = state.users.get(&conn_id).map(|u| u.skills[8]).unwrap_or(0);
+
+        // VB6: DoApuñalar — backstab (NPC target gets 2x damage)
+        if puede_apunalar(class, user_heading, npc_heading) && apunalar_sk > 0 {
+            // VB6: Assassin ignores NPC defense for backstab base damage
+            let stab_base = if class.eq_ignore_ascii_case("Asesino") {
+                damage_before_def as i64 // Ignore defense for Assassin
+            } else {
+                damage as i64
+            };
+
+            if let Some(stab_dmg) = do_apunalar(apunalar_sk, class, stab_base, true) {
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.min_hp -= stab_dmg as i32;
+                    npc.damage_received.push((conn_id, stab_dmg as i32));
+                }
+                state.send_console(conn_id, &format!("Has apuñalado la criatura por {}", stab_dmg), font_index::FIGHT).await;
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    try_level_skill_with_hit(u, 8, true);
+                }
+            } else {
+                state.send_console(conn_id, "\u{00A1}No has logrado apuñalar a tu enemigo!", font_index::FIGHT).await;
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    try_level_skill_with_hit(u, 8, false);
+                }
+            }
+        }
+
+        // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
+        let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
+        if let Some(crit_dmg) = do_golpe_critico(class, weapon_info.obj_index, wrestling_sk, damage as i64) {
+            if let Some(npc) = state.get_npc_mut(npc_idx) {
+                npc.min_hp -= crit_dmg as i32;
+                npc.damage_received.push((conn_id, crit_dmg as i32));
+            }
+            state.send_console(conn_id, &format!("Has golpeado críticamente a la criatura por {}.", crit_dmg), font_index::FIGHT).await;
+        }
+    }
+
+    // Re-check dead status after backstab/crit
+    let npc_dead = state.get_npc(npc_idx).map(|n| n.min_hp <= 0).unwrap_or(false);
+
     // Per-hit EXP (VB6: CalcularDarExp — gives proportional exp on EVERY hit, not just on death)
     if npc_give_exp > 0 && npc_max_hp > 0 {
         let exp_mult = state.multiplicador_exp;
-        let mut exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
-
-        // Scroll(0) = EXP scroll multiplier
-        let scroll_mult = state.users.get(&conn_id)
-            .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
-            .unwrap_or(1);
-        exp_award *= scroll_mult;
+        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
 
         // Level cap check
         let can_level = state.users.get(&conn_id)
@@ -349,8 +427,7 @@ pub(super) async fn user_attack_npc(
 }
 
 /// NPC dies — remove from world, reward players proportionally, schedule respawn.
-/// VB6: MuereNpc (modNPC.bas) — full parity with death sound, proportional EXP,
-/// gold to inventory, crystal drops, Ancalagon boss, faction points.
+/// VB6: MuereNpc (modNPC.bas) — death sound, gold to inventory, crystal drops, faction points.
 pub(super) async fn npc_die(
     state: &mut GameState,
     npc_idx: usize,
@@ -382,111 +459,13 @@ pub(super) async fn npc_die(
     // 2) Send msg 50 to killer (NPC death notification — client plays sound/animation)
     state.send_msg_id(killer_id, 50, "").await;
 
-    // 3) War king death check (VB6: NPC is rey de guerra)
-    if state.hay_guerra && npc_idx == state.rey_guerra_index {
-        // Faction wins — broadcast, award gold + faction points
-        let killer_name = state.users.get(&killer_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_msg_id_to(SendTarget::ToAll, 53, &format!("{} ha matado al rey de la guerra!", killer_name)).await;
-
-        if let Some(user) = state.users.get_mut(&killer_id) {
-            user.gold += 1_000_000;
-            if user.armada_real {
-                user.recompensas_real = (user.recompensas_real + 30).min(999);
-            } else if user.fuerzas_caos {
-                user.recompensas_caos = (user.recompensas_caos + 30).min(999);
-            }
-        }
-        send_stats_gold(state, killer_id).await;
-        state.hay_guerra = false;
-    }
-
-    // 4) Ancalagon boss system
-    match npc_number {
-        936 => {
-            // Dragon killed — broadcast ||54, award points, reset all state
-            // VB6: ReyON = 0, IndexReyAncalagon = 0, GuardiasRey = 0
-            state.send_msg_id_to(SendTarget::ToAll, 54, "").await;
-            state.ancalagon_alive = false;
-            state.ancalagon_pre_dragon_idx = 0;
-            state.ancalagon_guardians = 0;
-            state.ancalagon_minutes = 0;
-            state.ancalagon_seconds = 0;
-            if let Some(user) = state.users.get_mut(&killer_id) {
-                if user.armada_real {
-                    user.recompensas_real = (user.recompensas_real + 25).min(999);
-                } else if user.fuerzas_caos {
-                    user.recompensas_caos = (user.recompensas_caos + 25).min(999);
-                }
-            }
-        }
-        937 => {
-            // Pre-dragon killed → spawn real dragon (936) at pre-dragon's death position
-            // VB6: PosicionD = MiNPC.Pos; SpawnNpc(936, PosicionD, ...)
-            state.ancalagon_pre_dragon = false;
-            state.ancalagon_pre_dragon_idx = 0;
-            try_spawn_ancalagon_dragon(state, x, y).await;
-        }
-        938 => {
-            // Guardian killed → increment count (VB6: GuardiasRey = GuardiasRey + 1)
-            if state.ancalagon_guardians < 4 {
-                state.ancalagon_guardians += 1;
-            }
-            // When all 4 guards dead: broadcast ||699 + remove aura from pre-dragon
-            if state.ancalagon_guardians == 4 {
-                state.send_msg_id_to(SendTarget::ToArea { map, x, y }, 699, "").await;
-                // VB6: Npclist(IndexReyAncalagon).Char.AuraA = 0 + MakeNPCChar
-                let pre_idx = state.ancalagon_pre_dragon_idx;
-                if let Some(npc) = state.get_npc_mut(pre_idx) {
-                    npc.aura = 0;
-                    let cc = npc.build_cc_binary();
-                    state.send_data_bytes(SendTarget::ToMap(123), &cc).await;
-                }
-            }
-        }
-        _ => {}
-    }
-
-    // 5) Drop items (NPC_TIRAR_ITEMS) — only if not a pet
+    // 3) Drop items (NPC_TIRAR_ITEMS) — only if not a pet
     let is_pet = is_pet_owner.is_some();
     if !is_pet {
         npc_drop_items(state, npc_idx, killer_id, map, x, y).await;
     }
 
-    // 6) Crystal drops (VB6: level >= 60 NPCs drop crystals obj 1275-1278)
-    if has_crystals && !is_pet {
-        let crystal_objs = [
-            (1275, cr_min1, cr_max1),
-            (1276, cr_min2, cr_max2),
-            (1277, cr_min3, cr_max3),
-            (1278, cr_min4, cr_max4),
-        ];
-        for (obj_id, cmin, cmax) in &crystal_objs {
-            if *cmax > 0 {
-                let amount = rand_range((*cmin).max(1), *cmax);
-                if amount > 0 {
-                    // Drop crystal on ground near NPC
-                    let (dx, dy) = find_free_tile(state, map, x, y);
-                    let drop_x = x + dx;
-                    let drop_y = y + dy;
-                    let grid = state.world.grid_mut(map);
-                    if let Some(tile) = grid.tile_mut(drop_x, drop_y) {
-                        if tile.ground_item.obj_index == 0 {
-                            tile.ground_item.obj_index = *obj_id;
-                            tile.ground_item.amount = amount;
-                        }
-                    }
-                    let grh = state.get_object(*obj_id).map(|o| o.grh_index).unwrap_or(0);
-                    if grh > 0 {
-                        let ho = binary_packets::write_object_create(drop_x as u8, drop_y as u8, grh as i16);
-                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho).await;
-                    }
-                    clean_world_add_item(state, map, drop_x, drop_y, 10, *obj_id);
-                }
-            }
-        }
-    }
-
-    // 7) Remove NPC character from area (BP packet)
+    // 4) Remove NPC character from area (BP packet)
     let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
 
@@ -498,19 +477,13 @@ pub(super) async fn npc_die(
         pretoriano_check_death(state, npc_idx);
     }
 
-    // Check ARAM tower death
-    aram_check_tower_death(state, npc_idx).await;
-
-    // 8) EXP is now given per-hit via CalcularDarExp in user_attack_npc().
+    // EXP is now given per-hit via CalcularDarExp in user_attack_npc().
     // No death-time exp distribution needed (VB6 parity: exp per hit, not per kill).
 
-    // 9) Gold to killer's inventory (VB6: gold goes to player, NOT floor)
+    // 6) Gold to killer's inventory (VB6: gold goes to player, NOT floor)
     let gold_mult = state.multiplicador_oro;
-    let scroll_gold_mult = state.users.get(&killer_id)
-        .map(|u| if u.scroll_active[1] { u.scroll_mult[1] } else { 1 })
-        .unwrap_or(1);
-    let gld_min = (give_gld_min as i64) * (gold_mult as i64) * (scroll_gold_mult as i64);
-    let gld_max = (give_gld_max as i64) * (gold_mult as i64) * (scroll_gold_mult as i64);
+    let gld_min = (give_gld_min as i64) * (gold_mult as i64);
+    let gld_max = (give_gld_max as i64) * (gold_mult as i64);
     let gold_award = if gld_max > gld_min {
         rand_range(gld_min as i32, gld_max as i32) as i64
     } else {
@@ -523,7 +496,7 @@ pub(super) async fn npc_die(
         send_stats_gold(state, killer_id).await;
     }
 
-    // 10) Faction points (VB6: GivePTS)
+    // 7) Faction points (VB6: GivePTS)
     if give_pts > 0 {
         if let Some(user) = state.users.get_mut(&killer_id) {
             if user.armada_real {
@@ -534,19 +507,16 @@ pub(super) async fn npc_die(
         }
     }
 
-    // 11) Pet cleanup — if NPC was someone's pet, remove from owner
+    // 8) Pet cleanup — if NPC was someone's pet, remove from owner
     if let Some(owner_conn) = is_pet_owner {
         remove_pet_from_owner(state, owner_conn, npc_idx);
     }
 
-    // 12) Notify killer (VB6: ||50 + ||56@gold)
+    // 9) Notify killer (VB6: ||50 + ||56@gold)
     // Note: ||50 already sent at step 2. ||170 exp is now per-hit (CalcularDarExp).
     if gold_award > 0 {
         state.send_msg_id(killer_id, 56, &gold_award.to_string()).await; // TEXTO56: La criatura ha dejado %1 monedas
     }
-
-    // Quest kill tracking (VB6 RestarNPC)
-    quest_check_npc_kill(state, killer_id, npc_number as i32).await;
 
     info!("[NPC] '{}' killed NPC '{}' (idx={}, +{} exp, +{} gold)",
           state.users.get(&killer_id).map(|u| u.char_name.as_str()).unwrap_or("?"),
@@ -593,19 +563,16 @@ pub(super) async fn npc_drop_items(
         c => (c - 21).max(0),
     };
 
-    // Drop multiplier (VB6: multiplicador_drop + scroll(2))
+    // Drop multiplier
     let drop_mult = state.multiplicador_drop;
-    let scroll_drop_mult = state.users.get(&killer_id)
-        .map(|u| if u.scroll_active[2] { u.scroll_mult[2] } else { 1 })
-        .unwrap_or(1);
 
     for (obj_index, amount, prob_tirar) in npc_inv {
         if prob_tirar <= 0 {
             continue;
         }
 
-        // Calculate drop probability (VB6: ProbTirar * 2 * scroll * mult_drop, cap 200)
-        let prob = ((prob_tirar * 2 + luck_mod) * drop_mult * scroll_drop_mult).max(1).min(200);
+        // Calculate drop probability (VB6: ProbTirar * 2 * mult_drop, cap 200)
+        let prob = ((prob_tirar * 2 + luck_mod) * drop_mult).max(1).min(200);
 
         // Roll
         let roll = random_number(1, 200);
