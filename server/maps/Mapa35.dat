@@ -1,16 +1,44 @@
-[Mapa35]
-Name=Bosque Nevado
+[mapa35]
+Name=Bosque al norte de Nix.
 MusicNum=3
-StartPos=0-0-0
-MagiaSinEfecto=0
+MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
-Pk=0
-R=160
-G=160
-B=160
-Terreno=NIEVE
+Terreno=BOSQUE
 Zona=CAMPO
 Restringir=No
-BACKUP= 1
+BackUp= 0
+PK=0
+
+[SONIDOS]
+Cantidad=6
+
+[SONIDO1]
+Flags=1
+Probabilidad=20
+Sonido=21
+
+[SONIDO2]
+Flags=1
+Probabilidad=20
+Sonido=22
+
+[SONIDO3]
+Flags=1
+Probabilidad=20
+Sonido=28
+
+[SONIDO4]
+Flags=1
+Probabilidad=20
+Sonido=29
+
+[SONIDO5]
+Flags=1
+Probabilidad=20
+Sonido=34
+
+[SONIDO6]
+Flags=0
+Probabilidad=80
+Sonido=105

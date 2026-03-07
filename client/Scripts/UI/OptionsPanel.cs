@@ -888,8 +888,6 @@ public partial class OptionsPanel : PanelContainer
         string sub1 = parts.Length > 3 ? parts[3] : "";
         string sub2 = parts.Length > 4 ? parts[4] : "";
         string reputation = parts.Length > 9 ? parts[9] : "0";
-        string cvcW = parts.Length > 10 ? parts[10] : "0";
-        string cvcL = parts.Length > 11 ? parts[11] : "0";
 
         // Info
         var infoLabel = new Label();
@@ -908,7 +906,7 @@ public partial class OptionsPanel : PanelContainer
             if (hasSub2) subs.Add(sub2);
             infoText += $"Sub-lideres: {string.Join(", ", subs)}\n";
         }
-        infoText += $"Reputacion: {reputation} | CvC: {cvcW}W / {cvcL}L";
+        infoText += $"Reputacion: {reputation}";
         infoLabel.Text = infoText;
         _clanContent.AddChild(infoLabel);
 

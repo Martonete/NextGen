@@ -1352,16 +1352,9 @@ pub(super) async fn auto_save_all_users(state: &GameState) {
             ejercito_real: user.armada_real,
             ejercito_caos: user.fuerzas_caos,
             skill_pts_libres: user.skill_pts_libres,
-            puntos_donacion: user.puntos_donacion,
-            puntos_torneo: user.puntos_torneo,
-            ts_points: user.ts_points,
             recompensas_real: user.recompensas_real,
             recompensas_caos: user.recompensas_caos,
             reenlistadas: user.reenlistadas,
-            questeando: user.questeando,
-            quest_num: user.quest_num,
-            quest_kills: user.quest_kills,
-            quests_completed: user.quests_completed,
             description: user.desc.clone(),
         };
         if charfile::save_charfile(&pool, &user.char_name, &data).await.is_ok() {

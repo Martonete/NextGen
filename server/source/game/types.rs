@@ -7,7 +7,6 @@ use crate::config::ServerConfig;
 use crate::db::bans::BanList;
 use crate::data::GameData;
 use crate::data::objects::ObjType;
-use crate::data::ranking::RankingData;
 use sqlx::PgPool;
 use crate::net::ConnectionId;
 use crate::net::connection::ConnectionWriter;
@@ -112,6 +111,8 @@ pub struct UserState {
     pub min_ham: i32,
     pub attributes: [i32; 5], // Str, Agi, Int, Cha, Con
     pub skills: [i32; 22],
+    pub exp_skills: [i32; 22],  // VB6: ExpSkills — current XP per skill
+    pub elu_skills: [i32; 22],  // VB6: EluSkills — XP needed to level each skill
     pub skill_pts_libres: i32,  // Free skill points to distribute
     pub reputation: i32,
 
@@ -133,10 +134,7 @@ pub struct UserState {
     pub safe_toggle: bool,  // PvP safety (SEG)
     pub criminal: bool,
     pub navigating: bool,   // On a boat
-    pub transformed: bool,  // Demon/Angel transformation active
     pub gender: i32,        // 1=Male, 2=Female (from charfile Genero)
-    pub es_noble: bool,     // Has noble rank (VB6 flags.EsNoble)
-    pub en_guerra: bool,    // Enrolled in current war event
     pub comerciando: bool,  // In NPC commerce window
     pub target_npc: usize,  // NPC runtime index for commerce/interaction
 
@@ -157,10 +155,6 @@ pub struct UserState {
     pub guild_name: String,     // Cached clan name (empty if no guild)
     pub guild_creating_alignment: i32, // Temp: alignment during guild creation flow
     pub seguro_clan: bool,      // Clan safe toggle — prevents attacking clanmates
-    pub puede_retirar_obj: bool, // Guild bank: can withdraw items
-    pub puede_retirar_oro: bool, // Guild bank: can withdraw gold
-    pub cuenta_bancaria: String, // Guild name when clan bank is open (lock)
-    pub clan_bank: Vec<InventorySlot>, // Clan bank inventory (loaded from .bov)
 
     // Factions
     pub armada_real: bool,       // In Royal Army
@@ -178,34 +172,6 @@ pub struct UserState {
     pub party_pending: i32,      // Party index of pending invite (0 = none)
 
     // Quests
-    pub questeando: bool,        // Currently on a quest
-    pub quest_num: i32,          // Quest ID (1-31, 0=none)
-    pub quest_kills: i32,        // Kill counter for current quest
-    pub quests_completed: i32,   // Lifetime quests completed
-
-    // Duel/Arena
-    pub en_duelo: bool,          // In an arena duel
-    pub dueliando_contra: String, // Name of duel opponent
-    pub le_mandaron_duelo: bool,  // Has a pending duel challenge
-    pub ultimo_en_mandar_duelo: String, // Who sent the challenge
-    pub en_que_arena: i32,       // Which arena (1-4, 0=none)
-    pub apuesta_oro: i64,        // Gold bet for duel
-    pub mapa_anterior: i32,      // Saved map before duel/event
-    pub x_anterior: i32,         // Saved X before duel/event
-    pub y_anterior: i32,         // Saved Y before duel/event
-
-    // Desafio (1v1 challenge)
-    pub en_desafio: bool,
-    pub rondas: i32,             // Rounds won as defender
-
-    // CvC
-    pub en_cvc: bool,
-    pub seguro_cvc: bool,        // CvC safety toggle
-
-    // Tournament
-    pub en_torneo: bool,
-    pub num_torneo: i32,         // Tournament slot number
-
     // Pets/Summons
     pub nro_mascotas: i32,              // Active pet count (max 3)
     pub mascotas_index: [usize; 3],     // NPC runtime indices of pets
@@ -275,17 +241,6 @@ pub struct UserState {
     // Navigation — barco_slot is the inventory slot (1-based) holding the equipped boat (VB6 BarcoSlot)
     pub barco_slot: usize,
 
-    // Event system flags
-    pub en_evento: bool,          // In any event
-    pub evento_tipo: i32,         // 0=none, 1=CTF, 2=JDH, 3=LUZ, 4=ARAM, 5=BatMistica, 6=Faccionario, 7=TorneoAuto, 8=Guerra
-    pub evento_equipo: i32,       // Team number (1=Azul/Alianza, 2=Rojo/Horda, 3=Amarillo, 4=Verde)
-    pub evento_muertes: i32,      // Deaths in current event (for respawn delay calc)
-    pub evento_seconds: i32,      // Respawn countdown seconds
-    pub not_move: bool,           // Paralyzed during event countdown
-    pub torneo_auto: bool,        // In automatic tournament
-    pub torneo_auto_slot: i32,    // Slot in bracket
-    pub torneo_auto_muerto: bool, // Dead in auto tournament
-
     // SOS/Consultation system
     pub consulta_enviada: bool,    // Has pending consultation
     pub numero_consulta: i32,      // SOS message index
@@ -293,56 +248,16 @@ pub struct UserState {
     // Macro detection
     pub tiene_macro: i32,          // Macro detection counter
 
-    // Points
-    pub puntos_donacion: i64,      // Donation points
-    pub puntos_torneo: i64,        // Tournament points
-    pub ts_points: i64,            // TS points
-
-    // Scroll buffs (VB6: activoScroll, Scrolls)
-    // Index 0..3 for typeScroll 1..4 (exp, gold, drop, crystal drop)
-    pub scroll_active: [bool; 4],
-    pub scroll_time: [i32; 4],
-    pub scroll_mult: [i32; 4],
-
     // Private messages toggle
     pub msj_privados: bool,        // Receive private messages
-
-    // Friends chat
-    pub nombre_amigo: [String; 10], // Friends list names
 
     // Montado (mounted)
     pub montado: bool,             // Is currently mounted
     pub montado_body: i32,         // Original body before mounting
     pub levitando: bool,           // Flying mount levitation
 
-    // Divine system (Dioses)
-    pub sirviente_de_dios: String,   // God name: Mifrit, Poseidon, Tarraske, Erebros
-    pub almas_contenidas: i64,       // Contained souls
-    pub almas_ofrecidas: i64,        // Offered souls
-    pub jerarquia_dios: i32,         // God rank (1-5)
-    pub cofre_dios: [i32; 4],        // God chest item indices (4 slots)
-    pub cofre_dios_cant: i32,        // God chest item count
-
-    // Arena spectator
-    pub espectador_arena1: bool,
-    pub espectador_arena2: bool,
-    pub espectador_arena3: bool,
-    pub espectador_arena4: bool,
-
-    // CvC extended
-    pub puede_entrar_cvc: bool,
-    pub cvc_blue: bool,              // Team flag in CvC
-    pub vieja_pos_map: i32,          // Save position for CvC return
-    pub vieja_pos_x: i32,
-    pub vieja_pos_y: i32,
-
-    // 2vs2 pareja
-    pub espera_pareja: bool,
-    pub su_pareja: ConnectionId,
-    pub en_pareja: bool,
-
     // Command cooldown
-    pub time_comandos: i32,          // Cooldown for /PAREJA etc.
+    pub time_comandos: i32,
 
     // Description
     pub desc: String,                // User description (/DESC)
@@ -402,6 +317,8 @@ impl UserState {
             min_ham: 100,
             attributes: [18; 5],
             skills: [0; 22],
+            exp_skills: [0; 22],
+            elu_skills: [0; 22],
             skill_pts_libres: 0,
             reputation: 0,
             inventory: (0..MAX_INVENTORY_SLOTS).map(|_| InventorySlot::default()).collect(),
@@ -417,10 +334,7 @@ impl UserState {
             safe_toggle: true, // Safety ON by default
             criminal: false,
             navigating: false,
-            transformed: false,
             gender: 1,
-            es_noble: false,
-            en_guerra: false,
             comerciando: false,
             target_npc: 0,
             bank: (0..MAX_BANK_SLOTS).map(|_| InventorySlot::default()).collect(),
@@ -435,10 +349,6 @@ impl UserState {
             guild_name: String::new(),
             guild_creating_alignment: 0,
             seguro_clan: true, // Default ON — safe from clanmate attacks
-            puede_retirar_obj: false,
-            puede_retirar_oro: false,
-            cuenta_bancaria: String::new(),
-            clan_bank: Vec::new(),
             armada_real: false,
             fuerzas_caos: false,
             criminales_matados: 0,
@@ -450,25 +360,6 @@ impl UserState {
             last_ciud_matado: String::new(),
             party_index: 0,
             party_pending: 0,
-            questeando: false,
-            quest_num: 0,
-            quest_kills: 0,
-            quests_completed: 0,
-            en_duelo: false,
-            dueliando_contra: String::new(),
-            le_mandaron_duelo: false,
-            ultimo_en_mandar_duelo: String::new(),
-            en_que_arena: 0,
-            apuesta_oro: 0,
-            mapa_anterior: 0,
-            x_anterior: 0,
-            y_anterior: 0,
-            en_desafio: false,
-            rondas: 0,
-            en_cvc: false,
-            seguro_cvc: true,
-            en_torneo: false,
-            num_torneo: 0,
             nro_mascotas: 0,
             mascotas_index: [0; 3],
             mascotas_type: [0; 3],
@@ -518,47 +409,13 @@ impl UserState {
             warnings: 0,
             hogar: String::new(),
             barco_slot: 0,
-            en_evento: false,
-            evento_tipo: 0,
-            evento_equipo: 0,
-            evento_muertes: 0,
-            evento_seconds: 0,
-            not_move: false,
-            torneo_auto: false,
-            torneo_auto_slot: 0,
-            torneo_auto_muerto: false,
             consulta_enviada: false,
             numero_consulta: 0,
             tiene_macro: 0,
-            puntos_donacion: 0,
-            puntos_torneo: 0,
-            ts_points: 0,
-            scroll_active: [false; 4],
-            scroll_time: [0; 4],
-            scroll_mult: [0; 4],
             msj_privados: true,
-            nombre_amigo: Default::default(),
             montado: false,
             montado_body: 0,
             levitando: false,
-            sirviente_de_dios: String::new(),
-            almas_contenidas: 0,
-            almas_ofrecidas: 0,
-            jerarquia_dios: 0,
-            cofre_dios: [0; 4],
-            cofre_dios_cant: 0,
-            espectador_arena1: false,
-            espectador_arena2: false,
-            espectador_arena3: false,
-            espectador_arena4: false,
-            puede_entrar_cvc: false,
-            cvc_blue: false,
-            vieja_pos_map: 0,
-            vieja_pos_x: 0,
-            vieja_pos_y: 0,
-            espera_pareja: false,
-            su_pareja: 0,
-            en_pareja: false,
             time_comandos: 0,
             desc: String::new(),
             pareja: String::new(),
@@ -695,58 +552,14 @@ pub struct GameState {
     // GM-only mode (when enabled, only GMs can log in)
     pub server_solo_gms: bool,
 
-    // Arena duels (4 arenas on map 71)
-    pub arena_ocupada: [bool; 5],         // 1-indexed (0 unused)
-    pub tiempo_duelo: [i32; 5],           // Timer per arena (minutes)
-    pub nombre_dueleando: [String; 9],    // 1-indexed, 2 per arena (1-2, 3-4, 5-6, 7-8)
-
-    // Desafio (1v1 king-of-the-hill on map 109)
-    pub desafio_primero: ConnectionId,    // The defender
-    pub desafio_segundo: ConnectionId,    // The challenger
-
-    // CvC state
-    pub cvc_funciona: bool,
-    pub cvc_clan1_count: i32,
-    pub cvc_clan2_count: i32,
-    pub cvc_nombre1: String,           // Acceptor clan name (blue team)
-    pub cvc_nombre2: String,           // Challenger clan name (red team)
-    pub cvc_guild1: i32,               // Acceptor guild index (blue)
-    pub cvc_guild2: i32,               // Challenger guild index (red)
-    pub cvc_pending_target_guild: i32,  // Guild being challenged (pending acceptance)
-    pub cvc_pending_challenger_guild: i32, // Guild that sent the challenge
-    pub cvc_pending_challenger_name: String, // Challenger clan name (pending)
-
-    // Arena spectators
-    pub espectadores_arena1: i32,
-    pub espectadores_arena2: i32,
-    pub espectadores_arena3: i32,
-    pub espectadores_arena4: i32,
-
-    // 2vs2 Pareja system
-    pub pareja: [ConnectionId; 5], // 1-indexed (0 unused), slots 1-4
-
-    // Tournament
-    pub hay_torneo: bool,
-    pub usuarios_en_torneo: i32,
-    pub cronologia_participantes: Vec<String>, // Up to 64 participants
-
     // Auto-save counter (decrements in tick_player_passive, triggers save at 0)
     pub auto_save_counter: i32,
 
     // Anti-cheat intervals (loaded from Intervalos.ini)
     pub intervals: IntervalSettings,
 
-    // Ranking system (loaded from Ranking.dat)
-    pub ranking: RankingData,
-
     // World cleanup (tracks dropped items for auto-removal)
     pub clean_world: Vec<CleanWorldEntry>,
-
-    // Nobility quest state (modNobleza.bas)
-    pub nobility_user: ConnectionId,   // User doing the quest (0 = none)
-    pub nobility_stage: i32,           // Current stage (1-3, 0 = inactive)
-    pub nobility_timer: i32,           // Countdown ticks
-    pub nobility_kills: i32,           // Kills in current stage
 
     // IP security (SecurityIp.bas) — rate limiting + max connections per IP
     pub ip_last_connect: HashMap<String, std::time::Instant>, // Last connect time per IP
@@ -754,13 +567,6 @@ pub struct GameState {
     pub ip_max_connections: u32,                               // Max connections per IP (default 10)
     pub ip_min_interval_ms: u64,                               // Min ms between connections (default 500)
 
-    // War system (frmMain.frm / TCP_HandleData2.bas)
-    pub hay_guerra: bool,
-    pub hay_guerra_anvil: bool,         // War at Anvilmar (map 29)
-    pub hay_guerra_khalim: bool,        // War at Khalimdar (map 27)
-    pub rey_guerra_index: usize,        // NPC runtime index of war king
-    pub guerra_minutes: i32,            // Minute counter for war timer (VB6 Minus)
-    pub guerra_seconds: i32,            // Second counter (0-59, increments to minutes)
     pub chat_global: bool,              // Global chat enabled (toggled by /NOGLOBAL)
 
     // Treasure system (modTesoros.bas)
@@ -771,41 +577,11 @@ pub struct GameState {
     pub tesoro_tiempo: i32,             // Countdown ticks
     pub se_puede_desenterrar: bool,
 
-    // Castle siege state (modSiege.bas)
-    pub siege_active: bool,
-    pub siege_guild_owner: i32,           // Guild index that owns the castle
-    pub siege_guild_attacker: i32,        // Guild index attacking
-    pub siege_conquest: [i32; 4],         // 3 conquest points (1-indexed), guild_index or 0
-    pub siege_timer: i32,                 // Countdown ticks
-    pub siege_map: i32,                   // Map 151
-
     // Praetorian system (praetorians.bas)
     pub pretoriano_clan: Vec<usize>,      // NPC runtime indices in praetorian clan (up to 8)
     pub pretoriano_activo: bool,
     pub pretoriano_faccion: i32,          // 1=real, 2=caos
     pub pretoriano_alcoba: i32,           // Current alcoba state (0-4)
-
-    // Event system — generic event state
-    pub evento_activo: bool,
-    pub evento_tipo: i32,                 // 0=none, 1=CTF, 2=JDH, 3=LUZ, 4=ARAM, 5=BatMistica, 6=Faccionario, 7=TorneoAuto, 8=Guerra
-    pub evento_participantes: Vec<ConnectionId>,
-    pub evento_timer: i32,                // Event-specific timer (seconds)
-    pub evento_inscripciones: bool,       // Signup window open
-    pub evento_max_players: i32,
-    pub evento_costo: i64,               // Entry cost in gold
-    pub evento_map: i32,                  // Event map
-    pub evento_countdown: i32,            // Pre-start countdown (seconds)
-
-    // CTF-specific
-    pub ctf_puntos_azul: i32,
-    pub ctf_puntos_rojo: i32,
-
-    // ARAM-specific
-    pub aram_torre_azul: usize,           // NPC runtime index of blue tower
-    pub aram_torre_roja: usize,           // NPC runtime index of red tower
-
-    // Batalla Mistica — 4-team kills
-    pub bat_kills: [i32; 5],              // 1-indexed, team kills
 
     // Multipliers (set by GM commands)
     pub multiplicador_exp: i32,    // /EXP multiplier (default from config)
@@ -827,21 +603,6 @@ pub struct GameState {
     pub poll_votes: [i32; 5],
     pub poll_voters: Vec<String>,  // Names who already voted
 
-    // Automatic tournament
-    pub torneo_auto_activo: bool,
-    pub torneo_auto_rondas: i32,          // Total rounds
-    pub torneo_auto_ronda_actual: i32,    // Current round
-    pub torneo_auto_bracket: Vec<ConnectionId>, // Players in bracket (2^N)
-    pub torneo_auto_timer: i32,           // Countdown timer
-
-    // Ancalagon boss system (VB6: modDragon.bas)
-    pub ancalagon_alive: bool,            // Is the dragon (NPC 936) currently alive?
-    pub ancalagon_guardians: i32,         // Number of guardian NPCs (938) still alive
-    pub ancalagon_pre_dragon: bool,       // Is the pre-dragon (937) spawned?
-    pub ancalagon_pre_dragon_idx: NpcIndex, // Runtime index of pre-dragon NPC (for aura removal)
-    pub ancalagon_minutes: i32,           // Minutes since dragon death (counts to 60)
-    pub ancalagon_seconds: i32,           // Seconds counter (0-59)
-
     // Global NPC attack timer (VB6: CanAttackNpc counter — every 3 AI ticks)
     pub npc_can_attack_counter: i32,
 
@@ -849,11 +610,6 @@ pub struct GameState {
     pub map_user_counts: HashMap<i32, u32>,
 
     // Auction system (VB6: modSubastas)
-    pub auction: Option<AuctionState>,
-
-    // Gran Poder system (VB6: modGranPoder)
-    pub gran_poder_holder: ConnectionId,  // 0 = nobody has it
-
     // Countdown system (VB6: /CONT)
     pub countdown_seconds: i32,           // 0 = inactive
 
@@ -875,19 +631,6 @@ pub struct SosMessage {
     pub contenido: String,
 }
 
-/// Auction state (VB6: modSubastas — one global auction at a time)
-#[derive(Debug, Clone)]
-pub struct AuctionState {
-    pub auctioneer: ConnectionId,  // Who started the auction
-    pub obj_index: i32,            // Object being auctioned
-    pub amount: i32,               // Quantity
-    pub min_gold: i64,             // Minimum bid
-    pub current_bid: i64,          // Current highest bid (0 = no bids yet)
-    pub bidder: ConnectionId,      // Current highest bidder (0 = none)
-    pub bidder_name: String,       // Name of highest bidder
-    pub timer: i32,                // Seconds remaining (240 = 4 min)
-}
-
 /// Party runtime state (matches VB6 tParty)
 pub const MAX_PARTIES: usize = 1000;
 pub const MAX_PARTY_MEMBERS: usize = 10;
@@ -899,7 +642,7 @@ pub struct PartyState {
 }
 
 impl GameState {
-    pub fn new(config: ServerConfig, base_path: PathBuf, game_data: GameData, pool: PgPool, bans: BanList, ranking: RankingData) -> Self {
+    pub fn new(config: ServerConfig, base_path: PathBuf, game_data: GameData, pool: PgPool, bans: BanList) -> Self {
         let notice = config.notice.clone();
         let exp_mult = config.exp_multiplier as i32;
         let security_code = format!("{}", rand_simple());
@@ -932,47 +675,13 @@ impl GameState {
             record_users: 0,
             security_code,
             server_solo_gms: false,
-            arena_ocupada: [false; 5],
-            tiempo_duelo: [0; 5],
-            nombre_dueleando: Default::default(),
-            desafio_primero: 0,
-            desafio_segundo: 0,
-            cvc_funciona: false,
-            cvc_clan1_count: 0,
-            cvc_clan2_count: 0,
-            cvc_nombre1: String::new(),
-            cvc_nombre2: String::new(),
-            cvc_guild1: 0,
-            cvc_guild2: 0,
-            cvc_pending_target_guild: 0,
-            cvc_pending_challenger_guild: 0,
-            cvc_pending_challenger_name: String::new(),
-            espectadores_arena1: 0,
-            espectadores_arena2: 0,
-            espectadores_arena3: 0,
-            espectadores_arena4: 0,
-            pareja: [0; 5],
-            hay_torneo: false,
-            usuarios_en_torneo: 0,
-            cronologia_participantes: Vec::new(),
             auto_save_counter: 60, // Save every 60 ticks (~60 seconds)
             intervals,
-            ranking,
             clean_world: vec![CleanWorldEntry::default(); MAX_OBJS_CLEAR],
-            nobility_user: 0,
-            nobility_stage: 0,
-            nobility_timer: 0,
-            nobility_kills: 0,
             ip_last_connect: HashMap::new(),
             ip_connection_count: HashMap::new(),
             ip_max_connections: 10,
             ip_min_interval_ms: 500,
-            hay_guerra: false,
-            hay_guerra_anvil: false,
-            hay_guerra_khalim: false,
-            rey_guerra_index: 0,
-            guerra_minutes: 0,
-            guerra_seconds: 0,
             chat_global: true,
             tesoro_map: 0,
             tesoro_x: 0,
@@ -980,30 +689,10 @@ impl GameState {
             tesoro_contando: false,
             tesoro_tiempo: 0,
             se_puede_desenterrar: false,
-            siege_active: false,
-            siege_guild_owner: 0,
-            siege_guild_attacker: 0,
-            siege_conquest: [0; 4],
-            siege_timer: 0,
-            siege_map: 151,
             pretoriano_clan: Vec::new(),
             pretoriano_activo: false,
             pretoriano_faccion: 0,
             pretoriano_alcoba: 0,
-            evento_activo: false,
-            evento_tipo: 0,
-            evento_participantes: Vec::new(),
-            evento_timer: 0,
-            evento_inscripciones: false,
-            evento_max_players: 10,
-            evento_costo: 0,
-            evento_map: 0,
-            evento_countdown: 0,
-            ctf_puntos_azul: 0,
-            ctf_puntos_rojo: 0,
-            aram_torre_azul: 0,
-            aram_torre_roja: 0,
-            bat_kills: [0; 5],
             multiplicador_exp: exp_mult,
             multiplicador_oro: 1,
             multiplicador_drop: 1,
@@ -1016,21 +705,8 @@ impl GameState {
             poll_options: Default::default(),
             poll_votes: [0; 5],
             poll_voters: Vec::new(),
-            torneo_auto_activo: false,
-            torneo_auto_rondas: 0,
-            torneo_auto_ronda_actual: 0,
-            torneo_auto_bracket: Vec::new(),
-            torneo_auto_timer: 0,
-            ancalagon_alive: false,
-            ancalagon_guardians: 0,
-            ancalagon_pre_dragon: false,
-            ancalagon_pre_dragon_idx: 0,
-            ancalagon_minutes: 0,
-            ancalagon_seconds: 0,
             npc_can_attack_counter: 0,
             map_user_counts: HashMap::new(),
-            auction: None,
-            gran_poder_holder: 0,
             countdown_seconds: 0,
             role_overrides,
             recv_buffers: HashMap::new(),
@@ -1425,15 +1101,9 @@ impl GameState {
     }
 
     /// Get the guild that owns a castle on the given map.
-    /// VB6: CastilloNorte/Sur/Este/Oeste/Fortaleza correspond to different maps.
-    /// Currently uses single siege_guild_owner for the siege map.
-    pub fn get_castle_owner_guild(&self, map: i32) -> Option<i32> {
-        // Only the siege map has an owner
-        if map == self.siege_map && self.siege_guild_owner > 0 {
-            Some(self.siege_guild_owner)
-        } else {
-            None
-        }
+    /// (Siege system removed — always returns None.)
+    pub fn get_castle_owner_guild(&self, _map: i32) -> Option<i32> {
+        None
     }
 
     /// Remove an NPC from the world (death). Does NOT deallocate — for respawn.

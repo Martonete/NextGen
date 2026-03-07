@@ -1,16 +1,13 @@
 [Mapa40]
-Name=Pirámide de Inthak
-MusicNum=4
-StartPos=0-0-0
-MagiaSinEfecto=0
+Name=Catacumbas Ullathorpe-Nix.
+MusicNum=9
+MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
+Terreno=BOSQUE
+Zona=DUNGEON
+Restringir=No
+BackUp= 1
 Pk=0
-R=160
-G=160
-B=160
-Terreno=DESIERTO
-Zona=CAMPO
-Restringir=NO
-BACKUP= 1
+NoEncriptarMP=0
+RoboNpcsPermitido=1

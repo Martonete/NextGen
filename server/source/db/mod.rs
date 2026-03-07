@@ -5,11 +5,8 @@
 
 pub mod accounts;
 pub mod charfile;
-pub mod friends;
 pub mod guilds;
 pub mod bans;
-pub mod mail;
-pub mod ranking;
 pub mod password;
 
 use sqlx::PgPool;

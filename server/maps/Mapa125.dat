@@ -1,15 +1,12 @@
-[MAPA125]
-Name=Kalhat
-MusicNum=180
+[Mapa125]
+Name=Mar Oriental.
+MusicNum=17
 MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
+Terreno=BOSQUE
+Zona=CAMPO
+Restringir=No
+BackUp= 0
+Pk=0
 NoEncriptarMP=0
-Terreno=
-Zona=
-Restringir=
-BackUp= 1
-Pk=1
-R=160
-G=160
-B=160

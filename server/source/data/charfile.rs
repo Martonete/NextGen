@@ -135,17 +135,6 @@ pub struct CharData {
     pub recompensas_real: i32,   // Tier 0-5
     pub recompensas_caos: i32,   // Tier 0-5
     pub reenlistadas: bool,      // Can only enlist once
-
-    // Quests
-    pub questeando: bool,
-    pub quest_num: i32,
-    pub quest_kills: i32,
-    pub quests_completed: i32,
-
-    // Points
-    pub puntos_donacion: i64,
-    pub puntos_torneo: i64,
-    pub ts_points: i64,
 }
 
 /// Resolve path to a character file.
@@ -315,15 +304,6 @@ pub fn load_charfile(base: &Path, char_name: &str) -> Result<CharData, String> {
         recompensas_real: get_int("FACCIONES", "recReal"),
         recompensas_caos: get_int("FACCIONES", "recCaos"),
         reenlistadas: ini.get("FACCIONES", "Reenlistadas").map(|s| s == "1").unwrap_or(false),
-
-        questeando: ini.get("FLAGS", "Questeando").map(|s| s == "1").unwrap_or(false),
-        quest_num: get_int("FLAGS", "UserNumQuest"),
-        quest_kills: get_int("FLAGS", "MuereQuest"),
-        quests_completed: get_int("FLAGS", "QuestCompletadas"),
-
-        puntos_donacion: ini.get("STATS", "PuntosDonacion").and_then(|s| s.parse().ok()).unwrap_or(0),
-        puntos_torneo: ini.get("STATS", "PuntosTorneo").and_then(|s| s.parse().ok()).unwrap_or(0),
-        ts_points: ini.get("STATS", "TSPoints").and_then(|s| s.parse().ok()).unwrap_or(0),
     })
 }
 
@@ -358,44 +338,39 @@ pub fn create_charfile(
     let body = starter_body(race, gender);
     let head_val = if head > 0 { head } else { starter_head(race, gender) };
 
-    // Base stats by class
-    let (base_hp, base_mana, base_sta) = starter_stats(class);
-
-    // Apply race attribute bonuses (VB6 ConnectNewUser lines 615-650)
+    // Apply race attribute bonuses FIRST (VB6 13.3 Balance.dat ModRaza values)
     let mut attrs = attributes;
     let race_upper = race.to_uppercase();
     match race_upper.as_str() {
         "HUMANO" => {
-            attrs[0] += 2; // Fuerza +2
+            attrs[0] += 1; // Fuerza +1
+            attrs[1] += 1; // Agilidad +1
             attrs[4] += 2; // Constitucion +2
-            attrs[3] += 3; // Carisma +3
         }
         "ELFO" => {
             attrs[0] -= 1; // Fuerza -1
-            attrs[1] += 2; // Agilidad +2
+            attrs[1] += 3; // Agilidad +3
             attrs[2] += 2; // Inteligencia +2
             attrs[3] += 2; // Carisma +2
+            attrs[4] += 1; // Constitucion +1
         }
         "ELFO OSCURO" => {
-            attrs[0] += 1; // Fuerza +1
-            attrs[1] += 1; // Agilidad +1
+            attrs[0] += 2; // Fuerza +2
+            attrs[1] += 3; // Agilidad +3
             attrs[2] += 2; // Inteligencia +2
-            attrs[3] += 1; // Carisma +1
-            attrs[4] += 1; // Constitucion +1
+            attrs[3] -= 3; // Carisma -3
         }
         "ENANO" => {
             attrs[0] += 3; // Fuerza +3
-            attrs[4] += 4; // Constitucion +4
+            attrs[4] += 3; // Constitucion +3
             attrs[2] -= 2; // Inteligencia -2
-            attrs[1] -= 1; // Agilidad -1
-            attrs[3] -= 1; // Carisma -1
+            attrs[3] -= 2; // Carisma -2
         }
         "GNOMO" => {
-            attrs[0] -= 4; // Fuerza -4
-            attrs[2] += 3; // Inteligencia +3
+            attrs[0] -= 2; // Fuerza -2
             attrs[1] += 3; // Agilidad +3
+            attrs[2] += 4; // Inteligencia +4
             attrs[3] += 1; // Carisma +1
-            attrs[4] -= 1; // Constitucion -1
         }
         _ => {}
     }
@@ -403,6 +378,9 @@ pub fn create_charfile(
     for a in attrs.iter_mut() {
         *a = (*a).clamp(1, 25);
     }
+
+    // Base stats by class (VB6 13.3: uses post-race-bonus attributes)
+    let (base_hp, base_mana, base_sta) = starter_stats(class, attrs[4], attrs[1], attrs[2]);
 
     // Determine race-specific armor (VB6 ConnectNewUser lines 660-680)
     let race_armor = match race_upper.as_str() {
@@ -413,12 +391,13 @@ pub fn create_charfile(
         _ => 463,
     };
 
-    // Determine if class gets starting spell (casters get Magia Misil = spell 2)
+    // Determine starting spells (VB6 13.3: casters get spell 2, druids also get spell 46)
     let class_upper = class.to_uppercase();
-    let starting_spell = match class_upper.as_str() {
-        "MAGO" | "CLERIGO" | "DRUIDA" | "BARDO" | "BRUJO" => 2,
+    let starting_spell_1 = match class_upper.as_str() {
+        "MAGO" | "CLERIGO" | "DRUIDA" | "BARDO" | "ASESINO" => 2,
         _ => 0,
     };
+    let starting_spell_2 = if class_upper == "DRUIDA" { 46 } else { 0 };
 
     let mut lines = Vec::new();
 
@@ -449,7 +428,7 @@ pub fn create_charfile(
     lines.push(format!("MinSTA={}", base_sta));
     lines.push(format!("MaxMAN={}", base_mana));
     lines.push(format!("MinMAN={}", base_mana));
-    lines.push("MaxHIT=1".into());
+    lines.push("MaxHIT=2".into());
     lines.push("MinHIT=1".into());
     lines.push("MaxAGU=100".into());
     lines.push("MinAGU=100".into());
@@ -464,10 +443,10 @@ pub fn create_charfile(
         lines.push(format!("AT{}={}", i + 1, attrs[i]));
     }
 
-    // [SKILLS] — VB6 hardcodes all skills to 100 (skill system unused in TS)
+    // [SKILLS] — VB6 13.3: all skills start at 0, player distributes 10 skill points
     lines.push("[SKILLS]".into());
     for i in 1..=22 {
-        lines.push(format!("SK{}=100", i));
+        lines.push(format!("SK{}=0", i));
     }
 
     // [FLAGS]
@@ -480,31 +459,66 @@ pub fn create_charfile(
     lines.push("Criminal=0".into());
     lines.push("Navegando=0".into());
 
-    // [HECHIZOS] — casters get Magia Misil (spell 2) in slot 1
+    // [HECHIZOS] — VB6 13.3: casters get spell 2 in slot 1, druids also get spell 46 in slot 2
     lines.push("[HECHIZOS]".into());
-    lines.push(format!("H1={}", starting_spell));
-    for i in 2..=20 {
+    lines.push(format!("H1={}", starting_spell_1));
+    lines.push(format!("H2={}", starting_spell_2));
+    for i in 3..=20 {
         lines.push(format!("H{}=0", i));
     }
 
-    // [INVENTARIO] — starter items (VB6 ConnectNewUser lines 654-690)
-    // Slot 1: Food (obj 467) x100
-    // Slot 2: Drink (obj 468) x100
-    // Slot 3: Weapon (obj 460) x1, EQUIPPED
-    // Slot 4: Race armor x1, EQUIPPED
-    // Slot 5: Arrows (obj 461) x150
-    // Slot 6: Potions (obj 462) x150
-    // Slot 7: Misc (obj 1491) x150
+    // [INVENTARIO] — VB6 13.3 ConnectNewUser starter items
+    // Build inventory dynamically based on class
+    let mut inv: Vec<(i32, i32, bool)> = Vec::new(); // (obj_index, amount, equipped)
+
+    // Slot 1: Red Potion (857) x200
+    inv.push((857, 200, false));
+
+    // Slot 2: Blue Potion (856) x200 if mana class, else Yellow (855) x100 + Green (858) x50
+    let has_mana = base_mana > 0;
+    if has_mana {
+        inv.push((856, 200, false));
+    } else {
+        inv.push((855, 100, false));
+        inv.push((858, 50, false));
+    }
+
+    // Armor by race, equipped
+    inv.push((race_armor, 1, true));
+
+    // Weapon by class, equipped
+    let is_cazador = class_upper == "CAZADOR";
+    let is_trabajador = class_upper == "TRABAJADOR";
+    if is_cazador {
+        inv.push((859, 1, true)); // Bow
+    } else if is_trabajador {
+        // Random tool 561-565
+        let tool = 560 + simple_rand_range(5);
+        inv.push((tool, 1, true));
+    } else {
+        inv.push((460, 1, true)); // Dagger
+    }
+
+    // Arrows for hunters
+    if is_cazador {
+        inv.push((860, 150, true)); // Arrows, equipped as ammo
+    }
+
+    // Food and drink
+    inv.push((467, 100, false)); // Apples
+    inv.push((468, 100, false)); // Juice
+
+    let item_count = inv.len();
     lines.push("[INVENTARIO]".into());
-    lines.push("CantidadItems=7".into());
-    lines.push("Obj1=467-100".into());
-    lines.push("Obj2=468-100".into());
-    lines.push("Obj3=460-1-1".into());   // -1 = equipped
-    lines.push(format!("Obj4={}-1-1", race_armor)); // -1 = equipped
-    lines.push("Obj5=461-150".into());
-    lines.push("Obj6=462-150".into());
-    lines.push("Obj7=1491-150".into());
-    for i in 8..=25 {
+    lines.push(format!("CantidadItems={}", item_count));
+    for (i, &(obj, amt, eq)) in inv.iter().enumerate() {
+        if eq {
+            lines.push(format!("Obj{}={}-{}-1", i + 1, obj, amt));
+        } else {
+            lines.push(format!("Obj{}={}-{}", i + 1, obj, amt));
+        }
+    }
+    for i in (inv.len() + 1)..=25 {
         lines.push(format!("Obj{}=0-0", i));
     }
 
@@ -527,11 +541,11 @@ pub fn create_charfile(
     lines.push("rExReal=0".into());
     lines.push("rExCaos=0".into());
 
-    // [REP] — reputation
+    // [REP] — reputation (VB6 13.3: NobleRep=1000, PlebeRep=30, rest=0)
     lines.push("[REP]".into());
     lines.push("BurguesRep=0".into());
-    lines.push("NobleRep=0".into());
-    lines.push("PlebeRep=0".into());
+    lines.push("NobleRep=1000".into());
+    lines.push("PlebeRep=30".into());
     lines.push("CriminalRep=0".into());
     lines.push("Promedio=0".into());
 
@@ -594,9 +608,6 @@ pub fn save_charfile(base: &Path, char_name: &str, data: &CharSaveData) -> Resul
     lines.push(format!("GLD={}", data.gold));
     lines.push(format!("BancoGLD={}", data.bank_gold));
     lines.push(format!("SkillPtsLibres={}", data.skill_pts_libres));
-    lines.push(format!("PuntosDonacion={}", data.puntos_donacion));
-    lines.push(format!("PuntosTorneo={}", data.puntos_torneo));
-    lines.push(format!("TSPoints={}", data.ts_points));
 
     // [ATRIBUTOS]
     lines.push("[ATRIBUTOS]".into());
@@ -744,9 +755,6 @@ pub struct CharSaveData {
     pub ejercito_real: bool,
     pub ejercito_caos: bool,
     pub skill_pts_libres: i32,
-    pub puntos_donacion: i64,
-    pub puntos_torneo: i64,
-    pub ts_points: i64,
 }
 
 /// Delete a character file.
@@ -769,20 +777,15 @@ pub fn set_logged_flag(base: &Path, char_name: &str, logged: bool) -> Result<(),
 }
 
 // Starter body IDs by race and gender (VB6 Declares.bas / General.bas)
-fn starter_body(race: &str, gender: i32) -> i32 {
-    let race_lower = race.to_lowercase();
-    match (race_lower.as_str(), gender) {
-        ("humano", 1) => 1,   // Male human
-        ("humano", 2) => 2,   // Female human
-        ("elfo", 1) => 1,
-        ("elfo", 2) => 2,
-        ("elfo oscuro", 1) => 1,
-        ("elfo oscuro", 2) => 2,
-        ("enano", 1) => 53,   // Dwarf male
-        ("enano", 2) => 54,   // Dwarf female
-        ("gnomo", 1) => 53,
-        ("gnomo", 2) => 54,
-        _ => 1, // Default male human
+fn starter_body(race: &str, _gender: i32) -> i32 {
+    // VB6 13.3 DarCuerpo(): body per race (no gender distinction in 13.3)
+    let race_upper = race.to_uppercase();
+    match race_upper.as_str() {
+        "HUMANO" => 1,
+        "ELFO" => 2,
+        "ELFO OSCURO" => 3,
+        "ENANO" | "GNOMO" => 300,
+        _ => 1,
     }
 }
 
@@ -803,24 +806,42 @@ fn starter_head(race: &str, gender: i32) -> i32 {
     }
 }
 
-fn starter_stats(class: &str) -> (i32, i32, i32) {
-    // (HP, Mana, Stamina) for level 1
-    let class_lower = class.to_lowercase();
-    match class_lower.as_str() {
-        "guerrero" => (50, 0, 50),
-        "mago" => (30, 100, 30),
-        "clerigo" => (40, 75, 40),
-        "asesino" => (40, 0, 50),
-        "bardo" => (35, 50, 40),
-        "druida" => (35, 75, 35),
-        "paladin" => (45, 50, 45),
-        "cazador" => (40, 0, 55),
-        "trabajador" => (45, 0, 60),
-        "pirata" => (45, 0, 50),
-        "ladron" => (35, 0, 50),
-        "bandido" => (40, 0, 50),
-        _ => (40, 0, 40),
-    }
+/// Simple random in range [1, max] (not crypto-secure).
+fn simple_rand_range(max: i32) -> i32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    if max <= 1 { return 1; }
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u32;
+    let r = seed.wrapping_mul(1103515245).wrapping_add(12345);
+    1 + (r % max as u32) as i32
+}
+
+fn starter_stats(class: &str, constitution: i32, agility: i32, intelligence: i32) -> (i32, i32, i32) {
+    // VB6 13.3 ConnectNewUser: HP/Mana/Sta formulas using attributes
+
+    // HP = 15 + Random(1, Constitution/3)
+    let con_div = (constitution / 3).max(1);
+    let hp = 15 + simple_rand_range(con_div);
+
+    // Stamina = 20 * Random(1, Agility/6); if roll==1 then roll=2
+    let agi_div = (agility / 6).max(1);
+    let sta_roll = {
+        let r = simple_rand_range(agi_div);
+        if r == 1 { 2 } else { r }
+    };
+    let sta = 20 * sta_roll;
+
+    // Mana by class
+    let class_upper = class.to_uppercase();
+    let mana = match class_upper.as_str() {
+        "MAGO" => intelligence * 3,
+        "CLERIGO" | "DRUIDA" | "BARDO" | "ASESINO" | "BANDIDO" => 50,
+        _ => 0, // Guerrero, Cazador, Ladron, Paladin, Trabajador, Pirata
+    };
+
+    (hp, mana, sta)
 }
 
 #[cfg(test)]
@@ -851,10 +872,11 @@ mod tests {
         assert!(!preview.dead);
 
         let full = load_charfile(&base, "Warrior").unwrap();
-        assert_eq!(full.max_hp, 50); // Guerrero starter HP
+        // 13.3: HP = 15 + rand(1, CON/3), Guerrero has 0 mana
+        assert!(full.max_hp >= 15, "HP should be at least 15");
         assert_eq!(full.max_mana, 0);
-        // Humano race bonuses: Str+2, Con+2, Cha+3 → [20,18,18,21,20]
-        assert_eq!(full.attributes, [20, 18, 18, 21, 20]);
+        // Humano 13.3 race bonuses: Str+1, Agi+1, Con+2 → [19,19,18,18,20]
+        assert_eq!(full.attributes, [19, 19, 18, 18, 20]);
         assert_eq!(full.map, 1);
 
         let _ = fs::remove_dir_all(&base);

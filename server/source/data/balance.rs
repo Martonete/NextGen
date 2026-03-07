@@ -1,115 +1,148 @@
-// Game balance data loader — dat/Balance.dat + dat/Vidas.dat
+// Game balance data loader — dat/Balance.dat
 //
-// Balance.dat: per-class combat modifiers (attack %, defense %, evasion multiplier, etc.)
-//              plus class-vs-class AF/AM matrices.
-// Vidas.dat:   per-class per-race HP min/max ranges for level-up.
-//
-// Matches VB6 modBalance.bas LoadBalance().
+// Loads all VB6 13.3 balance sections:
+//   MODRAZA, MODEVASION, MODATAQUEARMAS, MODATAQUEPROYECTILES, MODATAQUEWRESTLING,
+//   MODDAÑOARMAS, MODDAÑOPROYECTILES, MODDAÑOWRESTLING, MODESCUDO, MODVIDA,
+//   DISTRIBUCION, EXTRA, PARTY, RECOMPENSAFACCION.
 
 use std::path::Path;
 use crate::config::IniFile;
 
-/// Number of classes in the game (Guerrero..Druida = 9).
-pub const NUM_CLASSES: usize = 9;
+/// Number of classes in the game (VB6 13.3: Mage..Pirat = 12).
+pub const NUM_CLASSES: usize = 12;
 
-/// Class indices matching VB6 order.
+/// VB6 eClass enum order (1-based in VB6, 0-based here).
 pub mod class_id {
-    pub const GUERRERO: usize = 0;
-    pub const CAZADOR: usize = 1;
-    pub const PALADIN: usize = 2;
-    pub const ASESINO: usize = 3;
-    pub const LADRON: usize = 4;
-    pub const BARDO: usize = 5;
-    pub const CLERIGO: usize = 6;
-    pub const MAGO: usize = 7;
-    pub const DRUIDA: usize = 8;
+    pub const MAGO: usize = 0;       // eClass.Mage = 1
+    pub const CLERIGO: usize = 1;    // eClass.Cleric = 2
+    pub const GUERRERO: usize = 2;   // eClass.Warrior = 3
+    pub const ASESINO: usize = 3;    // eClass.Assasin = 4
+    pub const LADRON: usize = 4;     // eClass.Thief = 5
+    pub const BARDO: usize = 5;      // eClass.Bard = 6
+    pub const DRUIDA: usize = 6;     // eClass.Druid = 7
+    pub const BANDIDO: usize = 7;    // eClass.Bandit = 8
+    pub const PALADIN: usize = 8;    // eClass.Paladin = 9
+    pub const CAZADOR: usize = 9;    // eClass.Hunter = 10
+    pub const TRABAJADOR: usize = 10; // eClass.Worker = 11
+    pub const PIRATA: usize = 11;    // eClass.Pirat = 12
 }
 
-/// Race indices for HP table.
+/// Race indices.
 pub mod race_id {
-    pub const HUMANO: usize = 0;
-    pub const ELFO: usize = 1;
-    pub const ELFO_OSCURO: usize = 2;
-    pub const GNOMO: usize = 3;
-    pub const ENANO: usize = 4;
+    pub const HUMANO: usize = 0;       // eRaza.Humano = 1
+    pub const ELFO: usize = 1;         // eRaza.Elfo = 2
+    pub const ELFO_OSCURO: usize = 2;  // eRaza.Drow = 3
+    pub const ENANO: usize = 3;        // eRaza.Enano = 4
+    pub const GNOMO: usize = 4;        // eRaza.Gnomo = 5
 }
 
 pub const NUM_RACES: usize = 5;
 
-/// Class names as they appear in INI files (section keys).
+/// Class names as they appear in Balance.dat keys.
 const CLASS_NAMES: [&str; NUM_CLASSES] = [
-    "Guerrero", "Cazador", "Paladin", "Asesino", "Ladron", "Bardo", "Clerigo", "Mago", "Druida",
+    "Mago", "Clerigo", "Guerrero", "Asesino", "Ladron", "Bardo",
+    "Druida", "Bandido", "Paladin", "Cazador", "Trabajador", "Pirata",
 ];
 
-/// Class section names (uppercase, for class-vs-class AF/AM matrices).
+/// Class section names (uppercase, for AF/AM matrices).
 const CLASS_SECTIONS: [&str; NUM_CLASSES] = [
-    "GUERRERO", "CAZADOR", "PALADIN", "ASESINO", "LADRON", "BARDO", "CLERIGO", "MAGO", "DRUIDA",
+    "MAGO", "CLERIGO", "GUERRERO", "ASESINO", "LADRON", "BARDO",
+    "DRUIDA", "BANDIDO", "PALADIN", "CAZADOR", "TRABAJADOR", "PIRATA",
 ];
 
-/// Race names as they appear in Vidas.dat.
-const RACE_NAMES: [&str; NUM_RACES] = [
-    "Humano", "Elfo", "ElfoOscuro", "Gnomo", "Enano",
+/// Race names for MODRAZA loading.
+const RACE_PREFIXES: [&str; NUM_RACES] = [
+    "Humano", "Elfo", "Drow", "Enano", "Gnomo",
 ];
 
-/// Per-class per-race HP range for level-up (min, max).
+/// Per-race attribute modifiers (VB6: ModRaza).
 #[derive(Debug, Clone, Copy, Default)]
-pub struct HpRange {
-    pub min: i32,
-    pub max: i32,
+pub struct RaceModifiers {
+    pub fuerza: i32,
+    pub agilidad: i32,
+    pub inteligencia: i32,
+    pub carisma: i32,
+    pub constitucion: i32,
 }
 
-/// All combat balance data.
+/// HP distribution probabilities for level-up (VB6: [DISTRIBUCION]).
+#[derive(Debug, Clone)]
+pub struct HpDistribution {
+    pub entera: [i32; 5],       // E1-E5 (integer average: 5 brackets)
+    pub semientera: [i32; 4],   // S1-S4 (half-integer average: 4 brackets)
+}
+
+impl Default for HpDistribution {
+    fn default() -> Self {
+        Self {
+            entera: [10, 20, 40, 20, 10],
+            semientera: [10, 40, 40, 10],
+        }
+    }
+}
+
+/// All combat balance data — VB6 13.3 exact.
 #[derive(Debug, Clone)]
 pub struct BalanceData {
-    /// Physical attack % modifier per class (e.g., -15 for Guerrero).
-    pub ataque_fisico: [f32; NUM_CLASSES],
-    /// Magic attack % modifier per class.
-    pub ataque_magico: [f32; NUM_CLASSES],
-    /// Physical defense % modifier per class.
-    pub defensa_fisica: [f32; NUM_CLASSES],
-    /// Magic defense % modifier per class.
-    pub defensa_magica: [f32; NUM_CLASSES],
-    /// Projectile attack % modifier per class.
-    pub ataque_proyectil: [f32; NUM_CLASSES],
-    /// Evasion multiplier per class (0.0-1.0).
+    // Per-race attribute modifiers (VB6: MODRAZA)
+    pub mod_raza: [RaceModifiers; NUM_RACES],
+
+    // Per-class combat modifiers (from Balance.dat sections)
     pub mod_evasion: [f32; NUM_CLASSES],
-    /// Weapon attack power multiplier per class.
-    pub mod_poder_ataque_armas: [f32; NUM_CLASSES],
-    /// Projectile attack power multiplier per class.
-    pub mod_poder_ataque_proyectiles: [f32; NUM_CLASSES],
-    /// Weapon damage class multiplier.
-    pub mod_dano_clase_armas: [f32; NUM_CLASSES],
-    /// Projectile damage class multiplier.
-    pub mod_dano_clase_proyectiles: [f32; NUM_CLASSES],
-    /// Shield evasion bonus per class.
-    pub mod_evasion_escudo: [f32; NUM_CLASSES],
+    pub mod_ataque_armas: [f32; NUM_CLASSES],
+    pub mod_ataque_proyectiles: [f32; NUM_CLASSES],
+    pub mod_ataque_wrestling: [f32; NUM_CLASSES],
+    pub mod_dano_armas: [f32; NUM_CLASSES],
+    pub mod_dano_proyectiles: [f32; NUM_CLASSES],
+    pub mod_dano_wrestling: [f32; NUM_CLASSES],
+    pub mod_escudo: [f32; NUM_CLASSES],
 
-    /// Class-vs-class physical attack modifier (AF). [attacker][victim] = %.
-    pub af_clase_vs_clase: [[f32; NUM_CLASSES]; NUM_CLASSES],
-    /// Class-vs-class magic attack modifier (AM). [attacker][victim] = %.
-    pub am_clase_vs_clase: [[f32; NUM_CLASSES]; NUM_CLASSES],
+    // HP base per class (VB6: MODVIDA)
+    pub mod_vida: [f32; NUM_CLASSES],
 
-    /// HP ranges per class per race. [class][race] = HpRange.
-    pub vidas: [[HpRange; NUM_RACES]; NUM_CLASSES],
+    // HP distribution probabilities (VB6: DISTRIBUCION)
+    pub hp_distribution: HpDistribution,
+
+    // Mana recovery percentage (VB6: EXTRA.PorcentajeRecuperoMana)
+    pub porcentaje_recupero_mana: i32,
+
+    // Party XP exponent (VB6: PARTY.ExponenteNivelParty)
+    pub exponente_nivel_party: f32,
+
+    // Faction reward thresholds (VB6: RECOMPENSAFACCION)
+    pub recompensa_faccion: Vec<i64>,
 }
 
 impl Default for BalanceData {
     fn default() -> Self {
         Self {
-            ataque_fisico: [0.0; NUM_CLASSES],
-            ataque_magico: [0.0; NUM_CLASSES],
-            defensa_fisica: [0.0; NUM_CLASSES],
-            defensa_magica: [0.0; NUM_CLASSES],
-            ataque_proyectil: [0.0; NUM_CLASSES],
+            mod_raza: [RaceModifiers::default(); NUM_RACES],
             mod_evasion: [1.0; NUM_CLASSES],
-            mod_poder_ataque_armas: [1.0; NUM_CLASSES],
-            mod_poder_ataque_proyectiles: [1.0; NUM_CLASSES],
-            mod_dano_clase_armas: [1.0; NUM_CLASSES],
-            mod_dano_clase_proyectiles: [1.0; NUM_CLASSES],
-            mod_evasion_escudo: [1.0; NUM_CLASSES],
-            af_clase_vs_clase: [[0.0; NUM_CLASSES]; NUM_CLASSES],
-            am_clase_vs_clase: [[0.0; NUM_CLASSES]; NUM_CLASSES],
-            vidas: [[HpRange::default(); NUM_RACES]; NUM_CLASSES],
+            mod_ataque_armas: [1.0; NUM_CLASSES],
+            mod_ataque_proyectiles: [1.0; NUM_CLASSES],
+            mod_ataque_wrestling: [1.0; NUM_CLASSES],
+            mod_dano_armas: [1.0; NUM_CLASSES],
+            mod_dano_proyectiles: [1.0; NUM_CLASSES],
+            mod_dano_wrestling: [1.0; NUM_CLASSES],
+            mod_escudo: [1.0; NUM_CLASSES],
+            mod_vida: [
+                7.5,  // Mago
+                8.5,  // Clerigo
+                10.0, // Guerrero
+                8.5,  // Asesino
+                10.0, // Ladron
+                8.5,  // Bardo
+                8.5,  // Druida
+                9.5,  // Bandido
+                9.5,  // Paladin
+                9.5,  // Cazador
+                9.5,  // Trabajador
+                9.5,  // Pirata
+            ],
+            hp_distribution: HpDistribution::default(),
+            porcentaje_recupero_mana: 6,
+            exponente_nivel_party: 1.75,
+            recompensa_faccion: Vec::new(),
         }
     }
 }
@@ -118,15 +151,18 @@ impl Default for BalanceData {
 pub fn class_name_to_index(name: &str) -> Option<usize> {
     let upper = name.to_uppercase();
     match upper.as_str() {
+        "MAGO" => Some(class_id::MAGO),
+        "CLERIGO" | "CLÉRIGO" => Some(class_id::CLERIGO),
         "GUERRERO" => Some(class_id::GUERRERO),
-        "CAZADOR" => Some(class_id::CAZADOR),
-        "PALADIN" | "PALADÍN" => Some(class_id::PALADIN),
         "ASESINO" => Some(class_id::ASESINO),
         "LADRON" | "LADRÓN" => Some(class_id::LADRON),
         "BARDO" => Some(class_id::BARDO),
-        "CLERIGO" | "CLÉRIGO" => Some(class_id::CLERIGO),
-        "MAGO" => Some(class_id::MAGO),
         "DRUIDA" => Some(class_id::DRUIDA),
+        "BANDIDO" => Some(class_id::BANDIDO),
+        "PALADIN" | "PALADÍN" => Some(class_id::PALADIN),
+        "CAZADOR" => Some(class_id::CAZADOR),
+        "TRABAJADOR" => Some(class_id::TRABAJADOR),
+        "PIRATA" => Some(class_id::PIRATA),
         _ => None,
     }
 }
@@ -137,79 +173,50 @@ pub fn race_name_to_index(name: &str) -> Option<usize> {
     match upper.as_str() {
         "HUMANO" => Some(race_id::HUMANO),
         "ELFO" => Some(race_id::ELFO),
-        "ELFO OSCURO" | "ELFOOSCURO" => Some(race_id::ELFO_OSCURO),
-        "GNOMO" => Some(race_id::GNOMO),
+        "ELFO OSCURO" | "ELFOOSCURO" | "DROW" => Some(race_id::ELFO_OSCURO),
         "ENANO" => Some(race_id::ENANO),
+        "GNOMO" => Some(race_id::GNOMO),
         _ => None,
     }
 }
 
 impl BalanceData {
-    /// Get physical attack % modifier for a class name.
-    pub fn modificar_ataque_fisico(&self, class: &str) -> f32 {
-        class_name_to_index(class)
-            .map(|i| self.ataque_fisico[i])
-            .unwrap_or(0.0)
+    pub fn class_mod_evasion(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_evasion[i]).unwrap_or(1.0)
     }
-
-    /// Get magic attack % modifier for a class name.
-    pub fn modificar_ataque_magico(&self, class: &str) -> f32 {
-        class_name_to_index(class)
-            .map(|i| self.ataque_magico[i])
-            .unwrap_or(0.0)
+    pub fn class_mod_ataque_armas(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_ataque_armas[i]).unwrap_or(1.0)
     }
-
-    /// Get physical defense % modifier for a class name.
-    pub fn modificar_defensa_fisica(&self, class: &str) -> f32 {
-        class_name_to_index(class)
-            .map(|i| self.defensa_fisica[i])
-            .unwrap_or(0.0)
+    pub fn class_mod_ataque_proyectiles(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_ataque_proyectiles[i]).unwrap_or(1.0)
     }
-
-    /// Get magic defense % modifier for a class name.
-    pub fn modificar_defensa_magica(&self, class: &str) -> f32 {
-        class_name_to_index(class)
-            .map(|i| self.defensa_magica[i])
-            .unwrap_or(0.0)
+    pub fn class_mod_ataque_wrestling(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_ataque_wrestling[i]).unwrap_or(1.0)
     }
-
-    /// Get projectile attack % modifier for a class name.
-    pub fn modificar_ataque_proyectil(&self, class: &str) -> f32 {
-        class_name_to_index(class)
-            .map(|i| self.ataque_proyectil[i])
-            .unwrap_or(0.0)
+    pub fn class_mod_dano_armas(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_dano_armas[i]).unwrap_or(1.0)
     }
-
-    /// Get class-vs-class AF modifier (attacker class vs victim class).
-    pub fn af_clase_vs(&self, attacker: &str, victim: &str) -> f32 {
-        match (class_name_to_index(attacker), class_name_to_index(victim)) {
-            (Some(a), Some(v)) => self.af_clase_vs_clase[a][v],
-            _ => 0.0,
-        }
+    pub fn class_mod_dano_proyectiles(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_dano_proyectiles[i]).unwrap_or(1.0)
     }
-
-    /// Get class-vs-class AM modifier (attacker class vs victim class).
-    pub fn am_clase_vs(&self, attacker: &str, victim: &str) -> f32 {
-        match (class_name_to_index(attacker), class_name_to_index(victim)) {
-            (Some(a), Some(v)) => self.am_clase_vs_clase[a][v],
-            _ => 0.0,
-        }
+    pub fn class_mod_dano_wrestling(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_dano_wrestling[i]).unwrap_or(1.0)
     }
-
-    /// Get HP range for level-up given class and race names.
-    pub fn hp_range(&self, class: &str, race: &str) -> HpRange {
-        match (class_name_to_index(class), race_name_to_index(race)) {
-            (Some(c), Some(r)) => self.vidas[c][r],
-            _ => HpRange { min: 1, max: 1 },
-        }
+    pub fn class_mod_escudo(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_escudo[i]).unwrap_or(1.0)
+    }
+    pub fn class_mod_vida(&self, class: &str) -> f32 {
+        class_name_to_index(class).map(|i| self.mod_vida[i]).unwrap_or(8.0)
+    }
+    pub fn race_modifiers(&self, race: &str) -> RaceModifiers {
+        race_name_to_index(race).map(|i| self.mod_raza[i]).unwrap_or_default()
     }
 }
 
-/// Load Balance.dat and Vidas.dat.
+/// Load Balance.dat (all VB6 13.3 sections).
 pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
     let mut data = BalanceData::default();
 
-    // --- Load Balance.dat ---
     let balance_path = base.join("dat").join("Balance.dat");
     if let Ok(ini) = IniFile::load(&balance_path) {
         let get_f32 = |section: &str, key: &str| -> f32 {
@@ -217,77 +224,96 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
                 .and_then(|s| s.replace(',', ".").parse::<f32>().ok())
                 .unwrap_or(0.0)
         };
+        let get_i32 = |section: &str, key: &str| -> i32 {
+            ini.get(section, key)
+                .and_then(|s| s.replace('+', "").trim().parse::<i32>().ok())
+                .unwrap_or(0)
+        };
 
-        // Per-class modifiers
-        for i in 0..NUM_CLASSES {
-            let name = CLASS_NAMES[i];
-            data.ataque_fisico[i] = get_f32("AtaqueFisico", name);
-            data.ataque_magico[i] = get_f32("AtaqueMagico", name);
-            data.defensa_fisica[i] = get_f32("DefensaFisica", name);
-            data.defensa_magica[i] = get_f32("DefensaMagica", name);
-            data.ataque_proyectil[i] = get_f32("AtaqueProyectil", name);
-            data.mod_evasion[i] = get_f32("ModificadorEvasion", name);
-            data.mod_poder_ataque_armas[i] = get_f32("ModificadorPoderAtaqueArmas", name);
-            data.mod_poder_ataque_proyectiles[i] = get_f32("ModificadorPoderAtaqueProyectiles", name);
-            // VB6 uses "ModicadorDa\xf1oClaseArmas" (with typo and ñ)
-            data.mod_dano_clase_armas[i] = get_f32("ModicadorDa\u{00f1}oClaseArmas", name);
-            if data.mod_dano_clase_armas[i] == 0.0 {
-                // Try without the ñ (in case INI parser normalized it)
-                data.mod_dano_clase_armas[i] = get_f32("ModicadorDanoClaseArmas", name);
-            }
-            data.mod_dano_clase_proyectiles[i] = get_f32("ModicadorDa\u{00f1}oClaseProyectiles", name);
-            if data.mod_dano_clase_proyectiles[i] == 0.0 {
-                data.mod_dano_clase_proyectiles[i] = get_f32("ModicadorDanoClaseProyectiles", name);
-            }
-            data.mod_evasion_escudo[i] = get_f32("ModEvasionDeEscudoClase", name);
-
-            // Default multipliers to 1.0 if loaded as 0.0
-            if data.mod_evasion[i] == 0.0 { data.mod_evasion[i] = 1.0; }
-            if data.mod_poder_ataque_armas[i] == 0.0 { data.mod_poder_ataque_armas[i] = 1.0; }
-            if data.mod_poder_ataque_proyectiles[i] == 0.0 { data.mod_poder_ataque_proyectiles[i] = 1.0; }
-            if data.mod_dano_clase_armas[i] == 0.0 { data.mod_dano_clase_armas[i] = 1.0; }
-            if data.mod_dano_clase_proyectiles[i] == 0.0 { data.mod_dano_clase_proyectiles[i] = 1.0; }
-            if data.mod_evasion_escudo[i] == 0.0 { data.mod_evasion_escudo[i] = 1.0; }
+        // MODRAZA — race attribute modifiers
+        let attr_names = ["Fuerza", "Agilidad", "Inteligencia", "Carisma", "Constitucion"];
+        for (ri, race_prefix) in RACE_PREFIXES.iter().enumerate() {
+            let f = get_i32("MODRAZA", &format!("{}Fuerza", race_prefix));
+            let a = get_i32("MODRAZA", &format!("{}Agilidad", race_prefix));
+            let i = get_i32("MODRAZA", &format!("{}Inteligencia", race_prefix));
+            let c = get_i32("MODRAZA", &format!("{}Carisma", race_prefix));
+            let co = get_i32("MODRAZA", &format!("{}Constitucion", race_prefix));
+            data.mod_raza[ri] = RaceModifiers {
+                fuerza: f, agilidad: a, inteligencia: i, carisma: c, constitucion: co,
+            };
         }
 
-        // Class-vs-class AF/AM matrices
-        // Sections: GUERRERO, CAZADOR, PALADIN, etc.
-        // Keys: AFMago, AFGuerrero, ..., AMMago, AMGuerrero, ...
-        for attacker in 0..NUM_CLASSES {
-            let section = CLASS_SECTIONS[attacker];
-            for victim in 0..NUM_CLASSES {
-                let victim_name = CLASS_NAMES[victim];
-                let af_key = format!("AF{}", victim_name);
-                let am_key = format!("AM{}", victim_name);
-                data.af_clase_vs_clase[attacker][victim] = get_f32(section, &af_key);
-                data.am_clase_vs_clase[attacker][victim] = get_f32(section, &am_key);
+        // Per-class modifiers
+        for ci in 0..NUM_CLASSES {
+            let name = CLASS_NAMES[ci];
+            data.mod_evasion[ci] = get_f32("MODEVASION", name);
+            data.mod_ataque_armas[ci] = get_f32("MODATAQUEARMAS", name);
+            data.mod_ataque_proyectiles[ci] = get_f32("MODATAQUEPROYECTILES", name);
+            data.mod_ataque_wrestling[ci] = get_f32("MODATAQUEWRESTLING", name);
+
+            // MODDAÑOARMAS — section name has ñ (Ñ = \u{00d1})
+            data.mod_dano_armas[ci] = get_f32("MODDA\u{00d1}OARMAS", name);
+            if data.mod_dano_armas[ci] == 0.0 {
+                data.mod_dano_armas[ci] = get_f32("MODDANOARMAS", name);
             }
+            data.mod_dano_proyectiles[ci] = get_f32("MODDA\u{00d1}OPROYECTILES", name);
+            if data.mod_dano_proyectiles[ci] == 0.0 {
+                data.mod_dano_proyectiles[ci] = get_f32("MODDANOPROYECTILES", name);
+            }
+            data.mod_dano_wrestling[ci] = get_f32("MODDA\u{00d1}OWRESTLING", name);
+            if data.mod_dano_wrestling[ci] == 0.0 {
+                data.mod_dano_wrestling[ci] = get_f32("MODDANOWRESTLING", name);
+            }
+
+            data.mod_escudo[ci] = get_f32("MODESCUDO", name);
+
+            // MODVIDA
+            data.mod_vida[ci] = get_f32("MODVIDA", name);
+
+            // Default multipliers to 1.0 if still 0.0
+            if data.mod_evasion[ci] == 0.0 { data.mod_evasion[ci] = 1.0; }
+            if data.mod_ataque_armas[ci] == 0.0 { data.mod_ataque_armas[ci] = 1.0; }
+            if data.mod_ataque_proyectiles[ci] == 0.0 { data.mod_ataque_proyectiles[ci] = 1.0; }
+            if data.mod_ataque_wrestling[ci] == 0.0 { data.mod_ataque_wrestling[ci] = 1.0; }
+            if data.mod_dano_armas[ci] == 0.0 { data.mod_dano_armas[ci] = 1.0; }
+            if data.mod_dano_proyectiles[ci] == 0.0 { data.mod_dano_proyectiles[ci] = 1.0; }
+            if data.mod_dano_wrestling[ci] == 0.0 { data.mod_dano_wrestling[ci] = 1.0; }
+            if data.mod_escudo[ci] == 0.0 { data.mod_escudo[ci] = 1.0; }
+            // mod_vida 0 is valid for non-loaded, use default
+            if data.mod_vida[ci] == 0.0 { data.mod_vida[ci] = 8.0; }
+        }
+
+        // DISTRIBUCION — HP level-up probability brackets
+        for i in 0..5 {
+            let val = get_i32("DISTRIBUCION", &format!("E{}", i + 1));
+            if val > 0 { data.hp_distribution.entera[i] = val; }
+        }
+        for i in 0..4 {
+            let val = get_i32("DISTRIBUCION", &format!("S{}", i + 1));
+            if val > 0 { data.hp_distribution.semientera[i] = val; }
+        }
+
+        // EXTRA
+        let prm = get_i32("EXTRA", "PorcentajeRecuperoMana");
+        if prm > 0 { data.porcentaje_recupero_mana = prm; }
+
+        // PARTY
+        let enp = get_f32("PARTY", "ExponenteNivelParty");
+        if enp > 0.0 { data.exponente_nivel_party = enp; }
+
+        // RECOMPENSAFACCION
+        for i in 1..=15 {
+            let val = ini.get("RECOMPENSAFACCION", &format!("Rango{}", i))
+                .and_then(|s| s.parse::<i64>().ok())
+                .unwrap_or(0);
+            if val > 0 { data.recompensa_faccion.push(val); }
         }
     } else {
         tracing::warn!("Balance.dat not found, using defaults");
     }
 
-    // --- Load Vidas.dat ---
-    let vidas_path = base.join("dat").join("Vidas.dat");
-    if let Ok(ini) = IniFile::load(&vidas_path) {
-        for class_i in 0..NUM_CLASSES {
-            let section = CLASS_SECTIONS[class_i];
-            for race_i in 0..NUM_RACES {
-                let race_name = RACE_NAMES[race_i];
-                if let Some(val) = ini.get(section, race_name) {
-                    // Format: "min-max" (e.g., "11-12")
-                    let parts: Vec<&str> = val.split('-').collect();
-                    let min_hp = parts.first().and_then(|s| s.parse::<i32>().ok()).unwrap_or(1);
-                    let max_hp = parts.get(1).and_then(|s| s.parse::<i32>().ok()).unwrap_or(min_hp);
-                    data.vidas[class_i][race_i] = HpRange { min: min_hp, max: max_hp };
-                }
-            }
-        }
-    } else {
-        tracing::warn!("Vidas.dat not found, using defaults");
-    }
-
-    tracing::info!("Balance data loaded (Balance.dat + Vidas.dat)");
+    tracing::info!("Balance data loaded — {} classes, {} races",
+        NUM_CLASSES, NUM_RACES);
     Ok(data)
 }
 
@@ -304,26 +330,15 @@ mod tests {
         }
         let bal = load_balance(base).unwrap();
 
-        // Guerrero physical attack = -15
-        assert_eq!(bal.ataque_fisico[class_id::GUERRERO], -15.0);
-        // Druida physical attack = 44
-        assert_eq!(bal.ataque_fisico[class_id::DRUIDA], 44.0);
-        // Mago evasion = 0.3
-        assert!((bal.mod_evasion[class_id::MAGO] - 0.3).abs() < 0.01);
-
-        // Class vs class: Guerrero AFGuerrero = 8
-        assert_eq!(bal.af_clase_vs_clase[class_id::GUERRERO][class_id::GUERRERO], 8.0);
-        // Paladin AFMago = 22
-        assert_eq!(bal.af_clase_vs_clase[class_id::PALADIN][class_id::MAGO], 22.0);
-
-        // Vidas: Guerrero Humano = 11-12
-        let hp = bal.vidas[class_id::GUERRERO][race_id::HUMANO];
-        assert_eq!(hp.min, 11);
-        assert_eq!(hp.max, 12);
-
-        // Mago Gnomo = 5-8
-        let hp2 = bal.vidas[class_id::MAGO][race_id::GNOMO];
-        assert_eq!(hp2.min, 5);
-        assert_eq!(hp2.max, 8);
+        // 13.3 Balance.dat: Guerrero evasion = 1.0
+        assert!((bal.mod_evasion[class_id::GUERRERO] - 1.0).abs() < 0.01);
+        // Cazador evasion = 0.9
+        assert!((bal.mod_evasion[class_id::CAZADOR] - 0.9).abs() < 0.01);
+        // Pirata evasion = 1.25
+        assert!((bal.mod_evasion[class_id::PIRATA] - 1.25).abs() < 0.01);
+        // MODRAZA: Humano STR = +1
+        assert_eq!(bal.mod_raza[race_id::HUMANO].fuerza, 1);
+        // MODRAZA: Gnomo INT = +4
+        assert_eq!(bal.mod_raza[race_id::GNOMO].inteligencia, 4);
     }
 }

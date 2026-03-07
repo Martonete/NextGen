@@ -13,8 +13,7 @@ use super::world;
 // Functions from parent module (mod.rs) used by GM commands
 use super::{
     warp_user, warp_user_exact, send_warp_fx, user_die, revive_user, check_user_level,
-    naked_body, send_inventory_slot, send_full_inventory, llevar_usuarios_cvc,
-    spawn_npc_at,
+    naked_body, send_inventory_slot, send_full_inventory,
 };
 
 /// After a GM warp, check if the destination tile has an exit and follow it.
@@ -1157,18 +1156,8 @@ pub(super) async fn handle_slash_home(state: &mut GameState, conn_id: Connection
     match target_conn {
         Some((tc, hogar, armada, caos)) => {
             // Determine home location
-            let (map, x, y) = if armada {
-                (29, 50, 90) // Royal Army camp
-            } else if caos {
-                (27, 47, 48) // Chaos Forces camp
-            } else {
-                match hogar.to_uppercase().as_str() {
-                    "THIR" => (25, 74, 44),
-                    "INTHAK" => (130, 52, 56),
-                    "RUVENDEL" => (26, 51, 52),
-                    _ => (28, 54, 36), // Default: Banderbill
-                }
-            };
+            let (map, x, y) = (1, 58, 45); // Ullathorpe
+            let _ = (armada, caos, hogar);
 
             warp_user(state, tc, map, x, y).await;
             state.send_msg_id(conn_id, 772, "").await;
@@ -2386,39 +2375,8 @@ pub(super) async fn handle_slash_hechizo(state: &mut GameState, conn_id: Connect
     }
 }
 
-/// /DONACION <name>@<amount> — Award donation points. Requires Administrador.
-pub(super) async fn handle_slash_donacion(state: &mut GameState, conn_id: ConnectionId, args: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
-        _ => return,
-    }
-
-    let target_name = read_field(1, args, '@');
-    let amount_str = read_field(2, args, '@');
-    let amount: i64 = amount_str.parse().unwrap_or(0);
-    if amount <= 0 { return; }
-
-    let target_upper = target_name.to_uppercase();
-    let target_conn = match state.online_names.get(&target_upper).copied() {
-        Some(c) => c,
-        None => {
-            state.send_msg_id(conn_id, 196, "").await;
-            return;
-        }
-    };
-
-    let target_real_name = state.users.get(&target_conn)
-        .map(|u| u.char_name.clone())
-        .unwrap_or_default();
-
-    // Donation points = amount * 10 (stored in charfile, not in runtime UserState for now)
-    state.send_msg_id(conn_id, 561, &format!("{}@{}", amount, target_real_name)).await;
-
-    info!("[GM] Donation of ${} to {} ({} points)", amount, target_real_name, amount * 10);
-}
-
 /// /RESETVALS <type> — Reset arena/duel/CvC state. Requires Semidios+.
-/// Types: ARENA1, ARENA2, ARENA3, ARENA4, 2VS2, DESAFIO, CVC, INVOCACIONES
+/// /RESETVALS <type> — Reset event values. Types: INVOCACIONES
 pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: ConnectionId, val_type: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
@@ -2427,53 +2385,11 @@ pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: Conne
 
     let vt = val_type.to_uppercase();
     match vt.as_str() {
-        "DESAFIO" => {
-            state.send_msg_id(conn_id, 586, "").await;
-        }
-        "ARENA1" => {
-            state.send_msg_id_to(SendTarget::ToAll, 587, "1").await;
-        }
-        "ARENA2" => {
-            state.send_msg_id_to(SendTarget::ToAll, 587, "2").await;
-        }
-        "ARENA3" => {
-            state.send_msg_id_to(SendTarget::ToAll, 587, "3").await;
-        }
-        "ARENA4" => {
-            state.send_msg_id_to(SendTarget::ToAll, 587, "4").await;
-        }
-        "2VS2" => {
-            state.send_msg_id(conn_id, 588, "").await;
-        }
-        "CVC" => {
-            if state.cvc_funciona {
-                // Revive dead CvC participants before warping back
-                let dead_cvc: Vec<ConnectionId> = state.users.iter()
-                    .filter(|(_, u)| u.en_cvc && u.dead)
-                    .map(|(&cid, _)| cid)
-                    .collect();
-                for cid in dead_cvc {
-                    revive_user(state, cid).await;
-                }
-                llevar_usuarios_cvc(state).await;
-                state.cvc_funciona = false;
-                state.cvc_clan1_count = 0;
-                state.cvc_clan2_count = 0;
-                state.cvc_guild1 = 0;
-                state.cvc_guild2 = 0;
-                state.cvc_nombre1.clear();
-                state.cvc_nombre2.clear();
-            }
-            state.cvc_pending_target_guild = 0;
-            state.cvc_pending_challenger_guild = 0;
-            state.cvc_pending_challenger_name.clear();
-            state.send_msg_id(conn_id, 589, "").await;
-        }
         "INVOCACIONES" => {
             state.send_msg_id(conn_id, 590, "").await;
         }
         _ => {
-            state.send_msg_id(conn_id, 585, "").await; // Invalid type
+            state.send_msg_id(conn_id, 585, "").await;
         }
     }
     info!("[GM] Reset vals: {}", vt);
@@ -2591,26 +2507,6 @@ pub(super) async fn handle_reload_balance(state: &mut GameState, conn_id: Connec
     }
 }
 
-/// /LOADQUESTS — reload Quests.dat.
-pub(super) async fn handle_reload_quests(state: &mut GameState, conn_id: ConnectionId) {
-    let name = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => u.char_name.clone(),
-        _ => return,
-    };
-
-    let base = state.base_path.clone();
-    match crate::data::quests::load_quests(&base) {
-        Ok(quests) => {
-            let count = quests.len();
-            state.game_data.quests = quests;
-            state.send_console(conn_id, &format!("Quests.dat recargado ({} quests).", count), font_index::INFO).await;
-            info!("[GM] {} reloaded Quests.dat ({} quests)", name, count);
-        }
-        Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando Quests.dat: {}", e), font_index::INFO).await;
-        }
-    }
-}
 
 /// /LOADMAP N — reload a specific map from disk.
 pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: ConnectionId, map_str: &str) {
@@ -2753,24 +2649,12 @@ pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId
         }
     };
 
-    // Get saved previous position
-    let (prev_map, prev_x, prev_y) = match state.users.get(&target_id) {
-        Some(u) if u.mapa_anterior > 0 => (u.mapa_anterior, u.x_anterior, u.y_anterior),
-        _ => {
-            state.send_console(conn_id, "El jugador no tiene posicion anterior guardada.", font_index::INFO).await;
-            return;
-        }
-    };
-
-    // Clear saved position
     if let Some(u) = state.users.get_mut(&target_id) {
-        u.mapa_anterior = 0;
-        u.x_anterior = 0;
-        u.y_anterior = 0;
-        u.jail_timer = 0; // Release from jail if applicable
+        u.jail_timer = 0;
     }
 
-    warp_user(state, target_id, prev_map, prev_x, prev_y).await;
+    // Warp to Ullathorpe (default home)
+    warp_user(state, target_id, 1, 58, 45).await;
     send_warp_fx(state, target_id).await;
     state.send_console(target_id, "Un GM te ha devuelto a tu posicion anterior.", font_index::INFO).await;
     state.send_console(conn_id, &format!("Jugador '{}' devuelto.", target), font_index::INFO).await;
@@ -2967,317 +2851,11 @@ async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_
     }
 }
 
-/// /PLATA <name> — Give silver trophy (obj 896) + update tournament points. VB6 TCP.bas:3114
-/// Requires Semidios+.
-pub(super) async fn handle_slash_plata(state: &mut GameState, conn_id: ConnectionId, target: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    let target_id = match state.find_user_by_name(target) {
-        Some(id) => id,
-        None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
-            return;
-        }
-    };
-
-    // VB6: Give silver trophy (obj 896) and add tournament points
-    if let Some(u) = state.users.get_mut(&target_id) {
-        u.puntos_torneo += 2;
-    }
-    give_item_to_player(state, conn_id, target, 896, 1).await;
-
-    state.send_msg_id_to(SendTarget::ToAll, 520, target).await; // Announce silver medal
-}
-
-/// /BRONCE <name> — Give bronze trophy (obj 897) + update tournament points. VB6 TCP.bas:3147
-/// Requires Semidios+.
-pub(super) async fn handle_slash_bronce(state: &mut GameState, conn_id: ConnectionId, target: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    let target_id = match state.find_user_by_name(target) {
-        Some(id) => id,
-        None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
-            return;
-        }
-    };
-
-    if let Some(u) = state.users.get_mut(&target_id) {
-        u.puntos_torneo += 1;
-    }
-    give_item_to_player(state, conn_id, target, 897, 1).await;
-
-    state.send_msg_id_to(SendTarget::ToAll, 521, target).await; // Announce bronze medal
-}
-
-/// /MEDALLA <name> — Give gold medal (obj 1025) + update tournament points. VB6 TCP.bas:3179
-/// Requires Semidios+.
-pub(super) async fn handle_slash_medalla(state: &mut GameState, conn_id: ConnectionId, target: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    let target_id = match state.find_user_by_name(target) {
-        Some(id) => id,
-        None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
-            return;
-        }
-    };
-
-    if let Some(u) = state.users.get_mut(&target_id) {
-        u.puntos_torneo += 3;
-    }
-    give_item_to_player(state, conn_id, target, 1025, 1).await;
-
-    state.send_msg_id_to(SendTarget::ToAll, 519, target).await; // Announce gold medal
-}
-
-/// /DESCALIFICAR <name> — Remove player from tournament. VB6 TCP.bas:3088
-/// Requires Semidios+.
-pub(super) async fn handle_slash_descalificar(state: &mut GameState, conn_id: ConnectionId, target: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    if !state.hay_torneo {
-        state.send_console(conn_id, "No hay torneo activo.", font_index::INFO).await;
-        return;
-    }
-
-    let target_id = match state.find_user_by_name(target) {
-        Some(id) => id,
-        None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
-            return;
-        }
-    };
-
-    let en_torneo = state.users.get(&target_id).map(|u| u.en_torneo).unwrap_or(false);
-    if !en_torneo {
-        state.send_console(conn_id, "El jugador no esta en el torneo.", font_index::INFO).await;
-        return;
-    }
-
-    // Remove from tournament
-    if let Some(u) = state.users.get_mut(&target_id) {
-        u.en_torneo = false;
-        u.num_torneo = 0;
-    }
-    state.usuarios_en_torneo = (state.usuarios_en_torneo - 1).max(0);
-
-    // Remove from participants list
-    let name_upper = target.to_uppercase();
-    state.cronologia_participantes.retain(|n| n.to_uppercase() != name_upper);
-
-    // Renumber remaining participants
-    for (i, name) in state.cronologia_participantes.iter().enumerate() {
-        if let Some(id) = state.find_user_by_name(name) {
-            if let Some(u) = state.users.get_mut(&id) {
-                u.num_torneo = (i + 1) as i32;
-            }
-        }
-    }
-
-    state.send_msg_id_to(SendTarget::ToAll, 522, target).await; // Announce disqualification
-    state.send_console(conn_id, &format!("Jugador '{}' descalificado del torneo.", target), font_index::INFO).await;
-}
-
-/// /MVP <npc>@<map>@<x>@<y> — Spawn MVP NPC at location. VB6 TCP.bas:3214
-/// Requires Semidios+.
-pub(super) async fn handle_slash_mvp(state: &mut GameState, conn_id: ConnectionId, args: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    let parts: Vec<&str> = args.split('@').collect();
-    if parts.len() < 4 {
-        state.send_console(conn_id, "Uso: /MVP npc@mapa@x@y", font_index::INFO).await;
-        return;
-    }
-
-    let npc_num: i32 = parts[0].trim().parse().unwrap_or(0);
-    let map: i32 = parts[1].trim().parse().unwrap_or(0);
-    let x: i32 = parts[2].trim().parse().unwrap_or(0);
-    let y: i32 = parts[3].trim().parse().unwrap_or(0);
-
-    if npc_num < 1 || map < 1 || !crate::game::world::in_map_bounds(x, y) {
-        state.send_console(conn_id, "Parametros invalidos.", font_index::INFO).await;
-        return;
-    }
-
-    // Verify NPC exists
-    if state.game_data.npcs.get(npc_num as usize).is_none() {
-        state.send_console(conn_id, &format!("NPC {} no existe.", npc_num), font_index::INFO).await;
-        return;
-    }
-
-    // Use spawn_npc_at from events module
-    super::spawn_npc_at(state, npc_num as usize, map, x, y).await;
-    state.send_console(conn_id, &format!("NPC {} (MVP) spawneado en mapa {} ({},{}).", npc_num, map, x, y), font_index::INFO).await;
-
-    // Announce MVP spawn
-    state.send_msg_id_to(SendTarget::ToAll, 523, &map.to_string()).await;
-}
-
-/// /DOTORNEO <modality> — Start tournament. VB6 TCP.bas:4053
-/// Modality: 1=1v1, 2=2v2, 3=3v3, 4=FFA, 5=special. Requires Semidios+.
-pub(super) async fn handle_slash_dotorneo(state: &mut GameState, conn_id: ConnectionId, args: &str) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    if state.hay_torneo {
-        state.send_console(conn_id, "Ya hay un torneo activo.", font_index::INFO).await;
-        return;
-    }
-
-    let modality: i32 = args.trim().parse().unwrap_or(0);
-    if modality < 1 || modality > 5 {
-        state.send_console(conn_id, "Uso: /DOTORNEO 1-5 (1=1v1, 2=2v2, 3=3v3, 4=FFA, 5=especial)", font_index::INFO).await;
-        return;
-    }
-
-    state.hay_torneo = true;
-    state.usuarios_en_torneo = 0;
-    state.cronologia_participantes.clear();
-
-    // Broadcast tournament start announcement
-    state.send_msg_id_to(SendTarget::ToAll, 524, &modality.to_string()).await;
-    state.send_console(conn_id, &format!("Torneo modalidad {} iniciado. Jugadores usen /TORNEO para inscribirse.", modality), font_index::INFO).await;
-}
-
-/// /CANCELARTORNEO — Cancel active tournament. VB6 TCP.bas:4397
-/// Requires Semidios+.
-pub(super) async fn handle_slash_cancelartorneo(state: &mut GameState, conn_id: ConnectionId) {
-    match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
-        _ => return,
-    }
-
-    if !state.hay_torneo {
-        state.send_console(conn_id, "No hay torneo activo.", font_index::INFO).await;
-        return;
-    }
-
-    // Remove all players from tournament
-    let participants: Vec<String> = state.cronologia_participantes.clone();
-    for name in &participants {
-        if let Some(id) = state.find_user_by_name(name) {
-            if let Some(u) = state.users.get_mut(&id) {
-                u.en_torneo = false;
-                u.num_torneo = 0;
-            }
-        }
-    }
-
-    state.hay_torneo = false;
-    state.usuarios_en_torneo = 0;
-    state.cronologia_participantes.clear();
-
-    state.send_msg_id_to(SendTarget::ToAll, 525, "").await;
-    state.send_console(conn_id, "Torneo cancelado.", font_index::INFO).await;
-}
-
-/// /TSUM <from>@<to> — Teleport tournament players (numbered from-to) to GM's position. VB6 TCP.bas:4215
-/// Requires Semidios+.
-pub(super) async fn handle_slash_tsum(state: &mut GameState, conn_id: ConnectionId, args: &str) {
-    let (gm_map, gm_x, gm_y) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => (u.pos_map, u.pos_x, u.pos_y),
-        _ => return,
-    };
-
-    if !state.hay_torneo {
-        state.send_console(conn_id, "No hay torneo activo.", font_index::INFO).await;
-        return;
-    }
-
-    let parts: Vec<&str> = args.split('@').collect();
-    if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /TSUM desde@hasta", font_index::INFO).await;
-        return;
-    }
-
-    let from: usize = parts[0].trim().parse().unwrap_or(0);
-    let to: usize = parts[1].trim().parse().unwrap_or(0);
-
-    if from < 1 || to < from {
-        state.send_console(conn_id, "Rango invalido.", font_index::INFO).await;
-        return;
-    }
-
-    let participants = state.cronologia_participantes.clone();
-    let mut warped = 0;
-    for i in from..=to {
-        if i > participants.len() { break; }
-        if let Some(id) = state.find_user_by_name(&participants[i - 1]) {
-            warp_user(state, id, gm_map, gm_x, gm_y).await;
-            send_warp_fx(state, id).await;
-            warped += 1;
-        }
-    }
-
-    state.send_console(conn_id, &format!("Invocados {} participantes del torneo.", warped), font_index::INFO).await;
-}
-
-/// /REY — Spawn the Ancalagon pre-dragon + 4 guardians (VB6: /SALEREY in TCP.bas line 5170).
-/// Requires DIOS+ privileges.
-pub(super) async fn handle_slash_rey(state: &mut GameState, conn_id: ConnectionId) {
-    let is_gm = state.users.get(&conn_id).map(|u| u.logged && u.privileges >= privilege_level::DIOS).unwrap_or(false);
-    if !is_gm { return; }
-
-    if state.ancalagon_pre_dragon || state.ancalagon_alive {
-        state.send_console(conn_id, "El Rey Ancalagon ya está activo.", font_index::INFO).await;
-        return;
-    }
-
-    // Broadcast warning (VB6: SendData ToAll, "||805")
-    state.send_msg_id_to(SendTarget::ToAll, 805, "").await;
-
-    // Spawn pre-dragon (NPC 937) at map 123, (50,18)
-    state.ancalagon_guardians = 0;
-    if let Some(idx) = state.spawn_npc(937, 123, 50, 18) {
-        state.ancalagon_pre_dragon = true;
-        state.ancalagon_pre_dragon_idx = idx;
-        // Set aura 3 (VB6: Npclist(IndexReyAncalagon).Char.AuraA = 3)
-        if let Some(npc) = state.get_npc_mut(idx) {
-            npc.aura = 3;
-            let cc = npc.build_cc_binary();
-            state.send_data_bytes(SendTarget::ToMap(123), &cc).await;
-        }
-    }
-
-    // Spawn 4 guardians (NPC 938) — VB6 positions
-    let guardian_positions = [(50, 17), (49, 18), (51, 18), (50, 19)];
-    for (gx, gy) in &guardian_positions {
-        state.spawn_npc(938, 123, *gx, *gy);
-    }
-
-    // Reset timer so tick_ancalagon won't auto-spawn again
-    state.ancalagon_minutes = 0;
-    state.ancalagon_seconds = 0;
-
-    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    info!("[GM] {} used /REY — spawned Ancalagon pre-dragon + 4 guardians", gm_name);
-    state.send_console(conn_id, "Rey Ancalagon invocado en mapa 123.", font_index::INFO).await;
-}
-
 /// /NPCAURA <npc_runtime_index> <aura_id> — Set aura on a live NPC instance.
 /// Requires DIOS+ privileges. Useful for testing NPC aura visuals.
 pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: ConnectionId, args: &str) {
     let is_gm = state.users.get(&conn_id).map(|u| u.logged && u.privileges >= privilege_level::DIOS).unwrap_or(false);
     if !is_gm { return; }
-
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
         state.send_console(conn_id, "Uso: /NPCAURA <npc_index> <aura_id>", font_index::INFO).await;

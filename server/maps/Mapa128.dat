@@ -1,16 +1,11 @@
 [Mapa128]
-Name=Archipielago de Kalhat
-MusicNum=180
-StartPos=0-0-0
-MagiaSinEfecto=0
+Name=Mar Nórdico.
+MusicNum=17
+MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
+Terreno=BOSQUE
+Zona=CAMPO
+Restringir=No
+BackUp= 0
 Pk=0
-R=160
-G=160
-B=160
-Terreno=
-Zona=
-Restringir=
-BACKUP= 1

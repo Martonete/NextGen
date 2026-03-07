@@ -12,7 +12,7 @@ use super::common::*;
 use super::{
     send_inventory_slot, send_full_inventory, build_anm_packet,
     warp_user, revive_user, naked_body,
-    iniciar_comercio_npc, iniciar_banco, iniciar_clan_banco,
+    iniciar_comercio_npc, iniciar_banco,
     DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
 };
 
@@ -1010,61 +1010,9 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
         }
         ObjType::ScrollItem => {
-            // VB6: Buff scroll — typeScroll: 1=exp, 2=gold, 3=drop, 4=crystal drop
-            let ts = obj_data.type_scroll;
-            if ts < 1 || ts > 4 { return; }
-
-            // Check if scroll type already active
-            let already_active = state.users.get(&conn_id)
-                .map(|u| u.scroll_active[ts as usize - 1])
-                .unwrap_or(false);
-
-            if already_active {
-                state.send_msg_id(conn_id, 928, "").await; // VB6: scroll already active
-                return;
-            }
-
-            let time_s = obj_data.time_scroll;
-            let mult = obj_data.mult_scroll;
-
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.scroll_active[ts as usize - 1] = true;
-                user.scroll_time[ts as usize - 1] = time_s;
-                user.scroll_mult[ts as usize - 1] = mult;
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
-                }
-            }
-
-            // VB6: Send TIS packet + message
-            let pkt_tis = binary_packets::write_timer_info(ts as u8, time_s as i32, time_s as i32);
-            state.send_bytes(conn_id, &pkt_tis).await;
-
-            let scroll_name = match ts {
-                1 => "Experiencia",
-                2 => "Oro",
-                3 => "Drop",
-                4 => "Drop de Cristales",
-                _ => "Desconocido",
-            };
-            state.send_msg_id(conn_id, 929, &format!("{}@{}@{}", scroll_name, time_s, mult)).await;
-            send_inventory_slot(state, conn_id, idx).await;
+            // Scroll system removed — no-op
         }
         ObjType::Sack => {
-            // VB6: Donation sack — add credits
-            let credits = obj_data.cant_credits;
-            if credits <= 0 { return; }
-
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.puntos_donacion += credits as i64;
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
-                }
-            }
-            state.send_msg_id(conn_id, 930, &credits.to_string()).await;
-            send_inventory_slot(state, conn_id, idx).await;
         }
         ObjType::RenounceHorde => {
             // VB6: Renounce Chaos faction
@@ -2125,11 +2073,8 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
-                            if dist > 5 {
-                                state.send_msg_id(conn_id, 10, "").await; return;
-                            }
-                            iniciar_clan_banco(state, conn_id).await;
+                            // Guild bank removed
+                            state.send_console(conn_id, "La boveda de clan no esta disponible.", font_index::INFO).await;
                         }
                         NpcType::Traveler => {
                             if dead { state.send_msg_id(conn_id, 3, "").await; return; }
@@ -2139,14 +2084,7 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             let pkt_travels = binary_packets::write_travels();
                             state.send_bytes(conn_id, &pkt_travels).await;
                         }
-                        NpcType::Quest | NpcType::QuestNoble => {
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
-                            if dist > 10 {
-                                state.send_msg_id(conn_id, 10, "").await; return;
-                            }
-                            let pkt_damequest = binary_packets::write_quest_npc_list();
-                            state.send_bytes(conn_id, &pkt_damequest).await;
-                        }
+                        NpcType::Quest | NpcType::QuestNoble => { }
                         NpcType::Reviver => {
                             // VB6 Acciones.bas:408-422 — Revividor NPC
                             // Distance check: <= 10 tiles
@@ -2209,21 +2147,7 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             let pkt_mfc = binary_packets::write_friend_dialog();
                             state.send_bytes(conn_id, &pkt_mfc).await;
                         }
-                        NpcType::Arena => {
-                            // VB6: Arenas (type 16) — MAR packet with duel names
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
-                            // Build tournament list
-                            let mut names = Vec::new();
-                            for i in 0..8 {
-                                if let Some(name) = state.nombre_dueleando.get(i) {
-                                    names.push(name.clone());
-                                } else {
-                                    names.push(String::new());
-                                }
-                            }
-                            let pkt_mar = binary_packets::write_arena_data(&names.join(","));
-                            state.send_bytes(conn_id, &pkt_mar).await;
-                        }
+                        NpcType::Arena => { }
                         NpcType::GodNpc => {
                             // VB6: NpcDioses (type 18)
                             if dead { state.send_msg_id(conn_id, 3, "").await; return; }
@@ -2333,8 +2257,6 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
             if obj_index == 1472 { return; } // Hardcoded locked gate
             let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
             if guild_idx <= 0 { return; }
-            // Only the guild owning the fortress can toggle (siege_guild_owner)
-            if guild_idx != state.siege_guild_owner { return; }
         }
 
         let new_obj_idx = obj.index_abierta;
@@ -2380,7 +2302,6 @@ pub(super) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
             if obj_index == 1472 { return; }
             let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
             if guild_idx <= 0 { return; }
-            if guild_idx != state.siege_guild_owner { return; }
         }
 
         let new_obj_idx = obj.index_cerrada;
@@ -2440,7 +2361,6 @@ pub(super) async fn handle_safe_toggle(state: &mut GameState, conn_id: Connectio
     // VB6: Seguro AND SeguroClan toggled together
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.safe_toggle = !safe;
-        user.seguro_cvc = !safe;
     }
 
     if safe {

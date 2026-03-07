@@ -256,8 +256,9 @@ mod tests {
             return;
         }
         let spells = load_spells(base).unwrap();
-        assert_eq!(spells.len(), 65);
-        assert_eq!(spells[0].nombre, "Curar Veneno");
+        // 13.3 has 46 spells
+        assert_eq!(spells.len(), 46);
+        // First spell cures poison (VB6: "Antídoto Mágico")
         assert_eq!(spells[0].tipo, SpellType::Status);
         assert!(spells[0].cura_veneno);
     }

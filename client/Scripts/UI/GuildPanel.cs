@@ -333,13 +333,11 @@ public partial class GuildPanel : Control
     private string _sub1 = "";
     private string _sub2 = "";
     private string _reputation = "0";
-    private string _cvcWins = "0";
-    private string _cvcLosses = "0";
     private string _castleSieges = "0";
 
     /// <summary>
     /// Parse IREDAEL (leader) format:
-    /// points BF level BF leader BF sub1 BF sub2 BF castle1..4 BF repu BF cvcW BF cvcL BF castis BF
+    /// points BF level BF leader BF sub1 BF sub2 BF castle1..4 BF repu BF ... BF ... BF castis BF
     /// guildCount BF guild1$align$level BF ... BF memberCount BF member1,member2 BF
     /// applicantCount BF app1 BF app2 ...
     /// </summary>
@@ -358,8 +356,6 @@ public partial class GuildPanel : Control
         _sub2 = parts[4];
         // parts[5..8] = castle positions (skip)
         _reputation = parts.Length > 9 ? parts[9] : "0";
-        _cvcWins = parts.Length > 10 ? parts[10] : "0";
-        _cvcLosses = parts.Length > 11 ? parts[11] : "0";
         _castleSieges = parts.Length > 12 ? parts[12] : "0";
 
         // Guild list (skip for leader view — not needed)
@@ -487,7 +483,7 @@ public partial class GuildPanel : Control
             $"Lider: {_leader}\n" +
             $"Sub-lideres: {_sub1}, {_sub2}\n" +
             $"Reputacion: {_reputation}\n" +
-            $"CvC: {_cvcWins}W / {_cvcLosses}L | Asedios: {_castleSieges}";
+            $"Asedios: {_castleSieges}";
     }
 
     // ── Button Handlers ──────────────────────────────────────────────

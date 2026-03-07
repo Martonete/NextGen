@@ -1,11 +1,11 @@
 [NIX]
-X=78
-Y=85
-MAPA=89
+X=44
+Y=88
+MAPA=34
 
 [Ullathorpe]
-X=59
-Y=47
+X=58
+Y=45
 MAPA=1
 
 [Banderbill]
@@ -17,3 +17,18 @@ MAPA=59
 X=72
 Y=41
 MAPA=62
+
+[Arghal]
+X=52
+Y=75
+MAPA=196
+
+[Nemahuak]
+X=50
+Y=65
+MAPA=286
+
+[Arkhein]
+X=40
+Y=48
+MAPA=151

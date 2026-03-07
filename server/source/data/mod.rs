@@ -19,10 +19,7 @@ pub mod spells;
 pub mod npcs;
 pub mod maps;
 pub mod guilds;
-pub mod quests;
 pub mod balance;
-pub mod ranking;
-pub mod prizes;
 
 use std::path::Path;
 
@@ -33,9 +30,7 @@ pub struct GameData {
     pub spells: Vec<spells::SpellData>,
     pub npcs: npcs::NpcDatabase,
     pub maps: Vec<Option<maps::GameMap>>,
-    pub quests: Vec<quests::QuestData>,
     pub balance: balance::BalanceData,
-    pub prizes: Vec<prizes::PrizeData>,
 }
 
 impl GameData {
@@ -48,9 +43,7 @@ impl GameData {
         let spells = spells::load_spells(base)?;
         let npcs = npcs::load_npcs(base)?;
         let mut maps = maps::load_all_maps(base)?;
-        let quests = quests::load_quests(base).unwrap_or_default();
         let balance = balance::load_balance(base).unwrap_or_default();
-        let prizes = prizes::load_prizes(base).unwrap_or_default();
 
         // VB6: Doors with cerrada=0 (open) should have their tiles unblocked on startup.
         // The .map file may have blocked=true for tiles where open doors exist.
@@ -105,10 +98,10 @@ impl GameData {
 
         let map_count = maps.iter().filter(|m| m.is_some()).count();
         tracing::info!(
-            "Game data loaded: {} levels, {} objects, {} spells, {} NPCs, {} maps, {} quests, {} prizes",
-            experience.len(), objects.len(), spells.len(), npcs.count(), map_count, quests.len(), prizes.len()
+            "Game data loaded: {} levels, {} objects, {} spells, {} NPCs, {} maps",
+            experience.len(), objects.len(), spells.len(), npcs.count(), map_count
         );
 
-        Ok(Self { experience, objects, spells, npcs, maps, quests, balance, prizes })
+        Ok(Self { experience, objects, spells, npcs, maps, balance })
     }
 }

@@ -29,9 +29,7 @@ use player_commands::*;
 use misc_handlers::*;
 use inventory::*;
 // Re-export quest/party functions called from other modules
-pub use quests_party::{quest_check_npc_kill, quest_check_player_kill, party_share_exp};
-// Re-export friend broadcast called from main.rs disconnect handler
-pub use social::broadcast_friend_disconnect;
+pub use quests_party::party_share_exp;
 // Re-export tick functions called from main.rs
 pub use ticks::{
     tick_npc_ai, tick_npc_respawn, tick_player_passive,
@@ -39,11 +37,7 @@ pub use ticks::{
 };
 // Re-export event functions called from main.rs and other modules
 pub use events::{
-    tick_nobleza, tick_eventos, tick_siege, tick_ancalagon, tick_guerra,
-    cvc_player_disconnect, resolve_duel_death, resolve_desafio_death,
-    evento_player_death, nobleza_etapa_uno, aram_check_tower_death,
-    torneo_auto_join, torneo_auto_death, pretoriano_check_death,
-    ip_security_accept,
+    pretoriano_check_death, ip_security_accept,
 };
 
 // Packet handlers — processes decrypted client packets.
@@ -574,20 +568,9 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             handle_packet(state, conn_id, &text).await;
         }
 
-        // Quests
-        ClientPacketID::QuestList => {
-            handle_packet(state, conn_id, "IQUEST").await;
-        }
-        ClientPacketID::QuestInfo => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("INFD{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::QuestAccept => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ACQT{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
+        ClientPacketID::QuestList => { }
+        ClientPacketID::QuestInfo => { let _ = bq.read_ascii_string(); }
+        ClientPacketID::QuestAccept => { let _ = bq.read_ascii_string(); }
 
         // Mail
         ClientPacketID::MailSend => {
@@ -622,16 +605,8 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let text = format!("BORRAC{}", name);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::InitChat => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("INCHAT{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::ChatMsg => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("KKCHAT{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
+        ClientPacketID::InitChat => { }
+        ClientPacketID::ChatMsg => { }
 
         // Player info
         ClientPacketID::PlayerInfo => {
@@ -655,24 +630,20 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::SendPoints => {
             handle_packet(state, conn_id, "ACTPT").await;
         }
-        ClientPacketID::DuelArenaInfo => {
-            handle_packet(state, conn_id, "IDUELOS").await;
-        }
-        ClientPacketID::ToInfo => {
-            handle_packet(state, conn_id, "TOINFO").await;
-        }
+        ClientPacketID::DuelArenaInfo => { }
+        ClientPacketID::ToInfo => { }
 
         // Misc — all use the generic string bridge
         ClientPacketID::HouseQuery => { bridge_string(bq, state, conn_id, "FWO").await; }
         ClientPacketID::HouseBuy => { bridge_string(bq, state, conn_id, "CUC").await; }
         ClientPacketID::PetRename => { bridge_string(bq, state, conn_id, "CNM").await; }
-        ClientPacketID::GemExchange => { bridge_string(bq, state, conn_id, "GEMS").await; }
-        ClientPacketID::MedalExchange => { bridge_string(bq, state, conn_id, "GEPS").await; }
-        ClientPacketID::DivineOffer => { bridge_string(bq, state, conn_id, "OFDIOZ").await; }
-        ClientPacketID::TsShop => { bridge_string(bq, state, conn_id, "FTSPTS").await; }
-        ClientPacketID::UpgradeQuery => { bridge_string(bq, state, conn_id, "SPH").await; }
-        ClientPacketID::UpgradeDo => { bridge_string(bq, state, conn_id, "SP\u{00C9}").await; }
-        ClientPacketID::ArenaSpectate => { bridge_string(bq, state, conn_id, "ARE").await; }
+        ClientPacketID::GemExchange => { }
+        ClientPacketID::MedalExchange => { }
+        ClientPacketID::DivineOffer => { }
+        ClientPacketID::TsShop => { }
+        ClientPacketID::UpgradeQuery => { }
+        ClientPacketID::UpgradeDo => { }
+        ClientPacketID::ArenaSpectate => { }
         ClientPacketID::DragDrop => { bridge_string(bq, state, conn_id, "DYDTRA").await; }
         ClientPacketID::Vote => { bridge_string(bq, state, conn_id, "NVOT").await; }
         ClientPacketID::Report => { bridge_string(bq, state, conn_id, "NEWD").await; }
@@ -773,36 +744,6 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_guild_apply(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::GUILD_DETAILS) {
         handle_guild_details(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_OPEN) {
-        handle_guild_bank_open(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_DEPOSIT) {
-        handle_guild_bank_deposit(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_WITHDRAW) {
-        handle_guild_bank_withdraw(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_SAVE) {
-        handle_clan_bank_save(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::CLAN_BANK_WITHDRAW_ITEM) {
-        handle_clan_bank_withdraw_item(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CLAN_BANK_DEPOSIT_ITEM) {
-        handle_clan_bank_deposit_item(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::QUEST_LIST) {
-        handle_quest_list(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::QUEST_INFO) {
-        handle_quest_info(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::QUEST_ACCEPT) {
-        handle_quest_accept(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::MAIL_SEND) {
-        handle_mail_send(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::MAIL_OPEN) {
-        handle_mail_open(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::MAIL_EXTRACT) {
-        handle_mail_extract(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::MAIL_DELETE) {
-        handle_mail_delete(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::FRIEND_ADD) {
-        handle_friend_add(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::FRIEND_REMOVE) {
-        handle_friend_remove(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_SMITH) {
         handle_construct_smith(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_CARP) {
@@ -819,20 +760,6 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_cuc(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::PET_RENAME) {
         handle_cnm(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GEM_EXCHANGE) {
-        handle_gems(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::MEDAL_EXCHANGE) {
-        handle_geps(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::DIVINE_OFFER) {
-        handle_ofdioz(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::TS_SHOP) {
-        handle_ftspts(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::UPGRADE_QUERY) {
-        handle_sph(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::UPGRADE_DO) {
-        handle_spe(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::ARENA_SPECTATE) {
-        handle_are(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CLAN_VALID_NAME) {
         handle_nanvame(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CLAN_INVALID_NAME) {
@@ -843,52 +770,20 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_pcwc(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::PCCC) {
         handle_pccc(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_PERMS_QUERY) {
-        handle_vlkg(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_PERMS_SET) {
-        handle_bovc(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CLOSE_GUILD_BANK) {
-        handle_fincbn(state, conn_id).await;
     } else if data.starts_with(client_opcodes::CAST_BY_NAME) {
         handle_downsi(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::RANKINGS) {
-        handle_rankin(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::MOVE_SPELL) {
         handle_desphe(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::PLAYER_INFO) {
         handle_daminf(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::FPZ_REPORT) {
         handle_envfpz(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::DONATION_MENU) {
-        handle_dcanje(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::DONATION_PREVIEW) {
-        handle_dpx(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::DONATION_REDEEM) {
-        handle_drx(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::TOURNAMENT_MENU) {
-        handle_ccanje(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::PRIZE_INFO) {
-        handle_ipx(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::PRIZE_BUY) {
-        handle_spx(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::INIT_CHAT) {
-        handle_inchat(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CHAT_MSG) {
-        handle_kkchat(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_DONATE_PTS) {
-        handle_addpts(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::MINI_STATS) {
         handle_fest(state, conn_id).await;
     } else if data.starts_with(client_opcodes::HEAD_CHANGE) {
         handle_cabezi(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::DRAG_DROP) {
         handle_dydtra(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::TOINFO) {
-        handle_toinfo(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::DUEL_ARENA_INFO) {
-        handle_iduelos(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::SEND_POINTS) {
-        handle_actpt(state, conn_id).await;
     } else if data.starts_with(client_opcodes::VOTE) {
         handle_nvot(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::REPORT) {
@@ -1378,10 +1273,6 @@ async fn connect_user(
         user.recompensas_real = char_data.recompensas_real;
         user.recompensas_caos = char_data.recompensas_caos;
         user.reenlistadas = char_data.reenlistadas;
-        user.questeando = char_data.questeando;
-        user.quest_num = char_data.quest_num;
-        user.quest_kills = char_data.quest_kills;
-        user.quests_completed = char_data.quests_completed;
         user.hogar = match char_data.hogar {
             1 => "Thir".to_string(),
             2 => "Inthak".to_string(),
@@ -1405,17 +1296,15 @@ async fn connect_user(
         user.gold = char_data.gold;
         user.bank_gold = char_data.bank_gold;
         user.skill_pts_libres = char_data.skill_pts_libres;
-        user.puntos_donacion = char_data.puntos_donacion;
-        user.puntos_torneo = char_data.puntos_torneo;
-        user.ts_points = char_data.ts_points;
         user.hogar = char_data.hogar.to_string();
         user.max_agua = char_data.max_agua;
         user.min_agua = char_data.min_agua;
         user.max_ham = char_data.max_ham;
         user.min_ham = char_data.min_ham;
         user.attributes = char_data.attributes;
-        // VB6 hardcodes all skills to 100 (skill system unused in TS)
-        user.skills = [100i32; 22];
+        user.skills = char_data.skills;
+        // Initialize skill ELU values for progression
+        skills::init_elu_skills(user);
         user.reputation = char_data.reputation;
 
         // Inventory
@@ -1573,11 +1462,6 @@ async fn connect_user(
     // --- PHASE 5: Reputation (VB6 line 1666) ---
     state.send_bytes(conn_id, &binary_packets::write_reputation(char_data.reputation as i32)).await;
 
-    // --- PHASE 6: Friend list (VB6 line 1685) ---
-    send_friend_list(state, conn_id).await;
-    // Notify other users who have this player as a friend
-    broadcast_friend_connect(state, conn_id).await;
-
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
     state.send_bytes(conn_id, &binary_packets::write_logged(0)).await;
@@ -1600,8 +1484,7 @@ async fn connect_user(
     )).await;
 
     // --- PHASE 10: Stop state (VB6 line 1730) ---
-    let stopped_flag = if let Some(u) = state.users.get(&conn_id) { u.not_move } else { false };
-    state.send_bytes(conn_id, &binary_packets::write_stop_dancing(stopped_flag)).await;
+    state.send_bytes(conn_id, &binary_packets::write_stop_dancing(false)).await;
 
     // --- PHASE 10b: PARADOK if paralyzed (VB6 line 1732) ---
     // PARADOK is a toggle — client starts with UserParalizado=False,
@@ -1745,13 +1628,13 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.not_move, u.meditating, u.navigating),
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.meditating, u.navigating),
         _ => return,
     };
-    let (map, old_x, old_y, char_index, paralyzed, dead, not_move, meditating, navigating) = user_data;
+    let (map, old_x, old_y, char_index, paralyzed, dead, meditating, navigating) = user_data;
 
-    // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed and not_move block.
-    if paralyzed || not_move {
+    // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
+    if paralyzed {
         // Force client back to server position (prevents ghost movement on client)
         state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
         return;
@@ -2167,6 +2050,7 @@ async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str)
         state.config.start_map,
         state.config.start_x,
         state.config.start_y,
+        &state.game_data.balance,
     ).await {
         Ok(_char_id) => {
             info!("[AUTH] Character '{}' created successfully — auto-logging in", char_name);
@@ -2444,10 +2328,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_finparty(state, conn_id).await;
     } else if cmd_upper.starts_with("/PINFO") {
         handle_slash_pinfo(state, conn_id).await;
-    } else if cmd_upper.starts_with("/QUEST") {
-        handle_slash_quest(state, conn_id).await;
-    } else if cmd_upper.starts_with("/NOQUEST") {
-        handle_slash_noquest(state, conn_id).await;
     } else if cmd_upper == "/ONLINE" {
         handle_slash_online(state, conn_id).await;
     } else if cmd_upper == "/PING" {
@@ -2463,15 +2343,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_onlinegm(state, conn_id).await;
     } else if cmd_upper == "/ONLINEMAP" {
         handle_slash_onlinemap(state, conn_id).await;
-    } else if cmd_upper.starts_with("/ITEMNOBLE ") {
-        let args = cmd[11..].trim();
-        handle_slash_itemnoble(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/OFRECER ") {
-        let args = cmd[9..].trim();
-        handle_slash_ofrecer(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/INISUB ") {
-        let args = &cmd[8..];
-        handle_slash_inisub(state, conn_id, args).await;
     // =====================================================================
     // GM / Admin commands (require privileges > 0)
     // =====================================================================
@@ -2562,29 +2433,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/PREMIARTS ") {
         let args = &cmd[11..];
         handle_slash_premiarts(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/PLATA ") {
-        let target = cmd[7..].trim();
-        handle_slash_plata(state, conn_id, target).await;
-    } else if cmd_upper.starts_with("/BRONCE ") {
-        let target = cmd[8..].trim();
-        handle_slash_bronce(state, conn_id, target).await;
-    } else if cmd_upper.starts_with("/MEDALLA ") {
-        let target = cmd[9..].trim();
-        handle_slash_medalla(state, conn_id, target).await;
-    } else if cmd_upper.starts_with("/DESCALIFICAR ") {
-        let target = cmd[14..].trim();
-        handle_slash_descalificar(state, conn_id, target).await;
-    } else if cmd_upper.starts_with("/MVP ") {
-        let args = &cmd[5..];
-        handle_slash_mvp(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/DOTORNEO ") {
-        let args = cmd[10..].trim();
-        handle_slash_dotorneo(state, conn_id, args).await;
-    } else if cmd_upper == "/CANCELARTORNEO" {
-        handle_slash_cancelartorneo(state, conn_id).await;
-    } else if cmd_upper.starts_with("/TSUM ") {
-        let args = &cmd[6..];
-        handle_slash_tsum(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/CHANGENICK ") {
         let new_name = cmd[12..].trim();
         handle_slash_changenick(state, conn_id, new_name).await;
@@ -2597,17 +2445,9 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/HECHIZO ") {
         let args = &cmd[9..];
         handle_slash_hechizo(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/DONACION ") {
-        let args = &cmd[10..];
-        handle_slash_donacion(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/RESETVALS ") {
         let args = cmd[11..].trim();
         handle_slash_resetvals(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/SIEGE ") {
-        let args = &cmd[7..];
-        handle_gm_start_siege(state, conn_id, args).await;
-    } else if cmd_upper == "/ENDSIEGE" {
-        handle_gm_end_siege(state, conn_id).await;
     } else if cmd_upper.starts_with("/PRETORIANO ") {
         // /PRETORIANO <faccion> — Spawn praetorian clan on current position
         let faccion: i32 = cmd[12..].trim().parse().unwrap_or(1);
@@ -2617,61 +2457,12 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         };
         crear_clan_pretoriano(state, map, x, y, faccion).await;
         state.send_console(conn_id, "Clan pretoriano creado.", font_index::INFO).await;
-    } else if cmd_upper.starts_with("/EVENTO ") {
-        let args = cmd[8..].trim();
-        handle_gm_evento(state, conn_id, args).await;
-    } else if cmd_upper.starts_with("/TORNEOAUTO ") {
-        let rounds: i32 = cmd[12..].trim().parse().unwrap_or(3);
-        handle_gm_torneo_auto(state, conn_id, rounds).await;
-    } else if cmd_upper == "/FINEVENTO" {
-        let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
-        if priv_level >= privilege_level::EVENT_MASTER {
-            if state.evento_activo {
-                evento_finalize(state).await;
-            } else if state.evento_inscripciones {
-                evento_reset(state);
-                state.send_console(conn_id, "Evento cancelado.", font_index::INFO).await;
-            }
-        }
     } else if cmd_upper == "/LIMPRETORIANO" {
         let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
         if priv_level >= privilege_level::DIOS {
             limpiar_clan_pretoriano(state).await;
             state.send_console(conn_id, "Clan pretoriano eliminado.", font_index::INFO).await;
         }
-    // =====================================================================
-    // Duel, Tournament, and Event commands
-    // =====================================================================
-    } else if cmd_upper.starts_with("/DUELO ") {
-        let args = &cmd[7..];
-        handle_slash_duelo(state, conn_id, args).await;
-    } else if cmd_upper == "/SIDUELO" {
-        handle_slash_siduelo(state, conn_id).await;
-    } else if cmd_upper == "/DESAFIO" {
-        handle_slash_desafio(state, conn_id).await;
-    } else if cmd_upper.starts_with("/DESAFIAR") {
-        handle_slash_desafiar(state, conn_id).await;
-    } else if cmd_upper == "/ABANDONAR" {
-        handle_slash_abandonar(state, conn_id).await;
-    } else if cmd_upper == "/TORNEO" {
-        handle_slash_torneo(state, conn_id).await;
-    } else if cmd_upper == "/PARTICIPANTES" {
-        handle_slash_participantes(state, conn_id).await;
-    } else if cmd_upper == "/HORDA" {
-        handle_slash_horda(state, conn_id).await;
-    } else if cmd_upper == "/ALIANZA" {
-        handle_slash_alianza(state, conn_id).await;
-    } else if cmd_upper == "/PARTICIPAR" {
-        handle_slash_participar(state, conn_id).await;
-    } else if cmd_upper == "/EVENTOS" {
-        handle_slash_eventos(state, conn_id).await;
-    } else if cmd_upper.starts_with("/CVC ") {
-        let clan_name = cmd[5..].trim();
-        handle_slash_cvc(state, conn_id, clan_name).await;
-    } else if cmd_upper == "/NCVC" {
-        handle_slash_ncvc(state, conn_id).await;
-    } else if cmd_upper == "/SCVC" {
-        handle_slash_scvc(state, conn_id).await;
     } else if cmd_upper == "/REGRESAR" {
         handle_slash_regresar(state, conn_id).await;
     } else if cmd_upper == "/SALIR" {
@@ -2683,7 +2474,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let is_safe = state.users.get(&conn_id).map(|u| u.safe_toggle).unwrap_or(true);
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.safe_toggle = !is_safe;
-            user.seguro_cvc = !is_safe;
         }
         if !is_safe {
             state.send_bytes(conn_id, &binary_packets::write_safe_on()).await;
@@ -2734,8 +2524,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_advertencias(state, conn_id).await;
     } else if cmd_upper == "/CURAR" {
         handle_slash_curar(state, conn_id).await;
-    } else if cmd_upper == "/DEMONIO" || cmd_upper == "/ANGEL" {
-        handle_slash_transform(state, conn_id, &cmd_upper).await;
     } else if cmd_upper == "/MONTAR" {
         handle_slash_montar(state, conn_id).await;
     } else if cmd_upper == "/DESMONTAR" {
@@ -2761,27 +2549,13 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_votar(state, conn_id).await;
     } else if cmd_upper == "/RESULTADOS" {
         handle_slash_resultados(state, conn_id).await;
-    } else if cmd_upper == "/GUERRA" {
-        handle_slash_guerra(state, conn_id).await;
     } else if cmd_upper == "/CIRUJIA" {
         handle_slash_cirujia(state, conn_id).await;
-    } else if cmd_upper == "/NOBLE" {
-        handle_slash_noble(state, conn_id).await;
-    } else if cmd_upper == "/DESENTERRAR" {
-        handle_slash_desenterrar(state, conn_id).await;
-    } else if cmd_upper == "/BOTIX" || cmd_upper == "/BOTIX2" {
-        handle_slash_botix(state, conn_id).await;
-    } else if cmd_upper == "/INFOSUB" {
-        handle_slash_infosub(state, conn_id).await;
-    } else if cmd_upper == "/SUBASTAR" {
-        handle_slash_subastar(state, conn_id).await;
     } else if cmd_upper.starts_with("/CASAR ") {
         let target = cmd[7..].trim();
         handle_slash_casar(state, conn_id, target).await;
     } else if cmd_upper == "/DIVORCIARSE" {
         handle_slash_divorciarse(state, conn_id).await;
-    } else if cmd_upper == "/CASTILLOS" {
-        handle_slash_castillos(state, conn_id).await;
     } else if cmd_upper == "/EMOTICONS" {
         // VB6: Toggle emoticons flag (no server response)
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -2790,13 +2564,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/VOTO ") {
         let candidate = cmd[6..].trim();
         handle_slash_voto(state, conn_id, candidate).await;
-    } else if cmd_upper.starts_with("/PAREJA ") {
-        let target = cmd[8..].trim();
-        handle_slash_pareja(state, conn_id, target).await;
-    } else if cmd_upper == "/SICV" {
-        handle_slash_sicv(state, conn_id).await;
-    } else if cmd_upper == "/PODER" {
-        handle_slash_poder(state, conn_id).await;
     } else if cmd_upper.starts_with("/PMSG ") {
         // Party message
         let text = &cmd[6..];
@@ -2952,22 +2719,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         gm_commands::handle_reload_npcs(state, conn_id).await;
     } else if cmd_upper == "/LOADBALANCE" {
         gm_commands::handle_reload_balance(state, conn_id).await;
-    } else if cmd_upper == "/LOADQUESTS" {
-        gm_commands::handle_reload_quests(state, conn_id).await;
-    } else if cmd_upper == "/LOADPREMIOS" {
-        let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
-        if !is_admin { return; }
-        let base = state.base_path.clone();
-        match crate::data::prizes::load_prizes(&base) {
-            Ok(prizes) => {
-                let count = prizes.len();
-                state.game_data.prizes = prizes;
-                state.send_console(conn_id, &format!("Premios recargados: {} premios.", count), font_index::INFO).await;
-            }
-            Err(e) => {
-                state.send_console(conn_id, &format!("Error recargando premios: {}", e), font_index::INFO).await;
-            }
-        }
     } else if cmd_upper.starts_with("/LOADMAP ") {
         let map_str = &cmd[9..];
         gm_commands::handle_reload_map(state, conn_id, map_str).await;
@@ -2986,8 +2737,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/CHEAT ") {
         let target = cmd[7..].trim();
         handle_slash_cheat(state, conn_id, target).await;
-    } else if cmd_upper == "/REY" {
-        gm_commands::handle_slash_rey(state, conn_id).await;
     } else if cmd_upper.starts_with("/NPCAURA ") {
         let args = cmd[9..].trim();
         gm_commands::handle_slash_npcaura(state, conn_id, args).await;
@@ -3225,16 +2974,17 @@ async fn send_full_spells(state: &mut GameState, conn_id: ConnectionId) {
 // Level up system
 // =====================================================================
 
-const MAX_LEVEL: i32 = 70;
+const MAX_LEVEL: i32 = 50;
 
 /// Check if user has enough exp to level up, and apply it.
 /// VB6 parity: two separate paths for levels 1-49 vs 50+.
 pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
     loop {
-        let (level, exp, class, race, max_hp, intelligence) = match state.users.get(&conn_id) {
+        let (level, exp, class, race, intelligence, constitution) = match state.users.get(&conn_id) {
             Some(u) if u.logged => (
                 u.level, u.exp, u.class.clone(), u.race.clone(),
-                u.max_hp, u.attributes[2], // attributes[2] = Intelligence
+                u.attributes[2], // Intelligence
+                u.attributes[4], // Constitution
             ),
             _ => return,
         };
@@ -3252,119 +3002,10 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         }
 
         // ══════════════════════════════════════════════════════════════
-        // VB6: Level 50+ path — NO regular stat gains, only milestones
-        // ══════════════════════════════════════════════════════════════
-        if level >= 50 {
-            // Level up sound + FX
-            let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
-            let map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
-            let x = state.users.get(&conn_id).map(|u| u.pos_x).unwrap_or(0);
-            let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
-            state.send_msg_id(conn_id, 67, "").await;
-
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.level += 1;
-                user.exp = 0;
-            }
-            let new_level = level + 1;
-
-            state.send_data_bytes(
-                SendTarget::ToArea { map, x, y },
-                &binary_packets::write_char_particle_create(char_index as i16, 58),
-            ).await;
-
-            // VB6: ClassBonus.dat options at levels 53, 56, 60
-            let class_upper = class.to_uppercase();
-            let bonus_nivel = match new_level {
-                53 => Some(1),
-                56 => Some(2),
-                60 => Some(3),
-                _ => None,
-            };
-            if let Some(nivel) = bonus_nivel {
-                let dat_path = state.base_path.join("dat").join("ClassBonus.dat");
-                let dat = dat_path.to_str().unwrap_or("");
-                let opt1 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion1", nivel));
-                let opt2 = crate::config::get_var(dat, &class_upper, &format!("Nivel{}Opcion2", nivel));
-                if !opt1.is_empty() || !opt2.is_empty() {
-                    let o1: u8 = opt1.parse().unwrap_or(0);
-                    let o2: u8 = opt2.parse().unwrap_or(0);
-                    state.send_bytes(conn_id, &binary_packets::write_class_options(o1, o2)).await;
-                }
-            }
-
-            // VB6: Level 50 — +50 skill points (one-time)
-            if new_level == 50 {
-                let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535).await;
-                state.send_msg_id(conn_id, 57, "50").await;
-                // TODO: AgregarPuntos(50) — add 50 free skill points
-            }
-
-            // VB6: Level 60 — +200 skill points (one-time), stop gaining exp
-            if new_level == 60 {
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.exp = 0;
-                }
-                let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 60!", name), 65535).await;
-                state.send_msg_id(conn_id, 57, "200").await;
-                // TODO: AgregarPuntos(200) — add 200 free skill points
-                send_stats_exp(state, conn_id).await;
-                state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
-                send_stats_hp(state, conn_id).await;
-                return;
-            }
-
-            // VB6: Level 65 — +3-5 HP, +2 TSPoints
-            if new_level == 65 {
-                let hp_bonus = rand_range(3, 5);
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.max_hp += hp_bonus;
-                    user.min_hp = user.max_hp;
-                }
-                state.send_msg_id(conn_id, 68, &format!("50 + 15@{}", hp_bonus)).await;
-                state.send_msg_id(conn_id, 900, "2").await;
-                send_stats_hp(state, conn_id).await;
-            }
-
-            // VB6: Level 70 — +3-5 HP, +200 skill points, +5 TSPoints
-            if new_level == 70 {
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.exp = 0;
-                }
-                let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 70!", name), 65535).await;
-                let hp_bonus = rand_range(3, 5);
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.max_hp += hp_bonus;
-                    user.min_hp = user.max_hp;
-                }
-                state.send_msg_id(conn_id, 68, &format!("50 + 20@{}", hp_bonus)).await;
-                state.send_msg_id(conn_id, 57, "200").await;
-                state.send_msg_id(conn_id, 900, "5").await;
-                // TODO: AgregarPuntos(200) — add 200 free skill points
-                send_stats_hp(state, conn_id).await;
-                send_stats_exp(state, conn_id).await;
-                state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
-                info!("[LEVEL] '{}' reached max level 70", name);
-                return;
-            }
-
-            send_stats_exp(state, conn_id).await;
-            state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
-
-            let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            info!("[LEVEL] '{}' reached level {}", name, new_level);
-            continue; // Check for multi-level jump
-        }
-
-        // ══════════════════════════════════════════════════════════════
         // VB6: Level 1-49 path — full promedio HP + INT-based mana
         // ══════════════════════════════════════════════════════════════
         let (hp_gain, mana_gain, sta_gain, hit_gain) =
-            level_up_gains(&class, &race, level, max_hp, intelligence);
+            level_up_gains(&class, &race, level, constitution, intelligence, &state.game_data.balance);
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.level += 1;
@@ -3426,26 +3067,9 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             state.send_msg_id(conn_id, 75, &hit_gain.to_string()).await;
         }
 
-        // VB6: HP projection messages (how your HP is trending)
-        {
-            let tbl = hp_table(&class.to_uppercase(), &race.to_uppercase());
-            let cur_hp = state.users.get(&conn_id).map(|u| u.max_hp).unwrap_or(0);
-            if new_level < 20 {
-                // ||76@class@race@vidaMin@vidaMax — show target range
-                state.send_msg_id(conn_id, 76, &format!("{}@{}@{}@{}", class, race,
-                    tbl.vida_veinte + (30 - 20) * tbl.define_random_min + 20 * tbl.random_final,
-                    tbl.vida_veinte + (30 - 20) * tbl.define_random_max + 20 * tbl.random_final,
-                )).await;
-            } else if new_level <= 29 {
-                // ||77@min@max — projected HP at level 50
-                let projected_min = cur_hp + (30 - new_level) * tbl.define_random_min + 20 * tbl.random_final;
-                let projected_max = cur_hp + (30 - new_level) * tbl.define_random_max + 20 * tbl.random_final;
-                state.send_msg_id(conn_id, 77, &format!("{}@{}", projected_min, projected_max)).await;
-            } else {
-                // ||78@projected — exact projected HP at level 50
-                let projected = cur_hp + (50 - new_level) * tbl.random_final;
-                state.send_msg_id(conn_id, 78, &projected.to_string()).await;
-            }
+        // VB6: +5 skill points per level
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.skill_pts_libres += 5;
         }
 
         // Send updated stats
@@ -3469,55 +3093,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
             send_stats_gold(state, conn_id).await;
         }
 
-        // VB6: Level 10 — warp to Tanaris, clear inventory, naked body, give torch
-        if new_level == 10 {
-            warp_user(state, conn_id, 28, 54, 34).await;
-
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                for slot in user.inventory.iter_mut() {
-                    slot.obj_index = 0;
-                    slot.amount = 0;
-                    slot.equipped = false;
-                }
-                user.equip = EquipSlots::default();
-                user.weapon_anim = 0;
-                user.shield_anim = 0;
-                user.casco_anim = 0;
-            }
-
-            let (race_l10, gender) = state.users.get(&conn_id)
-                .map(|u| (u.race.clone(), u.gender))
-                .unwrap_or_default();
-            let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
-            let naked = naked_body(&race_l10, gender_str);
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.body = naked;
-            }
-
-            let torch = if race_l10.eq_ignore_ascii_case("enano") || race_l10.eq_ignore_ascii_case("gnomo") {
-                1561
-            } else {
-                1560
-            };
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                if let Some(slot) = user.inventory.iter_mut().find(|s| s.obj_index == 0) {
-                    slot.obj_index = torch;
-                    slot.amount = 1;
-                }
-            }
-
-            send_full_inventory(state, conn_id).await;
-
-            let (m, px, py, ci, hd, head) = state.users.get(&conn_id)
-                .map(|u| (u.pos_map, u.pos_x, u.pos_y, u.char_index.0, u.heading, u.head))
-                .unwrap_or_default();
-            state.send_data_bytes(
-                SendTarget::ToArea { map: m, x: px, y: py },
-                &binary_packets::write_character_change(ci as i16, naked as i16, head as i16, hd as u8, 0, 0, 0, 0, 0),
-            ).await;
-        }
-
-        // VB6: Level 50 — announcement + skill points (one-time)
+        // 13.3: Level 50 — announcement + skill points (one-time)
         if new_level == 50 {
             state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535).await;
             state.send_msg_id(conn_id, 57, "50").await;
@@ -3528,140 +3104,103 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
     }
 }
 
-// ── VB6 HP progression table entry (class × race) ──────────────────
-// The VB6 system uses a "promedio" (average-tracking) algorithm:
-//   Level 1-20:  if current HP + remaining levels × min < VidaVeinte → give max, else min
-//   Level 20-29: random in [DefineRandomMin, DefineRandomMax]
-//   Level 30+:   fixed RandomFinal
-// This ensures all characters of the same class/race converge to a predictable HP range.
-struct HpTable {
-    vida_veinte: i32,       // Target HP at level 20
-    random_veinte_min: i32, // Min HP roll for levels 1-20
-    random_veinte_max: i32, // Max HP roll for levels 1-20
-    define_random_min: i32, // Min HP roll for levels 20-29
-    define_random_max: i32, // Max HP roll for levels 20-29
-    random_final: i32,      // Fixed HP gain for level 30+
-}
-
-// VB6 constants
+// VB6 13.3 constants (Declares.bas)
 const AUMENTO_ST_DEF: i32 = 15;
-const AUMENTO_ST_MAGO: i32 = 14; // AumentoSTDef - 1
-const STAT_MAXSTA: i32 = 30000;
-const STAT_MAXMAN: i32 = 30000;
-const STAT_MAXHIT_UNDER36: i32 = 99;
-const STAT_MAXHIT_OVER36: i32 = 999;
+const AUMENTO_ST_LADRON: i32 = 18;    // AumentoSTDef + 3
+const AUMENTO_ST_BANDIDO: i32 = 18;   // AumentoSTDef + 3
+const AUMENTO_ST_MAGO: i32 = 14;      // AumentoSTDef - 1
+const AUMENTO_ST_TRABAJADOR: i32 = 40; // AumentoSTDef + 25
+const STAT_MAXSTA: i32 = 999;         // VB6: STAT_MAXSTA = 999
+const STAT_MAXMAN: i32 = 9999;        // VB6: STAT_MAXMAN = 9999
+const STAT_MAXHIT_UNDER36: i32 = 99;  // VB6: STAT_MAXHIT_UNDER36
+const STAT_MAXHIT_OVER36: i32 = 999;  // VB6: STAT_MAXHIT_OVER36
 
-/// Look up the VB6 HP progression table for a class/race combo.
-/// Returns None for unknown combos (uses guerrero-humano fallback in caller).
-fn hp_table(class: &str, race: &str) -> HpTable {
-    match (class, race) {
-        // ── GUERRERO ──
-        ("GUERRERO", "HUMANO")      => HpTable { vida_veinte: 225, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 11, define_random_max: 12, random_final: 11 },
-        ("GUERRERO", "ELFO")        => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min: 11, define_random_max: 12, random_final: 11 },
-        ("GUERRERO", "ELFO OSCURO") => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 10, define_random_min: 11, define_random_max: 12, random_final: 11 },
-        ("GUERRERO", "GNOMO")       => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final: 10 },
-        ("GUERRERO", "ENANO")       => HpTable { vida_veinte: 245, random_veinte_min: 11, random_veinte_max: 12, define_random_min: 11, define_random_max: 13, random_final: 11 },
-
-        // ── CAZADOR ──
-        ("CAZADOR", "HUMANO")       => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 11, define_random_min:  9, define_random_max: 11, random_final: 10 },
-        ("CAZADOR", "ELFO")         => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final:  9 },
-        ("CAZADOR", "ELFO OSCURO")  => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final:  9 },
-        ("CAZADOR", "GNOMO")        => HpTable { vida_veinte: 185, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  8, define_random_max:  9, random_final:  9 },
-        ("CAZADOR", "ENANO")        => HpTable { vida_veinte: 225, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 10, define_random_max: 11, random_final: 10 },
-
-        // ── PALADIN ──
-        ("PALADIN", "HUMANO")       => HpTable { vida_veinte: 205, random_veinte_min:  9, random_veinte_max: 11, define_random_min: 10, define_random_max: 11, random_final: 10 },
-        ("PALADIN", "ELFO")         => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final: 10 },
-        ("PALADIN", "ELFO OSCURO")  => HpTable { vida_veinte: 200, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  9, define_random_max: 10, random_final: 10 },
-        ("PALADIN", "GNOMO")        => HpTable { vida_veinte: 195, random_veinte_min:  9, random_veinte_max: 10, define_random_min:  8, define_random_max:  9, random_final: 10 },
-        ("PALADIN", "ENANO")        => HpTable { vida_veinte: 215, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 10, define_random_max: 11, random_final: 10 },
-
-        // ── MAGO ──
-        ("MAGO", "HUMANO")          => HpTable { vida_veinte: 155, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("MAGO", "ELFO")            => HpTable { vida_veinte: 155, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  9, random_final:  7 },
-        ("MAGO", "ELFO OSCURO")     => HpTable { vida_veinte: 160, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  7 },
-        ("MAGO", "GNOMO")           => HpTable { vida_veinte: 135, random_veinte_min:  6, random_veinte_max:  6, define_random_min:  6, define_random_max:  7, random_final:  7 },
-        ("MAGO", "ENANO")           => HpTable { vida_veinte: 155, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  8, define_random_max:  9, random_final:  8 },
-
-        // ── CLERIGO ──
-        ("CLERIGO", "HUMANO")       => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
-        ("CLERIGO", "ELFO")         => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-        ("CLERIGO", "ELFO OSCURO")  => HpTable { vida_veinte: 180, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-        ("CLERIGO", "GNOMO")        => HpTable { vida_veinte: 170, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("CLERIGO", "ENANO")        => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
-
-        // ── DRUIDA ──
-        ("DRUIDA", "HUMANO")        => HpTable { vida_veinte: 185, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max: 10, random_final:  8 },
-        ("DRUIDA", "ELFO")          => HpTable { vida_veinte: 165, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("DRUIDA", "ELFO OSCURO")   => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("DRUIDA", "GNOMO")         => HpTable { vida_veinte: 170, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  6, define_random_max:  7, random_final:  7 },
-        ("DRUIDA", "ENANO")         => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-
-        // ── ASESINO ──
-        ("ASESINO", "HUMANO")       => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-        ("ASESINO", "ELFO")         => HpTable { vida_veinte: 165, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("ASESINO", "ELFO OSCURO")  => HpTable { vida_veinte: 170, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("ASESINO", "GNOMO")        => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  6, define_random_max:  7, random_final:  7 },
-        ("ASESINO", "ENANO")        => HpTable { vida_veinte: 185, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-
-        // ── BARDO ──
-        ("BARDO", "HUMANO")         => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
-        ("BARDO", "ELFO")           => HpTable { vida_veinte: 175, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-        ("BARDO", "ELFO OSCURO")    => HpTable { vida_veinte: 180, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  8, define_random_max:  9, random_final:  8 },
-        ("BARDO", "GNOMO")          => HpTable { vida_veinte: 167, random_veinte_min:  7, random_veinte_max:  8, define_random_min:  7, define_random_max:  8, random_final:  8 },
-        ("BARDO", "ENANO")          => HpTable { vida_veinte: 190, random_veinte_min:  8, random_veinte_max:  9, define_random_min:  9, define_random_max: 10, random_final:  9 },
-
-        // ── Default (unknown class/race) → guerrero humano ──
-        _ => HpTable { vida_veinte: 225, random_veinte_min: 10, random_veinte_max: 11, define_random_min: 11, define_random_max: 12, random_final: 11 },
-    }
-}
-
-/// VB6-accurate level-up stat gains.
-/// Uses the promedio (average-tracking) HP system with 40 class×race tables,
-/// INT-based mana per class, and level-tier hit/sta constants.
+/// VB6 13.3 level-up stat gains (Modulo_UsUaRiOs.bas:499-707).
+/// HP: MODVIDA + CON-based probabilistic distribution.
+/// Mana: INT-based per class (exact VB6 multipliers).
+/// STA: per-class constants.
+/// HIT: per-class with level>35 cutoffs.
 /// Returns (hp_gain, mana_gain, sta_gain, hit_gain).
-fn level_up_gains(class: &str, race: &str, level: i32, current_max_hp: i32, intelligence: i32) -> (i32, i32, i32, i32) {
-    let class_upper = class.to_uppercase();
-    let race_upper = race.to_uppercase();
-    let cls = class_upper.as_str();
+fn level_up_gains(class: &str, _race: &str, level: i32, constitution: i32, intelligence: i32,
+                  balance: &crate::data::balance::BalanceData) -> (i32, i32, i32, i32) {
+    let cls = class.to_uppercase();
+    let c = cls.as_str();
 
-    // ── HP gain (promedio system) ──
-    let tbl = hp_table(cls, &race_upper);
-    let hp_gain = if level <= 20 {
-        // VB6 promedio: if we can't reach VidaVeinte with min rolls for remaining levels, give max
-        if current_max_hp + (21 - level) * tbl.random_veinte_min < tbl.vida_veinte {
-            tbl.random_veinte_max
-        } else {
-            tbl.random_veinte_min
-        }
-    } else if level < 30 {
-        rand_range(tbl.define_random_min, tbl.define_random_max)
-    } else {
-        tbl.random_final
+    // ── HP gain (VB6: MODVIDA + CON distribution) ──
+    let mod_vida = balance.class_mod_vida(class);
+    // VB6: Promedio = ModVida(clase) - (21 - Constitucion) * 0.5
+    let promedio = mod_vida as f64 - (21.0 - constitution as f64) * 0.5;
+    let hp_gain = hp_gain_from_distribution(promedio, &balance.hp_distribution);
+
+    // ── Mana gain (VB6 exact multipliers) ──
+    let mana_gain = match c {
+        "MAGO"    => (2.8 * intelligence as f64) as i32,
+        "CLERIGO" => 2 * intelligence,
+        "DRUIDA"  => 2 * intelligence,
+        "BARDO"   => 2 * intelligence,
+        "ASESINO" => intelligence,
+        "PALADIN" => intelligence,
+        "BANDIDO" => intelligence / 3 * 2,
+        _ => 0, // Guerrero, Cazador, Ladron, Trabajador, Pirata
     };
 
-    // ── Mana gain (INT-based per class) ──
-    let mana_gain = match cls {
-        "MAGO"    => 3 * intelligence,                          // 3 × INT
-        "CLERIGO" => 2 * intelligence,                          // 2 × INT
-        "DRUIDA" | "BARDO" => (2.1 * intelligence as f64) as i32, // 2.1 × INT (truncated)
-        "PALADIN" | "ASESINO" => intelligence,                  // 1 × INT
-        _ => 0,                                                 // No mana classes
+    // ── STA gain (VB6 exact constants) ──
+    let sta_gain = match c {
+        "MAGO"       => AUMENTO_ST_MAGO,
+        "LADRON"     => AUMENTO_ST_LADRON,
+        "BANDIDO"    => AUMENTO_ST_BANDIDO,
+        "TRABAJADOR" => AUMENTO_ST_TRABAJADOR,
+        _ => AUMENTO_ST_DEF,
     };
 
-    // ── STA gain ──
-    let sta_gain = if cls == "MAGO" { AUMENTO_ST_MAGO } else { AUMENTO_ST_DEF };
-
-    // ── Hit gain (level-dependent for combat classes) ──
-    let hit_gain = match cls {
-        "GUERRERO" | "CAZADOR" => if level > 35 { 2 } else { 3 },
-        "PALADIN" | "ASESINO"  => if level > 35 { 1 } else { 3 },
-        "MAGO"                 => 1,
-        "CLERIGO" | "DRUIDA" | "BARDO" => 2,
-        _ => 2, // Default for unknown classes
+    // ── HIT gain (VB6 exact with level>35 cutoffs) ──
+    let hit_gain = match c {
+        "GUERRERO" => if level > 35 { 2 } else { 3 },
+        "CAZADOR"  => if level > 35 { 2 } else { 3 },
+        "PIRATA"   => 3,
+        "PALADIN"  => if level > 35 { 1 } else { 3 },
+        "ASESINO"  => if level > 35 { 1 } else { 3 },
+        "BANDIDO"  => if level > 35 { 1 } else { 3 },
+        "LADRON"   => 2,
+        "MAGO"     => 1,
+        "CLERIGO"  => 2,
+        "DRUIDA"   => 2,
+        "BARDO"    => 2,
+        "TRABAJADOR" => 2,
+        _ => 2,
     };
 
     (hp_gain, mana_gain, sta_gain, hit_gain)
+}
+
+/// VB6 HP distribution using probabilistic brackets (Modulo_UsUaRiOs.bas:545-610).
+fn hp_gain_from_distribution(promedio: f64, dist: &crate::data::balance::HpDistribution) -> i32 {
+    let roll = rand_range(1, 100);
+    let is_half = (promedio * 2.0).fract().abs() > 0.01; // Half-integer check
+
+    if is_half {
+        // Semi-integer distribution (4 brackets: +1.5, +0.5, -0.5, -1.5)
+        let mut cumulative = 0;
+        cumulative += dist.semientera[0]; // S1
+        if roll <= cumulative { return (promedio + 1.5) as i32; }
+        cumulative += dist.semientera[1]; // S2
+        if roll <= cumulative { return (promedio + 0.5) as i32; }
+        cumulative += dist.semientera[2]; // S3
+        if roll <= cumulative { return (promedio - 0.5) as i32; }
+        return (promedio - 1.5).max(1.0) as i32;
+    } else {
+        // Integer distribution (5 brackets: +2, +1, 0, -1, -2)
+        let mut cumulative = 0;
+        cumulative += dist.entera[0]; // E1
+        if roll <= cumulative { return (promedio as i32) + 2; }
+        cumulative += dist.entera[1]; // E2
+        if roll <= cumulative { return (promedio as i32) + 1; }
+        cumulative += dist.entera[2]; // E3
+        if roll <= cumulative { return promedio as i32; }
+        cumulative += dist.entera[3]; // E4
+        if roll <= cumulative { return (promedio as i32) - 1; }
+        return ((promedio as i32) - 2).max(1);
+    }
 }
 
 // =====================================================================
@@ -3829,12 +3368,6 @@ async fn check_update_needed_user(
                                     }
                                 }
 
-                                // Special objects 1472/1470: always force unblocked (VB6 line 292-298)
-                                if oi == 1472 || oi == 1470 {
-                                    for dx in [-2i32, -1, 0, 1, 2] {
-                                        new_door_bqs.push((sx + dx, sy, false));
-                                    }
-                                }
                             }
                         }
                     }
@@ -4258,12 +3791,6 @@ async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
     };
 
     // VB6: skip if in ring/arena
-    let in_ring = state.users.get(&conn_id).map(|u| u.en_duelo || u.en_desafio).unwrap_or(false);
-    if in_ring {
-        state.send_msg_id(conn_id, 395, "").await;
-        return;
-    }
-
     if dead {
         // Revive + full heal + full stamina
         revive_user(state, conn_id).await;

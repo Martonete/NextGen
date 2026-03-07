@@ -63,8 +63,6 @@ public partial class Main : Control
     private Label? _repLabel;
     private Label? _fpsLabel;
 
-    // Friends list
-    private ItemList? _friendsList;
 
     // Minimap
     private TextureRect? _minimapRect;
@@ -145,9 +143,6 @@ public partial class Main : Control
     private Button? _dropDialogAll;
     private Button? _dropDialogCancel;
 
-    // Add friend dialog
-    private PanelContainer? _addFriendDialog;
-    private LineEdit? _addFriendInput;
 
     // Account creation panel
     private PanelContainer? _accountCreatePanel;
@@ -475,20 +470,6 @@ public partial class Main : Control
         _fpsLabel = CreateStatLabel(37, 576, 37, 10, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
-        // Friends list — VB6: ChatContacts at (396,2,137,88), Tahoma 9, light blue
-        _friendsList = new ItemList();
-        _friendsList.Position = new Vector2(396, 2);
-        _friendsList.Size = new Vector2(137, 88);
-        _friendsList.AddThemeFontSizeOverride("font_size", 9);
-        _friendsList.AddThemeColorOverride("font_color", new Color(0.753f, 0.878f, 1f)); // VB6: &H00C0E0FF&
-        var friendsBg = new StyleBoxFlat();
-        friendsBg.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.9f);
-        friendsBg.SetBorderWidthAll(0);
-        _friendsList.AddThemeStyleboxOverride("panel", friendsBg);
-        _friendsList.FocusMode = Control.FocusModeEnum.None; // Don't steal arrow key input
-        _friendsList.AllowRmbSelect = true; // Enable right-click selection
-        _friendsList.ItemClicked += OnFriendsListClicked;
-        _gameUI.AddChild(_friendsList);
 
         // Minimap
         _minimapRect = new TextureRect();
@@ -636,8 +617,6 @@ public partial class Main : Control
         // Drop quantity dialog (VB6: frmCantidad)
         CreateDropDialog();
 
-        // Add friend dialog
-        CreateAddFriendDialog();
 
         // "Crear Personaje" button on CharSelect screen
         _charSelectCreateBtn = new Button();
@@ -1615,74 +1594,6 @@ public partial class Main : Control
             _dropDialog.Visible = false;
     }
 
-    /// <summary>
-    /// Create the add friend dialog (input popup).
-    /// </summary>
-    private void CreateAddFriendDialog()
-    {
-        _addFriendDialog = new PanelContainer();
-        _addFriendDialog.Size = new Vector2(200, 90);
-        _addFriendDialog.Position = new Vector2(167, 273);
-        _addFriendDialog.Visible = false;
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.12f, 0.12f, 0.18f, 0.95f);
-        bg.SetBorderWidthAll(1);
-        bg.BorderColor = new Color(0.4f, 0.6f, 0.9f);
-        _addFriendDialog.AddThemeStyleboxOverride("panel", bg);
-        var vbox = new VBoxContainer();
-        _addFriendDialog.AddChild(vbox);
-
-        var label = new Label();
-        label.Text = "Nombre del amigo:";
-        label.HorizontalAlignment = HorizontalAlignment.Center;
-        label.AddThemeColorOverride("font_color", Colors.White);
-        label.AddThemeFontSizeOverride("font_size", 12);
-        vbox.AddChild(label);
-
-        _addFriendInput = new LineEdit();
-        _addFriendInput.PlaceholderText = "Nombre";
-        _addFriendInput.Alignment = HorizontalAlignment.Center;
-        _addFriendInput.FocusMode = Control.FocusModeEnum.Click;
-        _addFriendInput.AddThemeFontSizeOverride("font_size", 12);
-        _addFriendInput.TextSubmitted += (_) => OnAddFriendOk();
-        vbox.AddChild(_addFriendInput);
-
-        var hbox = new HBoxContainer();
-        hbox.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.AddChild(hbox);
-
-        var okBtn = new Button();
-        okBtn.Text = "Agregar";
-        okBtn.CustomMinimumSize = new Vector2(70, 24);
-        okBtn.AddThemeFontSizeOverride("font_size", 11);
-        okBtn.Pressed += OnAddFriendOk;
-        hbox.AddChild(okBtn);
-
-        var cancelBtn = new Button();
-        cancelBtn.Text = "X";
-        cancelBtn.CustomMinimumSize = new Vector2(30, 24);
-        cancelBtn.AddThemeFontSizeOverride("font_size", 11);
-        cancelBtn.Pressed += CloseAddFriendDialog;
-        hbox.AddChild(cancelBtn);
-
-        _gameUI!.AddChild(_addFriendDialog);
-    }
-
-    private void OnAddFriendOk()
-    {
-        if (_addFriendInput == null || _tcp == null) return;
-        var name = _addFriendInput.Text.Trim();
-        if (name.Length > 0)
-            _tcp.SendPacket(ClientPackets.WriteFriendAdd(name));
-        CloseAddFriendDialog();
-    }
-
-    private void CloseAddFriendDialog()
-    {
-        _state.AddFriendDialogOpen = false;
-        if (_addFriendDialog != null)
-            _addFriendDialog.Visible = false;
-    }
 
     // =====================================================================
     // Character Creation Panel
@@ -2430,34 +2341,6 @@ public partial class Main : Control
         GD.Print($"[MAIN] Sent: NLOGIN {name} (binary)");
     }
 
-    /// <summary>
-    /// Right-click on friend list: (NADIE) → add friend, existing friend → remove.
-    /// </summary>
-    private void OnFriendsListClicked(long index, Vector2 atPosition, long mouseButtonIndex)
-    {
-        // Only handle right-click (button index 2)
-        if (mouseButtonIndex != 2 || _tcp == null) return;
-        int idx = (int)index;
-        if (idx < 0 || idx >= _state.FriendsList.Count) return;
-
-        var entry = _state.FriendsList[idx];
-        if (entry.StartsWith("(NADIE)"))
-        {
-            // Show add friend dialog
-            _state.AddFriendDialogOpen = true;
-            if (_addFriendDialog != null)
-            {
-                _addFriendInput!.Text = "";
-                _addFriendDialog.Visible = true;
-                _addFriendInput.GrabFocus();
-            }
-        }
-        else
-        {
-            // Remove friend — send 1-based slot index
-            _tcp.SendPacket(ClientPackets.WriteFriendRemove((idx + 1).ToString()));
-        }
-    }
 
     public override void _Process(double delta)
     {
@@ -2842,9 +2725,6 @@ public partial class Main : Control
         // Clear console
         _console?.Clear();
 
-        // Clear friends list UI
-        _friendsList?.Clear();
-
         // Clear minimap
         if (_minimapRect != null)
             _minimapRect.Texture = null;
@@ -2863,7 +2743,6 @@ public partial class Main : Control
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();
         CloseDropDialog();
-        CloseAddFriendDialog();
 
         // Reset char create button state
         if (_charCreateCreateBtn != null)
@@ -2933,8 +2812,6 @@ public partial class Main : Control
         _state.ItemSafety = true; // Re-enable on reconnect (VB6: ISItem starts true)
         _state.SeguroResu = false;
         _state.DropDialogOpen = false;
-        _state.AddFriendDialogOpen = false;
-        _state.FriendsListDirty = false;
         _state.ShowTravelPanel = false;
         _state.UserMoving = false;
         _state.AddToUserPosX = 0;
@@ -2966,9 +2843,6 @@ public partial class Main : Control
         _state.AttackMin = 0; _state.AttackMax = 0;
         _state.DefenseMin = 0; _state.DefenseMax = 0;
         _state.MagDefMin = 0; _state.MagDefMax = 0;
-
-        // Friends
-        _state.FriendsList.Clear();
 
         // Inventory & spells
         for (int i = 0; i < 25; i++)
@@ -3055,15 +2929,6 @@ public partial class Main : Control
 
         // FPS
         _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
-
-        // Friends list — rebuild when dirty (LDM received or KFM/DFM changed status)
-        if (_friendsList != null && _state.FriendsListDirty)
-        {
-            _state.FriendsListDirty = false;
-            _friendsList.Clear();
-            foreach (var friend in _state.FriendsList)
-                _friendsList.AddItem(friend);
-        }
 
         // Minimap player dot position
         if (_minimapDot != null)
@@ -3190,12 +3055,6 @@ public partial class Main : Control
                 if (_state.Banqueando || _state.BovedaAbierta)
                 {
                     _tcp?.SendPacket(ClientPackets.WriteBankClose());
-                    GetViewport().SetInputAsHandled();
-                    return;
-                }
-                if (_state.AddFriendDialogOpen)
-                {
-                    CloseAddFriendDialog();
                     GetViewport().SetInputAsHandled();
                     return;
                 }

@@ -1,12 +1,13 @@
-[MAPA172]
-Name=Cementerio
-MusicNum=180
+[Mapa172]
+Name=Ducto de escape.
+MusicNum=15
 MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
-BackUp= 0
+Terreno=NIEVE
+Zona=DUNGEON
+Restringir=No
+BackUp= 1
 Pk=0
-R=160
-G=160
-B=160
+
+NoEncriptarMP=0

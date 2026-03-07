@@ -99,14 +99,6 @@ pub struct CharData {
     pub recompensas_real: i32,
     pub recompensas_caos: i32,
     pub reenlistadas: bool,
-    pub questeando: bool,
-    pub quest_num: i32,
-    pub quest_kills: i32,
-    pub quests_completed: i32,
-    pub puntos_donacion: i64,
-    pub puntos_torneo: i64,
-    pub ts_points: i64,
-    // password field kept for VB6 compat (CodeX from account)
     pub password: String,
 }
 
@@ -183,9 +175,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
                 weapon_eqp_slot, armour_eqp_slot, shield_eqp_slot, helmet_eqp_slot, municion_eqp_slot,
                 guild_index, reputation,
                 armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
-                recompensas_real, recompensas_caos, reenlistadas,
-                questeando, quest_num, quest_kills, quests_completed,
-                puntos_donacion, puntos_torneo, ts_points
+                recompensas_real, recompensas_caos, reenlistadas
          FROM characters WHERE UPPER(name) = UPPER($1)"
     )
     .bind(char_name)
@@ -256,13 +246,6 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     let recompensas_real: i32 = row.get("recompensas_real");
     let recompensas_caos: i32 = row.get("recompensas_caos");
     let reenlistadas: bool = row.get("reenlistadas");
-    let questeando: bool = row.get("questeando");
-    let quest_num: i32 = row.get("quest_num");
-    let quest_kills: i32 = row.get("quest_kills");
-    let quests_completed: i32 = row.get("quests_completed");
-    let puntos_donacion: i64 = row.get("puntos_donacion");
-    let puntos_torneo: i64 = row.get("puntos_torneo");
-    let ts_points: i64 = row.get("ts_points");
 
     // Load inventory
     let inv_rows: Vec<(i16, i32, i32, bool)> = sqlx::query_as(
@@ -333,13 +316,11 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         reputation, criminal,
         armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
         recompensas_real, recompensas_caos, reenlistadas,
-        questeando, quest_num, quest_kills, quests_completed,
-        puntos_donacion, puntos_torneo, ts_points,
         password,
     })
 }
 
-/// Create a new character with starter stats.
+/// Create a new character with starter stats (VB6 13.3 ConnectNewUser exact).
 pub async fn create_charfile(
     pool: &PgPool,
     account_id: i32,
@@ -353,45 +334,61 @@ pub async fn create_charfile(
     start_map: i32,
     start_x: i32,
     start_y: i32,
+    balance: &crate::data::balance::BalanceData,
 ) -> Result<i32, String> {
-    // Check uniqueness
     if character_exists(pool, name).await {
         return Err("El nombre del personaje ya esta siendo utilizado.".into());
     }
 
-    // Determine starter body/head based on race + gender
     let body = starter_body(race, gender);
     let head_val = if head > 0 { head } else { starter_head(race, gender) };
-    let (base_hp, base_mana, base_sta) = starter_stats(class);
 
-    // Apply race attribute bonuses
+    // VB6: Apply MODRAZA attribute bonuses from Balance.dat
     let mut attrs = attributes;
-    let race_upper = race.to_uppercase();
-    match race_upper.as_str() {
-        "HUMANO" => { attrs[0] += 2; attrs[4] += 2; attrs[3] += 3; }
-        "ELFO" => { attrs[0] -= 1; attrs[1] += 2; attrs[2] += 2; attrs[3] += 2; }
-        "ELFO OSCURO" => { attrs[0] += 1; attrs[1] += 1; attrs[2] += 2; attrs[3] += 1; attrs[4] += 1; }
-        "ENANO" => { attrs[0] += 3; attrs[4] += 4; attrs[2] -= 2; attrs[1] -= 1; attrs[3] -= 1; }
-        "GNOMO" => { attrs[0] -= 4; attrs[2] += 3; attrs[1] += 3; attrs[3] += 1; attrs[4] -= 1; }
-        _ => {}
-    }
+    let race_mods = balance.race_modifiers(race);
+    attrs[0] += race_mods.fuerza;       // Fuerza
+    attrs[1] += race_mods.agilidad;     // Agilidad
+    attrs[2] += race_mods.inteligencia; // Inteligencia
+    attrs[3] += race_mods.carisma;      // Carisma
+    attrs[4] += race_mods.constitucion; // Constitucion
     for a in attrs.iter_mut() {
         *a = (*a).clamp(1, 25);
     }
 
-    // All skills start at 100
-    let skills = [100i32; 22];
+    // VB6 ConnectNewUser: HP = 15 + Random(1, CON/3)
+    let con_div3 = (attrs[4] / 3).max(1);
+    let hp_roll = random_range(1, con_div3);
+    let base_hp = 15 + hp_roll;
 
-    // Starting spell (casters get Magia Misil = spell 2)
+    // VB6 ConnectNewUser: STA = 20 * Random(2, AGI/6)
+    let agi_div6 = (attrs[1] / 6).max(2);
+    let sta_roll = random_range(1, agi_div6).max(2);
+    let base_sta = 20 * sta_roll;
+
+    // VB6 ConnectNewUser: Mana by class
     let class_upper = class.to_uppercase();
-    let starting_spell = match class_upper.as_str() {
-        "MAGO" | "CLERIGO" | "DRUIDA" | "BARDO" | "BRUJO" => 2,
-        _ => 0,
+    let base_mana = match class_upper.as_str() {
+        "MAGO" => attrs[2] * 3, // INT * 3
+        "CLERIGO" | "DRUIDA" | "BARDO" | "ASESINO" | "BANDIDO" => 50,
+        _ => 0, // Guerrero, Cazador, Ladron, Paladin, Trabajador, Pirata
     };
-    let mut spells = [0i32; 20];
-    spells[0] = starting_spell;
 
-    // Count current characters for slot assignment
+    // VB6: All skills start at 0 with 10 free skill points
+    let skills = [0i32; 22];
+
+    // VB6: Starting spells
+    let mut spells = [0i32; 20];
+    match class_upper.as_str() {
+        "MAGO" | "CLERIGO" | "BARDO" | "ASESINO" => {
+            spells[0] = 2; // Magia Misil
+        }
+        "DRUIDA" => {
+            spells[0] = 2;  // Magia Misil
+            spells[1] = 46; // Druida extra spell
+        }
+        _ => {}
+    }
+
     let slot: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM characters WHERE account_id = $1"
     )
@@ -400,7 +397,7 @@ pub async fn create_charfile(
     .await
     .map_err(|e| format!("DB error: {}", e))?;
 
-    // Insert character
+    // VB6: MaxHIT=2, MinHIT=1
     let char_id: (i32,) = sqlx::query_as(
         "INSERT INTO characters (
             account_id, name, slot, head, body, heading, weapon, shield, helmet,
@@ -414,7 +411,7 @@ pub async fn create_charfile(
             $1, $2, $3, $4, $5, 0, 0, 0, 0,
             $6, $7, $8, $9, $10, $11, $12,
             1, 0, $13, $13, $14, $14, $15, $15,
-            1, 1, 100, 100, 100, 100,
+            2, 1, 100, 100, 100, 100,
             0, 0, 10,
             $16, $17, $18,
             0
@@ -444,8 +441,8 @@ pub async fn create_charfile(
 
     let cid = char_id.0;
 
-    // Race-specific armor
-    let race_armor = match race_upper.as_str() {
+    // VB6 ConnectNewUser: Race-specific armor
+    let race_armor = match race.to_uppercase().as_str() {
         "HUMANO" => 463,
         "ELFO" => 464,
         "ELFO OSCURO" => 465,
@@ -453,18 +450,54 @@ pub async fn create_charfile(
         _ => 463,
     };
 
-    // Insert starter inventory (7 items)
-    let starter_items: [(i16, i32, i32, bool); 7] = [
-        (0, 467, 100, false),   // Food
-        (1, 468, 100, false),   // Drink
-        (2, 460, 1, true),      // Weapon (equipped)
-        (3, race_armor, 1, true), // Armor (equipped)
-        (4, 461, 150, false),   // Arrows
-        (5, 462, 150, false),   // Potions
-        (6, 1491, 150, false),  // Misc
-    ];
+    // VB6 ConnectNewUser: Class-specific starter items
+    let mut items: Vec<(i16, i32, i32, bool)> = Vec::new();
+    let mut slot_idx: i16 = 0;
 
-    for (slot, obj_idx, amount, equipped) in &starter_items {
+    // Slot 0: Food (Manzanas=467, 100)
+    items.push((slot_idx, 467, 100, false)); slot_idx += 1;
+    // Slot 1: Drink (Jugos=468, 100)
+    items.push((slot_idx, 468, 100, false)); slot_idx += 1;
+
+    // Slot 2: Weapon (class-specific)
+    match class_upper.as_str() {
+        "CAZADOR" => {
+            items.push((slot_idx, 859, 1, true)); slot_idx += 1; // Arco (bow)
+        }
+        "TRABAJADOR" => {
+            // Random tool: 561-565
+            let tool = random_range(561, 565);
+            items.push((slot_idx, tool, 1, true)); slot_idx += 1;
+        }
+        _ => {
+            items.push((slot_idx, 460, 1, true)); slot_idx += 1; // Daga (dagger)
+        }
+    }
+    let weapon_slot = slot_idx; // 1-based: slot_idx (already incremented = 3)
+
+    // Slot 3: Armor (race-specific, equipped)
+    items.push((slot_idx, race_armor, 1, true)); slot_idx += 1;
+    let armor_slot = slot_idx; // 1-based: 4
+
+    // Slot 4: Red potion (PociónRoja=857, 200)
+    items.push((slot_idx, 857, 200, false)); slot_idx += 1;
+
+    // Slot 5: Blue potion if caster or Paladin (PociónAzul=856, 200)
+    let has_mana = base_mana > 0 || class_upper == "PALADIN";
+    if has_mana {
+        items.push((slot_idx, 856, 200, false)); slot_idx += 1;
+    } else {
+        // Non-casters: Yellow potion (855, 100) + Green potion (858, 50)
+        items.push((slot_idx, 855, 100, false)); slot_idx += 1;
+        items.push((slot_idx, 858, 50, false)); slot_idx += 1;
+    }
+
+    // Cazador: Arrows (Flechas=860, 150, equipped)
+    if class_upper == "CAZADOR" {
+        items.push((slot_idx, 860, 150, true)); slot_idx += 1;
+    }
+
+    for (slot, obj_idx, amount, equipped) in &items {
         sqlx::query(
             "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped)
              VALUES ($1, $2, $3, $4, $5)"
@@ -479,16 +512,32 @@ pub async fn create_charfile(
         .map_err(|e| format!("DB error inserting inventory: {}", e))?;
     }
 
-    // Set equipment slots (weapon=slot 2+1=3, armor=slot 3+1=4 — 1-indexed in VB6)
+    // Set equipment slots (1-indexed VB6 style: weapon=3, armor=4)
+    let municion_slot = if class_upper == "CAZADOR" { slot_idx as i32 } else { 0 };
     sqlx::query(
-        "UPDATE characters SET weapon_eqp_slot = 3, armour_eqp_slot = 4 WHERE id = $1"
+        "UPDATE characters SET weapon_eqp_slot = $2, armour_eqp_slot = $3, municion_eqp_slot = $4 WHERE id = $1"
     )
     .bind(cid)
+    .bind(weapon_slot as i32)
+    .bind(armor_slot as i32)
+    .bind(municion_slot)
     .execute(pool)
     .await
     .map_err(|e| format!("DB error setting equip slots: {}", e))?;
 
     Ok(cid)
+}
+
+fn random_range(min: i32, max: i32) -> i32 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    if min >= max { return min; }
+    let seed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos() as u64;
+    let val = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+    let range = (max - min + 1) as u64;
+    min + (val % range) as i32
 }
 
 /// Data needed to save a character (extracted from UserState).
@@ -546,16 +595,9 @@ pub struct CharSaveData {
     pub ejercito_real: bool,
     pub ejercito_caos: bool,
     pub skill_pts_libres: i32,
-    pub puntos_donacion: i64,
-    pub puntos_torneo: i64,
-    pub ts_points: i64,
     pub recompensas_real: i32,
     pub recompensas_caos: i32,
     pub reenlistadas: bool,
-    pub questeando: bool,
-    pub quest_num: i32,
-    pub quest_kills: i32,
-    pub quests_completed: i32,
     pub description: String,
 }
 
@@ -589,12 +631,10 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             reputation = $43, guild_index = $44,
             criminales_matados = $45, ciudadanos_matados = $46,
             armada_real = $47, fuerzas_caos = $48,
-            puntos_donacion = $49, puntos_torneo = $50, ts_points = $51,
-            barco_slot = $52,
-            montado = $53, levitando = $54, montado_body = $55,
-            recompensas_real = $56, recompensas_caos = $57, reenlistadas = $58,
-            questeando = $59, quest_num = $60, quest_kills = $61, quests_completed = $62,
-            description = $63,
+            barco_slot = $49,
+            montado = $50, levitando = $51, montado_body = $52,
+            recompensas_real = $53, recompensas_caos = $54, reenlistadas = $55,
+            description = $56,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -616,11 +656,9 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(data.reputation).bind(data.guild_index)
     .bind(data.criminales_matados).bind(data.ciudadanos_matados)
     .bind(data.ejercito_real).bind(data.ejercito_caos)
-    .bind(data.puntos_donacion).bind(data.puntos_torneo).bind(data.ts_points)
     .bind(data.barco_slot as i32)
     .bind(data.montado).bind(data.levitando).bind(data.montado_body)
     .bind(data.recompensas_real).bind(data.recompensas_caos).bind(data.reenlistadas)
-    .bind(data.questeando).bind(data.quest_num).bind(data.quest_kills).bind(data.quests_completed)
     .bind(&data.description)
     .execute(pool)
     .await
@@ -811,21 +849,4 @@ fn starter_head(race: &str, gender: i32) -> i32 {
     }
 }
 
-fn starter_stats(class: &str) -> (i32, i32, i32) {
-    let class_lower = class.to_lowercase();
-    match class_lower.as_str() {
-        "guerrero" => (50, 0, 50),
-        "mago" => (30, 100, 30),
-        "clerigo" => (40, 75, 40),
-        "asesino" => (40, 0, 50),
-        "bardo" => (35, 50, 40),
-        "druida" => (35, 75, 35),
-        "paladin" => (45, 50, 45),
-        "cazador" => (40, 0, 55),
-        "trabajador" => (45, 0, 60),
-        "pirata" => (45, 0, 50),
-        "ladron" => (35, 0, 50),
-        "bandido" => (40, 0, 50),
-        _ => (40, 0, 40),
-    }
-}
+// starter_stats removed — VB6 13.3 calculates HP/Mana/Sta from attributes inline

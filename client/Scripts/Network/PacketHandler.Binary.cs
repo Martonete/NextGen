@@ -574,7 +574,6 @@ public partial class PacketHandler
                 HandleBinResponseMsg(bq);
                 break;
             case ServerPacketId.AuctionInit: // 178
-                GD.Print("[PKT] AuctionInit");
                 break;
             case ServerPacketId.AuctionBid: // 179
                 HandleBinAuctionBid(bq);
@@ -639,7 +638,6 @@ public partial class PacketHandler
                 HandleBinQuestData(bq, "QuestSelected");
                 break;
             case ServerPacketId.QuestNpcList: // 203
-                GD.Print("[PKT] QuestNpcList trigger");
                 break;
 
             // ── Mail ──────────────────────────────────────────────
@@ -755,8 +753,6 @@ public partial class PacketHandler
                 GD.Print("[PKT] MailOpenTrigger");
                 break;
             case ServerPacketId.FriendDialog: // 253
-                _state.ShowFriendDialog = true;
-                GD.Print("[PKT] FriendDialog");
                 break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);
@@ -2642,14 +2638,10 @@ public partial class PacketHandler
 
     // ── Tournament / Auction ──────────────────────────────────────
 
-    /// <summary>
-    /// TournamentPoints (ID 176). Wire: i32 points
-    /// </summary>
     private void HandleBinTournamentPoints(ByteQueue bq)
     {
-        int pts = bq.ReadLong();
-        GD.Print($"[PKT] TournamentPoints: {pts}");
-        _state.TournamentPoints = pts;
+        bq.ReadLong();
+        return;
     }
 
     /// <summary>
@@ -2664,15 +2656,10 @@ public partial class PacketHandler
         GD.Print($"[PKT] ResponseMsg: {text} (name={name})");
     }
 
-    /// <summary>
-    /// AuctionBid (ID 179) — auction bid info string (GVN opcode).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinAuctionBid(ByteQueue bq)
     {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] AuctionBid (binary): {data}");
-        _state.AuctionBidData = data;
+        bq.ReadString();
+        return;
     }
 
     // ── Trading (legacy) ──────────────────────────────────────────
@@ -2779,15 +2766,10 @@ public partial class PacketHandler
 
     // ── Quest ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// QuestListResp / QuestCurrent / QuestSelected — quest data as raw string.
-    /// Wire: string data
-    /// </summary>
     private void HandleBinQuestData(ByteQueue bq, string tag)
     {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
-        _state.QuestData = data;
+        bq.ReadString();
+        return;
     }
 
     // ── Mail ──────────────────────────────────────────────────────
@@ -2805,32 +2787,10 @@ public partial class PacketHandler
 
     // ── Friends ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// FriendList (ID 210) — friends list data string (LDM opcode).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinFriendList(ByteQueue bq)
     {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] FriendList (binary): {data.Length} chars");
-        _state.FriendListData = data;
-
-        // Parse CSV into FriendsList (same as text LDM handler)
-        _state.FriendsList.Clear();
-        if (!string.IsNullOrEmpty(data))
-        {
-            var parts = data.Split(',');
-            // First field is count — skip it, take names from index 1 onward
-            for (int i = 1; i < parts.Length; i++)
-            {
-                var entry = parts[i].Trim();
-                if (entry.Length == 0) continue;
-                _state.FriendsList.Add(entry);
-            }
-        }
-        while (_state.FriendsList.Count < 20)
-            _state.FriendsList.Add("(NADIE)(OFF)");
-        _state.FriendsListDirty = true;
+        bq.ReadString();
+        return;
     }
 
     // ── Misc data ─────────────────────────────────────────────────
@@ -2900,24 +2860,16 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = $"[{sender}] {msg}", Color = "AAFFAA" });
     }
 
-    /// <summary>
-    /// KfmData (ID 235) — friend came online. Wire: string name
-    /// </summary>
     private void HandleBinKfmData(ByteQueue bq)
     {
-        string name = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{name} se ha conectado.", Color = "00FF00" });
-        GD.Print($"[PKT] KfmData: {name} online");
+        bq.ReadString();
+        return;
     }
 
-    /// <summary>
-    /// DfmData (ID 236) — friend went offline. Wire: string name
-    /// </summary>
     private void HandleBinDfmData(ByteQueue bq)
     {
-        string name = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{name} se ha desconectado.", Color = "FF8800" });
-        GD.Print($"[PKT] DfmData: {name} offline");
+        bq.ReadString();
+        return;
     }
 
     // ── Cosmetics ─────────────────────────────────────────────────
@@ -2974,15 +2926,10 @@ public partial class PacketHandler
 
     // ── Arena ─────────────────────────────────────────────────────
 
-    /// <summary>
-    /// ArenaData (ID 254) — arena duel list (MAR opcode).
-    /// Wire: string names (8 comma-separated duel slot names)
-    /// </summary>
     private void HandleBinArenaData(ByteQueue bq)
     {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] ArenaData (binary): {data}");
-        _state.ArenaDuelData = data;
+        bq.ReadString();
+        return;
     }
 
     // ── GenericText fallback ──────────────────────────────────────

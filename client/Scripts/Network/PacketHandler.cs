@@ -299,12 +299,9 @@ public partial class PacketHandler
         }
         else if (packet.StartsWith("ENCHAT"))
         {
-            // Start chat with friend — stub
-            GD.Print($"[PKT] ENCHAT: {packet[6..]}");
         }
         else if (packet.StartsWith("IRCHAT"))
         {
-            HandleFriendChat(packet[6..]);
         }
         // ── 4-char opcodes ──
         else if (packet.StartsWith("EHYS"))
@@ -379,8 +376,6 @@ public partial class PacketHandler
         }
         else if (packet.StartsWith("DAMEQUEST"))
         {
-            // Quest NPC trigger — stub
-            GD.Print("[PKT] DAMEQUEST: Quest NPC interaction");
         }
         else if (packet.StartsWith("INITCOM"))
         {
@@ -437,15 +432,12 @@ public partial class PacketHandler
         }
         else if (packet.StartsWith("LDM"))
         {
-            HandleFriendsList(packet[3..]);
         }
         else if (packet.StartsWith("KFM"))
         {
-            HandleFriendOnline(packet[3..]);
         }
         else if (packet.StartsWith("DFM"))
         {
-            HandleFriendOffline(packet[3..]);
         }
         else if (packet.StartsWith("BKW"))
         {
@@ -543,18 +535,12 @@ public partial class PacketHandler
         }
         else if (packet.StartsWith("QTL"))
         {
-            // Quest list — stub
-            GD.Print($"[PKT] QTL: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
         }
         else if (packet.StartsWith("MQS"))
         {
-            // Quest details — stub
-            GD.Print($"[PKT] MQS: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
         }
         else if (packet.StartsWith("MQC"))
         {
-            // Quest progress — stub
-            GD.Print($"[PKT] MQC: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
         }
         else if (packet.StartsWith("MFC"))
         {
@@ -568,8 +554,6 @@ public partial class PacketHandler
         }
         else if (packet.StartsWith("MAR"))
         {
-            // Market/auction — stub
-            GD.Print($"[PKT] MAR: {(packet.Length > 50 ? packet[..50] + "..." : packet)}");
         }
         else if (packet.StartsWith("VOT"))
         {
@@ -578,33 +562,21 @@ public partial class PacketHandler
         }
         else if (packet.StartsWith("LTR"))
         {
-            // Tournament rankings — stub
-            GD.Print($"[PKT] LTR: {packet[3..]}");
         }
         else if (packet.StartsWith("DRM"))
         {
-            // Donation menu — stub
-            GD.Print($"[PKT] DRM: {packet[3..]}");
         }
         else if (packet.StartsWith("DNF"))
         {
-            // Donation item info — stub
-            GD.Print($"[PKT] DNF: {packet[3..]}");
         }
         else if (packet.StartsWith("PRM"))
         {
-            // Prize menu info — stub
-            GD.Print($"[PKT] PRM: {packet[3..]}");
         }
         else if (packet.StartsWith("INF"))
         {
-            // Prize list — stub
-            GD.Print($"[PKT] INF: {packet[3..]}");
         }
         else if (packet.StartsWith("APT"))
         {
-            // Tournament/donation points — stub
-            GD.Print($"[PKT] APT: {packet[3..]}");
         }
         else if (packet.StartsWith("PNT"))
         {
@@ -1997,54 +1969,9 @@ public partial class PacketHandler
         _state.MagDefMax = magMax + magMaxa + magMaxb + magMaxc + magMaxd;
     }
 
-    /// <summary>
-    /// LDM{count},name1(ON),name2(OFF),... — Friends list.
-    /// First field is the count, remaining are "Name(ON)" or "Name(OFF)".
-    /// Filter out (NADIE) entries (empty slots).
-    /// </summary>
-    private void HandleFriendsList(string data)
-    {
-        _state.FriendsList.Clear();
-        if (!string.IsNullOrEmpty(data))
-        {
-            var parts = data.Split(',');
-            // First field is count — skip it, take names from index 1 onward
-            for (int i = 1; i < parts.Length; i++)
-            {
-                var entry = parts[i].Trim();
-                if (entry.Length == 0) continue;
-                _state.FriendsList.Add(entry);
-            }
-        }
-        // VB6: always show 20 slots — pad with (NADIE)(OFF)
-        while (_state.FriendsList.Count < 20)
-            _state.FriendsList.Add("(NADIE)(OFF)");
-        _state.FriendsListDirty = true;
-    }
-
-    /// <summary>
-    /// KFM{name} — Friend came online.
-    /// </summary>
-    private void HandleFriendOnline(string data)
-    {
-        _state.ChatMessages.Enqueue(new ChatMessage
-        {
-            Text = $"{data.Trim()} se ha conectado.",
-            Color = "00FF00"
-        });
-    }
-
-    /// <summary>
-    /// DFM{name} — Friend went offline.
-    /// </summary>
-    private void HandleFriendOffline(string data)
-    {
-        _state.ChatMessages.Enqueue(new ChatMessage
-        {
-            Text = $"{data.Trim()} se ha desconectado.",
-            Color = "FF0000"
-        });
-    }
+    private void HandleFriendsList(string data) { }
+    private void HandleFriendOnline(string data) { }
+    private void HandleFriendOffline(string data) { }
 
     // ── Bank handlers (frmBanco + frmNuevoBancoObj) ───────────────
 
@@ -2537,23 +2464,7 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "00FFFF" });
     }
 
-    /// <summary>
-    /// IRCHAT{senderName},{text} — Incoming friend chat message.
-    /// </summary>
-    private void HandleFriendChat(string data)
-    {
-        int commaIdx = data.IndexOf(',');
-        if (commaIdx > 0)
-        {
-            string sender = data[..commaIdx];
-            string text = data[(commaIdx + 1)..];
-            _state.ChatMessages.Enqueue(new ChatMessage
-            {
-                Text = $"[Chat] {sender}: {text}",
-                Color = "00FFFF"
-            });
-        }
-    }
+    private void HandleFriendChat(string data) { }
 
     // ── Trading (player-to-player) ───────────────────────────────
 

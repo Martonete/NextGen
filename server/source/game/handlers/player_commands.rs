@@ -1,5 +1,5 @@
 //! Remaining player slash commands: /desc, /comerciar, /boveda, /daroro,
-//! /depositar, /retirar, /fmsg, /hora, /curar, /transform, /pmsg, etc.
+//! /depositar, /retirar, /fmsg, /hora, /curar, /pmsg, etc.
 //! Extracted from mod.rs to reduce file size.
 
 use tracing::info;
@@ -13,7 +13,7 @@ use crate::game::types::InventorySlot;
 use super::{
     warp_user, revive_user, send_inventory_slot, send_full_inventory,
     iniciar_comercio_npc, iniciar_comercio_usuario, iniciar_banco, enviar_banco_inv,
-    naked_body, send_to_party,
+    send_to_party,
 };
 
 // GM / Admin command handlers (TCP_HandleData3.bas — GM section)
@@ -355,91 +355,6 @@ pub(super) async fn handle_slash_curar(state: &mut GameState, conn_id: Connectio
     state.send_msg_id(conn_id, 398, "").await;
 }
 
-/// /DEMONIO or /ANGEL — VB6: requires CJerarquia=1, toggles transform.
-/// Demon body=289 (criminal), Angel body=288 (citizen). FX=1 (FXWARP), Sound=SND_TRANSF.
-pub(super) async fn handle_slash_transform(state: &mut GameState, conn_id: ConnectionId, cmd: &str) {
-    let (dead, navigating, criminal, transformed, c_jerarquia) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.navigating, u.criminal, u.transformed, u.jerarquia_dios),
-        _ => return,
-    };
-
-    // VB6: If Navegando=1 Or Muerto=1 Then ||397
-    if navigating || dead {
-        state.send_msg_id(conn_id, 397, "").await;
-        return;
-    }
-
-    let (ci, map, x, y) = match state.users.get(&conn_id) {
-        Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
-        None => return,
-    };
-
-    if transformed {
-        // VB6: Revert transformation — DarCuerpoDesnudo, reset head, FX + sound
-        let (race, char_name, gender) = match state.users.get(&conn_id) {
-            Some(u) => (u.race.clone(), u.char_name.clone(), u.gender),
-            None => return,
-        };
-        let gender_str = gender.to_string();
-        let orig_head = charfile::load_charfile(&state.pool, &char_name).await
-            .map(|c| c.head).unwrap_or(0);
-        let new_body = naked_body(&race, &gender_str);
-
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.body = new_body;
-            user.head = orig_head;
-            user.transformed = false;
-        }
-
-        // Broadcast appearance + FX
-        let (heading, weapon, shield, casco) = match state.users.get(&conn_id) {
-            Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
-            None => return,
-        };
-        let cp = binary_packets::write_character_change(ci as i16, new_body as i16, orig_head as i16, heading as u8, weapon as i16, shield as i16, casco as i16, 0, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
-        let fx = binary_packets::write_create_fx(ci as i16, 1, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx).await;
-        let snd = binary_packets::write_play_wave(3, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
-
-    } else if cmd == "/DEMONIO" && c_jerarquia >= 1 && criminal {
-        // VB6: Transform to demon — body 289, head 0
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.body = 289;
-            user.head = 0;
-            user.transformed = true;
-        }
-        let (heading, weapon, shield, casco) = match state.users.get(&conn_id) {
-            Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
-            None => return,
-        };
-        let cp = binary_packets::write_character_change(ci as i16, 289, 0, heading as u8, weapon as i16, shield as i16, casco as i16, 0, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
-        let fx = binary_packets::write_create_fx(ci as i16, 1, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx).await;
-        let snd = binary_packets::write_play_wave(3, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
-
-    } else if cmd == "/ANGEL" && c_jerarquia >= 1 && !criminal {
-        // VB6: Transform to angel — body 288, head 0
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.body = 288;
-            user.head = 0;
-            user.transformed = true;
-        }
-        let (heading, weapon, shield, casco) = match state.users.get(&conn_id) {
-            Some(u) => (u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
-            None => return,
-        };
-        let cp = binary_packets::write_character_change(ci as i16, 288, 0, heading as u8, weapon as i16, shield as i16, casco as i16, 0, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
-        let fx = binary_packets::write_create_fx(ci as i16, 1, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx).await;
-        let snd = binary_packets::write_play_wave(3, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
-    }
-}
 
 /// /PMSG <msg> — Party message to all party members.
 pub(super) async fn handle_slash_pmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
@@ -512,74 +427,3 @@ pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: Conne
     state.send_msg_id(conn_id, 750, &list).await;
 }
 
-/// /ITEMNOBLE <type> — Exchange noble items. VB6 TCP_HandleData3.bas:560
-/// Types: DIADEMA(1), ESPADA(2), ARMADURA(3), ANILLO(4)
-/// Each requires specific items in inventory, gives a noble item in return.
-pub(super) async fn handle_slash_itemnoble(state: &mut GameState, conn_id: ConnectionId, args: &str) {
-    let user = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => u,
-        _ => return,
-    };
-
-    if !user.es_noble {
-        state.send_console(conn_id, "Debes ser noble para usar este comando.", font_index::INFO).await;
-        return;
-    }
-
-    let tipo = args.trim().to_uppercase();
-
-    // Noble item exchange table (VB6: ItemsNoble.dat)
-    // Format: (required_items: [(obj_idx, qty)], reward_obj_idx)
-    let (required, reward): (&[(i32, i32)], i32) = match tipo.as_str() {
-        "DIADEMA" | "1" => (&[(848, 1), (849, 1), (850, 1)], 851),  // Noble diadem
-        "ESPADA" | "2" => (&[(852, 1), (853, 1), (854, 1)], 855),   // Noble sword
-        "ARMADURA" | "3" => (&[(856, 1), (857, 1), (858, 1)], 859), // Noble armor
-        "ANILLO" | "4" => (&[(860, 1), (861, 1), (862, 1)], 863),   // Noble ring
-        _ => {
-            state.send_console(conn_id, "Uso: /ITEMNOBLE DIADEMA|ESPADA|ARMADURA|ANILLO", font_index::INFO).await;
-            return;
-        }
-    };
-
-    // Check all required items are in inventory
-    for &(obj_idx, qty) in required {
-        let has = state.users.get(&conn_id)
-            .map(|u| u.inventory.iter().filter(|s| s.obj_index == obj_idx).map(|s| s.amount).sum::<i32>())
-            .unwrap_or(0);
-        if has < qty {
-            state.send_console(conn_id, "No tenes los items necesarios.", font_index::INFO).await;
-            return;
-        }
-    }
-
-    // Remove required items
-    for &(obj_idx, mut qty_needed) in required {
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            for slot in user.inventory.iter_mut() {
-                if slot.obj_index == obj_idx && qty_needed > 0 {
-                    let take = slot.amount.min(qty_needed);
-                    slot.amount -= take;
-                    qty_needed -= take;
-                    if slot.amount <= 0 {
-                        slot.obj_index = 0;
-                        slot.amount = 0;
-                    }
-                }
-            }
-        }
-    }
-
-    // Add reward item
-    let empty_slot = state.users.get(&conn_id)
-        .and_then(|u| u.inventory.iter().position(|s| s.obj_index == 0));
-
-    if let Some(slot_idx) = empty_slot {
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.inventory[slot_idx] = InventorySlot { obj_index: reward, amount: 1, equipped: false };
-        }
-        send_full_inventory(state, conn_id).await;
-        state.send_console(conn_id, "Has obtenido tu item noble!", font_index::INFO).await;
-    } else {
-        state.send_console(conn_id, "No tenes espacio en el inventario.", font_index::INFO).await;
-    }
-}

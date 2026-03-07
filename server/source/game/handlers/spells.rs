@@ -554,12 +554,7 @@ pub(super) async fn apply_spell_properties_npc(
     // Per-hit EXP (VB6: CalcularDarExp — proportional exp on every hit)
     if npc_give_exp > 0 && npc_max_hp > 0 {
         let exp_mult = state.multiplicador_exp;
-        let mut exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
-
-        let scroll_mult = state.users.get(&caster_id)
-            .map(|u| if u.scroll_active[0] { u.scroll_mult[0] as i64 } else { 1 })
-            .unwrap_or(1);
-        exp_award *= scroll_mult;
+        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
 
         let can_level = state.users.get(&caster_id)
             .map(|u| u.logged && u.level < MAX_LEVEL as i32)

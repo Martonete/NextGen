@@ -1,12 +1,11 @@
-[MAPA103]
+[Mapa103]
+Name=Mar al este del desierto.
+MusicNum=5
 MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
+Terreno=BOSQUE
+Zona=CAMPO
+Restringir=No
 BackUp= 0
 Pk=0
-MusicNum=73
-Name=Dungeon Perdida
-R=160
-G=160
-B=160

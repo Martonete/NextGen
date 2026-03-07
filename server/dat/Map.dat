@@ -1,3 +1,6 @@
+'En éste archivo se debe especificar la cantidad de mapas
+'que cargará el servidor
+
 [INIT]
 MapPath=\Maps\
-NumMaps=193
+NumMaps=291

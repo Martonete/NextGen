@@ -420,12 +420,12 @@ public static class ClientPackets
 
     public static byte[] WriteFriendAdd(string name)
     {
-        return WriteStringPacket(ClientPacketId.FriendAdd, name);
+        return System.Array.Empty<byte>();
     }
 
     public static byte[] WriteFriendRemove(string name)
     {
-        return WriteStringPacket(ClientPacketId.FriendRemove, name);
+        return System.Array.Empty<byte>();
     }
 
     // ── Trade ──────────────────────────────────────────────────
@@ -466,7 +466,7 @@ public static class ClientPackets
 
     public static byte[] WriteQuestList()
     {
-        return new byte[] { ClientPacketId.QuestList };
+        return System.Array.Empty<byte>();
     }
 
     // ── Misc ───────────────────────────────────────────────────
@@ -483,6 +483,6 @@ public static class ClientPackets
 
     public static byte[] WriteDuelArenaInfo()
     {
-        return new byte[] { ClientPacketId.DuelArenaInfo };
+        return System.Array.Empty<byte>();
     }
 }

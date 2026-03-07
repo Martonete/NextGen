@@ -1,15 +1,11 @@
-[MAPA120]
-Name=Ping Pong
-MusicNum=
+[Mapa120]
+Name=Mar Oriental.
+MusicNum=17
 MagiaSinefecto=0
-InviSinEfecto=1
-ResuSinEfecto=1
-NoEncriptarMP=0
+InviSinEfecto=0
+ResuSinEfecto=0
 Terreno=BOSQUE
-Zona=ESPECIAL
-Restringir=
-BackUp= 1
+Zona=CAMPO
+Restringir=No
+BackUp= 0
 Pk=0
-R=160
-G=160
-B=160

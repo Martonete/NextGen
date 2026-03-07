@@ -156,10 +156,6 @@ public class GameState
     public int DefenseMin, DefenseMax;
     public int MagDefMin, MagDefMax;
 
-    // Friends list
-    public List<string> FriendsList = new();
-    public bool FriendsListDirty;      // triggers UI rebuild when LDM received
-    public bool AddFriendDialogOpen;   // true when add-friend input dialog is visible
 
     // Inventory (25 slots)
     public InventorySlot[] Inventory = new InventorySlot[25];
@@ -193,7 +189,7 @@ public class GameState
     public bool AnyFormOpen =>
         EscapeMenuOpen || Comerciando || Banqueando || BovedaAbierta
         || MacroPanelOpen || OptionsPanelOpen || KeyBindPanelOpen
-        || ShowTravelPanel || Trading || DropDialogOpen || AddFriendDialogOpen;
+        || ShowTravelPanel || Trading || DropDialogOpen;
 
     // Extended stat fields
     public int CarryBulk;           // StatBulk (ID 127) — current carry weight
@@ -221,16 +217,9 @@ public class GameState
     public string GuildMotdText = ""; // Guild MOTD from server
     public string GuildCodexText = ""; // Guild codex from server
 
-    // Quest
-    public string QuestData = ""; // raw quest data string from server
-
     // Mail
     public string MailData = ""; // raw mail data string from server
     public bool ShowMailPanel;   // MailOpenTrigger (ID 252)
-
-    // Friends
-    public string FriendListData = ""; // raw friend list string from server
-    public bool ShowFriendDialog;      // FriendDialog (ID 253)
 
     // UI triggers
     public bool ShowTravelsPanel;  // TravelsOpen (ID 251)
@@ -243,15 +232,8 @@ public class GameState
     public string SelectData = "";   // SelectData (ID 222)
     public string MiniTopData = "";  // MiniTopData (ID 223)
 
-    // Tournament / auction
-    public int TournamentPoints;
-    public string AuctionBidData = "";
-
     // Trading
     public int TradePartnerGold;
-
-    // Arena
-    public string ArenaDuelData = "";
 
     // Raw account data (AccountData ID 76)
     public string RawAccountData = "";

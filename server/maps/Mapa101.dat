@@ -1,16 +1,12 @@
-[MAPA101]
-Name=Dungeon Perdida
-MusicNum=73
+[Mapa101]
+Name=
+Mar al sur del desierto.
+MusicNum=5
 MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
 Terreno=BOSQUE
-Zona=DUNGEON
+Zona=CAMPO
 Restringir=No
-BackUp= 1
+BackUp= 0
 Pk=0
-R=160
-G=160
-B=160
-StartPos=0-0-0

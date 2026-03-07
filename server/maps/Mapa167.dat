@@ -1,21 +1,11 @@
-[MAPA25]
-Name=Fortaleza del Clan
+[Mapa167]
+Name=Dungeon Newbie.
+MusicNum=7
 MagiaSinefecto=0
 InviSinEfecto=0
 ResuSinEfecto=0
-NoEncriptarMP=0
 Terreno=BOSQUE
-Zona=CAMPO
-BackUp= 0
-Pk=0
-R=160
-G=160
-B=160
-[MAPA167]
-Name=Fortaleza del Clan
-MagiaSinefecto=0
-InviSinEfecto=0
-ResuSinEfecto=0
-NoEncriptarMP=0
-BackUp= 0
-Pk=0
+Zona=DUNGEON
+Restringir=NEWBIE
+BackUp= 1
+PK=1

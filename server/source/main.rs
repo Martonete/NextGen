@@ -98,10 +98,9 @@ async fn main() {
 
     // Load bans and rankings from DB
     let bans = db::bans::BanList::load(&pool).await;
-    let ranking = db::ranking::load_ranking(&pool).await;
 
     // Initialize game state
-    let mut state = GameState::new(config.clone(), base_path, game_data, pool, bans, ranking);
+    let mut state = GameState::new(config.clone(), base_path, game_data, pool, bans);
     info!("Game state initialized");
 
     // Spawn NPCs from map data
@@ -179,12 +178,6 @@ async fn main() {
             }
 
             ServerEvent::Disconnected(conn_id) => {
-                // Handle CvC disconnect (counts as death for scoring)
-                let in_cvc = state.users.get(&conn_id).map(|u| u.en_cvc).unwrap_or(false);
-                if in_cvc && state.cvc_funciona {
-                    game::handlers::cvc_player_disconnect(&mut state, conn_id).await;
-                }
-
                 // Get user info and save charfile before removal
                 let user_info = state.users.get(&conn_id)
                     .filter(|u| u.logged)
@@ -295,16 +288,9 @@ async fn main() {
                             ejercito_real: user.armada_real,
                             ejercito_caos: user.fuerzas_caos,
                             skill_pts_libres: user.skill_pts_libres,
-                            puntos_donacion: user.puntos_donacion,
-                            puntos_torneo: user.puntos_torneo,
-                            ts_points: user.ts_points,
                             recompensas_real: user.recompensas_real,
                             recompensas_caos: user.recompensas_caos,
                             reenlistadas: user.reenlistadas,
-                            questeando: user.questeando,
-                            quest_num: user.quest_num,
-                            quest_kills: user.quest_kills,
-                            quests_completed: user.quests_completed,
                             description: user.desc.clone(),
                         };
                         let pool = state.pool.clone();
@@ -320,9 +306,6 @@ async fn main() {
                 } else {
                     debug!("[DISC] #{} disconnected (no login)", conn_id);
                 }
-
-                // Notify friends that this user went offline
-                game::handlers::broadcast_friend_disconnect(&mut state, conn_id).await;
 
                 // Decrement IP connection count
                 if let Some(user) = state.users.get(&conn_id) {
@@ -361,11 +344,6 @@ async fn main() {
             // Player passive tick — regen/drain (every 1s)
             _ = player_tick.tick() => {
                 game::handlers::tick_player_passive(&mut state).await;
-                game::handlers::tick_nobleza(&mut state).await;
-                game::handlers::tick_siege(&mut state).await;
-                game::handlers::tick_guerra(&mut state).await;
-                game::handlers::tick_eventos(&mut state).await;
-                game::handlers::tick_ancalagon(&mut state).await;
             }
 
             // World cleanup tick — auto-remove ground items (every 60s, VB6: LimpiezaTimer)

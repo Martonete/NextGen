@@ -1,15 +1,10 @@
 [MAPA1]
-Name=Afueras de Kahlimdor
-MusicNum=1
+Name=Ciudad de Ullathorpe
+MusicNum=4
 MagiaSinefecto=0
-InviSinEfecto=0
-ResuSinEfecto=0
 NoEncriptarMP=0
 Terreno=BOSQUE
-Zona=CAMPO
-Restringir=NO
+Zona=CIUDAD
+Restringir=No
 BackUp= 1
-Pk=0
-R=160
-G=160
-B=160
+Pk=1
