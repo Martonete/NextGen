@@ -859,6 +859,28 @@ pub fn write_show_signal(text: &str, grh_index: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 117: AddForumMsg — send a forum post to the client.
+/// VB6: WriteByte(ForumType) + WriteASCIIString(Title) + WriteASCIIString(Author) + WriteASCIIString(Message)
+pub fn write_add_forum_msg(forum_type: u8, title: &str, author: &str, message: &str) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::AddForumMsg.to_byte());
+    pkt.write_byte(forum_type);
+    pkt.write_ascii_string(title);
+    pkt.write_ascii_string(author);
+    pkt.write_ascii_string(message);
+    pkt.into_bytes()
+}
+
+/// ID 118: ShowForumForm — open the forum UI on the client.
+/// VB6: WriteByte(Visibility) + WriteByte(CanMakeSticky)
+pub fn write_show_forum_form(visibility: u8, can_make_sticky: u8) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::ShowForumForm.to_byte());
+    pkt.write_byte(visibility);
+    pkt.write_byte(can_make_sticky);
+    pkt.into_bytes()
+}
+
 /// ID 72: Trainer creature list.
 pub fn write_trainer_creature_list(creatures: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();

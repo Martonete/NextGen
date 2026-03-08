@@ -106,6 +106,9 @@ pub enum ClientPacketID {
     GuildDonatePts = 118, // ADDPTS
     ClanValidName = 119,  // NANVAME
 
+    // Forum (123)
+    ForumPost = 123,      // DEMSG — post to forum
+
     // Quest (120-122)
     QuestList = 120,      // IQUEST
     QuestInfo = 121,      // INFD
@@ -288,6 +291,10 @@ pub enum ServerPacketID {
     ChatClan = 114,
     ConsoleMsgId = 115,
     GmBroadcast = 116,
+
+    // Forum
+    AddForumMsg = 117,
+    ShowForumForm = 118,
 
     // Stat variants
     StatHP = 120,
@@ -519,6 +526,7 @@ impl ClientPacketID {
             120 => Some(Self::QuestList),
             121 => Some(Self::QuestInfo),
             122 => Some(Self::QuestAccept),
+            123 => Some(Self::ForumPost),
             125 => Some(Self::MailSend),
             126 => Some(Self::MailOpen),
             127 => Some(Self::MailExtract),

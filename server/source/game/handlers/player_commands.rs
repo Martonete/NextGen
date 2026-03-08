@@ -427,3 +427,304 @@ pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: Conne
     state.send_msg_id(conn_id, 750, &list).await;
 }
 
+// =====================================================================
+// Duel system (VB6: AtacablePor / /DESAFIO)
+// =====================================================================
+
+/// /DESAFIO <name> — Challenge another player to a duel.
+/// VB6: Sets AtacablePor on both users so they can attack each other
+/// outside of normal PvP rules (e.g. in safe zones).
+pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+    let (my_name, dead, my_map, mx, my_) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.char_name.clone(), u.dead, u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    if dead {
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        return;
+    }
+
+    let target_conn = match state.online_names.get(&target_name.to_uppercase()).copied() {
+        Some(c) => c,
+        None => {
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    if target_conn == conn_id {
+        state.send_console(conn_id, "No puedes desafiarte a ti mismo.", font_index::INFO).await;
+        return;
+    }
+
+    let target_data = match state.users.get(&target_conn) {
+        Some(u) if u.logged && !u.dead => (u.pos_map, u.pos_x, u.pos_y, u.atacable_por, u.duel_pending),
+        _ => {
+            state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO).await;
+            return;
+        }
+    };
+    let (t_map, _t_x, _t_y, t_atacable, t_pending) = target_data;
+
+    // Must be on same map
+    if t_map != my_map {
+        state.send_console(conn_id, "El jugador no esta en el mismo mapa.", font_index::INFO).await;
+        return;
+    }
+
+    // Check if already dueling
+    let my_atacable = state.users.get(&conn_id).map(|u| u.atacable_por).unwrap_or(0);
+    if my_atacable > 0 {
+        state.send_console(conn_id, "Ya estas en un duelo.", font_index::INFO).await;
+        return;
+    }
+    if t_atacable > 0 {
+        state.send_console(conn_id, "El jugador ya esta en un duelo.", font_index::INFO).await;
+        return;
+    }
+
+    // Check if target already challenged us — if so, accept the duel
+    if t_pending == conn_id {
+        // Accept: enable mutual PvP
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.atacable_por = target_conn;
+            u.duel_pending = 0;
+        }
+        if let Some(u) = state.users.get_mut(&target_conn) {
+            u.atacable_por = conn_id;
+            u.duel_pending = 0;
+        }
+
+        let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+        state.send_console(conn_id, &format!("Has aceptado el duelo con {}!", target_real), font_index::FIGHT).await;
+        state.send_console(target_conn, &format!("{} ha aceptado tu desafio!", my_name), font_index::FIGHT).await;
+        return;
+    }
+
+    // Send challenge
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.duel_pending = target_conn;
+    }
+
+    let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(target_conn, &format!("{} te ha desafiado a un duelo. Usa /DESAFIO {} para aceptar.", my_name, my_name), font_index::FIGHT).await;
+    state.send_console(conn_id, &format!("Has desafiado a {} a un duelo.", target_real), font_index::INFO).await;
+}
+
+/// /FINDESAFIO — End current duel.
+pub(super) async fn handle_slash_findesafio(state: &mut GameState, conn_id: ConnectionId) {
+    let (atacable_por, my_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.atacable_por, u.char_name.clone()),
+        _ => return,
+    };
+
+    if atacable_por == 0 {
+        // Also clear pending challenge
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.duel_pending = 0;
+        }
+        state.send_console(conn_id, "No estas en un duelo.", font_index::INFO).await;
+        return;
+    }
+
+    let partner = atacable_por;
+
+    // Clear both sides
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.atacable_por = 0;
+        u.duel_pending = 0;
+    }
+    if let Some(u) = state.users.get_mut(&partner) {
+        u.atacable_por = 0;
+        u.duel_pending = 0;
+    }
+
+    state.send_console(conn_id, "Has terminado el duelo.", font_index::INFO).await;
+    state.send_console(partner, &format!("{} ha terminado el duelo.", my_name), font_index::INFO).await;
+}
+
+// =====================================================================
+// Timbero (Gambling NPC) — VB6: HandleBet
+// =====================================================================
+
+/// /APOSTAR <amount> — Bet gold at the Timbero NPC.
+/// VB6: 47% win chance, min 1 max 5000 gold.
+pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: ConnectionId, amount: i64) {
+    let (dead, target_npc, gold, map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc, u.gold, u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    if dead {
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        return;
+    }
+
+    if amount < 1 || amount > 5000 {
+        state.send_console(conn_id, "La apuesta debe ser entre 1 y 5000 monedas de oro.", font_index::INFO).await;
+        return;
+    }
+
+    if gold < amount {
+        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO).await;
+        return;
+    }
+
+    // Must target a Timbero NPC (type 7)
+    if target_npc == 0 {
+        state.send_console(conn_id, "Primero selecciona un Timbero.", font_index::INFO).await;
+        return;
+    }
+
+    let npc_type = state.get_npc(target_npc).map(|n| n.npc_type);
+    if npc_type != Some(crate::data::npcs::NpcType::Gambler) {
+        state.send_console(conn_id, "Debes seleccionar un Timbero para apostar.", font_index::INFO).await;
+        return;
+    }
+
+    // Distance check (max 10 tiles)
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
+        None => return,
+    };
+    if map != npc_map || (x - npc_x).abs() > 10 || (y - npc_y).abs() > 10 {
+        state.send_console(conn_id, "Estas muy lejos del Timbero.", font_index::INFO).await;
+        return;
+    }
+
+    // 47% win chance (VB6 exact)
+    let roll: i32 = rand_range(1, 100);
+    let win = roll <= 47;
+
+    state.timbero_jugadas += 1;
+
+    if win {
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.gold += amount;
+        }
+        state.timbero_perdidas += amount;
+        state.send_console(conn_id, &format!("Ganaste {} monedas de oro!", amount), font_index::FIGHT).await;
+    } else {
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.gold -= amount;
+        }
+        state.timbero_ganancias += amount;
+        state.send_console(conn_id, &format!("Perdiste {} monedas de oro.", amount), font_index::INFO).await;
+    }
+
+    send_stats_gold(state, conn_id).await;
+}
+
+// =====================================================================
+// Governor NPC — Set home city (VB6: Gobernador type 11)
+// =====================================================================
+
+/// /HOGAR — Set home city via Governor NPC.
+/// VB6: Gobernador NPC has a Ciudad field; interacting sets player home.
+pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: ConnectionId) {
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
+        _ => return,
+    };
+
+    if dead {
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        return;
+    }
+
+    if target_npc == 0 {
+        state.send_console(conn_id, "Primero selecciona un Gobernador.", font_index::INFO).await;
+        return;
+    }
+
+    // VB6: NpcType = 11 (Gobernador) — our enum uses Quest=11 for this
+    let npc_type_num = state.get_npc(target_npc).map(|n| n.npc_type as i32).unwrap_or(0);
+    if npc_type_num != 11 {
+        state.send_console(conn_id, "Debes seleccionar un Gobernador.", font_index::INFO).await;
+        return;
+    }
+
+    // Distance check
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 5 || (u_y - npc_y).abs() > 5 {
+        state.send_console(conn_id, "Estas muy lejos del Gobernador.", font_index::INFO).await;
+        return;
+    }
+
+    // Get city from NPC's spawn location (map name as city)
+    let city_name = state.get_npc(target_npc)
+        .and_then(|n| state.game_data.maps.get(n.map as usize))
+        .and_then(|m| m.as_ref())
+        .map(|m| m.info.name.clone())
+        .unwrap_or_else(|| "Desconocida".to_string());
+
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.hogar = city_name.clone();
+    }
+
+    state.send_console(conn_id, &format!("Tu hogar ha sido establecido en {}.", city_name), font_index::INFO).await;
+}
+
+// =====================================================================
+// Password change — /PASSWD
+// =====================================================================
+
+/// /PASSWD <old>@<new> — Change account password.
+pub(super) async fn handle_slash_passwd(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let old_pass = read_field(1, args, '@');
+    let new_pass = read_field(2, args, '@');
+
+    if old_pass.is_empty() || new_pass.is_empty() {
+        state.send_console(conn_id, "Uso: /PASSWD <vieja>@<nueva>", font_index::INFO).await;
+        return;
+    }
+
+    if new_pass.len() < 3 {
+        state.send_console(conn_id, "La nueva password debe tener al menos 3 caracteres.", font_index::INFO).await;
+        return;
+    }
+
+    let account_name = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.account_name.clone(),
+        _ => return,
+    };
+
+    // Verify old password
+    let account = match crate::db::accounts::load_account(&state.pool, &account_name).await {
+        Ok(acc) => acc,
+        Err(_) => {
+            state.send_console(conn_id, "Error al verificar la cuenta.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    if !crate::db::password::verify_password(&old_pass, &account.password_hash) {
+        state.send_console(conn_id, "Password actual incorrecta.", font_index::INFO).await;
+        return;
+    }
+
+    // Hash new password
+    let new_hash = match crate::db::password::hash_password(&new_pass) {
+        Ok(h) => h,
+        Err(_) => {
+            state.send_console(conn_id, "Error al cambiar la password.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    // Update in DB
+    if crate::db::accounts::update_password(&state.pool, &account_name, &new_hash).await.is_ok() {
+        state.send_console(conn_id, "Password cambiada exitosamente.", font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, "Error al guardar la nueva password.", font_index::INFO).await;
+    }
+}
+

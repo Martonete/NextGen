@@ -81,6 +81,29 @@ impl Default for HpDistribution {
     }
 }
 
+/// Per-class+race faction armor assignments (VB6: ArmadurasFaccionarias.dat).
+/// Indexed by [class_index][race_index], each entry has 3 armor tiers per faction.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FactionArmors {
+    /// ObjIndex for Armada Real armor at each tier (Baja=0, Media=1, Alta=2)
+    pub armada: [i32; 3],
+    /// ObjIndex for Fuerzas del Caos armor at each tier
+    pub caos: [i32; 3],
+}
+
+/// Full faction armor table: [class][race] → FactionArmors.
+pub type FactionArmorTable = [[FactionArmors; NUM_RACES]; NUM_CLASSES];
+
+/// VB6: GetArmourAmount — quantity of armors given per tier based on rank.
+pub fn faction_armor_amount(rango: i32, tier: usize) -> i32 {
+    match tier {
+        0 => 20 / (rango + 1),                               // Baja: many at low rank
+        1 => rango * 2 / (rango - 4).max(1),                 // Media: scales then plateaus
+        2 => (rango as f32 * 1.35) as i32,                   // Alta: linear growth
+        _ => 0,
+    }
+}
+
 /// All combat balance data — VB6 13.3 exact.
 #[derive(Debug, Clone)]
 pub struct BalanceData {
@@ -111,6 +134,9 @@ pub struct BalanceData {
 
     // Faction reward thresholds (VB6: RECOMPENSAFACCION)
     pub recompensa_faccion: Vec<i64>,
+
+    // Faction armor assignments (VB6: ArmadurasFaccionarias.dat)
+    pub faction_armor: FactionArmorTable,
 }
 
 impl Default for BalanceData {
@@ -143,6 +169,7 @@ impl Default for BalanceData {
             porcentaje_recupero_mana: 6,
             exponente_nivel_party: 1.75,
             recompensa_faccion: Vec::new(),
+            faction_armor: [[FactionArmors::default(); NUM_RACES]; NUM_CLASSES],
         }
     }
 }
@@ -210,6 +237,12 @@ impl BalanceData {
     }
     pub fn race_modifiers(&self, race: &str) -> RaceModifiers {
         race_name_to_index(race).map(|i| self.mod_raza[i]).unwrap_or_default()
+    }
+    /// Get faction armor assignments for a class+race combo.
+    pub fn get_faction_armor(&self, class: &str, race: &str) -> FactionArmors {
+        let ci = class_name_to_index(class).unwrap_or(0);
+        let ri = race_name_to_index(race).unwrap_or(0);
+        self.faction_armor[ci][ri]
     }
 }
 
@@ -310,6 +343,51 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
         }
     } else {
         tracing::warn!("Balance.dat not found, using defaults");
+    }
+
+    // Load ArmadurasFaccionarias.dat
+    let af_path = base.join("dat").join("ArmadurasFaccionarias.dat");
+    if let Ok(af_ini) = IniFile::load(&af_path) {
+        let af_get = |section: &str, key: &str| -> i32 {
+            af_ini.get(section, key)
+                .and_then(|s| s.trim().parse::<i32>().ok())
+                .unwrap_or(0)
+        };
+        for ci in 0..NUM_CLASSES {
+            let section = format!("CLASE{}", ci + 1); // VB6: CLASE1..CLASE12
+            // Alto races (Humano, Elfo, Drow) get "Alto" entries
+            let alto_races = [race_id::HUMANO, race_id::ELFO, race_id::ELFO_OSCURO];
+            // Bajo races (Enano, Gnomo) get "Bajo" entries
+            let bajo_races = [race_id::ENANO, race_id::GNOMO];
+
+            for &ri in &alto_races {
+                data.faction_armor[ci][ri].armada = [
+                    af_get(&section, "DefMinArmyAlto"),
+                    af_get(&section, "DefMedArmyAlto"),
+                    af_get(&section, "DefAltaArmyAlto"),
+                ];
+                data.faction_armor[ci][ri].caos = [
+                    af_get(&section, "DefMinCaosAlto"),
+                    af_get(&section, "DefMedCaosAlto"),
+                    af_get(&section, "DefAltaCaosAlto"),
+                ];
+            }
+            for &ri in &bajo_races {
+                data.faction_armor[ci][ri].armada = [
+                    af_get(&section, "DefMinArmyBajo"),
+                    af_get(&section, "DefMedArmyBajo"),
+                    af_get(&section, "DefAltaArmyBajo"),
+                ];
+                data.faction_armor[ci][ri].caos = [
+                    af_get(&section, "DefMinCaosBajo"),
+                    af_get(&section, "DefMedCaosBajo"),
+                    af_get(&section, "DefAltaCaosBajo"),
+                ];
+            }
+        }
+        tracing::info!("ArmadurasFaccionarias.dat loaded — {} classes x {} races", NUM_CLASSES, NUM_RACES);
+    } else {
+        tracing::warn!("ArmadurasFaccionarias.dat not found");
     }
 
     tracing::info!("Balance data loaded — {} classes, {} races",

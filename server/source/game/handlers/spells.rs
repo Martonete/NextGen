@@ -313,6 +313,16 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             _ => {}
         }
 
+        // VB6: Mimetiza on NPC — Druid only, copies NPC appearance onto caster
+        if spell.mimetiza {
+            let is_druid = state.users.get(&conn_id)
+                .map(|u| u.class.eq_ignore_ascii_case("Druida"))
+                .unwrap_or(false);
+            if is_druid {
+                apply_mimetiza_npc(state, conn_id, npc_idx).await;
+            }
+        }
+
         // Consume mana (VB6: only if b=True, after HandleHechizoNPC)
         consume_spell_mana(state, conn_id, &spell, privileges).await;
     } else if has_user_target {
@@ -389,6 +399,11 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 apply_spell_buffs(state, conn_id, target_id, &spell).await;
             }
             _ => {}
+        }
+
+        // VB6: Mimetiza — copy target user's appearance onto caster
+        if spell.mimetiza && target_id != conn_id {
+            apply_mimetiza_user(state, conn_id, target_id).await;
         }
 
         // Consume mana
@@ -1138,6 +1153,16 @@ pub(super) async fn apply_spell_invocation(
         _ => return,
     };
 
+    // VB6: InvocarSinEfecto — block summoning on certain maps
+    let invocar_blocked = state.game_data.maps.get(map as usize)
+        .and_then(|m| m.as_ref())
+        .map(|m| m.info.invocar_sin_efecto)
+        .unwrap_or(false);
+    if invocar_blocked {
+        state.send_console(caster_id, "No puedes invocar criaturas en este mapa.", font_index::INFO).await;
+        return;
+    }
+
     if nro_mascotas >= MAX_MASCOTAS {
         state.send_console(caster_id, "No puedes invocar mas criaturas.", font_index::INFO).await;
         return;
@@ -1319,4 +1344,83 @@ pub(super) async fn apply_spell_teleport(
         user.min_mana = 0;
     }
     send_stats_mana(state, caster_id).await;
+}
+
+// =====================================================================
+// VB6 Mimetiza (Druid mimicry — body swap)
+// =====================================================================
+
+/// VB6: Mimetiza on user target — caster copies target's body, head, weapon, shield, helmet.
+async fn apply_mimetiza_user(state: &mut GameState, caster_id: ConnectionId, target_id: ConnectionId) {
+    // Read target appearance
+    let target_look = match state.users.get(&target_id) {
+        Some(t) => (t.body, t.head, t.weapon_anim, t.shield_anim, t.casco_anim),
+        None => return,
+    };
+    let (t_body, t_head, t_weapon, t_shield, t_helmet) = target_look;
+
+    // Save original and apply new appearance
+    if let Some(caster) = state.users.get_mut(&caster_id) {
+        if !caster.mimetizado {
+            caster.char_mimetizado_body = caster.body;
+            caster.char_mimetizado_head = caster.head;
+            caster.char_mimetizado_weapon = caster.weapon_anim;
+            caster.char_mimetizado_shield = caster.shield_anim;
+            caster.char_mimetizado_helmet = caster.casco_anim;
+        }
+        caster.body = t_body;
+        caster.head = t_head;
+        caster.weapon_anim = t_weapon;
+        caster.shield_anim = t_shield;
+        caster.casco_anim = t_helmet;
+        caster.mimetizado = true;
+    }
+
+    // Send CP to area so everyone sees the change
+    if let Some(u) = state.users.get(&caster_id) {
+        let cp = binary_packets::write_character_change(
+            u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+            u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+        );
+        let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+    }
+}
+
+/// VB6: Mimetiza on NPC target — Druid only, copies NPC body+head, clears weapon/shield/helmet.
+async fn apply_mimetiza_npc(state: &mut GameState, caster_id: ConnectionId, npc_idx: usize) {
+    // Read NPC appearance
+    let npc_look = match state.get_npc(npc_idx) {
+        Some(n) => (n.body, n.head),
+        None => return,
+    };
+    let (n_body, n_head) = npc_look;
+
+    // Save original and apply NPC appearance
+    if let Some(caster) = state.users.get_mut(&caster_id) {
+        if !caster.mimetizado {
+            caster.char_mimetizado_body = caster.body;
+            caster.char_mimetizado_head = caster.head;
+            caster.char_mimetizado_weapon = caster.weapon_anim;
+            caster.char_mimetizado_shield = caster.shield_anim;
+            caster.char_mimetizado_helmet = caster.casco_anim;
+        }
+        caster.body = n_body;
+        caster.head = n_head;
+        // VB6: Clear weapon/shield/helmet when mimicking NPC
+        caster.weapon_anim = 0;
+        caster.shield_anim = 0;
+        caster.casco_anim = 0;
+        caster.mimetizado = true;
+    }
+
+    // Send CP to area
+    if let Some(u) = state.users.get(&caster_id) {
+        let cp = binary_packets::write_character_change(
+            u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
+            0, 0, 0, 0, 0,
+        );
+        let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+    }
 }

@@ -207,6 +207,7 @@ pub struct UserState {
     pub target_x: i32,                  // Last left-click X (for /TELEPLOC)
     pub target_y: i32,                  // Last left-click Y (for /TELEPLOC)
     pub target_map: i32,                // Last left-click map (for /TELEPLOC)
+    pub target_obj: i32,                // VB6: flags.TargetObj (ObjIndex of last right-clicked obj)
     pub target_obj_map: i32,            // VB6: flags.TargetObjMap
     pub target_obj_x: i32,              // VB6: flags.TargetObjX
     pub target_obj_y: i32,              // VB6: flags.TargetObjY
@@ -283,6 +284,13 @@ pub struct UserState {
 
     // Marriage (VB6: Pareja)
     pub pareja: String,              // Name of spouse (empty = not married)
+
+    // Duel system (VB6: AtacablePor)
+    pub atacable_por: ConnectionId,  // 0 = no duel, >0 = can be attacked by this player only
+    pub duel_pending: ConnectionId,  // Pending duel challenge from this player
+
+    // Timbero (gambling) stats
+    pub timbero_target_npc: usize,   // Currently interacting with gambler NPC
 }
 
 impl UserState {
@@ -405,6 +413,7 @@ impl UserState {
             target_x: 0,
             target_y: 0,
             target_map: 0,
+            target_obj: 0,
             target_obj_map: 0,
             target_obj_x: 0,
             target_obj_y: 0,
@@ -458,6 +467,9 @@ impl UserState {
             levitando: false,
             desc: String::new(),
             pareja: String::new(),
+            atacable_por: 0,
+            duel_pending: 0,
+            timbero_target_npc: 0,
         }
     }
 
@@ -609,6 +621,17 @@ pub struct GameState {
 
     pub chat_global: bool,              // Global chat enabled (toggled by /NOGLOBAL)
 
+    // Timbero (gambling) stats — VB6: tAPuestas, persisted in apuestas.dat
+    pub timbero_ganancias: i64,         // Total player losses (house winnings)
+    pub timbero_perdidas: i64,          // Total player winnings (house losses)
+    pub timbero_jugadas: i64,           // Total bets placed
+
+    // Guild diplomacy — runtime cache of guild relations
+    // Key: (guild_a, guild_b) where guild_a < guild_b → value: -1=war, 0=peace, 1=alliance
+    pub guild_relations: HashMap<(i32, i32), i32>,
+    // Pending guild proposals: (proposer_guild, target_guild) → proposal type (0=peace, 1=alliance)
+    pub guild_proposals: HashMap<(i32, i32), i32>,
+
     // Praetorian system (praetorians.bas)
     pub pretoriano_clan: Vec<usize>,      // NPC runtime indices in praetorian clan (up to 8)
     pub pretoriano_activo: bool,
@@ -634,6 +657,9 @@ pub struct GameState {
     pub poll_options: [String; 5],
     pub poll_votes: [i32; 5],
     pub poll_voters: Vec<String>,  // Names who already voted
+
+    // Forum system (VB6: modForum.bas)
+    pub forums: HashMap<String, ForumData>,
 
     // Global NPC attack timer (VB6: CanAttackNpc counter — every 3 AI ticks)
     pub npc_can_attack_counter: i32,
@@ -676,6 +702,24 @@ pub struct SosMessage {
     pub tipo: String,
     pub autor: String,
     pub contenido: String,
+}
+
+/// VB6: tPost — a single forum post (title + author + body).
+#[derive(Debug, Clone)]
+pub struct ForumPost {
+    pub title: String,
+    pub author: String,
+    pub body: String,
+}
+
+/// VB6: tForo — a forum with up to 30 posts + 5 stickies.
+pub const MAX_FORUM_POSTS: usize = 30;
+pub const MAX_FORUM_STICKIES: usize = 5;
+
+#[derive(Debug, Clone, Default)]
+pub struct ForumData {
+    pub posts: Vec<ForumPost>,     // Newest first, max 30
+    pub stickies: Vec<ForumPost>,  // Newest first, max 5
 }
 
 /// Party runtime state (matches VB6 tParty)
@@ -736,6 +780,11 @@ impl GameState {
             ip_min_interval_ms: ip_min_ms,
             flood_strike_limit: flood_strikes_limit,
             chat_global: true,
+            timbero_ganancias: 0,
+            timbero_perdidas: 0,
+            timbero_jugadas: 0,
+            guild_relations: HashMap::new(),
+            guild_proposals: HashMap::new(),
             pretoriano_clan: Vec::new(),
             pretoriano_activo: false,
             pretoriano_faccion: 0,
@@ -752,6 +801,7 @@ impl GameState {
             poll_options: Default::default(),
             poll_votes: [0; 5],
             poll_voters: Vec::new(),
+            forums: HashMap::new(),
             npc_can_attack_counter: 0,
             map_user_counts: HashMap::new(),
             countdown_seconds: 0,

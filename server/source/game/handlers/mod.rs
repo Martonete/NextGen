@@ -606,6 +606,14 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::QuestInfo => { let _ = bq.read_ascii_string(); }
         ClientPacketID::QuestAccept => { let _ = bq.read_ascii_string(); }
 
+        // Forum
+        ClientPacketID::ForumPost => {
+            let msg_type = bq.read_byte().unwrap_or(0);
+            let title = bq.read_ascii_string().unwrap_or_default();
+            let body = bq.read_ascii_string().unwrap_or_default();
+            inventory::handle_forum_post(state, conn_id, msg_type, title, body).await;
+        }
+
         // Mail
         ClientPacketID::MailSend => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
@@ -675,8 +683,15 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::MedalExchange => { }
         ClientPacketID::DivineOffer => { }
         ClientPacketID::TsShop => { }
-        ClientPacketID::UpgradeQuery => { }
-        ClientPacketID::UpgradeDo => { }
+        ClientPacketID::UpgradeQuery => {
+            // VB6: SPH — query upgrade info (not yet implemented)
+            let _slot = bq.read_integer().unwrap_or(0);
+        }
+        ClientPacketID::UpgradeDo => {
+            // VB6: SPÉ — perform item upgrade
+            let slot = bq.read_integer().unwrap_or(0);
+            skills::do_upgrade(state, conn_id, slot as usize).await;
+        }
         ClientPacketID::ArenaSpectate => { }
         ClientPacketID::DragDrop => { bridge_string(bq, state, conn_id, "DYDTRA").await; }
         ClientPacketID::Vote => { bridge_string(bq, state, conn_id, "NVOT").await; }
@@ -2625,6 +2640,53 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         // Party message
         let text = &cmd[6..];
         handle_slash_pmsg(state, conn_id, text).await;
+    // =====================================================================
+    // Duel system
+    // =====================================================================
+    } else if cmd_upper.starts_with("/DESAFIO ") {
+        let target = cmd[9..].trim();
+        handle_slash_desafio(state, conn_id, target).await;
+    } else if cmd_upper == "/FINDESAFIO" {
+        handle_slash_findesafio(state, conn_id).await;
+    // =====================================================================
+    // Timbero (gambling)
+    // =====================================================================
+    } else if cmd_upper.starts_with("/APOSTAR ") {
+        let amount: i64 = cmd[9..].trim().parse().unwrap_or(0);
+        handle_slash_apostar(state, conn_id, amount).await;
+    // =====================================================================
+    // Governor NPC (set home)
+    // =====================================================================
+    } else if cmd_upper == "/HOGAR" {
+        handle_slash_hogar(state, conn_id).await;
+    // =====================================================================
+    // Survival skill (campfire)
+    // =====================================================================
+    } else if cmd_upper == "/FOGATA" {
+        skills::handle_crear_fogata(state, conn_id).await;
+    // =====================================================================
+    // Guild diplomacy
+    // =====================================================================
+    } else if cmd_upper.starts_with("/DECLARARGUERRA ") {
+        let target = cmd[16..].trim();
+        handle_slash_declararguerra(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/PROPONERPAZ ") {
+        let target = cmd[13..].trim();
+        handle_slash_proponerpaz(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/PROPONERALIAR ") {
+        let target = cmd[15..].trim();
+        handle_slash_proponeraliar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/ROMPERALIANZA ") {
+        let target = cmd[15..].trim();
+        handle_slash_romperalianza(state, conn_id, target).await;
+    } else if cmd_upper == "/RELACIONES" {
+        handle_slash_relaciones(state, conn_id).await;
+    // =====================================================================
+    // Password change
+    // =====================================================================
+    } else if cmd_upper.starts_with("/PASSWD ") {
+        let args = &cmd[8..];
+        handle_slash_passwd(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/TELEP ") {
         let args = cmd[7..].trim();
         handle_slash_telep(state, conn_id, args).await;
@@ -2964,7 +3026,7 @@ pub(crate) fn build_anm_packet(state: &GameState, conn_id: ConnectionId) -> Stri
 
 /// Send a single inventory slot CSI packet.
 /// Format: CSI<slot>,<objindex>,<name>,<amount>,<equipped>,<grhindex>,<objtype>,<maxhit>,<minhit>,<maxdef>,<valor/3>
-async fn send_inventory_slot(state: &mut GameState, conn_id: ConnectionId, idx: usize) {
+pub(super) async fn send_inventory_slot(state: &mut GameState, conn_id: ConnectionId, idx: usize) {
     let slot = idx + 1; // 1-based for client
     let inv = match state.users.get(&conn_id) {
         Some(u) => u.inventory[idx].clone(),
@@ -3717,6 +3779,38 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
         user.resting = false;
         if user.meditating {
             user.meditating = false;
+        }
+    }
+
+    // VB6: Remove invisibility when entering InviSinEfecto map
+    let invi_blocked = state.game_data.maps.get(new_map as usize)
+        .and_then(|m| m.as_ref())
+        .map(|m| m.info.invi_sin_efecto)
+        .unwrap_or(false);
+    if invi_blocked {
+        let was_invis = state.users.get(&conn_id)
+            .map(|u| u.invisible && !u.admin_invisible)
+            .unwrap_or(false);
+        if was_invis {
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.invisible = false;
+                user.hidden = false;
+                user.counter_invisible = 0;
+                user.counter_oculto = 0;
+            }
+        }
+    }
+
+    // VB6: Remove mimetizado on map change (revert appearance)
+    let was_mimetizado = state.users.get(&conn_id).map(|u| u.mimetizado).unwrap_or(false);
+    if was_mimetizado {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.body = user.char_mimetizado_body;
+            user.head = user.char_mimetizado_head;
+            user.weapon_anim = user.char_mimetizado_weapon;
+            user.shield_anim = user.char_mimetizado_shield;
+            user.casco_anim = user.char_mimetizado_helmet;
+            user.mimetizado = false;
         }
     }
 

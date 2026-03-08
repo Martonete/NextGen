@@ -905,3 +905,274 @@ pub(super) async fn handle_guild_details(state: &mut GameState, conn_id: Connect
     let binary = binary_packets::write_guild_details(&data);
     state.send_bytes(conn_id, &binary).await;
 }
+
+// =====================================================================
+// Guild Diplomacy — War / Peace / Alliance (VB6: modGuilds.bas)
+// =====================================================================
+
+/// Guild relation constants (VB6: RELACIONES_GUILD enum)
+pub(crate) const GUILD_REL_WAR: i32 = -1;
+pub(crate) const GUILD_REL_PEACE: i32 = 0;
+pub(crate) const GUILD_REL_ALLIANCE: i32 = 1;
+
+/// Get normalized key for guild relation lookup (smaller index first)
+fn guild_pair(a: i32, b: i32) -> (i32, i32) {
+    if a <= b { (a, b) } else { (b, a) }
+}
+
+/// Get relation between two guilds (default: peace)
+pub fn get_guild_relation(state: &GameState, guild_a: i32, guild_b: i32) -> i32 {
+    if guild_a == guild_b { return GUILD_REL_ALLIANCE; } // Same guild = allies
+    state.guild_relations.get(&guild_pair(guild_a, guild_b)).copied().unwrap_or(GUILD_REL_PEACE)
+}
+
+/// Set relation between two guilds
+fn set_guild_relation(state: &mut GameState, guild_a: i32, guild_b: i32, relation: i32) {
+    state.guild_relations.insert(guild_pair(guild_a, guild_b), relation);
+}
+
+/// /DECLARARGUERRA <clan> — Declare war on another guild (leader only).
+pub(super) async fn handle_slash_declararguerra(state: &mut GameState, conn_id: ConnectionId, target_guild_name: &str) {
+    let (guild_index, char_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
+        _ => {
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let guild = match guilds::load_guild(&state.pool, guild_index).await {
+        Some(g) => g,
+        None => return,
+    };
+
+    if guild.leader.to_uppercase() != char_name.to_uppercase() {
+        state.send_console(conn_id, "Solo el lider puede declarar la guerra.", font_index::INFO).await;
+        return;
+    }
+
+    let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
+        Some(n) => n,
+        None => {
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    if target_num == guild_index {
+        state.send_console(conn_id, "No puedes declarar la guerra a tu propio clan.", font_index::INFO).await;
+        return;
+    }
+
+    let current = get_guild_relation(state, guild_index, target_num);
+    if current == GUILD_REL_WAR {
+        state.send_console(conn_id, "Ya estan en guerra con ese clan.", font_index::INFO).await;
+        return;
+    }
+
+    // Set war — immediate bilateral
+    set_guild_relation(state, guild_index, target_num, GUILD_REL_WAR);
+
+    // Cancel any pending proposals between the two guilds
+    state.guild_proposals.remove(&(guild_index, target_num));
+    state.guild_proposals.remove(&(target_num, guild_index));
+
+    // Notify both guilds
+    let msg_us = format!("Se ha declarado la guerra al clan {}!", target_guild_name);
+    let msg_them = format!("El clan {} les ha declarado la guerra!", guild.name);
+    state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::FIGHT).await;
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::FIGHT).await;
+}
+
+/// /PROPONERPAZ <clan> — Propose peace to a guild at war (leader only).
+pub(super) async fn handle_slash_proponerpaz(state: &mut GameState, conn_id: ConnectionId, target_guild_name: &str) {
+    let (guild_index, char_name, my_guild_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.guild_name.clone()),
+        _ => {
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let guild = match guilds::load_guild(&state.pool, guild_index).await {
+        Some(g) => g,
+        None => return,
+    };
+
+    if guild.leader.to_uppercase() != char_name.to_uppercase() {
+        state.send_console(conn_id, "Solo el lider puede proponer la paz.", font_index::INFO).await;
+        return;
+    }
+
+    let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
+        Some(n) => n,
+        None => {
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let current = get_guild_relation(state, guild_index, target_num);
+    if current != GUILD_REL_WAR {
+        state.send_console(conn_id, "Solo puedes proponer paz a un clan en guerra.", font_index::INFO).await;
+        return;
+    }
+
+    // Check if target already proposed peace to us — if so, accept
+    if state.guild_proposals.get(&(target_num, guild_index)) == Some(&0) {
+        // Accept peace
+        set_guild_relation(state, guild_index, target_num, GUILD_REL_PEACE);
+        state.guild_proposals.remove(&(target_num, guild_index));
+
+        let msg_us = format!("Se ha firmado la paz con el clan {}!", target_guild_name);
+        let msg_them = format!("El clan {} ha aceptado la propuesta de paz!", my_guild_name);
+        state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::GUILD_MSG).await;
+        state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
+        return;
+    }
+
+    // Store proposal
+    state.guild_proposals.insert((guild_index, target_num), 0); // 0 = peace
+
+    let msg_them = format!("El clan {} ha propuesto la paz. El lider puede usar /PROPONERPAZ {} para aceptar.", my_guild_name, my_guild_name);
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
+    state.send_console(conn_id, &format!("Has propuesto la paz al clan {}.", target_guild_name), font_index::INFO).await;
+}
+
+/// /PROPONERALIAR <clan> — Propose alliance to a peaceful guild (leader only).
+pub(super) async fn handle_slash_proponeraliar(state: &mut GameState, conn_id: ConnectionId, target_guild_name: &str) {
+    let (guild_index, char_name, my_guild_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.guild_name.clone()),
+        _ => {
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let guild = match guilds::load_guild(&state.pool, guild_index).await {
+        Some(g) => g,
+        None => return,
+    };
+
+    if guild.leader.to_uppercase() != char_name.to_uppercase() {
+        state.send_console(conn_id, "Solo el lider puede proponer alianza.", font_index::INFO).await;
+        return;
+    }
+
+    let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
+        Some(n) => n,
+        None => {
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let current = get_guild_relation(state, guild_index, target_num);
+    if current != GUILD_REL_PEACE {
+        state.send_console(conn_id, "Solo puedes proponer alianza a un clan en paz.", font_index::INFO).await;
+        return;
+    }
+
+    // Check if target already proposed alliance to us — if so, accept
+    if state.guild_proposals.get(&(target_num, guild_index)) == Some(&1) {
+        // Accept alliance
+        set_guild_relation(state, guild_index, target_num, GUILD_REL_ALLIANCE);
+        state.guild_proposals.remove(&(target_num, guild_index));
+
+        let msg_us = format!("Se ha formado una alianza con el clan {}!", target_guild_name);
+        let msg_them = format!("El clan {} ha aceptado la propuesta de alianza!", my_guild_name);
+        state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::GUILD_MSG).await;
+        state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
+        return;
+    }
+
+    // Store proposal
+    state.guild_proposals.insert((guild_index, target_num), 1); // 1 = alliance
+
+    let msg_them = format!("El clan {} ha propuesto una alianza. El lider puede usar /PROPONERALIAR {} para aceptar.", my_guild_name, my_guild_name);
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
+    state.send_console(conn_id, &format!("Has propuesto alianza al clan {}.", target_guild_name), font_index::INFO).await;
+}
+
+/// /ROMPERALIANZA <clan> — Break alliance with a guild (leader only).
+pub(super) async fn handle_slash_romperalianza(state: &mut GameState, conn_id: ConnectionId, target_guild_name: &str) {
+    let (guild_index, char_name, my_guild_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.guild_name.clone()),
+        _ => {
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let guild = match guilds::load_guild(&state.pool, guild_index).await {
+        Some(g) => g,
+        None => return,
+    };
+
+    if guild.leader.to_uppercase() != char_name.to_uppercase() {
+        state.send_console(conn_id, "Solo el lider puede romper alianzas.", font_index::INFO).await;
+        return;
+    }
+
+    let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
+        Some(n) => n,
+        None => {
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let current = get_guild_relation(state, guild_index, target_num);
+    if current != GUILD_REL_ALLIANCE {
+        state.send_console(conn_id, "No estan aliados con ese clan.", font_index::INFO).await;
+        return;
+    }
+
+    // Revert to peace
+    set_guild_relation(state, guild_index, target_num, GUILD_REL_PEACE);
+
+    let msg_us = format!("Se ha roto la alianza con el clan {}.", target_guild_name);
+    let msg_them = format!("El clan {} ha roto la alianza.", my_guild_name);
+    state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::INFO).await;
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::INFO).await;
+}
+
+/// /RELACIONES — Show current guild diplomacy status (all relations).
+pub(super) async fn handle_slash_relaciones(state: &mut GameState, conn_id: ConnectionId) {
+    let guild_index = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
+        _ => {
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let mut wars = Vec::new();
+    let mut allies = Vec::new();
+
+    for (&(a, b), &rel) in &state.guild_relations {
+        if a != guild_index && b != guild_index { continue; }
+        let other = if a == guild_index { b } else { a };
+        let other_name = guilds::load_guild(&state.pool, other).await
+            .map(|g| g.name)
+            .unwrap_or_else(|| format!("Clan #{}", other));
+
+        match rel {
+            GUILD_REL_WAR => wars.push(other_name),
+            GUILD_REL_ALLIANCE => allies.push(other_name),
+            _ => {}
+        }
+    }
+
+    state.send_console(conn_id, "--- Relaciones del clan ---", font_index::GUILD_MSG).await;
+    if wars.is_empty() {
+        state.send_console(conn_id, "En guerra con: nadie", font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, &format!("En guerra con: {}", wars.join(", ")), font_index::FIGHT).await;
+    }
+    if allies.is_empty() {
+        state.send_console(conn_id, "Aliados con: nadie", font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, &format!("Aliados con: {}", allies.join(", ")), font_index::GUILD_MSG).await;
+    }
+}

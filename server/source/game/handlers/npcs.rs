@@ -8,20 +8,25 @@ use crate::game::world;
 use crate::game::npc;
 use crate::protocol::binary_packets;
 use crate::data::experience::MAX_LEVEL;
+use crate::data::npcs::NpcType;
 use super::common::*;
 use crate::game::types::MAX_INVENTORY_SLOTS;
 use crate::protocol::font_index;
 use super::{
-    user_die, check_user_level, send_inventory_slot,
+    user_die, check_user_level, send_inventory_slot, send_full_inventory,
     calc_attack_power, calc_defense_power, calc_armor_absorption,
     class_damage_modifier,
     poder_ataque_arma, poder_ataque_proyectil, poder_ataque_wrestling,
     calcular_dano, get_weapon_info, get_ring_info,
     do_apunalar, do_golpe_critico, puede_apunalar,
+    do_acuchillar, puede_acuchillar,
     pretoriano_check_death, es_pretoriano,
     remove_pet_from_owner,
 };
 use super::skills::try_level_skill_with_hit;
+
+/// VB6: EspadaMataDragonesIndex = 402 (Dragon Slayer sword)
+const ESPADA_MATA_DRAGONES: i32 = 402;
 
 // =====================================================================
 // NPC system — spawning, AI, combat
@@ -283,9 +288,21 @@ pub(super) async fn user_attack_npc(
 
     let damage_before_def = base_damage + boat_bonus;
 
+    // VB6: EspadaMataDragonesIndex (402) — deals 1 damage to non-dragons, full to dragons
+    let npc_is_dragon = state.get_npc(npc_idx).map(|n| n.npc_type == NpcType::Dragon).unwrap_or(false);
+    let damage_before_def = if weapon_info.obj_index == ESPADA_MATA_DRAGONES && !npc_is_dragon {
+        1i64
+    } else {
+        damage_before_def
+    };
+
     // VB6: damage = DañoBase - NPC.Stats.def
     let npc_def = state.get_npc(npc_idx).map(|n| n.def).unwrap_or(0) as i64;
-    let damage = (damage_before_def - npc_def).max(0) as i32;
+    let damage = if weapon_info.obj_index == ESPADA_MATA_DRAGONES && !npc_is_dragon {
+        1 // Dragon Slayer always deals exactly 1 to non-dragons (ignores defense)
+    } else {
+        (damage_before_def - npc_def).max(0) as i32
+    };
 
     // Check attacker GM status BEFORE taking mutable NPC borrow
     let attacker_is_gm = state.users.get(&conn_id)
@@ -395,6 +412,17 @@ pub(super) async fn user_attack_npc(
             }
             state.send_console(conn_id, &format!("Has golpeado críticamente a la criatura por {}.", crit_dmg), font_index::FIGHT).await;
         }
+
+        // VB6: DoAcuchillar (Pirate throat cut — melee NPC attacks, SistemaCombate.bas:423)
+        if puede_acuchillar(class, weapon_info.acuchilla) {
+            if let Some(cut_dmg) = do_acuchillar(damage as i64) {
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.min_hp -= cut_dmg as i32;
+                    npc.damage_received.push((conn_id, cut_dmg as i32));
+                }
+                state.send_console(conn_id, &format!("Has acuchillado a la criatura por {}", cut_dmg), font_index::FIGHT).await;
+            }
+        }
     }
 
     // Re-check dead status after backstab/crit
@@ -422,6 +450,24 @@ pub(super) async fn user_attack_npc(
     }
 
     if npc_dead {
+        // VB6: Dragon Slayer sword is consumed when killing a dragon
+        if npc_is_dragon && weapon_info.obj_index == ESPADA_MATA_DRAGONES {
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                if user.equip.weapon > 0 && user.equip.weapon <= MAX_INVENTORY_SLOTS {
+                    let slot = user.equip.weapon - 1;
+                    if user.inventory[slot].obj_index == ESPADA_MATA_DRAGONES {
+                        user.inventory[slot].amount -= 1;
+                        if user.inventory[slot].amount <= 0 {
+                            user.inventory[slot].obj_index = 0;
+                            user.inventory[slot].amount = 0;
+                            user.equip.weapon = 0;
+                        }
+                    }
+                }
+            }
+            state.send_console(conn_id, "La espada mata dragones se ha destruido.", font_index::INFO).await;
+            send_full_inventory(state, conn_id).await;
+        }
         npc_die(state, npc_idx, conn_id, npc_give_exp, npc_give_gld_min, npc_give_gld_max).await;
     }
 }

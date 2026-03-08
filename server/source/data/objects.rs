@@ -217,6 +217,15 @@ pub struct ObjData {
     // Staff fields (VB6: StaffPower, StaffDamageBonus — mage weapons)
     pub staff_power: i32,
     pub staff_damage_bonus: i32,
+
+    // Pirate throat-cut (VB6: Acuchilla — weapon flag for DoAcuchillar)
+    pub acuchilla: bool,
+
+    // Upgrade target (VB6: Upgrade — obj index of upgraded version)
+    pub upgrade: i32,
+
+    // Forum identifier (VB6: ForoID — string ID linking object to a forum board)
+    pub foro_id: String,
 }
 
 impl Default for ObjData {
@@ -286,6 +295,9 @@ impl Default for ObjData {
             defensa_magica_max: 0,
             staff_power: 0,
             staff_damage_bonus: 0,
+            acuchilla: false,
+            upgrade: 0,
+            foro_id: String::new(),
         }
     }
 }
@@ -385,6 +397,9 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             defensa_magica_max: get_int("DefensaMagicaMax"),
             staff_power: get_int("StaffPower"),
             staff_damage_bonus: get_int("StaffDamageBonus"),
+            acuchilla: get_bool("Acuchilla"),
+            upgrade: get_int("Upgrade"),
+            foro_id: get_str("ForoID"),
             ..Default::default()
         };
 

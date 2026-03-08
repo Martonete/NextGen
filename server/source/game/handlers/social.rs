@@ -2,9 +2,50 @@
 //! Extracted from mod.rs to reduce file size.
 
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget};
+use crate::game::types::{GameState, SendTarget, InventorySlot};
 use crate::protocol::font_index;
+use crate::data::balance;
 use super::common::*;
+
+/// VB6: GiveFactionArmours — give 3 tiers of faction armor based on class+race+faction+rank.
+async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_caos: bool) {
+    let (class, race, rango) = match state.users.get(&conn_id) {
+        Some(u) => {
+            let r = if is_caos { u.recompensas_caos } else { u.recompensas_real };
+            (u.class.clone(), u.race.clone(), r + 1) // VB6: Rango = RecompensasX + 1
+        }
+        None => return,
+    };
+    let armors = state.game_data.balance.get_faction_armor(&class, &race);
+
+    for tier in 0..3 {
+        let obj_index = if is_caos { armors.caos[tier] } else { armors.armada[tier] };
+        if obj_index <= 0 { continue; }
+        let amount = balance::faction_armor_amount(rango, tier);
+        if amount <= 0 { continue; }
+
+        // Try to add to inventory (stack or empty slot)
+        let added = if let Some(user) = state.users.get_mut(&conn_id) {
+            // First try stacking
+            if let Some(slot_idx) = user.inventory.iter().position(|s| s.obj_index == obj_index && !s.equipped) {
+                user.inventory[slot_idx].amount += amount;
+                Some(slot_idx)
+            } else if let Some(slot_idx) = user.inventory.iter().position(|s| s.obj_index == 0) {
+                user.inventory[slot_idx] = InventorySlot { obj_index, amount, equipped: false };
+                Some(slot_idx)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(slot_idx) = added {
+            super::send_inventory_slot(state, conn_id, slot_idx).await;
+        }
+        // If no space, VB6 drops on floor — skip for simplicity (rare edge case)
+    }
+}
 
 
 // =====================================================================
@@ -84,6 +125,9 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         }
         send_stats_exp(state, conn_id).await;
 
+        // VB6: GiveFactionArmours on enlistment
+        give_faction_armours(state, conn_id, false).await;
+
         state.send_console(conn_id, "Te has enlistado en la Armada Real!", font_index::GUILD_MSG).await;
 
         // Broadcast
@@ -104,6 +148,9 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
             user.exp += 50000;
         }
         send_stats_exp(state, conn_id).await;
+
+        // VB6: GiveFactionArmours on enlistment
+        give_faction_armours(state, conn_id, true).await;
 
         state.send_console(conn_id, "Te has enlistado en las Fuerzas del Caos!", font_index::GUILD_MSG).await;
 
@@ -228,6 +275,9 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
             user.recompensas_real = new_tier;
         }
 
+        // VB6: GiveFactionArmours + GiveExpReward on rank-up
+        give_faction_armours(state, conn_id, false).await;
+
         state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, true)), font_index::GUILD_MSG).await;
     } else {
         let current_tier = rec_caos;
@@ -246,6 +296,9 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.recompensas_caos = new_tier;
         }
+
+        // VB6: GiveFactionArmours + GiveExpReward on rank-up
+        give_faction_armours(state, conn_id, true).await;
 
         state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, false)), font_index::GUILD_MSG).await;
     }

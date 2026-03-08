@@ -2144,6 +2144,18 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
         }
     }
 
+    // 1b. Check for FORUM on tile (VB6: AccionParaForo — ObjType 10)
+    if ground_obj > 0 {
+        if let Some(obj) = state.get_object(ground_obj) {
+            if obj.obj_type == crate::data::objects::ObjType::Forum {
+                if !dead {
+                    accion_para_foro(state, conn_id, ground_obj).await;
+                }
+                return;
+            }
+        }
+    }
+
     // 2. Check for USER on tile → send MENU packet
     if let Some(target_conn) = tile_user {
         if target_conn != conn_id {
@@ -2502,5 +2514,135 @@ pub(super) async fn handle_safe_toggle(state: &mut GameState, conn_id: Connectio
     } else {
         let pkt = binary_packets::write_safe_on();
         state.send_bytes(conn_id, &pkt).await;
+    }
+}
+
+// ── Forum system (VB6: AccionParaForo / modForum.bas) ──────────────
+
+/// VB6 eForumMsgType — matches client protocol.
+pub(super) mod forum_msg_type {
+    pub const GENERAL: u8 = 0;
+    pub const GENERAL_STICKY: u8 = 1;
+    pub const CAOS: u8 = 2;
+    pub const CAOS_STICKY: u8 = 3;
+    pub const REAL: u8 = 4;
+    pub const REAL_STICKY: u8 = 5;
+}
+
+/// VB6 eForumVisibility — bitflags for ShowForumForm.
+pub(super) mod forum_visibility {
+    pub const GENERAL_MEMBER: u8 = 1;
+    pub const CAOS_MEMBER: u8 = 2;
+    pub const REAL_MEMBER: u8 = 4;
+}
+
+const FORO_REAL_ID: &str = "REAL";
+const FORO_CAOS_ID: &str = "CAOS";
+
+/// VB6: AccionParaForo — triggered on right-click on a Forum object (ObjType 10).
+/// Sends all posts for the forum board + faction boards the user can see, then opens the UI.
+pub(super) async fn accion_para_foro(state: &mut GameState, conn_id: ConnectionId, obj_index: i32) {
+    let foro_id = match state.get_object(obj_index) {
+        Some(obj) => obj.foro_id.clone(),
+        None => return,
+    };
+    if foro_id.is_empty() { return; }
+
+    // Save target object for ForumPost handler
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.target_obj = obj_index;
+    }
+
+    let (is_gm, is_caos, is_armada) = match state.users.get(&conn_id) {
+        Some(u) => (u.privileges >= 1, u.fuerzas_caos, u.armada_real),
+        None => return,
+    };
+
+    // 1. Send general forum posts
+    send_forum_posts(state, conn_id, &foro_id, forum_msg_type::GENERAL, forum_msg_type::GENERAL_STICKY).await;
+
+    // 2. Faction-specific boards
+    if is_caos || is_gm {
+        send_forum_posts(state, conn_id, FORO_CAOS_ID, forum_msg_type::CAOS, forum_msg_type::CAOS_STICKY).await;
+    }
+    if is_armada || is_gm {
+        send_forum_posts(state, conn_id, FORO_REAL_ID, forum_msg_type::REAL, forum_msg_type::REAL_STICKY).await;
+    }
+
+    // 3. Compute visibility + sticky permissions
+    let mut visibility = forum_visibility::GENERAL_MEMBER;
+    if is_caos || is_gm { visibility |= forum_visibility::CAOS_MEMBER; }
+    if is_armada || is_gm { visibility |= forum_visibility::REAL_MEMBER; }
+
+    let can_make_sticky = if is_gm { 2u8 } else { 0u8 };
+
+    // 4. Show the forum form
+    let pkt = binary_packets::write_show_forum_form(visibility, can_make_sticky);
+    state.send_bytes(conn_id, &pkt).await;
+}
+
+/// Send all posts (regular + sticky) from a specific forum board to a user.
+async fn send_forum_posts(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    forum_id: &str,
+    regular_type: u8,
+    sticky_type: u8,
+) {
+    let forum = match state.forums.get(forum_id) {
+        Some(f) => f.clone(),
+        None => return,
+    };
+
+    for post in &forum.posts {
+        let pkt = binary_packets::write_add_forum_msg(regular_type, &post.title, &post.author, &post.body);
+        state.send_bytes(conn_id, &pkt).await;
+    }
+    for post in &forum.stickies {
+        let pkt = binary_packets::write_add_forum_msg(sticky_type, &post.title, &post.author, &post.body);
+        state.send_bytes(conn_id, &pkt).await;
+    }
+}
+
+/// Handle client ForumPost packet — add a new post to a forum board.
+/// VB6: HandleForumPost — reads ForumMsgType(byte) + Title(string) + Post(string).
+pub(super) async fn handle_forum_post(state: &mut GameState, conn_id: ConnectionId, msg_type: u8, title: String, body: String) {
+    use crate::game::types::{ForumPost, MAX_FORUM_POSTS, MAX_FORUM_STICKIES};
+
+    let (author, target_obj, is_gm) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && !u.dead => (u.char_name.clone(), u.target_obj, u.privileges >= 1),
+        _ => return,
+    };
+
+    if target_obj <= 0 || title.is_empty() || body.is_empty() { return; }
+
+    // Determine forum ID based on message type
+    let forum_id = match msg_type {
+        forum_msg_type::CAOS | forum_msg_type::CAOS_STICKY => FORO_CAOS_ID.to_string(),
+        forum_msg_type::REAL | forum_msg_type::REAL_STICKY => FORO_REAL_ID.to_string(),
+        _ => {
+            // General forum — get ID from the target object
+            match state.get_object(target_obj) {
+                Some(obj) if !obj.foro_id.is_empty() => obj.foro_id.clone(),
+                _ => return,
+            }
+        }
+    };
+
+    let is_sticky = matches!(msg_type,
+        forum_msg_type::GENERAL_STICKY | forum_msg_type::CAOS_STICKY | forum_msg_type::REAL_STICKY);
+
+    // Only GMs can make stickies
+    if is_sticky && !is_gm { return; }
+
+    let post = ForumPost { title, author, body };
+
+    let forum = state.forums.entry(forum_id).or_default();
+    if is_sticky {
+        forum.stickies.insert(0, post);
+        forum.stickies.truncate(MAX_FORUM_STICKIES);
+    } else {
+        forum.posts.insert(0, post);
+        forum.posts.truncate(MAX_FORUM_POSTS);
     }
 }
