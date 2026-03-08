@@ -609,14 +609,6 @@ pub struct GameState {
 
     pub chat_global: bool,              // Global chat enabled (toggled by /NOGLOBAL)
 
-    // Treasure system (modTesoros.bas)
-    pub tesoro_map: i32,
-    pub tesoro_x: i32,
-    pub tesoro_y: i32,
-    pub tesoro_contando: bool,
-    pub tesoro_tiempo: i32,             // Countdown ticks
-    pub se_puede_desenterrar: bool,
-
     // Praetorian system (praetorians.bas)
     pub pretoriano_clan: Vec<usize>,      // NPC runtime indices in praetorian clan (up to 8)
     pub pretoriano_activo: bool,
@@ -744,12 +736,6 @@ impl GameState {
             ip_min_interval_ms: ip_min_ms,
             flood_strike_limit: flood_strikes_limit,
             chat_global: true,
-            tesoro_map: 0,
-            tesoro_x: 0,
-            tesoro_y: 0,
-            tesoro_contando: false,
-            tesoro_tiempo: 0,
-            se_puede_desenterrar: false,
             pretoriano_clan: Vec::new(),
             pretoriano_activo: false,
             pretoriano_faccion: 0,

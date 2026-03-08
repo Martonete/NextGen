@@ -8,54 +8,57 @@ using ArgentumNextgen.Rendering;
 namespace ArgentumNextgen.UI;
 
 /// <summary>
-/// VB6 frmComerciar — NPC commerce panel.
-/// Shows NPC items (buy) and player inventory (sell), with buy/sell/selectall buttons.
-/// Layout converted from VB6 twips÷15 → pixels: 445×486.
+/// NPC commerce panel — two icon grids (NPC items / player inventory)
+/// with buy/sell buttons, quantity input, and item preview.
 /// </summary>
 public partial class CommercePanel : Control
 {
-    // Panel dimensions (VB6 form = 445×486 px)
+    // Panel dimensions
     private const int PanelW = 445;
     private const int PanelH = 486;
 
-    // NPC item list area
-    private const int NpcListX = 26, NpcListY = 133;
-    private const int NpcListW = 169, NpcListH = 266;
+    // Grid layout — 5 columns, 34×34 cells
+    private const int GridCols = 5;
+    private const int CellSize = 34;
 
-    // User item list area
-    private const int UserListX = 243, UserListY = 133;
-    private const int UserListW = 168, UserListH = 266;
+    // NPC grid area (left side)
+    private const int NpcGridX = 14, NpcGridY = 120;
+    private const int NpcGridW = GridCols * CellSize; // 170
+    private const int NpcGridRows = 7; // visible rows
+    private const int NpcGridH = NpcGridRows * CellSize; // 238
+
+    // User grid area (right side)
+    private const int UserGridX = 243, UserGridY = 120;
+    private const int UserGridW = GridCols * CellSize;
+    private const int UserGridRows = 7;
+    private const int UserGridH = UserGridRows * CellSize;
 
     // Item preview area
-    private const int PreviewIconX = 19, PreviewIconY = 63;
-    private const int PreviewNameX = 62, PreviewNameY = 60;
-    private const int PriceLabelX = 155, PriceLabelY = 86;
-    private const int AmountLabelX = 59, AmountLabelY = 85;
-    private const int Stat1X = 278, Stat1Y = 80;
-    private const int Stat2X = 278, Stat2Y = 96;
+    private const int PreviewIconX = 19, PreviewIconY = 50;
+    private const int PreviewNameX = 62, PreviewNameY = 48;
+    private const int PriceLabelX = 62, PriceLabelY = 64;
+    private const int AmountLabelX = 62, AmountLabelY = 80;
+    private const int Stat1X = 62, Stat1Y = 96;
 
     // Buttons
-    private const int BuyBtnX = 28, BuyBtnY = 412, BtnW = 166, BtnH = 23;
-    private const int SellBtnX = 244, SellBtnY = 412;
-    private const int SelectAllBtnX = 244, SelectAllBtnY = 443;
-    private const int QtyInputX = 78, QtyInputY = 442, QtyInputW = 66, QtyInputH = 13;
+    private const int BuyBtnX = 14, BuyBtnY = 370, BtnW = 170, BtnH = 23;
+    private const int SellBtnX = 243, SellBtnY = 370;
+    private const int SelectAllBtnX = 243, SelectAllBtnY = 443;
+    private const int QtyInputX = 78, QtyInputY = 442, QtyInputW = 66, QtyInputH = 15;
     private const int CloseBtnX = 408, CloseBtnY = 0, CloseBtnW = 33, CloseBtnH = 33;
-
-    // List item height
-    private const int ItemRowH = 16;
 
     private GameState? _state;
     private GameData? _data;
     private AoTcpClient? _tcp;
 
     // Selection state
-    private int _selectedNpcIdx = -1;   // index into NpcShopItems (0-based)
-    private int _selectedUserIdx = -1;  // index into filtered user items (0-based)
-    private int _npcScrollOffset;
-    private int _userScrollOffset;
+    private int _selectedNpcIdx = -1;
+    private int _selectedUserIdx = -1;
+    private int _npcScrollRow;
+    private int _userScrollRow;
 
     // Filtered user inventory (non-empty slots)
-    private int[] _userSlots = new int[25]; // indices into state.Inventory
+    private int[] _userSlots = new int[25];
     private int _userSlotCount;
 
     // Dragging
@@ -63,10 +66,8 @@ public partial class CommercePanel : Control
     private Vector2 _dragOffset;
     private const int TitleBarH = 30;
 
-    // Quantity input
+    // UI controls
     private LineEdit? _qtyInput;
-
-    // Buttons (Godot controls for click handling)
     private Button? _buyBtn;
     private Button? _sellBtn;
     private Button? _selectAllBtn;
@@ -85,7 +86,6 @@ public partial class CommercePanel : Control
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.None;
 
-        // Quantity LineEdit
         _qtyInput = new LineEdit();
         _qtyInput.Position = new Vector2(QtyInputX, QtyInputY);
         _qtyInput.Size = new Vector2(QtyInputW, QtyInputH);
@@ -96,22 +96,18 @@ public partial class CommercePanel : Control
         _qtyInput.AddThemeFontSizeOverride("font_size", 10);
         AddChild(_qtyInput);
 
-        // Buy button
         _buyBtn = CreateButton("Comprar", BuyBtnX, BuyBtnY, BtnW, BtnH);
         _buyBtn.Pressed += OnBuyPressed;
         AddChild(_buyBtn);
 
-        // Sell button
         _sellBtn = CreateButton("Vender", SellBtnX, SellBtnY, BtnW, BtnH);
         _sellBtn.Pressed += OnSellPressed;
         AddChild(_sellBtn);
 
-        // SelectAll button
         _selectAllBtn = CreateButton("Todo", SelectAllBtnX, SelectAllBtnY, BtnW, BtnH);
         _selectAllBtn.Pressed += OnSelectAllPressed;
         AddChild(_selectAllBtn);
 
-        // Close button (X)
         _closeBtn = CreateButton("X", CloseBtnX, CloseBtnY, CloseBtnW, CloseBtnH);
         _closeBtn.Pressed += OnClosePressed;
         AddChild(_closeBtn);
@@ -132,8 +128,8 @@ public partial class CommercePanel : Control
     {
         _selectedNpcIdx = -1;
         _selectedUserIdx = -1;
-        _npcScrollOffset = 0;
-        _userScrollOffset = 0;
+        _npcScrollRow = 0;
+        _userScrollRow = 0;
         _qtyInput!.Text = "1";
         Visible = true;
     }
@@ -149,7 +145,6 @@ public partial class CommercePanel : Control
     {
         if (!Visible || _state == null) return;
 
-        // Rebuild filtered user inventory each frame (cheap: 25 items)
         _userSlotCount = 0;
         for (int i = 0; i < 25; i++)
         {
@@ -166,8 +161,6 @@ public partial class CommercePanel : Control
 
         // Background
         DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.08f, 0.06f, 0.12f, 0.96f));
-
-        // Panel border
         DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.5f, 0.4f, 0.3f, 0.8f), false, 2f);
 
         var font = _data.Fonts?[1];
@@ -175,69 +168,101 @@ public partial class CommercePanel : Control
         // Title
         font?.DrawText(this, PanelW / 2, 8, "Comerciar", new Color(1f, 0.85f, 0.4f), center: true);
 
-        // List headers
-        font?.DrawText(this, NpcListX + NpcListW / 2, NpcListY - 14, "NPC", Colors.White, center: true);
-        font?.DrawText(this, UserListX + UserListW / 2, UserListY - 14, "Inventario", Colors.White, center: true);
+        // Grid headers
+        font?.DrawText(this, NpcGridX + NpcGridW / 2, NpcGridY - 14, "NPC", Colors.White, center: true);
+        font?.DrawText(this, UserGridX + UserGridW / 2, UserGridY - 14, "Inventario", Colors.White, center: true);
 
-        // NPC list background
-        DrawRect(new Rect2(NpcListX, NpcListY, NpcListW, NpcListH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(NpcListX, NpcListY, NpcListW, NpcListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        // NPC grid background
+        DrawRect(new Rect2(NpcGridX, NpcGridY, NpcGridW, NpcGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        DrawRect(new Rect2(NpcGridX, NpcGridY, NpcGridW, NpcGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
-        // User list background
-        DrawRect(new Rect2(UserListX, UserListY, UserListW, UserListH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(UserListX, UserListY, UserListW, UserListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        // User grid background
+        DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
-        // Draw NPC items
-        int maxNpcVisible = NpcListH / ItemRowH;
-        for (int i = 0; i < maxNpcVisible && (i + _npcScrollOffset) < _state.NpcShopCount; i++)
+        // Draw NPC items as icon grid
+        int npcStartIdx = _npcScrollRow * GridCols;
+        int maxNpcCells = NpcGridRows * GridCols;
+        for (int i = 0; i < maxNpcCells; i++)
         {
-            int idx = i + _npcScrollOffset;
+            int idx = npcStartIdx + i;
+            if (idx >= _state.NpcShopCount) break;
+
             var item = _state.NpcShopItems[idx];
             if (string.IsNullOrEmpty(item.Name)) continue;
 
-            int rowY = NpcListY + i * ItemRowH;
+            int col = i % GridCols;
+            int row = i / GridCols;
+            float cx = NpcGridX + col * CellSize;
+            float cy = NpcGridY + row * CellSize;
 
             // Selection highlight
             if (idx == _selectedNpcIdx)
-                DrawRect(new Rect2(NpcListX + 1, rowY, NpcListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
+            {
+                DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
+            }
 
-            // Item name (truncate to fit)
-            string displayName = item.Name.Length > 16 ? item.Name[..16] : item.Name;
-            font?.DrawText(this, NpcListX + 3, rowY + 1, displayName, Colors.White);
+            // Item icon
+            if (item.GrhIndex > 0)
+                CharRenderer.DrawGrh(this, _data, item.GrhIndex, 0, new Vector2(cx + 1, cy));
+
+            // Amount overlay
+            if (item.Amount > 0 && font != null)
+                font.DrawText(this, (int)cx, (int)cy + 3, item.Amount.ToString(), Colors.White);
+
+            // Cell border
+            DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
         }
 
-        // Draw User items
-        int maxUserVisible = UserListH / ItemRowH;
-        for (int i = 0; i < maxUserVisible && (i + _userScrollOffset) < _userSlotCount; i++)
+        // Draw User items as icon grid
+        int userStartIdx = _userScrollRow * GridCols;
+        int maxUserCells = UserGridRows * GridCols;
+        for (int i = 0; i < maxUserCells; i++)
         {
-            int idx = i + _userScrollOffset;
+            int idx = userStartIdx + i;
+            if (idx >= _userSlotCount) break;
+
             int slotIdx = _userSlots[idx];
             var inv = _state.Inventory[slotIdx];
 
-            int rowY = UserListY + i * ItemRowH;
+            int col = i % GridCols;
+            int row = i / GridCols;
+            float cx = UserGridX + col * CellSize;
+            float cy = UserGridY + row * CellSize;
 
             // Selection highlight
             if (idx == _selectedUserIdx)
-                DrawRect(new Rect2(UserListX + 1, rowY, UserListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
+            {
+                DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
+            }
 
-            // Item name + amount
-            string equip = inv.Equipped ? "(E)" : "";
-            string displayName = inv.Name.Length > 12 ? inv.Name[..12] : inv.Name;
-            font?.DrawText(this, UserListX + 3, rowY + 1, $"{displayName} x{inv.Amount}{equip}", Colors.White);
+            // Item icon
+            if (inv.GrhIndex > 0)
+                CharRenderer.DrawGrh(this, _data, inv.GrhIndex, 0, new Vector2(cx + 1, cy));
+
+            // Amount overlay
+            if (inv.Amount > 0 && font != null)
+                font.DrawText(this, (int)cx, (int)cy + 3, inv.Amount.ToString(), Colors.White);
+
+            // Equipped marker
+            if (inv.Equipped && font != null)
+                font.DrawText(this, (int)cx + 23, (int)cy + 20, "E", new Color(1f, 1f, 0f));
+
+            // Cell border
+            DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
         }
 
-        // Preview area — show selected item info
+        // Preview area
         DrawPreview(font);
 
-        // Labels for buttons area
-        font?.DrawText(this, 28, QtyInputY + 1, "Cant:", Colors.White);
+        // Labels
+        font?.DrawText(this, 14, QtyInputY + 1, "Cant:", Colors.White);
     }
 
     private void DrawPreview(AoFont? font)
     {
         if (_state == null || _data == null) return;
 
-        // Determine which item to preview
         string name = "";
         long price = 0;
         int amount = 0;
@@ -248,57 +273,47 @@ public partial class CommercePanel : Control
         if (_selectedNpcIdx >= 0 && _selectedNpcIdx < _state.NpcShopCount)
         {
             var item = _state.NpcShopItems[_selectedNpcIdx];
-            name = item.Name;
-            price = item.Price;
-            amount = item.Amount;
-            grhIndex = item.GrhIndex;
-            objType = item.ObjType;
-            minHit = item.MinHit;
-            maxHit = item.MaxHit;
-            maxDef = item.MaxDef;
+            name = item.Name; price = item.Price; amount = item.Amount;
+            grhIndex = item.GrhIndex; objType = item.ObjType;
+            minHit = item.MinHit; maxHit = item.MaxHit; maxDef = item.MaxDef;
         }
         else if (_selectedUserIdx >= 0 && _selectedUserIdx < _userSlotCount)
         {
             int slotIdx = _userSlots[_selectedUserIdx];
             var inv = _state.Inventory[slotIdx];
-            name = inv.Name;
-            price = inv.Value;
-            amount = inv.Amount;
-            grhIndex = inv.GrhIndex;
-            objType = inv.ObjType;
-            minHit = inv.MinHit;
-            maxHit = inv.MaxHit;
-            maxDef = inv.MaxDef;
+            name = inv.Name; price = inv.Value; amount = inv.Amount;
+            grhIndex = inv.GrhIndex; objType = inv.ObjType;
+            minHit = inv.MinHit; maxHit = inv.MaxHit; maxDef = inv.MaxDef;
         }
 
         if (string.IsNullOrEmpty(name)) return;
 
         // Preview border
-        DrawRect(new Rect2(14, 50, 270, 60), new Color(0.12f, 0.1f, 0.15f, 0.9f));
-        DrawRect(new Rect2(14, 50, 270, 60), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
+        DrawRect(new Rect2(14, 38, PanelW - 28, 66), new Color(0.12f, 0.1f, 0.15f, 0.9f));
+        DrawRect(new Rect2(14, 38, PanelW - 28, 66), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
 
-        // Item icon
         if (grhIndex > 0)
             CharRenderer.DrawGrh(this, _data, grhIndex, 0, new Vector2(PreviewIconX, PreviewIconY));
 
-        // Item name
         font?.DrawText(this, PreviewNameX, PreviewNameY, name, new Color(1f, 0.9f, 0.5f));
-
-        // Price
-        font?.DrawText(this, PriceLabelX, PriceLabelY, $"{price}", new Color(1f, 1f, 0f));
-
-        // Amount
+        font?.DrawText(this, PriceLabelX, PriceLabelY, $"Precio: {price}", new Color(1f, 1f, 0f));
         font?.DrawText(this, AmountLabelX, AmountLabelY, $"x{amount}", Colors.White);
 
-        // Stats (type 2=weapon, 3=armor, 16=shield, 17=helmet)
         if (objType == 2)
-        {
-            font?.DrawText(this, Stat1X, Stat1Y, $"Daño: {minHit}/{maxHit}", Colors.White);
-        }
+            font?.DrawText(this, Stat1X + 120, Stat1Y - 32, $"Daño: {minHit}/{maxHit}", Colors.White);
         else if (objType == 3 || objType == 16 || objType == 17)
-        {
-            font?.DrawText(this, Stat1X, Stat1Y, $"Defensa: {maxDef}", Colors.White);
-        }
+            font?.DrawText(this, Stat1X + 120, Stat1Y - 32, $"Def: {maxDef}", Colors.White);
+    }
+
+    private int HitTestGrid(Vector2 pos, int gridX, int gridY, int gridW, int gridH, int scrollRow, int itemCount)
+    {
+        float lx = pos.X - gridX;
+        float ly = pos.Y - gridY;
+        if (lx < 0 || ly < 0 || lx >= gridW || ly >= gridH) return -1;
+        int col = (int)(lx / CellSize);
+        int row = (int)(ly / CellSize);
+        int idx = (scrollRow + row) * GridCols + col;
+        return idx < itemCount ? idx : -1;
     }
 
     public override void _GuiInput(InputEvent @event)
@@ -318,9 +333,7 @@ public partial class CommercePanel : Control
                     return;
                 }
                 if (!dragMb.Pressed && _dragging)
-                {
                     _dragging = false;
-                }
             }
         }
         if (@event is InputEventMouseMotion dragMm && _dragging)
@@ -332,38 +345,44 @@ public partial class CommercePanel : Control
 
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
-            float mx = mb.Position.X;
-            float my = mb.Position.Y;
-
-            // Click in NPC list
-            if (mx >= NpcListX && mx < NpcListX + NpcListW && my >= NpcListY && my < NpcListY + NpcListH)
+            // Click in NPC grid
+            int npcIdx = HitTestGrid(mb.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state.NpcShopCount);
+            if (npcIdx >= 0)
             {
-                int row = (int)(my - NpcListY) / ItemRowH;
-                int idx = row + _npcScrollOffset;
-                if (idx >= 0 && idx < _state.NpcShopCount)
-                {
-                    _selectedNpcIdx = idx;
-                    _selectedUserIdx = -1; // deselect user
-                }
+                _selectedNpcIdx = npcIdx;
+                _selectedUserIdx = -1;
                 AcceptEvent();
                 return;
             }
 
-            // Click in User list
-            if (mx >= UserListX && mx < UserListX + UserListW && my >= UserListY && my < UserListY + UserListH)
+            // Click in User grid
+            int userIdx = HitTestGrid(mb.Position, UserGridX, UserGridY, UserGridW, UserGridH, _userScrollRow, _userSlotCount);
+            if (userIdx >= 0)
             {
-                int row = (int)(my - UserListY) / ItemRowH;
-                int idx = row + _userScrollOffset;
-                if (idx >= 0 && idx < _userSlotCount)
-                {
-                    _selectedUserIdx = idx;
-                    _selectedNpcIdx = -1; // deselect NPC
-                }
+                _selectedUserIdx = userIdx;
+                _selectedNpcIdx = -1;
                 AcceptEvent();
                 return;
             }
 
-            // Right-click anywhere → close
+            // Scroll NPC grid
+            if (mb.Position.X >= NpcGridX && mb.Position.X < NpcGridX + NpcGridW &&
+                mb.Position.Y >= NpcGridY && mb.Position.Y < NpcGridY + NpcGridH)
+            {
+                HandleScroll(mb, ref _npcScrollRow, _state.NpcShopCount, NpcGridRows);
+                AcceptEvent();
+                return;
+            }
+
+            // Scroll User grid
+            if (mb.Position.X >= UserGridX && mb.Position.X < UserGridX + UserGridW &&
+                mb.Position.Y >= UserGridY && mb.Position.Y < UserGridY + UserGridH)
+            {
+                HandleScroll(mb, ref _userScrollRow, _userSlotCount, UserGridRows);
+                AcceptEvent();
+                return;
+            }
+
             if (mb.ButtonIndex == MouseButton.Right)
             {
                 OnClosePressed();
@@ -375,38 +394,38 @@ public partial class CommercePanel : Control
         }
         else if (@event is InputEventMouseButton mbScroll)
         {
-            float mx = mbScroll.Position.X;
-            float my = mbScroll.Position.Y;
-
-            // Scroll NPC list
-            if (mx >= NpcListX && mx < NpcListX + NpcListW && my >= NpcListY && my < NpcListY + NpcListH)
+            // Scroll NPC grid
+            if (mbScroll.Position.X >= NpcGridX && mbScroll.Position.X < NpcGridX + NpcGridW &&
+                mbScroll.Position.Y >= NpcGridY && mbScroll.Position.Y < NpcGridY + NpcGridH)
             {
-                int maxVisible = NpcListH / ItemRowH;
-                if (mbScroll.ButtonIndex == MouseButton.WheelDown)
-                    _npcScrollOffset = Math.Min(_npcScrollOffset + 1, Math.Max(0, _state.NpcShopCount - maxVisible));
-                else if (mbScroll.ButtonIndex == MouseButton.WheelUp)
-                    _npcScrollOffset = Math.Max(0, _npcScrollOffset - 1);
+                HandleScroll(mbScroll, ref _npcScrollRow, _state.NpcShopCount, NpcGridRows);
                 AcceptEvent();
                 return;
             }
 
-            // Scroll User list
-            if (mx >= UserListX && mx < UserListX + UserListW && my >= UserListY && my < UserListY + UserListH)
+            // Scroll User grid
+            if (mbScroll.Position.X >= UserGridX && mbScroll.Position.X < UserGridX + UserGridW &&
+                mbScroll.Position.Y >= UserGridY && mbScroll.Position.Y < UserGridY + UserGridH)
             {
-                int maxVisible = UserListH / ItemRowH;
-                if (mbScroll.ButtonIndex == MouseButton.WheelDown)
-                    _userScrollOffset = Math.Min(_userScrollOffset + 1, Math.Max(0, _userSlotCount - maxVisible));
-                else if (mbScroll.ButtonIndex == MouseButton.WheelUp)
-                    _userScrollOffset = Math.Max(0, _userScrollOffset - 1);
+                HandleScroll(mbScroll, ref _userScrollRow, _userSlotCount, UserGridRows);
                 AcceptEvent();
                 return;
             }
         }
     }
 
+    private static void HandleScroll(InputEventMouseButton mb, ref int scrollRow, int itemCount, int visibleRows)
+    {
+        int totalRows = (itemCount + GridCols - 1) / GridCols;
+        int maxScroll = Math.Max(0, totalRows - visibleRows);
+        if (mb.ButtonIndex == MouseButton.WheelDown)
+            scrollRow = Math.Min(scrollRow + 1, maxScroll);
+        else if (mb.ButtonIndex == MouseButton.WheelUp)
+            scrollRow = Math.Max(0, scrollRow - 1);
+    }
+
     private void OnBuyPressed()
     {
-        GD.Print($"[COMMERCE] Buy pressed: state={_state != null} tcp={_tcp != null} selNpc={_selectedNpcIdx} shopCount={_state?.NpcShopCount ?? 0}");
         if (_state == null || _tcp == null) return;
         if (_selectedNpcIdx < 0 || _selectedNpcIdx >= _state.NpcShopCount) return;
 
@@ -414,28 +433,21 @@ public partial class CommercePanel : Control
         if (qty <= 0) return;
 
         var item = _state.NpcShopItems[_selectedNpcIdx];
-
-        // Clamp to available stock
         if (qty > item.Amount && item.Amount > 0)
             qty = item.Amount;
 
         long totalCost = item.Price * qty;
-        GD.Print($"[COMMERCE] Buying: '{item.Name}' slot={item.Slot} qty={qty} unitPrice={item.Price} total={totalCost} gold={_state.Gold}");
-
         if (_state.Gold < totalCost)
         {
             _state.ChatMessages.Enqueue(new ChatMessage { Text = "No tienes suficiente oro.", Color = "FF0000" });
             return;
         }
 
-        // VB6: SendData "COMP," & slot & "," & qty
-        GD.Print($"[COMMERCE] Sending: COMP,{item.Slot},{qty}");
         _tcp.SendPacket(ClientPackets.WriteCommerceBuy((byte)item.Slot, (short)qty));
     }
 
     private void OnSellPressed()
     {
-        GD.Print($"[COMMERCE] Sell pressed: state={_state != null} tcp={_tcp != null} selUser={_selectedUserIdx} userSlotCount={_userSlotCount}");
         if (_state == null || _tcp == null) return;
         if (_selectedUserIdx < 0 || _selectedUserIdx >= _userSlotCount) return;
 
@@ -452,19 +464,14 @@ public partial class CommercePanel : Control
         if (qty <= 0) return;
         if (qty > inv.Amount) qty = inv.Amount;
 
-        // VB6: SendData "VEND," & (slot+1) & "," & qty (1-indexed)
-        GD.Print($"[COMMERCE] Sending: VEND,{slotIdx + 1},{qty}");
         _tcp.SendPacket(ClientPackets.WriteCommerceSell((byte)(slotIdx + 1), (short)qty));
     }
 
     private void OnSelectAllPressed()
     {
         if (_qtyInput == null) return;
-
         if (_selectedNpcIdx >= 0 && _selectedNpcIdx < (_state?.NpcShopCount ?? 0))
-        {
             _qtyInput.Text = _state!.NpcShopItems[_selectedNpcIdx].Amount.ToString();
-        }
         else if (_selectedUserIdx >= 0 && _selectedUserIdx < _userSlotCount)
         {
             int slotIdx = _userSlots[_selectedUserIdx];

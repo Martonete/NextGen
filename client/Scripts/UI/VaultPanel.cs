@@ -9,69 +9,70 @@ namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmNuevoBancoObj — Item vault (bóveda) panel.
-/// VB6 ScaleWidth=450, ScaleHeight=527.
-/// Two item lists: vault items (left, List1[0]) and player inventory (right, List1[1]).
-/// Buttons: Retirar, Depositar, Retirar Oro, Depositar Oro, Salir.
-/// Quantity input, gold displays, item preview icon.
+/// Two icon grids (vault items / player inventory) with withdraw/deposit buttons,
+/// quantity input, gold displays, and item preview.
 /// </summary>
 public partial class VaultPanel : Control
 {
-    // VB6 form dimensions (ScaleMode=3 Pixel): 450×527
+    // Panel dimensions
     private const int PanelW = 450;
     private const int PanelH = 527;
 
-    // VB6 List positions (twips÷15):
-    // List1(0) vault: Left=540/15=36, Top=1600/15=107, Width=2715/15=181, Height=3735/15=249
-    // List1(1) inventory: Left=3495/15=233, Top=1600/15=107, Width=2730/15=182, Height=3735/15=249
-    private const int VaultListX = 36, VaultListY = 107;
-    private const int VaultListW = 181, VaultListH = 249;
-    private const int InvListX = 233, InvListY = 107;
-    private const int InvListW = 182, InvListH = 249;
+    // Grid layout — 5 columns, 34×34 cells
+    private const int GridCols = 5;
+    private const int CellSize = 34;
 
-    // Item preview picture: Left=555/15=37, Top=600/15=40, Width/Height=510/15=34
-    private const int PreviewX = 37, PreviewY = 40, PreviewSize = 34;
+    // Vault grid area (left side)
+    private const int VaultGridX = 14, VaultGridY = 120;
+    private const int VaultGridW = GridCols * CellSize; // 170
+    private const int VaultGridRows = 7;
+    private const int VaultGridH = VaultGridRows * CellSize; // 238
 
-    // Quantity input: Left=2940/15=196, Top=5745/15=383, Width=915/15=61, Height=225/15=15
-    private const int QtyX = 196, QtyY = 383, QtyW = 61, QtyH = 15;
+    // User grid area (right side)
+    private const int UserGridX = 243, UserGridY = 120;
+    private const int UserGridW = GridCols * CellSize;
+    private const int UserGridRows = 7;
+    private const int UserGridH = UserGridRows * CellSize;
 
-    // Gold displays:
-    // OroBove: Left=2925/15=195, Top=6330/15=422, Width=1785/15=119
-    // MiOro: Left=2925/15=195, Top=6690/15=446, Width=1785/15=119
+    // Item preview area
+    private const int PreviewIconX = 19, PreviewIconY = 50;
+    private const int PreviewNameX = 62, PreviewNameY = 48;
+    private const int AmountLabelX = 62, AmountLabelY = 64;
+
+    // Buttons
+    private const int RetirarBtnX = 14, RetirarBtnY = 370, BtnW = 170, BtnH = 23;
+    private const int DepositarBtnX = 243, DepositarBtnY = 370;
+    private const int QtyInputX = 78, QtyInputY = 400, QtyInputW = 66, QtyInputH = 15;
+
+    // Gold displays
     private const int GoldDisplayX = 195, GoldDisplayW = 119;
-    private const int VaultGoldY = 422, MyGoldY = 446;
+    private const int VaultGoldY = 432, MyGoldY = 456;
 
-    // Buttons (twips÷15):
-    // Retirar: Left=810/15=54, Top=5610/15=374, Width=1695/15=113, Height=375/15=25
-    // Depositar: Left=4230/15=282, Top=5610/15=374, Width=1695/15=113, Height=375/15=25
-    // RetirarOro: Left=4815/15=321, Top=6330/15=422, Width=1305/15=87, Height=225/15=15
-    // DepositarOro: Left=4815/15=321, Top=6690/15=446, Width=1305/15=87, Height=225/15=15
-    // Salir: Left=2640/15=176, Top=7215/15=481, Width=1470/15=98, Height=360/15=24
-    private const int ItemRowH = 16;
+    // Gold buttons
+    private const int RetirarOroX = 321, DepositarOroX = 321;
+    private const int GoldBtnW = 87, GoldBtnH = 15;
 
-    // VB6 colors
-    private static readonly Color ListBg = new(19f / 255f, 21f / 255f, 22f / 255f);
-    private static readonly Color ListFg = new(145f / 255f, 123f / 255f, 85f / 255f);
-    private static readonly Color GoldInputBg = new(19f / 255f, 21f / 255f, 22f / 255f);
-    private static readonly Color GoldInputFg = new(145f / 255f, 123f / 255f, 85f / 255f);
-
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-    private const int TitleBarH = 30;
+    // Salir
+    private const int SalirBtnX = 176, SalirBtnY = 490, SalirBtnW = 98, SalirBtnH = 24;
 
     private GameState? _state;
     private GameData? _data;
     private AoTcpClient? _tcp;
 
     // Selection state
-    private int _selectedVaultIdx = -1;  // index into BankItems
-    private int _selectedInvIdx = -1;    // index into filtered inventory
-    private int _vaultScrollOffset;
-    private int _invScrollOffset;
+    private int _selectedVaultIdx = -1;
+    private int _selectedInvIdx = -1;
+    private int _vaultScrollRow;
+    private int _invScrollRow;
 
-    // Filtered user inventory (non-empty, non-equipped)
+    // Filtered user inventory (non-empty slots)
     private int[] _userSlots = new int[25];
     private int _userSlotCount;
+
+    // Dragging
+    private bool _dragging;
+    private Vector2 _dragOffset;
+    private const int TitleBarH = 30;
 
     // UI controls
     private LineEdit? _qtyInput;
@@ -98,13 +99,13 @@ public partial class VaultPanel : Control
 
         // Quantity input
         _qtyInput = new LineEdit();
-        _qtyInput.Position = new Vector2(QtyX, QtyY);
-        _qtyInput.Size = new Vector2(QtyW, QtyH);
+        _qtyInput.Position = new Vector2(QtyInputX, QtyInputY);
+        _qtyInput.Size = new Vector2(QtyInputW, QtyInputH);
         _qtyInput.Text = "1";
         _qtyInput.Alignment = HorizontalAlignment.Center;
         _qtyInput.FocusMode = FocusModeEnum.Click;
-        _qtyInput.AddThemeColorOverride("font_color", GoldInputFg);
-        _qtyInput.AddThemeFontSizeOverride("font_size", 9);
+        _qtyInput.AddThemeColorOverride("font_color", Colors.White);
+        _qtyInput.AddThemeFontSizeOverride("font_size", 10);
         AddChild(_qtyInput);
 
         // Vault gold label
@@ -115,28 +116,28 @@ public partial class VaultPanel : Control
         _myGoldLabel = CreateLabel("0", GoldDisplayX, MyGoldY, GoldDisplayW, 15);
         AddChild(_myGoldLabel);
 
-        // Retirar (withdraw item from vault)
-        _retirarBtn = CreateButton("Retirar", 54, 374, 113, 25);
+        // Retirar (withdraw item)
+        _retirarBtn = CreateButton("Retirar", RetirarBtnX, RetirarBtnY, BtnW, BtnH);
         _retirarBtn.Pressed += OnRetirarPressed;
         AddChild(_retirarBtn);
 
-        // Depositar (deposit item to vault)
-        _depositarBtn = CreateButton("Depositar", 282, 374, 113, 25);
+        // Depositar (deposit item)
+        _depositarBtn = CreateButton("Depositar", DepositarBtnX, DepositarBtnY, BtnW, BtnH);
         _depositarBtn.Pressed += OnDepositarPressed;
         AddChild(_depositarBtn);
 
         // Retirar Oro
-        _retirarOroBtn = CreateButton("Retirar", 321, VaultGoldY, 87, 15);
+        _retirarOroBtn = CreateButton("Retirar", RetirarOroX, VaultGoldY, GoldBtnW, GoldBtnH);
         _retirarOroBtn.Pressed += OnRetirarOroPressed;
         AddChild(_retirarOroBtn);
 
         // Depositar Oro
-        _depositarOroBtn = CreateButton("Depositar", 321, MyGoldY, 87, 15);
+        _depositarOroBtn = CreateButton("Depositar", DepositarOroX, MyGoldY, GoldBtnW, GoldBtnH);
         _depositarOroBtn.Pressed += OnDepositarOroPressed;
         AddChild(_depositarOroBtn);
 
         // Salir
-        _salirBtn = CreateButton("Salir", 176, 481, 98, 24);
+        _salirBtn = CreateButton("Salir", SalirBtnX, SalirBtnY, SalirBtnW, SalirBtnH);
         _salirBtn.Pressed += OnSalirPressed;
         AddChild(_salirBtn);
     }
@@ -159,7 +160,7 @@ public partial class VaultPanel : Control
         lbl.Position = new Vector2(x, y);
         lbl.Size = new Vector2(w, h);
         lbl.HorizontalAlignment = HorizontalAlignment.Center;
-        lbl.AddThemeColorOverride("font_color", GoldInputFg);
+        lbl.AddThemeColorOverride("font_color", new Color(145f / 255f, 123f / 255f, 85f / 255f));
         lbl.AddThemeFontSizeOverride("font_size", 9);
         var boldFont = new SystemFont();
         boldFont.FontWeight = 700;
@@ -171,8 +172,8 @@ public partial class VaultPanel : Control
     {
         _selectedVaultIdx = -1;
         _selectedInvIdx = -1;
-        _vaultScrollOffset = 0;
-        _invScrollOffset = 0;
+        _vaultScrollRow = 0;
+        _invScrollRow = 0;
         _qtyInput!.Text = "1";
         Visible = true;
     }
@@ -217,58 +218,91 @@ public partial class VaultPanel : Control
         // Title
         font?.DrawText(this, PanelW / 2, 8, "Bóveda", new Color(1f, 0.85f, 0.4f), center: true);
 
-        // List headers
-        font?.DrawText(this, VaultListX + VaultListW / 2, VaultListY - 14, "Bóveda", Colors.White, center: true);
-        font?.DrawText(this, InvListX + InvListW / 2, InvListY - 14, "Inventario", Colors.White, center: true);
+        // Grid headers
+        font?.DrawText(this, VaultGridX + VaultGridW / 2, VaultGridY - 14, "Bóveda", Colors.White, center: true);
+        font?.DrawText(this, UserGridX + UserGridW / 2, UserGridY - 14, "Inventario", Colors.White, center: true);
 
-        // Vault list background
-        DrawRect(new Rect2(VaultListX, VaultListY, VaultListW, VaultListH), ListBg);
-        DrawRect(new Rect2(VaultListX, VaultListY, VaultListW, VaultListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        // Vault grid background
+        DrawRect(new Rect2(VaultGridX, VaultGridY, VaultGridW, VaultGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        DrawRect(new Rect2(VaultGridX, VaultGridY, VaultGridW, VaultGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
-        // Inventory list background
-        DrawRect(new Rect2(InvListX, InvListY, InvListW, InvListH), ListBg);
-        DrawRect(new Rect2(InvListX, InvListY, InvListW, InvListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        // User grid background
+        DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
-        // Draw vault items
-        int maxVaultVisible = VaultListH / ItemRowH;
-        for (int i = 0; i < maxVaultVisible && (i + _vaultScrollOffset) < _state.BankItemCount; i++)
+        // Draw vault items as icon grid
+        int vaultStartIdx = _vaultScrollRow * GridCols;
+        int maxVaultCells = VaultGridRows * GridCols;
+        for (int i = 0; i < maxVaultCells; i++)
         {
-            int idx = i + _vaultScrollOffset;
+            int idx = vaultStartIdx + i;
+            if (idx >= _state.BankItemCount) break;
+
             var item = _state.BankItems[idx];
             if (item.ObjIndex <= 0) continue;
 
-            int rowY = VaultListY + i * ItemRowH;
+            int col = i % GridCols;
+            int row = i / GridCols;
+            float cx = VaultGridX + col * CellSize;
+            float cy = VaultGridY + row * CellSize;
 
+            // Selection highlight
             if (idx == _selectedVaultIdx)
-                DrawRect(new Rect2(VaultListX + 1, rowY, VaultListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
+                DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
 
-            string displayName = item.Name.Length > 13 ? item.Name[..13] : item.Name;
-            font?.DrawText(this, VaultListX + 3, rowY + 1, $"{displayName} x{item.Amount}", ListFg);
+            // Item icon
+            if (item.GrhIndex > 0)
+                CharRenderer.DrawGrh(this, _data, item.GrhIndex, 0, new Vector2(cx + 1, cy));
+
+            // Amount overlay
+            if (item.Amount > 0 && font != null)
+                font.DrawText(this, (int)cx, (int)cy + 3, item.Amount.ToString(), Colors.White);
+
+            // Cell border
+            DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
         }
 
-        // Draw inventory items
-        int maxInvVisible = InvListH / ItemRowH;
-        for (int i = 0; i < maxInvVisible && (i + _invScrollOffset) < _userSlotCount; i++)
+        // Draw user items as icon grid
+        int userStartIdx = _invScrollRow * GridCols;
+        int maxUserCells = UserGridRows * GridCols;
+        for (int i = 0; i < maxUserCells; i++)
         {
-            int idx = i + _invScrollOffset;
+            int idx = userStartIdx + i;
+            if (idx >= _userSlotCount) break;
+
             int slotIdx = _userSlots[idx];
             var inv = _state.Inventory[slotIdx];
 
-            int rowY = InvListY + i * ItemRowH;
+            int col = i % GridCols;
+            int row = i / GridCols;
+            float cx = UserGridX + col * CellSize;
+            float cy = UserGridY + row * CellSize;
 
+            // Selection highlight
             if (idx == _selectedInvIdx)
-                DrawRect(new Rect2(InvListX + 1, rowY, InvListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
+                DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
 
-            string equip = inv.Equipped ? "(E)" : "";
-            string displayName = inv.Name.Length > 12 ? inv.Name[..12] : inv.Name;
-            font?.DrawText(this, InvListX + 3, rowY + 1, $"{displayName} x{inv.Amount}{equip}", ListFg);
+            // Item icon
+            if (inv.GrhIndex > 0)
+                CharRenderer.DrawGrh(this, _data, inv.GrhIndex, 0, new Vector2(cx + 1, cy));
+
+            // Amount overlay
+            if (inv.Amount > 0 && font != null)
+                font.DrawText(this, (int)cx, (int)cy + 3, inv.Amount.ToString(), Colors.White);
+
+            // Equipped marker
+            if (inv.Equipped && font != null)
+                font.DrawText(this, (int)cx + 23, (int)cy + 20, "E", new Color(1f, 1f, 0f));
+
+            // Cell border
+            DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
         }
 
-        // Item preview (selected from either list)
+        // Preview area
         DrawItemPreview(font);
 
         // Labels
-        font?.DrawText(this, 145, QtyY + 1, "Cant:", Colors.White);
+        font?.DrawText(this, 14, QtyInputY + 1, "Cant:", Colors.White);
         font?.DrawText(this, 140, VaultGoldY + 1, "Oro Bóveda:", Colors.White);
         font?.DrawText(this, 155, MyGoldY + 1, "Mi Oro:", Colors.White);
     }
@@ -279,12 +313,14 @@ public partial class VaultPanel : Control
 
         int grhIndex = 0;
         string name = "";
+        int amount = 0;
 
         if (_selectedVaultIdx >= 0 && _selectedVaultIdx < _state.BankItemCount)
         {
             var item = _state.BankItems[_selectedVaultIdx];
             grhIndex = item.GrhIndex;
             name = item.Name;
+            amount = item.Amount;
         }
         else if (_selectedInvIdx >= 0 && _selectedInvIdx < _userSlotCount)
         {
@@ -292,17 +328,31 @@ public partial class VaultPanel : Control
             var inv = _state.Inventory[slotIdx];
             grhIndex = inv.GrhIndex;
             name = inv.Name;
+            amount = inv.Amount;
         }
 
-        // Preview box
-        DrawRect(new Rect2(PreviewX, PreviewY, PreviewSize, PreviewSize), new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(PreviewX, PreviewY, PreviewSize, PreviewSize), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
+        if (string.IsNullOrEmpty(name)) return;
+
+        // Preview border
+        DrawRect(new Rect2(14, 38, PanelW - 28, 66), new Color(0.12f, 0.1f, 0.15f, 0.9f));
+        DrawRect(new Rect2(14, 38, PanelW - 28, 66), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
 
         if (grhIndex > 0)
-            CharRenderer.DrawGrh(this, _data, grhIndex, 0, new Vector2(PreviewX, PreviewY));
+            CharRenderer.DrawGrh(this, _data, grhIndex, 0, new Vector2(PreviewIconX, PreviewIconY));
 
-        if (!string.IsNullOrEmpty(name))
-            font?.DrawText(this, PreviewX + PreviewSize + 8, PreviewY + 10, name, new Color(1f, 0.9f, 0.5f));
+        font?.DrawText(this, PreviewNameX, PreviewNameY, name, new Color(1f, 0.9f, 0.5f));
+        font?.DrawText(this, AmountLabelX, AmountLabelY, $"x{amount}", Colors.White);
+    }
+
+    private int HitTestGrid(Vector2 pos, int gridX, int gridY, int gridW, int gridH, int scrollRow, int itemCount)
+    {
+        float lx = pos.X - gridX;
+        float ly = pos.Y - gridY;
+        if (lx < 0 || ly < 0 || lx >= gridW || ly >= gridH) return -1;
+        int col = (int)(lx / CellSize);
+        int row = (int)(ly / CellSize);
+        int idx = (scrollRow + row) * GridCols + col;
+        return idx < itemCount ? idx : -1;
     }
 
     public override void _GuiInput(InputEvent @event)
@@ -334,33 +384,22 @@ public partial class VaultPanel : Control
 
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
-            float mx = mb.Position.X;
-            float my = mb.Position.Y;
-
-            // Click in vault list
-            if (mx >= VaultListX && mx < VaultListX + VaultListW && my >= VaultListY && my < VaultListY + VaultListH)
+            // Click in vault grid
+            int vaultIdx = HitTestGrid(mb.Position, VaultGridX, VaultGridY, VaultGridW, VaultGridH, _vaultScrollRow, _state.BankItemCount);
+            if (vaultIdx >= 0)
             {
-                int row = (int)(my - VaultListY) / ItemRowH;
-                int idx = row + _vaultScrollOffset;
-                if (idx >= 0 && idx < _state.BankItemCount)
-                {
-                    _selectedVaultIdx = idx;
-                    _selectedInvIdx = -1;
-                }
+                _selectedVaultIdx = vaultIdx;
+                _selectedInvIdx = -1;
                 AcceptEvent();
                 return;
             }
 
-            // Click in inventory list
-            if (mx >= InvListX && mx < InvListX + InvListW && my >= InvListY && my < InvListY + InvListH)
+            // Click in user grid
+            int userIdx = HitTestGrid(mb.Position, UserGridX, UserGridY, UserGridW, UserGridH, _invScrollRow, _userSlotCount);
+            if (userIdx >= 0)
             {
-                int row = (int)(my - InvListY) / ItemRowH;
-                int idx = row + _invScrollOffset;
-                if (idx >= 0 && idx < _userSlotCount)
-                {
-                    _selectedInvIdx = idx;
-                    _selectedVaultIdx = -1;
-                }
+                _selectedInvIdx = userIdx;
+                _selectedVaultIdx = -1;
                 AcceptEvent();
                 return;
             }
@@ -369,38 +408,38 @@ public partial class VaultPanel : Control
         }
         else if (@event is InputEventMouseButton mbScroll)
         {
-            float mx = mbScroll.Position.X;
-            float my = mbScroll.Position.Y;
-
-            // Scroll vault list
-            if (mx >= VaultListX && mx < VaultListX + VaultListW && my >= VaultListY && my < VaultListY + VaultListH)
+            // Scroll vault grid
+            if (mbScroll.Position.X >= VaultGridX && mbScroll.Position.X < VaultGridX + VaultGridW &&
+                mbScroll.Position.Y >= VaultGridY && mbScroll.Position.Y < VaultGridY + VaultGridH)
             {
-                int maxVisible = VaultListH / ItemRowH;
-                if (mbScroll.ButtonIndex == MouseButton.WheelDown)
-                    _vaultScrollOffset = Math.Min(_vaultScrollOffset + 1, Math.Max(0, _state.BankItemCount - maxVisible));
-                else if (mbScroll.ButtonIndex == MouseButton.WheelUp)
-                    _vaultScrollOffset = Math.Max(0, _vaultScrollOffset - 1);
+                HandleScroll(mbScroll, ref _vaultScrollRow, _state.BankItemCount, VaultGridRows);
                 AcceptEvent();
                 return;
             }
 
-            // Scroll inventory list
-            if (mx >= InvListX && mx < InvListX + InvListW && my >= InvListY && my < InvListY + InvListH)
+            // Scroll user grid
+            if (mbScroll.Position.X >= UserGridX && mbScroll.Position.X < UserGridX + UserGridW &&
+                mbScroll.Position.Y >= UserGridY && mbScroll.Position.Y < UserGridY + UserGridH)
             {
-                int maxVisible = InvListH / ItemRowH;
-                if (mbScroll.ButtonIndex == MouseButton.WheelDown)
-                    _invScrollOffset = Math.Min(_invScrollOffset + 1, Math.Max(0, _userSlotCount - maxVisible));
-                else if (mbScroll.ButtonIndex == MouseButton.WheelUp)
-                    _invScrollOffset = Math.Max(0, _invScrollOffset - 1);
+                HandleScroll(mbScroll, ref _invScrollRow, _userSlotCount, UserGridRows);
                 AcceptEvent();
                 return;
             }
         }
     }
 
+    private static void HandleScroll(InputEventMouseButton mb, ref int scrollRow, int itemCount, int visibleRows)
+    {
+        int totalRows = (itemCount + GridCols - 1) / GridCols;
+        int maxScroll = Math.Max(0, totalRows - visibleRows);
+        if (mb.ButtonIndex == MouseButton.WheelDown)
+            scrollRow = Math.Min(scrollRow + 1, maxScroll);
+        else if (mb.ButtonIndex == MouseButton.WheelUp)
+            scrollRow = Math.Max(0, scrollRow - 1);
+    }
+
     private void OnRetirarPressed()
     {
-        // Withdraw item from vault to inventory
         if (_state == null || _tcp == null) return;
         if (_selectedVaultIdx < 0 || _selectedVaultIdx >= _state.BankItemCount) return;
 
@@ -411,13 +450,11 @@ public partial class VaultPanel : Control
         if (qty <= 0) return;
         if (qty > item.Amount) qty = item.Amount;
 
-        // VB6: SendData("RETI," & slot & "," & cantidad)
         _tcp.SendPacket(ClientPackets.WriteBankWithdraw((byte)item.Slot, (short)qty));
     }
 
     private void OnDepositarPressed()
     {
-        // Deposit item from inventory to vault
         if (_state == null || _tcp == null) return;
         if (_selectedInvIdx < 0 || _selectedInvIdx >= _userSlotCount) return;
 
@@ -438,7 +475,6 @@ public partial class VaultPanel : Control
         if (qty <= 0) return;
         if (qty > inv.Amount) qty = inv.Amount;
 
-        // VB6: SendData("DEPO," & (slot+1) & "," & cantidad)
         _tcp.SendPacket(ClientPackets.WriteBankDeposit((byte)(slotIdx + 1), (short)qty));
     }
 
@@ -454,7 +490,6 @@ public partial class VaultPanel : Control
 
     private void OnSalirPressed()
     {
-        // VB6: SendData("FINBAN") then Unload Me
         _tcp?.SendPacket(ClientPackets.WriteBankClose());
     }
 
@@ -533,15 +568,9 @@ public partial class VaultPanel : Control
         }
 
         if (_isDepositing)
-        {
-            // VB6: SendData("CCDO" & cantidad) — but this is guild bank
-            // Personal bank uses /DEPOSITAR via chat command
             _tcp.SendPacket(ClientPackets.WriteTalk($"/DEPOSITAR {amount}"));
-        }
         else
-        {
             _tcp.SendPacket(ClientPackets.WriteTalk($"/RETIRAR {amount}"));
-        }
 
         HideGoldInputDialog();
     }
