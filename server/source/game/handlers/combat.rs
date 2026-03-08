@@ -957,6 +957,19 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     };
     let (map, x, y, char_index, victim_name, victim_level) = user_data;
 
+    // Cancel active trade on death (VB6: FinComerciarUsu)
+    let trade_partner = state.users.get(&conn_id).and_then(|u| {
+        if u.trading { u.trade_partner } else { None }
+    });
+    if let Some(partner) = trade_partner {
+        super::commerce::cancel_trade(state, conn_id, partner).await;
+    }
+
+    // Cancel NPC commerce on death
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.comerciando = false;
+    }
+
     // VB6: "¡Aaaahhhh!" floating text in red (vbRed=255) above dying character
     state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Aaaahhhh!", char_index.0 as i16, 255).await;
 

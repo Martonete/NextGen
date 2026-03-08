@@ -762,6 +762,22 @@ impl GameState {
 
     /// Remove a connection and clean up world state.
     pub fn remove_connection(&mut self, conn_id: ConnectionId) {
+        // Cancel active trade before removing user (VB6: FinComerciarUsu on disconnect)
+        let trade_partner = self.users.get(&conn_id).and_then(|u| {
+            if u.trading { u.trade_partner } else { None }
+        });
+        if let Some(partner) = trade_partner {
+            // Clear partner's trade state
+            if let Some(p) = self.users.get_mut(&partner) {
+                p.trading = false;
+                p.trade_partner = None;
+                p.trade_offered = false;
+                p.trade_accepted = false;
+                p.trade_gold = 0;
+                p.trade_items.clear();
+            }
+        }
+
         if let Some(user) = self.users.remove(&conn_id) {
             // Decrement IP connection count (SecurityIp.bas)
             if let Some(count) = self.ip_connection_count.get_mut(&user.ip) {
