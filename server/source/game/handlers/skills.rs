@@ -1447,33 +1447,57 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
-    // Check arrows equipped
-    let municion_obj_idx = if municion_slot > 0 && municion_slot <= MAX_INVENTORY_SLOTS {
-        state.users.get(&conn_id).map(|u| u.inventory[municion_slot - 1].obj_index).unwrap_or(0)
-    } else {
-        0
-    };
-    let municion_amount = if municion_slot > 0 && municion_slot <= MAX_INVENTORY_SLOTS {
-        state.users.get(&conn_id).map(|u| u.inventory[municion_slot - 1].amount).unwrap_or(0)
-    } else {
-        0
-    };
-
-    let is_arrow = municion_obj_idx > 0 && state.get_object(municion_obj_idx)
-        .map(|o| o.obj_type == crate::data::objects::ObjType::Arrow)
+    // VB6: Check if weapon requires ammo (Municion=1) or is a throwing weapon (Municion=0)
+    let weapon_needs_ammo = state.get_object(weapon_obj_idx)
+        .map(|o| o.municion > 0)
         .unwrap_or(false);
 
-    if !is_arrow || municion_amount < 1 {
-        state.send_msg_id(conn_id, 246, "").await;
-        // Unequip ammo slot
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.equip.municion = 0;
+    // Determine the projectile source: ammo slot (bow+arrow) or weapon slot (throwing weapon)
+    let (consume_slot, projectile_obj_idx, projectile_amount);
+
+    if weapon_needs_ammo {
+        // Bow + arrows: consume from ammo slot
+        let municion_obj_idx = if municion_slot > 0 && municion_slot <= MAX_INVENTORY_SLOTS {
+            state.users.get(&conn_id).map(|u| u.inventory[municion_slot - 1].obj_index).unwrap_or(0)
+        } else {
+            0
+        };
+        let municion_amount = if municion_slot > 0 && municion_slot <= MAX_INVENTORY_SLOTS {
+            state.users.get(&conn_id).map(|u| u.inventory[municion_slot - 1].amount).unwrap_or(0)
+        } else {
+            0
+        };
+        let is_arrow = municion_obj_idx > 0 && state.get_object(municion_obj_idx)
+            .map(|o| o.obj_type == crate::data::objects::ObjType::Arrow)
+            .unwrap_or(false);
+        if !is_arrow || municion_amount < 1 {
+            state.send_console(conn_id, "No tienes municiones equipadas.", font_index::INFO).await;
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.equip.municion = 0;
+            }
+            return;
         }
-        return;
+        consume_slot = municion_slot;
+        projectile_obj_idx = municion_obj_idx;
+        projectile_amount = municion_amount;
+    } else {
+        // Throwing weapon: consume the weapon itself
+        let wp_amount = if weapon_slot > 0 && weapon_slot <= MAX_INVENTORY_SLOTS {
+            state.users.get(&conn_id).map(|u| u.inventory[weapon_slot - 1].amount).unwrap_or(0)
+        } else {
+            0
+        };
+        if wp_amount < 1 {
+            state.send_console(conn_id, "No tienes municiones.", font_index::INFO).await;
+            return;
+        }
+        consume_slot = weapon_slot;
+        projectile_obj_idx = weapon_obj_idx;
+        projectile_amount = wp_amount;
     }
 
-    // Get arrow properties (damage + poison flag)
-    let (arrow_min_hit, arrow_max_hit, arrow_envenena) = state.get_object(municion_obj_idx)
+    // Get projectile properties (damage + poison flag)
+    let (arrow_min_hit, arrow_max_hit, arrow_envenena) = state.get_object(projectile_obj_idx)
         .map(|o| (o.min_hit, o.max_hit, o.envenena))
         .unwrap_or((0, 0, false));
 
@@ -1488,21 +1512,26 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
     }
     send_stats_sta(state, conn_id).await;
 
-    // Consume 1 arrow
+    // Consume 1 projectile
     if let Some(user) = state.users.get_mut(&conn_id) {
-        if municion_slot > 0 && municion_slot <= MAX_INVENTORY_SLOTS {
-            user.inventory[municion_slot - 1].amount -= 1;
-            if user.inventory[municion_slot - 1].amount <= 0 {
-                user.inventory[municion_slot - 1] = InventorySlot::default();
-                user.equip.municion = 0;
+        if consume_slot > 0 && consume_slot <= MAX_INVENTORY_SLOTS {
+            user.inventory[consume_slot - 1].amount -= 1;
+            if user.inventory[consume_slot - 1].amount <= 0 {
+                user.inventory[consume_slot - 1] = InventorySlot::default();
+                if weapon_needs_ammo {
+                    user.equip.municion = 0;
+                } else {
+                    user.equip.weapon = 0;
+                    user.weapon_anim = super::common::NINGUN_ARMA;
+                }
             }
         }
     }
     // Update inventory slot
-    send_inventory_slot(state, conn_id, municion_slot).await;
+    send_inventory_slot(state, conn_id, consume_slot).await;
 
-    // Get arrow GRH for visual
-    let arrow_grh = state.get_object(municion_obj_idx).map(|o| o.grh_index).unwrap_or(0);
+    // Get projectile GRH for visual
+    let arrow_grh = state.get_object(projectile_obj_idx).map(|o| o.grh_index).unwrap_or(0);
 
     // Find target (NPC or user on clicked tile)
     let target_npc = state.world.grid(map)

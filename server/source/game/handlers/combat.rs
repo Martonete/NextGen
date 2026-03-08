@@ -454,6 +454,21 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
     }
 
+    // VB6: If equipped weapon is ranged, block melee attack — "No puedes usar así este arma."
+    {
+        let weapon_slot = state.users.get(&conn_id).map(|u| u.equip.weapon).unwrap_or(0);
+        if weapon_slot > 0 && weapon_slot <= MAX_INVENTORY_SLOTS {
+            let weapon_obj = state.users.get(&conn_id)
+                .map(|u| u.inventory[weapon_slot - 1].obj_index).unwrap_or(0);
+            if weapon_obj > 0 {
+                if state.get_object(weapon_obj).map(|o| o.proyectil).unwrap_or(false) {
+                    state.send_console(conn_id, "No puedes usar así este arma.", font_index::INFO).await;
+                    return;
+                }
+            }
+        }
+    }
+
     // Anti-cheat: check melee cooldown
     if !puede_pegar(state, conn_id) {
         return;

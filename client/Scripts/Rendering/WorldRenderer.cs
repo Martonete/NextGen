@@ -690,14 +690,17 @@ void fragment() {
     }
 
     /// <summary>
-    /// VB6 HayAgua(): checks if a tile is water (Layer1 GRH 1505-1520 and Layer2 == 0).
+    /// VB6 HayAgua(): checks if a tile is water (3 graphic ranges and Layer2 == 0).
     /// </summary>
     public static bool IsWater(MapData? mapData, int x, int y)
     {
         if (mapData == null || x < 1 || x > 100 || y < 1 || y > 100) return false;
         ref var tile = ref mapData.Tiles[x, y];
-        int grh = tile.Layer1;
-        return grh >= 1505 && grh <= 1520 && tile.Layer2 <= 0;
+        int g = tile.Layer1;
+        bool isWater = (g >= 1505 && g <= 1520)
+            || (g >= 5665 && g <= 5680)
+            || (g >= 13547 && g <= 13562);
+        return isWater && tile.Layer2 <= 0;
     }
 
     /// <summary>

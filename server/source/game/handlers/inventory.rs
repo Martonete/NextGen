@@ -15,6 +15,7 @@ use super::{
     iniciar_comercio_npc, iniciar_banco, iniciar_boveda_clan,
     DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
 };
+use super::skills::skill_id;
 
 // =====================================================================
 // Inventory handlers
@@ -455,9 +456,25 @@ pub(super) async fn handle_use_item_click(state: &mut GameState, conn_id: Connec
         _ => return,
     };
 
-    // Projectile items do nothing on use
+    // VB6: Using a projectile weapon sends WorkRequestTarget(Proyectiles) to enter target mode
     let is_projectile = state.get_object(obj_index).map(|o| o.proyectil).unwrap_or(false);
-    if is_projectile { return; }
+    if is_projectile {
+        let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
+        if is_dead {
+            state.send_msg_id(conn_id, 5, "").await;
+            return;
+        }
+        let is_equipped = state.users.get(&conn_id)
+            .map(|u| u.inventory[idx].equipped).unwrap_or(false);
+        if !is_equipped {
+            state.send_console(conn_id, "Antes de usar la herramienta deberías equipártela.", font_index::INFO).await;
+            return;
+        }
+        // VB6: WriteMultiMessage(UserIndex, eMessages.WorkRequestTarget, eSkill.Proyectiles)
+        let pkt = binary_packets::write_work_request_target(skill_id::PROYECTILES as u8);
+        state.send_bytes(conn_id, &pkt).await;
+        return;
+    }
 
     // Anti-cheat: PuedoClickear — checks interval_click AND sets both
     // interval_click=6 and interval_poteo=8 (cross-locking, matches VB6)
@@ -1123,6 +1140,26 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
             }
+        }
+        ObjType::Weapon => {
+            // VB6: Case otWeapon — projectile weapons trigger target selection
+            if obj_data.proyectil {
+                let is_equipped = state.users.get(&conn_id)
+                    .map(|u| u.inventory[idx].equipped).unwrap_or(false);
+                if !is_equipped {
+                    state.send_console(conn_id, "Antes de usar la herramienta deberías equipártela.", font_index::INFO).await;
+                    return;
+                }
+                let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
+                if sta <= 0 {
+                    state.send_msg_id(conn_id, 17, "").await; // Too tired
+                    return;
+                }
+                // VB6: WriteMultiMessage(UserIndex, eMessages.WorkRequestTarget, eSkill.Proyectiles)
+                let pkt = binary_packets::write_work_request_target(skill_id::PROYECTILES as u8);
+                state.send_bytes(conn_id, &pkt).await;
+            }
+            // Non-projectile weapons: no action on "use" (VB6 handles fogata etc. but that's separate)
         }
         _ => {
             // Unhandled item types — inform user

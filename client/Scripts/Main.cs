@@ -369,12 +369,12 @@ public partial class Main : Control
         _invEquImage.MouseFilter = Control.MouseFilterEnum.Ignore;
         _gameUI.AddChild(_invEquImage);
 
-        // Tab buttons — invisible flat (VB6 visuals are in Principal.jpg)
-        _invTabButton = CreateInvisibleButton(536, 120, 131, 29);
+        // Tab buttons — invisible flat (TSAO text: Inventario Y=134-139 X=585-641, Hechizos X=706-734)
+        _invTabButton = CreateInvisibleButton(570, 125, 110, 30);
         _gameUI.AddChild(_invTabButton);
         _invTabButton.Pressed += OnInventoryTabPressed;
 
-        _spellTabButton = CreateInvisibleButton(672, 120, 125, 30);
+        _spellTabButton = CreateInvisibleButton(680, 125, 100, 30);
         _gameUI.AddChild(_spellTabButton);
         _spellTabButton.Pressed += OnSpellTabPressed;
 
@@ -423,14 +423,14 @@ public partial class Main : Control
         _spellPanel.Visible = false;
         _gameUI.AddChild(_spellPanel);
 
-        // LANZAR button — VB6: CmdLanzar at (536,327,142,40) — invisible, visual in background
-        _lanzarButton = CreateInvisibleButton(536, 327, 142, 40);
+        // LANZAR button — TSAO Principal.jpg ornament at Y≈365-395, X=565-679
+        _lanzarButton = CreateInvisibleButton(565, 365, 115, 30);
         _lanzarButton.Visible = false;
         _gameUI.AddChild(_lanzarButton);
         _lanzarButton.Pressed += OnLanzarPressed;
 
-        // INFO button — VB6: cmdInfo at (720,336,57,27) — invisible
-        _infoButton = CreateInvisibleButton(720, 336, 57, 27);
+        // INFO button — TSAO Principal.jpg ornament at Y≈365-395, X=680-779
+        _infoButton = CreateInvisibleButton(680, 365, 100, 30);
         _infoButton.Visible = false;
         _gameUI.AddChild(_infoButton);
         _infoButton.Pressed += () => _spellPanel.InfoSelected();
@@ -446,22 +446,23 @@ public partial class Main : Control
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
-        // === Bottom bar stat labels (VB6: inherited form font Tahoma 8.25 Bold) ===
-        _armaLabel = CreateStatLabel(112, 557, 57, 13, Colors.White, 10);
-        _gameUI.AddChild(_armaLabel);
-
-        _defMagLabel = CreateStatLabel(200, 557, 57, 13, Colors.White, 10);
-        _gameUI.AddChild(_defMagLabel);
-
-        _defensaLabel = CreateStatLabel(284, 557, 57, 13, Colors.White, 10);
+        // === Bottom bar equipment labels — TSAO Principal.jpg 4 dark slots ===
+        // Slots measured: X=82-128, 200-246, 348-395, 467-515 (Y≈560-579)
+        _defensaLabel = CreateStatLabel(78, 569, 50, 11, Colors.White, 8);
         _gameUI.AddChild(_defensaLabel);
 
-        // Fuerza: VB6 ForeColor &H0000FF00& = RGB(0,255,0) Green
-        _fuerzaLabel = CreateStatLabel(384, 557, 33, 17, new Color(0, 1, 0), 10);
+        _defMagLabel = CreateStatLabel(196, 569, 50, 11, Colors.White, 8);
+        _gameUI.AddChild(_defMagLabel);
+
+        _armaLabel = CreateStatLabel(342, 569, 53, 11, Colors.White, 8);
+        _gameUI.AddChild(_armaLabel);
+
+        // Fuerza: VB6 lblStrg at (648, 415) — right panel near compass, green
+        _fuerzaLabel = CreateStatLabel(648, 415, 14, 14, new Color(0, 1, 0), 9);
         _gameUI.AddChild(_fuerzaLabel);
 
-        // Agilidad: VB6 ForeColor &H0000FFFF& = RGB(255,255,0) Yellow
-        _agilidadLabel = CreateStatLabel(447, 557, 33, 17, new Color(1f, 1f, 0f), 10);
+        // Agilidad: VB6 lblDext at (608, 415) — right panel near compass, yellow
+        _agilidadLabel = CreateStatLabel(608, 415, 14, 14, new Color(1f, 1f, 0f), 9);
         _gameUI.AddChild(_agilidadLabel);
 
         // Reputation: VB6 Cambria 8.25 Normal (Weight=400, NOT bold), White
