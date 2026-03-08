@@ -270,8 +270,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         }
     }
 
-    // Determine if spell is offensive
-    let is_offensive = spell.sube_hp == 2 || spell.paraliza || spell.inmoviliza
+    // Determine if spell is offensive (VB6: PuedeAtacar check)
+    let is_offensive = spell.sube_hp == 2 || spell.sube_ham == 2 || spell.sube_sed == 2
+        || spell.paraliza || spell.inmoviliza
         || spell.envenena || spell.maldicion;
 
     // ===== STEP 4: Safe zone check for offensive spells (VB6: PuedeAtacar) =====
