@@ -168,10 +168,6 @@ public partial class OptionsPanel : PanelContainer
         _renderTabBtn.Pressed += () => SetTab(2);
         tabRow.AddChild(_renderTabBtn);
 
-        _clanTabBtn = MakeTabButton("Clanes");
-        _clanTabBtn.Pressed += () => SetTab(3);
-        tabRow.AddChild(_clanTabBtn);
-
         root.AddChild(tabRow);
         root.AddChild(Spacer(4));
 
@@ -193,12 +189,9 @@ public partial class OptionsPanel : PanelContainer
         _gameTab = BuildGameTab();
         _controlsTab = BuildControlsTab();
         _renderTab = BuildRenderTab();
-        _clanTab = BuildClanTab();
-
         tabHost.AddChild(_gameTab);
         tabHost.AddChild(_controlsTab);
         tabHost.AddChild(_renderTab);
-        tabHost.AddChild(_clanTab);
 
         scroll.AddChild(tabHost);
         root.AddChild(scroll);
@@ -508,7 +501,6 @@ public partial class OptionsPanel : PanelContainer
 
         _state.OptionsPanelOpen = true;
         Visible = true;
-        _clanTabRequested = false; // allow re-request when switching to clan tab
         SetTab(0);
     }
 
@@ -557,7 +549,6 @@ public partial class OptionsPanel : PanelContainer
         if (_gameTab != null) _gameTab.Visible = idx == 0;
         if (_controlsTab != null) _controlsTab.Visible = idx == 1;
         if (_renderTab != null) _renderTab.Visible = idx == 2;
-        if (_clanTab != null) _clanTab.Visible = idx == 3;
 
         // Highlight active tab button
         var activeColor = new Color(1f, 0.85f, 0.4f);
@@ -565,14 +556,6 @@ public partial class OptionsPanel : PanelContainer
         if (_gameTabBtn != null) _gameTabBtn.Modulate = idx == 0 ? activeColor : inactiveColor;
         if (_controlsTabBtn != null) _controlsTabBtn.Modulate = idx == 1 ? activeColor : inactiveColor;
         if (_renderTabBtn != null) _renderTabBtn.Modulate = idx == 2 ? activeColor : inactiveColor;
-        if (_clanTabBtn != null) _clanTabBtn.Modulate = idx == 3 ? activeColor : inactiveColor;
-
-        // When switching to clan tab, request guild info from server
-        if (idx == 3 && _tcp != null && !_clanTabRequested)
-        {
-            _clanTabRequested = true;
-            _tcp.SendPacket(ClientPackets.WriteGuildInfo());
-        }
     }
 
     // ── Config ↔ Controls sync ────────────────────────────

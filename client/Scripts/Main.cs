@@ -495,10 +495,10 @@ public partial class Main : Control
         dotInner.MouseFilter = Control.MouseFilterEnum.Ignore;
         _minimapDot.AddChild(dotInner);
 
-        // Menu General button — VB6: imgMenuGral at (616, 372, 105, 30)
-        var menuGralButton = CreateInvisibleButton(616, 372, 105, 30);
-        _gameUI.AddChild(menuGralButton);
-        menuGralButton.Pressed += () =>
+        // VB6 sidebar buttons: imgOpciones at (681, 485, 95, 22), imgClanes at (683, 532, 92, 26)
+        var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
+        _gameUI.AddChild(opcionesButton);
+        opcionesButton.Pressed += () =>
         {
             if (_optionsPanel != null)
             {
@@ -508,6 +508,10 @@ public partial class Main : Control
                     _optionsPanel.Open();
             }
         };
+
+        var clanesButton = CreateInvisibleButton(683, 532, 92, 26);
+        _gameUI.AddChild(clanesButton);
+        clanesButton.Pressed += OnClanesButtonPressed;
 
         // Minimize button — VB6: Image5 at (768, 0, 19, 17)
         var minimizeButton = CreateInvisibleButton(768, 0, 19, 17);
@@ -1495,6 +1499,12 @@ public partial class Main : Control
         HideEscapeMenu();
         _tcp?.SendPacket(ClientPackets.WriteTalk("/salir"));
         HandleDisconnect("");
+    }
+
+    private void OnClanesButtonPressed()
+    {
+        // VB6 imgClanes_Click: sends WriteRequestGuildLeaderInfo
+        _tcp?.SendPacket(ClientPackets.WriteGuildInfo());
     }
 
     /// <summary>
@@ -2535,14 +2545,12 @@ public partial class Main : Control
                 _travelPanel?.OpenTravel();
             }
 
-            // Guild panels — update clan tab in options panel
+            // Guild panel — open standalone clan panel
             if (_state.ShowGuildPanel)
             {
                 _state.ShowGuildPanel = false;
-                _optionsPanel?.UpdateClanContent();
-                // Also open options on Clanes tab if not already visible
-                if (_optionsPanel != null && !_state.OptionsPanelOpen)
-                    _optionsPanel.OpenClanTab();
+                string viewType = string.IsNullOrEmpty(_state.GuildInfoType) ? "List" : _state.GuildInfoType;
+                _guildPanel?.ShowView(viewType);
             }
             if (_state.ShowGuildFoundation)
             {

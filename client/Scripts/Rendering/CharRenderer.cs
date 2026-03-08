@@ -1032,7 +1032,10 @@ public static class CharRenderer
 
         int fontSize = font.CharHeight;
 
-        int baseY = (int)(pos.Y + headOffset.Y) - ((numLines - 1) * 3);
+        // VB6: Y = PixelOffsetY + HeadOffset.Y + OFFSET_HEAD - (numLines * 3)
+        // OFFSET_HEAD = -34 ("34 pixels of head GRH that overlap with body")
+        const int OffsetHead = -34;
+        int baseY = (int)(pos.Y + headOffset.Y) + OffsetHead - ((numLines - 1) * 3);
         if (ch.DialogRiseCounter > 0)
             baseY += (int)(ch.DialogRiseCounter / 1.2f);
 
