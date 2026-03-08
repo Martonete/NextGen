@@ -1,11 +1,12 @@
-//! Commerce handlers: NPC buy/sell, user-to-user trading, personal bank.
+//! Commerce handlers: NPC buy/sell, user-to-user trading, personal bank, guild bank.
 //! Extracted from mod.rs to reduce file size.
 
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, InventorySlot, MAX_BANK_SLOTS};
-use crate::protocol::{fields::read_field, binary_packets};
+use crate::protocol::{fields::read_field, binary_packets, font_index};
 use crate::data::objects::ObjType;
+use crate::db::guilds as db_guilds;
 use super::common::*;
 use super::{send_inventory_slot, send_full_inventory};
 
@@ -995,5 +996,352 @@ pub(super) async fn handle_bank_close(state: &mut GameState, conn_id: Connection
     }
     let pkt = binary_packets::write_bank_end();
     state.send_bytes(conn_id, &pkt).await;
+}
+
+// ── Guild Bank ──────────────────────────────────────────────────────────────
+
+const MAX_GUILD_BANK_SLOTS: usize = 40;
+const MAX_GUILD_BANK_STACK: i32 = 999;
+const MAX_GUILD_BANK_GOLD: i64 = 999_999_999;
+
+/// Open guild bank — triggered by NpcType::BoveClan interaction.
+/// VB6: BIniciarDeposito — loads bank from file, sends INITCBANK with permissions.
+pub(super) async fn iniciar_boveda_clan(state: &mut GameState, conn_id: ConnectionId) {
+    let (guild_name, char_name, dead, guild_index) = match state.users.get(&conn_id) {
+        Some(u) => (u.guild_name.clone(), u.char_name.clone(), u.dead, u.guild_index),
+        None => return,
+    };
+
+    if dead {
+        state.send_console(conn_id, "Estás muerto.", font_index::INFO).await;
+        return;
+    }
+    if guild_index <= 0 || guild_name.is_empty() {
+        state.send_console(conn_id, "No perteneces a ningún clan.", font_index::INFO).await;
+        return;
+    }
+
+    // Determine permissions: leader/sublider can withdraw, members can only deposit
+    let guild = db_guilds::load_guild(&state.pool, guild_index).await;
+    let (can_obj, can_gold) = match &guild {
+        Some(g) => {
+            let upper = char_name.to_uppercase();
+            let is_leader = g.leader.to_uppercase() == upper;
+            let is_sublider = g.sub_lider1.to_uppercase() == upper
+                || g.sub_lider2.to_uppercase() == upper;
+            (is_leader || is_sublider, is_leader || is_sublider)
+        }
+        None => (false, false),
+    };
+
+    // Load bank items from DB
+    let bank_items = db_guilds::load_bank_items(&state.pool, &guild_name).await;
+    let bank_gold = db_guilds::load_bank_gold(&state.pool, &guild_name).await;
+
+    // Set user state
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.guild_bank_open = true;
+        user.comerciando = true;
+        user.can_withdraw_items = can_obj;
+        user.can_withdraw_gold = can_gold;
+    }
+
+    // Send all guild bank slots
+    let user_gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
+    for (i, slot) in bank_items.iter().enumerate() {
+        let slot_num = (i + 1) as u8;
+        if slot.obj_index > 0 {
+            if let Some(obj) = state.get_object(slot.obj_index) {
+                let pkt = binary_packets::write_guild_bank_slot_data(
+                    slot_num, slot.obj_index as i16, &obj.name, slot.amount as i16,
+                    obj.grh_index as i16, obj.obj_type as u8,
+                    obj.max_hit as i16, obj.min_hit as i16, obj.max_def as i16,
+                    bank_gold, user_gold,
+                );
+                state.send_bytes(conn_id, &pkt).await;
+            }
+        } else {
+            let pkt = binary_packets::write_guild_bank_slot_data(
+                slot_num, 0, "", 0, 0, 0, 0, 0, 0, bank_gold, user_gold,
+            );
+            state.send_bytes(conn_id, &pkt).await;
+        }
+    }
+
+    // Send init packet with permissions
+    let pkt = binary_packets::write_guild_bank_init(can_obj, can_gold);
+    state.send_bytes(conn_id, &pkt).await;
+}
+
+/// DEPB{slot},{qty} — Deposit item into guild bank.
+/// VB6: BUserDejaObj — any guild member can deposit.
+pub(super) async fn handle_guild_bank_deposit_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 4); // "DEPB" = 4 chars
+    let slot: usize = match read_field(1, payload, ',').parse() {
+        Ok(v) if v >= 1 => v,
+        _ => return,
+    };
+    let cantidad: i32 = match read_field(2, payload, ',').parse() {
+        Ok(v) if v >= 1 => v,
+        _ => return,
+    };
+
+    let slot_idx = slot - 1;
+
+    let (guild_name, obj_index, user_amount, equipped, guild_bank_open) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_bank_open && slot_idx < u.inventory.len() => {
+            let s = &u.inventory[slot_idx];
+            (u.guild_name.clone(), s.obj_index, s.amount, s.equipped, u.guild_bank_open)
+        }
+        _ => return,
+    };
+
+    if !guild_bank_open || obj_index <= 0 || user_amount <= 0 { return; }
+    if equipped {
+        state.send_console(conn_id, "No podés depositar un objeto equipado.", font_index::INFO).await;
+        return;
+    }
+
+    let intransferible = state.get_object(obj_index).map(|o| o.intransferible).unwrap_or(false);
+    if intransferible {
+        state.send_console(conn_id, "Este objeto no es transferible.", font_index::INFO).await;
+        return;
+    }
+
+    let cantidad = cantidad.min(user_amount);
+
+    // Load current guild bank
+    let mut bank_items = db_guilds::load_bank_items(&state.pool, &guild_name).await;
+
+    // Find stackable or empty slot
+    let bank_idx = {
+        let mut stack = None;
+        let mut empty = None;
+        for (i, s) in bank_items.iter().enumerate() {
+            if s.obj_index == obj_index && s.amount + cantidad <= MAX_GUILD_BANK_STACK {
+                stack = Some(i);
+                break;
+            }
+            if s.obj_index == 0 && empty.is_none() {
+                empty = Some(i);
+            }
+        }
+        stack.or(empty)
+    };
+
+    let bank_idx = match bank_idx {
+        Some(i) => i,
+        None => {
+            state.send_console(conn_id, "La bóveda del clan está llena.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    // Transfer: remove from inventory
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.inventory[slot_idx].amount -= cantidad;
+        if user.inventory[slot_idx].amount <= 0 {
+            user.inventory[slot_idx] = InventorySlot::default();
+        }
+    }
+
+    // Add to guild bank
+    if bank_items[bank_idx].obj_index == 0 {
+        bank_items[bank_idx].obj_index = obj_index;
+        bank_items[bank_idx].amount = cantidad;
+    } else {
+        bank_items[bank_idx].amount += cantidad;
+    }
+
+    // Persist
+    db_guilds::save_bank_items(&state.pool, &guild_name, &bank_items).await;
+
+    // Send updates
+    send_inventory_slot(state, conn_id, slot_idx).await;
+    send_guild_bank_all_slots(state, conn_id, &guild_name, &bank_items).await;
+}
+
+/// RETB{slot},{qty} — Withdraw item from guild bank.
+/// VB6: BUserRetiraItem — requires PuedeRetirarObj permission.
+pub(super) async fn handle_guild_bank_withdraw_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 4); // "RETB" = 4 chars
+    let slot: usize = match read_field(1, payload, ',').parse() {
+        Ok(v) if v >= 1 => v,
+        _ => return,
+    };
+    let cantidad: i32 = match read_field(2, payload, ',').parse() {
+        Ok(v) if v >= 1 => v,
+        _ => return,
+    };
+
+    let (guild_name, can_withdraw, guild_bank_open) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_bank_open => {
+            (u.guild_name.clone(), u.can_withdraw_items, u.guild_bank_open)
+        }
+        _ => return,
+    };
+
+    if !guild_bank_open { return; }
+    if !can_withdraw {
+        state.send_console(conn_id, "No tenés permiso para retirar objetos.", font_index::INFO).await;
+        return;
+    }
+
+    let slot_idx = slot - 1;
+    let mut bank_items = db_guilds::load_bank_items(&state.pool, &guild_name).await;
+
+    if slot_idx >= bank_items.len() { return; }
+    let obj_index = bank_items[slot_idx].obj_index;
+    let bank_amount = bank_items[slot_idx].amount;
+    if obj_index <= 0 || bank_amount <= 0 { return; }
+
+    let cantidad = cantidad.min(bank_amount);
+
+    // Find inventory slot
+    let inv_idx = match find_or_add_inv_slot(state, conn_id, obj_index, cantidad) {
+        Some(i) => i,
+        None => {
+            state.send_console(conn_id, "No podés cargar más objetos.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    // Remove from guild bank
+    bank_items[slot_idx].amount -= cantidad;
+    if bank_items[slot_idx].amount <= 0 {
+        // Shift items down (VB6 behavior)
+        for i in slot_idx..bank_items.len() - 1 {
+            bank_items[i] = bank_items[i + 1].clone();
+        }
+        let last = bank_items.len() - 1;
+        bank_items[last] = db_guilds::GuildBankSlot::default();
+    }
+
+    // Persist
+    db_guilds::save_bank_items(&state.pool, &guild_name, &bank_items).await;
+
+    // Send updates
+    send_inventory_slot(state, conn_id, inv_idx).await;
+    send_guild_bank_all_slots(state, conn_id, &guild_name, &bank_items).await;
+}
+
+/// CCDO{amount} — Deposit gold into guild bank.
+/// VB6: Any member can deposit gold.
+pub(super) async fn handle_guild_bank_deposit_gold(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 4); // "CCDO" = 4 chars
+    let amount: i64 = match payload.trim().parse() {
+        Ok(v) if v >= 1 => v,
+        _ => return,
+    };
+
+    let (guild_name, user_gold, guild_bank_open) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_bank_open => {
+            (u.guild_name.clone(), u.gold, u.guild_bank_open)
+        }
+        _ => return,
+    };
+
+    if !guild_bank_open { return; }
+
+    if amount > user_gold {
+        state.send_console(conn_id, "No tenés suficiente oro.", font_index::INFO).await;
+        return;
+    }
+
+    let bank_gold = db_guilds::load_bank_gold(&state.pool, &guild_name).await;
+    if bank_gold + amount > MAX_GUILD_BANK_GOLD {
+        state.send_console(conn_id, "La bóveda del clan no puede guardar más oro.", font_index::INFO).await;
+        return;
+    }
+
+    // Transfer
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.gold -= amount;
+    }
+    db_guilds::save_bank_gold(&state.pool, &guild_name, bank_gold + amount).await;
+
+    // Send updates
+    send_stats_gold(state, conn_id).await;
+    let pkt = binary_packets::write_guild_bank_gold((bank_gold + amount) as i32);
+    state.send_bytes(conn_id, &pkt).await;
+}
+
+/// CCRO{amount} — Withdraw gold from guild bank.
+/// VB6: Requires PuedeRetirarOro permission.
+pub(super) async fn handle_guild_bank_withdraw_gold(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let payload = strip_opcode(data, 4); // "CCRO" = 4 chars
+    let amount: i64 = match payload.trim().parse() {
+        Ok(v) if v >= 1 => v,
+        _ => return,
+    };
+
+    let (guild_name, can_withdraw, guild_bank_open) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_bank_open => {
+            (u.guild_name.clone(), u.can_withdraw_gold, u.guild_bank_open)
+        }
+        _ => return,
+    };
+
+    if !guild_bank_open { return; }
+    if !can_withdraw {
+        state.send_console(conn_id, "No tenés permiso para retirar oro.", font_index::INFO).await;
+        return;
+    }
+
+    let bank_gold = db_guilds::load_bank_gold(&state.pool, &guild_name).await;
+    if amount > bank_gold {
+        state.send_console(conn_id, "La bóveda del clan no tiene suficiente oro.", font_index::INFO).await;
+        return;
+    }
+
+    // Transfer
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.gold += amount;
+    }
+    db_guilds::save_bank_gold(&state.pool, &guild_name, bank_gold - amount).await;
+
+    // Send updates
+    send_stats_gold(state, conn_id).await;
+    let pkt = binary_packets::write_guild_bank_gold((bank_gold - amount) as i32);
+    state.send_bytes(conn_id, &pkt).await;
+}
+
+/// FINCBN — Close guild bank.
+pub(super) async fn handle_guild_bank_close(state: &mut GameState, conn_id: ConnectionId) {
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.guild_bank_open = false;
+        user.comerciando = false;
+        user.can_withdraw_items = false;
+        user.can_withdraw_gold = false;
+    }
+}
+
+/// Helper: send all guild bank slots to client.
+async fn send_guild_bank_all_slots(
+    state: &mut GameState, conn_id: ConnectionId,
+    guild_name: &str, bank_items: &[db_guilds::GuildBankSlot],
+) {
+    let bank_gold = db_guilds::load_bank_gold(&state.pool, guild_name).await;
+    let user_gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
+
+    for (i, slot) in bank_items.iter().enumerate() {
+        let slot_num = (i + 1) as u8;
+        if slot.obj_index > 0 {
+            if let Some(obj) = state.get_object(slot.obj_index) {
+                let pkt = binary_packets::write_guild_bank_slot_data(
+                    slot_num, slot.obj_index as i16, &obj.name, slot.amount as i16,
+                    obj.grh_index as i16, obj.obj_type as u8,
+                    obj.max_hit as i16, obj.min_hit as i16, obj.max_def as i16,
+                    bank_gold, user_gold,
+                );
+                state.send_bytes(conn_id, &pkt).await;
+            }
+        } else {
+            let pkt = binary_packets::write_guild_bank_slot_data(
+                slot_num, 0, "", 0, 0, 0, 0, 0, 0, bank_gold, user_gold,
+            );
+            state.send_bytes(conn_id, &pkt).await;
+        }
+    }
 }
 

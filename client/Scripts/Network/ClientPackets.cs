@@ -330,6 +330,45 @@ public static class ClientPackets
         return new byte[] { ClientPacketId.BankClose };
     }
 
+    // ── Guild Bank ────────────────────────────────────────────
+
+    public static byte[] WriteGuildBankDepositItem(byte slot, short amount)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.ClanBankDepositItem);
+        bq.WriteString($"{slot},{amount}");
+        return bq.ToArray();
+    }
+
+    public static byte[] WriteGuildBankWithdrawItem(byte slot, short amount)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.ClanBankWithdrawItem);
+        bq.WriteString($"{slot},{amount}");
+        return bq.ToArray();
+    }
+
+    public static byte[] WriteGuildBankDepositGold(int amount)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.GuildBankDeposit);
+        bq.WriteString(amount.ToString());
+        return bq.ToArray();
+    }
+
+    public static byte[] WriteGuildBankWithdrawGold(int amount)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.GuildBankWithdraw);
+        bq.WriteString(amount.ToString());
+        return bq.ToArray();
+    }
+
+    public static byte[] WriteGuildBankClose()
+    {
+        return new byte[] { ClientPacketId.CloseGuildBank };
+    }
+
     // ── Crafting ───────────────────────────────────────────────
 
     public static byte[] WriteConstructSmith(short item)

@@ -100,6 +100,7 @@ public partial class Main : Control
     // Bank panels (frmBanco + frmNuevoBancoObj)
     private BankPanel? _bankPanel;
     private VaultPanel? _vaultPanel;
+    private GuildBankPanel? _guildBankPanel;
     private bool _lastBanqueando;
 
     // Guild panels
@@ -545,6 +546,12 @@ public partial class Main : Control
         _vaultPanel.Position = new Vector2(42, 64);
         _vaultPanel.Visible = false;
         _gameUI.AddChild(_vaultPanel);
+
+        // Guild bank panel (frmBovClan) — centered on viewport
+        _guildBankPanel = new GuildBankPanel();
+        _guildBankPanel.Position = new Vector2(42, 64);
+        _guildBankPanel.Visible = false;
+        _gameUI.AddChild(_guildBankPanel);
 
         // Guild panel (frmGuildInfo) — centered on viewport
         _guildPanel = new GuildPanel();
@@ -2544,6 +2551,13 @@ public partial class Main : Control
                 _guildFoundationPanel?.Show();
             }
 
+            // Guild bank panel
+            if (_state.ShowGuildBank)
+            {
+                _state.ShowGuildBank = false;
+                _guildBankPanel?.OpenGuildBank();
+            }
+
             // Death panel — show when player dies, hide on revive
             if (_state.ShowDeathPanel)
             {
@@ -2633,6 +2647,7 @@ public partial class Main : Control
                     _commercePanel!.Init(_state, _gameData, _tcp);
                     _bankPanel!.Init(_state, _gameData, _tcp);
                     _vaultPanel!.Init(_state, _gameData, _tcp);
+                    _guildBankPanel!.Init(_state, _gameData, _tcp);
                     _travelPanel!.Init(_state, _tcp, _dataPath);
                     _deathPanel!.Init(_state, _tcp, _dataPath);
                     _guildPanel!.Init(_state, _tcp);
@@ -2742,6 +2757,7 @@ public partial class Main : Control
         _lastComerciando = false;
         _bankPanel?.CloseBank();
         _vaultPanel?.CloseVault();
+        _guildBankPanel?.CloseGuildBank();
         _guildPanel?.Hide();
         _guildFoundationPanel?.Hide();
         _lastBanqueando = false;
@@ -2865,6 +2881,14 @@ public partial class Main : Control
         _state.BankGold = 0;
         _state.Banqueando = false;
         _state.BovedaAbierta = false;
+
+        // Guild Bank
+        _state.ShowGuildBank = false;
+        _state.GuildBankGold = 0;
+        _state.GuildBankCanObj = false;
+        _state.GuildBankCanGold = false;
+        for (int i = 0; i < _state.GuildBankItems.Length; i++)
+            _state.GuildBankItems[i] = new GuildBankSlot();
         for (int i = 0; i < 40; i++)
             _state.BankItems[i] = new BankItem();
 

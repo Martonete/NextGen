@@ -203,9 +203,11 @@ public class GameState
     public byte AmbientColorR = 200, AmbientColorG = 200, AmbientColorB = 200; // AmbientColor (ID 164)
 
     // Guild
-    public long GuildBankGold;
-    public bool GuildBankCanObj;
-    public bool GuildBankCanGold;
+    public bool GuildBankCanObj;      // Permission: can withdraw items from guild bank
+    public bool GuildBankCanGold;     // Permission: can withdraw gold from guild bank
+    public int GuildBankGold;         // Current guild bank gold balance
+    public bool ShowGuildBank;        // Trigger to open guild bank panel
+    public GuildBankSlot[] GuildBankItems = new GuildBankSlot[40];
     public string GuildInfoData = ""; // raw guild info string from server
     public string GuildInfoType = ""; // "Leader", "Member", "Details" — which panel to show
     public string GuildListData = ""; // raw guild list from server
@@ -408,4 +410,17 @@ public class ArrowProjectile
     public float TargetX, TargetY; // destination pixel
     public float Speed = 8f;  // pixels per frame
     public bool Active = true;
+}
+
+/// A slot in the guild bank (VB6: BancoInventarioB).
+public class GuildBankSlot
+{
+    public int ObjIndex;
+    public string Name = "";
+    public int Amount;
+    public int GrhIndex;
+    public int ObjType;
+    public int MaxHit;
+    public int MinHit;
+    public int MaxDef;
 }

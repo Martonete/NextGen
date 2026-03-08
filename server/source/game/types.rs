@@ -161,6 +161,9 @@ pub struct UserState {
     pub guild_name: String,     // Cached clan name (empty if no guild)
     pub guild_creating_alignment: i32, // Temp: alignment during guild creation flow
     pub seguro_clan: bool,      // Clan safe toggle — prevents attacking clanmates
+    pub guild_bank_open: bool,  // Currently interacting with guild bank
+    pub can_withdraw_items: bool, // Permission: withdraw items from guild bank
+    pub can_withdraw_gold: bool,  // Permission: withdraw gold from guild bank
 
     // Factions
     pub armada_real: bool,       // In Royal Army
@@ -362,6 +365,9 @@ impl UserState {
             guild_name: String::new(),
             guild_creating_alignment: 0,
             seguro_clan: true, // Default ON — safe from clanmate attacks
+            guild_bank_open: false,
+            can_withdraw_items: false,
+            can_withdraw_gold: false,
             armada_real: false,
             fuerzas_caos: false,
             criminales_matados: 0,

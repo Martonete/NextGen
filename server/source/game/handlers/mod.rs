@@ -747,6 +747,18 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_guild_apply(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::GUILD_DETAILS) {
         handle_guild_details(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::GUILD_BANK_OPEN) {
+        iniciar_boveda_clan(state, conn_id).await;
+    } else if data.starts_with(client_opcodes::CLAN_BANK_DEPOSIT_ITEM) {
+        handle_guild_bank_deposit_item(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::CLAN_BANK_WITHDRAW_ITEM) {
+        handle_guild_bank_withdraw_item(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::GUILD_BANK_DEPOSIT) {
+        handle_guild_bank_deposit_gold(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::GUILD_BANK_WITHDRAW) {
+        handle_guild_bank_withdraw_gold(state, conn_id, data).await;
+    } else if data.starts_with(client_opcodes::CLOSE_GUILD_BANK) {
+        handle_guild_bank_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_SMITH) {
         handle_construct_smith(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_CARP) {

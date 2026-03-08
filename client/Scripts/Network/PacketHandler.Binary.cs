@@ -2761,6 +2761,21 @@ public partial class PacketHandler
         short maxDef = bq.ReadInteger();
         int bankGold = bq.ReadLong();
         int userGold = bq.ReadLong();
+
+        int idx = slot - 1;
+        if (idx >= 0 && idx < _state.GuildBankItems.Length)
+        {
+            _state.GuildBankItems[idx] ??= new GuildBankSlot();
+            _state.GuildBankItems[idx].ObjIndex = objIdx;
+            _state.GuildBankItems[idx].Name = name;
+            _state.GuildBankItems[idx].Amount = amount;
+            _state.GuildBankItems[idx].GrhIndex = grh;
+            _state.GuildBankItems[idx].ObjType = objType;
+            _state.GuildBankItems[idx].MaxHit = maxHit;
+            _state.GuildBankItems[idx].MinHit = minHit;
+            _state.GuildBankItems[idx].MaxDef = maxDef;
+        }
+        _state.GuildBankGold = bankGold;
         GD.Print($"[PKT] GuildBankSlotData slot={slot} {name} x{amount} bankGold={bankGold}");
     }
 
@@ -2896,7 +2911,7 @@ public partial class PacketHandler
         bool canGold = bq.ReadBoolean();
         _state.GuildBankCanObj = canObj;
         _state.GuildBankCanGold = canGold;
-        _state.BovedaAbierta = true;
+        _state.ShowGuildBank = true;
         GD.Print($"[PKT] GuildBankInitResp canObj={canObj} canGold={canGold}");
     }
 

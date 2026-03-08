@@ -12,7 +12,7 @@ use super::common::*;
 use super::{
     send_inventory_slot, send_full_inventory, build_anm_packet,
     warp_user, revive_user, naked_body,
-    iniciar_comercio_npc, iniciar_banco,
+    iniciar_comercio_npc, iniciar_banco, iniciar_boveda_clan,
     DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
 };
 
@@ -2073,8 +2073,11 @@ pub(super) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            // Guild bank removed
-                            state.send_console(conn_id, "La boveda de clan no esta disponible.", font_index::INFO).await;
+                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dist > 10 {
+                                state.send_msg_id(conn_id, 13, "").await; return;
+                            }
+                            iniciar_boveda_clan(state, conn_id).await;
                         }
                         NpcType::Traveler => {
                             if dead { state.send_msg_id(conn_id, 3, "").await; return; }
