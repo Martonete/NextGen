@@ -88,16 +88,12 @@ pub struct SpellData {
     pub sube_sta: i32,
     pub min_sta: i32,
     pub max_sta: i32,
-    pub sube_ham: i32,
-    pub sube_sed: i32,
     pub sube_agilidad: i32,
     pub min_agilidad: i32,
     pub max_agilidad: i32,
     pub sube_fuerza: i32,
     pub min_fuerza: i32,
     pub max_fuerza: i32,
-    pub sube_carisma: i32,
-
     // Status effects
     pub invisibilidad: bool,
     pub paraliza: bool,
@@ -108,14 +104,11 @@ pub struct SpellData {
     pub cura_veneno: bool,
     pub remover_paralisis: bool,
     pub revivir: bool,
-    pub resis: bool,        // Resistible
     pub estupidez: bool,    // VB6: Stun/dumb effect
     pub ceguera: bool,      // VB6: Blindness effect
     pub mimetiza: bool,     // VB6: Druid mimicry
     pub remover_maldicion: bool, // VB6: Remove curse
     pub remover_estupidez: bool, // VB6: Remove stun
-    pub warp: bool,         // VB6: Warp pet to caster
-
     // Staff requirement (VB6: NeedStaff, StaffAffected)
     pub need_staff: i32,
     pub staff_affected: bool,
@@ -153,15 +146,13 @@ impl Default for SpellData {
             sube_hp: 0, min_hp: 0, max_hp: 0,
             sube_mana: 0, min_mana: 0, max_mana: 0,
             sube_sta: 0, min_sta: 0, max_sta: 0,
-            sube_ham: 0, sube_sed: 0,
             sube_agilidad: 0, min_agilidad: 0, max_agilidad: 0,
             sube_fuerza: 0, min_fuerza: 0, max_fuerza: 0,
-            sube_carisma: 0,
             invisibilidad: false, paraliza: false, inmoviliza: false,
             envenena: false, maldicion: false, bendicion: false,
-            cura_veneno: false, remover_paralisis: false, revivir: false, resis: false,
+            cura_veneno: false, remover_paralisis: false, revivir: false,
             estupidez: false, ceguera: false, mimetiza: false,
-            remover_maldicion: false, remover_estupidez: false, warp: false,
+            remover_maldicion: false, remover_estupidez: false,
             need_staff: 0, staff_affected: false,
             num_npc: 0, cant: 0,
             portal_map: 0, portal_x: 0, portal_y: 0,
@@ -221,15 +212,12 @@ pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
             sube_sta: get_int("SubeSta"),
             min_sta: get_int("MinSta"),
             max_sta: get_int("MaxSta"),
-            sube_ham: get_int("SubeHam"),
-            sube_sed: get_int("SubeSed"),
             sube_agilidad: get_int("SubeAgilidad"),
             min_agilidad: get_int("MinAG"),
             max_agilidad: get_int("MaxAG"),
             sube_fuerza: get_int("SubeFuerza"),
             min_fuerza: get_int("MinFU"),
             max_fuerza: get_int("MaxFU"),
-            sube_carisma: get_int("SubeCarisma"),
             invisibilidad: get_bool("Invisibilidad"),
             paraliza: get_bool("Paraliza"),
             inmoviliza: get_bool("Inmoviliza"),
@@ -239,13 +227,11 @@ pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
             cura_veneno: get_bool("CuraVeneno"),
             remover_paralisis: get_bool("RemoverParalisis"),
             revivir: get_bool("Revivir"),
-            resis: get_bool("Resis"),
             estupidez: get_bool("Estupidez"),
             ceguera: get_bool("Ceguera"),
             mimetiza: get_bool("Mimetiza"),
             remover_maldicion: get_bool("RemoverMaldicion"),
             remover_estupidez: get_bool("RemoverEstupidez"),
-            warp: get_bool("Warp"),
             need_staff: get_int("NeedStaff"),
             staff_affected: get_bool("StaffAffected"),
             num_npc: get_int("numNPC"),

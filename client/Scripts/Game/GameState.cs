@@ -223,27 +223,6 @@ public class GameState
     public string GuildMotdText = ""; // Guild MOTD from server
     public string GuildCodexText = ""; // Guild codex from server
 
-    // Mail
-    public string MailData = ""; // raw mail data string from server
-    public bool ShowMailPanel;   // MailOpenTrigger (ID 252)
-
-    // UI triggers
-    public bool ShowTravelsPanel;  // TravelsOpen (ID 251)
-
-    // Right-click context menu (MenuData)
-    public string MenuTargetName = "";
-    public int MenuTargetPriv;
-
-    // Selection / misc data
-    public string SelectData = "";   // SelectData (ID 222)
-    public string MiniTopData = "";  // MiniTopData (ID 223)
-
-    // Trading
-    public int TradePartnerGold;
-
-    // Raw account data (AccountData ID 76)
-    public string RawAccountData = "";
-
     // Arrow/projectile system (VB6: FLECHI)
     public List<ArrowProjectile> ActiveArrows = new();
 

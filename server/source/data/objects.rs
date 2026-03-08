@@ -126,7 +126,6 @@ pub struct ObjData {
     pub name: String,
     pub obj_type: ObjType,
     pub grh_index: i32,
-    pub grh_secundario: i32,
     pub valor: i32,          // Item value/price
     pub agarrable: bool,     // VB6: Agarrable=1 means FIXED (cannot pick up)
 
@@ -153,8 +152,6 @@ pub struct ObjData {
     pub clave: i32,            // Key code for locked doors
     pub index_abierta: i32,
     pub index_cerrada: i32,
-    pub index_cerrada_llave: i32,
-
     // Potion/food fields
     pub tipo_pocion: i32,    // Potion subtype: 1=agility, 2=strength, 3=HP, 4=mana, 5=cure poison, 6=remo
     pub min_modificador: i32,
@@ -188,7 +185,6 @@ pub struct ObjData {
     pub intransferible: bool, // Cannot be traded
 
     // Flags
-    pub crucial: bool,
     pub cura_veneno: bool,
     pub envenena: bool,      // Weapon poisons on hit (60% chance)
     pub refuerzo: i32,       // Weapon penetration (reduces armor absorption)
@@ -207,14 +203,6 @@ pub struct ObjData {
 
     // Sound
     pub snd1: i32,            // VB6 Snd1 — sound ID (used by instruments)
-
-    // Scroll buffs (type 50)
-    pub type_scroll: i32,     // 1=exp, 2=gold, 3=drop, 4=crystal drop
-    pub time_scroll: i32,     // Duration in seconds
-    pub mult_scroll: i32,     // Multiplier percentage
-
-    // Donation sacks (type 51)
-    pub cant_credits: i32,    // Donation points
 
     // Paralysis on hit
     pub paraliza: bool,       // Weapon paralyzes on hit
@@ -238,7 +226,6 @@ impl Default for ObjData {
             name: String::new(),
             obj_type: ObjType::Unknown,
             grh_index: 0,
-            grh_secundario: 0,
             valor: 0,
             agarrable: false,
             min_hit: 0,
@@ -259,7 +246,6 @@ impl Default for ObjData {
             clave: 0,
             index_abierta: 0,
             index_cerrada: 0,
-            index_cerrada_llave: 0,
             tipo_pocion: 0,
             min_modificador: 0,
             max_modificador: 0,
@@ -282,7 +268,6 @@ impl Default for ObjData {
             caos: false,
             item_dios: false,
             intransferible: false,
-            crucial: false,
             cura_veneno: false,
             envenena: false,
             refuerzo: 0,
@@ -295,10 +280,6 @@ impl Default for ObjData {
             mujer: false,
             hombre: false,
             snd1: 0,
-            type_scroll: 0,
-            time_scroll: 0,
-            mult_scroll: 0,
-            cant_credits: 0,
             paraliza: false,
             crea_aura: 0,
             defensa_magica_min: 0,
@@ -345,7 +326,6 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             name: get_str("Name"),
             obj_type: ObjType::from_i32(get_int("ObjType")),
             grh_index: get_int("GrhIndex"),
-            grh_secundario: get_int("GrhSecundario"),
             valor: get_int("Valor"),
             agarrable: get_bool("Agarrable"),
             min_hit: get_int("MinHIT"),
@@ -366,7 +346,6 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             clave: get_int("clave"),
             index_abierta: get_int("IndexAbierta"),
             index_cerrada: get_int("IndexCerrada"),
-            index_cerrada_llave: get_int("IndexCerradaLlave"),
             tipo_pocion: get_int("TipoPocion"),
             min_modificador: get_int("MinModificador"),
             max_modificador: get_int("MaxModificador"),
@@ -389,7 +368,6 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             caos: get_bool("Caos"),
             item_dios: get_bool("ItemDios"),
             intransferible: get_bool("Intransferible"),
-            crucial: get_bool("Crucial"),
             cura_veneno: get_bool("CuraVeneno"),
             envenena: get_bool("Envenena"),
             refuerzo: get_int("Refuerzo"),
@@ -401,10 +379,6 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             mujer: get_bool("Mujer"),
             hombre: get_bool("Hombre"),
             snd1: get_int("Snd1"),
-            type_scroll: get_int("typeScroll"),
-            time_scroll: get_int("timeScroll"),
-            mult_scroll: get_int("multScroll"),
-            cant_credits: get_int("cantCredits"),
             paraliza: get_bool("Paraliza"),
             crea_aura: get_int("CreaAura"),
             defensa_magica_min: get_int("DefensaMagicaMin"),

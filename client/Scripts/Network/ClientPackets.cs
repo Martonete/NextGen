@@ -455,18 +455,6 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    // ── Friends ────────────────────────────────────────────────
-
-    public static byte[] WriteFriendAdd(string name)
-    {
-        return System.Array.Empty<byte>();
-    }
-
-    public static byte[] WriteFriendRemove(string name)
-    {
-        return System.Array.Empty<byte>();
-    }
-
     // ── Trade ──────────────────────────────────────────────────
 
     public static byte[] WriteTradeOfferGold(int amount)
@@ -501,27 +489,4 @@ public static class ClientPackets
         return WriteStringPacket(ClientPacketId.TradeChat, msg);
     }
 
-    // ── Quest ──────────────────────────────────────────────────
-
-    public static byte[] WriteQuestList()
-    {
-        return System.Array.Empty<byte>();
-    }
-
-    // ── Misc ───────────────────────────────────────────────────
-
-    public static byte[] WriteMiniStats()
-    {
-        return new byte[] { ClientPacketId.MiniStatsReq };
-    }
-
-    public static byte[] WriteSendPoints()
-    {
-        return new byte[] { ClientPacketId.SendPoints };
-    }
-
-    public static byte[] WriteDuelArenaInfo()
-    {
-        return System.Array.Empty<byte>();
-    }
 }

@@ -751,8 +751,7 @@ public partial class PacketHandler
                 GD.Print("[PKT] TravelsOpen");
                 break;
             case ServerPacketId.MailOpenTrigger: // 252
-                _state.ShowMailPanel = true;
-                GD.Print("[PKT] MailOpenTrigger");
+                GD.Print("[PKT] MailOpenTrigger (not implemented)");
                 break;
             case ServerPacketId.FriendDialog: // 253
                 break;
@@ -2321,7 +2320,6 @@ public partial class PacketHandler
     {
         string data = bq.ReadString();
         GD.Print($"[PKT] AccountData (binary): {data}");
-        _state.RawAccountData = data;
     }
 
     // ── Movement / Projectiles ────────────────────────────────────
@@ -2696,7 +2694,7 @@ public partial class PacketHandler
     {
         int gold = bq.ReadLong();
         GD.Print($"[PKT] TradeOfferRecv: gold={gold}");
-        _state.TradePartnerGold = gold;
+        // TODO: display partner gold in trade panel when implemented
     }
 
     /// <summary>
@@ -2812,7 +2810,7 @@ public partial class PacketHandler
     {
         string data = bq.ReadString();
         GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
-        _state.MailData = data;
+        // TODO: display in mail panel when implemented
     }
 
     // ── Friends ───────────────────────────────────────────────────
@@ -2834,8 +2832,7 @@ public partial class PacketHandler
         string name = bq.ReadString();
         byte priv = bq.ReadByte();
         GD.Print($"[PKT] MenuData: {name} priv={priv}");
-        _state.MenuTargetName = name;
-        _state.MenuTargetPriv = priv;
+        // TODO: show right-click context menu when implemented
     }
 
     /// <summary>
@@ -2846,7 +2843,7 @@ public partial class PacketHandler
     {
         string data = bq.ReadString();
         GD.Print($"[PKT] SelectData (binary): {data}");
-        _state.SelectData = data;
+        // TODO: show selection dialog when implemented
     }
 
     /// <summary>
@@ -2857,7 +2854,7 @@ public partial class PacketHandler
     {
         string data = bq.ReadString();
         GD.Print($"[PKT] MiniTopData (binary): {data.Length} chars");
-        _state.MiniTopData = data;
+        // TODO: show mini ranking when implemented
     }
 
     /// <summary>

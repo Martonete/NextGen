@@ -266,9 +266,6 @@ pub struct UserState {
     pub montado_body: i32,         // Original body before mounting
     pub levitando: bool,           // Flying mount levitation
 
-    // Command cooldown
-    pub time_comandos: i32,
-
     // Description
     pub desc: String,                // User description (/DESC)
 
@@ -436,7 +433,6 @@ impl UserState {
             montado: false,
             montado_body: 0,
             levitando: false,
-            time_comandos: 0,
             desc: String::new(),
             pareja: String::new(),
         }
