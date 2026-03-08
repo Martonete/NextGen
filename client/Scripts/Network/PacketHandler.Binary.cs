@@ -1378,7 +1378,8 @@ public partial class PacketHandler
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();
-        short def = bq.ReadInteger();
+        short maxDef = bq.ReadInteger();
+        short minDef = bq.ReadInteger();
         float value = bq.ReadSingle();
 
         if (slot < 1 || slot > 25) return;
@@ -1399,9 +1400,43 @@ public partial class PacketHandler
                 ObjType = objType,
                 MaxHit = maxHit,
                 MinHit = minHit,
-                MaxDef = def,
+                MaxDef = maxDef,
+                MinDef = minDef,
                 Value = (int)value,
             };
+        }
+
+        // VB6: Update per-equipment bottom bar labels
+        // ObjType: 1=Weapon, 2=Armadura, 3=Escudo (shield), 31=Casco (helmet)
+        if (equipped)
+        {
+            switch (objType)
+            {
+                case 1: // otWeapon
+                    _state.WeaponEqpSlot = slot;
+                    _state.WeaponLabel = $"{minHit}/{maxHit}";
+                    break;
+                case 2: // otArmadura
+                    _state.ArmourEqpSlot = slot;
+                    _state.ArmourLabel = $"{minDef}/{maxDef}";
+                    break;
+                case 3: // otEscudo (shield)
+                    _state.ShieldEqpSlot = slot;
+                    _state.ShieldLabel = $"{minDef}/{maxDef}";
+                    break;
+                case 31: // otCasco (helmet)
+                    _state.HelmEqpSlot = slot;
+                    _state.HelmLabel = $"{minDef}/{maxDef}";
+                    break;
+            }
+        }
+        else
+        {
+            // Unequipped — clear label if this was the equipped slot
+            if (slot == _state.WeaponEqpSlot) { _state.WeaponEqpSlot = 0; _state.WeaponLabel = "0/0"; }
+            if (slot == _state.ArmourEqpSlot) { _state.ArmourEqpSlot = 0; _state.ArmourLabel = "0/0"; }
+            if (slot == _state.ShieldEqpSlot) { _state.ShieldEqpSlot = 0; _state.ShieldLabel = "0/0"; }
+            if (slot == _state.HelmEqpSlot) { _state.HelmEqpSlot = 0; _state.HelmLabel = "0/0"; }
         }
     }
 
@@ -1416,7 +1451,8 @@ public partial class PacketHandler
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();
-        short def = bq.ReadInteger();
+        short maxDef = bq.ReadInteger();
+        short minDef = bq.ReadInteger();
         float value = bq.ReadSingle();
 
         // Reset bank when first slot arrives (server sends all 40 slots before BankInit)
@@ -1442,7 +1478,7 @@ public partial class PacketHandler
         {
             Slot = slot, ObjIndex = objIndex, Name = name, Amount = amount,
             GrhIndex = grhIndex, ObjType = objType,
-            MaxHit = maxHit, MinHit = minHit, MaxDef = def,
+            MaxHit = maxHit, MinHit = minHit, MaxDef = maxDef, MinDef = minDef,
         };
 
         if (existingIdx >= 0)
@@ -1517,7 +1553,8 @@ public partial class PacketHandler
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();
-        short def = bq.ReadInteger();
+        short maxDef = bq.ReadInteger();
+        short minDef = bq.ReadInteger();
 
         // Search for existing slot to update in-place
         int existingIdx = -1;
@@ -1534,7 +1571,7 @@ public partial class PacketHandler
         {
             Name = name, Amount = amount, Price = (long)value,
             GrhIndex = grhIndex, ObjIndex = objIndex, ObjType = objType,
-            MaxHit = maxHit, MinHit = minHit, MaxDef = def, Slot = slot,
+            MaxHit = maxHit, MinHit = minHit, MaxDef = maxDef, MinDef = minDef, Slot = slot,
         };
 
         if (existingIdx >= 0)
@@ -1745,7 +1782,8 @@ public partial class PacketHandler
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();
-        short def = bq.ReadInteger();
+        short maxDef = bq.ReadInteger();
+        short minDef = bq.ReadInteger();
         int value = bq.ReadLong();
         string name = bq.ReadString();
         GD.Print($"[PKT] ChangeUserTradeSlot (binary): slot={offerSlot} {name} x{amount}");

@@ -3035,11 +3035,11 @@ pub(super) async fn send_inventory_slot(state: &mut GameState, conn_id: Connecti
 
     if inv.obj_index == 0 {
         state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
-            slot as u8, 0, "(None)", 0, false, 0, 0, 0, 0, 0, 0.0,
+            slot as u8, 0, "(None)", 0, false, 0, 0, 0, 0, 0, 0, 0.0,
         )).await;
     } else {
         let obj = state.get_object(inv.obj_index).cloned();
-        let (name, grh, obj_type, max_hit, min_hit, max_def, valor) = match obj {
+        let (name, grh, obj_type, max_hit, min_hit, max_def, min_def, valor) = match obj {
             Some(o) => (
                 o.name.clone(),
                 o.grh_index,
@@ -3047,13 +3047,14 @@ pub(super) async fn send_inventory_slot(state: &mut GameState, conn_id: Connecti
                 o.max_hit,
                 o.min_hit,
                 o.max_def,
+                o.min_def,
                 o.valor / 3,
             ),
-            None => ("???".into(), 0, 0, 0, 0, 0, 0),
+            None => ("???".into(), 0, 0, 0, 0, 0, 0, 0),
         };
         state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
             slot as u8, inv.obj_index as i16, &name, inv.amount as i16, inv.equipped,
-            grh as i16, obj_type as u8, max_hit as i16, min_hit as i16, max_def as i16, valor as f32,
+            grh as i16, obj_type as u8, max_hit as i16, min_hit as i16, max_def as i16, min_def as i16, valor as f32,
         )).await;
     }
 }

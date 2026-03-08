@@ -467,7 +467,7 @@ pub fn write_update_str_dex(str_: u8, agi: u8) -> Vec<u8> {
 pub fn write_change_inventory_slot(
     slot: u8, obj_index: i16, name: &str, amount: i16,
     equipped: bool, grh_index: i16, obj_type: u8,
-    max_hit: i16, min_hit: i16, def: i16, value: f32,
+    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16, value: f32,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeInventorySlot.to_byte());
@@ -480,7 +480,8 @@ pub fn write_change_inventory_slot(
     pkt.write_byte(obj_type);
     pkt.write_integer(max_hit);
     pkt.write_integer(min_hit);
-    pkt.write_integer(def);
+    pkt.write_integer(max_def);
+    pkt.write_integer(min_def);
     pkt.write_single(value);
     pkt.into_bytes()
 }
@@ -489,7 +490,7 @@ pub fn write_change_inventory_slot(
 pub fn write_change_bank_slot(
     slot: u8, obj_index: i16, name: &str, amount: i16,
     equipped: bool, grh_index: i16, obj_type: u8,
-    max_hit: i16, min_hit: i16, def: i16, value: f32,
+    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16, value: f32,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeBankSlot.to_byte());
@@ -502,7 +503,8 @@ pub fn write_change_bank_slot(
     pkt.write_byte(obj_type);
     pkt.write_integer(max_hit);
     pkt.write_integer(min_hit);
-    pkt.write_integer(def);
+    pkt.write_integer(max_def);
+    pkt.write_integer(min_def);
     pkt.write_single(value);
     pkt.into_bytes()
 }
@@ -521,7 +523,7 @@ pub fn write_change_spell_slot(slot: u8, spell_index: i16, name: &str) -> Vec<u8
 pub fn write_change_npc_inv_slot(
     slot: u8, name: &str, amount: i16, value: f32,
     grh_index: i16, obj_index: i16, obj_type: u8,
-    max_hit: i16, min_hit: i16, def: i16,
+    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeNPCInventorySlot.to_byte());
@@ -534,7 +536,8 @@ pub fn write_change_npc_inv_slot(
     pkt.write_byte(obj_type);
     pkt.write_integer(max_hit);
     pkt.write_integer(min_hit);
-    pkt.write_integer(def);
+    pkt.write_integer(max_def);
+    pkt.write_integer(min_def);
     pkt.into_bytes()
 }
 
@@ -636,7 +639,7 @@ pub fn write_bank_ok() -> Vec<u8> {
 /// ID 86: Change user trade slot.
 pub fn write_change_user_trade_slot(
     offer_slot: u8, obj_index: i16, amount: i32, grh_index: i16,
-    obj_type: u8, max_hit: i16, min_hit: i16, def: i16,
+    obj_type: u8, max_hit: i16, min_hit: i16, max_def: i16, min_def: i16,
     value: i32, name: &str,
 ) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -648,7 +651,8 @@ pub fn write_change_user_trade_slot(
     pkt.write_byte(obj_type);
     pkt.write_integer(max_hit);
     pkt.write_integer(min_hit);
-    pkt.write_integer(def);
+    pkt.write_integer(max_def);
+    pkt.write_integer(min_def);
     pkt.write_long(value);
     pkt.write_ascii_string(name);
     pkt.into_bytes()

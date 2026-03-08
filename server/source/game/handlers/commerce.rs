@@ -92,6 +92,7 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
                 obj.max_hit as i16,
                 obj.min_hit as i16,
                 obj.max_def as i16,
+                obj.min_def as i16,
             );
             state.send_bytes(conn_id, &pkt).await;
         }
@@ -104,7 +105,7 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
         if obj_index <= 0 {
             // Empty slot — send zeroed data
             let pkt = binary_packets::write_change_npc_inv_slot(
-                slot as u8, "(Nada)", 0, 0.0, 0, 0, 0, 0, 0, 0,
+                slot as u8, "(Nada)", 0, 0.0, 0, 0, 0, 0, 0, 0, 0,
             );
             state.send_bytes(conn_id, &pkt).await;
         } else {
@@ -126,6 +127,7 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
                 obj.max_hit as i16,
                 obj.min_hit as i16,
                 obj.max_def as i16,
+                obj.min_def as i16,
             );
             state.send_bytes(conn_id, &pkt).await;
         }
@@ -811,7 +813,7 @@ pub(super) async fn enviar_banco_inv(state: &mut GameState, conn_id: ConnectionI
                 if s.obj_index > 0 {
                     state.get_object(s.obj_index).map(|o| {
                         (s.obj_index, o.name.clone(), s.amount, o.grh_index, o.obj_type as u8,
-                         o.max_hit, o.min_hit, o.max_def, o.valor)
+                         o.max_hit, o.min_hit, o.max_def, o.min_def, o.valor)
                     })
                 } else {
                     None
@@ -820,17 +822,17 @@ pub(super) async fn enviar_banco_inv(state: &mut GameState, conn_id: ConnectionI
             _ => None,
         };
 
-        if let Some((obj_idx, name, amount, grh, obj_type, max_hit, min_hit, max_def, valor)) = slot_data {
+        if let Some((obj_idx, name, amount, grh, obj_type, max_hit, min_hit, max_def, min_def, valor)) = slot_data {
             let pkt = binary_packets::write_change_bank_slot(
                 slot_num, obj_idx as i16, &name, amount as i16,
                 false, grh as i16, obj_type,
-                max_hit as i16, min_hit as i16, max_def as i16, (valor / 3) as f32,
+                max_hit as i16, min_hit as i16, max_def as i16, min_def as i16, (valor / 3) as f32,
             );
             state.send_bytes(conn_id, &pkt).await;
         } else {
             // Empty slot
             let pkt = binary_packets::write_change_bank_slot(
-                slot_num, 0, "", 0, false, 0, 0, 0, 0, 0, 0.0,
+                slot_num, 0, "", 0, false, 0, 0, 0, 0, 0, 0, 0.0,
             );
             state.send_bytes(conn_id, &pkt).await;
         }

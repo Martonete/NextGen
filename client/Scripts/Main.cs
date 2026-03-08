@@ -54,25 +54,22 @@ public partial class Main : Control
     private Label? _expLabel;
     private Control? _btnCastiGM;
 
-    // Bottom bar combat/attribute labels
-    private Label? _armaLabel;
-    private Label? _defMagLabel;
-    private Label? _defensaLabel;
+    // Bottom bar combat/attribute labels (VB6: lblArmor, lblHelm, lblShielder, lblWeapon)
+    private Label? _armorLabel;    // Body armor def
+    private Label? _helmLabel;     // Helmet def
+    private Label? _shieldLabel;   // Shield def
+    private Label? _weaponLabel;   // Weapon hit
     private Label? _fuerzaLabel;
     private Label? _agilidadLabel;
     private Label? _repLabel;
     private Label? _fpsLabel;
 
-
-    // Minimap
-    // Minimap removed — VB6 13.3 has no minimap
-    private string? _principalDir; // cached for minimap loading
     private string _dataPath = ""; // cached for macro file I/O
 
     // Custom stat bar overlay (draws colored fill rects at VB6 positions)
     private StatBarOverlay? _statBarOverlay;
 
-    // InvEqu panel background (CentroNuevoInventario / CentronuevoHechizos)
+    // InvEqu panel background (CentroInventario / CentroHechizos)
     private TextureRect? _invEquImage;
     private ImageTexture? _invEquInvTexture;
     private ImageTexture? _invEquSpellTexture;
@@ -447,14 +444,17 @@ public partial class Main : Control
 
         // === Bottom bar labels — VB6 13.3 exact positions ===
         // lblArmor(78,576,57,17), lblHelm(196,576,57,17), lblShielder(342,576,57,17), lblWeapon(464,576,57,17)
-        _defensaLabel = CreateStatLabel(78, 576, 57, 17, Colors.White, 8);
-        _gameUI.AddChild(_defensaLabel);
+        _armorLabel = CreateStatLabel(78, 576, 57, 17, Colors.White, 8);
+        _gameUI.AddChild(_armorLabel);
 
-        _defMagLabel = CreateStatLabel(196, 576, 57, 17, Colors.White, 8);
-        _gameUI.AddChild(_defMagLabel);
+        _helmLabel = CreateStatLabel(196, 576, 57, 17, Colors.White, 8);
+        _gameUI.AddChild(_helmLabel);
 
-        _armaLabel = CreateStatLabel(342, 576, 57, 17, Colors.White, 8);
-        _gameUI.AddChild(_armaLabel);
+        _shieldLabel = CreateStatLabel(342, 576, 57, 17, Colors.White, 8);
+        _gameUI.AddChild(_shieldLabel);
+
+        _weaponLabel = CreateStatLabel(464, 576, 57, 17, Colors.White, 8);
+        _gameUI.AddChild(_weaponLabel);
 
         // Fuerza: VB6 13.3 lblStrg at (648, 415, 14, 14), green
         _fuerzaLabel = CreateStatLabel(648, 415, 14, 14, new Color(0, 1, 0), 9);
@@ -473,7 +473,17 @@ public partial class Main : Control
         _gameUI.AddChild(_fpsLabel);
 
 
-        // VB6 13.3: No minimap — just sidebar buttons: imgOpciones at (681, 485, 95, 22), imgClanes at (683, 532, 92, 26)
+        // VB6 13.3 sidebar buttons (no minimap)
+        // imgMapa(682,445,93,20), imgGrupo(681,466,94,21), imgOpciones(681,485,95,22),
+        // imgEstadisticas(681,507,95,24), imgClanes(683,532,92,26)
+        var mapaButton = CreateInvisibleButton(682, 445, 93, 20);
+        _gameUI.AddChild(mapaButton);
+        mapaButton.Pressed += () => GD.Print("[UI] Mapa button — not implemented yet");
+
+        var grupoButton = CreateInvisibleButton(681, 466, 94, 21);
+        _gameUI.AddChild(grupoButton);
+        grupoButton.Pressed += () => GD.Print("[UI] Grupo button — not implemented yet");
+
         var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
@@ -486,6 +496,10 @@ public partial class Main : Control
                     _optionsPanel.Open();
             }
         };
+
+        var estadisticasButton = CreateInvisibleButton(681, 507, 95, 24);
+        _gameUI.AddChild(estadisticasButton);
+        estadisticasButton.Pressed += () => GD.Print("[UI] Estadisticas button — not implemented yet");
 
         var clanesButton = CreateInvisibleButton(683, 532, 92, 26);
         _gameUI.AddChild(clanesButton);
@@ -933,8 +947,6 @@ public partial class Main : Control
             return;
         }
 
-        _principalDir = principalDir;
-
         // Load Principal.jpg
         try
         {
@@ -949,8 +961,8 @@ public partial class Main : Control
         }
 
         // Load InvEqu textures (inventory / spells panel backgrounds)
-        _invEquInvTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroNuevoInventario.jpg"));
-        _invEquSpellTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentronuevoHechizos.jpg"));
+        _invEquInvTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroInventario.jpg"));
+        _invEquSpellTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroHechizos.jpg"));
 
         // Default to inventory background
         if (_invEquImage != null && _invEquInvTexture != null)
@@ -2858,6 +2870,10 @@ public partial class Main : Control
         _state.AttackMin = 0; _state.AttackMax = 0;
         _state.DefenseMin = 0; _state.DefenseMax = 0;
         _state.MagDefMin = 0; _state.MagDefMax = 0;
+        _state.WeaponEqpSlot = 0; _state.ArmourEqpSlot = 0;
+        _state.ShieldEqpSlot = 0; _state.HelmEqpSlot = 0;
+        _state.WeaponLabel = "0/0"; _state.ArmourLabel = "0/0";
+        _state.ShieldLabel = "0/0"; _state.HelmLabel = "0/0";
 
         // Inventory & spells
         for (int i = 0; i < 25; i++)
@@ -2932,9 +2948,11 @@ public partial class Main : Control
         if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;
 
         // Combat stat labels
-        _armaLabel!.Text = $"{_state.AttackMin}/{_state.AttackMax}";
-        _defMagLabel!.Text = $"{_state.MagDefMin}/{_state.MagDefMax}";
-        _defensaLabel!.Text = $"{_state.DefenseMin}/{_state.DefenseMax}";
+        // VB6: Per-equipment bottom bar labels (updated on ChangeInventorySlot)
+        _armorLabel!.Text = _state.ArmourLabel;
+        _helmLabel!.Text = _state.HelmLabel;
+        _shieldLabel!.Text = _state.ShieldLabel;
+        _weaponLabel!.Text = _state.WeaponLabel;
         _fuerzaLabel!.Text = $"{_state.Strength}";
         _agilidadLabel!.Text = $"{_state.Agility}";
 

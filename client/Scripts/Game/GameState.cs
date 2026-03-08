@@ -156,6 +156,18 @@ public class GameState
     public int DefenseMin, DefenseMax;
     public int MagDefMin, MagDefMax;
 
+    // Per-equipment labels (VB6: UserWeaponEqpSlot, etc.)
+    // These track which inventory slot holds each equipment type,
+    // and the min/max values to display on the bottom bar labels.
+    public int WeaponEqpSlot;  // 1-based slot, 0 = none
+    public int ArmourEqpSlot;
+    public int ShieldEqpSlot;
+    public int HelmEqpSlot;
+    public string WeaponLabel = "0/0";
+    public string ArmourLabel = "0/0";
+    public string ShieldLabel = "0/0";
+    public string HelmLabel = "0/0";
+
 
     // Inventory (25 slots)
     public InventorySlot[] Inventory = new InventorySlot[25];
@@ -276,7 +288,7 @@ public class InventorySlot
     public int GrhIndex;
     public int ObjType;
     public int MaxHit, MinHit;
-    public int MaxDef;
+    public int MaxDef, MinDef;
     public int Value;
 }
 
@@ -295,7 +307,7 @@ public class NpcShopItem
     public int GrhIndex;
     public int ObjIndex;
     public int ObjType;    // 2=weapon, 3=armor, 16=shield, 17=helmet
-    public int MaxHit, MinHit, MaxDef;
+    public int MaxHit, MinHit, MaxDef, MinDef;
 }
 
 public class BankItem
@@ -306,7 +318,7 @@ public class BankItem
     public int Amount;
     public int GrhIndex;
     public int ObjType;
-    public int MaxHit, MinHit, MaxDef;
+    public int MaxHit, MinHit, MaxDef, MinDef;
 }
 
 /// <summary>
