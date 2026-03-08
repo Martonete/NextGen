@@ -80,7 +80,14 @@ impl IniFile {
             // Key=Value pair
             if let Some(eq_pos) = trimmed.find('=') {
                 let key = trimmed[..eq_pos].trim().to_lowercase();
-                let value = trimmed[eq_pos + 1..].trim().to_string();
+                let raw_value = trimmed[eq_pos + 1..].trim();
+                // Strip VB6 inline comments: " '" (space + apostrophe) starts a comment
+                // But preserve apostrophes inside values (e.g. Name=O'Riley)
+                let value = if let Some(comment_pos) = raw_value.find(" '") {
+                    raw_value[..comment_pos].trim().to_string()
+                } else {
+                    raw_value.to_string()
+                };
                 sections
                     .entry(current_section.clone())
                     .or_default()
