@@ -9,6 +9,7 @@ use crate::data::objects::ObjType;
 use crate::db::guilds as db_guilds;
 use super::common::*;
 use super::{send_inventory_slot, send_full_inventory};
+use super::skills::try_level_skill_with_hit;
 
 /// Commerce skill index in skills array.
 const SK_COMERCIAR: usize = 11; // VB6 eSkill.Comerciar = 11
@@ -78,7 +79,7 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
             };
 
             let infla = (inflacion as i64 * obj.valor as i64) / 100;
-            let price = ((obj.valor as i64 + infla) as f64 / descuento) as i64;
+            let price = ((obj.valor as i64 + infla) as f64 / descuento + 0.5) as i64;
 
             let pkt = binary_packets::write_change_npc_inv_slot(
                 (*idx + 1) as u8, // 1-based slot for client
@@ -112,7 +113,7 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
                 None => return,
             };
             let infla = (inflacion as i64 * obj.valor as i64) / 100;
-            let price = ((obj.valor as i64 + infla) as f64 / descuento) as i64;
+            let price = ((obj.valor as i64 + infla) as f64 / descuento + 0.5) as i64;
 
             let pkt = binary_packets::write_change_npc_inv_slot(
                 slot as u8,
@@ -199,7 +200,7 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
     let descuento = 1.0 + comerciar_skill as f64 / 100.0;
     let descuento = if descuento <= 0.0 { 1.0 } else { descuento };
     let infla = (npc_inflacion as i64 * obj.valor as i64) / 100;
-    let unit_price = ((obj.valor as i64 + infla) as f64 / descuento) as i64;
+    let unit_price = ((obj.valor as i64 + infla) as f64 / descuento + 0.5) as i64;
     let total_price = unit_price * cantidad as i64;
 
     // Check gold
@@ -281,6 +282,11 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
 
     let pkt = binary_packets::write_trans_ok(slot as u8, 0); // 0 = buy
     state.send_bytes(conn_id, &pkt).await;
+
+    // VB6: SubirSkill(UserIndex, Comerciar, True) — commerce XP on buy
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        try_level_skill_with_hit(user, SK_COMERCIAR, true);
+    }
 }
 
 /// VEND — User sells to NPC (VB6: NPCCompraItem / NpcCompraObj).
@@ -424,6 +430,11 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
 
     let pkt = binary_packets::write_trans_ok(slot as u8, 1); // 1 = sell
     state.send_bytes(conn_id, &pkt).await;
+
+    // VB6: SubirSkill(UserIndex, Comerciar, True) — commerce XP on sell
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        try_level_skill_with_hit(user, SK_COMERCIAR, true);
+    }
 }
 
 /// FINCOM — Close commerce window.

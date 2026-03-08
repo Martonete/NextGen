@@ -222,6 +222,18 @@ pub struct UserState {
     pub counter_poison: i32,   // Poison damage counter
     pub counter_hp_regen: i32, // HP regen counter (VB6: Sanar)
     pub counter_remo: i32,     // Remo potion cooldown (VB6: usoPotaRemo, 3 rounds)
+    pub counter_frio: i32,     // VB6 Counters.Frio — cold damage counter (naked on snow/non-snow)
+    pub counter_lava: i32,     // VB6 Counters.Lava — lava damage counter
+    pub counter_mimetismo: i32, // VB6 Counters.Mimetismo — mimicry duration (counts up to IntervaloInvisible)
+    pub resting: bool,         // VB6 flags.Descansar — resting (DOK) for faster HP/STA regen
+    pub mimetizado: bool,      // VB6 flags.Mimetizado — disguised via Druid mimicry spell
+    pub ignorado: bool,        // VB6 flags.Ignorado — ignored by NPCs (during mimicry)
+    // Backup of original char appearance before mimicry
+    pub char_mimetizado_body: i32,
+    pub char_mimetizado_head: i32,
+    pub char_mimetizado_weapon: i32,
+    pub char_mimetizado_shield: i32,
+    pub char_mimetizado_helmet: i32,
 
     // Area system (VB6 ModAreas — 9x9 tile zones for visibility updates)
     pub area_id: i32,        // (x/9+1)*(y/9+1), 0 = uninitialized
@@ -406,6 +418,17 @@ impl UserState {
             counter_poison: 0,
             counter_hp_regen: 0,
             counter_remo: 0,
+            counter_frio: 0,
+            counter_lava: 0,
+            counter_mimetismo: 0,
+            resting: false,
+            mimetizado: false,
+            ignorado: false,
+            char_mimetizado_body: 0,
+            char_mimetizado_head: 0,
+            char_mimetizado_weapon: 0,
+            char_mimetizado_shield: 0,
+            char_mimetizado_helmet: 0,
             area_id: 0,
             area_min_x: 0,
             area_min_y: 0,

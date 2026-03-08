@@ -1234,6 +1234,35 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         return;
     }
 
+    let obj_idx = ground_item.obj_index;
+    let amount = ground_item.amount;
+
+    // VB6 13.3: Gold (otGuita / ObjType::Money) goes directly to wallet, not inventory
+    let is_gold = state.get_object(obj_idx)
+        .map(|o| o.obj_type == ObjType::Money)
+        .unwrap_or(false);
+
+    if is_gold {
+        // Remove item from ground
+        {
+            let grid = state.world.grid_mut(map);
+            if let Some(tile) = grid.tile_mut(x, y) {
+                tile.ground_item = world::GroundItem::default();
+            }
+        }
+        // Broadcast BO (erase object) to area
+        let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo).await;
+
+        // Add directly to gold counter (VB6: Stats.GLD += Amount)
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.gold += amount as i64;
+        }
+        send_stats_gold(state, conn_id).await;
+        state.send_console(conn_id, &format!("Has recogido {} monedas de oro.", amount), font_index::INFO).await;
+        return;
+    }
+
     // Find free inventory slot
     let free_slot = {
         let user = match state.users.get(&conn_id) {
@@ -1262,9 +1291,6 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
             return;
         }
     };
-
-    let obj_idx = ground_item.obj_index;
-    let amount = ground_item.amount;
 
     // Remove item from ground
     {
@@ -1555,23 +1581,79 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 }
 
 /// Drop gold from inventory (TI with slot=-1).
+/// VB6: TirarOro — splits into piles of max 10,000 on ground.
 pub(super) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionId, amount: i32) {
-    let user = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => u,
+    let (gold, map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && !u.dead => (u.gold, u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };
 
-    if user.gold < amount as i64 || amount <= 0 {
+    if gold < amount as i64 || amount <= 0 {
         return;
     }
 
+    // VB6: Cap at 500,000 per drop
+    let drop_total = (amount as i64).min(500_000).min(gold) as i32;
+
     // Deduct gold
     if let Some(user) = state.users.get_mut(&conn_id) {
-        user.gold -= amount as i64;
+        user.gold -= drop_total as i64;
     }
     send_stats_gold(state, conn_id).await;
 
-    state.send_console(conn_id, &format!("Tiraste {} monedas de oro", amount), font_index::INFO).await;
+    // VB6: TirarOro — place gold object (iORO=12) on ground tile
+    // Split into MAX_INVENTORY_OBJS (10000) chunks like VB6
+    let grh_index = state.get_object(GOLD_OBJ_INDEX)
+        .map(|o| o.grh_index)
+        .unwrap_or(0);
+
+    let mut remaining = drop_total;
+    while remaining > 0 {
+        let chunk = remaining.min(10_000);
+        remaining -= chunk;
+
+        // Check tile availability
+        let can_place = state.world.grid(map)
+            .and_then(|g| g.tile(x, y))
+            .map(|t| t.ground_item.obj_index == 0 || t.ground_item.obj_index == GOLD_OBJ_INDEX)
+            .unwrap_or(false);
+
+        if !can_place {
+            // Refund what we couldn't place
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.gold += (chunk + remaining) as i64;
+            }
+            send_stats_gold(state, conn_id).await;
+            break;
+        }
+
+        let is_new = {
+            let grid = state.world.grid_mut(map);
+            if let Some(tile) = grid.tile_mut(x, y) {
+                if tile.ground_item.obj_index == GOLD_OBJ_INDEX {
+                    tile.ground_item.amount += chunk;
+                    false
+                } else {
+                    tile.ground_item.obj_index = GOLD_OBJ_INDEX;
+                    tile.ground_item.amount = chunk;
+                    true
+                }
+            } else {
+                break;
+            }
+        };
+
+        if is_new && grh_index > 0 {
+            let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
+        }
+
+        clean_world_add_item(state, map, x, y, 10, GOLD_OBJ_INDEX);
+        // Only one pile per tile — break after placing
+        break;
+    }
+
+    state.send_console(conn_id, &format!("Tiraste {} monedas de oro.", drop_total), font_index::INFO).await;
 }
 
 /// LC<x>,<y> — Left click on tile (look / inspect).

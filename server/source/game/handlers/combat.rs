@@ -970,8 +970,12 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         user.immobilized = false;
         user.invisible = false;
         user.meditating = false;
+        user.resting = false;
+        user.poisoned = false;
         user.montado = false;
         user.levitando = false;
+        user.mimetizado = false;
+        user.hidden = false;
         // VB6 UserDie: if navigating, use ghost boat (iFragataFantasmal=87), else normal dead body
         if user.navigating {
             user.body = 87; // iFragataFantasmal

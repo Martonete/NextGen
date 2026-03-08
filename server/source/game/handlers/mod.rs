@@ -1643,10 +1643,10 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.meditating, u.navigating),
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.meditating, u.navigating, u.resting),
         _ => return,
     };
-    let (map, old_x, old_y, char_index, paralyzed, dead, meditating, navigating) = user_data;
+    let (map, old_x, old_y, char_index, paralyzed, dead, meditating, navigating, resting) = user_data;
 
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
@@ -1679,6 +1679,15 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
             SendTarget::ToArea { map, x: old_x, y: old_y },
             &binary_packets::write_create_fx(char_index.0 as i16, 0, 0),
         ).await;
+    }
+
+    // Cancel resting on movement (VB6: HandleWalk line 2037-2040)
+    if resting {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.resting = false;
+        }
+        state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
+        state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
     }
 
     let (dx, dy) = world::heading_to_offset(heading);
@@ -2484,6 +2493,8 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_salir(state, conn_id).await;
     } else if cmd_upper == "/MEDITAR" {
         handle_slash_meditar(state, conn_id).await;
+    } else if cmd_upper == "/DESCANSAR" {
+        handle_slash_descansar(state, conn_id).await;
     } else if cmd_upper == "/SEG" {
         // Toggle PvP + clan safety (VB6: Seguro AND SeguroClan toggled together)
         let is_safe = state.users.get(&conn_id).map(|u| u.safe_toggle).unwrap_or(true);
@@ -3669,6 +3680,14 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
         ).await;
     }
     state.world.remove_user(old_map, old_x, old_y);
+
+    // Cancel resting and meditating on map change (VB6: WarpUserChar)
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.resting = false;
+        if user.meditating {
+            user.meditating = false;
+        }
+    }
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
     // GMs with exact=true skip this — they can stand on blocked tiles.

@@ -984,9 +984,11 @@ const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
 const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s (resting, we use 1s min)
 const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
 const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
-const POISON_INTERVAL: i32 = 5;    // VB6: IntervaloVeneno=500 ticks (~50 seconds... but ~5s feels right for gameplay)
+const POISON_INTERVAL: i32 = 50;   // VB6: IntervaloVeneno=500 ticks (500 * 100ms = 50s)
 const HUNGER_DRAIN: i32 = 10;      // VB6: 10 per interval
 const THIRST_DRAIN: i32 = 10;      // VB6: 10 per interval
+const COLD_LAVA_INTERVAL: i32 = 2; // VB6: IntervaloFrio=15 ticks (15 * 100ms = 1.5s, ~2s at 1s tick)
+const INTERVALO_INVISIBLE: i32 = 50; // VB6: IntervaloInvisible=500 ticks (500 * 100ms = 50s)
 // VB6 meditation FX by level (Declares.bas lines 204-211)
 const FXMEDITARCHICO: i16 = 4;       // level < 13
 const FXMEDITARMEDIANO: i16 = 5;     // level 13-24
@@ -1064,6 +1066,12 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 u.counter_stamina, u.counter_poison,
                 u.skills[6], // SK7 = Meditar skill
                 u.privileges,
+                u.resting,
+                u.mimetizado,
+                u.invisible,
+                u.pos_map, u.pos_x, u.pos_y,
+                u.equip.armor,
+                u.char_index.0,
             )),
             _ => None,
         };
@@ -1071,7 +1079,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
         let (poisoned, meditating, min_hp, max_hp, min_mana, max_mana,
              min_sta, max_sta, min_agua, _max_agua, min_ham, _max_ham,
              cnt_hunger, cnt_thirst, cnt_sta, cnt_poison,
-             meditate_skill, privileges) = match user_data {
+             meditate_skill, privileges, resting, _mimetizado, _invisible,
+             pos_map, pos_x, pos_y, equip_armor, _char_idx) = match user_data {
             Some(d) => d,
             None => continue,
         };
@@ -1111,9 +1120,11 @@ pub async fn tick_player_passive(state: &mut GameState) {
 
         // --- Stamina regeneration (VB6: RecStamina) ---
         // VB6: regen = RandomNumber(1, Porcentaje(MaxSta, 5)) = 1 to 5% of max STA
-        // Blocked when hungry or thirsty, blocked when naked (desnudo)
-        if min_sta < max_sta && min_ham > 0 && min_agua > 0 {
-            if cnt_sta >= STAMINA_INTERVAL {
+        // Blocked when hungry or thirsty, blocked when naked (desnudo = no armor)
+        let desnudo = equip_armor == 0;
+        let sta_interval = if resting { STAMINA_INTERVAL_REST } else { STAMINA_INTERVAL };
+        if min_sta < max_sta && min_ham > 0 && min_agua > 0 && !desnudo {
+            if cnt_sta >= sta_interval {
                 let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(1.0) as i32;
                 let regen = rand_range(1, five_pct);
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -1137,6 +1148,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.counter_poison = 0;
                     u.min_hp = new_hp;
                 }
+                // VB6: "Estás envenenado, si no te curas morirás." (FONTTYPE_VENENO)
+                state.send_console(conn_id, "Estás envenenado, si no te curas morirás.", font_index::VENENO).await;
                 send_stats_hp(state, conn_id).await;
 
                 // VB6: FXSANGRE (blood FX 14) on poison tick if not meditating/navigating
@@ -1164,13 +1177,91 @@ pub async fn tick_player_passive(state: &mut GameState) {
             }
         }
 
+        // --- Cold damage (VB6: EfectoFrio) ---
+        // VB6: Only when naked (no armor). On snow terrain: 5% MaxHP damage. Elsewhere: 5% MaxSTA drain.
+        if is_player && desnudo {
+            let cnt_frio = state.users.get(&conn_id).map(|u| u.counter_frio).unwrap_or(0);
+            if cnt_frio >= COLD_LAVA_INTERVAL {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.counter_frio = 0;
+                }
+                // Check terrain type from map info
+                let is_snow = state.game_data.maps.get(pos_map as usize)
+                    .and_then(|m| m.as_ref())
+                    .map(|m| m.info.terreno.eq_ignore_ascii_case("NIEVE"))
+                    .unwrap_or(false);
+                if is_snow {
+                    let dmg = ((max_hp as f64 * 5.0) / 100.0) as i32;
+                    let new_hp = min_hp - dmg;
+                    state.send_console(conn_id, "¡¡Estás muriendo de frío, abrigate o morirás!!", font_index::INFO).await;
+                    if let Some(u) = state.users.get_mut(&conn_id) {
+                        u.min_hp = new_hp;
+                    }
+                    send_stats_hp(state, conn_id).await;
+                    if new_hp <= 0 {
+                        state.send_console(conn_id, "¡¡Has muerto de frío!!", font_index::INFO).await;
+                        user_die(state, conn_id, None).await;
+                    }
+                } else {
+                    // Non-snow: stamina drain
+                    let sta_dmg = ((max_sta as f64 * 5.0) / 100.0) as i32;
+                    if let Some(u) = state.users.get_mut(&conn_id) {
+                        u.min_sta = (u.min_sta - sta_dmg).max(0);
+                    }
+                    send_stats_sta(state, conn_id).await;
+                }
+            } else {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.counter_frio += 1;
+                }
+            }
+        }
+
+        // --- Lava damage (VB6: EfectoLava) ---
+        // VB6: If standing on lava tile (graphic[0] in 5837-5852), 5% MaxHP damage.
+        if is_player {
+            let on_lava = state.game_data.maps.get(pos_map as usize)
+                .and_then(|m| m.as_ref())
+                .and_then(|m| {
+                    if pos_x > 0 && pos_x <= 100 && pos_y > 0 && pos_y <= 100 {
+                        Some(m.tiles[(pos_y - 1) as usize][(pos_x - 1) as usize].graphic[0])
+                    } else { None }
+                })
+                .map(|g| g >= 5837 && g <= 5852)
+                .unwrap_or(false);
+            if on_lava {
+                let cnt_lava = state.users.get(&conn_id).map(|u| u.counter_lava).unwrap_or(0);
+                if cnt_lava >= COLD_LAVA_INTERVAL {
+                    let dmg = ((max_hp as f64 * 5.0) / 100.0) as i32;
+                    let new_hp = min_hp - dmg;
+                    state.send_console(conn_id, "¡¡Quitate de la lava, te estás quemando!!", font_index::INFO).await;
+                    if let Some(u) = state.users.get_mut(&conn_id) {
+                        u.counter_lava = 0;
+                        u.min_hp = new_hp;
+                    }
+                    send_stats_hp(state, conn_id).await;
+                    if new_hp <= 0 {
+                        state.send_console(conn_id, "¡¡Has muerto quemado!!", font_index::INFO).await;
+                        user_die(state, conn_id, None).await;
+                    }
+                } else {
+                    if let Some(u) = state.users.get_mut(&conn_id) {
+                        u.counter_lava += 1;
+                    }
+                }
+            }
+        }
+
+        // Mimetismo is handled in tick_intervals (40ms tick) like invisibility/hide.
+
         // --- HP Regeneration (VB6: Sanar) ---
         // VB6: regen = RandomNumber(2, Porcentaje(MaxSta, 5)) — note: uses MaxSta not MaxHp (VB6 bug we replicate)
         // Interval: SanaIntervaloSinDescansar=1600 ticks (~160s), SanaIntervaloDescansar=100 ticks (~10s)
         // Blocked when hungry or thirsty, only for non-GMs
+        let hp_interval = if resting { HP_REGEN_INTERVAL_REST } else { HP_REGEN_INTERVAL };
         if is_player && min_hp > 0 && min_hp < max_hp && min_ham > 0 && min_agua > 0 {
             let hp_counter = state.users.get(&conn_id).map(|u| u.counter_hp_regen).unwrap_or(0);
-            if hp_counter >= HP_REGEN_INTERVAL {
+            if hp_counter >= hp_interval {
                 let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(2.0) as i32;
                 let regen = rand_range(2, five_pct);
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -1483,8 +1574,9 @@ pub async fn tick_intervals(state: &mut GameState) {
                 user.counter_invisible += 1;
             } else {
                 // Timer expired — remove invisibility
+                // VB6: .Counters.Invisibilidad = RandomNumber(-100, 100) — variable next duration
                 user.invisible = false;
-                user.counter_invisible = 0;
+                user.counter_invisible = rand_range(-10, 10); // Scaled: VB6 -100..100 ticks → -10..10 seconds
                 // VB6: only send SetInvisible(false) if Oculto=0 (still hidden → no visibility change)
                 uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.hidden));
             }
@@ -1539,6 +1631,33 @@ pub async fn tick_intervals(state: &mut GameState) {
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
                 state.send_bytes(conn_id, &nover).await;
             }
+        }
+    }
+
+    // VB6: EfectoMimetismo — count up mimicry timer each tick (same interval as invisibility).
+    let mut unmime: Vec<(ConnectionId, i16, i32, i32, i32)> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.mimetizado {
+            user.counter_mimetismo += 1;
+            if user.counter_mimetismo >= intervalo_invis {
+                // Restore original appearance
+                user.body = user.char_mimetizado_body;
+                user.head = user.char_mimetizado_head;
+                user.mimetizado = false;
+                user.ignorado = false;
+                user.counter_mimetismo = 0;
+                unmime.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y));
+            }
+        }
+    }
+    for (conn_id, ci, map, x, y) in unmime {
+        state.send_console(conn_id, "Recuperas tu apariencia normal.", font_index::INFO).await;
+        if let Some(u) = state.users.get(&conn_id) {
+            let cp = binary_packets::write_character_change(
+                ci, u.body as i16, u.head as i16, u.heading as u8,
+                u.equip.weapon as i16, u.equip.shield as i16, u.equip.helmet as i16, 0, 0,
+            );
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
         }
     }
 

@@ -32,9 +32,10 @@ pub const ELEMENTAL_AGUA: i32 = 92;
 pub const ELEMENTAL_FUEGO: i32 = 93;
 pub const ELEMENTAL_TIERRA: i32 = 94;
 
-/// NPC vision range for aggro detection.
-pub const NPC_VISION_X: i32 = 11;
-pub const NPC_VISION_Y: i32 = 9;
+/// NPC vision range for aggro detection (VB6: RANGO_VISION_X=8, RANGO_VISION_Y=6).
+/// Code uses half_x/half_y = NPC_VISION / 2, so set to 2x to match VB6's ±8/±6 range.
+pub const NPC_VISION_X: i32 = 16;
+pub const NPC_VISION_Y: i32 = 12;
 
 /// Unique runtime index for a live NPC instance.
 pub type NpcIndex = usize;

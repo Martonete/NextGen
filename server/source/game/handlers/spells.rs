@@ -812,6 +812,32 @@ pub(super) async fn apply_spell_properties(
         }
     }
 
+    // Hunger effect (VB6: SubeHam — 1=restore, 2=damage)
+    if spell.sube_ham == 1 {
+        let amount = rand_range(spell.min_ham, spell.max_ham);
+        if let Some(target) = state.users.get_mut(&target_id) {
+            target.min_ham = (target.min_ham + amount).min(target.max_ham);
+        }
+    } else if spell.sube_ham == 2 {
+        let amount = rand_range(spell.min_ham, spell.max_ham);
+        if let Some(target) = state.users.get_mut(&target_id) {
+            target.min_ham = (target.min_ham - amount).max(0);
+        }
+    }
+
+    // Thirst effect (VB6: SubeSed — 1=restore, 2=damage)
+    if spell.sube_sed == 1 {
+        let amount = rand_range(spell.min_sed, spell.max_sed);
+        if let Some(target) = state.users.get_mut(&target_id) {
+            target.min_agua = (target.min_agua + amount).min(target.max_agua);
+        }
+    } else if spell.sube_sed == 2 {
+        let amount = rand_range(spell.min_sed, spell.max_sed);
+        if let Some(target) = state.users.get_mut(&target_id) {
+            target.min_agua = (target.min_agua - amount).max(0);
+        }
+    }
+
     // VB6: floating yellow damage number above target for damage spells
     if damage_dealt > 0 {
         if let Some((ci, map, tx, ty)) = target_info {
@@ -823,6 +849,11 @@ pub(super) async fn apply_spell_properties(
     send_stats_hp(state, target_id).await;
     send_stats_mana(state, target_id).await;
     send_stats_sta(state, target_id).await;
+
+    // Send hunger/thirst if affected
+    if spell.sube_ham != 0 || spell.sube_sed != 0 {
+        send_hunger_thirst(state, target_id).await;
+    }
 
     // Check death from damage spell
     let hp = state.users.get(&target_id).map(|u| u.min_hp).unwrap_or(0);

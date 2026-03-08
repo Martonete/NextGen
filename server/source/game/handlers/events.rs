@@ -123,6 +123,71 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
 }
 
 
+/// /DESCANSAR — Toggle resting near a campfire.
+/// VB6: HandleRest (Protocol.bas). Requires FOGATA (obj 63) in view area.
+/// Resting doubles HP/STA regen rate in tick_player_passive.
+pub(super) async fn handle_slash_descansar(state: &mut GameState, conn_id: ConnectionId) {
+    let (dead, resting, pos_map, pos_x, pos_y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.resting, u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    if dead {
+        state.send_console(conn_id, "¡¡Estás muerto!!", font_index::INFO).await;
+        return;
+    }
+
+    const FOGATA: i16 = 63;
+    let has_fogata = hay_obj_area(state, pos_map, pos_x, pos_y, FOGATA);
+
+    if has_fogata {
+        state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
+
+        if !resting {
+            state.send_console(conn_id, "Te acomodás junto a la fogata y comienzas a descansar.", font_index::INFO).await;
+        } else {
+            state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
+        }
+
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.resting = !resting;
+        }
+    } else {
+        if resting {
+            // Was resting but moved away — stop resting
+            state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
+            state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.resting = false;
+            }
+        } else {
+            state.send_console(conn_id, "No hay ninguna fogata junto a la cual descansar.", font_index::INFO).await;
+        }
+    }
+}
+
+/// VB6: HayOBJarea — check if an object with given index exists within the view area.
+/// Scans roughly ±8 tiles X and ±6 tiles Y around position (VB6 MinXBorder/MinYBorder).
+fn hay_obj_area(state: &GameState, map: i32, cx: i32, cy: i32, obj_index: i16) -> bool {
+    const RANGE_X: i32 = 8;
+    const RANGE_Y: i32 = 6;
+
+    let game_map = match state.game_data.maps.get(map as usize).and_then(|m| m.as_ref()) {
+        Some(m) => m,
+        None => return false,
+    };
+
+    for y in (cy - RANGE_Y)..=(cy + RANGE_Y) {
+        for x in (cx - RANGE_X)..=(cx + RANGE_X) {
+            if x < 1 || x > 100 || y < 1 || y > 100 { continue; }
+            if game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index == obj_index {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 // =====================================================================
 // IP Security (SecurityIp.bas) — rate limiting + max connections per IP
 // =====================================================================
