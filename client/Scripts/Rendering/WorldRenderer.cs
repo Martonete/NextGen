@@ -646,6 +646,45 @@ void fragment() {
             }
         }
 
+        // Arrow projectiles — draw after characters/trees so they appear on top
+        if (_state.ActiveArrows.Count > 0)
+        {
+            float originX = _frameUserX * TileSize - HalfWindowTileWidth * TileSize - _framePixelOffsetX;
+            float originY = _frameUserY * TileSize - HalfWindowTileHeight * TileSize - _framePixelOffsetY;
+
+            for (int i = 0; i < _state.ActiveArrows.Count; i++)
+            {
+                var arrow = _state.ActiveArrows[i];
+                if (!arrow.Active || arrow.GrhIndex <= 0) continue;
+
+                float screenX = arrow.X - originX;
+                float screenY = arrow.Y - originY;
+
+                // Rotate arrow to face target
+                float dx = arrow.TargetX - arrow.X;
+                float dy = arrow.TargetY - arrow.Y;
+                float angle = MathF.Atan2(dy, dx);
+
+                // Resolve sprite for centering
+                int frame = _animator?.GetCurrentFrame(arrow.GrhIndex, _data) ?? 0;
+                var resolved = _data?.ResolveGrh(arrow.GrhIndex, frame);
+                if (resolved == null || resolved.FileNum <= 0) continue;
+
+                var texture = _data?.Textures?.GetTexture(resolved.FileNum);
+                if (texture == null) continue;
+
+                float hw = resolved.PixelWidth / 2f;
+                float hh = resolved.PixelHeight / 2f;
+
+                // Draw rotated around center
+                canvas.DrawSetTransform(new Vector2(screenX, screenY), angle);
+                var srcRect = new Rect2(resolved.SX, resolved.SY, resolved.PixelWidth, resolved.PixelHeight);
+                canvas.DrawTextureRectRegion(texture, new Rect2(-hw, -hh, resolved.PixelWidth, resolved.PixelHeight),
+                                              srcRect);
+                canvas.DrawSetTransform(Vector2.Zero, 0f);
+            }
+        }
+
         // Status overlay (VB6: drawCounters — paralysis/invisibility bars + status icons)
         DrawStatusOverlayTo(canvas);
     }

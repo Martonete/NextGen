@@ -2473,6 +2473,9 @@ public partial class Main : Control
         // Update particle simulation
         _particleSystem.Update((float)delta, _state);
 
+        // Update arrow projectiles (move toward target, remove on arrival)
+        UpdateArrowProjectiles((float)delta);
+
         // Recalculate lighting when dirty (lights added/removed/map changed)
         if (_state.LightsDirty)
         {
@@ -2953,6 +2956,42 @@ public partial class Main : Control
             int tileY = Math.Clamp((int)(mb.Position.Y) + 1, 1, 100);
             _tcp?.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {_state.CurrentMap} {tileX} {tileY}"));
         }
+    }
+
+    /// <summary>
+    /// Move active arrows toward targets and remove on arrival.
+    /// VB6: arrows fly from shooter to target tile, rendered as a GRH.
+    /// </summary>
+    private void UpdateArrowProjectiles(float delta)
+    {
+        if (_state.ActiveArrows.Count == 0) return;
+        float pixelsPerSec = 320f; // ~10 tiles/sec at 32px/tile
+        for (int i = _state.ActiveArrows.Count - 1; i >= 0; i--)
+        {
+            var a = _state.ActiveArrows[i];
+            if (!a.Active) { _state.ActiveArrows.RemoveAt(i); continue; }
+
+            // Update target position from live character data (target may be moving)
+            if (_state.Characters.TryGetValue((short)a.TargetCharIndex, out var tgt))
+            {
+                a.TargetX = tgt.PosX * 32f + 16f;
+                a.TargetY = tgt.PosY * 32f + 16f;
+            }
+
+            float dx = a.TargetX - a.X;
+            float dy = a.TargetY - a.Y;
+            float dist = MathF.Sqrt(dx * dx + dy * dy);
+            if (dist < 4f)
+            {
+                _state.ActiveArrows.RemoveAt(i);
+                continue;
+            }
+            float move = pixelsPerSec * delta;
+            if (move >= dist) { _state.ActiveArrows.RemoveAt(i); continue; }
+            a.X += dx / dist * move;
+            a.Y += dy / dist * move;
+        }
+        _worldRenderer?.QueueRedraw(); // ensure arrows are redrawn
     }
 
     /// <summary>
