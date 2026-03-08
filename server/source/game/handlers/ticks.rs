@@ -1723,3 +1723,49 @@ pub async fn tick_clean_world(state: &mut GameState) {
     }
 }
 
+/// Security tick — called every 1 second from the main loop.
+///
+/// 1. Checks which connections exceeded the packet rate limit this window.
+///    - If exceeded: increment flood_strikes for that connection.
+///    - If strikes >= flood_strike_limit: queue for disconnect.
+///    - If NOT exceeded: reset strikes to 0 (clean window resets history).
+/// 2. Resets all packet counters for the next 1-second window.
+/// 3. Cleans up flood_strikes for disconnected connections.
+pub fn tick_security(state: &mut GameState) {
+    let limit = state.max_packets_per_second;
+    let strike_limit = state.flood_strike_limit;
+
+    // Collect connection IDs that had packet activity this window
+    let conn_ids: Vec<crate::net::ConnectionId> = state.packet_counts.keys().copied().collect();
+
+    for conn_id in &conn_ids {
+        let count = state.packet_counts.get(conn_id).copied().unwrap_or(0);
+        if count > limit {
+            // Exceeded rate — add a strike
+            let strikes = state.flood_strikes.entry(*conn_id).or_insert(0);
+            *strikes += 1;
+            if *strikes >= strike_limit {
+                tracing::warn!(
+                    "[SEC] Connection #{} flood: {} strikes ({}+ pkt/s), disconnecting",
+                    conn_id, strikes, count
+                );
+                state.security_kick_queue.push(*conn_id);
+            } else {
+                tracing::debug!(
+                    "[SEC] Connection #{} flood strike {}/{} ({} pkt/s)",
+                    conn_id, strikes, strike_limit, count
+                );
+            }
+        } else {
+            // Clean window — reset strikes
+            state.flood_strikes.remove(conn_id);
+        }
+    }
+
+    // Reset packet counters for the next window
+    state.packet_counts.clear();
+
+    // Clean up flood_strikes for connections that no longer exist
+    state.flood_strikes.retain(|conn_id, _| state.users.contains_key(conn_id));
+}
+

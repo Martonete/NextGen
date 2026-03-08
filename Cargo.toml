@@ -19,3 +19,4 @@ thiserror = "2"
 sqlx = { version = "0.8", features = ["runtime-tokio", "tls-rustls", "postgres", "migrate"] }
 argon2 = "0.5"
 dotenvy = "0.15"
+socket2 = "0.5"

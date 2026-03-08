@@ -605,6 +605,7 @@ pub struct GameState {
     pub ip_connection_count: HashMap<String, u32>,            // Active connections per IP
     pub ip_max_connections: u32,                               // Max connections per IP (default 10)
     pub ip_min_interval_ms: u64,                               // Min ms between connections (default 500)
+    pub flood_strike_limit: u32,                               // Strikes before disconnect (default 3)
 
     pub chat_global: bool,              // Global chat enabled (toggled by /NOGLOBAL)
 
@@ -660,6 +661,21 @@ pub struct GameState {
     /// When a TCP read delivers a partial packet, leftover bytes are stored here
     /// and prepended to the next read.
     pub recv_buffers: HashMap<ConnectionId, Vec<u8>>,
+
+    // ── Security: per-connection packet rate limiting ──
+    /// Packet count per connection in the current 1-second window.
+    /// Reset every second by tick_security(). If a connection exceeds
+    /// max_packets_per_second, further packets are silently dropped.
+    pub packet_counts: HashMap<ConnectionId, u32>,
+    /// Maximum packets per second per connection (default 60).
+    /// Legitimate gameplay produces ~5-15 pkt/s. Flood attacks produce thousands.
+    pub max_packets_per_second: u32,
+    /// Connections flagged for disconnection by security checks.
+    /// Drained in the main loop after event processing.
+    pub security_kick_queue: Vec<ConnectionId>,
+    /// Flood strike counter per connection. Incremented each second the
+    /// connection exceeds the packet rate limit. At 3 strikes, disconnected.
+    pub flood_strikes: HashMap<ConnectionId, u32>,
 }
 
 /// SOS message (help request from player)
@@ -685,6 +701,11 @@ impl GameState {
         let notice = config.notice.clone();
         let exp_mult = config.exp_multiplier as i32;
         let security_code = format!("{}", rand_simple());
+        // Extract security config before `config` is moved into struct
+        let ip_max_conn = config.ip_max_connections.unwrap_or(10);
+        let ip_min_ms = config.ip_min_interval_ms.unwrap_or(500);
+        let flood_strikes_limit = config.flood_strike_limit.unwrap_or(3);
+        let max_pps = config.max_packets_per_second.unwrap_or(60);
 
         // Load anti-cheat intervals
         let intervals = load_intervals(&base_path);
@@ -719,8 +740,9 @@ impl GameState {
             clean_world: vec![CleanWorldEntry::default(); MAX_OBJS_CLEAR],
             ip_last_connect: HashMap::new(),
             ip_connection_count: HashMap::new(),
-            ip_max_connections: 10,
-            ip_min_interval_ms: 500,
+            ip_max_connections: ip_max_conn,
+            ip_min_interval_ms: ip_min_ms,
+            flood_strike_limit: flood_strikes_limit,
             chat_global: true,
             tesoro_map: 0,
             tesoro_x: 0,
@@ -749,6 +771,10 @@ impl GameState {
             countdown_seconds: 0,
             role_overrides,
             recv_buffers: HashMap::new(),
+            packet_counts: HashMap::new(),
+            max_packets_per_second: max_pps,
+            security_kick_queue: Vec::new(),
+            flood_strikes: HashMap::new(),
         }
     }
 

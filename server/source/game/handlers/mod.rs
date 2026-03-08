@@ -33,7 +33,7 @@ pub use quests_party::party_share_exp;
 // Re-export tick functions called from main.rs
 pub use ticks::{
     tick_npc_ai, tick_npc_respawn, tick_player_passive,
-    tick_intervals, tick_clean_world,
+    tick_intervals, tick_clean_world, tick_security,
 };
 // Re-export event functions called from main.rs and other modules
 pub use events::{
@@ -93,11 +93,42 @@ pub async fn handle_packet_stream(state: &mut GameState, conn_id: ConnectionId, 
         return;
     }
 
+    // Recv buffer size cap — drop connection if accumulated buffer exceeds 64KB.
+    // Defense against partial-packet flooding (sending incomplete packets to bloat memory).
+    if data.len() > crate::net::connection::MAX_RECV_BUFFER {
+        tracing::warn!(
+            "[SEC] Connection #{} recv buffer overflow ({} bytes), disconnecting",
+            conn_id, data.len()
+        );
+        state.security_kick_queue.push(conn_id);
+        return;
+    }
+
     let mut bq = ByteQueue::from_bytes(&data);
+    let max_pps = state.max_packets_per_second;
 
     // Loop through all complete packets in the buffer
     loop {
         if bq.remaining() == 0 {
+            break;
+        }
+
+        // Per-connection packet rate limiting.
+        // Increment counter and check against max_packets_per_second.
+        // If exceeded, stop processing — remaining data stays in buffer
+        // and tick_security() will handle strike/kick logic.
+        let count = state.packet_counts.entry(conn_id).or_insert(0);
+        *count += 1;
+        if *count > max_pps {
+            // Over rate limit — save remaining bytes for next window
+            let leftover = bq.read_remaining();
+            if !leftover.is_empty() {
+                state.recv_buffers.insert(conn_id, leftover);
+            }
+            tracing::debug!(
+                "[SEC] Connection #{} exceeded packet rate ({}/s), throttled",
+                conn_id, max_pps
+            );
             break;
         }
 

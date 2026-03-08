@@ -57,6 +57,11 @@ async fn main() {
             info!("  EXP multiplier: {}x", cfg.exp_multiplier);
             info!("  Can create characters: {}", cfg.can_create_characters);
             info!("  Multi-login: {}", if cfg.allow_multi_logins { "allowed" } else { "blocked" });
+            info!("  Security: max_pkt/s={}, ip_max_conn={}, ip_min_ms={}, flood_strikes={}",
+                cfg.max_packets_per_second.unwrap_or(60),
+                cfg.ip_max_connections.unwrap_or(10),
+                cfg.ip_min_interval_ms.unwrap_or(500),
+                cfg.flood_strike_limit.unwrap_or(3));
             cfg
         }
         Err(e) => {
@@ -139,6 +144,9 @@ async fn main() {
     // World cleanup timer (60s — VB6: LimpiezaTimer.Interval = 60000)
     // Items dropped on ground get 10 ticks × 60s = 10 minutes before removal
     let mut cleanup_tick = tokio::time::interval(std::time::Duration::from_secs(60));
+
+    // Security tick (1s — packet rate reset, flood strike check, kick offenders)
+    let mut security_tick = tokio::time::interval(std::time::Duration::from_secs(1));
 
     // Main event loop
     loop {
@@ -349,6 +357,34 @@ async fn main() {
             // World cleanup tick — auto-remove ground items (every 60s, VB6: LimpiezaTimer)
             _ = cleanup_tick.tick() => {
                 game::handlers::tick_clean_world(&mut state).await;
+            }
+
+            // Security tick — rate limit reset, flood detection, kick offenders (every 1s)
+            _ = security_tick.tick() => {
+                game::handlers::tick_security(&mut state);
+
+                // Drain security kick queue — disconnect flagged connections
+                let kicks: Vec<_> = std::mem::take(&mut state.security_kick_queue);
+                for conn_id in kicks {
+                    if let Some(mut writer) = state.writers.remove(&conn_id) {
+                        writer.shutdown().await;
+                    }
+                    // Clean up recv buffers and counters
+                    state.recv_buffers.remove(&conn_id);
+                    state.packet_counts.remove(&conn_id);
+                    state.flood_strikes.remove(&conn_id);
+
+                    // Decrement IP connection count
+                    if let Some(user) = state.users.get(&conn_id) {
+                        let ip = user.ip.clone();
+                        if let Some(count) = state.ip_connection_count.get_mut(&ip) {
+                            *count = count.saturating_sub(1);
+                        }
+                    }
+
+                    state.remove_connection(conn_id);
+                    info!("[SEC] Connection #{} kicked for flood", conn_id);
+                }
             }
         } // end tokio::select!
     } // end loop

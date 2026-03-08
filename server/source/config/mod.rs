@@ -96,6 +96,11 @@ pub struct ServerConfig {
     pub intervalo_invisible: i32,   // VB6: IntervaloInvisible (ticks at 40ms — default 500 = 20s)
     pub intervalo_oculto: i32,      // VB6: IntervaloOculto (ticks at 40ms — default 500 = 20s)
     pub npc_ai_interval_ms: u64,    // VB6: IntervaloNpcAI (ms — default 1300)
+    // Security settings (loaded from [Security] section)
+    pub max_packets_per_second: Option<u32>,  // Per-connection packet rate limit (default 60)
+    pub ip_max_connections: Option<u32>,       // Max simultaneous connections per IP (default 10)
+    pub ip_min_interval_ms: Option<u64>,       // Min ms between connections from same IP (default 500)
+    pub flood_strike_limit: Option<u32>,       // Strikes before disconnect (default 3)
 }
 
 impl ServerConfig {
@@ -169,6 +174,14 @@ impl ServerConfig {
             npc_ai_interval_ms: ini.get("INTERVALOS", "IntervaloNpcAI")
                 .and_then(|s| s.trim().parse().ok())
                 .unwrap_or(1300),
+            max_packets_per_second: ini.get("Security", "MaxPacketsPerSecond")
+                .and_then(|s| s.trim().parse().ok()),
+            ip_max_connections: ini.get("Security", "IpMaxConnections")
+                .and_then(|s| s.trim().parse().ok()),
+            ip_min_interval_ms: ini.get("Security", "IpMinIntervalMs")
+                .and_then(|s| s.trim().parse().ok()),
+            flood_strike_limit: ini.get("Security", "FloodStrikeLimit")
+                .and_then(|s| s.trim().parse().ok()),
         })
     }
 }
