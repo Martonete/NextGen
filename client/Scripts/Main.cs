@@ -369,12 +369,12 @@ public partial class Main : Control
         _invEquImage.MouseFilter = Control.MouseFilterEnum.Ignore;
         _gameUI.AddChild(_invEquImage);
 
-        // Tab buttons — invisible flat (TSAO text: Inventario Y=134-139 X=585-641, Hechizos X=706-734)
-        _invTabButton = CreateInvisibleButton(570, 125, 110, 30);
+        // Tab buttons — VB6 13.3: Label4 "Inventario" (592,128,93,29), Label7 "Hechizos" (688,128,75,30)
+        _invTabButton = CreateInvisibleButton(592, 128, 93, 29);
         _gameUI.AddChild(_invTabButton);
         _invTabButton.Pressed += OnInventoryTabPressed;
 
-        _spellTabButton = CreateInvisibleButton(680, 125, 100, 30);
+        _spellTabButton = CreateInvisibleButton(688, 128, 75, 30);
         _gameUI.AddChild(_spellTabButton);
         _spellTabButton.Pressed += OnSpellTabPressed;
 
@@ -423,14 +423,14 @@ public partial class Main : Control
         _spellPanel.Visible = false;
         _gameUI.AddChild(_spellPanel);
 
-        // LANZAR button — TSAO Principal.jpg ornament at Y≈365-395, X=565-679
-        _lanzarButton = CreateInvisibleButton(565, 365, 115, 30);
+        // LANZAR button — VB6 13.3: CmdLanzar at (584, 352, 77, 25)
+        _lanzarButton = CreateInvisibleButton(584, 352, 77, 25);
         _lanzarButton.Visible = false;
         _gameUI.AddChild(_lanzarButton);
         _lanzarButton.Pressed += OnLanzarPressed;
 
-        // INFO button — TSAO Principal.jpg ornament at Y≈365-395, X=680-779
-        _infoButton = CreateInvisibleButton(680, 365, 100, 30);
+        // INFO button — VB6 13.3: cmdInfo at (712, 352, 57, 27)
+        _infoButton = CreateInvisibleButton(712, 352, 57, 27);
         _infoButton.Visible = false;
         _gameUI.AddChild(_infoButton);
         _infoButton.Pressed += () => _spellPanel.InfoSelected();
@@ -446,22 +446,22 @@ public partial class Main : Control
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
-        // === Bottom bar equipment labels — TSAO Principal.jpg 4 dark slots ===
-        // Slots measured: X=82-128, 200-246, 348-395, 467-515 (Y≈560-579)
-        _defensaLabel = CreateStatLabel(78, 569, 50, 11, Colors.White, 8);
+        // === Bottom bar labels — VB6 13.3 exact positions ===
+        // lblArmor(78,576,57,17), lblHelm(196,576,57,17), lblShielder(342,576,57,17), lblWeapon(464,576,57,17)
+        _defensaLabel = CreateStatLabel(78, 576, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_defensaLabel);
 
-        _defMagLabel = CreateStatLabel(196, 569, 50, 11, Colors.White, 8);
+        _defMagLabel = CreateStatLabel(196, 576, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_defMagLabel);
 
-        _armaLabel = CreateStatLabel(342, 569, 53, 11, Colors.White, 8);
+        _armaLabel = CreateStatLabel(342, 576, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_armaLabel);
 
-        // Fuerza: VB6 lblStrg at (648, 415) — right panel near compass, green
+        // Fuerza: VB6 13.3 lblStrg at (648, 415, 14, 14), green
         _fuerzaLabel = CreateStatLabel(648, 415, 14, 14, new Color(0, 1, 0), 9);
         _gameUI.AddChild(_fuerzaLabel);
 
-        // Agilidad: VB6 lblDext at (608, 415) — right panel near compass, yellow
+        // Agilidad: VB6 13.3 lblDext at (608, 415, 14, 14), yellow
         _agilidadLabel = CreateStatLabel(608, 415, 14, 14, new Color(1f, 1f, 0f), 9);
         _gameUI.AddChild(_agilidadLabel);
 
@@ -469,8 +469,8 @@ public partial class Main : Control
         _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 10, "Cambria", 400);
         _gameUI.AddChild(_repLabel);
 
-        // FPS: VB6 Tahoma 6pt Bold, center, White
-        _fpsLabel = CreateStatLabel(37, 576, 37, 10, Colors.White, 7);
+        // FPS: VB6 13.3 lblFPS at (444, 4, 37, 12), Tahoma Bold
+        _fpsLabel = CreateStatLabel(444, 4, 37, 12, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
 
