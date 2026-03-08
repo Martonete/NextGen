@@ -361,10 +361,10 @@ public partial class Main : Control
 
         // === Inventory & Spells UI (VB6-exact pixel positions, twips÷15) ===
 
-        // InvEqu panel background — VB6: InvEqu at (535,123,264,246)
+        // InvEqu panel background — VB6: InvEqu at (581,125) 198×282 pixels
         _invEquImage = new TextureRect();
-        _invEquImage.Position = new Vector2(535, 123);
-        _invEquImage.Size = new Vector2(264, 246);
+        _invEquImage.Position = new Vector2(581, 125);
+        _invEquImage.Size = new Vector2(198, 282);
         _invEquImage.StretchMode = TextureRect.StretchModeEnum.Scale;
         _invEquImage.MouseFilter = Control.MouseFilterEnum.Ignore;
         _gameUI.AddChild(_invEquImage);
@@ -378,10 +378,10 @@ public partial class Main : Control
         _gameUI.AddChild(_spellTabButton);
         _spellTabButton.Pressed += OnSpellTabPressed;
 
-        // Inventory panel — VB6: picInv at (580,155,174,174)
+        // Inventory panel — VB6: picInv at (600,160) 160×128 pixels
         _inventoryPanel = new InventoryPanel();
-        _inventoryPanel.Position = new Vector2(580, 155);
-        _inventoryPanel.Size = new Vector2(174, 174);
+        _inventoryPanel.Position = new Vector2(600, 160);
+        _inventoryPanel.Size = new Vector2(160, 128);
         _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
@@ -530,31 +530,31 @@ public partial class Main : Control
                 ShowEscapeMenu();
         };
 
-        // Commerce panel (frmComerciar) — centered on game viewport (534×408 at y=124)
+        // Commerce panel (frmComerciar) — centered on game viewport (544×416 at 8,144)
         _commercePanel = new CommercePanel();
-        // Center: (534 - 445) / 2 = 44.5, y offset: 124 + (408 - 486) / 2 ≈ 85
-        _commercePanel.Position = new Vector2(44, 85);
+        // Center: 8 + (544 - 445) / 2 = 57, y: 144 + (416 - 486) / 2 ≈ 109
+        _commercePanel.Position = new Vector2(57, 109);
         _commercePanel.Visible = false;
         _gameUI.AddChild(_commercePanel);
 
         // Bank panel (frmBanco) — centered on viewport
         _bankPanel = new BankPanel();
-        // Center: (534 - 165) / 2 = 184, y: 124 + (408 - 196) / 2 = 230
-        _bankPanel.Position = new Vector2(184, 230);
+        // Center: 8 + (544 - 165) / 2 = 197, y: 144 + (416 - 196) / 2 = 254
+        _bankPanel.Position = new Vector2(197, 254);
         _bankPanel.Visible = false;
         _bankPanel.OnOpenVault += OnBankOpenVault;
         _gameUI.AddChild(_bankPanel);
 
         // Vault panel (frmNuevoBancoObj) — centered on viewport
         _vaultPanel = new VaultPanel();
-        // Center: (534 - 450) / 2 = 42, y: 124 + (408 - 527) / 2 ≈ 64
-        _vaultPanel.Position = new Vector2(42, 64);
+        // Center: 8 + (544 - 450) / 2 = 55, y: 144 + (416 - 527) / 2 ≈ 88
+        _vaultPanel.Position = new Vector2(55, 88);
         _vaultPanel.Visible = false;
         _gameUI.AddChild(_vaultPanel);
 
         // Guild bank panel (frmBovClan) — centered on viewport
         _guildBankPanel = new GuildBankPanel();
-        _guildBankPanel.Position = new Vector2(42, 64);
+        _guildBankPanel.Position = new Vector2(55, 88);
         _guildBankPanel.Visible = false;
         _gameUI.AddChild(_guildBankPanel);
 
@@ -577,28 +577,28 @@ public partial class Main : Control
 
         // Travel panel (frmViajar) — centered on viewport
         _travelPanel = new TravelPanel();
-        // Center: (534 - 450) / 2 = 42, y: 124 + (408 - 350) / 2 = 153
-        _travelPanel.Position = new Vector2(42, 153);
+        // Center: 8 + (544 - 450) / 2 = 55, y: 144 + (416 - 350) / 2 = 177
+        _travelPanel.Position = new Vector2(55, 177);
         _travelPanel.Visible = false;
         _gameUI.AddChild(_travelPanel);
 
         // Death panel (frmMuertito) — centered on viewport
         _deathPanel = new DeathPanel();
-        // Center: (534 - 263) / 2 = 135, y: 124 + (408 - 100) / 2 = 278
-        _deathPanel.Position = new Vector2(135, 278);
+        // Center: 8 + (544 - 263) / 2 = 148, y: 144 + (416 - 100) / 2 = 302
+        _deathPanel.Position = new Vector2(148, 302);
         _deathPanel.Visible = false;
         _gameUI.AddChild(_deathPanel);
 
         // Macro panel (frmMakro) — centered on viewport
         _macroPanel = new MacroPanel();
-        _macroPanel.Position = new Vector2((534 - 280) / 2, 124 + (408 - 380) / 2);
+        _macroPanel.Position = new Vector2(8 + (544 - 280) / 2, 144 + (416 - 380) / 2);
         _macroPanel.Visible = false;
         _gameUI.AddChild(_macroPanel);
         _macroPanel.Init(_state, _dataPath);
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
-        _optionsPanel.Position = new Vector2((534 - 420) / 2, 20);
+        _optionsPanel.Position = new Vector2(8 + (544 - 420) / 2, 20);
         _optionsPanel.Visible = false;
         _gameUI.AddChild(_optionsPanel);
         _optionsPanel.Init(_state, _state.Config, _dataPath);
@@ -606,7 +606,7 @@ public partial class Main : Control
 
         // Key binding panel (frmTeclas) — centered on viewport
         _keyBindPanel = new KeyBindPanel();
-        _keyBindPanel.Position = new Vector2((534 - 420) / 2, 124 + (408 - 500) / 2);
+        _keyBindPanel.Position = new Vector2(8 + (544 - 420) / 2, 144 + (416 - 500) / 2);
         _keyBindPanel.Visible = false;
         _gameUI.AddChild(_keyBindPanel);
         _keyBindPanel.Init(_state, _state.Keys, _dataPath);
@@ -1227,7 +1227,7 @@ public partial class Main : Control
     {
         _mensajeDialog = new PanelContainer();
         _mensajeDialog.Size = new Vector2(340, 160);
-        // Center on window (534x408 game viewport offset at 0,124 approx)
+        // Center on window (544x416 game viewport offset at 8,144)
         _mensajeDialog.Visible = false;
         _mensajeDialog.ZIndex = 200; // Above everything
 
@@ -1521,8 +1521,8 @@ public partial class Main : Control
     {
         _dropDialog = new PanelContainer();
         _dropDialog.Size = new Vector2(200, 110);
-        // Center on game viewport: x=(534-200)/2=167, y=124+(408-110)/2=273
-        _dropDialog.Position = new Vector2(167, 273);
+        // Center on game viewport: x=8+(544-200)/2=180, y=144+(416-110)/2=297
+        _dropDialog.Position = new Vector2(180, 297);
         _dropDialog.Visible = false;
 
         var bg = new StyleBoxFlat();
@@ -3300,12 +3300,12 @@ public partial class Main : Control
         // So we handle double-click on press, and single-click on release.
         if (@event is InputEventMouseButton mb)
         {
-            // Translate click position relative to the game viewport (0,124) with 534x408 size
-            float clickX = mb.Position.X;
-            float clickY = mb.Position.Y - 124;
+            // Translate click position relative to the game viewport (8,144) with 544x416 size
+            float clickX = mb.Position.X - 8;
+            float clickY = mb.Position.Y - 144;
 
             // Only handle clicks within the game viewport area
-            if (clickX >= 0 && clickX < 534 && clickY >= 0 && clickY < 408)
+            if (clickX >= 0 && clickX < 544 && clickY >= 0 && clickY < 416)
             {
                 var viewPos = new Vector2(clickX, clickY);
 

@@ -44,9 +44,9 @@ public partial class WorldRenderer : Node2D
 
     private const int TileSize = 32;
 
-    // VB6 viewport: 534x408 px
-    private const int ViewportWidth = 534;
-    private const int ViewportHeight = 408;
+    // VB6 viewport: 544x416 px (MainViewPic ScaleWidth/ScaleHeight)
+    private const int ViewportWidth = 544;
+    private const int ViewportHeight = 416;
 
     // How many tiles from center to edge (visible range)
     private const int HalfWindowTileWidth = 8;
@@ -817,7 +817,7 @@ void fragment() {
     private void DrawStatusLabelRight(CanvasItem canvas, string label, Color color)
     {
         if (_data?.Fonts?[1] == null) return;
-        float x = 534f - 10f - (label.Length * 8f); // approximate right-align
+        float x = 544f - 10f - (label.Length * 8f); // approximate right-align
         _data.Fonts[1]!.DrawText(canvas, (int)x, 7, label, color);
     }
 

@@ -11,12 +11,13 @@ namespace ArgentumNextgen.UI;
 public partial class StatBarOverlay : Control
 {
     // VB6 bar positions (twips÷15) — X, Y, MaxWidth, Height
-    private static readonly Rect2 HpRect   = new(544, 423, 118, 12);
-    private static readonly Rect2 ManaRect = new(544, 445, 118, 12);
-    private static readonly Rect2 StaRect  = new(544, 467, 118, 12);
-    private static readonly Rect2 AguaRect = new(544, 489, 118, 12);
-    private static readonly Rect2 HamRect  = new(544, 511, 118, 12);
-    private static readonly Rect2 ExpRect  = new(535, 85,  264, 5);
+    // Order in VB6: Energia(STA), Mana, Vida(HP), Hambre, Sed
+    private static readonly Rect2 HpRect   = new(584, 498, 75, 12);
+    private static readonly Rect2 ManaRect = new(584, 477, 75, 12);
+    private static readonly Rect2 StaRect  = new(584, 453, 75, 12);
+    private static readonly Rect2 AguaRect = new(584, 544, 75, 12);  // Sed (thirst)
+    private static readonly Rect2 HamRect  = new(584, 521, 75, 12);
+    private static readonly Rect2 ExpRect  = new(585, 85,  172, 5);
 
     private static readonly Color TextColor = new(1f, 1f, 1f);
 

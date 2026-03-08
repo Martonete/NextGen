@@ -109,25 +109,25 @@ mouse_filter = 2
 
 [node name="GameViewportContainer" type="SubViewportContainer" parent="GameUI"]
 layout_mode = 0
-offset_left = 0.0
-offset_top = 124.0
-offset_right = 534.0
-offset_bottom = 532.0
+offset_left = 8.0
+offset_top = 144.0
+offset_right = 552.0
+offset_bottom = 560.0
 stretch = true
 
 [node name="GameViewport" type="SubViewport" parent="GameUI/GameViewportContainer"]
 handle_input_locally = true
-size = Vector2i(534, 408)
+size = Vector2i(544, 416)
 render_target_update_mode = 3
 
 [node name="GameWorld" type="Node2D" parent="GameUI/GameViewportContainer/GameViewport"]
 
 [node name="Console" type="RichTextLabel" parent="GameUI"]
 layout_mode = 0
-offset_left = 2.0
-offset_top = 2.0
-offset_right = 396.0
-offset_bottom = 90.0
+offset_left = 10.0
+offset_top = 24.0
+offset_right = 557.0
+offset_bottom = 123.0
 theme_override_font_sizes/normal_font_size = 9
 theme_override_font_sizes/bold_font_size = 9
 theme_override_font_sizes/italics_font_size = 9
@@ -136,10 +136,10 @@ scroll_following = true
 
 [node name="ChatInput" type="LineEdit" parent="GameUI"]
 layout_mode = 0
-offset_left = 3.0
-offset_top = 99.0
-offset_right = 507.0
-offset_bottom = 116.0
+offset_left = 8.0
+offset_top = 123.0
+offset_right = 554.0
+offset_bottom = 144.0
 flat = true
 draw_control_chars = false
 theme_override_colors/font_color = Color(1, 1, 1, 1)
@@ -148,38 +148,38 @@ theme_override_font_sizes/font_size = 10
 
 [node name="NameLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 541.0
-offset_top = 6.0
-offset_right = 796.0
-offset_bottom = 27.0
+offset_left = 584.0
+offset_top = 24.0
+offset_right = 759.0
+offset_bottom = 37.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(0.502, 1, 1, 1)
 theme_override_font_sizes/font_size = 14
 
 [node name="LevelLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 580.0
-offset_top = 39.0
-offset_right = 610.0
-offset_bottom = 58.0
+offset_left = 655.0
+offset_top = 76.0
+offset_right = 673.0
+offset_bottom = 91.0
 clip_text = false
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 10
 
 [node name="ExpLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 616.0
-offset_top = 66.0
-offset_right = 756.0
-offset_bottom = 79.0
+offset_left = 615.0
+offset_top = 100.0
+offset_right = 749.0
+offset_bottom = 115.0
 theme_override_font_sizes/font_size = 10
 
 [node name="GoldLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 696.0
-offset_top = 408.0
+offset_left = 728.0
+offset_top = 418.0
 offset_right = 773.0
-offset_bottom = 418.0
+offset_bottom = 432.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 0.502, 1)
 theme_override_font_sizes/font_size = 8
@@ -196,10 +196,10 @@ theme_override_font_sizes/font_size = 7
 
 [node name="CoordsLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 560.0
-offset_top = 557.0
-offset_right = 773.0
-offset_bottom = 566.0
+offset_left = 580.0
+offset_top = 578.0
+offset_right = 669.0
+offset_bottom = 595.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 9
