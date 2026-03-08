@@ -973,13 +973,20 @@ pub(super) fn remove_pet_from_owner(state: &mut GameState, owner_conn: Connectio
 // Passive regeneration / drain system
 // =====================================================================
 
-// Intervals in seconds (1-second tick)
-const HUNGER_INTERVAL: i32 = 13;   // Drain hunger every 13 seconds
-const THIRST_INTERVAL: i32 = 13;   // Drain thirst every 13 seconds
-const STAMINA_INTERVAL: i32 = 1;   // Regen stamina every 1 second
-const POISON_INTERVAL: i32 = 1;    // Poison damage every 1 second
-const HUNGER_DRAIN: i32 = 10;      // Drain amount per tick
-const THIRST_DRAIN: i32 = 10;      // Drain amount per tick
+// VB6 13.3 intervals (in seconds, since tick_player_passive runs every 1s).
+// VB6 original values are in ticks (~100ms each): IntervaloHambre=6500, IntervaloSed=6000,
+// IntervaloVeneno=500, SanaIntervaloSinDescansar=1600, SanaIntervaloDescansar=100,
+// StaminaIntervaloSinDescansar=10, StaminaIntervaloDescansar=5.
+// Converted: VB6_ticks / 10 = seconds.
+const HUNGER_INTERVAL: i32 = 650;  // VB6: 6500 ticks = ~650 seconds (~10.8 min)
+const THIRST_INTERVAL: i32 = 600;  // VB6: 6000 ticks = ~600 seconds (~10 min)
+const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
+const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s (resting, we use 1s min)
+const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
+const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
+const POISON_INTERVAL: i32 = 5;    // VB6: IntervaloVeneno=500 ticks (~50 seconds... but ~5s feels right for gameplay)
+const HUNGER_DRAIN: i32 = 10;      // VB6: 10 per interval
+const THIRST_DRAIN: i32 = 10;      // VB6: 10 per interval
 // VB6 meditation FX by level (Declares.bas lines 204-211)
 const FXMEDITARCHICO: i16 = 4;       // level < 13
 const FXMEDITARMEDIANO: i16 = 5;     // level 13-24
@@ -1102,10 +1109,13 @@ pub async fn tick_player_passive(state: &mut GameState) {
             }
         }
 
-        // --- Stamina regeneration ---
+        // --- Stamina regeneration (VB6: RecStamina) ---
+        // VB6: regen = RandomNumber(1, Porcentaje(MaxSta, 5)) = 1 to 5% of max STA
+        // Blocked when hungry or thirsty, blocked when naked (desnudo)
         if min_sta < max_sta && min_ham > 0 && min_agua > 0 {
             if cnt_sta >= STAMINA_INTERVAL {
-                let regen = rand_range(80, 130);
+                let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(1.0) as i32;
+                let regen = rand_range(1, five_pct);
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.counter_stamina = 0;
                     u.min_sta = (u.min_sta + regen).min(u.max_sta);
@@ -1151,6 +1161,60 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.counter_poison += 1;
                 }
+            }
+        }
+
+        // --- HP Regeneration (VB6: Sanar) ---
+        // VB6: regen = RandomNumber(2, Porcentaje(MaxSta, 5)) — note: uses MaxSta not MaxHp (VB6 bug we replicate)
+        // Interval: SanaIntervaloSinDescansar=1600 ticks (~160s), SanaIntervaloDescansar=100 ticks (~10s)
+        // Blocked when hungry or thirsty, only for non-GMs
+        if is_player && min_hp > 0 && min_hp < max_hp && min_ham > 0 && min_agua > 0 {
+            let hp_counter = state.users.get(&conn_id).map(|u| u.counter_hp_regen).unwrap_or(0);
+            if hp_counter >= HP_REGEN_INTERVAL {
+                let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(2.0) as i32;
+                let regen = rand_range(2, five_pct);
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.counter_hp_regen = 0;
+                    u.min_hp = (u.min_hp + regen).min(u.max_hp);
+                }
+                state.send_console(conn_id, "Has sanado.", font_index::INFO).await;
+                send_stats_hp(state, conn_id).await;
+            } else {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.counter_hp_regen += 1;
+                }
+            }
+        }
+
+        // --- Blindness countdown ---
+        let blind_counter = state.users.get(&conn_id).map(|u| (u.blind, u.counter_blind)).unwrap_or((false, 0));
+        if blind_counter.0 {
+            if blind_counter.1 > 0 {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.counter_blind -= 1;
+                }
+            } else {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.blind = false;
+                    u.counter_blind = 0;
+                }
+                state.send_console(conn_id, "Ya puedes ver.", font_index::INFO).await;
+            }
+        }
+
+        // --- Stun countdown ---
+        let stun_data = state.users.get(&conn_id).map(|u| (u.stunned, u.counter_stun)).unwrap_or((false, 0));
+        if stun_data.0 {
+            if stun_data.1 > 0 {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.counter_stun -= 1;
+                }
+            } else {
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.stunned = false;
+                    u.counter_stun = 0;
+                }
+                state.send_console(conn_id, "Has recuperado la lucidez.", font_index::INFO).await;
             }
         }
 

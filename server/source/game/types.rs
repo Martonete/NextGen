@@ -217,6 +217,7 @@ pub struct UserState {
     pub counter_thirst: i32,   // Thirst drain counter
     pub counter_stamina: i32,  // Stamina regen counter
     pub counter_poison: i32,   // Poison damage counter
+    pub counter_hp_regen: i32, // HP regen counter (VB6: Sanar)
     pub counter_remo: i32,     // Remo potion cooldown (VB6: usoPotaRemo, 3 rounds)
 
     // Area system (VB6 ModAreas — 9x9 tile zones for visibility updates)
@@ -400,6 +401,7 @@ impl UserState {
             counter_thirst: 0,
             counter_stamina: 0,
             counter_poison: 0,
+            counter_hp_regen: 0,
             counter_remo: 0,
             area_id: 0,
             area_min_x: 0,
