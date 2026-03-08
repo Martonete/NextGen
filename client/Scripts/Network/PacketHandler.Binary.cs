@@ -176,7 +176,13 @@ public partial class PacketHandler
                 HandleBinUpdateUserStats(bq);
                 break;
             case ServerPacketId.WorkRequestTarget: // 45
-                { byte skill = bq.ReadByte(); GD.Print($"[PKT] WorkRequestTarget skill={skill}"); }
+                {
+                    byte skill = bq.ReadByte();
+                    _state.UsingSkill = skill;
+                    // VB6: frmMain.MousePointer = 2 (crosshair)
+                    Input.SetDefaultCursorShape(Input.CursorShape.Cross);
+                    GD.Print($"[PKT] WorkRequestTarget skill={skill} — entering target mode");
+                }
                 break;
 
             // ── Inventory / Spells ────────────────────────────────
