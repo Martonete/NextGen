@@ -65,8 +65,7 @@ public partial class Main : Control
 
 
     // Minimap
-    private TextureRect? _minimapRect;
-    private ColorRect? _minimapDot;
+    // Minimap removed — VB6 13.3 has no minimap
     private string? _principalDir; // cached for minimap loading
     private string _dataPath = ""; // cached for macro file I/O
 
@@ -474,30 +473,7 @@ public partial class Main : Control
         _gameUI.AddChild(_fpsLabel);
 
 
-        // Minimap
-        _minimapRect = new TextureRect();
-        _minimapRect.Position = new Vector2(682, 424);
-        _minimapRect.Size = new Vector2(100, 100);
-        _minimapRect.StretchMode = TextureRect.StretchModeEnum.Scale;
-        _minimapRect.MouseFilter = Control.MouseFilterEnum.Stop;
-        _minimapRect.GuiInput += OnMinimapInput;
-        _gameUI.AddChild(_minimapRect);
-
-        // VB6: red dot with white border
-        _minimapDot = new ColorRect();
-        _minimapDot.Color = Colors.White;
-        _minimapDot.Size = new Vector2(8, 8);
-        _minimapDot.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _minimapRect.AddChild(_minimapDot);
-
-        var dotInner = new ColorRect();
-        dotInner.Color = new Color(1f, 0f, 0f);
-        dotInner.Position = new Vector2(1, 1);
-        dotInner.Size = new Vector2(6, 6);
-        dotInner.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _minimapDot.AddChild(dotInner);
-
-        // VB6 sidebar buttons: imgOpciones at (681, 485, 95, 22), imgClanes at (683, 532, 92, 26)
+        // VB6 13.3: No minimap — just sidebar buttons: imgOpciones at (681, 485, 95, 22), imgClanes at (683, 532, 92, 26)
         var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
@@ -2713,14 +2689,6 @@ public partial class Main : Control
         // Apply FPS limit
         Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
 
-        // Minimap visibility
-        if (_minimapRect != null)
-        {
-            _minimapRect.Visible = cfg.ShowMinimap;
-            if (_minimapDot != null)
-                _minimapDot.Visible = cfg.ShowMinimap && cfg.ShowMinimapPosition;
-        }
-
         // Apply display mode
         if (cfg.Fullscreen)
         {
@@ -2774,9 +2742,6 @@ public partial class Main : Control
         _console?.Clear();
 
         // Clear minimap
-        if (_minimapRect != null)
-            _minimapRect.Texture = null;
-
         // Close escape menu
         HideEscapeMenu();
 
@@ -2988,29 +2953,10 @@ public partial class Main : Control
         // FPS
         _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
 
-        // Minimap player dot position
-        if (_minimapDot != null)
-        {
-            float dotX = _state.UserPosX / 100f * 94f;
-            float dotY = _state.UserPosY / 100f * 94f;
-            _minimapDot.Position = new Vector2(dotX, dotY);
-        }
+        // (minimap removed — VB6 13.3 has no minimap)
     }
 
     /// <summary>
-    /// VB6 TSAO: right-click on minimap teleports to that map position (GM only, server validates).
-    /// Minimap is 100x100 px = 100x100 tiles, so click position maps 1:1 to tile coords.
-    /// </summary>
-    private void OnMinimapInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Right)
-        {
-            int tileX = Math.Clamp((int)(mb.Position.X) + 1, 1, 100);
-            int tileY = Math.Clamp((int)(mb.Position.Y) + 1, 1, 100);
-            _tcp?.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {_state.CurrentMap} {tileX} {tileY}"));
-        }
-    }
-
     /// <summary>
     /// Move active arrows toward targets and remove on arrival.
     /// VB6: arrows fly from shooter to target tile, rendered as a GRH.
@@ -3496,9 +3442,6 @@ public partial class Main : Control
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
 
-            // Load minimap image
-            LoadMinimap(_state.CurrentMap);
-
             // Load particles and lights embedded in tile data (byFlags bits 5/6)
             LoadTileParticlesAndLights(_state);
 
@@ -3533,151 +3476,6 @@ public partial class Main : Control
                 }
             }
         }
-    }
-
-    private void LoadMinimap(int mapNumber)
-    {
-        if (_minimapRect == null) return;
-
-        // Try multiple paths for minimap BMP
-        // _principalDir = .../GRAFICOS/Principal/ → parent = .../GRAFICOS/
-        var candidates = new List<string>();
-        if (_principalDir != null)
-        {
-            string graficosDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(_principalDir, ".."));
-            // Try exact names first, then do case-insensitive directory scan
-            candidates.Add(System.IO.Path.Combine(graficosDir, "MiniMap", $"Mapa{mapNumber}.bmp"));
-            candidates.Add(System.IO.Path.Combine(graficosDir, "Minimap", $"Mapa{mapNumber}.bmp"));
-        }
-        // Windows fallback
-        candidates.Add($@"C:\Users\F\Desktop\Projects\ArgentumNextgen\Cliente\Data\GRAFICOS\MiniMap\Mapa{mapNumber}.bmp");
-
-        foreach (string path in candidates)
-        {
-            if (TryLoadMinimapFile(path)) return;
-        }
-
-        // Case-insensitive fallback: scan MiniMap directory for matching filename
-        // Handles files like "mapa187.bmp" vs expected "Mapa187.bmp" (Linux is case-sensitive)
-        if (_principalDir != null)
-        {
-            string graficosDir = System.IO.Path.GetFullPath(System.IO.Path.Combine(_principalDir, ".."));
-            string targetName = $"mapa{mapNumber}.bmp";
-            foreach (string dirName in new[] { "MiniMap", "Minimap", "minimap" })
-            {
-                string dir = System.IO.Path.Combine(graficosDir, dirName);
-                if (System.IO.Directory.Exists(dir))
-                {
-                    foreach (string file in System.IO.Directory.GetFiles(dir, "*.bmp"))
-                    {
-                        if (string.Equals(System.IO.Path.GetFileName(file), targetName,
-                            StringComparison.OrdinalIgnoreCase))
-                        {
-                            if (TryLoadMinimapFile(file)) return;
-                        }
-                    }
-                }
-            }
-        }
-
-        GD.Print($"[MAIN] No minimap found for map {mapNumber}");
-        _minimapRect.Texture = null;
-    }
-
-    private bool TryLoadMinimapFile(string path)
-    {
-        if (!System.IO.File.Exists(path)) return false;
-        try
-        {
-            // 32bpp BMPs (maps 92+) have alpha=0 in all pixels.
-            // Godot's Image.Load succeeds but renders fully transparent.
-            // Detect bpp from BMP header and use manual parser for 32bpp.
-            bool use_manual = false;
-            try
-            {
-                var header = new byte[30];
-                using (var fs = System.IO.File.OpenRead(path))
-                    fs.Read(header, 0, 30);
-                if (header[0] == 0x42 && header[1] == 0x4D) // "BM"
-                {
-                    int bpp = BitConverter.ToInt16(header, 28);
-                    use_manual = bpp == 32;
-                }
-            }
-            catch { /* fall through to Godot loader */ }
-
-            if (!use_manual)
-            {
-                var img = new Image();
-                var err = img.Load(path);
-                if (err == Error.Ok && img.GetWidth() > 0 && img.GetHeight() > 0)
-                {
-                    _minimapRect!.Texture = ImageTexture.CreateFromImage(img);
-                    return true;
-                }
-            }
-
-            // Manual BMP parser: handles 32bpp (strips alpha) and 24bpp
-            var manualImg = LoadBmpManual(path);
-            if (manualImg != null)
-            {
-                _minimapRect!.Texture = ImageTexture.CreateFromImage(manualImg);
-                return true;
-            }
-
-            GD.PrintErr($"[MAIN] Minimap unsupported format: {path}");
-            return false;
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[MAIN] Failed to load minimap {System.IO.Path.GetFileName(path)}: {ex.Message}");
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Manual BMP loader supporting 24bpp and 32bpp uncompressed BMPs.
-    /// Godot's Image.Load doesn't handle 32bpp BMP files (maps 92+).
-    /// BMP stores rows bottom-to-top with BGR/BGRA byte order.
-    /// </summary>
-    private static Image? LoadBmpManual(string path)
-    {
-        byte[] data = System.IO.File.ReadAllBytes(path);
-        if (data.Length < 54 || data[0] != 0x42 || data[1] != 0x4D) return null; // "BM" magic
-
-        int pixelOffset = BitConverter.ToInt32(data, 10);
-        int width = BitConverter.ToInt32(data, 18);
-        int height = BitConverter.ToInt32(data, 22);
-        int bpp = BitConverter.ToInt16(data, 28);
-        int compression = BitConverter.ToInt32(data, 30);
-
-        // compression: 0=BI_RGB, 3=BI_BITFIELDS (common for 32bpp BMPs like maps 92+)
-        if ((compression != 0 && compression != 3) || (bpp != 24 && bpp != 32)) return null;
-        if (width <= 0 || height <= 0 || width > 4096 || height > 4096) return null;
-
-        bool bottomUp = height > 0;
-        int absHeight = Math.Abs(height);
-        int bytesPerPixel = bpp / 8;
-        int rowStride = (width * bytesPerPixel + 3) & ~3; // BMP rows are 4-byte aligned
-
-        byte[] rgb = new byte[width * absHeight * 3];
-        for (int y = 0; y < absHeight; y++)
-        {
-            int srcRow = bottomUp ? (absHeight - 1 - y) : y;
-            int srcOffset = pixelOffset + srcRow * rowStride;
-            for (int x = 0; x < width; x++)
-            {
-                int si = srcOffset + x * bytesPerPixel;
-                int di = (y * width + x) * 3;
-                if (si + bytesPerPixel - 1 >= data.Length) continue;
-                rgb[di] = data[si + 2];     // R (BMP stores BGR)
-                rgb[di + 1] = data[si + 1]; // G
-                rgb[di + 2] = data[si];     // B
-            }
-        }
-
-        var img = Image.CreateFromData(width, absHeight, false, Image.Format.Rgb8, rgb);
-        return img;
     }
 
     // VB6 movement constants
