@@ -2,13 +2,13 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
-using TierrasSagradasAO.Rendering;
-using TierrasSagradasAO.UI;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
+using ArgentumNextgen.Rendering;
+using ArgentumNextgen.UI;
 
-namespace TierrasSagradasAO;
+namespace ArgentumNextgen;
 
 public partial class Main : Control
 {
@@ -184,7 +184,7 @@ public partial class Main : Control
 
     public override void _Ready()
     {
-        GD.Print("=== Tierras Sagradas AO — Godot 4 Client ===");
+        GD.Print("=== Argentum Nextgen — Godot 4 Client ===");
 
         string dataPath;
         if (OS.HasFeature("editor"))
@@ -210,7 +210,7 @@ public partial class Main : Control
         string particlesPath = System.IO.Path.Combine(dataPath, "INIT", "Particles.ini");
         _particleSystem.LoadDefinitions(particlesPath, _state);
 
-        // Load user configuration (Options.tsao)
+        // Load user configuration (Options.ao)
         _state.Config = GameConfig.Load(dataPath);
         _state.ShowNames = _state.Config.ShowNames;
         // Apply V-Sync
@@ -219,7 +219,7 @@ public partial class Main : Control
         if (_state.Config.FpsLimit > 0)
             Engine.MaxFps = _state.Config.FpsLimit;
 
-        // Load key bindings (Teclas.tsao)
+        // Load key bindings (Teclas.ao)
         _state.Keys = KeyBindings.Load(dataPath);
 
         if (!_gameData.IsLoaded)
@@ -3529,7 +3529,7 @@ public partial class Main : Control
             candidates.Add(System.IO.Path.Combine(graficosDir, "Minimap", $"Mapa{mapNumber}.bmp"));
         }
         // Windows fallback
-        candidates.Add($@"C:\Users\F\Desktop\Projects\Tierras-Sagradas-AO\Cliente\Data\GRAFICOS\MiniMap\Mapa{mapNumber}.bmp");
+        candidates.Add($@"C:\Users\F\Desktop\Projects\ArgentumNextgen\Cliente\Data\GRAFICOS\MiniMap\Mapa{mapNumber}.bmp");
 
         foreach (string path in candidates)
         {

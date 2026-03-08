@@ -1065,7 +1065,7 @@ async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     if is_char_banned(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg(
-            "Se te ha prohibido la entrada a Tierras Sagradas debido a tu mal comportamiento. Consulta a un administrador para saber el motivo de la prohibicion."
+            "Se te ha prohibido la entrada a Argentum Nextgen debido a tu mal comportamiento. Consulta a un administrador para saber el motivo de la prohibicion."
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -1100,7 +1100,7 @@ async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
     if is_char_banned(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg(
-            "Se te ha prohibido la entrada a Tierras Sagradas AO debido a tu mal comportamiento."
+            "Se te ha prohibido la entrada a Argentum Nextgen debido a tu mal comportamiento."
         )).await;
         close_connection(state, conn_id).await;
         return;
@@ -4093,7 +4093,7 @@ mod db_tests {
         create_test_data(&test_dir);
 
         let game_data = GameData::load(&test_dir).expect("Failed to load game data");
-        let config = test_config("Bienvenido a Tierras Sagradas!");
+        let config = test_config("Bienvenido a Argentum Nextgen!");
 
         // Create TCP pair (server↔client)
         let (mut client_stream, writer) = create_tcp_pair().await;

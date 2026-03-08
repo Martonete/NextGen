@@ -1,4 +1,4 @@
-# Tierras Sagradas AO — Server Migration Roadmap (VB6 → Rust)
+# Argentum Nextgen — Server Migration Roadmap (VB6 → Rust)
 
 ## Current Status: ~90% VB6 Parity
 
@@ -63,5 +63,5 @@ All core game systems are implemented and functional. Server: 55 Rust files, 35.
 5. **Obj.dat**: UTF-16 LE encoded INI (exception — all others are Latin-1)
 6. **Map .map/.inf files**: binary little-endian format
 7. **String encoding**: VB6 uses ANSI strings — Rust handles Latin-1 ↔ UTF-8 conversion
-8. **Text codes**: Use `||NNN` format for client-side text rendering (Textos.tsao)
+8. **Text codes**: Use `||NNN` format for client-side text rendering (Textos.ao)
 9. **Directory names**: All lowercase (`dat/`, `maps/`, `dioses/`, `server.ini`)

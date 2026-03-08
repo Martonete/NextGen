@@ -892,7 +892,7 @@ impl GameState {
 
     // ── Binary packet send helpers ─────────────────────────────
 
-    /// Send a console message by text ID (Textos.tsao lookup).
+    /// Send a console message by text ID (Textos.ao lookup).
     pub async fn send_msg_id(&mut self, conn_id: ConnectionId, msg_id: i16, args: &str) {
         let pkt = crate::protocol::binary_packets::write_console_msg_id(msg_id, args);
         self.send_bytes(conn_id, &pkt).await;

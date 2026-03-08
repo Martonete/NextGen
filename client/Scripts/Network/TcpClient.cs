@@ -5,7 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Godot;
 
-namespace TierrasSagradasAO.Network;
+namespace ArgentumNextgen.Network;
 
 /// <summary>
 /// Async TCP client for the 13.3 binary protocol.

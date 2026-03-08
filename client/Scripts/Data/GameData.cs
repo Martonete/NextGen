@@ -1,7 +1,7 @@
 using System;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// Singleton holding all loaded game data: GRH, bodies, heads, helmets, FX.
@@ -92,7 +92,7 @@ public class GameData
 
         try
         {
-            TextMessages = TextosLoader.Load(System.IO.Path.Combine(initPath, "Textos.tsao"));
+            TextMessages = TextosLoader.Load(System.IO.Path.Combine(initPath, "Textos.ao"));
         }
         catch (Exception ex)
         {

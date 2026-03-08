@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Godot;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.Rendering;
+namespace ArgentumNextgen.Rendering;
 
 /// <summary>
 /// Renders the game world matching VB6 RenderScreen.

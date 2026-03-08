@@ -2,7 +2,7 @@
 name = "ao-server"
 version = "0.1.0"
 edition = "2024"
-description = "Tierras Sagradas AO - Game Server (Rust port)"
+description = "Argentum Nextgen - Game Server (Rust port)"
 
 [[bin]]
 name = "ao-server"

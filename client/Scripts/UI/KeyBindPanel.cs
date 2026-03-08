@@ -1,7 +1,7 @@
 using Godot;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmTeclas — Key binding configuration panel.

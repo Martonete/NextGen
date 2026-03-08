@@ -1,4 +1,4 @@
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
 /// Represents a visible character (player or NPC) in the game world.

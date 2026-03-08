@@ -67,21 +67,21 @@ client-clean:
 client-export: client-build
 	@test -n "$(GODOT)" || (echo "ERROR: Godot not found. Install it or run: make client-export GODOT=/path/to/godot" && exit 1)
 	@mkdir -p client/build
-	cd client && "$(GODOT)" --headless --export-release "Windows Desktop" build/TierrasSagradasAO.exe
+	cd client && "$(GODOT)" --headless --export-release "Windows Desktop" build/ArgentumNextgen.exe
 	@echo ""
 	@echo "  Export complete → client/build/"
 
 # Build a ready-to-distribute folder (exe + Data/) and zip it
 client-dist: client-export
-	@rm -rf dist/TierrasSagradasAO
-	@mkdir -p dist/TierrasSagradasAO
-	cp -r client/build/* dist/TierrasSagradasAO/
-	cp -r client/Data dist/TierrasSagradasAO/
-	cd dist && zip -r TierrasSagradasAO.zip TierrasSagradasAO/
+	@rm -rf dist/ArgentumNextgen
+	@mkdir -p dist/ArgentumNextgen
+	cp -r client/build/* dist/ArgentumNextgen/
+	cp -r client/Data dist/ArgentumNextgen/
+	cd dist && zip -r ArgentumNextgen.zip ArgentumNextgen/
 	@echo ""
-	@echo "  Distribution ready → dist/TierrasSagradasAO.zip"
+	@echo "  Distribution ready → dist/ArgentumNextgen.zip"
 	@echo "  Contents:"
-	@echo "    TierrasSagradasAO.exe    (game executable)"
+	@echo "    ArgentumNextgen.exe    (game executable)"
 	@echo "    *.dll                    (.NET runtime + game assemblies)"
 	@echo "    Data/                    (graphics, maps, config)"
 
@@ -89,7 +89,7 @@ client-dist: client-export
 
 help:
 	@echo ""
-	@echo "  Tierras Sagradas AO"
+	@echo "  Argentum Nextgen"
 	@echo "  ────────────────────────────────────────"
 	@echo ""
 	@echo "  Server"

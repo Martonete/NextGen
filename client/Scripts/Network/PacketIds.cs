@@ -1,4 +1,4 @@
-namespace TierrasSagradasAO.Network;
+namespace ArgentumNextgen.Network;
 
 /// <summary>
 /// Client → Server packet IDs (13.3 binary protocol).

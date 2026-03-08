@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// Loads Fxs.ind binary file.

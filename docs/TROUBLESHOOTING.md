@@ -13,7 +13,7 @@
 | Changes not taking effect | Stale assemblies | Run `dotnet build` after every code change |
 | Low FPS | Default settings | F10 → Render tab → adjust |
 | "this project contains c files but no solution file" | Missing .sln | Already in repo — do NOT use `Create C# Solution`, just `dotnet build` |
-| .csproj overwritten by Godot | Godot regenerated it | `git checkout client/TierrasSagradasAO.csproj` |
+| .csproj overwritten by Godot | Godot regenerated it | `git checkout client/ArgentumNextgen.csproj` |
 
 ## Server
 

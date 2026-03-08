@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// LRU cache of textures loaded from Graficos/ folder.

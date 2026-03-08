@@ -4,7 +4,7 @@
 
 [application]
 
-config/name="Tierras Sagradas AO"
+config/name="Argentum Nextgen"
 run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.4", "C#")
 config/icon="res://icon.svg"
@@ -18,7 +18,7 @@ window/stretch/mode="canvas_items"
 
 [dotnet]
 
-project/assembly_name="TierrasSagradasAO"
+project/assembly_name="ArgentumNextgen"
 
 [rendering]
 

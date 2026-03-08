@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Godot;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.Rendering;
+namespace ArgentumNextgen.Rendering;
 
 /// <summary>
 /// Renders a character with heading-dependent layer order matching VB6 exactly.

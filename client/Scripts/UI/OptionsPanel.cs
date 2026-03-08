@@ -1,15 +1,15 @@
 using Godot;
 using System;
 using System.Collections.Generic;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmOpcionesNew — Options panel with 3 tabs: Juego, Controles, Render.
 /// Changes apply immediately. Draggable by title bar. X button to close.
-/// Saves to Data/INIT/Options.tsao on every change.
+/// Saves to Data/INIT/Options.ao on every change.
 /// </summary>
 public partial class OptionsPanel : PanelContainer
 {

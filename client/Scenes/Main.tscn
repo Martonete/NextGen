@@ -31,7 +31,7 @@ theme_override_constants/separation = 12
 
 [node name="Title" type="Label" parent="UILayer/LoginPanel/VBox"]
 layout_mode = 2
-text = "Tierras Sagradas AO"
+text = "Argentum Nextgen"
 horizontal_alignment = 1
 
 [node name="AccountInput" type="LineEdit" parent="UILayer/LoginPanel/VBox"]

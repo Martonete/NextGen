@@ -1,7 +1,7 @@
 using Godot;
 using System.Collections.Generic;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
 /// Manages sound effects (WAV/MP3) and music playback.

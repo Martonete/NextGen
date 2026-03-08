@@ -1,12 +1,12 @@
 using Godot;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmMakro — Macro configuration panel.
 /// 10 text inputs for keys 1-0, save/cancel buttons.
-/// Macros are saved to Data/INIT/Macro.tsao in INI format.
+/// Macros are saved to Data/INIT/Macro.ao in INI format.
 /// </summary>
 public partial class MacroPanel : PanelContainer
 {
@@ -25,7 +25,7 @@ public partial class MacroPanel : PanelContainer
     public void Init(GameState state, string dataPath)
     {
         _state = state;
-        _macroFilePath = System.IO.Path.Combine(dataPath, "INIT", "Macro.tsao");
+        _macroFilePath = System.IO.Path.Combine(dataPath, "INIT", "Macro.ao");
         LoadMacros();
     }
 
@@ -187,7 +187,7 @@ public partial class MacroPanel : PanelContainer
     }
 
     /// <summary>
-    /// Load macros from Data/INIT/Macro.tsao (VB6 INI format).
+    /// Load macros from Data/INIT/Macro.ao (VB6 INI format).
     /// [Macro] section with Tecla0..Tecla9 keys.
     /// </summary>
     public void LoadMacros()
@@ -231,7 +231,7 @@ public partial class MacroPanel : PanelContainer
     }
 
     /// <summary>
-    /// Save macros to Data/INIT/Macro.tsao in VB6 INI format.
+    /// Save macros to Data/INIT/Macro.ao in VB6 INI format.
     /// </summary>
     private void SaveMacros()
     {

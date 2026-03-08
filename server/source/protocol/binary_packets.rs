@@ -291,7 +291,7 @@ pub fn write_online_count(count: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 115: Console message by text ID (Textos.tsao lookup).
+/// ID 115: Console message by text ID (Textos.ao lookup).
 /// Args are @-separated strings that substitute %1, %2, ... in the template.
 pub fn write_console_msg_id(msg_id: i16, args: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();

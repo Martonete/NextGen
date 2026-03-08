@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// Parses Graficos.ind binary file.

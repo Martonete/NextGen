@@ -1,10 +1,10 @@
 using Godot;
 using System;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmBanco — Personal bank panel (gold + open vault).

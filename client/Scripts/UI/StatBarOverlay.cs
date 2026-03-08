@@ -1,6 +1,6 @@
 using Godot;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Draws VB6-accurate stat bar fills using extracted bar images and value labels.

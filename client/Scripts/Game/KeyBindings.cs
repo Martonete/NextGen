@@ -3,7 +3,7 @@ using System.IO;
 using System.Text;
 using Godot;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
 /// Bindable game action — matches VB6 BindKeys indices (1-22).
@@ -51,7 +51,7 @@ public struct KeyBind
 
 /// <summary>
 /// Manages all key bindings — 22 configurable actions.
-/// Persisted to Data/INIT/Teclas.tsao (INI format matching VB6).
+/// Persisted to Data/INIT/Teclas.ao (INI format matching VB6).
 /// </summary>
 public class KeyBindings
 {
@@ -187,7 +187,7 @@ public class KeyBindings
     // ── Persistence ───────────────────────────────────────
 
     private static string FilePath(string dataPath) =>
-        Path.Combine(dataPath, "INIT", "Teclas.tsao");
+        Path.Combine(dataPath, "INIT", "Teclas.ao");
 
     /// <summary>
     /// Convert a Godot Key to a display name.
@@ -227,7 +227,7 @@ public class KeyBindings
     }
 
     /// <summary>
-    /// Load key bindings from Teclas.tsao. Missing entries use defaults.
+    /// Load key bindings from Teclas.ao. Missing entries use defaults.
     /// Format: [TECLAS] section, each line: index=GodotKeyInt,DisplayName
     /// </summary>
     public static KeyBindings Load(string dataPath)
@@ -237,7 +237,7 @@ public class KeyBindings
 
         if (!File.Exists(path))
         {
-            GD.Print("[KEYS] No Teclas.tsao found, using defaults.");
+            GD.Print("[KEYS] No Teclas.ao found, using defaults.");
             return kb;
         }
 
@@ -288,7 +288,7 @@ public class KeyBindings
     }
 
     /// <summary>
-    /// Save key bindings to Teclas.tsao.
+    /// Save key bindings to Teclas.ao.
     /// </summary>
     public void Save(string dataPath)
     {

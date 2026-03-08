@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Godot;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Network;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Network;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
 /// Translates keyboard/mouse input to server packets with VB6-accurate client-side prediction.
@@ -14,7 +14,7 @@ namespace TierrasSagradasAO.Game;
 /// Guard: UserMoving == 0 is the ONLY movement blocker (no timer).
 /// Server has NO anti-flood for movement — speed is controlled entirely by client animation.
 ///
-/// Key bindings are loaded from Teclas.tsao and configurable via KeyBindPanel.
+/// Key bindings are loaded from Teclas.ao and configurable via KeyBindPanel.
 /// </summary>
 public class InputHandler
 {

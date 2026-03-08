@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// VB6 tAuras type — loaded from Auras.dat INI file.

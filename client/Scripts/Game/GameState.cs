@@ -1,8 +1,8 @@
 using System.Collections.Generic;
 using Godot;
-using TierrasSagradasAO.Data;
+using ArgentumNextgen.Data;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 public enum Screen { Login, CharSelect, CharCreate, AccountCreate, Game }
 
@@ -98,12 +98,12 @@ public class GameState
     public string WhisperTarget = "";   // Target name for whisper mode
     public bool ShowNames = true;       // VB6: Nombres — toggle character names display
 
-    // User configuration (loaded from Options.tsao, applied to renderers/audio)
+    // User configuration (loaded from Options.ao, applied to renderers/audio)
     public GameConfig Config = new();
     public bool OptionsPanelOpen;
     public bool EscapeMenuOpen;
 
-    // Key bindings (loaded from Teclas.tsao, used by InputHandler)
+    // Key bindings (loaded from Teclas.ao, used by InputHandler)
     public KeyBindings Keys = new();
     public bool KeyBindPanelOpen;
 
@@ -256,7 +256,7 @@ public class GameState
     // Chat message queue — drained by Main.cs each frame
     public Queue<ChatMessage> ChatMessages = new();
 
-    // Textos.tsao message templates — loaded once, used by PacketHandler for console messages
+    // Textos.ao message templates — loaded once, used by PacketHandler for console messages
     public TextMessage[] TextMessages = System.Array.Empty<TextMessage>();
 
     public GameState()
@@ -270,7 +270,7 @@ public class GameState
         for (int i = 0; i < 40; i++)
             BankItems[i] = new BankItem();
 
-        // VB6 default macros (frmMakro defaults from Macro.tsao)
+        // VB6 default macros (frmMakro defaults from Macro.ao)
         Macros[0] = "/COMERCIAR";
         Macros[1] = "/RESUCITAR";
         Macros[2] = "/CURAR";

@@ -1,11 +1,11 @@
 using Godot;
 using System;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
-using TierrasSagradasAO.Rendering;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
+using ArgentumNextgen.Rendering;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmBovClan — Guild bank (bóveda de clan) panel.

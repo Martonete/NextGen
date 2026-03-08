@@ -3,10 +3,10 @@ using System.IO;
 using System.Text;
 using Godot;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
-/// User configuration — persisted to Data/INIT/Options.tsao (INI format).
+/// User configuration — persisted to Data/INIT/Options.ao (INI format).
 /// Mirrors VB6 User_Config from frmOpcionesNew (46 fields).
 /// A temporary copy is used while the options dialog is open to support Cancel.
 /// </summary>
@@ -64,7 +64,7 @@ public class GameConfig
     public bool Fullscreen;                 // false=windowed, true=fullscreen
     public int AspectRatioMode = 1;         // 0=Stretch (4:3), 1=Keep ratio 16:9 (black bars)
 
-    /// <summary>True if Options.tsao existed on disk when loaded (used to skip startup dialog).</summary>
+    /// <summary>True if Options.ao existed on disk when loaded (used to skip startup dialog).</summary>
     [System.NonSerialized] public bool LoadedFromFile;
 
     /// <summary>
@@ -128,7 +128,7 @@ public class GameConfig
     // ── Persistence ───────────────────────────────────────
 
     private static string FilePath(string dataPath) =>
-        Path.Combine(dataPath, "INIT", "Options.tsao");
+        Path.Combine(dataPath, "INIT", "Options.ao");
 
     /// <summary>
     /// Load configuration from INI file. Missing keys use defaults.
@@ -140,7 +140,7 @@ public class GameConfig
 
         if (!File.Exists(path))
         {
-            GD.Print("[CFG] No Options.tsao found, using defaults.");
+            GD.Print("[CFG] No Options.ao found, using defaults.");
             return cfg;
         }
 

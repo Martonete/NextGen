@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using TierrasSagradasAO.Data;
+using ArgentumNextgen.Data;
 
-namespace TierrasSagradasAO.Rendering;
+namespace ArgentumNextgen.Rendering;
 
 /// <summary>
 /// Manages animation frames for GRH indices.

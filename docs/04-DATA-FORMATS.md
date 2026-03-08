@@ -24,7 +24,7 @@ IntervaloNpcAI=1300
 IntervaloParalizado=8
 
 [NOTICE]
-Notice=Welcome to Tierras Sagradas!
+Notice=Welcome to Argentum Nextgen!
 ```
 
 **Key fields**: port, max_users, version, start_map/x/y, encryption toggle, EXP multiplier, NPC AI interval.
@@ -331,13 +331,13 @@ MaxHIT=+3
 MaxMAN=+50
 ```
 
-## 12. Text Codes (`Cliente/Data/INIT/Textos.tsao`)
+## 12. Text Codes (`Cliente/Data/INIT/Textos.ao`)
 
 Client-side text database with 983 entries:
 
 ```ini
 [TEXTO1]
-Mensaje=Bienvenido a Tierras Sagradas!
+Mensaje=Bienvenido a Argentum Nextgen!
 Font=1
 
 [TEXTO3]

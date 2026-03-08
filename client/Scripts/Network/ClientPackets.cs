@@ -1,4 +1,4 @@
-namespace TierrasSagradasAO.Network;
+namespace ArgentumNextgen.Network;
 
 /// <summary>
 /// Builds binary client→server packets using ByteQueue.

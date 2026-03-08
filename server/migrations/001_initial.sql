@@ -1,4 +1,4 @@
--- Tierras Sagradas AO — Initial schema
+-- Argentum Nextgen — Initial schema
 -- Replaces INI file storage for accounts, characters, guilds, bans, rankings.
 
 -- Accounts

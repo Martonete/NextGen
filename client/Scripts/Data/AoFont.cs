@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
 /// VB6-exact bitmap font renderer. Loads fontX.dat (header + char widths)

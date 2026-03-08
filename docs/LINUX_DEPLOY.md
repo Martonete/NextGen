@@ -1,4 +1,4 @@
-# Linux Deploy Guide — Tierras Sagradas AO
+# Linux Deploy Guide — Argentum Nextgen
 
 Step-by-step guide to run the full stack (Rust server + Godot 4 C# client) on a Linux machine (Debian 12/13, Ubuntu 22.04+).
 

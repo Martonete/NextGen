@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using Godot;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.Network;
+namespace ArgentumNextgen.Network;
 
 /// <summary>
 /// Dispatches inbound packets by opcode prefix to handler methods.
@@ -1582,7 +1582,7 @@ public partial class PacketHandler
     private void HandleConsoleMessage(string data)
     {
         // VB6 format: ||<TextID>@<param1>@<param2>@...
-        // TextID indexes into Textos.tsao. Params substitute %1, %2, ... in the message template.
+        // TextID indexes into Textos.ao. Params substitute %1, %2, ... in the message template.
         var parts = data.Split('@');
 
         if (parts.Length >= 1 && int.TryParse(parts[0], out int textId)

@@ -1,9 +1,9 @@
 using System;
 using Godot;
-using TierrasSagradasAO.Data;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.Network;
+namespace ArgentumNextgen.Network;
 
 /// <summary>
 /// Binary packet dispatch — handles native binary packets (non-GenericText).

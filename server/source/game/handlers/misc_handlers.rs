@@ -96,7 +96,7 @@ pub(super) async fn handle_skse(state: &mut GameState, conn_id: ConnectionId, da
 }
 
 /// INFS — Spell info. VB6: TCP_HandleData1.bas:2747-2764
-/// Sends ||281 through ||287 packets (message-based, client reads from Textos.tsao)
+/// Sends ||281 through ||287 packets (message-based, client reads from Textos.ao)
 pub(super) async fn handle_infs(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 4);
     let slot: usize = payload.trim().parse().unwrap_or(0);

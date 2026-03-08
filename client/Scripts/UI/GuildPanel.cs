@@ -1,10 +1,10 @@
 using Godot;
 using System;
 using System.Collections.Generic;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Multi-view guild panel:

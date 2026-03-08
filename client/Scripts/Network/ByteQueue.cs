@@ -1,7 +1,7 @@
 using System;
 using System.Text;
 
-namespace TierrasSagradasAO.Network;
+namespace ArgentumNextgen.Network;
 
 /// <summary>
 /// FIFO byte buffer for the 13.3 binary protocol.

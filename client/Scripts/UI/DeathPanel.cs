@@ -1,8 +1,8 @@
 using Godot;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmMuertito — Death dialog shown when the player dies.

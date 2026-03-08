@@ -360,11 +360,11 @@ mod tests {
         let mut bq = ByteQueue::new();
         bq.write_ascii_string("Hello AO");
         bq.write_ascii_string("");
-        bq.write_ascii_string("Tierras Sagradas");
+        bq.write_ascii_string("Argentum Nextgen");
         let mut reader = ByteQueue::from_bytes(bq.as_bytes());
         assert_eq!(reader.read_ascii_string().unwrap(), "Hello AO");
         assert_eq!(reader.read_ascii_string().unwrap(), "");
-        assert_eq!(reader.read_ascii_string().unwrap(), "Tierras Sagradas");
+        assert_eq!(reader.read_ascii_string().unwrap(), "Argentum Nextgen");
     }
 
     #[test]

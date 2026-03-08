@@ -1,8 +1,8 @@
 using System;
 using Godot;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
 /// Per-vertex tile lighting matching VB6 clsLight.cls exactly.

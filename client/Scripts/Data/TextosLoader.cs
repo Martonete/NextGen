@@ -4,10 +4,10 @@ using System.IO;
 using System.Text;
 using Godot;
 
-namespace TierrasSagradasAO.Data;
+namespace ArgentumNextgen.Data;
 
 /// <summary>
-/// Loads Textos.tsao — INI-format message templates indexed by ID.
+/// Loads Textos.ao — INI-format message templates indexed by ID.
 /// VB6 format: [TEXTOn] Mensaje=... Font=...
 /// Console messages (|| packets) reference these by ID.
 /// </summary>

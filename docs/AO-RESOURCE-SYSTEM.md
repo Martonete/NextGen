@@ -582,7 +582,7 @@ Per FX (6 bytes):
 | Fxs.ind | 1.1K | Binary | ~20 | Combat/spell effects |
 | Auras.dat | 11K | INI | 96 | Aura effects |
 | Particles.ini | 47K | INI | 105 | Particle definitions |
-| Textos.tsao | 73K | INI | 983 | UI message strings |
+| Textos.ao | 73K | INI | 983 | UI message strings |
 
 ### Client Textures (client/Data/Graficos/)
 - 3,291 PNG files, naming: `{FileNum}.png`

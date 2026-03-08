@@ -191,7 +191,7 @@ skill_pts_libres, puntos_donacion, puntos_torneo, ts_points
 
 ## Text Code System (|| Migration)
 
-The VB6 server sends `||NNN` codes for most system messages. The client looks up the text in `Textos.tsao` and renders it with the appropriate font.
+The VB6 server sends `||NNN` codes for most system messages. The client looks up the text in `Textos.ao` and renders it with the appropriate font.
 
 Parameterized messages: `||NNN@param1@param2` — the client substitutes `@ARG1`, `@ARG2` in the text template.
 

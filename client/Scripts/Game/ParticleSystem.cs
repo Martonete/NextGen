@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Godot;
-using TierrasSagradasAO.Game;
+using ArgentumNextgen.Game;
 
-namespace TierrasSagradasAO.Game;
+namespace ArgentumNextgen.Game;
 
 /// <summary>
 /// Loads particle definitions from Particles.ini and simulates active particle streams.

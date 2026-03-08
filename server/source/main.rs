@@ -27,7 +27,7 @@ async fn main() {
         .init();
 
     info!("==============================================");
-    info!("  Tierras Sagradas AO - Server (Rust)");
+    info!("  Argentum Nextgen - Server (Rust)");
     info!("  Version 0.1.0");
     info!("==============================================");
 

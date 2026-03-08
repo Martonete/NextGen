@@ -1,8 +1,8 @@
 using System;
 using System.IO;
-using TierrasSagradasAO.Data;
+using ArgentumNextgen.Data;
 
-namespace TierrasSagradasAO;
+namespace ArgentumNextgen;
 
 /// <summary>
 /// Standalone test for data loaders - run via: dotnet run
@@ -19,7 +19,7 @@ public static class DataTest
         string mapsPath = Path.Combine(dataPath, "Maps");
         string graficosPath = Path.Combine(dataPath, "Graficos");
 
-        Console.WriteLine("=== Tierras Sagradas AO — Data Loader Test ===\n");
+        Console.WriteLine("=== Argentum Nextgen — Data Loader Test ===\n");
 
         int errors = 0;
 

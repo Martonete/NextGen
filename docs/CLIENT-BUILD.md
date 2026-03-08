@@ -4,9 +4,9 @@
 
 | Component | Size | Changes? | Description |
 |-----------|------|----------|-------------|
-| `TierrasSagradasAO.exe` | ~82MB | Rarely | Godot engine + .NET runtime |
-| `TierrasSagradasAO.pck` | ~180KB | Every code change | Compiled scenes + scripts |
-| `data_TierrasSagradasAO_*/` | ~150MB | Rarely | .NET runtime DLLs |
+| `ArgentumNextgen.exe` | ~82MB | Rarely | Godot engine + .NET runtime |
+| `ArgentumNextgen.pck` | ~180KB | Every code change | Compiled scenes + scripts |
+| `data_ArgentumNextgen_*/` | ~150MB | Rarely | .NET runtime DLLs |
 | `Data/` | ~217MB | Only when assets change | Game assets (sprites, sounds, maps) |
 
 `Data/` is loaded from the filesystem at runtime (not packed). All loaders use `System.IO.File`.
@@ -24,9 +24,9 @@ private const string ServerHost = "123.45.67.89"; // Your server's public IP
 cd client
 dotnet build
 mkdir build -Force
-& "C:\path\to\Godot_v4.4-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\TierrasSagradasAO.exe
+& "C:\path\to\Godot_v4.4-stable_mono_win64.exe" --headless --export-release "Windows Desktop" build\ArgentumNextgen.exe
 Copy-Item -Recurse Data build\
-Compress-Archive -Path build\* -DestinationPath ..\TierrasSagradasAO.zip
+Compress-Archive -Path build\* -DestinationPath ..\ArgentumNextgen.zip
 ```
 
 Or with Make: `make client-dist`

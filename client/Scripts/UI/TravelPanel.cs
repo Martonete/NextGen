@@ -1,9 +1,9 @@
 using Godot;
 using System;
-using TierrasSagradasAO.Game;
-using TierrasSagradasAO.Network;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
 
-namespace TierrasSagradasAO.UI;
+namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmViajar — Travel NPC panel.
