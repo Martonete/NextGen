@@ -195,8 +195,12 @@ public class GameState
     public int CarryBulk;           // StatBulk (ID 127) — current carry weight
     public string SpellInfoText = ""; // SpellInfoResp (ID 148)
 
-    // Crafting lists (smith/carp)
-    public string CraftListData = ""; // raw CSV from SmithWeapons/SmithArmors/CarpItems
+    // Crafting lists (smith/carp) — VB6 13.3 binary format
+    public List<CraftEntry> SmithWeapons = new();
+    public List<CraftEntry> SmithArmors = new();
+    public List<CraftEntry> CarpItems = new();
+    public bool ShowBlacksmithForm;
+    public bool ShowCarpenterForm;
 
     // Event / environment
     public string BattleTeamScores = ""; // BattleTeamScores (ID 163)
@@ -410,6 +414,18 @@ public class ArrowProjectile
     public float TargetX, TargetY; // destination pixel
     public float Speed = 8f;  // pixels per frame
     public bool Active = true;
+}
+
+/// A craftable item entry (blacksmith weapons/armors, carpenter items).
+public class CraftEntry
+{
+    public string Name = "";
+    public int GrhIndex;
+    public int Mat1;      // LingH (smith) or Madera (carp)
+    public int Mat2;      // LingP (smith) or MaderaElfica (carp)
+    public int Mat3;      // LingO (smith only)
+    public int ObjIndex;
+    public int Upgrade;
 }
 
 /// A slot in the guild bank (VB6: BancoInventarioB).

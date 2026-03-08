@@ -51,6 +51,54 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     let mut aura_changed = false;
 
     if currently_equipped {
+        // VB6: Tools that are equipped and double-clicked trigger work actions
+        // instead of unequipping (InvUsuario.bas Tool case).
+        if obj_data.obj_type == ObjType::Tool {
+            const CANA_PESCA: i32 = 543;
+            const CANA_PESCA_NEWBIE: i32 = 468;
+            const HACHA_LENADOR: i32 = 127;
+            const HACHA_LENA_ELFICA: i32 = 1005;
+            const HACHA_LENADOR_NEWBIE: i32 = 565;
+            const PIQUETE_MINERO: i32 = 187;
+            const PIQUETE_MINERO_NEWBIE: i32 = 566;
+            const MARTILLO_HERRERO: i32 = 389;
+            const MARTILLO_HERRERO_NEWBIE: i32 = 567;
+            const SERRUCHO_CARPINTERO: i32 = 198;
+            const SERRUCHO_CARPINTERO_NEWBIE: i32 = 564;
+
+            match obj_index {
+                CANA_PESCA | CANA_PESCA_NEWBIE => {
+                    // Send WorkRequestTarget(Pesca) — client picks a target tile
+                    let pkt = binary_packets::write_work_request_target(13); // Pesca=13
+                    state.send_bytes(conn_id, &pkt).await;
+                }
+                HACHA_LENADOR | HACHA_LENA_ELFICA | HACHA_LENADOR_NEWBIE => {
+                    let pkt = binary_packets::write_work_request_target(10); // Talar=10
+                    state.send_bytes(conn_id, &pkt).await;
+                }
+                PIQUETE_MINERO | PIQUETE_MINERO_NEWBIE => {
+                    let pkt = binary_packets::write_work_request_target(14); // Mineria=14
+                    state.send_bytes(conn_id, &pkt).await;
+                }
+                MARTILLO_HERRERO | MARTILLO_HERRERO_NEWBIE => {
+                    let pkt = binary_packets::write_work_request_target(16); // Herreria=16
+                    state.send_bytes(conn_id, &pkt).await;
+                }
+                SERRUCHO_CARPINTERO | SERRUCHO_CARPINTERO_NEWBIE => {
+                    // Carpenter opens directly (no target needed)
+                    super::skills::do_carpinteria(state, conn_id).await;
+                }
+                _ => {
+                    // Other tools: if SkHerreria > 0, trigger FundirMetal
+                    if obj_data.sk_herreria > 0 {
+                        let pkt = binary_packets::write_work_request_target(88); // FundirMetal=88
+                        state.send_bytes(conn_id, &pkt).await;
+                    }
+                }
+            }
+            return;
+        }
+
         // VB6: Can't unequip armor/weapon/shield/helmet while mounted
         let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
         if is_mounted {

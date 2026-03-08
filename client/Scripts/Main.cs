@@ -101,6 +101,7 @@ public partial class Main : Control
     private BankPanel? _bankPanel;
     private VaultPanel? _vaultPanel;
     private GuildBankPanel? _guildBankPanel;
+    private CraftPanel? _craftPanel;
     private bool _lastBanqueando;
 
     // Guild panels
@@ -556,6 +557,11 @@ public partial class Main : Control
         _guildBankPanel.Position = new Vector2(42, 64);
         _guildBankPanel.Visible = false;
         _gameUI.AddChild(_guildBankPanel);
+
+        // Craft panel (frmHerrero / frmCarpintero)
+        _craftPanel = new CraftPanel();
+        _craftPanel.Visible = false;
+        _gameUI.AddChild(_craftPanel);
 
         // Guild panel (frmGuildInfo) — centered on viewport
         _guildPanel = new GuildPanel();
@@ -2566,6 +2572,18 @@ public partial class Main : Control
                 _guildBankPanel?.OpenGuildBank();
             }
 
+            // Craft panels (blacksmith / carpenter)
+            if (_state.ShowBlacksmithForm)
+            {
+                _state.ShowBlacksmithForm = false;
+                _craftPanel?.ShowBlacksmith();
+            }
+            if (_state.ShowCarpenterForm)
+            {
+                _state.ShowCarpenterForm = false;
+                _craftPanel?.ShowCarpenter();
+            }
+
             // Death panel — show when player dies, hide on revive
             if (_state.ShowDeathPanel)
             {
@@ -2656,6 +2674,7 @@ public partial class Main : Control
                     _bankPanel!.Init(_state, _gameData, _tcp);
                     _vaultPanel!.Init(_state, _gameData, _tcp);
                     _guildBankPanel!.Init(_state, _gameData, _tcp);
+                    _craftPanel!.Init(_state, _gameData, _tcp);
                     _travelPanel!.Init(_state, _tcp, _dataPath);
                     _deathPanel!.Init(_state, _tcp, _dataPath);
                     _guildPanel!.Init(_state, _tcp);
@@ -2766,6 +2785,7 @@ public partial class Main : Control
         _bankPanel?.CloseBank();
         _vaultPanel?.CloseVault();
         _guildBankPanel?.CloseGuildBank();
+        _craftPanel?.ClosePanel();
         _guildPanel?.Hide();
         _guildFoundationPanel?.Hide();
         _lastBanqueando = false;

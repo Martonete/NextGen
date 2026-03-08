@@ -768,29 +768,61 @@ pub(super) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
         return;
     }
 
-    // Send buildable items lists
+    // Send buildable items lists (VB6 13.3 binary format)
     let skill_herreria = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // Herreria = 15 (1-based 16)
 
-    // Build weapons list
-    let mut weapons_list = String::new();
-    let mut armors_list = String::new();
+    let mut weapons = Vec::new();
+    let mut armors = Vec::new();
     for obj in state.game_data.objects.iter() {
         if obj.sk_herreria > 0 && obj.sk_herreria <= skill_herreria {
-            let entry = format!("{} ({}-{}-{}),{},",
-                obj.name, obj.ling_h, obj.ling_p, obj.ling_o, obj.index);
+            let item = binary_packets::CraftItem {
+                name: obj.name.clone(),
+                grh_index: obj.grh_index as i16,
+                mat1: obj.ling_h as i16,
+                mat2: obj.ling_p as i16,
+                mat3: obj.ling_o as i16,
+                obj_index: obj.index as i16,
+                upgrade: 0,
+            };
             if obj.obj_type == ObjType::Weapon {
-                weapons_list.push_str(&entry);
+                weapons.push(item);
             } else if obj.obj_type == ObjType::Armor || obj.obj_type == ObjType::Shield || obj.obj_type == ObjType::Helmet {
-                armors_list.push_str(&entry);
+                armors.push(item);
             }
         }
     }
 
-    let pkt = binary_packets::write_smith_weapons(&weapons_list);
+    let pkt = binary_packets::write_smith_weapons(&weapons);
     state.send_bytes(conn_id, &pkt).await;
-    let pkt = binary_packets::write_smith_armors(&armors_list);
+    let pkt = binary_packets::write_smith_armors(&armors);
     state.send_bytes(conn_id, &pkt).await;
     let pkt = binary_packets::write_show_blacksmith_form();
+    state.send_bytes(conn_id, &pkt).await;
+}
+
+/// Carpenter (open UI — sends buildable items list + ShowCarpenterForm).
+/// VB6: triggered by double-clicking equipped serrucho.
+pub(super) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId) {
+    let skill_carpinteria = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0); // Carpinteria=14 (1-based 15)
+
+    let mut items = Vec::new();
+    for obj in state.game_data.objects.iter() {
+        if obj.sk_carpinteria > 0 && obj.sk_carpinteria <= skill_carpinteria {
+            items.push(binary_packets::CraftItem {
+                name: obj.name.clone(),
+                grh_index: obj.grh_index as i16,
+                mat1: obj.madera as i16,
+                mat2: 0, // MaderaElfica — not loaded yet
+                mat3: 0, // unused for carpenter
+                obj_index: obj.index as i16,
+                upgrade: 0,
+            });
+        }
+    }
+
+    let pkt = binary_packets::write_carp_items(&items);
+    state.send_bytes(conn_id, &pkt).await;
+    let pkt = binary_packets::write_show_carpenter_form();
     state.send_bytes(conn_id, &pkt).await;
 }
 

@@ -1791,12 +1791,31 @@ pub fn write_guild_bank_slot_data(
     pkt.into_bytes()
 }
 
-/// ID 158: Buildable weapons list for blacksmith (LAH).
-/// data is the raw comma-separated list string (name,idx,name,idx,...).
-pub fn write_smith_weapons(data: &str) -> Vec<u8> {
+/// Craft list item (for blacksmith weapons/armors and carpenter).
+pub struct CraftItem {
+    pub name: String,
+    pub grh_index: i16,
+    pub mat1: i16,       // LingH (smith) or Madera (carp)
+    pub mat2: i16,       // LingP (smith) or MaderaElfica (carp)
+    pub mat3: i16,       // LingO (smith) or 0 (carp)
+    pub obj_index: i16,
+    pub upgrade: i16,
+}
+
+/// ID 158: Buildable weapons list for blacksmith (VB6 13.3 binary format).
+pub fn write_smith_weapons(items: &[CraftItem]) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::SmithWeapons.to_byte());
-    pkt.write_ascii_string(data);
+    pkt.write_integer(items.len() as i16);
+    for item in items {
+        pkt.write_ascii_string(&item.name);
+        pkt.write_integer(item.grh_index);
+        pkt.write_integer(item.mat1);
+        pkt.write_integer(item.mat2);
+        pkt.write_integer(item.mat3);
+        pkt.write_integer(item.obj_index);
+        pkt.write_integer(item.upgrade);
+    }
     pkt.into_bytes()
 }
 
@@ -1808,10 +1827,35 @@ pub fn write_mini_top_data(data: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 159: Buildable armors/shields/helmets list for blacksmith (LAR).
-pub fn write_smith_armors(data: &str) -> Vec<u8> {
+/// ID 159: Buildable armors/shields/helmets list for blacksmith (VB6 13.3 binary format).
+pub fn write_smith_armors(items: &[CraftItem]) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::SmithArmors.to_byte());
-    pkt.write_ascii_string(data);
+    pkt.write_integer(items.len() as i16);
+    for item in items {
+        pkt.write_ascii_string(&item.name);
+        pkt.write_integer(item.grh_index);
+        pkt.write_integer(item.mat1);
+        pkt.write_integer(item.mat2);
+        pkt.write_integer(item.mat3);
+        pkt.write_integer(item.obj_index);
+        pkt.write_integer(item.upgrade);
+    }
+    pkt.into_bytes()
+}
+
+/// ID 160: Buildable items list for carpenter (VB6 13.3 binary format).
+pub fn write_carp_items(items: &[CraftItem]) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::CarpItems.to_byte());
+    pkt.write_integer(items.len() as i16);
+    for item in items {
+        pkt.write_ascii_string(&item.name);
+        pkt.write_integer(item.grh_index);
+        pkt.write_integer(item.mat1);   // Madera
+        pkt.write_integer(item.mat2);   // MaderaElfica
+        pkt.write_integer(item.obj_index);
+        pkt.write_integer(item.upgrade);
+    }
     pkt.into_bytes()
 }

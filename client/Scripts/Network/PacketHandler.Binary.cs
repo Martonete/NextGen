@@ -69,9 +69,11 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.ShowBlacksmithForm: // 14
                 GD.Print("[PKT] ShowBlacksmithForm");
+                _state.ShowBlacksmithForm = true;
                 break;
             case ServerPacketId.ShowCarpenterForm: // 15
                 GD.Print("[PKT] ShowCarpenterForm");
+                _state.ShowCarpenterForm = true;
                 break;
 
             // ── Stats ─────────────────────────────────────────────
@@ -508,13 +510,13 @@ public partial class PacketHandler
                 GD.Print("[PKT] OpenCarp");
                 break;
             case ServerPacketId.SmithWeapons: // 158
-                HandleBinSmithList(bq, "SmithWeapons");
+                HandleBinCraftList(bq, _state.SmithWeapons, true);
                 break;
             case ServerPacketId.SmithArmors: // 159
-                HandleBinSmithList(bq, "SmithArmors");
+                HandleBinCraftList(bq, _state.SmithArmors, true);
                 break;
             case ServerPacketId.CarpItems: // 160
-                HandleBinSmithList(bq, "CarpItems");
+                HandleBinCraftList(bq, _state.CarpItems, false);
                 break;
             case ServerPacketId.MedOK: // 161
                 GD.Print("[PKT] MedOK");
@@ -2527,14 +2529,27 @@ public partial class PacketHandler
     }
 
     /// <summary>
-    /// SmithWeapons/SmithArmors/CarpItems (IDs 158/159/160) — buildable item list as raw string.
-    /// Wire: string data (comma-separated name,idx pairs)
+    /// SmithWeapons/SmithArmors/CarpItems (IDs 158/159/160) — VB6 13.3 binary craft list.
+    /// Smith: count, per item: name(str), grh(i16), lingH(i16), lingP(i16), lingO(i16), objIdx(i16), upgrade(i16)
+    /// Carp:  count, per item: name(str), grh(i16), madera(i16), maderaElf(i16), objIdx(i16), upgrade(i16)
     /// </summary>
-    private void HandleBinSmithList(ByteQueue bq, string tag)
+    private void HandleBinCraftList(ByteQueue bq, System.Collections.Generic.List<CraftEntry> list, bool hasThreeMats)
     {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] {tag} (binary): {data.Length} bytes");
-        _state.CraftListData = data;
+        list.Clear();
+        int count = bq.ReadInteger();
+        for (int i = 0; i < count; i++)
+        {
+            var entry = new CraftEntry();
+            entry.Name = bq.ReadString();
+            entry.GrhIndex = bq.ReadInteger();
+            entry.Mat1 = bq.ReadInteger();
+            entry.Mat2 = bq.ReadInteger();
+            if (hasThreeMats) entry.Mat3 = bq.ReadInteger();
+            entry.ObjIndex = bq.ReadInteger();
+            entry.Upgrade = bq.ReadInteger();
+            list.Add(entry);
+        }
+        GD.Print($"[PKT] CraftList: {count} items (3mat={hasThreeMats})");
     }
 
     /// <summary>
