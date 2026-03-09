@@ -97,7 +97,9 @@ func _apply_snap(rect: Rect2i) -> Rect2i:
 	var new_y: int = rect.position.y
 	var new_w: int = rect.size.x
 	var new_h: int = rect.size.y
+	@warning_ignore("integer_division")
 	var cx: int = rect.position.x + rect.size.x / 2
+	@warning_ignore("integer_division")
 	var cy: int = rect.position.y + rect.size.y / 2
 
 	match snap_mode:
@@ -106,20 +108,28 @@ func _apply_snap(rect: Rect2i) -> Rect2i:
 		1:  # Multiplo de snap_x / snap_y
 			var sx: int = maxi(1, snap_x)
 			var sy: int = maxi(1, snap_y)
+			@warning_ignore("integer_division")
 			new_w = ((rect.size.x + sx - 1) / sx) * sx
+			@warning_ignore("integer_division")
 			new_h = ((rect.size.y + sy - 1) / sy) * sy
+			@warning_ignore("integer_division")
 			new_x = cx - new_w / 2
+			@warning_ignore("integer_division")
 			new_y = cy - new_h / 2
 		2:  # Potencia de 2 por dimension
 			new_w = _next_pow2(rect.size.x)
 			new_h = _next_pow2(rect.size.y)
+			@warning_ignore("integer_division")
 			new_x = cx - new_w / 2
+			@warning_ignore("integer_division")
 			new_y = cy - new_h / 2
 		3:  # Cuadrado potencia de 2 (usa la mayor dimension)
 			var dim: int = _next_pow2(maxi(rect.size.x, rect.size.y))
 			new_w = dim
 			new_h = dim
+			@warning_ignore("integer_division")
 			new_x = cx - dim / 2
+			@warning_ignore("integer_division")
 			new_y = cy - dim / 2
 
 	# Always clamp to image borders regardless of snap mode

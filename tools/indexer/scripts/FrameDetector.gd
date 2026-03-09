@@ -243,7 +243,7 @@ static func detect_content_rows(
 # 4. Alinea el offset al múltiplo más cercano del tamaño
 # Retorna Array de Rect2i con cada frame detectado.
 
-const STANDARD_SIZES: Array[int] = [32, 64, 96, 128, 192, 256, 384, 512, 768, 1024]
+const STANDARD_SIZES := [32, 64, 96, 128, 192, 256, 384, 512, 768, 1024]
 
 static func detect_auto_frames(
 	image: Image,
@@ -346,8 +346,8 @@ static func detect_auto_frames(
 	var blob_ws: Array[int] = []
 	var blob_hs: Array[int] = []
 	for bl in merged:
-		blob_ws.append(bl.x1 - bl.x0 + 1)
-		blob_hs.append(bl.y1 - bl.y0 + 1)
+		blob_ws.append(int(bl.x1) - int(bl.x0) + 1)
+		blob_hs.append(int(bl.y1) - int(bl.y0) + 1)
 
 	var strategy := "mixed"
 	var grid_cell := Vector2i.ZERO
@@ -373,8 +373,8 @@ static func detect_auto_frames(
 		var cw: int = grid_cell.x
 		var ch: int = grid_cell.y
 		for bl in merged:
-			var cx := (bl.x0 + bl.x1) / 2
-			var cy := (bl.y0 + bl.y1) / 2
+			var cx: int = (int(bl.x0) + int(bl.x1)) / 2
+			var cy: int = (int(bl.y0) + int(bl.y1)) / 2
 			var gx: int = int(roundf(float(cx) / cw - 0.5)) * cw
 			var gy: int = int(roundf(float(cy) / ch - 0.5)) * ch
 			gx = clampi(gx, 0, w - cw)
@@ -393,8 +393,8 @@ static func detect_auto_frames(
 			var bh: int = bl.y1 - bl.y0 + 1
 			var fit_w := _best_fit_size(bw)
 			var fit_h := _best_fit_size(bh)
-			var cx := (bl.x0 + bl.x1) / 2
-			var cy := (bl.y0 + bl.y1) / 2
+			var cx: int = (int(bl.x0) + int(bl.x1)) / 2
+			var cy: int = (int(bl.y0) + int(bl.y1)) / 2
 			var gx: int = clampi(cx - fit_w / 2, 0, w - fit_w)
 			var gy: int = clampi(cy - fit_h / 2, 0, h - fit_h)
 			gx = int(roundf(float(gx) / fit_w)) * fit_w

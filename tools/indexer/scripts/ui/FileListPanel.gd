@@ -121,8 +121,8 @@ func get_file_num(path: String) -> int:
 	if _using_client:
 		var basename := path.get_file().get_basename()
 		return basename.to_int() if basename.is_valid_int() else 0
-	var name := path.get_file().get_basename()
-	var digits := name.lstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_- ")
+	var fname := path.get_file().get_basename()
+	var digits := fname.lstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_- ")
 	if digits.is_valid_int():
 		return _filenum_base + digits.to_int()
 	return _filenum_base + _all_files.find(path)
@@ -205,8 +205,8 @@ func _load_thumb(file_idx: int) -> void:
 
 
 static func _sort_num(path: String) -> int:
-	var name := path.get_file().get_basename()
-	var digits := name.lstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_- ")
+	var fname := path.get_file().get_basename()
+	var digits := fname.lstrip("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_- ")
 	return digits.to_int() if digits.is_valid_int() else -1
 
 

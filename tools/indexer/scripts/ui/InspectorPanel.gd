@@ -15,6 +15,7 @@ signal split_frame_pressed(cell_w: int, cell_h: int)
 signal save_init_pressed(path: String, content: String)
 signal add_manual_frame_pressed
 signal index_frame_pressed(idx: int)
+@warning_ignore("unused_signal")
 signal view_file_num_pressed(file_num: int, grh_index: int)
 signal next_grh_changed(val: int)
 
