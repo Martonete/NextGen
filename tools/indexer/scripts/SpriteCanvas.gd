@@ -115,7 +115,8 @@ func _apply_snap(rect: Rect2i) -> Rect2i:
 			new_x = cx - dim / 2
 			new_y = cy - dim / 2
 
-	if _image_size.x > 0 and snap_mode != 0:
+	# Always clamp to image borders regardless of snap mode
+	if _image_size.x > 0:
 		var img_w: int = int(_image_size.x)
 		var img_h: int = int(_image_size.y)
 		new_x = clampi(new_x, 0, img_w - 1)
@@ -265,6 +266,12 @@ func _resize_rect_from_drag(handle: int, delta_img: Vector2) -> Rect2:
 	var ny1 := minf(y1, y2 - 1.0)
 	var nx2 := maxf(x2, x1 + 1.0)
 	var ny2 := maxf(y2, y1 + 1.0)
+	# Clamp to image borders
+	if _image_size.x > 0:
+		nx1 = maxf(nx1, 0.0)
+		ny1 = maxf(ny1, 0.0)
+		nx2 = minf(nx2, _image_size.x)
+		ny2 = minf(ny2, _image_size.y)
 	return Rect2(nx1, ny1, nx2 - nx1, ny2 - ny1)
 
 

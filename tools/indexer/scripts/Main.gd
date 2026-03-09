@@ -386,9 +386,12 @@ func _on_canvas_frame_drawn(rect: Rect2) -> void:
 	_next_grh_index += 1
 	_inspector.set_next_grh(_next_grh_index)
 
+	var sx := _clamp_x(int(rect.position.x))
+	var sy := _clamp_y(int(rect.position.y))
 	var frame := {
-		"sx": int(rect.position.x), "sy": int(rect.position.y),
-		"w": int(rect.size.x), "h": int(rect.size.y),
+		"sx": sx, "sy": sy,
+		"w": _clamp_w(sx, int(rect.size.x)),
+		"h": _clamp_h(sy, int(rect.size.y)),
 		"grh_index": grh_idx, "file_num": file_num
 	}
 	_current_frames.append(frame)
@@ -407,10 +410,10 @@ func _on_canvas_frame_resized(index: int, new_rect: Rect2) -> void:
 		return
 	_push_undo()
 	var f: Dictionary = _current_frames[index]
-	f["sx"] = int(new_rect.position.x)
-	f["sy"] = int(new_rect.position.y)
-	f["w"] = int(new_rect.size.x)
-	f["h"] = int(new_rect.size.y)
+	f["sx"] = _clamp_x(int(new_rect.position.x))
+	f["sy"] = _clamp_y(int(new_rect.position.y))
+	f["w"] = _clamp_w(f["sx"], int(new_rect.size.x))
+	f["h"] = _clamp_h(f["sy"], int(new_rect.size.y))
 	_current_frames[index] = f
 	_refresh_all()
 
@@ -441,7 +444,11 @@ func _on_inspector_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh
 		return
 	_push_undo()
 	var f: Dictionary = _current_frames[idx]
-	f["sx"] = sx; f["sy"] = sy; f["w"] = w; f["h"] = h; f["grh_index"] = grh
+	f["sx"] = _clamp_x(sx)
+	f["sy"] = _clamp_y(sy)
+	f["w"] = _clamp_w(f["sx"], w)
+	f["h"] = _clamp_h(f["sy"], h)
+	f["grh_index"] = grh
 	_current_frames[idx] = f
 	_refresh_all()
 
@@ -645,6 +652,25 @@ func _redo() -> void:
 	_inspector.set_next_grh(_next_grh_index)
 	_refresh_all()
 	_update_status("Rehacer. (%d en pila)" % _redo_stack.size())
+
+
+# ── Image bounds clamping ────────────────────────────────────────────────────
+
+func _clamp_x(x: int) -> int:
+	if _current_image == null: return maxi(x, 0)
+	return clampi(x, 0, _current_image.get_width() - 1)
+
+func _clamp_y(y: int) -> int:
+	if _current_image == null: return maxi(y, 0)
+	return clampi(y, 0, _current_image.get_height() - 1)
+
+func _clamp_w(x: int, w: int) -> int:
+	if _current_image == null: return maxi(w, 1)
+	return clampi(w, 1, _current_image.get_width() - x)
+
+func _clamp_h(y: int, h: int) -> int:
+	if _current_image == null: return maxi(h, 1)
+	return clampi(h, 1, _current_image.get_height() - y)
 
 
 func _refresh_all() -> void:
