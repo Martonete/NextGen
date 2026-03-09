@@ -963,7 +963,12 @@ func _on_index_single_frame(idx: int) -> void:
 var _pending_select_grh: int = 0
 
 func _on_view_file_num(file_num: int, grh_index: int) -> void:
+	# Defer to next frame — the button that triggered this is about to be freed
 	_pending_select_grh = grh_index
+	call_deferred("_do_navigate_to_file", file_num)
+
+
+func _do_navigate_to_file(file_num: int) -> void:
 	_file_list.select_by_file_num(file_num)
 	# After file loads, select the frame matching grh_index
 	if _pending_select_grh > 0:
