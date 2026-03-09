@@ -54,7 +54,7 @@ func _ready() -> void:
 	# ── Snap ──
 	hbox.add_child(IndexerTheme.label("Snap:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	var snap_defs := [["Off", 0], ["Pot.2", 2], ["Sq", 3], ["Smart", 4], ["Grid", 1], ["AO", 5]]
-	var snap_tips := {0: "Sin snap", 1: "Multiplo", 2: "Potencia de 2", 3: "Cuadrado P2", 4: "Detección inteligente", 5: "AO Tiles: offset ×32, tamaño ×8"}
+	var snap_tips := {0: "Sin snap", 1: "Multiplo", 2: "Potencia de 2", 3: "Cuadrado P2", 4: "Detección inteligente", 5: "AO Tiles: offset y tamaño ×8, grilla ×32"}
 	for sd in snap_defs:
 		var btn := IndexerTheme.preset_button(sd[0], Callable(), snap_tips.get(sd[1], ""))
 		btn.toggle_mode = true

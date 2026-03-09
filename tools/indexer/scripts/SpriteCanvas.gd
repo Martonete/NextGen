@@ -131,25 +131,20 @@ func _apply_snap(rect: Rect2i) -> Rect2i:
 			new_x = cx - dim / 2
 			@warning_ignore("integer_division")
 			new_y = cy - dim / 2
-		5:  # AO Tiles: position ×32, size ×8
-			# Snap position to nearest 32px grid
+		5:  # AO Tiles: position and size in multiples of 8, covering all content
+			# Snap position DOWN to nearest 8px boundary
 			@warning_ignore("integer_division")
-			new_x = (rect.position.x / 32) * 32
+			new_x = (rect.position.x / 8) * 8
 			@warning_ignore("integer_division")
-			new_y = (rect.position.y / 32) * 32
-			# Snap size to nearest multiple of 8 (minimum 8)
+			new_y = (rect.position.y / 8) * 8
+			# Right/bottom edge of original content
+			var right_edge: int = rect.position.x + rect.size.x
+			var bottom_edge: int = rect.position.y + rect.size.y
+			# Size = ceil to next multiple of 8 so all content fits
 			@warning_ignore("integer_division")
-			new_w = maxi(8, ((rect.size.x + 4) / 8) * 8)
+			new_w = maxi(8, ((right_edge - new_x + 7) / 8) * 8)
 			@warning_ignore("integer_division")
-			new_h = maxi(8, ((rect.size.y + 4) / 8) * 8)
-			# If snapped position + size exceeds the right/bottom edge of where content was,
-			# keep the size but shift position to include the original center
-			@warning_ignore("integer_division")
-			if new_x + new_w < cx:
-				new_x = ((cx - new_w + 32) / 32) * 32
-			@warning_ignore("integer_division")
-			if new_y + new_h < cy:
-				new_y = ((cy - new_h + 32) / 32) * 32
+			new_h = maxi(8, ((bottom_edge - new_y + 7) / 8) * 8)
 
 	# Always clamp to image borders regardless of snap mode
 	if _image_size.x > 0:
@@ -587,9 +582,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 							queue_redraw()
 						if snap_mode == 5:
 							@warning_ignore("integer_division")
-							ip.x = float((int(ip.x) / 32) * 32)
+							ip.x = float((int(ip.x) / 8) * 8)
 							@warning_ignore("integer_division")
-							ip.y = float((int(ip.y) / 32) * 32)
+							ip.y = float((int(ip.y) / 8) * 8)
 						_draw_start_img = ip
 						_draw_cur_img = ip
 			else:
@@ -613,9 +608,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 						new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
 					if snap_mode == 5:
 						@warning_ignore("integer_division")
-						new_pos.x = float((int(new_pos.x) / 32) * 32)
+						new_pos.x = float((int(new_pos.x) / 8) * 8)
 						@warning_ignore("integer_division")
-						new_pos.y = float((int(new_pos.y) / 32) * 32)
+						new_pos.y = float((int(new_pos.y) / 8) * 8)
 					var new_rect := Rect2(new_pos, _move_frame_orig.size)
 					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
