@@ -102,6 +102,138 @@ static func detect_blobs_indexed(
 	}
 
 
+# ── Detección por bandas de contenido (multi-sprite sheets) ──────────────────
+# Analiza la imagen por filas: detecta bandas horizontales con contenido,
+# dentro de cada banda detecta sub-regiones verticales (columnas separadas).
+# Retorna Array de Rect2i con cada frame detectado.
+# gap_threshold: pixeles vacíos entre filas/columnas para considerar separación.
+
+static func detect_content_rows(
+	image: Image,
+	alpha_threshold: float = 0.03,
+	gap_threshold: int = 3,
+	padding: int = 1
+) -> Array:
+	var img := image.duplicate()
+	img.convert(Image.FORMAT_RGBA8)
+	var data: PackedByteArray = img.get_data()
+	var w: int = img.get_width()
+	var h: int = img.get_height()
+	var alpha_min := int(alpha_threshold * 255)
+
+	# 1) Build row/col content masks
+	var row_has_content: PackedByteArray = PackedByteArray()
+	row_has_content.resize(h)
+	row_has_content.fill(0)
+
+	for y in range(h):
+		for x in range(w):
+			var b := (y * w + x) * 4
+			if not _px_empty(data, b, data[b + 3], alpha_min):
+				row_has_content[y] = 1
+				break
+
+	# 2) Find horizontal bands (contiguous rows with content, allowing small gaps)
+	var bands: Array = []  # [{y1, y2}]
+	var in_band := false
+	var band_start := 0
+	var gap_count := 0
+
+	for y in range(h):
+		if row_has_content[y]:
+			if not in_band:
+				band_start = y
+				in_band = true
+			gap_count = 0
+		else:
+			if in_band:
+				gap_count += 1
+				if gap_count >= gap_threshold:
+					bands.append({"y1": band_start, "y2": y - gap_count})
+					in_band = false
+					gap_count = 0
+	if in_band:
+		bands.append({"y1": band_start, "y2": h - 1})
+
+	if bands.is_empty():
+		return []
+
+	# 3) Within each band, find column sub-regions
+	var result: Array = []
+	for band in bands:
+		var by1: int = band["y1"]
+		var by2: int = band["y2"]
+		var band_h: int = by2 - by1 + 1
+
+		# Build column content mask for this band
+		var col_has_content: PackedByteArray = PackedByteArray()
+		col_has_content.resize(w)
+		col_has_content.fill(0)
+		for x in range(w):
+			for y in range(by1, by2 + 1):
+				var b := (y * w + x) * 4
+				if not _px_empty(data, b, data[b + 3], alpha_min):
+					col_has_content[x] = 1
+					break
+
+		# Find contiguous column regions
+		var col_regions: Array = []  # [{x1, x2}]
+		var in_region := false
+		var region_start := 0
+		var cgap := 0
+		for x in range(w):
+			if col_has_content[x]:
+				if not in_region:
+					region_start = x
+					in_region = true
+				cgap = 0
+			else:
+				if in_region:
+					cgap += 1
+					if cgap >= gap_threshold:
+						col_regions.append({"x1": region_start, "x2": x - cgap})
+						in_region = false
+						cgap = 0
+		if in_region:
+			col_regions.append({"x1": region_start, "x2": w - 1})
+
+		if col_regions.size() <= 1:
+			# Single region spans the full band width
+			var rx1 := 0
+			var rx2 := w - 1
+			if col_regions.size() == 1:
+				rx1 = col_regions[0]["x1"]
+				rx2 = col_regions[0]["x2"]
+			var sx := maxi(0, rx1 - padding)
+			var sy := maxi(0, by1 - padding)
+			var ex := mini(w - 1, rx2 + padding)
+			var ey := mini(h - 1, by2 + padding)
+			result.append(Rect2i(sx, sy, ex - sx + 1, ey - sy + 1))
+		else:
+			# Multiple column regions within this band
+			for cr in col_regions:
+				var crx1: int = cr["x1"]
+				var crx2: int = cr["x2"]
+				# Tighten vertically: find actual content bounds within this column slice
+				var tight_y1 := by2
+				var tight_y2 := by1
+				for y in range(by1, by2 + 1):
+					for x in range(crx1, crx2 + 1):
+						var b := (y * w + x) * 4
+						if not _px_empty(data, b, data[b + 3], alpha_min):
+							if y < tight_y1: tight_y1 = y
+							if y > tight_y2: tight_y2 = y
+							break
+				if tight_y2 >= tight_y1:
+					var sx := maxi(0, crx1 - padding)
+					var sy := maxi(0, tight_y1 - padding)
+					var ex := mini(w - 1, crx2 + padding)
+					var ey := mini(h - 1, tight_y2 + padding)
+					result.append(Rect2i(sx, sy, ex - sx + 1, ey - sy + 1))
+
+	return result
+
+
 # ── Detección por cuadrícula (sin cambios) ───────────────────────────────────
 
 static func detect_grid(

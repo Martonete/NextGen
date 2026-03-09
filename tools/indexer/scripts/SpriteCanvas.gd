@@ -22,6 +22,9 @@ var _blob_id_to_rect: PackedInt32Array = PackedInt32Array()
 var _blob_map_w: int = 0
 var _hover_rect: Rect2i = Rect2i()      # Rect del blob bajo el cursor (vacío=nada)
 
+# ── Content regions (smart mode) ──────────────────────────────────────────────
+var _content_regions: Array = []         # Array of Rect2i from detect_content_rows
+
 # ── Frames definidos ──────────────────────────────────────────────────────────
 
 var _frames: Array = []
@@ -159,6 +162,7 @@ func load_image(img: Image) -> void:
 	_hover_rect = Rect2i()
 	_blob_map = PackedInt32Array()
 	_blob_rects = []
+	_content_regions = []
 	# Diferir fit para que el canvas tenga su tamaño definitivo tras el layout
 	call_deferred("fit_to_canvas")
 	queue_redraw()
@@ -171,6 +175,10 @@ func set_blob_data(map: PackedInt32Array, rects: Array, id_to_rect: PackedInt32A
 	_blob_map_w = w
 	_hover_rect = Rect2i()
 	queue_redraw()
+
+
+func set_content_regions(regions: Array) -> void:
+	_content_regions = regions
 
 
 func set_frames(frames: Array) -> void:
@@ -190,6 +198,7 @@ func clear_image() -> void:
 	_selected_frame = -1
 	_blob_map = PackedInt32Array()
 	_blob_rects = []
+	_content_regions = []
 	_hover_rect = Rect2i()
 	queue_redraw()
 
@@ -591,7 +600,15 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 		var prev_rect := _hover_rect
 		_hover_rect = Rect2i()
 
-		if px >= 0 and px < _blob_map_w and py >= 0:
+		if snap_mode == 4 and _content_regions.size() > 0:
+			# Smart mode: find which pre-computed content region the cursor is in
+			for region in _content_regions:
+				var r: Rect2i = region
+				if px >= r.position.x and px < r.position.x + r.size.x \
+				and py >= r.position.y and py < r.position.y + r.size.y:
+					_hover_rect = r
+					break
+		elif px >= 0 and px < _blob_map_w and py >= 0:
 			var map_h := _blob_map.size() / _blob_map_w
 			if py < map_h:
 				var blob_id := _blob_map[py * _blob_map_w + px]

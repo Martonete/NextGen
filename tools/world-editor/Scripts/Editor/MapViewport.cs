@@ -68,7 +68,7 @@ public partial class MapViewport : Control
 
     public override void _Draw()
     {
-        DrawRect(new Rect2(Vector2.Zero, Size), new Color(0.1f, 0.1f, 0.12f, 1f));
+        DrawRect(new Rect2(Vector2.Zero, Size), EditorTheme.BG_DARK);
 
         if (Map == null || Grhs == null || Textures == null || State == null) return;
 
@@ -457,7 +457,7 @@ public partial class MapViewport : Control
         // Grid
         if (State.ShowGrid)
         {
-            var gridColor = new Color(1, 1, 1, 0.08f);
+            var gridColor = EditorTheme.OVERLAY_GRID;
             for (int y = 1; y <= mapH + 1; y++)
                 DrawLine(new Vector2(1 * TileSize, y * TileSize),
                          new Vector2((mapW + 1) * TileSize, y * TileSize), gridColor);
@@ -469,7 +469,7 @@ public partial class MapViewport : Control
         // Blocked tiles
         if (State.ShowBlocked)
         {
-            var blockedColor = new Color(1, 0, 0, 0.25f);
+            var blockedColor = EditorTheme.OVERLAY_BLOCKED;
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].Blocked)
@@ -483,7 +483,7 @@ public partial class MapViewport : Control
                     if (Map.Tiles[x, y].HasExit)
                     {
                         DrawRect(new Rect2(x * TileSize, y * TileSize, TileSize, TileSize),
-                            new Color(0, 1, 0, 0.25f));
+                            EditorTheme.OVERLAY_EXIT);
                         DrawString(ThemeDB.FallbackFont,
                             new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
                             $"M{Map.Tiles[x, y].ExitMap}", HorizontalAlignment.Left, -1, 7,
@@ -515,7 +515,7 @@ public partial class MapViewport : Control
                     if (Map.Tiles[x, y].ParticleGroup > 0)
                     {
                         var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
-                        var particleCol = new Color(0, 0.9f, 0.9f, 0.5f);
+                        var particleCol = EditorTheme.OVERLAY_PARTICLE;
                         float s = TileSize * 0.25f;
                         DrawLine(center + new Vector2(0, -s), center + new Vector2(s, 0), particleCol, 1.5f);
                         DrawLine(center + new Vector2(s, 0), center + new Vector2(0, s), particleCol, 1.5f);
@@ -534,7 +534,7 @@ public partial class MapViewport : Control
                     if (Map.Tiles[x, y].HasNpc)
                     {
                         DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
-                            TileSize * 0.3f, new Color(1, 0.5f, 0, 0.4f));
+                            TileSize * 0.3f, EditorTheme.OVERLAY_NPC);
                         DrawString(ThemeDB.FallbackFont,
                             new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
                             $"N{Map.Tiles[x, y].NpcIndex}", HorizontalAlignment.Left, -1, 7,
@@ -548,7 +548,7 @@ public partial class MapViewport : Control
                     if (Map.Tiles[x, y].HasObject)
                     {
                         DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
-                            TileSize * 0.2f, new Color(0.5f, 0, 1, 0.4f));
+                            TileSize * 0.2f, EditorTheme.OVERLAY_OBJECT);
                         var obj = Map.Tiles[x, y];
                         DrawString(ThemeDB.FallbackFont,
                             new Vector2(x * TileSize + 2, y * TileSize + 10),
@@ -583,9 +583,9 @@ public partial class MapViewport : Control
         if (State.HoverValid && Map.InBounds(State.HoverX, State.HoverY))
         {
             DrawRect(new Rect2(State.HoverX * TileSize, State.HoverY * TileSize,
-                TileSize, TileSize), new Color(1, 1, 1, 0.15f));
+                TileSize, TileSize), EditorTheme.OVERLAY_HOVER);
             DrawRect(new Rect2(State.HoverX * TileSize, State.HoverY * TileSize,
-                TileSize, TileSize), new Color(1, 1, 1, 0.4f), false, 1f);
+                TileSize, TileSize), EditorTheme.OVERLAY_HOVER with { A = 0.4f }, false, 1f);
         }
 
         // Selection rectangle
@@ -595,8 +595,8 @@ public partial class MapViewport : Control
                 State.SelX1 * TileSize, State.SelY1 * TileSize,
                 (State.SelX2 - State.SelX1 + 1) * TileSize,
                 (State.SelY2 - State.SelY1 + 1) * TileSize);
-            DrawRect(selRect, new Color(0.2f, 0.6f, 1f, 0.15f));
-            DrawRect(selRect, new Color(0.2f, 0.6f, 1f, 0.7f), false, 2f);
+            DrawRect(selRect, EditorTheme.OVERLAY_SELECTION);
+            DrawRect(selRect, EditorTheme.OVERLAY_SELECTION with { A = 0.7f }, false, 2f);
         }
 
         // Active selection being drawn

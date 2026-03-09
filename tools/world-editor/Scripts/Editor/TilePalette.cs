@@ -31,13 +31,12 @@ public partial class TilePalette : VBoxContainer
     {
         CustomMinimumSize = new Vector2(300, 0);
 
-        // Layer selector
+        // Layer selector (syncs with toolbar layer tabs)
         var layerBox = new HBoxContainer();
-        var layerLbl = new Label { Text = "Capa:" };
-        layerLbl.AddThemeFontSizeOverride("font_size", 12);
-        layerBox.AddChild(layerLbl);
+        layerBox.AddChild(EditorTheme.MakeLabel("Capa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
 
         _layerSelect = new OptionButton();
+        _layerSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
         _layerSelect.AddItem("1 - Terreno", 0);
         _layerSelect.AddItem("2 - Mascara", 1);
         _layerSelect.AddItem("3 - Objetos/Arboles", 2);
@@ -54,9 +53,7 @@ public partial class TilePalette : VBoxContainer
         AddChild(_tabBar);
 
         // Info label
-        _infoLabel = new Label();
-        _infoLabel.Text = "Selecciona una textura";
-        _infoLabel.AddThemeFontSizeOverride("font_size", 11);
+        _infoLabel = EditorTheme.MakeLabel("Selecciona una textura", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
         AddChild(_infoLabel);
 
         // Scroll + Grid for texture previews

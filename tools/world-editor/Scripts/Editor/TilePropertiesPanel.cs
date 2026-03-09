@@ -7,6 +7,7 @@ namespace AOWorldEditor.Editor;
 /// <summary>
 /// Panel for editing individual tile properties:
 /// blocked, trigger, light, exit, NPC, object.
+/// Themed with EditorTheme for consistent dark UI.
 /// </summary>
 public partial class TilePropertiesPanel : PanelContainer
 {
@@ -27,21 +28,27 @@ public partial class TilePropertiesPanel : PanelContainer
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(250, 0);
+        CustomMinimumSize = new Vector2(260, 0);
+        AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL, 4, 8, 6, EditorTheme.BORDER, 1));
 
         var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 4);
         AddChild(vbox);
 
-        _titleLabel = new Label { Text = "Tile Properties" };
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
+        _titleLabel = EditorTheme.Heading("Tile Properties");
         vbox.AddChild(_titleLabel);
 
+        // Blocked
         _blockedCheck = new CheckBox { Text = "Bloqueado" };
+        _blockedCheck.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        _blockedCheck.AddThemeColorOverride("font_color", EditorTheme.TEXT_DANGER);
         vbox.AddChild(_blockedCheck);
 
         // Trigger
-        vbox.AddChild(new Label { Text = "Trigger:" });
+        vbox.AddChild(EditorTheme.MakeHSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("Trigger"));
         _triggerSelect = new OptionButton();
+        _triggerSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
         _triggerSelect.AddItem("Ninguno", 0);
         _triggerSelect.AddItem("Indoor", 1);
         _triggerSelect.AddItem("InvalidPos", 3);
@@ -51,49 +58,63 @@ public partial class TilePropertiesPanel : PanelContainer
         vbox.AddChild(_triggerSelect);
 
         // Light
-        vbox.AddChild(new Label { Text = "Luz:" });
+        vbox.AddChild(EditorTheme.MakeHSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("Luz"));
         var lightGrid = new GridContainer { Columns = 2 };
-        lightGrid.AddChild(new Label { Text = "Rango:" });
-        _lightRange = CreateSpinBox(0, 20, 1); lightGrid.AddChild(_lightRange);
-        lightGrid.AddChild(new Label { Text = "R:" });
-        _lightR = CreateSpinBox(0, 255, 1); lightGrid.AddChild(_lightR);
-        lightGrid.AddChild(new Label { Text = "G:" });
-        _lightG = CreateSpinBox(0, 255, 1); lightGrid.AddChild(_lightG);
-        lightGrid.AddChild(new Label { Text = "B:" });
-        _lightB = CreateSpinBox(0, 255, 1); lightGrid.AddChild(_lightB);
+        lightGrid.AddThemeConstantOverride("h_separation", 8);
+        lightGrid.AddThemeConstantOverride("v_separation", 4);
+        lightGrid.AddChild(EditorTheme.MakeLabel("Rango:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _lightRange = EditorTheme.MakeSpinBox(0, 20, 1); lightGrid.AddChild(_lightRange);
+        lightGrid.AddChild(EditorTheme.MakeLabel("R:", EditorTheme.TEXT_DANGER, EditorTheme.FONT_SM));
+        _lightR = EditorTheme.MakeSpinBox(0, 255, 1); lightGrid.AddChild(_lightR);
+        lightGrid.AddChild(EditorTheme.MakeLabel("G:", EditorTheme.TEXT_SUCCESS, EditorTheme.FONT_SM));
+        _lightG = EditorTheme.MakeSpinBox(0, 255, 1); lightGrid.AddChild(_lightG);
+        lightGrid.AddChild(EditorTheme.MakeLabel("B:", EditorTheme.TEXT_ACCENT, EditorTheme.FONT_SM));
+        _lightB = EditorTheme.MakeSpinBox(0, 255, 1); lightGrid.AddChild(_lightB);
         vbox.AddChild(lightGrid);
 
         // Exit
-        vbox.AddChild(new Label { Text = "Salida:" });
+        vbox.AddChild(EditorTheme.MakeHSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("Salida"));
         var exitGrid = new GridContainer { Columns = 2 };
-        exitGrid.AddChild(new Label { Text = "Mapa:" });
-        _exitMap = CreateSpinBox(0, 999, 1); exitGrid.AddChild(_exitMap);
-        exitGrid.AddChild(new Label { Text = "X:" });
-        _exitX = CreateSpinBox(0, 100, 1); exitGrid.AddChild(_exitX);
-        exitGrid.AddChild(new Label { Text = "Y:" });
-        _exitY = CreateSpinBox(0, 100, 1); exitGrid.AddChild(_exitY);
+        exitGrid.AddThemeConstantOverride("h_separation", 8);
+        exitGrid.AddThemeConstantOverride("v_separation", 4);
+        exitGrid.AddChild(EditorTheme.MakeLabel("Mapa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _exitMap = EditorTheme.MakeSpinBox(0, 999, 1); exitGrid.AddChild(_exitMap);
+        exitGrid.AddChild(EditorTheme.MakeLabel("X:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _exitX = EditorTheme.MakeSpinBox(0, 100, 1); exitGrid.AddChild(_exitX);
+        exitGrid.AddChild(EditorTheme.MakeLabel("Y:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _exitY = EditorTheme.MakeSpinBox(0, 100, 1); exitGrid.AddChild(_exitY);
         vbox.AddChild(exitGrid);
 
         // NPC
-        vbox.AddChild(new Label { Text = "NPC Index:" });
-        _npcIndex = CreateSpinBox(0, 9999, 1);
-        vbox.AddChild(_npcIndex);
+        vbox.AddChild(EditorTheme.MakeHSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("NPC"));
+        var npcBox = new HBoxContainer();
+        npcBox.AddChild(EditorTheme.MakeLabel("Index:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _npcIndex = EditorTheme.MakeSpinBox(0, 9999, 1);
+        _npcIndex.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        npcBox.AddChild(_npcIndex);
+        vbox.AddChild(npcBox);
 
         // Object
-        vbox.AddChild(new Label { Text = "Objeto:" });
+        vbox.AddChild(EditorTheme.MakeHSeparator());
+        vbox.AddChild(EditorTheme.SectionLabel("Objeto"));
         var objGrid = new GridContainer { Columns = 2 };
-        objGrid.AddChild(new Label { Text = "Index:" });
-        _objIndex = CreateSpinBox(0, 9999, 1); objGrid.AddChild(_objIndex);
-        objGrid.AddChild(new Label { Text = "Cant:" });
-        _objAmount = CreateSpinBox(0, 9999, 1); objGrid.AddChild(_objAmount);
+        objGrid.AddThemeConstantOverride("h_separation", 8);
+        objGrid.AddThemeConstantOverride("v_separation", 4);
+        objGrid.AddChild(EditorTheme.MakeLabel("Index:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _objIndex = EditorTheme.MakeSpinBox(0, 9999, 1); objGrid.AddChild(_objIndex);
+        objGrid.AddChild(EditorTheme.MakeLabel("Cant:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
+        _objAmount = EditorTheme.MakeSpinBox(0, 9999, 1); objGrid.AddChild(_objAmount);
         vbox.AddChild(objGrid);
 
-        // GRH indices display (read-only)
-        vbox.AddChild(new HSeparator());
+        // Separator
+        vbox.AddChild(EditorTheme.MakeHSeparator());
 
         // Apply button
-        _applyBtn = new Button { Text = "Aplicar" };
-        _applyBtn.Pressed += ApplyChanges;
+        _applyBtn = EditorTheme.SuccessButton("Aplicar", ApplyChanges);
+        _applyBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         vbox.AddChild(_applyBtn);
     }
 
@@ -105,7 +126,7 @@ public partial class TilePropertiesPanel : PanelContainer
         _tileY = y;
         ref var tile = ref Map.Tiles[x, y];
 
-        _titleLabel!.Text = $"Tile ({x}, {y}) | L1:{tile.Layer1} L2:{tile.Layer2} L3:{tile.Layer3} L4:{tile.Layer4}";
+        _titleLabel!.Text = $"Tile ({x}, {y})";
         _blockedCheck!.ButtonPressed = tile.Blocked;
 
         // Map trigger value to option index
@@ -154,16 +175,5 @@ public partial class TilePropertiesPanel : PanelContainer
         Undo?.BeginBatch("Edit Properties");
         Undo?.RecordTileChange(_tileX, _tileY, before, Map.Tiles[_tileX, _tileY]);
         Undo?.EndBatch();
-    }
-
-    private static SpinBox CreateSpinBox(double min, double max, double step)
-    {
-        return new SpinBox
-        {
-            MinValue = min,
-            MaxValue = max,
-            Step = step,
-            CustomMinimumSize = new Vector2(80, 0)
-        };
     }
 }

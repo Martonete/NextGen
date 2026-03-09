@@ -53,9 +53,10 @@ func _ready() -> void:
 
 	# ── Snap ──
 	hbox.add_child(IndexerTheme.label("Snap:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	var snap_defs := [["Off", 0], ["Pot.2", 2], ["Sq", 3], ["Grid", 1]]
+	var snap_defs := [["Off", 0], ["Pot.2", 2], ["Sq", 3], ["Smart", 4], ["Grid", 1]]
+	var snap_tips := {0: "Sin snap", 1: "Multiplo", 2: "Potencia de 2", 3: "Cuadrado P2", 4: "Detección inteligente"}
 	for sd in snap_defs:
-		var btn := IndexerTheme.preset_button(sd[0], Callable(), ["Sin snap", "Multiplo", "Potencia de 2", "Cuadrado P2"][sd[1]])
+		var btn := IndexerTheme.preset_button(sd[0], Callable(), snap_tips.get(sd[1], ""))
 		btn.toggle_mode = true
 		btn.custom_minimum_size.x = 42
 		btn.pressed.connect(_on_snap_pressed.bind(sd[1]))
@@ -130,8 +131,8 @@ func _on_snap_pressed(mode: int) -> void:
 
 
 func _get_snap_btn(mode: int) -> Button:
-	# snap_defs order: Off=0, Pot.2=2, Sq=3, Grid=1 → button indices 0,1,2,3
-	var map := {0: 0, 2: 1, 3: 2, 1: 3}
+	# snap_defs order: Off=0, Pot.2=2, Sq=3, Smart=4, Grid=1 → button indices 0,1,2,3,4
+	var map := {0: 0, 2: 1, 3: 2, 4: 3, 1: 4}
 	return _snap_buttons[map.get(mode, 0)]
 
 

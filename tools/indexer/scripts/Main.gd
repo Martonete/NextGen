@@ -412,9 +412,13 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	var blob_data := FrameDetector.detect_blobs_indexed(img, 0.03, 3, 1)
 	_canvas.set_blob_data(blob_data["map"], blob_data["rects"], blob_data["id_to_rect"], blob_data["width"])
 
+	# Pre-compute content regions for smart mode
+	var content_regions := FrameDetector.detect_content_rows(img, 0.03, 3, 1)
+	_canvas.set_content_regions(content_regions)
+
 	# Auto-detect sprite sheet type and suggest best snap mode
 	var rects: Array = blob_data["rects"]
-	var snap_hint := _detect_snap_hint(rects)
+	var snap_hint := _detect_snap_hint(rects, content_regions)
 
 	# Update GRH viewer
 	var grh_entries := _get_grh_entries_for_file_num(file_num)
@@ -539,6 +543,12 @@ func _on_detect_blobs(alpha: float, min_size: int, padding: int) -> void:
 		return
 	var blob_data := FrameDetector.detect_blobs_indexed(_current_image, alpha, min_size, padding)
 	var rects: Array = blob_data["rects"]
+	_canvas.set_blob_data(blob_data["map"], blob_data["rects"], blob_data["id_to_rect"], blob_data["width"])
+
+	# Update content regions for smart mode
+	var content_regions := FrameDetector.detect_content_rows(_current_image, alpha, 3, padding)
+	_canvas.set_content_regions(content_regions)
+
 	if rects.is_empty():
 		_update_status("No se detectaron blobs.")
 		return
@@ -749,7 +759,7 @@ func _clamp_h(y: int, h: int) -> int:
 
 ## Analyze detected blobs and auto-set the best snap mode.
 ## Returns a human-readable hint string for the status bar.
-func _detect_snap_hint(rects: Array) -> String:
+func _detect_snap_hint(rects: Array, content_regions: Array = []) -> String:
 	if rects.size() < 2:
 		return "Snap: Pot.2"
 
@@ -794,13 +804,23 @@ func _detect_snap_hint(rects: Array) -> String:
 		_toolbar.set_snap(1, gw, gh)
 		_canvas.set_snap(1, gw, gh)
 		return "Snap: Grid %dx%d (auto — %d/%d blobs iguales)" % [gw, gh, best["count"], sizes.size()]
+	elif content_regions.size() >= 2 and content_regions.size() <= rects.size() + 2:
+		# Multiple distinct content regions detected → Smart mode
+		# (content_regions merges overlapping blobs into logical groups)
+		_toolbar.set_snap(4)
+		_canvas.set_snap(4, 32, 32)
+		return "Snap: Smart (auto — %d regiones de contenido)" % content_regions.size()
 	elif w_is_pow2 and h_is_pow2:
 		# Mixed sizes but pow2 works
 		_toolbar.set_snap(2)
 		_canvas.set_snap(2, 32, 32)
 		return "Snap: Pot.2 (auto — tamaños variados)"
 	else:
-		# Mixed sizes, not all pow2 → no snap
+		# Mixed sizes, not all pow2 → Smart if we have regions
+		if content_regions.size() >= 2:
+			_toolbar.set_snap(4)
+			_canvas.set_snap(4, 32, 32)
+			return "Snap: Smart (auto — %d regiones)" % content_regions.size()
 		_toolbar.set_snap(0)
 		_canvas.set_snap(0, 32, 32)
 		return "Snap: Off (auto — tamaños irregulares)"
