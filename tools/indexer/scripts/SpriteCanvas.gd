@@ -131,12 +131,12 @@ func _apply_snap(rect: Rect2i) -> Rect2i:
 			new_x = cx - dim / 2
 			@warning_ignore("integer_division")
 			new_y = cy - dim / 2
-		5:  # AO Tiles: position and size in multiples of 8, covering all content
-			# Snap position DOWN to nearest 8px boundary
+		5:  # AO Tiles: offset ×32, size ×8
+			# Snap position DOWN to nearest 32px grid
 			@warning_ignore("integer_division")
-			new_x = (rect.position.x / 8) * 8
+			new_x = (rect.position.x / 32) * 32
 			@warning_ignore("integer_division")
-			new_y = (rect.position.y / 8) * 8
+			new_y = (rect.position.y / 32) * 32
 			# Right/bottom edge of original content
 			var right_edge: int = rect.position.x + rect.size.x
 			var bottom_edge: int = rect.position.y + rect.size.y
@@ -582,9 +582,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 							queue_redraw()
 						if snap_mode == 5:
 							@warning_ignore("integer_division")
-							ip.x = float((int(ip.x) / 8) * 8)
+							ip.x = float((int(ip.x) / 32) * 32)
 							@warning_ignore("integer_division")
-							ip.y = float((int(ip.y) / 8) * 8)
+							ip.y = float((int(ip.y) / 32) * 32)
 						_draw_start_img = ip
 						_draw_cur_img = ip
 			else:
@@ -608,9 +608,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 						new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
 					if snap_mode == 5:
 						@warning_ignore("integer_division")
-						new_pos.x = float((int(new_pos.x) / 8) * 8)
+						new_pos.x = float((int(new_pos.x) / 32) * 32)
 						@warning_ignore("integer_division")
-						new_pos.y = float((int(new_pos.y) / 8) * 8)
+						new_pos.y = float((int(new_pos.y) / 32) * 32)
 					var new_rect := Rect2(new_pos, _move_frame_orig.size)
 					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
