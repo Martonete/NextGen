@@ -28,6 +28,7 @@ var _anim_time: float = 0.0
 var _anim_fps: float = 8.0
 var _anim_frame_idx: int = 0
 var _frames_for_anim: Array = []
+var _fx_in_preview: bool = false  # True when main preview shows an FX animation
 
 var _props_box: VBoxContainer
 var _spin_sx: SpinBox
@@ -107,13 +108,14 @@ func _ready() -> void:
 
 func update_frames(frames: Array, selected: int) -> void:
 	_rebuild_frame_list(frames, selected)
-	_frames_for_anim = frames
-	_preview.set_frames(frames)
-	if selected >= 0 and selected < frames.size():
-		_preview.show_frame(selected)
-		_show_props(true)
-	else:
-		_show_props(false)
+	if not _fx_in_preview:
+		_frames_for_anim = frames
+		_preview.set_frames(frames)
+		if selected >= 0 and selected < frames.size():
+			_preview.show_frame(selected)
+			_show_props(true)
+		else:
+			_show_props(false)
 
 
 func update_selected_props(frame: Dictionary) -> void:
@@ -134,6 +136,8 @@ func clear_props() -> void:
 
 
 func set_image(img: Image) -> void:
+	if _fx_in_preview:
+		_exit_fx_preview()
 	_preview.set_image(img)
 
 
@@ -163,8 +167,18 @@ func get_filenum_base() -> int:
 
 
 func show_frame_preview(idx: int) -> void:
+	if _fx_in_preview:
+		_exit_fx_preview()
 	_preview.show_frame(idx)
 	_anim_frame_idx = idx
+
+
+func _exit_fx_preview() -> void:
+	_fx_in_preview = false
+	_anim_playing = false
+	_btn_play.button_pressed = false
+	_btn_play.text = "Play"
+	_preview._textures.clear()
 
 
 func process_animation(delta: float) -> void:
@@ -205,9 +219,43 @@ func update_related_animations(anims: Array) -> void:
 		c.queue_free()
 	_related_previews.clear()
 	_related_anim_data.clear()
+	_fx_in_preview = false
 
 	if anims.is_empty():
 		_related_anims_box.visible = false
+		return
+
+	# Check if we have a single FX — promote it to the main preview
+	var fx_anims := anims.filter(func(a): return a.get("source", "") == "Fxs.ind")
+	if fx_anims.size() == 1 and anims.size() == 1:
+		var fx: Dictionary = fx_anims[0]
+		var frames: Array = fx.get("frames", [])
+		var speed: float = fx.get("speed", 100.0)
+		var safe_speed := maxf(speed, 10.0)
+		var fps := (frames.size() * 1000.0) / safe_speed
+
+		# Promote to main preview
+		_fx_in_preview = true
+		_frames_for_anim = frames
+		_preview.set_frames(frames)
+		if not frames.is_empty():
+			_preview.show_frame(0)
+		_anim_fps = fps
+		_anim_playing = true
+		_anim_time = 0.0
+		_anim_frame_idx = 0
+		_btn_play.button_pressed = true
+		_btn_play.text = "Pausa"
+		_spin_anim_fps.value = roundf(fps)
+		_lbl_anim_info.text = "FX %d — G%d — %d frames" % [fx.get("grh_index", 0), fx.get("grh_index", 0), frames.size()]
+
+		# Still show a small label in related section
+		_related_anims_box.visible = true
+		var info_lbl := IndexerTheme.label(
+			"FX %d reproduciendo en preview principal — G%d, %d frames, %.1f FPS" % [
+				fx.get("grh_index", 0), fx.get("grh_index", 0), frames.size(), fps],
+			IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
+		_related_anims_content.add_child(info_lbl)
 		return
 
 	_related_anims_box.visible = true
@@ -220,8 +268,7 @@ func update_related_animations(anims: Array) -> void:
 		var grh_idx: int = anim.get("grh_index", 0)
 
 		# AO speed → FPS: speed is total cycle duration in ms.
-		# VB6: FrameCounter += timerElapsedTime * NumFrames / Speed
-		# FPS = NumFrames * 1000 / Speed (e.g. speed=500, 6 frames → 12 FPS)
+		# FPS = NumFrames * 1000 / Speed
 		var safe_speed := maxf(speed, 10.0)
 		var anim_fps := (frames.size() * 1000.0) / safe_speed
 		var ad := {
@@ -244,20 +291,17 @@ func update_related_animations(anims: Array) -> void:
 		section.add_child(header)
 		header.add_child(IndexerTheme.label(label_text, IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM))
 		header.add_child(IndexerTheme.spacer())
-		var info_text := "G%d  %d frames" % [grh_idx, frames.size()]
+		var info_text := "G%d  %d frames  %.0f FPS" % [grh_idx, frames.size(), anim_fps]
 		if not source.is_empty():
 			info_text += "  (%s)" % source
 		header.add_child(IndexerTheme.label(info_text, IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 
-		# Preview
+		# Preview — generous height for visibility
 		var preview := FramePreviewPanel.new()
-		preview.custom_minimum_size = Vector2(0, 80)
+		preview.custom_minimum_size = Vector2(0, 120)
 		preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		section.add_child(preview)
 
-		# Set image and frames for this preview
-		# We need to set the image from the frames' textures
-		# The preview panel uses frames array with sx/sy/w/h
 		preview.set_frames(frames)
 		if not frames.is_empty():
 			preview.show_frame(0)

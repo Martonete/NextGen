@@ -1179,6 +1179,16 @@ func _load_related_textures(related: Array, current_file_num: int, current_img: 
 		if i < _inspector._related_previews.size():
 			_inspector._related_previews[i].set_textures(textures)
 
+	# If FX was promoted to main preview, set textures there too
+	if _inspector._fx_in_preview and related.size() == 1:
+		var frames: Array = related[0].get("frames", [])
+		var textures: Dictionary = {}
+		for fr in frames:
+			var fnum: int = fr.get("file_num", 0)
+			if fnum > 0 and img_cache.has(fnum):
+				textures[fnum] = ImageTexture.create_from_image(img_cache[fnum])
+		_inspector._preview.set_textures(textures)
+
 
 func _load_personajes_ind(path: String) -> Array:
 	var bodies: Array = []
