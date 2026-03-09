@@ -236,6 +236,7 @@ func _connect_signals() -> void:
 	_inspector.clear_frames_pressed.connect(_on_clear_frames)
 	_inspector.detect_grid_pressed.connect(_on_detect_grid)
 	_inspector.detect_blobs_pressed.connect(_on_detect_blobs)
+	_inspector.detect_auto_pressed.connect(_on_detect_auto)
 	_inspector.create_anim_pressed.connect(_on_create_anim_grh)
 	_inspector.split_frame_pressed.connect(_on_split_frame)
 	_inspector.save_init_pressed.connect(_on_save_init_file)
@@ -562,6 +563,35 @@ func _on_detect_blobs(alpha: float, min_size: int, padding: int) -> void:
 	else:
 		_apply_detected_frames(rects)
 		_update_status("Blobs: %d regiones detectadas" % rects.size())
+
+
+func _on_detect_auto() -> void:
+	if _current_image == null:
+		_update_status("Carga una imagen primero.")
+		return
+	var result := FrameDetector.detect_auto_frames(_current_image)
+	var frames: Array = result.get("frames", [])
+	var strategy: String = result.get("strategy", "?")
+	var blob_count: int = result.get("blobs", 0)
+	var grid_cell: Vector2i = result.get("grid_cell", Vector2i.ZERO)
+
+	# Update canvas content regions for Smart hover mode
+	_canvas.set_content_regions(frames)
+
+	if frames.is_empty():
+		_update_status("Auto-detect: no se detectaron frames.")
+		return
+
+	# Convert Rect2i to frame dicts
+	var frame_dicts: Array = []
+	for rect in frames:
+		frame_dicts.append({"sx": rect.position.x, "sy": rect.position.y, "w": rect.size.x, "h": rect.size.y})
+	_apply_detected_frames(frame_dicts)
+
+	if strategy == "grid":
+		_update_status("Auto: %d frames (grid %dx%d, %d blobs)" % [frames.size(), grid_cell.x, grid_cell.y, blob_count])
+	else:
+		_update_status("Auto: %d frames (mixed sizes, %d blobs)" % [frames.size(), blob_count])
 
 
 func _on_split_frame(cell_w: int, cell_h: int) -> void:

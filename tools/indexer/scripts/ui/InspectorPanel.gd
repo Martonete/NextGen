@@ -9,6 +9,7 @@ signal frame_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh: int)
 signal clear_frames_pressed
 signal detect_grid_pressed(cell_w: int, cell_h: int, off_x: int, off_y: int, mrg_x: int, mrg_y: int, skip_empty: bool)
 signal detect_blobs_pressed(alpha: float, min_size: int, padding: int)
+signal detect_auto_pressed
 signal create_anim_pressed(indices: Array[int], speed: float)
 signal split_frame_pressed(cell_w: int, cell_h: int)
 signal save_init_pressed(path: String, content: String)
@@ -821,6 +822,19 @@ func _build_detect_tab() -> Control:
 
 	blob_inner.add_child(IndexerTheme.primary_button("Detectar Blobs", _on_detect_blobs_btn))
 
+	# ── Auto-detect section ──
+	root.add_child(IndexerTheme.separator_h())
+	root.add_child(IndexerTheme.section_label("Detección Automática"))
+	var auto_section := IndexerTheme.section_box(6)
+	root.add_child(auto_section)
+	var auto_inner := VBoxContainer.new()
+	auto_inner.add_theme_constant_override("separation", 4)
+	auto_section.add_child(auto_inner)
+	auto_inner.add_child(IndexerTheme.label(
+		"Detecta blobs, los agrupa y ajusta cada frame al tamaño estándar AO más cercano (32, 64, 96, 128, 192, 256...).",
+		IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	auto_inner.add_child(IndexerTheme.success_button("Auto-Detectar Frames", _on_detect_auto_btn))
+
 	return root
 
 
@@ -1127,6 +1141,10 @@ func _on_detect_blobs_btn() -> void:
 		_spin_alpha.value / 100.0,
 		int(_spin_min_size.value),
 		int(_spin_padding.value))
+
+
+func _on_detect_auto_btn() -> void:
+	detect_auto_pressed.emit()
 
 
 func _on_save_init_btn() -> void:
