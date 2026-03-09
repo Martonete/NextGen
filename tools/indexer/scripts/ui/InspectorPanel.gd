@@ -219,12 +219,11 @@ func update_related_animations(anims: Array) -> void:
 		var source: String = anim.get("source", "")
 		var grh_idx: int = anim.get("grh_index", 0)
 
-		# Data for animation playback
-		# AO speed → FPS: AO encodes speed as ms per full cycle, roughly
-		# speed=100 means ~1.5s full cycle for 6 frames ≈ 4 FPS
-		# speed=200 means ~0.75s cycle ≈ 8 FPS. Formula: speed / 150 * frames.
-		# Simplified: total_time = frames / (speed / 150), fps = speed / 150
-		var anim_fps := maxf(speed / 150.0, 0.5)
+		# AO speed → FPS: speed is total cycle duration in ms.
+		# VB6: FrameCounter += timerElapsedTime * NumFrames / Speed
+		# FPS = NumFrames * 1000 / Speed (e.g. speed=500, 6 frames → 12 FPS)
+		var safe_speed := maxf(speed, 10.0)
+		var anim_fps := (frames.size() * 1000.0) / safe_speed
 		var ad := {
 			"playing": true,
 			"time": 0.0,
@@ -426,10 +425,19 @@ func _build_frames_tab() -> Control:
 	action_row.add_child(_spin_split_h)
 	action_row.add_child(IndexerTheme.button("Cortar", _on_split_btn, IndexerTheme.TEXT_ACCENT))
 
-	# ── Unified frame list (frames + indexed status) ──
+	# ── Resizable split: frame list (top) + related anims + anim creator (bottom) ──
+	var split := VSplitContainer.new()
+	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	root.add_child(split)
+
+	# ── Top: frame list ──
+	var list_box := VBoxContainer.new()
+	list_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	split.add_child(list_box)
+
 	var list_header := HBoxContainer.new()
 	list_header.add_theme_constant_override("separation", 4)
-	root.add_child(list_header)
+	list_box.add_child(list_header)
 	_lbl_frame_count = IndexerTheme.label("0 frames", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM)
 	list_header.add_child(_lbl_frame_count)
 	list_header.add_child(IndexerTheme.spacer())
@@ -441,32 +449,47 @@ func _build_frames_tab() -> Control:
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root.add_child(scroll)
+	list_box.add_child(scroll)
 
 	_frame_list_vbox = VBoxContainer.new()
 	_frame_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_frame_list_vbox.add_theme_constant_override("separation", 1)
 	scroll.add_child(_frame_list_vbox)
 
-	# ── Related animations (bodies/fx detected from Personajes.ind/Fxs.ind) ──
+	# ── Bottom: related animations + animation creator (scrollable) ──
+	var bottom_box := VBoxContainer.new()
+	bottom_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	bottom_box.custom_minimum_size.y = 80
+	split.add_child(bottom_box)
+
+	var bottom_scroll := ScrollContainer.new()
+	bottom_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	bottom_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	bottom_box.add_child(bottom_scroll)
+
+	var bottom_content := VBoxContainer.new()
+	bottom_content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	bottom_content.add_theme_constant_override("separation", 4)
+	bottom_scroll.add_child(bottom_content)
+
+	# Related animations (bodies/fx detected from Personajes.ind/Fxs.ind)
 	_related_anims_box = VBoxContainer.new()
 	_related_anims_box.add_theme_constant_override("separation", 2)
 	_related_anims_box.visible = false
-	root.add_child(_related_anims_box)
+	bottom_content.add_child(_related_anims_box)
 
-	_related_anims_box.add_child(IndexerTheme.separator_h())
 	_related_anims_box.add_child(IndexerTheme.section_label("Animaciones relacionadas"))
 
 	_related_anims_content = VBoxContainer.new()
 	_related_anims_content.add_theme_constant_override("separation", 4)
 	_related_anims_box.add_child(_related_anims_content)
 
-	# ── Animation creator ──
-	root.add_child(IndexerTheme.separator_h())
+	# Animation creator
+	bottom_content.add_child(IndexerTheme.separator_h())
 
 	_anim_section = VBoxContainer.new()
 	_anim_section.add_theme_constant_override("separation", 3)
-	root.add_child(_anim_section)
+	bottom_content.add_child(_anim_section)
 
 	_anim_section.add_child(IndexerTheme.section_label("Crear GRH animado"))
 
