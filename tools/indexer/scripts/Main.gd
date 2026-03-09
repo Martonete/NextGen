@@ -712,8 +712,10 @@ func _detect_snap_hint(rects: Array) -> String:
 	var ratio: float = float(best["count"]) / float(sizes.size())
 
 	# Check if best size is already a power of 2
-	var w_is_pow2 := (best["w"] & (best["w"] - 1)) == 0 and best["w"] > 0
-	var h_is_pow2 := (best["h"] & (best["h"] - 1)) == 0 and best["h"] > 0
+	var bw: int = best["w"]
+	var bh: int = best["h"]
+	var w_is_pow2: bool = (bw & (bw - 1)) == 0 and bw > 0
+	var h_is_pow2: bool = (bh & (bh - 1)) == 0 and bh > 0
 
 	if ratio >= 0.5 and best["count"] >= 3:
 		# Majority of blobs share a common size → grid mode
