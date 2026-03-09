@@ -901,22 +901,23 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 		outer.add_child(btn_col)
 
 		if is_remote:
-			# "Ver" button — navigates to that graphic
+			# "Ver" button — navigates to that graphic (deferred to avoid freeing self)
 			var r_fnum := fnum
 			var r_grh := grh_idx
-			var btn_ver := IndexerTheme.icon_button("Ver", func(): view_file_num_pressed.emit(r_fnum, r_grh), "Abrir gráfico %d" % fnum, 32)
+			var btn_ver := IndexerTheme.icon_button("Ver", func(): call_deferred("emit_signal", "view_file_num_pressed", r_fnum, r_grh), "Abrir gráfico %d" % fnum, 32)
 			btn_ver.add_theme_font_size_override("font_size", 9)
 			btn_ver.add_theme_color_override("font_color", IndexerTheme.TEXT_ACCENT)
 			btn_col.add_child(btn_ver)
 		elif not is_sel:
+			# Deferred to avoid freeing the button while its callback runs
 			var l_idx := local_idx
-			var btn_sel := IndexerTheme.icon_button("Sel", func(): frame_selected.emit(l_idx), "Seleccionar", 32)
+			var btn_sel := IndexerTheme.icon_button("Sel", func(): call_deferred("emit_signal", "frame_selected", l_idx), "Seleccionar", 32)
 			btn_sel.add_theme_font_size_override("font_size", 9)
 			btn_col.add_child(btn_sel)
 
 		if is_local:
 			var l_idx2 := local_idx
-			var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(l_idx2), "Eliminar", 22)
+			var btn_del := IndexerTheme.icon_button("X", func(): call_deferred("emit_signal", "frame_deleted", l_idx2), "Eliminar", 22)
 			btn_del.add_theme_font_size_override("font_size", 9)
 			btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
 			btn_col.add_child(btn_del)
