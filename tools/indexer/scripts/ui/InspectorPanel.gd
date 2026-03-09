@@ -285,8 +285,10 @@ func update_related_animations(anims: Array) -> void:
 
 		# AO speed → FPS: speed is total cycle duration in ms.
 		# FPS = NumFrames * 1000 / Speed
+		# Body walk animations have a 0.7x slowdown in the client (Main.cs:3403)
 		var safe_speed := maxf(speed, 10.0)
-		var anim_fps := (frames.size() * 1000.0) / safe_speed
+		var raw_fps := (frames.size() * 1000.0) / safe_speed
+		var anim_fps := raw_fps * 0.7 if source == "Personajes.ind" else raw_fps
 		var ad := {
 			"playing": true,
 			"time": 0.0,
@@ -307,9 +309,7 @@ func update_related_animations(anims: Array) -> void:
 		section.add_child(header)
 		header.add_child(IndexerTheme.label(label_text, IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM))
 		header.add_child(IndexerTheme.spacer())
-		var info_text := "G%d  %d frames  %.0f FPS" % [grh_idx, frames.size(), anim_fps]
-		if not source.is_empty():
-			info_text += "  (%s)" % source
+		var info_text := "G%d  %df  spd=%.0f  %.1fFPS" % [grh_idx, frames.size(), speed, anim_fps]
 		header.add_child(IndexerTheme.label(info_text, IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 
 		# Preview — generous height for visibility
