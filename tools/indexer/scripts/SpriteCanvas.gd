@@ -697,6 +697,34 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 				and py >= r.position.y and py < r.position.y + r.size.y:
 					_hover_rect = r
 					break
+		elif snap_mode == 5 and _blob_rects.size() > 0:
+			# AO mode: find which 32px-aligned cell the cursor is in,
+			# then merge all blobs that overlap that cell into one frame
+			@warning_ignore("integer_division")
+			var cell_x: int = (px / 32) * 32
+			@warning_ignore("integer_division")
+			var cell_y: int = (py / 32) * 32
+			# Start with a minimal cell, grow to include all intersecting blobs
+			var merged := Rect2i(cell_x, cell_y, 32, 32)
+			var found_any := false
+			var changed := true
+			while changed:
+				changed = false
+				for blob_rect in _blob_rects:
+					var br: Rect2i = blob_rect
+					if _rects_overlap(merged, br):
+						# Expand merged to contain the blob, then re-snap
+						var union_x := mini(merged.position.x, br.position.x)
+						var union_y := mini(merged.position.y, br.position.y)
+						var union_r := maxi(merged.position.x + merged.size.x, br.position.x + br.size.x)
+						var union_b := maxi(merged.position.y + merged.size.y, br.position.y + br.size.y)
+						var snapped := _apply_snap(Rect2i(union_x, union_y, union_r - union_x, union_b - union_y))
+						if snapped != merged:
+							merged = snapped
+							changed = true
+						found_any = true
+			if found_any:
+				_hover_rect = merged
 		elif px >= 0 and px < _blob_map_w and py >= 0:
 			var map_h := _blob_map.size() / _blob_map_w
 			if py < map_h:
@@ -718,6 +746,13 @@ func _hit_test_frame(img_pos: Vector2) -> int:
 		and img_pos.y >= fr.sy and img_pos.y < fr.sy + fr.h:
 			return i
 	return -1
+
+
+static func _rects_overlap(a: Rect2i, b: Rect2i) -> bool:
+	return a.position.x < b.position.x + b.size.x \
+		and a.position.x + a.size.x > b.position.x \
+		and a.position.y < b.position.y + b.size.y \
+		and a.position.y + a.size.y > b.position.y
 
 
 func _overlaps_any_frame(r: Rect2) -> bool:
