@@ -142,23 +142,44 @@ func _build_ui() -> void:
 
 func _build_menu_bar() -> MenuBar:
 	var mb := MenuBar.new()
+	mb.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_MD)
 
 	var m_archivo := PopupMenu.new()
 	m_archivo.name = "Archivo"
-	m_archivo.add_item("Abrir carpeta Cliente...", 0)
+	m_archivo.add_item("Abrir carpeta Cliente...", 0, KEY_MASK_CTRL | KEY_O)
 	m_archivo.add_item("Abrir carpeta fuente...", 1)
 	m_archivo.add_separator()
-	m_archivo.add_item("Salir", 99)
+	m_archivo.add_item("Salir", 99, KEY_MASK_CTRL | KEY_Q)
 	m_archivo.id_pressed.connect(_on_archivo_menu)
 	mb.add_child(m_archivo)
 
+	var m_editar := PopupMenu.new()
+	m_editar.name = "Editar"
+	m_editar.add_item("Deshacer", 0, KEY_MASK_CTRL | KEY_Z)
+	m_editar.add_item("Rehacer", 1, KEY_MASK_CTRL | KEY_Y)
+	m_editar.add_separator()
+	m_editar.add_item("Limpiar frames", 2)
+	m_editar.id_pressed.connect(_on_editar_menu)
+	mb.add_child(m_editar)
+
 	var m_guardar := PopupMenu.new()
 	m_guardar.name = "Guardar"
-	m_guardar.add_item("Guardar Graficos.ind", 0)
+	m_guardar.add_item("Guardar Graficos.ind", 0, KEY_MASK_CTRL | KEY_S)
 	m_guardar.add_item("Guardar Personajes.ind", 1)
 	m_guardar.add_item("Guardar Fxs.ind", 2)
+	m_guardar.add_separator()
+	m_guardar.add_item("Guardar como...", 3, KEY_MASK_CTRL | KEY_MASK_SHIFT | KEY_S)
 	m_guardar.id_pressed.connect(_on_guardar_menu)
 	mb.add_child(m_guardar)
+
+	var m_ver := PopupMenu.new()
+	m_ver.name = "Ver"
+	m_ver.add_item("Zoom +", 0, KEY_EQUAL)
+	m_ver.add_item("Zoom -", 1, KEY_MINUS)
+	m_ver.add_item("Zoom 100%", 2, KEY_1)
+	m_ver.add_item("Ajustar al canvas", 3, KEY_0)
+	m_ver.id_pressed.connect(_on_ver_menu)
+	mb.add_child(m_ver)
 
 	return mb
 
@@ -262,7 +283,16 @@ func _on_archivo_menu(id: int) -> void:
 	match id:
 		0: _dlg_client_folder.popup_centered_ratio(0.7)
 		1: _dlg_source_folder.popup_centered_ratio(0.7)
-		99: get_tree().quit()
+		99:
+			_save_session()
+			get_tree().quit()
+
+
+func _on_editar_menu(id: int) -> void:
+	match id:
+		0: _undo()
+		1: _redo()
+		2: _on_clear_frames()
 
 
 func _on_guardar_menu(id: int) -> void:
@@ -270,6 +300,15 @@ func _on_guardar_menu(id: int) -> void:
 		0: _on_save_ind()
 		1: _save_personajes_ind()
 		2: _save_fxs_ind()
+		3: _dlg_save_ind.popup_centered_ratio(0.7)
+
+
+func _on_ver_menu(id: int) -> void:
+	match id:
+		0: _canvas.zoom_in()
+		1: _canvas.zoom_out()
+		2: _canvas.zoom_reset()
+		3: _canvas.fit_to_canvas()
 
 
 # ── Load client folder ──────────────────────────────────────────────────────
@@ -385,8 +424,17 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	var grh_entries := _get_grh_entries_for_file_num(file_num)
 	_inspector.update_grh_viewer(grh_entries, _current_texture)
 
-	_update_status("%s — FileNum=%d — %d GRHs — %d blobs — %s" % [
-		path.get_file(), file_num, _current_frames.size(), rects.size(), snap_hint])
+	# Detect related animations (bodies, FXs) that use GRHs from this image
+	var related := _find_related_animations(file_num)
+	_inspector.update_related_animations(related)
+	_inspector.set_related_image(img)
+
+	var related_info := ""
+	if not related.is_empty():
+		related_info = " — %d animaciones" % related.size()
+
+	_update_status("%s — FileNum=%d — %d GRHs — %d blobs — %s%s" % [
+		path.get_file(), file_num, _current_frames.size(), rects.size(), snap_hint, related_info])
 
 
 # ── Canvas signals ───────────────────────────────────────────────────────────
@@ -952,6 +1000,103 @@ func _get_grh_entries_for_file_num(file_num: int) -> Array:
 		if e.get("num_frames", 1) == 1 and e.get("file_num", -1) == file_num:
 			result.append(e)
 	result.sort_custom(func(a, b): return a.grh_index < b.grh_index)
+	return result
+
+
+## Resolve an animated GRH into an array of frame dicts {sx, sy, w, h, grh_index, file_num}.
+## Returns empty array if grh_index is not found or not animated.
+func _resolve_anim_grh(grh_index: int) -> Array:
+	var entry = _grh_data["entries"].get(grh_index, null)
+	if entry == null:
+		return []
+	var nf: int = entry.get("num_frames", 1)
+	if nf <= 1:
+		# Static GRH — return as single-frame "animation"
+		return [{"sx": entry.get("sx", 0), "sy": entry.get("sy", 0),
+				"w": entry.get("width", 32), "h": entry.get("height", 32),
+				"grh_index": grh_index, "file_num": entry.get("file_num", 0)}]
+	# Animated: resolve each frame index
+	var frames: Array = []
+	var frame_indices: Array = entry.get("frame_indices", [])
+	for fi in frame_indices:
+		var fe = _grh_data["entries"].get(fi, null)
+		if fe != null and fe.get("num_frames", 1) == 1:
+			frames.append({"sx": fe.get("sx", 0), "sy": fe.get("sy", 0),
+				"w": fe.get("width", 32), "h": fe.get("height", 32),
+				"grh_index": fi, "file_num": fe.get("file_num", 0)})
+	return frames
+
+
+## Check if an animated GRH references any static GRH from the given file_num.
+func _anim_uses_file(grh_index: int, file_num: int) -> bool:
+	var entry = _grh_data["entries"].get(grh_index, null)
+	if entry == null:
+		return false
+	var nf: int = entry.get("num_frames", 1)
+	if nf <= 1:
+		return entry.get("file_num", -1) == file_num
+	for fi in entry.get("frame_indices", []):
+		var fe = _grh_data["entries"].get(fi, null)
+		if fe != null and fe.get("file_num", -1) == file_num:
+			return true
+	return false
+
+
+## Find all body and FX animations that reference GRHs from the given file_num.
+## Returns Array of {label, grh_index, frames, speed, source} for the inspector.
+func _find_related_animations(file_num: int) -> Array:
+	var result: Array = []
+	var entries: Dictionary = _grh_data["entries"]
+	if entries.is_empty():
+		return result
+
+	var heading_names := ["Norte", "Este", "Sur", "Oeste"]
+	var heading_keys := ["walk_n", "walk_e", "walk_s", "walk_w"]
+
+	# Search bodies
+	for body in _bodies_data:
+		var body_idx: int = body.get("index", 0)
+		var found_any := false
+		for h in range(4):
+			var walk_grh: int = body.get(heading_keys[h], 0)
+			if walk_grh > 0 and _anim_uses_file(walk_grh, file_num):
+				found_any = true
+		if found_any:
+			for h in range(4):
+				var walk_grh: int = body.get(heading_keys[h], 0)
+				if walk_grh <= 0:
+					continue
+				var frames := _resolve_anim_grh(walk_grh)
+				if frames.is_empty():
+					continue
+				var entry = entries.get(walk_grh, {})
+				var speed: float = entry.get("speed", 100.0) if entry.get("num_frames", 1) > 1 else 100.0
+				result.append({
+					"label": "Body %d — %s" % [body_idx, heading_names[h]],
+					"grh_index": walk_grh,
+					"frames": frames,
+					"speed": speed,
+					"source": "Personajes.ind"
+				})
+
+	# Search FXs
+	for fx in _fxs_data:
+		var fx_idx: int = fx.get("index", 0)
+		var anim_grh: int = fx.get("animacion", 0)
+		if anim_grh > 0 and _anim_uses_file(anim_grh, file_num):
+			var frames := _resolve_anim_grh(anim_grh)
+			if frames.is_empty():
+				continue
+			var entry = entries.get(anim_grh, {})
+			var speed: float = entry.get("speed", 100.0) if entry.get("num_frames", 1) > 1 else 100.0
+			result.append({
+				"label": "FX %d" % fx_idx,
+				"grh_index": anim_grh,
+				"frames": frames,
+				"speed": speed,
+				"source": "Fxs.ind"
+			})
+
 	return result
 
 

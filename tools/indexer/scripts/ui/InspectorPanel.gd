@@ -47,6 +47,12 @@ var _edit_anim_indices: LineEdit
 var _spin_anim_speed: SpinBox
 var _anim_section: VBoxContainer
 
+# ── Related animations section ──
+var _related_anims_box: VBoxContainer
+var _related_anims_content: VBoxContainer
+var _related_previews: Array = []  # Array of FramePreviewPanel
+var _related_anim_data: Array = []  # [{label, frames, playing, time, fps, frame_idx}]
+
 # ── Detection tab ──
 var _spin_cell_w: SpinBox
 var _spin_cell_h: SpinBox
@@ -149,15 +155,103 @@ func show_frame_preview(idx: int) -> void:
 
 
 func process_animation(delta: float) -> void:
-	if not _anim_playing or _frames_for_anim.size() <= 1:
+	# Main preview animation
+	if _anim_playing and _frames_for_anim.size() > 1:
+		_anim_time += delta
+		var dur := 1.0 / maxf(_anim_fps, 1.0)
+		if _anim_time >= dur:
+			_anim_time = fmod(_anim_time, dur)
+			_anim_frame_idx = (_anim_frame_idx + 1) % _frames_for_anim.size()
+			_preview.show_frame(_anim_frame_idx)
+			_lbl_anim_info.text = "%d / %d" % [_anim_frame_idx + 1, _frames_for_anim.size()]
+
+	# Related animation previews (bodies/fx headings)
+	for i in range(_related_anim_data.size()):
+		var ad: Dictionary = _related_anim_data[i]
+		if not ad.get("playing", false):
+			continue
+		var frames: Array = ad.get("frames", [])
+		if frames.size() <= 1:
+			continue
+		ad["time"] = ad.get("time", 0.0) + delta
+		var spd: float = ad.get("fps", 8.0)
+		var dur2 := 1.0 / maxf(spd, 1.0)
+		if ad["time"] >= dur2:
+			ad["time"] = fmod(ad["time"], dur2)
+			ad["frame_idx"] = (ad.get("frame_idx", 0) + 1) % frames.size()
+			if i < _related_previews.size():
+				_related_previews[i].show_frame(ad["frame_idx"])
+
+
+## Populate the "Related Animations" section.
+## Each entry: {label: String, grh_index: int, frames: Array[Dict], speed: float, source: String}
+## frames is Array of {sx, sy, w, h, grh_index, file_num} dicts (resolved statics).
+func update_related_animations(anims: Array) -> void:
+	# Clear old content
+	for c in _related_anims_content.get_children():
+		c.queue_free()
+	_related_previews.clear()
+	_related_anim_data.clear()
+
+	if anims.is_empty():
+		_related_anims_box.visible = false
 		return
-	_anim_time += delta
-	var dur := 1.0 / maxf(_anim_fps, 1.0)
-	if _anim_time >= dur:
-		_anim_time = fmod(_anim_time, dur)
-		_anim_frame_idx = (_anim_frame_idx + 1) % _frames_for_anim.size()
-		_preview.show_frame(_anim_frame_idx)
-		_lbl_anim_info.text = "%d / %d" % [_anim_frame_idx + 1, _frames_for_anim.size()]
+
+	_related_anims_box.visible = true
+
+	for anim in anims:
+		var label_text: String = anim.get("label", "Animación")
+		var frames: Array = anim.get("frames", [])
+		var speed: float = anim.get("speed", 8.0)
+		var source: String = anim.get("source", "")
+		var grh_idx: int = anim.get("grh_index", 0)
+
+		# Data for animation playback
+		var ad := {
+			"playing": true,
+			"time": 0.0,
+			"fps": maxf(speed / 20.0, 1.0),  # AO speed to approx FPS
+			"frame_idx": 0,
+			"frames": frames
+		}
+		_related_anim_data.append(ad)
+
+		# Container for this animation
+		var section := VBoxContainer.new()
+		section.add_theme_constant_override("separation", 2)
+		_related_anims_content.add_child(section)
+
+		# Header row: label + source info
+		var header := HBoxContainer.new()
+		header.add_theme_constant_override("separation", 4)
+		section.add_child(header)
+		header.add_child(IndexerTheme.label(label_text, IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM))
+		header.add_child(IndexerTheme.spacer())
+		var info_text := "G%d  %d frames" % [grh_idx, frames.size()]
+		if not source.is_empty():
+			info_text += "  (%s)" % source
+		header.add_child(IndexerTheme.label(info_text, IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+
+		# Preview
+		var preview := FramePreviewPanel.new()
+		preview.custom_minimum_size = Vector2(0, 80)
+		preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		section.add_child(preview)
+
+		# Set image and frames for this preview
+		# We need to set the image from the frames' textures
+		# The preview panel uses frames array with sx/sy/w/h
+		preview.set_frames(frames)
+		if not frames.is_empty():
+			preview.show_frame(0)
+
+		_related_previews.append(preview)
+
+
+## Set the texture for related animation previews (called from Main after loading image)
+func set_related_image(img: Image) -> void:
+	for p in _related_previews:
+		p.set_image(img)
 
 
 func update_grh_viewer(entries: Array, texture: ImageTexture) -> void:
@@ -372,6 +466,19 @@ func _build_frames_tab() -> Control:
 	_grh_viewer_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_grh_viewer_vbox.add_theme_constant_override("separation", 2)
 	grh_scroll.add_child(_grh_viewer_vbox)
+
+	# ── Related animations (bodies/fx detected from Personajes.ind/Fxs.ind) ──
+	_related_anims_box = VBoxContainer.new()
+	_related_anims_box.add_theme_constant_override("separation", 2)
+	_related_anims_box.visible = false
+	root.add_child(_related_anims_box)
+
+	_related_anims_box.add_child(IndexerTheme.separator_h())
+	_related_anims_box.add_child(IndexerTheme.section_label("Animaciones relacionadas"))
+
+	_related_anims_content = VBoxContainer.new()
+	_related_anims_content.add_theme_constant_override("separation", 4)
+	_related_anims_box.add_child(_related_anims_content)
 
 	# ── Animation creator ──
 	root.add_child(IndexerTheme.separator_h())
