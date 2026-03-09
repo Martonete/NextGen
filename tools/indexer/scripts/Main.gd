@@ -33,6 +33,13 @@ const MAX_UNDO := 50
 var _undo_stack: Array = []
 var _redo_stack: Array = []
 
+# Background analysis thread
+var _analysis_thread: Thread = null
+var _analysis_result: Dictionary = {}
+var _analysis_pending: bool = false
+var _loading_overlay: PanelContainer = null
+var _loading_label: Label = null
+
 # ── UI components ────────────────────────────────────────────────────────────
 
 var _toolbar: IndexerToolBar
@@ -71,11 +78,23 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_finish_analysis_thread()
 		_save_session()
 		get_tree().quit()
 
 
 func _process(delta: float) -> void:
+	# Check if background analysis finished
+	if _analysis_pending and _analysis_thread != null and not _analysis_thread.is_alive():
+		var result: Dictionary = _analysis_thread.wait_to_finish()
+		_analysis_thread = null
+		_analysis_pending = false
+		_hide_loading()
+		if result.has("blob_data"):
+			_apply_analysis_results(
+				result["blob_data"], result["content_regions"],
+				result["rects"], result["file_num"])
+
 	# Thumbnail lazy-loading
 	_file_list.process_thumbnails(5)
 	# Animation playback
@@ -138,6 +157,31 @@ func _build_ui() -> void:
 	_lbl_status = IndexerTheme.label("", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
 	status_bar.add_child(_lbl_status)
 	root.add_child(status_bar)
+
+	# Loading overlay (covers entire window, hidden by default)
+	_loading_overlay = PanelContainer.new()
+	var overlay_sb := StyleBoxFlat.new()
+	overlay_sb.bg_color = Color(0.0, 0.0, 0.0, 0.65)
+	_loading_overlay.add_theme_stylebox_override("panel", overlay_sb)
+	_loading_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_loading_overlay.mouse_filter = Control.MOUSE_FILTER_STOP  # Block clicks
+	_loading_overlay.visible = false
+	add_child(_loading_overlay)
+
+	var overlay_center := CenterContainer.new()
+	overlay_center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_loading_overlay.add_child(overlay_center)
+
+	var overlay_box := VBoxContainer.new()
+	overlay_box.add_theme_constant_override("separation", 12)
+	overlay_center.add_child(overlay_box)
+
+	_loading_label = Label.new()
+	_loading_label.text = "Analizando imagen..."
+	_loading_label.add_theme_font_size_override("font_size", 20)
+	_loading_label.add_theme_color_override("font_color", Color.WHITE)
+	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	overlay_box.add_child(_loading_label)
 
 
 func _build_menu_bar() -> MenuBar:
@@ -384,6 +428,9 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	_current_frames = []
 	_selected_frame_idx = -1
 
+	# Cancel any pending analysis
+	_finish_analysis_thread()
+
 	var img := _load_image_from_os_path(path)
 	if img == null:
 		_update_status("No se pudo cargar: " + path)
@@ -394,7 +441,7 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	_canvas.load_image(img)
 	_inspector.set_image(img)
 
-	# Load existing GRHs for this file
+	# Load existing GRHs for this file (fast — just dict lookup)
 	if _grh_data["entries"].size() > 0 and file_num > 0:
 		var entries := _get_grh_entries_for_file_num(file_num)
 		for e in entries:
@@ -406,43 +453,90 @@ func _on_file_selected(path: String, file_num: int) -> void:
 
 	_refresh_all()
 
-	_update_status("%s — FileNum=%d — %dx%d px (analizando blobs...)" % [
-		path.get_file(), file_num, img.get_width(), img.get_height()])
-
-	# Pre-compute blob map
-	var blob_data := FrameDetector.detect_blobs_indexed(img, 0.03, 3, 1)
-	_canvas.set_blob_data(blob_data["map"], blob_data["rects"], blob_data["id_to_rect"], blob_data["width"])
-
-	# Pre-compute content regions for smart mode
-	var content_regions := FrameDetector.detect_content_rows(img, 0.03, 3, 1)
-	_canvas.set_content_regions(content_regions)
-
-	# Auto-detect sprite sheet type and suggest best snap mode
-	var rects: Array = blob_data["rects"]
-	var snap_hint := _detect_snap_hint(rects, content_regions)
-
-	# Update GRH viewer
+	# Update GRH viewer (fast)
 	var grh_entries := _get_grh_entries_for_file_num(file_num)
 	_inspector.update_grh_viewer(grh_entries, _current_texture)
 
-	# Detect related animations (bodies, FXs) that use GRHs from this image
+	var px_count := img.get_width() * img.get_height()
+	if px_count > 512 * 512:
+		# Large image → run blob analysis in background thread
+		_update_status("%s — FileNum=%d — %dx%d px — analizando..." % [
+			path.get_file(), file_num, img.get_width(), img.get_height()])
+		_show_loading("Analizando %s (%dx%d)..." % [path.get_file(), img.get_width(), img.get_height()])
+		_analysis_thread = Thread.new()
+		_analysis_pending = true
+		# Duplicate image for thread safety (Image is not thread-safe)
+		var img_copy := img.duplicate()
+		_analysis_thread.start(_run_analysis.bind(img_copy, file_num))
+	else:
+		# Small image → run synchronously
+		_run_analysis_sync(img, file_num)
+
+
+func _show_loading(text: String) -> void:
+	if _loading_overlay != null:
+		_loading_label.text = text
+		_loading_overlay.visible = true
+
+
+func _hide_loading() -> void:
+	if _loading_overlay != null:
+		_loading_overlay.visible = false
+
+
+func _run_analysis(img: Image, file_num: int) -> Dictionary:
+	# Runs in background thread — NO Godot scene tree calls here
+	var blob_data := FrameDetector.detect_blobs_indexed(img, 0.03, 3, 1)
+	var content_regions := FrameDetector.detect_content_rows(img, 0.03, 3, 1)
+	var rects: Array = blob_data["rects"]
+	return {
+		"blob_data": blob_data,
+		"content_regions": content_regions,
+		"rects": rects,
+		"file_num": file_num
+	}
+
+
+func _finish_analysis_thread() -> void:
+	if _analysis_thread != null and _analysis_thread.is_started():
+		_analysis_thread.wait_to_finish()
+		_analysis_thread = null
+	_analysis_pending = false
+	_hide_loading()
+
+
+func _run_analysis_sync(img: Image, file_num: int) -> void:
+	_update_status("%s — FileNum=%d — %dx%d px (analizando blobs...)" % [
+		_current_image_path.get_file(), file_num, img.get_width(), img.get_height()])
+
+	var blob_data := FrameDetector.detect_blobs_indexed(img, 0.03, 3, 1)
+	var content_regions := FrameDetector.detect_content_rows(img, 0.03, 3, 1)
+	var rects: Array = blob_data["rects"]
+	_apply_analysis_results(blob_data, content_regions, rects, file_num)
+
+
+func _apply_analysis_results(blob_data: Dictionary, content_regions: Array, rects: Array, file_num: int) -> void:
+	_canvas.set_blob_data(blob_data["map"], blob_data["rects"], blob_data["id_to_rect"], blob_data["width"])
+	_canvas.set_content_regions(content_regions)
+
+	var snap_hint := _detect_snap_hint(rects, content_regions)
+
+	# Detect related animations
 	var related := _find_related_animations(file_num)
 	_inspector.update_related_animations(related)
-	# Collect all related frames for the unified frame list
 	var all_related_frames: Array = []
 	for anim in related:
 		for fr in anim.get("frames", []):
 			all_related_frames.append(fr)
 	_inspector.set_related_frames(all_related_frames)
-	# Load per-file_num textures for each related animation preview + frame list thumbnails
-	_load_related_textures(related, file_num, img)
+	_load_related_textures(related, file_num, _current_image)
 
 	var related_info := ""
 	if not related.is_empty():
 		related_info = " — %d animaciones" % related.size()
 
 	_update_status("%s — FileNum=%d — %d GRHs — %d blobs — %s%s" % [
-		path.get_file(), file_num, _current_frames.size(), rects.size(), snap_hint, related_info])
+		_current_image_path.get_file(), file_num, _current_frames.size(), rects.size(), snap_hint, related_info])
 
 
 # ── Canvas signals ───────────────────────────────────────────────────────────

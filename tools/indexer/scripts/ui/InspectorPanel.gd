@@ -780,7 +780,7 @@ func _build_detect_tab() -> Control:
 	presets_row1.add_theme_constant_override("separation", 3)
 	grid_inner.add_child(presets_row1)
 	presets_row1.add_child(IndexerTheme.preset_button("Cuerpo 25x45", _make_preset_cb(25, 45), "Cuerpos, armas, movimientos"))
-	presets_row1.add_child(IndexerTheme.preset_button("Cabeza 16x16", _make_preset_cb(16, 16), "Cabezas"))
+	presets_row1.add_child(IndexerTheme.preset_button("Cabeza 17x50", _make_preset_cb(17, 50), "Cabezas"))
 	presets_row1.add_child(IndexerTheme.preset_button("Escudo 25x25", _make_preset_cb(25, 25), "Escudos"))
 
 	var presets_row2 := HBoxContainer.new()
