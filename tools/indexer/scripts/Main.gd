@@ -272,6 +272,8 @@ func _connect_signals() -> void:
 	_canvas.blob_clicked.connect(_on_canvas_blob_clicked)
 	_canvas.frame_resized.connect(_on_canvas_frame_resized)
 	_canvas.frame_delete_pressed.connect(func(idx): _delete_frame(idx))
+	_canvas.ao_candidate_clicked.connect(_on_ao_candidate_clicked)
+	_canvas.ao_add_all_pressed.connect(_on_ao_add_all)
 
 	# Inspector
 	_inspector.frame_selected.connect(_on_inspector_frame_selected)
@@ -565,6 +567,34 @@ func _on_canvas_frame_drawn(rect: Rect2) -> void:
 
 func _on_canvas_blob_clicked(rect: Rect2i) -> void:
 	_on_canvas_frame_drawn(Rect2(rect.position, rect.size))
+
+
+func _on_ao_candidate_clicked(rect: Rect2i) -> void:
+	_on_canvas_frame_drawn(Rect2(rect.position, rect.size))
+
+
+func _on_ao_add_all(rects: Array) -> void:
+	if rects.size() == 0:
+		return
+	_push_undo()
+	for r in rects:
+		var rect: Rect2i = r
+		var file_num := _current_file_num
+		var grh_idx := _next_grh_index
+		_next_grh_index += 1
+		var sx := _clamp_x(rect.position.x)
+		var sy := _clamp_y(rect.position.y)
+		var frame := {
+			"sx": sx, "sy": sy,
+			"w": _clamp_w(sx, rect.size.x),
+			"h": _clamp_h(sy, rect.size.y),
+			"grh_index": grh_idx, "file_num": file_num
+		}
+		_current_frames.append(frame)
+	_inspector.set_next_grh(_next_grh_index)
+	_selected_frame_idx = _current_frames.size() - 1
+	_refresh_all()
+	_update_status("AO: %d frames agregados" % rects.size())
 
 
 func _on_canvas_frame_resized(index: int, new_rect: Rect2) -> void:

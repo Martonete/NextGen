@@ -8,6 +8,8 @@ signal frame_selected(index: int)                   # Frame existente clickeado 
 signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para agregar
 signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
 signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
+signal ao_candidate_clicked(rect: Rect2i)           # AO candidate frame clicked to add
+signal ao_add_all_pressed(rects: Array)             # Add all AO candidates at once
 
 # ── Imagen ───────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,10 @@ var _hover_rect: Rect2i = Rect2i()      # Rect del blob bajo el cursor (vacío=n
 
 # ── Content regions (smart mode) ──────────────────────────────────────────────
 var _content_regions: Array = []         # Array of Rect2i from detect_content_rows
+
+# ── AO candidate frames (subdivision mode) ───────────────────────────────────
+var _ao_candidates: Array = []           # Array of Rect2i — detected sub-frames
+var _ao_hover_idx: int = -1              # Which candidate is hovered
 
 # ── Frames definidos ──────────────────────────────────────────────────────────
 
@@ -187,6 +193,8 @@ func load_image(img: Image) -> void:
 	_blob_map = PackedInt32Array()
 	_blob_rects = []
 	_content_regions = []
+	_ao_candidates = []
+	_ao_hover_idx = -1
 	# Diferir fit para que el canvas tenga su tamaño definitivo tras el layout
 	call_deferred("fit_to_canvas")
 	queue_redraw()
@@ -426,6 +434,28 @@ func _draw() -> void:
 			draw_rect(rb, Color(1, 1, 1, 0.12))
 			draw_rect(rb, Color.WHITE, false, 1.5)
 
+	# AO candidate frames
+	if _ao_candidates.size() > 0:
+		for i in range(_ao_candidates.size()):
+			var cr: Rect2i = _ao_candidates[i]
+			var sr := _irect2srect(Rect2(cr.position, cr.size))
+			var is_hovered := (i == _ao_hover_idx)
+			var col_fill := Color(0.0, 1.0, 0.5, 0.20) if is_hovered else Color(0.0, 0.8, 1.0, 0.10)
+			var col_border := Color(0.0, 1.0, 0.5, 0.95) if is_hovered else Color(0.0, 0.8, 1.0, 0.70)
+			draw_rect(sr, col_fill)
+			draw_rect(sr, col_border, false, 2.0 if is_hovered else 1.0)
+			if sr.size.x > 30:
+				var lbl := "%dx%d" % [cr.size.x, cr.size.y]
+				if is_hovered:
+					lbl = "Click: %d,%d %dx%d" % [cr.position.x, cr.position.y, cr.size.x, cr.size.y]
+				draw_string(ThemeDB.fallback_font, sr.position + Vector2(3, 14),
+					lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
+					Color(0.0, 1.0, 0.5, 0.95) if is_hovered else Color(0.0, 0.8, 1.0, 0.85))
+		# Show count + hint at top
+		var hint := "%d candidatos AO  |  Click=agregar  |  Enter=agregar todos  |  Esc=cancelar" % _ao_candidates.size()
+		draw_string(ThemeDB.fallback_font, Vector2(6, 16), hint,
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.0, 1.0, 0.7, 0.9))
+
 	# Info zoom
 	draw_string(ThemeDB.fallback_font, Vector2(6, size.y - 6),
 		"Zoom %.0f%%  |  %d x %d px" % [_zoom * 100, _image_size.x, _image_size.y],
@@ -502,10 +532,15 @@ func _on_key(k: InputEventKey) -> void:
 		return
 	match k.keycode:
 		KEY_ESCAPE:
-			if _selected_frame >= 0:
+			if _ao_candidates.size() > 0:
+				ao_clear()
+			elif _selected_frame >= 0:
 				_selected_frame = -1
 				frame_selected.emit(-1)
 				queue_redraw()
+		KEY_ENTER, KEY_KP_ENTER:
+			if _ao_candidates.size() > 0:
+				ao_add_all()
 		KEY_DELETE:
 			if _selected_frame >= 0:
 				var idx := _selected_frame
@@ -634,12 +669,24 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 						w = float(snapped.size.x)
 						h = float(snapped.size.y)
 					if w >= 2.0 and h >= 2.0:
-						if not _overlaps_any_frame(Rect2(x, y, w, h)):
+						if snap_mode == 5:
+							# AO mode: subdivide drawn area into individual blob-based frames
+							_ao_subdivide(Rect2i(int(x), int(y), int(w), int(h)))
+						elif not _overlaps_any_frame(Rect2(x, y, w, h)):
 							frame_drawn.emit(Rect2(x, y, w, h))
 					queue_redraw()
 				else:
-					# Click without drag in DRAW mode → blob hover
-					if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
+					# Click without drag in DRAW mode
+					if snap_mode == 5 and _ao_candidates.size() > 0:
+						# AO mode: click on a candidate to add it
+						var ip := _s2i(mb.position)
+						var clicked_idx := _ao_hit_test(ip)
+						if clicked_idx >= 0:
+							ao_candidate_clicked.emit(_ao_candidates[clicked_idx])
+							_ao_candidates.remove_at(clicked_idx)
+							_ao_hover_idx = -1
+							queue_redraw()
+					elif _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
 						blob_clicked.emit(_hover_rect)
 
 
@@ -678,6 +725,15 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 		if dist > DRAG_THRESHOLD or _drawing:
 			_drawing = true
 			_draw_cur_img = _s2i(mm.position)
+			queue_redraw()
+		return
+
+	# AO candidates hover
+	if _ao_candidates.size() > 0:
+		var ip := _s2i(mm.position)
+		var prev_idx := _ao_hover_idx
+		_ao_hover_idx = _ao_hit_test(ip)
+		if _ao_hover_idx != prev_idx:
 			queue_redraw()
 		return
 
@@ -737,6 +793,89 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 
 		if _hover_rect != prev_rect:
 			queue_redraw()
+
+
+# ── AO subdivision ───────────────────────────────────────────────────────────
+
+func _ao_subdivide(area: Rect2i) -> void:
+	# Find all blobs that overlap the drawn area, snap each to ×8
+	_ao_candidates.clear()
+	_ao_hover_idx = -1
+	var used_blobs: Array = []  # track which blobs are already merged
+	for i in range(_blob_rects.size()):
+		var br: Rect2i = _blob_rects[i]
+		if not _rects_overlap(area, br):
+			continue
+		# Check if this blob is already part of an existing candidate (merged)
+		var already := false
+		for u in used_blobs:
+			if u == i:
+				already = true
+				break
+		if already:
+			continue
+		# Start with this blob snapped
+		var snapped := _apply_snap(br)
+		# Iteratively merge nearby blobs that overlap the snapped rect
+		var changed := true
+		while changed:
+			changed = false
+			for j in range(_blob_rects.size()):
+				var br2: Rect2i = _blob_rects[j]
+				if not _rects_overlap(area, br2):
+					continue
+				if not _rects_overlap(snapped, br2):
+					continue
+				var union_x := mini(snapped.position.x, br2.position.x)
+				var union_y := mini(snapped.position.y, br2.position.y)
+				var union_r := maxi(snapped.position.x + snapped.size.x, br2.position.x + br2.size.x)
+				var union_b := maxi(snapped.position.y + snapped.size.y, br2.position.y + br2.size.y)
+				var new_snapped := _apply_snap(Rect2i(union_x, union_y, union_r - union_x, union_b - union_y))
+				if new_snapped != snapped:
+					snapped = new_snapped
+					changed = true
+				# Mark blob as used
+				var found_j := false
+				for u in used_blobs:
+					if u == j:
+						found_j = true
+						break
+				if not found_j:
+					used_blobs.append(j)
+		# Skip if overlaps existing frames
+		if not _overlaps_any_frame(Rect2(snapped.position, snapped.size)):
+			# Skip duplicates
+			var dupe := false
+			for c in _ao_candidates:
+				if c == snapped:
+					dupe = true
+					break
+			if not dupe:
+				_ao_candidates.append(snapped)
+	queue_redraw()
+
+
+func _ao_hit_test(img_pos: Vector2) -> int:
+	for i in range(_ao_candidates.size() - 1, -1, -1):
+		var r: Rect2i = _ao_candidates[i]
+		if img_pos.x >= r.position.x and img_pos.x < r.position.x + r.size.x \
+		and img_pos.y >= r.position.y and img_pos.y < r.position.y + r.size.y:
+			return i
+	return -1
+
+
+func ao_add_all() -> void:
+	if _ao_candidates.size() > 0:
+		ao_add_all_pressed.emit(_ao_candidates.duplicate())
+		_ao_candidates.clear()
+		_ao_hover_idx = -1
+		queue_redraw()
+
+
+func ao_clear() -> void:
+	_ao_candidates.clear()
+	_ao_hover_idx = -1
+	queue_redraw()
 
 
 func _hit_test_frame(img_pos: Vector2) -> int:
