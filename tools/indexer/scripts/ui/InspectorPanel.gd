@@ -60,12 +60,17 @@ var _confirm_index_btn: Button = null  # button in confirm state
 
 var _anim_section: VBoxContainer
 var _anim_creator_win: Window
-var _anim_avail_list: ItemList       # GRHs from current image
-var _anim_seq_list: ItemList         # Animation sequence (ordered)
-var _anim_seq_indices: Array[int] = []  # GRH indices in sequence
+var _anim_avail_vbox: VBoxContainer      # Available GRH items (custom rows)
+var _anim_seq_vbox: VBoxContainer        # Sequence items (custom rows with arrows/X)
+var _anim_seq_preview: FramePreviewPanel # Live preview of the animation
+var _anim_seq_indices: Array[int] = []   # GRH indices in sequence
 var _anim_manual_spin: SpinBox
 var _anim_speed_spin: SpinBox
-var _anim_avail_grhs: Array[int] = []   # GRH indices matching available list items
+var _anim_avail_grhs: Array[int] = []    # GRH indices matching available list items
+var _anim_avail_frames: Array = []       # frame dicts for available GRHs (for thumbnails)
+var _anim_preview_playing: bool = false
+var _anim_preview_time: float = 0.0
+var _anim_preview_idx: int = 0
 
 # ── Related animations section ──
 var _related_anims_box: VBoxContainer
@@ -225,6 +230,16 @@ func process_animation(delta: float) -> void:
 			_anim_frame_idx = (_anim_frame_idx + 1) % _frames_for_anim.size()
 			_preview.show_frame(_anim_frame_idx)
 			_lbl_anim_info.text = "%d / %d" % [_anim_frame_idx + 1, _frames_for_anim.size()]
+
+	# Anim creator preview
+	if _anim_preview_playing and _anim_seq_preview.get_frame_count() > 1:
+		var seq_fps := maxf(_anim_seq_indices.size() * 1000.0 / maxf(_anim_speed_spin.value, 10.0), 1.0)
+		_anim_preview_time += delta
+		var seq_dur := 1.0 / seq_fps
+		if _anim_preview_time >= seq_dur:
+			_anim_preview_time = fmod(_anim_preview_time, seq_dur)
+			_anim_preview_idx = (_anim_preview_idx + 1) % _anim_seq_preview.get_frame_count()
+			_anim_seq_preview.show_frame(_anim_preview_idx)
 
 	# Related animation previews (bodies/fx headings)
 	for i in range(_related_anim_data.size()):
@@ -1130,8 +1145,10 @@ func _build_anim_creator_window() -> void:
 	_anim_creator_win.exclusive = false
 	_anim_creator_win.visible = false
 	_anim_creator_win.wrap_controls = true
-	_anim_creator_win.size = Vector2i(480, 420)
-	_anim_creator_win.close_requested.connect(func(): _anim_creator_win.hide())
+	_anim_creator_win.size = Vector2i(560, 500)
+	_anim_creator_win.close_requested.connect(func():
+		_anim_creator_win.hide()
+		_anim_preview_playing = false)
 
 	var bg := PanelContainer.new()
 	var sb := StyleBoxFlat.new()
@@ -1145,12 +1162,12 @@ func _build_anim_creator_window() -> void:
 	main_vbox.add_theme_constant_override("separation", 6)
 	bg.add_child(main_vbox)
 
-	# ── Top: two columns (available | sequence) ──
+	# ── Top: two columns (available | sequence + preview) ──
 	var hsplit := HSplitContainer.new()
 	hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	main_vbox.add_child(hsplit)
 
-	# Left: Available GRHs from current image
+	# ── Left: Available GRHs from current image ──
 	var left := VBoxContainer.new()
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.add_theme_constant_override("separation", 2)
@@ -1159,88 +1176,140 @@ func _build_anim_creator_window() -> void:
 	left.add_child(IndexerTheme.label("GRHs disponibles", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_MD))
 	left.add_child(IndexerTheme.label("Click para agregar", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 
-	_anim_avail_list = ItemList.new()
-	_anim_avail_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_anim_avail_list.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	_anim_avail_list.item_activated.connect(_on_anim_avail_activated)
-	left.add_child(_anim_avail_list)
+	var avail_scroll := ScrollContainer.new()
+	avail_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	avail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	left.add_child(avail_scroll)
 
-	# Right: Animation sequence
+	_anim_avail_vbox = VBoxContainer.new()
+	_anim_avail_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_anim_avail_vbox.add_theme_constant_override("separation", 1)
+	avail_scroll.add_child(_anim_avail_vbox)
+
+	# ── Right: Preview + Sequence ──
 	var right := VBoxContainer.new()
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	right.add_theme_constant_override("separation", 2)
 	hsplit.add_child(right)
 
-	right.add_child(IndexerTheme.label("Secuencia", IndexerTheme.TEXT_SUCCESS, IndexerTheme.FONT_SIZE_MD))
+	# Animation preview
+	_anim_seq_preview = FramePreviewPanel.new()
+	_anim_seq_preview.custom_minimum_size = Vector2(0, 90)
+	_anim_seq_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_child(_anim_seq_preview)
 
-	var seq_btns := HBoxContainer.new()
-	seq_btns.add_theme_constant_override("separation", 3)
-	right.add_child(seq_btns)
-	seq_btns.add_child(IndexerTheme.icon_button("^", _on_anim_seq_move_up, "Subir", 24))
-	seq_btns.add_child(IndexerTheme.icon_button("v", _on_anim_seq_move_down, "Bajar", 24))
-	seq_btns.add_child(IndexerTheme.spacer())
-	seq_btns.add_child(IndexerTheme.danger_button("Quitar", _on_anim_seq_remove))
-	seq_btns.add_child(IndexerTheme.danger_button("Limpiar", _on_anim_seq_clear))
+	var seq_header := HBoxContainer.new()
+	seq_header.add_theme_constant_override("separation", 4)
+	right.add_child(seq_header)
+	seq_header.add_child(IndexerTheme.label("Secuencia", IndexerTheme.TEXT_SUCCESS, IndexerTheme.FONT_SIZE_MD))
+	seq_header.add_child(IndexerTheme.spacer())
+	seq_header.add_child(IndexerTheme.danger_button("Limpiar", _on_anim_seq_clear))
 
-	_anim_seq_list = ItemList.new()
-	_anim_seq_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_anim_seq_list.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	right.add_child(_anim_seq_list)
+	var seq_scroll := ScrollContainer.new()
+	seq_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	seq_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	right.add_child(seq_scroll)
 
-	# ── Bottom: manual add + speed + save ──
+	_anim_seq_vbox = VBoxContainer.new()
+	_anim_seq_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_anim_seq_vbox.add_theme_constant_override("separation", 1)
+	seq_scroll.add_child(_anim_seq_vbox)
+
+	# ── Bottom: settings bar ──
+	var bottom_section := IndexerTheme.section_box(4)
+	main_vbox.add_child(bottom_section)
 	var bottom := VBoxContainer.new()
-	bottom.add_theme_constant_override("separation", 4)
-	main_vbox.add_child(bottom)
+	bottom.add_theme_constant_override("separation", 6)
+	bottom_section.add_child(bottom)
 
-	# Manual GRH add row
-	var manual_row := HBoxContainer.new()
-	manual_row.add_theme_constant_override("separation", 4)
-	bottom.add_child(manual_row)
-	manual_row.add_child(IndexerTheme.label("GRH manual:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	# Row 1: Manual GRH add + Speed — side by side
+	var settings_row := HBoxContainer.new()
+	settings_row.add_theme_constant_override("separation", 8)
+	bottom.add_child(settings_row)
+
+	# Manual add group
+	var manual_group := HBoxContainer.new()
+	manual_group.add_theme_constant_override("separation", 3)
+	settings_row.add_child(manual_group)
+	var manual_icon := IndexerTheme.label("+", IndexerTheme.TEXT_SUCCESS, IndexerTheme.FONT_SIZE_MD)
+	manual_group.add_child(manual_icon)
 	_anim_manual_spin = IndexerTheme.spinbox(1, 999999, 1)
-	_anim_manual_spin.custom_minimum_size.x = 80
-	manual_row.add_child(_anim_manual_spin)
-	manual_row.add_child(IndexerTheme.button("Agregar", _on_anim_manual_add, IndexerTheme.TEXT_ACCENT))
-	manual_row.add_child(IndexerTheme.spacer())
+	_anim_manual_spin.custom_minimum_size.x = 72
+	_anim_manual_spin.tooltip_text = "GRH index para agregar manualmente"
+	manual_group.add_child(_anim_manual_spin)
+	var btn_manual := Button.new()
+	btn_manual.text = "Agregar"
+	btn_manual.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+	btn_manual.add_theme_stylebox_override("normal", IndexerTheme._flat_box(Color(0.15, 0.22, 0.15), 3, 6, 2))
+	btn_manual.add_theme_stylebox_override("hover", IndexerTheme._flat_box(Color(0.2, 0.3, 0.2), 3, 6, 2))
+	btn_manual.add_theme_color_override("font_color", IndexerTheme.TEXT_SUCCESS)
+	btn_manual.pressed.connect(_on_anim_manual_add)
+	manual_group.add_child(btn_manual)
 
-	# Speed + Save row
-	var save_row := HBoxContainer.new()
-	save_row.add_theme_constant_override("separation", 4)
-	bottom.add_child(save_row)
-	save_row.add_child(IndexerTheme.label("Speed (ms):", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	settings_row.add_child(IndexerTheme.spacer())
+
+	# Speed group
+	var speed_group := HBoxContainer.new()
+	speed_group.add_theme_constant_override("separation", 3)
+	settings_row.add_child(speed_group)
+	speed_group.add_child(IndexerTheme.label("Velocidad", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 	_anim_speed_spin = IndexerTheme.spinbox(10, 99999, 500)
 	_anim_speed_spin.step = 10
-	_anim_speed_spin.custom_minimum_size.x = 80
-	save_row.add_child(_anim_speed_spin)
-	save_row.add_child(IndexerTheme.spacer())
-	save_row.add_child(IndexerTheme.success_button("Guardar en GrhIndex", _on_anim_save))
+	_anim_speed_spin.suffix = "ms"
+	_anim_speed_spin.custom_minimum_size.x = 90
+	_anim_speed_spin.tooltip_text = "Duración total del ciclo en milisegundos"
+	speed_group.add_child(_anim_speed_spin)
+
+	# Row 2: Save button (full width)
+	var btn_save := Button.new()
+	btn_save.text = "Guardar animación en Graficos.ind"
+	btn_save.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_MD)
+	var save_sb := StyleBoxFlat.new()
+	save_sb.bg_color = Color(0.15, 0.35, 0.15)
+	save_sb.set_corner_radius_all(4)
+	save_sb.set_content_margin_all(6)
+	var save_sb_h := StyleBoxFlat.new()
+	save_sb_h.bg_color = Color(0.2, 0.45, 0.2)
+	save_sb_h.set_corner_radius_all(4)
+	save_sb_h.set_content_margin_all(6)
+	btn_save.add_theme_stylebox_override("normal", save_sb)
+	btn_save.add_theme_stylebox_override("hover", save_sb_h)
+	btn_save.add_theme_color_override("font_color", Color.WHITE)
+	btn_save.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_save.pressed.connect(_on_anim_save)
+	bottom.add_child(btn_save)
 
 
 func _open_anim_creator() -> void:
 	if _anim_creator_win == null:
 		return
-	# Attach to tree if needed
 	if not _anim_creator_win.is_inside_tree():
 		get_tree().root.add_child(_anim_creator_win)
 
 	# Populate available GRHs from current image's frames
-	_anim_avail_list.clear()
 	_anim_avail_grhs.clear()
+	_anim_avail_frames.clear()
+	for c in _anim_avail_vbox.get_children():
+		c.queue_free()
+
 	for f in _frames_for_anim:
 		var grh_idx: int = f.get("grh_index", 0)
 		if grh_idx > 0:
+			var idx := _anim_avail_grhs.size()
 			_anim_avail_grhs.append(grh_idx)
-			var w: int = f.get("w", 0)
-			var h: int = f.get("h", 0)
-			_anim_avail_list.add_item("GRH %d  (%dx%d)" % [grh_idx, w, h])
+			_anim_avail_frames.append(f)
+			_anim_avail_vbox.add_child(_build_avail_row(f, grh_idx, idx))
 
 	# Clear sequence
 	_anim_seq_indices.clear()
-	_anim_seq_list.clear()
+	for c in _anim_seq_vbox.get_children():
+		c.queue_free()
+	_anim_preview_playing = false
+	_anim_seq_preview.set_frames([])
 
 	# Position and show
 	var inspector_rect := get_global_rect()
-	var wx := int(inspector_rect.position.x) - 490
+	var wx := int(inspector_rect.position.x) - 570
 	if wx < 4:
 		wx = 4
 	var wy := int(inspector_rect.position.y) + 20
@@ -1248,65 +1317,210 @@ func _open_anim_creator() -> void:
 	_anim_creator_win.visible = true
 
 
-func _on_anim_avail_activated(idx: int) -> void:
-	if idx < 0 or idx >= _anim_avail_grhs.size():
+func _build_avail_row(f: Dictionary, grh_idx: int, idx: int) -> Control:
+	var row_sb := StyleBoxFlat.new()
+	row_sb.bg_color = Color(0.14, 0.14, 0.16)
+	row_sb.set_corner_radius_all(3)
+	row_sb.content_margin_left = 3
+	row_sb.content_margin_right = 3
+	row_sb.content_margin_top = 2
+	row_sb.content_margin_bottom = 2
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", row_sb)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 4)
+	panel.add_child(hbox)
+
+	# Thumbnail
+	_add_grh_thumbnail(hbox, f)
+
+	# Label
+	var lbl := IndexerTheme.label("GRH %d  (%dx%d)" % [grh_idx, f.get("w", 0), f.get("h", 0)],
+		IndexerTheme.TEXT_PRIMARY, IndexerTheme.FONT_SIZE_SM)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(lbl)
+
+	# Add button
+	var i := idx
+	var btn := IndexerTheme.icon_button("+", func(): _on_anim_add_grh(i), "Agregar a secuencia", 28)
+	btn.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_MD)
+	btn.add_theme_color_override("font_color", IndexerTheme.TEXT_SUCCESS)
+	hbox.add_child(btn)
+
+	return panel
+
+
+func _add_grh_thumbnail(parent: Node, f: Dictionary) -> void:
+	var tex: ImageTexture = _current_texture
+	var fnum: int = f.get("file_num", 0)
+	if fnum > 0 and fnum != _current_file_num and _related_textures.has(fnum):
+		tex = _related_textures[fnum]
+	if tex == null:
 		return
-	var grh_idx: int = _anim_avail_grhs[idx]
+	var preview_rect := TextureRect.new()
+	var atlas := AtlasTexture.new()
+	atlas.atlas = tex
+	atlas.region = Rect2(f.get("sx", 0), f.get("sy", 0), f.get("w", 32), f.get("h", 32))
+	preview_rect.texture = atlas
+	preview_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+	preview_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	preview_rect.custom_minimum_size = Vector2(36, 36)
+	parent.add_child(preview_rect)
+
+
+func _on_anim_add_grh(avail_idx: int) -> void:
+	if avail_idx < 0 or avail_idx >= _anim_avail_grhs.size():
+		return
+	var grh_idx: int = _anim_avail_grhs[avail_idx]
+	var f: Dictionary = _anim_avail_frames[avail_idx]
 	_anim_seq_indices.append(grh_idx)
-	_anim_seq_list.add_item("GRH %d" % grh_idx)
+	_anim_seq_vbox.add_child(_build_seq_row(f, grh_idx, _anim_seq_indices.size() - 1))
+	_update_anim_seq_preview()
 
 
 func _on_anim_manual_add() -> void:
 	var grh_idx := int(_anim_manual_spin.value)
-	if grh_idx > 0:
-		_anim_seq_indices.append(grh_idx)
-		_anim_seq_list.add_item("GRH %d (manual)" % grh_idx)
-
-
-func _on_anim_seq_remove() -> void:
-	var sel := _anim_seq_list.get_selected_items()
-	if sel.is_empty():
+	if grh_idx <= 0:
 		return
-	var idx: int = sel[0]
+	_anim_seq_indices.append(grh_idx)
+	# Try to find frame data from available or grh_entries
+	var f := _find_frame_for_grh(grh_idx)
+	_anim_seq_vbox.add_child(_build_seq_row(f, grh_idx, _anim_seq_indices.size() - 1))
+	_update_anim_seq_preview()
+
+
+func _find_frame_for_grh(grh_idx: int) -> Dictionary:
+	# Check available frames first
+	for i in range(_anim_avail_grhs.size()):
+		if _anim_avail_grhs[i] == grh_idx:
+			return _anim_avail_frames[i]
+	# Check grh_entries
+	var entry = _grh_entries.get(grh_idx, {})
+	if not entry.is_empty() and entry.get("num_frames", 1) == 1:
+		return {
+			"sx": entry.get("sx", 0),
+			"sy": entry.get("sy", 0),
+			"w": entry.get("width", 32),
+			"h": entry.get("height", 32),
+			"file_num": entry.get("file_num", 0),
+			"grh_index": grh_idx
+		}
+	return {"grh_index": grh_idx, "w": 0, "h": 0}
+
+
+func _build_seq_row(f: Dictionary, grh_idx: int, seq_idx: int) -> Control:
+	var row_sb := StyleBoxFlat.new()
+	row_sb.bg_color = Color(0.12, 0.14, 0.12)
+	row_sb.set_corner_radius_all(3)
+	row_sb.content_margin_left = 3
+	row_sb.content_margin_right = 3
+	row_sb.content_margin_top = 2
+	row_sb.content_margin_bottom = 2
+
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", row_sb)
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 3)
+	panel.add_child(hbox)
+
+	# Thumbnail
+	_add_grh_thumbnail(hbox, f)
+
+	# Label
+	var w: int = f.get("w", 0)
+	var h: int = f.get("h", 0)
+	var text := "GRH %d" % grh_idx
+	if w > 0:
+		text += "  %dx%d" % [w, h]
+	var lbl := IndexerTheme.label(text, IndexerTheme.TEXT_PRIMARY, IndexerTheme.FONT_SIZE_SM)
+	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hbox.add_child(lbl)
+
+	# Move up
+	var si := seq_idx
+	var btn_up := IndexerTheme.icon_button("^", func(): _on_seq_move(si, -1), "Subir", 22)
+	btn_up.add_theme_font_size_override("font_size", 10)
+	hbox.add_child(btn_up)
+
+	# Move down
+	var btn_dn := IndexerTheme.icon_button("v", func(): _on_seq_move(si, 1), "Bajar", 22)
+	btn_dn.add_theme_font_size_override("font_size", 10)
+	hbox.add_child(btn_dn)
+
+	# Remove
+	var btn_x := IndexerTheme.icon_button("X", func(): _on_seq_remove(si), "Quitar", 22)
+	btn_x.add_theme_font_size_override("font_size", 10)
+	btn_x.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
+	hbox.add_child(btn_x)
+
+	return panel
+
+
+func _on_seq_move(idx: int, dir: int) -> void:
+	var new_idx := idx + dir
+	if new_idx < 0 or new_idx >= _anim_seq_indices.size():
+		return
+	# Swap indices
+	var tmp: int = _anim_seq_indices[idx]
+	_anim_seq_indices[idx] = _anim_seq_indices[new_idx]
+	_anim_seq_indices[new_idx] = tmp
+	# Rebuild sequence list
+	_rebuild_seq_list()
+	_update_anim_seq_preview()
+
+
+func _on_seq_remove(idx: int) -> void:
+	if idx < 0 or idx >= _anim_seq_indices.size():
+		return
 	_anim_seq_indices.remove_at(idx)
-	_anim_seq_list.remove_item(idx)
+	_rebuild_seq_list()
+	_update_anim_seq_preview()
 
 
 func _on_anim_seq_clear() -> void:
 	_anim_seq_indices.clear()
-	_anim_seq_list.clear()
+	_rebuild_seq_list()
+	_update_anim_seq_preview()
 
 
-func _on_anim_seq_move_up() -> void:
-	var sel := _anim_seq_list.get_selected_items()
-	if sel.is_empty() or sel[0] <= 0:
+func _rebuild_seq_list() -> void:
+	for c in _anim_seq_vbox.get_children():
+		c.queue_free()
+	for i in range(_anim_seq_indices.size()):
+		var grh_idx: int = _anim_seq_indices[i]
+		var f := _find_frame_for_grh(grh_idx)
+		_anim_seq_vbox.add_child(_build_seq_row(f, grh_idx, i))
+
+
+func _update_anim_seq_preview() -> void:
+	if _anim_seq_indices.is_empty():
+		_anim_seq_preview.set_frames([])
+		_anim_preview_playing = false
 		return
-	var idx: int = sel[0]
-	# Swap in data
-	var tmp: int = _anim_seq_indices[idx]
-	_anim_seq_indices[idx] = _anim_seq_indices[idx - 1]
-	_anim_seq_indices[idx - 1] = tmp
-	# Swap in list
-	var text_a := _anim_seq_list.get_item_text(idx)
-	var text_b := _anim_seq_list.get_item_text(idx - 1)
-	_anim_seq_list.set_item_text(idx, text_b)
-	_anim_seq_list.set_item_text(idx - 1, text_a)
-	_anim_seq_list.select(idx - 1)
-
-
-func _on_anim_seq_move_down() -> void:
-	var sel := _anim_seq_list.get_selected_items()
-	if sel.is_empty() or sel[0] >= _anim_seq_indices.size() - 1:
-		return
-	var idx: int = sel[0]
-	var tmp: int = _anim_seq_indices[idx]
-	_anim_seq_indices[idx] = _anim_seq_indices[idx + 1]
-	_anim_seq_indices[idx + 1] = tmp
-	var text_a := _anim_seq_list.get_item_text(idx)
-	var text_b := _anim_seq_list.get_item_text(idx + 1)
-	_anim_seq_list.set_item_text(idx, text_b)
-	_anim_seq_list.set_item_text(idx + 1, text_a)
-	_anim_seq_list.select(idx + 1)
+	# Build frames array for preview
+	var frames: Array = []
+	for grh_idx in _anim_seq_indices:
+		var f := _find_frame_for_grh(grh_idx)
+		if f.get("w", 0) > 0:
+			frames.append(f)
+	# Load textures for all unique file_nums
+	var tex_dict: Dictionary = {}
+	if _current_texture != null:
+		tex_dict[_current_file_num] = _current_texture
+	for fnum in _related_textures:
+		tex_dict[fnum] = _related_textures[fnum]
+	_anim_seq_preview.set_textures(tex_dict)
+	_anim_seq_preview.set_frames(frames)
+	if not frames.is_empty():
+		_anim_seq_preview.show_frame(0)
+	_anim_preview_playing = frames.size() > 1
+	_anim_preview_time = 0.0
+	_anim_preview_idx = 0
 
 
 func _on_anim_save() -> void:
@@ -1314,6 +1528,7 @@ func _on_anim_save() -> void:
 		return
 	create_anim_pressed.emit(_anim_seq_indices.duplicate(), _anim_speed_spin.value)
 	_anim_creator_win.hide()
+	_anim_preview_playing = false
 
 
 func _on_props_changed() -> void:

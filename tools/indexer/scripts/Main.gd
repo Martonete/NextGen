@@ -1,4 +1,4 @@
-## Main.gd — Ruthnar Sprite Indexer (v2 — docked panels)
+## Main.gd — Argentum Sprite Indexer (v2 — docked panels)
 ## Orchestrates all UI components: FileListPanel, ToolBar, InspectorPanel, SpriteCanvas.
 
 extends Control
