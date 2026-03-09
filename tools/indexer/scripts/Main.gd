@@ -798,16 +798,25 @@ func _try_uniform_blob_grid(rects: Array) -> Array:
 
 	# Generate grid: iterate rows of cell_h, then columns of cell_w
 	# Per cell, check if it has non-empty content (skip empty cells)
+	# Include partial edge cells if they are >= 70% of cell size
 	var img_w: int = _current_image.get_width()
 	var img_h: int = _current_image.get_height()
+	var min_cw: int = int(cell_w * 0.70)
+	var min_ch: int = int(cell_h * 0.70)
 	var result: Array = []
 
 	var row_y := 0
-	while row_y + cell_h <= img_h:
+	while row_y < img_h:
+		var actual_h: int = mini(cell_h, img_h - row_y)
+		if actual_h < min_ch:
+			break
 		var col_x := 0
-		while col_x + cell_w <= img_w:
-			if not FrameDetector._is_empty_sample(_current_image, col_x, row_y, cell_w, cell_h):
-				result.append({"sx": col_x, "sy": row_y, "w": cell_w, "h": cell_h})
+		while col_x < img_w:
+			var actual_w: int = mini(cell_w, img_w - col_x)
+			if actual_w < min_cw:
+				break
+			if not FrameDetector._is_empty_sample(_current_image, col_x, row_y, actual_w, actual_h):
+				result.append({"sx": col_x, "sy": row_y, "w": actual_w, "h": actual_h})
 			col_x += cell_w
 		row_y += cell_h
 

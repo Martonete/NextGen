@@ -114,12 +114,22 @@ static func detect_grid(
 	var frames: Array = []
 	var img_w := image.get_width()
 	var img_h := image.get_height()
+	# Minimum fraction of cell size to still include a partial edge cell
+	const PARTIAL_MIN := 0.70
+	var min_cw: int = int(cell_w * PARTIAL_MIN)
+	var min_ch: int = int(cell_h * PARTIAL_MIN)
 	var row_y := off_y
-	while row_y + cell_h <= img_h:
+	while row_y < img_h:
+		var actual_h: int = mini(cell_h, img_h - row_y)
+		if actual_h < min_ch:
+			break
 		var col_x := off_x
-		while col_x + cell_w <= img_w:
-			if not skip_empty or not _is_empty_sample(image, col_x, row_y, cell_w, cell_h):
-				frames.append({ "sx": col_x, "sy": row_y, "w": cell_w, "h": cell_h })
+		while col_x < img_w:
+			var actual_w: int = mini(cell_w, img_w - col_x)
+			if actual_w < min_cw:
+				break
+			if not skip_empty or not _is_empty_sample(image, col_x, row_y, actual_w, actual_h):
+				frames.append({ "sx": col_x, "sy": row_y, "w": actual_w, "h": actual_h })
 			col_x += cell_w + margin_x
 		row_y += cell_h + margin_y
 	return frames
