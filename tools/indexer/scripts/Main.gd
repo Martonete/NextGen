@@ -249,6 +249,7 @@ func _connect_signals() -> void:
 	_inspector.split_frame_pressed.connect(_on_split_frame)
 	_inspector.save_init_pressed.connect(_on_save_init_file)
 	_inspector.add_manual_frame_pressed.connect(_on_add_manual_frame)
+	_inspector.index_frame_pressed.connect(_on_index_single_frame)
 	_inspector.next_grh_changed.connect(func(v): _next_grh_index = v)
 
 
@@ -898,6 +899,8 @@ func _try_uniform_blob_grid(rects: Array) -> Array:
 func _refresh_all() -> void:
 	_canvas.set_frames(_current_frames)
 	_canvas.set_selected(_selected_frame_idx)
+	_inspector.set_grh_entries(_grh_data["entries"])
+	_inspector.set_current_texture(_current_texture)
 	_inspector.update_frames(_current_frames, _selected_frame_idx)
 	if _selected_frame_idx >= 0 and _selected_frame_idx < _current_frames.size():
 		_inspector.update_selected_props(_current_frames[_selected_frame_idx])
@@ -925,7 +928,27 @@ func _on_index_image() -> void:
 			_grh_data["max_index"] = frame.grh_index
 		added += 1
 	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+	_refresh_all()
 	_update_status("Indexados %d frames. Total: %d entradas." % [added, _grh_data["entries"].size()])
+
+
+func _on_index_single_frame(idx: int) -> void:
+	if idx < 0 or idx >= _current_frames.size():
+		return
+	var frame: Dictionary = _current_frames[idx]
+	var entry := {
+		"grh_index": frame.grh_index,
+		"num_frames": 1,
+		"file_num": frame.file_num,
+		"sx": frame.sx, "sy": frame.sy,
+		"width": frame.w, "height": frame.h
+	}
+	_grh_data["entries"][frame.grh_index] = entry
+	if frame.grh_index > _grh_data["max_index"]:
+		_grh_data["max_index"] = frame.grh_index
+	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+	_refresh_all()
+	_update_status("GRH %d indexado. Total: %d entradas." % [frame.grh_index, _grh_data["entries"].size()])
 
 
 # ── Save ─────────────────────────────────────────────────────────────────────

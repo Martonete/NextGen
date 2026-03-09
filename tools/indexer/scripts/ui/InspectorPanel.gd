@@ -13,6 +13,7 @@ signal create_anim_pressed(indices: Array[int], speed: float)
 signal split_frame_pressed(cell_w: int, cell_h: int)
 signal save_init_pressed(path: String, content: String)
 signal add_manual_frame_pressed
+signal index_frame_pressed(idx: int)
 signal next_grh_changed(val: int)
 
 var _tabs: TabContainer
@@ -42,6 +43,10 @@ var _spin_split_h: SpinBox
 
 var _frame_list_vbox: VBoxContainer
 var _lbl_frame_count: Label
+var _grh_entries: Dictionary = {}  # grh_index → entry (from Graficos.ind)
+var _current_texture: ImageTexture = null
+var _confirm_index_idx: int = -1  # frame idx pending double-confirm
+var _confirm_index_btn: Button = null  # button in confirm state
 
 var _edit_anim_indices: LineEdit
 var _spin_anim_speed: SpinBox
@@ -130,6 +135,14 @@ func clear_props() -> void:
 
 func set_image(img: Image) -> void:
 	_preview.set_image(img)
+
+
+func set_grh_entries(entries: Dictionary) -> void:
+	_grh_entries = entries
+
+
+func set_current_texture(tex: ImageTexture) -> void:
+	_current_texture = tex
 
 
 func set_grh_data(max_idx: int, count: int) -> void:
@@ -260,27 +273,9 @@ func set_related_image(img: Image) -> void:
 
 
 func update_grh_viewer(entries: Array, texture: ImageTexture) -> void:
-	for c in _grh_viewer_vbox.get_children():
-		c.queue_free()
-	_lbl_grh_info.text = "%d GRHs indexados" % entries.size()
-	for e in entries:
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 4)
-		if texture != null and e.get("num_frames", 1) == 1:
-			var preview_rect := TextureRect.new()
-			var atlas := AtlasTexture.new()
-			atlas.atlas = texture
-			atlas.region = Rect2(e.get("sx", 0), e.get("sy", 0), e.get("width", 32), e.get("height", 32))
-			preview_rect.texture = atlas
-			preview_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
-			preview_rect.custom_minimum_size = Vector2(36, 36)
-			row.add_child(preview_rect)
-		var lbl := IndexerTheme.label(
-			"G%d  %dx%d  (%d,%d)" % [e.get("grh_index", 0), e.get("width", 0), e.get("height", 0), e.get("sx", 0), e.get("sy", 0)],
-			IndexerTheme.TEXT_PRIMARY, IndexerTheme.FONT_SIZE_SM)
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(lbl)
-		_grh_viewer_vbox.add_child(row)
+	# Legacy — now handled inline in the unified frame list.
+	# Just update the texture reference for thumbnails.
+	_current_texture = texture
 
 
 func load_init_files(folder: String) -> void:
@@ -431,13 +426,15 @@ func _build_frames_tab() -> Control:
 	action_row.add_child(_spin_split_h)
 	action_row.add_child(IndexerTheme.button("Cortar", _on_split_btn, IndexerTheme.TEXT_ACCENT))
 
-	# ── Frame list ──
+	# ── Unified frame list (frames + indexed status) ──
 	var list_header := HBoxContainer.new()
 	list_header.add_theme_constant_override("separation", 4)
 	root.add_child(list_header)
 	_lbl_frame_count = IndexerTheme.label("0 frames", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM)
 	list_header.add_child(_lbl_frame_count)
 	list_header.add_child(IndexerTheme.spacer())
+	_lbl_grh_info = IndexerTheme.label("", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
+	list_header.add_child(_lbl_grh_info)
 	list_header.add_child(IndexerTheme.button("+ Manual", func(): add_manual_frame_pressed.emit(), IndexerTheme.TEXT_ACCENT))
 	list_header.add_child(IndexerTheme.danger_button("Limpiar", func(): clear_frames_pressed.emit()))
 
@@ -450,27 +447,6 @@ func _build_frames_tab() -> Control:
 	_frame_list_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_frame_list_vbox.add_theme_constant_override("separation", 1)
 	scroll.add_child(_frame_list_vbox)
-
-	# ── GRH Index (already indexed frames with thumbnails) ──
-	root.add_child(IndexerTheme.separator_h())
-	var grh_header := HBoxContainer.new()
-	grh_header.add_theme_constant_override("separation", 4)
-	root.add_child(grh_header)
-	grh_header.add_child(IndexerTheme.section_label("GRH Indexados"))
-	grh_header.add_child(IndexerTheme.spacer())
-	_lbl_grh_info = IndexerTheme.label("", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
-	grh_header.add_child(_lbl_grh_info)
-
-	var grh_scroll := ScrollContainer.new()
-	grh_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	grh_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	grh_scroll.custom_minimum_size.y = 60
-	root.add_child(grh_scroll)
-
-	_grh_viewer_vbox = VBoxContainer.new()
-	_grh_viewer_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_grh_viewer_vbox.add_theme_constant_override("separation", 2)
-	grh_scroll.add_child(_grh_viewer_vbox)
 
 	# ── Related animations (bodies/fx detected from Personajes.ind/Fxs.ind) ──
 	_related_anims_box = VBoxContainer.new()
@@ -701,59 +677,114 @@ func _show_props(visible: bool) -> void:
 func _rebuild_frame_list(frames: Array, selected: int) -> void:
 	for c in _frame_list_vbox.get_children():
 		c.free()
+	_confirm_index_idx = -1
+	_confirm_index_btn = null
+
+	# Count indexed vs total
+	var indexed_count := 0
+	for f in frames:
+		if _grh_entries.has(f.get("grh_index", 0)):
+			indexed_count += 1
 	_lbl_frame_count.text = "%d frames" % frames.size()
+	_lbl_grh_info.text = "%d indexados" % indexed_count if indexed_count > 0 else ""
 
 	for i in range(frames.size()):
 		var f: Dictionary = frames[i]
 		var is_sel := (i == selected)
+		var grh_idx: int = f.get("grh_index", 0)
+		var is_indexed: bool = _grh_entries.has(grh_idx)
+
+		# Row container with background for selected
+		var row_bg := StyleBoxFlat.new()
+		if is_sel:
+			row_bg.bg_color = IndexerTheme.BG_SELECTED
+		else:
+			row_bg.bg_color = Color.TRANSPARENT
+		row_bg.set_corner_radius_all(3)
+		row_bg.content_margin_left = 2
+		row_bg.content_margin_right = 2
+		row_bg.content_margin_top = 1
+		row_bg.content_margin_bottom = 1
+
+		var panel := PanelContainer.new()
+		panel.add_theme_stylebox_override("panel", row_bg)
+		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 2)
+		row.add_theme_constant_override("separation", 3)
+		panel.add_child(row)
 
-		if is_sel:
-			var row_bg := StyleBoxFlat.new()
-			row_bg.bg_color = IndexerTheme.BG_SELECTED
-			row_bg.set_corner_radius_all(3)
-			row_bg.set_content_margin_all(2)
-			var panel := PanelContainer.new()
-			panel.add_theme_stylebox_override("panel", row_bg)
-			panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			var inner_row := HBoxContainer.new()
-			inner_row.add_theme_constant_override("separation", 2)
-			panel.add_child(inner_row)
+		# Thumbnail
+		if _current_texture != null:
+			var preview_rect := TextureRect.new()
+			var atlas := AtlasTexture.new()
+			atlas.atlas = _current_texture
+			atlas.region = Rect2(f.get("sx", 0), f.get("sy", 0), f.get("w", 32), f.get("h", 32))
+			preview_rect.texture = atlas
+			preview_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
+			preview_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			preview_rect.custom_minimum_size = Vector2(28, 28)
+			row.add_child(preview_rect)
 
-			var lbl := IndexerTheme.label(
-				"G%d  (%d,%d)  %dx%d" % [f.get("grh_index", 0), f.get("sx", 0), f.get("sy", 0), f.get("w", 0), f.get("h", 0)],
-				Color.WHITE, IndexerTheme.FONT_SIZE_SM)
-			lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			inner_row.add_child(lbl)
+		# Info: GRH + pos + size
+		var info_text := "G%d  (%d,%d)  %dx%d" % [grh_idx, f.get("sx", 0), f.get("sy", 0), f.get("w", 0), f.get("h", 0)]
+		var text_col := Color.WHITE if is_sel else IndexerTheme.TEXT_PRIMARY
+		var lbl := IndexerTheme.label(info_text, text_col, IndexerTheme.FONT_SIZE_SM)
+		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		row.add_child(lbl)
 
-			var idx := i
-			var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(idx), "Eliminar", 22)
-			btn_del.add_theme_font_size_override("font_size", 9)
-			btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
-			inner_row.add_child(btn_del)
-
-			_frame_list_vbox.add_child(panel)
+		# Status badge: indexed or not
+		if is_indexed:
+			var badge := IndexerTheme.label("IND", IndexerTheme.TEXT_SUCCESS, 9)
+			badge.tooltip_text = "Indexado en Graficos.ind"
+			row.add_child(badge)
 		else:
-			var col := IndexerTheme.TEXT_PRIMARY
-			var lbl := IndexerTheme.label(
-				"G%d  (%d,%d)  %dx%d" % [f.get("grh_index", 0), f.get("sx", 0), f.get("sy", 0), f.get("w", 0), f.get("h", 0)],
-				col, IndexerTheme.FONT_SIZE_SM)
-			lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			row.add_child(lbl)
+			# "Indexar" button with double confirmation
+			var idx := i
+			var btn_idx := Button.new()
+			btn_idx.text = "+"
+			btn_idx.tooltip_text = "Agregar a Graficos.ind (doble click)"
+			btn_idx.custom_minimum_size.x = 22
+			btn_idx.add_theme_font_size_override("font_size", 9)
+			btn_idx.add_theme_color_override("font_color", IndexerTheme.TEXT_WARNING)
+			btn_idx.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 2, 2, 1))
+			btn_idx.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 2, 2, 1))
+			btn_idx.pressed.connect(_on_index_frame_btn.bind(idx, btn_idx))
+			row.add_child(btn_idx)
 
+		# Select button (non-selected only)
+		if not is_sel:
 			var idx := i
 			var btn_sel := IndexerTheme.icon_button("Sel", func(): frame_selected.emit(idx), "Seleccionar", 28)
 			btn_sel.add_theme_font_size_override("font_size", 9)
 			row.add_child(btn_sel)
 
-			var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(idx), "Eliminar", 22)
-			btn_del.add_theme_font_size_override("font_size", 9)
-			btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
-			row.add_child(btn_del)
+		# Delete X
+		var idx2 := i
+		var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(idx2), "Eliminar", 22)
+		btn_del.add_theme_font_size_override("font_size", 9)
+		btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
+		row.add_child(btn_del)
 
-			_frame_list_vbox.add_child(row)
+		_frame_list_vbox.add_child(panel)
+
+
+func _on_index_frame_btn(idx: int, btn: Button) -> void:
+	if _confirm_index_idx == idx and _confirm_index_btn == btn:
+		# Second click — confirm
+		_confirm_index_idx = -1
+		_confirm_index_btn = null
+		index_frame_pressed.emit(idx)
+	else:
+		# First click — enter confirm state, reset previous if any
+		if _confirm_index_btn != null and is_instance_valid(_confirm_index_btn):
+			_confirm_index_btn.text = "+"
+			_confirm_index_btn.add_theme_color_override("font_color", IndexerTheme.TEXT_WARNING)
+		_confirm_index_idx = idx
+		_confirm_index_btn = btn
+		btn.text = "OK?"
+		btn.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
 
 
 func _make_preset_cb(pw: int, ph: int) -> Callable:
