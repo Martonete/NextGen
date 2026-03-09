@@ -99,6 +99,8 @@ var _init_current_path: String = ""
 
 func _ready() -> void:
 	custom_minimum_size.x = 380
+	size_flags_horizontal = Control.SIZE_FILL
+	clip_contents = true
 	add_theme_constant_override("separation", 0)
 
 	# Panel background
@@ -537,6 +539,9 @@ func _build_frames_tab() -> Control:
 	playbar.add_child(_spin_anim_fps)
 
 	_lbl_anim_info = IndexerTheme.label("--", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
+	_lbl_anim_info.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_lbl_anim_info.clip_text = true
+	_lbl_anim_info.custom_minimum_size.x = 60
 	playbar.add_child(_lbl_anim_info)
 
 	# ── Properties popup (floats to the left of the inspector) ──
@@ -642,6 +647,8 @@ func _build_frames_tab() -> Control:
 	list_header.add_child(_lbl_frame_count)
 	list_header.add_child(IndexerTheme.spacer())
 	_lbl_grh_info = IndexerTheme.label("", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
+	_lbl_grh_info.clip_text = true
+	_lbl_grh_info.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	list_header.add_child(_lbl_grh_info)
 	list_header.add_child(IndexerTheme.button("+ Manual", func(): add_manual_frame_pressed.emit(), IndexerTheme.TEXT_ACCENT))
 	list_header.add_child(IndexerTheme.danger_button("Limpiar", func(): clear_frames_pressed.emit()))
