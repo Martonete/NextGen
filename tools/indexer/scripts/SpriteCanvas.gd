@@ -131,6 +131,25 @@ func _apply_snap(rect: Rect2i) -> Rect2i:
 			new_x = cx - dim / 2
 			@warning_ignore("integer_division")
 			new_y = cy - dim / 2
+		5:  # AO Tiles: position ×32, size ×8
+			# Snap position to nearest 32px grid
+			@warning_ignore("integer_division")
+			new_x = (rect.position.x / 32) * 32
+			@warning_ignore("integer_division")
+			new_y = (rect.position.y / 32) * 32
+			# Snap size to nearest multiple of 8 (minimum 8)
+			@warning_ignore("integer_division")
+			new_w = maxi(8, ((rect.size.x + 4) / 8) * 8)
+			@warning_ignore("integer_division")
+			new_h = maxi(8, ((rect.size.y + 4) / 8) * 8)
+			# If snapped position + size exceeds the right/bottom edge of where content was,
+			# keep the size but shift position to include the original center
+			@warning_ignore("integer_division")
+			if new_x + new_w < cx:
+				new_x = ((cx - new_w + 32) / 32) * 32
+			@warning_ignore("integer_division")
+			if new_y + new_h < cy:
+				new_y = ((cy - new_h + 32) / 32) * 32
 
 	# Always clamp to image borders regardless of snap mode
 	if _image_size.x > 0:
@@ -319,6 +338,10 @@ func _draw() -> void:
 	draw_texture_rect(_texture, img_sr, false)
 	draw_rect(img_sr, Color(0.4, 0.4, 0.4), false, 1.0)
 
+	# AO 32px grid overlay
+	if snap_mode == 5 and _zoom >= 0.15:
+		_draw_ao_grid(img_sr)
+
 	# Hover blob highlight (solo si no solapa frames existentes)
 	if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
 		var hr := Rect2(_hover_rect.position, _hover_rect.size)
@@ -428,6 +451,46 @@ func _draw_checker(rect: Rect2) -> void:
 			), cc)
 
 
+func _draw_ao_grid(img_sr: Rect2) -> void:
+	var grid_step := 32.0 * _zoom
+	# Skip drawing if grid lines would be too dense (< 4px apart)
+	if grid_step < 4.0:
+		return
+	# Determine visible area
+	var vis_left := maxf(img_sr.position.x, 0.0)
+	var vis_top := maxf(img_sr.position.y, 0.0)
+	var vis_right := minf(img_sr.position.x + img_sr.size.x, size.x)
+	var vis_bottom := minf(img_sr.position.y + img_sr.size.y, size.y)
+	# Thin lines for 32px grid
+	var col_grid := Color(1.0, 0.85, 0.0, 0.12)
+	# Thicker lines every 128px (4 tiles)
+	var col_grid_major := Color(1.0, 0.85, 0.0, 0.28)
+	# Vertical lines
+	@warning_ignore("integer_division")
+	var first_col := int((vis_left - img_sr.position.x) / grid_step)
+	var total_cols := ceili(_image_size.x / 32.0)
+	for i in range(first_col, total_cols + 1):
+		var sx := img_sr.position.x + float(i) * grid_step
+		if sx < vis_left or sx > vis_right:
+			continue
+		var is_major := (i % 4 == 0)
+		draw_line(Vector2(sx, vis_top), Vector2(sx, vis_bottom),
+			col_grid_major if is_major else col_grid,
+			2.0 if is_major else 1.0)
+	# Horizontal lines
+	@warning_ignore("integer_division")
+	var first_row := int((vis_top - img_sr.position.y) / grid_step)
+	var total_rows := ceili(_image_size.y / 32.0)
+	for i in range(first_row, total_rows + 1):
+		var sy := img_sr.position.y + float(i) * grid_step
+		if sy < vis_top or sy > vis_bottom:
+			continue
+		var is_major := (i % 4 == 0)
+		draw_line(Vector2(vis_left, sy), Vector2(vis_right, sy),
+			col_grid_major if is_major else col_grid,
+			2.0 if is_major else 1.0)
+
+
 # ── Input ─────────────────────────────────────────────────────────────────────
 
 func _gui_input(event: InputEvent) -> void:
@@ -522,6 +585,11 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 							_selected_frame = -1
 							frame_selected.emit(-1)
 							queue_redraw()
+						if snap_mode == 5:
+							@warning_ignore("integer_division")
+							ip.x = float((int(ip.x) / 32) * 32)
+							@warning_ignore("integer_division")
+							ip.y = float((int(ip.y) / 32) * 32)
 						_draw_start_img = ip
 						_draw_cur_img = ip
 			else:
@@ -531,6 +599,9 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					_resize_active = false
 					var delta_img := _s2i(mb.position) - _resize_mouse_start_img
 					var new_rect := _resize_rect_from_drag(_resize_handle, delta_img)
+					if snap_mode == 5:
+						var snapped := _apply_snap(Rect2i(int(new_rect.position.x), int(new_rect.position.y), int(new_rect.size.x), int(new_rect.size.y)))
+						new_rect = Rect2(snapped.position, snapped.size)
 					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
 				elif _move_active:
@@ -540,6 +611,11 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					if _image_size.x > 0:
 						new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
 						new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
+					if snap_mode == 5:
+						@warning_ignore("integer_division")
+						new_pos.x = float((int(new_pos.x) / 32) * 32)
+						@warning_ignore("integer_division")
+						new_pos.y = float((int(new_pos.y) / 32) * 32)
 					var new_rect := Rect2(new_pos, _move_frame_orig.size)
 					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
@@ -581,6 +657,9 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 	if _resize_active:
 		var delta_img := _s2i(mm.position) - _resize_mouse_start_img
 		_resize_live = _resize_rect_from_drag(_resize_handle, delta_img)
+		if snap_mode == 5:
+			var snapped := _apply_snap(Rect2i(int(_resize_live.position.x), int(_resize_live.position.y), int(_resize_live.size.x), int(_resize_live.size.y)))
+			_resize_live = Rect2(snapped.position, snapped.size)
 		queue_redraw()
 		return
 
@@ -590,6 +669,11 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 		if _image_size.x > 0:
 			new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
 			new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
+		if snap_mode == 5:
+			@warning_ignore("integer_division")
+			new_pos.x = float((int(new_pos.x) / 32) * 32)
+			@warning_ignore("integer_division")
+			new_pos.y = float((int(new_pos.y) / 32) * 32)
 		_move_live_pos = new_pos
 		queue_redraw()
 		return

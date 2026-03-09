@@ -53,8 +53,8 @@ func _ready() -> void:
 
 	# ── Snap ──
 	hbox.add_child(IndexerTheme.label("Snap:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	var snap_defs := [["Off", 0], ["Pot.2", 2], ["Sq", 3], ["Smart", 4], ["Grid", 1]]
-	var snap_tips := {0: "Sin snap", 1: "Multiplo", 2: "Potencia de 2", 3: "Cuadrado P2", 4: "Detección inteligente"}
+	var snap_defs := [["Off", 0], ["Pot.2", 2], ["Sq", 3], ["Smart", 4], ["Grid", 1], ["AO", 5]]
+	var snap_tips := {0: "Sin snap", 1: "Multiplo", 2: "Potencia de 2", 3: "Cuadrado P2", 4: "Detección inteligente", 5: "AO Tiles: offset ×32, tamaño ×8"}
 	for sd in snap_defs:
 		var btn := IndexerTheme.preset_button(sd[0], Callable(), snap_tips.get(sd[1], ""))
 		btn.toggle_mode = true
@@ -126,13 +126,13 @@ func _on_snap_pressed(mode: int) -> void:
 	_current_snap = mode
 	for i in range(_snap_buttons.size()):
 		_snap_buttons[i].set_pressed_no_signal(_snap_buttons[i] == _get_snap_btn(mode))
-	_snap_spin_row.visible = (mode == 1)
+	_snap_spin_row.visible = (mode == 1)  # Only show X/Y spinboxes for Grid mode
 	_emit_snap()
 
 
 func _get_snap_btn(mode: int) -> Button:
-	# snap_defs order: Off=0, Pot.2=2, Sq=3, Smart=4, Grid=1 → button indices 0,1,2,3,4
-	var map := {0: 0, 2: 1, 3: 2, 4: 3, 1: 4}
+	# snap_defs order: Off=0, Pot.2=2, Sq=3, Smart=4, Grid=1, AO=5 → button indices 0,1,2,3,4,5
+	var map := {0: 0, 2: 1, 3: 2, 4: 3, 1: 4, 5: 5}
 	return _snap_buttons[map.get(mode, 0)]
 
 
