@@ -1231,6 +1231,13 @@ func _load_related_textures(related: Array, current_file_num: int, current_img: 
 	_inspector._rebuild_frame_list(_current_frames, _selected_frame_idx)
 
 
+static func _read_i16(f: FileAccess) -> int:
+	var val := f.get_16()
+	if val >= 0x8000:
+		return val - 0x10000
+	return val
+
+
 func _load_personajes_ind(path: String) -> Array:
 	var bodies: Array = []
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -1240,13 +1247,13 @@ func _load_personajes_ind(path: String) -> Array:
 		f.close()
 		return bodies
 	f.seek(263)
-	var count: int = f.get_16()
+	var count: int = _read_i16(f)
 	for i in range(1, count + 1):
 		bodies.append({
 			"index": i,
-			"walk_n": f.get_16(), "walk_e": f.get_16(),
-			"walk_s": f.get_16(), "walk_w": f.get_16(),
-			"head_x": f.get_16(), "head_y": f.get_16()
+			"walk_n": _read_i16(f), "walk_e": _read_i16(f),
+			"walk_s": _read_i16(f), "walk_w": _read_i16(f),
+			"head_x": _read_i16(f), "head_y": _read_i16(f)
 		})
 	f.close()
 	return bodies
@@ -1261,13 +1268,13 @@ func _load_fxs_ind(path: String) -> void:
 		f.close()
 		return
 	_mi_cabecera_fxs = f.get_buffer(263)
-	var count: int = f.get_16()
+	var count: int = _read_i16(f)
 	for i in range(1, count + 1):
 		_fxs_data.append({
 			"index": i,
-			"animacion": f.get_16(),
-			"offset_x": f.get_16(),
-			"offset_y": f.get_16()
+			"animacion": _read_i16(f),
+			"offset_x": _read_i16(f),
+			"offset_y": _read_i16(f)
 		})
 	f.close()
 

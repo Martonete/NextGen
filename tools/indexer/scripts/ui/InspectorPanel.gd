@@ -473,10 +473,12 @@ func load_init_files(folder: String) -> void:
 		var ext := f.get_extension().to_lower()
 		if ext in ["ind", "ini", "dat"]:
 			_init_files.append(folder.path_join(f))
-			_init_file_list.add_item(f)
 		f = dir.get_next()
 	dir.list_dir_end()
+	# Sort BEFORE populating the ItemList so indices match
 	_init_files.sort()
+	for path in _init_files:
+		_init_file_list.add_item(path.get_file())
 
 
 func use_current_frames_for_anim(_frames: Array) -> void:
@@ -1128,8 +1130,12 @@ func _on_detect_blobs_btn() -> void:
 
 
 func _on_save_init_btn() -> void:
-	if not _init_current_path.is_empty():
-		save_init_pressed.emit(_init_current_path, _init_text_edit.text)
+	if _init_current_path.is_empty():
+		return
+	# Don't save binary .ind files as text — they have dedicated save paths
+	if _init_current_path.get_extension().to_lower() == "ind":
+		return
+	save_init_pressed.emit(_init_current_path, _init_text_edit.text)
 
 
 func _on_split_btn() -> void:
@@ -1565,9 +1571,107 @@ func _on_init_file_selected(idx: int) -> void:
 
 func _load_init_file(path: String) -> void:
 	_init_current_path = path
+	var ext := path.get_extension().to_lower()
+
+	# Binary .ind files → parsed text view
+	if ext == "ind":
+		_init_text_edit.text = _parse_ind_to_text(path)
+		_init_text_edit.editable = false
+		return
+
+	# Text files (.ini, .dat) → normal editable text
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		_init_text_edit.text = "(no se pudo abrir)"
 		return
 	_init_text_edit.text = f.get_as_text()
+	_init_text_edit.editable = true
 	f.close()
+
+
+static func _read_i16(f: FileAccess) -> int:
+	var val := f.get_16()
+	if val >= 0x8000:
+		return val - 0x10000
+	return val
+
+
+static func _read_i32(f: FileAccess) -> int:
+	var val := f.get_32()
+	if val >= 0x80000000:
+		return val - 0x100000000
+	return val
+
+
+func _parse_ind_to_text(path: String) -> String:
+	var fname := path.get_file().to_lower()
+
+	# Graficos.ind → use GrhIO for full round-trip text
+	if fname == "graficos.ind":
+		var data := GrhIO.load_ind(path)
+		return GrhIO.to_text(data)
+
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return "(no se pudo abrir)"
+
+	# Personajes.ind
+	if fname == "personajes.ind":
+		if f.get_length() < 265:
+			f.close()
+			return "(archivo muy pequeño)"
+		f.seek(263)
+		var count: int = _read_i16(f)
+		var lines: PackedStringArray = PackedStringArray()
+		lines.append("# Personajes.ind  count=%d" % count)
+		lines.append("# Index  WalkN  WalkE  WalkS  WalkW  HeadX  HeadY")
+		for i in range(1, count + 1):
+			if f.get_position() + 12 > f.get_length():
+				break
+			var wn := _read_i16(f)
+			var we := _read_i16(f)
+			var ws := _read_i16(f)
+			var ww := _read_i16(f)
+			var hx := _read_i16(f)
+			var hy := _read_i16(f)
+			lines.append("%d  %d  %d  %d  %d  %d  %d" % [i, wn, we, ws, ww, hx, hy])
+		f.close()
+		return "\n".join(lines)
+
+	# Fxs.ind
+	if fname == "fxs.ind":
+		if f.get_length() < 265:
+			f.close()
+			return "(archivo muy pequeño)"
+		f.seek(263)
+		var count: int = _read_i16(f)
+		var lines: PackedStringArray = PackedStringArray()
+		lines.append("# Fxs.ind  count=%d" % count)
+		lines.append("# Index  Animacion  OffsetX  OffsetY")
+		for i in range(1, count + 1):
+			if f.get_position() + 6 > f.get_length():
+				break
+			var anim := _read_i16(f)
+			var ox := _read_i16(f)
+			var oy := _read_i16(f)
+			lines.append("%d  %d  %d  %d" % [i, anim, ox, oy])
+		f.close()
+		return "\n".join(lines)
+
+	# Unknown .ind → hex dump (first 512 bytes)
+	var size := f.get_length()
+	var to_read := mini(512, size)
+	var data := f.get_buffer(to_read)
+	f.close()
+	var lines: PackedStringArray = PackedStringArray()
+	lines.append("# %s  (%d bytes, formato desconocido)" % [path.get_file(), size])
+	lines.append("# Hex dump (primeros %d bytes):" % to_read)
+	var line := ""
+	for i in range(to_read):
+		if i > 0 and i % 16 == 0:
+			lines.append(line)
+			line = ""
+		line += "%02X " % data[i]
+	if not line.is_empty():
+		lines.append(line)
+	return "\n".join(lines)
