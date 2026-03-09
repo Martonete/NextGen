@@ -44,7 +44,6 @@ var _menu_ver: PopupMenu
 
 # Dialogs
 var _dlg_client_folder: FileDialog
-var _dlg_source_folder: FileDialog
 var _dlg_save_ind: FileDialog
 
 # Prefs
@@ -148,7 +147,6 @@ func _build_menu_bar() -> MenuBar:
 	var m_archivo := PopupMenu.new()
 	m_archivo.name = "Archivo"
 	m_archivo.add_item("Abrir carpeta Cliente...", 0, KEY_MASK_CTRL | KEY_O)
-	m_archivo.add_item("Abrir carpeta fuente...", 1)
 	m_archivo.add_separator()
 	m_archivo.add_item("Salir", 99, KEY_MASK_CTRL | KEY_Q)
 	m_archivo.id_pressed.connect(_on_archivo_menu)
@@ -195,12 +193,6 @@ func _build_dialogs() -> void:
 	_dlg_client_folder.dir_selected.connect(_load_client_folder)
 	add_child(_dlg_client_folder)
 
-	_dlg_source_folder = FileDialog.new()
-	_dlg_source_folder.access = FileDialog.ACCESS_FILESYSTEM
-	_dlg_source_folder.file_mode = FileDialog.FILE_MODE_OPEN_DIR
-	_dlg_source_folder.dir_selected.connect(_load_source_folder)
-	add_child(_dlg_source_folder)
-
 	_dlg_save_ind = FileDialog.new()
 	_dlg_save_ind.access = FileDialog.ACCESS_FILESYSTEM
 	_dlg_save_ind.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -214,7 +206,6 @@ func _build_dialogs() -> void:
 		var last: String = _recent_clients[0]
 		if DirAccess.dir_exists_absolute(last):
 			_dlg_client_folder.current_dir = last
-			_dlg_source_folder.current_dir = last
 
 
 func _connect_signals() -> void:
@@ -288,7 +279,6 @@ func _on_tool_changed(mode: int) -> void:
 func _on_archivo_menu(id: int) -> void:
 	match id:
 		0: _dlg_client_folder.popup_centered_ratio(0.7)
-		1: _dlg_source_folder.popup_centered_ratio(0.7)
 		99:
 			_save_session()
 			get_tree().quit()
@@ -383,13 +373,6 @@ func _load_client_folder(path: String) -> void:
 
 	_update_status("Cliente cargado: " + " | ".join(msgs))
 
-
-func _load_source_folder(path: String) -> void:
-	_using_client = false
-	_file_list._using_client = false
-	_file_list._filenum_base = _filenum_base
-	_file_list.load_folder(path)
-	_update_status("Carpeta cargada: %d imagenes en %s" % [_file_list.get_file_count(), path])
 
 
 # ── File selection ───────────────────────────────────────────────────────────
@@ -1368,8 +1351,6 @@ func _save_session() -> void:
 	# Last open folder
 	if not _client_graficos_path.is_empty():
 		_prefs.set_value("session", "last_client_path", _client_graficos_path)
-	elif not _graficos_folder_path.is_empty():
-		_prefs.set_value("session", "last_source_path", _graficos_folder_path)
 
 	# Last selected file
 	if not _current_image_path.is_empty():
@@ -1400,15 +1381,11 @@ func _restore_session() -> void:
 
 	# Restore client folder
 	var last_client: String = _prefs.get_value("session", "last_client_path", "")
-	var last_source: String = _prefs.get_value("session", "last_source_path", "")
 
 	if not last_client.is_empty() and DirAccess.dir_exists_absolute(last_client):
 		_load_client_folder(last_client)
-	elif not last_source.is_empty() and DirAccess.dir_exists_absolute(last_source):
-		_load_source_folder(last_source)
 	else:
-		# Folder moved or deleted — skip, user will open manually
-		if not last_client.is_empty() or not last_source.is_empty():
+		if not last_client.is_empty():
 			_update_status("Carpeta anterior no encontrada. Abre una nueva.")
 		return
 

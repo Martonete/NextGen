@@ -29,8 +29,13 @@ var _anim_time: float = 0.0
 var _anim_fps: float = 8.0
 var _anim_frame_idx: int = 0
 var _frames_for_anim: Array = []
-var _fx_in_preview: bool = false  # True when main preview shows an FX animation
+var _fx_in_preview: bool = false  # True when main preview shows FX/body animation
+var _body_in_preview: bool = false  # True when main preview shows body directions
+var _body_anims: Array = []  # Array of body animation dicts (one per heading)
+var _body_dir_tabs: HBoxContainer  # Norte/Este/Sur/Oeste tabs
+var _body_current_dir: int = 0  # Currently selected direction index
 
+var _props_popup: Window
 var _props_box: VBoxContainer
 var _spin_sx: SpinBox
 var _spin_sy: SpinBox
@@ -53,9 +58,14 @@ var _related_frames: Array = []  # frames from related animations (other images)
 var _confirm_index_idx: int = -1  # frame idx pending double-confirm
 var _confirm_index_btn: Button = null  # button in confirm state
 
-var _edit_anim_indices: LineEdit
-var _spin_anim_speed: SpinBox
 var _anim_section: VBoxContainer
+var _anim_creator_win: Window
+var _anim_avail_list: ItemList       # GRHs from current image
+var _anim_seq_list: ItemList         # Animation sequence (ordered)
+var _anim_seq_indices: Array[int] = []  # GRH indices in sequence
+var _anim_manual_spin: SpinBox
+var _anim_speed_spin: SpinBox
+var _anim_avail_grhs: Array[int] = []   # GRH indices matching available list items
 
 # ── Related animations section ──
 var _related_anims_box: VBoxContainer
@@ -106,6 +116,9 @@ func _ready() -> void:
 	_tabs.add_child(_build_frames_tab())
 	_tabs.add_child(_build_detect_tab())
 	_tabs.add_child(_build_data_tab())
+
+	# Deferred: add popup to root window (must be done after entering tree)
+	call_deferred("_attach_props_popup")
 
 
 # ── Public API ────────────────────────────────────────────────────
@@ -191,10 +204,13 @@ func show_frame_preview(idx: int) -> void:
 
 func _exit_fx_preview() -> void:
 	_fx_in_preview = false
+	_body_in_preview = false
 	_anim_playing = false
 	_btn_play.button_pressed = false
 	_btn_play.text = "Play"
 	_preview._textures.clear()
+	_body_dir_tabs.visible = false
+	_body_anims.clear()
 
 
 func process_animation(delta: float) -> void:
@@ -236,46 +252,143 @@ func update_related_animations(anims: Array) -> void:
 	_related_previews.clear()
 	_related_anim_data.clear()
 	_fx_in_preview = false
+	_body_in_preview = false
+	_body_anims.clear()
+	_body_dir_tabs.visible = false
 
 	if anims.is_empty():
 		_related_anims_box.visible = false
 		return
 
-	# Check if we have a single FX — promote it to the main preview
+	# Check if we have a single FX — promote to main preview
 	var fx_anims := anims.filter(func(a): return a.get("source", "") == "Fxs.ind")
 	if fx_anims.size() == 1 and anims.size() == 1:
-		var fx: Dictionary = fx_anims[0]
-		var frames: Array = fx.get("frames", [])
-		var speed: float = fx.get("speed", 100.0)
-		var safe_speed := maxf(speed, 10.0)
-		var fps := (frames.size() * 1000.0) / safe_speed
-
-		# Promote to main preview
-		_fx_in_preview = true
-		_frames_for_anim = frames
-		_preview.set_frames(frames)
-		if not frames.is_empty():
-			_preview.show_frame(0)
-		_anim_fps = fps
-		_anim_playing = true
-		_anim_time = 0.0
-		_anim_frame_idx = 0
-		_btn_play.button_pressed = true
-		_btn_play.text = "Pausa"
-		_spin_anim_fps.value = roundf(fps)
-		_lbl_anim_info.text = "FX %d — G%d — %d frames" % [fx.get("grh_index", 0), fx.get("grh_index", 0), frames.size()]
-
-		# Still show a small label in related section
-		_related_anims_box.visible = true
-		var info_lbl := IndexerTheme.label(
-			"FX %d reproduciendo en preview principal — G%d, %d frames, %.1f FPS" % [
-				fx.get("grh_index", 0), fx.get("grh_index", 0), frames.size(), fps],
-			IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
-		_related_anims_content.add_child(info_lbl)
+		_promote_fx_to_preview(fx_anims[0])
 		return
 
-	_related_anims_box.visible = true
+	# Check if all are body animations — promote to main preview with direction tabs
+	var body_anims := anims.filter(func(a): return a.get("source", "") == "Personajes.ind")
+	if body_anims.size() == anims.size() and body_anims.size() > 0:
+		_promote_body_to_preview(body_anims)
+		return
 
+	# Fallback: show each animation in its own preview (mixed FX + body or other)
+	_related_anims_box.visible = true
+	_build_related_anim_previews(anims)
+
+
+func _promote_fx_to_preview(fx: Dictionary) -> void:
+	var frames: Array = fx.get("frames", [])
+	var speed: float = fx.get("speed", 100.0)
+	var safe_speed := maxf(speed, 10.0)
+	var fps := (frames.size() * 1000.0) / safe_speed
+
+	_fx_in_preview = true
+	_frames_for_anim = frames
+	_preview.set_frames(frames)
+	if not frames.is_empty():
+		_preview.show_frame(0)
+	_anim_fps = fps
+	_anim_playing = true
+	_anim_time = 0.0
+	_anim_frame_idx = 0
+	_btn_play.button_pressed = true
+	_btn_play.text = "Pausa"
+	_spin_anim_fps.value = roundf(fps)
+	_lbl_anim_info.text = "FX %d — G%d — %d frames" % [fx.get("grh_index", 0), fx.get("grh_index", 0), frames.size()]
+
+	_related_anims_box.visible = true
+	var info_lbl := IndexerTheme.label(
+		"FX %d en preview — G%d, %d frames, %.1f FPS" % [
+			fx.get("grh_index", 0), fx.get("grh_index", 0), frames.size(), fps],
+		IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
+	_related_anims_content.add_child(info_lbl)
+
+
+func _promote_body_to_preview(anims: Array) -> void:
+	_body_in_preview = true
+	_fx_in_preview = true  # Reuse fx flag to prevent normal frame preview from overriding
+	_body_anims = anims
+
+	# Build per-direction data (fps, frames)
+	# Anims may come in groups of 4 (N/E/S/W) per body. Take the first body's 4 directions.
+	# Labels are "Body N — Norte", "Body N — Este", etc.
+	var dir_data: Array = []
+	for anim in anims:
+		var frames: Array = anim.get("frames", [])
+		var speed: float = anim.get("speed", 100.0)
+		var safe_speed := maxf(speed, 10.0)
+		var raw_fps := (frames.size() * 1000.0) / safe_speed
+		var fps := raw_fps * 0.7  # Body walk 0.7x slowdown
+		dir_data.append({
+			"label": anim.get("label", ""),
+			"grh_index": anim.get("grh_index", 0),
+			"frames": frames,
+			"fps": fps,
+			"speed": speed
+		})
+
+	_body_anims = dir_data
+
+	# Show direction tabs
+	_body_dir_tabs.visible = true
+	# Enable only available directions (some bodies may have < 4)
+	for i in range(4):
+		var btn: Button = _body_dir_tabs.get_child(i)
+		if i < dir_data.size():
+			btn.visible = true
+			btn.disabled = false
+		else:
+			btn.visible = false
+
+	# Select first direction
+	_body_current_dir = 0
+	_apply_body_direction(0)
+
+	# Show info in related section
+	_related_anims_box.visible = true
+	var info_parts: PackedStringArray = []
+	for d in dir_data:
+		info_parts.append("G%d %df" % [d.grh_index, d.frames.size()])
+	var info_lbl := IndexerTheme.label(
+		"Body en preview — " + ", ".join(info_parts),
+		IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
+	_related_anims_content.add_child(info_lbl)
+
+
+func _on_body_dir_selected(dir_idx: int) -> void:
+	if not _body_in_preview or dir_idx >= _body_anims.size():
+		return
+	_body_current_dir = dir_idx
+	# Update tab toggle states
+	for i in range(_body_dir_tabs.get_child_count()):
+		var btn: Button = _body_dir_tabs.get_child(i)
+		btn.set_pressed_no_signal(i == dir_idx)
+	_apply_body_direction(dir_idx)
+
+
+func _apply_body_direction(dir_idx: int) -> void:
+	if dir_idx >= _body_anims.size():
+		return
+	var d: Dictionary = _body_anims[dir_idx]
+	var frames: Array = d.frames
+	var fps: float = d.fps
+
+	_frames_for_anim = frames
+	_preview.set_frames(frames)
+	if not frames.is_empty():
+		_preview.show_frame(0)
+	_anim_fps = fps
+	_anim_playing = true
+	_anim_time = 0.0
+	_anim_frame_idx = 0
+	_btn_play.button_pressed = true
+	_btn_play.text = "Pausa"
+	_spin_anim_fps.value = roundf(fps)
+	_lbl_anim_info.text = "%s — G%d — %d frames" % [d.label, d.grh_index, frames.size()]
+
+
+func _build_related_anim_previews(anims: Array) -> void:
 	for anim in anims:
 		var label_text: String = anim.get("label", "Animación")
 		var frames: Array = anim.get("frames", [])
@@ -283,9 +396,6 @@ func update_related_animations(anims: Array) -> void:
 		var source: String = anim.get("source", "")
 		var grh_idx: int = anim.get("grh_index", 0)
 
-		# AO speed → FPS: speed is total cycle duration in ms.
-		# FPS = NumFrames * 1000 / Speed
-		# Body walk animations have a 0.7x slowdown in the client (Main.cs:3403)
 		var safe_speed := maxf(speed, 10.0)
 		var raw_fps := (frames.size() * 1000.0) / safe_speed
 		var anim_fps := raw_fps * 0.7 if source == "Personajes.ind" else raw_fps
@@ -298,12 +408,10 @@ func update_related_animations(anims: Array) -> void:
 		}
 		_related_anim_data.append(ad)
 
-		# Container for this animation
 		var section := VBoxContainer.new()
 		section.add_theme_constant_override("separation", 2)
 		_related_anims_content.add_child(section)
 
-		# Header row: label + source info
 		var header := HBoxContainer.new()
 		header.add_theme_constant_override("separation", 4)
 		section.add_child(header)
@@ -312,7 +420,6 @@ func update_related_animations(anims: Array) -> void:
 		var info_text := "G%d  %df  spd=%.0f  %.1fFPS" % [grh_idx, frames.size(), speed, anim_fps]
 		header.add_child(IndexerTheme.label(info_text, IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 
-		# Preview — generous height for visibility
 		var preview := FramePreviewPanel.new()
 		preview.custom_minimum_size = Vector2(0, 120)
 		preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -355,11 +462,8 @@ func load_init_files(folder: String) -> void:
 	_init_files.sort()
 
 
-func use_current_frames_for_anim(frames: Array) -> void:
-	var indices: PackedStringArray = PackedStringArray()
-	for f in frames:
-		indices.append(str(f.get("grh_index", 0)))
-	_edit_anim_indices.text = ", ".join(indices)
+func use_current_frames_for_anim(_frames: Array) -> void:
+	pass  # Legacy — now handled by anim creator window
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -377,6 +481,26 @@ func _build_frames_tab() -> Control:
 	var preview_vbox := VBoxContainer.new()
 	preview_vbox.add_theme_constant_override("separation", 3)
 	preview_section.add_child(preview_vbox)
+
+	# Direction tabs (hidden by default, shown for body animations)
+	_body_dir_tabs = HBoxContainer.new()
+	_body_dir_tabs.add_theme_constant_override("separation", 2)
+	_body_dir_tabs.visible = false
+	preview_vbox.add_child(_body_dir_tabs)
+	var dir_names := ["Norte", "Este", "Sur", "Oeste"]
+	for di in range(4):
+		var btn := Button.new()
+		btn.text = dir_names[di]
+		btn.toggle_mode = true
+		btn.button_pressed = (di == 0)
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		btn.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+		btn.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 3, 6, 2))
+		btn.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 3, 6, 2))
+		btn.add_theme_stylebox_override("pressed", IndexerTheme._flat_box(IndexerTheme.BG_TOOL_ACTIVE, 3, 6, 2))
+		var d_idx := di
+		btn.pressed.connect(func(): _on_body_dir_selected(d_idx))
+		_body_dir_tabs.add_child(btn)
 
 	_preview = FramePreviewPanel.new()
 	_preview.custom_minimum_size = Vector2(0, 140)
@@ -415,13 +539,32 @@ func _build_frames_tab() -> Control:
 	_lbl_anim_info = IndexerTheme.label("--", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM)
 	playbar.add_child(_lbl_anim_info)
 
-	# ── Properties (shown when a frame is selected) ──
+	# ── Properties popup (floats to the left of the inspector) ──
+	_props_popup = Window.new()
+	_props_popup.title = "Propiedades del frame"
+	_props_popup.unresizable = true
+	_props_popup.always_on_top = true
+	_props_popup.transient = true
+	_props_popup.exclusive = false
+	_props_popup.visible = false
+	_props_popup.wrap_controls = true
+	_props_popup.close_requested.connect(func(): _props_popup.hide())
+	# Dark background panel
+	var popup_bg := PanelContainer.new()
+	var popup_sb := StyleBoxFlat.new()
+	popup_sb.bg_color = IndexerTheme.BG_PANEL
+	popup_sb.border_color = IndexerTheme.ACCENT
+	popup_sb.set_border_width_all(1)
+	popup_sb.set_corner_radius_all(4)
+	popup_sb.set_content_margin_all(8)
+	popup_bg.add_theme_stylebox_override("panel", popup_sb)
+	popup_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_props_popup.add_child(popup_bg)
+
 	_props_box = VBoxContainer.new()
 	_props_box.add_theme_constant_override("separation", 4)
-	_props_box.visible = false
-	root.add_child(_props_box)
+	popup_bg.add_child(_props_box)
 
-	# Subtle separator
 	var props_header := HBoxContainer.new()
 	props_header.add_theme_constant_override("separation", 6)
 	_props_box.add_child(props_header)
@@ -430,60 +573,57 @@ func _build_frames_tab() -> Control:
 	_lbl_prop_info = IndexerTheme.label("", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM)
 	props_header.add_child(_lbl_prop_info)
 
-	var props_section := IndexerTheme.section_box(5)
-	_props_box.add_child(props_section)
-	var props_inner := VBoxContainer.new()
-	props_inner.add_theme_constant_override("separation", 4)
-	props_section.add_child(props_inner)
-
 	var grid := GridContainer.new()
-	grid.columns = 6
-	grid.add_theme_constant_override("h_separation", 3)
-	grid.add_theme_constant_override("v_separation", 3)
-	props_inner.add_child(grid)
+	grid.columns = 4
+	grid.add_theme_constant_override("h_separation", 4)
+	grid.add_theme_constant_override("v_separation", 4)
+	_props_box.add_child(grid)
+
+	grid.add_child(IndexerTheme.label("GRH", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM))
+	_spin_grh = IndexerTheme.spinbox(1, 999999, 1, func(_v): _on_props_changed())
+	_spin_grh.custom_minimum_size.x = 72
+	grid.add_child(_spin_grh)
+	grid.add_child(Control.new())
+	grid.add_child(Control.new())
 
 	grid.add_child(IndexerTheme.label("X", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_sx = IndexerTheme.spinbox(0, 16383, 0, func(_v): _on_props_changed())
-	_spin_sx.custom_minimum_size.x = 58
+	_spin_sx.custom_minimum_size.x = 64
 	grid.add_child(_spin_sx)
 	grid.add_child(IndexerTheme.label("Y", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_sy = IndexerTheme.spinbox(0, 16383, 0, func(_v): _on_props_changed())
-	_spin_sy.custom_minimum_size.x = 58
+	_spin_sy.custom_minimum_size.x = 64
 	grid.add_child(_spin_sy)
-	grid.add_child(IndexerTheme.label("GRH", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM))
-	_spin_grh = IndexerTheme.spinbox(1, 999999, 1, func(_v): _on_props_changed())
-	_spin_grh.custom_minimum_size.x = 68
-	grid.add_child(_spin_grh)
 
 	grid.add_child(IndexerTheme.label("W", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_fw = IndexerTheme.spinbox(1, 16383, 32, func(_v): _on_props_changed())
-	_spin_fw.custom_minimum_size.x = 58
+	_spin_fw.custom_minimum_size.x = 64
 	grid.add_child(_spin_fw)
 	grid.add_child(IndexerTheme.label("H", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_fh = IndexerTheme.spinbox(1, 16383, 32, func(_v): _on_props_changed())
-	_spin_fh.custom_minimum_size.x = 58
+	_spin_fh.custom_minimum_size.x = 64
 	grid.add_child(_spin_fh)
-	# Empty cells for alignment
-	grid.add_child(Control.new())
-	grid.add_child(Control.new())
 
-	# Action row: delete + split
+	# Action rows
 	var action_row := HBoxContainer.new()
 	action_row.add_theme_constant_override("separation", 4)
-	props_inner.add_child(action_row)
+	_props_box.add_child(action_row)
 
 	action_row.add_child(IndexerTheme.danger_button("Eliminar", func(): frame_deleted.emit(-1)))
+	action_row.add_child(IndexerTheme.spacer())
 
-	action_row.add_child(IndexerTheme.separator_v())
-	action_row.add_child(IndexerTheme.label("Dividir:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	var split_row := HBoxContainer.new()
+	split_row.add_theme_constant_override("separation", 4)
+	_props_box.add_child(split_row)
+	split_row.add_child(IndexerTheme.label("Dividir:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_split_w = IndexerTheme.spinbox(1, 2048, 32)
 	_spin_split_w.custom_minimum_size.x = 52
-	action_row.add_child(_spin_split_w)
-	action_row.add_child(IndexerTheme.label("x", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	split_row.add_child(_spin_split_w)
+	split_row.add_child(IndexerTheme.label("x", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_split_h = IndexerTheme.spinbox(1, 2048, 32)
 	_spin_split_h.custom_minimum_size.x = 52
-	action_row.add_child(_spin_split_h)
-	action_row.add_child(IndexerTheme.button("Cortar", _on_split_btn, IndexerTheme.TEXT_ACCENT))
+	split_row.add_child(_spin_split_h)
+	split_row.add_child(IndexerTheme.button("Cortar", _on_split_btn, IndexerTheme.TEXT_ACCENT))
 
 	# ── Resizable split: frame list (top) + related anims + anim creator (bottom) ──
 	var split := VSplitContainer.new()
@@ -544,37 +684,17 @@ func _build_frames_tab() -> Control:
 	_related_anims_content.add_theme_constant_override("separation", 4)
 	_related_anims_box.add_child(_related_anims_content)
 
-	# Animation creator
+	# Animation creator — just a button that opens the full dialog
 	bottom_content.add_child(IndexerTheme.separator_h())
 
 	_anim_section = VBoxContainer.new()
 	_anim_section.add_theme_constant_override("separation", 3)
 	bottom_content.add_child(_anim_section)
 
-	_anim_section.add_child(IndexerTheme.section_label("Crear GRH animado"))
+	_anim_section.add_child(IndexerTheme.primary_button("Crear GRH Animado...", _open_anim_creator))
 
-	var anim_inner := IndexerTheme.section_box(4)
-	_anim_section.add_child(anim_inner)
-	var anim_vbox := VBoxContainer.new()
-	anim_vbox.add_theme_constant_override("separation", 3)
-	anim_inner.add_child(anim_vbox)
-
-	_edit_anim_indices = LineEdit.new()
-	_edit_anim_indices.placeholder_text = "GRH indices: 1001, 1002, 1003..."
-	_edit_anim_indices.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	anim_vbox.add_child(_edit_anim_indices)
-
-	var anim_row := HBoxContainer.new()
-	anim_row.add_theme_constant_override("separation", 4)
-	anim_vbox.add_child(anim_row)
-	anim_row.add_child(IndexerTheme.label("Speed:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	_spin_anim_speed = IndexerTheme.spinbox(0.001, 999.0, 8.0)
-	_spin_anim_speed.step = 0.1
-	_spin_anim_speed.custom_minimum_size.x = 58
-	anim_row.add_child(_spin_anim_speed)
-	anim_row.add_child(IndexerTheme.spacer())
-	anim_row.add_child(IndexerTheme.button("Usar frames", _on_use_frames_btn, IndexerTheme.TEXT_MUTED))
-	anim_row.add_child(IndexerTheme.success_button("Crear", _on_create_anim_btn))
+	# Build the animation creator window (hidden until button pressed)
+	_build_anim_creator_window()
 
 	return root
 
@@ -752,9 +872,31 @@ func _build_data_tab() -> Control:
 
 # ── Internal helpers ──────────────────────────────────────────────
 
-func _show_props(visible: bool) -> void:
-	if _props_box != null:
-		_props_box.visible = visible
+func _attach_props_popup() -> void:
+	if _props_popup == null or _props_popup.is_inside_tree():
+		return
+	get_tree().root.add_child(_props_popup)
+	_props_popup.visible = false
+
+
+func _show_props(vis: bool) -> void:
+	if _props_popup == null or not _props_popup.is_inside_tree():
+		return
+	if not vis:
+		_props_popup.visible = false
+		return
+	# Position to the left of the inspector panel
+	var inspector_rect := get_global_rect()
+	var popup_w := 280
+	var popup_h := 240
+	var px := int(inspector_rect.position.x) - popup_w - 8
+	var py := int(inspector_rect.position.y) + 40
+	# Clamp to screen
+	if px < 4:
+		px = 4
+	_props_popup.position = Vector2i(px, py)
+	_props_popup.size = Vector2i(popup_w, popup_h)
+	_props_popup.visible = true
 
 
 func _rebuild_frame_list(frames: Array, selected: int) -> void:
@@ -972,22 +1114,199 @@ func _on_split_btn() -> void:
 	split_frame_pressed.emit(int(_spin_split_w.value), int(_spin_split_h.value))
 
 
-func _on_use_frames_btn() -> void:
-	var indices: PackedStringArray = PackedStringArray()
+func _build_anim_creator_window() -> void:
+	_anim_creator_win = Window.new()
+	_anim_creator_win.title = "Crear GRH Animado"
+	_anim_creator_win.unresizable = false
+	_anim_creator_win.always_on_top = true
+	_anim_creator_win.transient = true
+	_anim_creator_win.exclusive = false
+	_anim_creator_win.visible = false
+	_anim_creator_win.wrap_controls = true
+	_anim_creator_win.size = Vector2i(480, 420)
+	_anim_creator_win.close_requested.connect(func(): _anim_creator_win.hide())
+
+	var bg := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = IndexerTheme.BG_PANEL
+	sb.set_content_margin_all(8)
+	bg.add_theme_stylebox_override("panel", sb)
+	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_anim_creator_win.add_child(bg)
+
+	var main_vbox := VBoxContainer.new()
+	main_vbox.add_theme_constant_override("separation", 6)
+	bg.add_child(main_vbox)
+
+	# ── Top: two columns (available | sequence) ──
+	var hsplit := HSplitContainer.new()
+	hsplit.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_vbox.add_child(hsplit)
+
+	# Left: Available GRHs from current image
+	var left := VBoxContainer.new()
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.add_theme_constant_override("separation", 2)
+	hsplit.add_child(left)
+
+	left.add_child(IndexerTheme.label("GRHs disponibles", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_MD))
+	left.add_child(IndexerTheme.label("Click para agregar", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+
+	_anim_avail_list = ItemList.new()
+	_anim_avail_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_anim_avail_list.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+	_anim_avail_list.item_activated.connect(_on_anim_avail_activated)
+	left.add_child(_anim_avail_list)
+
+	# Right: Animation sequence
+	var right := VBoxContainer.new()
+	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	right.add_theme_constant_override("separation", 2)
+	hsplit.add_child(right)
+
+	right.add_child(IndexerTheme.label("Secuencia", IndexerTheme.TEXT_SUCCESS, IndexerTheme.FONT_SIZE_MD))
+
+	var seq_btns := HBoxContainer.new()
+	seq_btns.add_theme_constant_override("separation", 3)
+	right.add_child(seq_btns)
+	seq_btns.add_child(IndexerTheme.icon_button("^", _on_anim_seq_move_up, "Subir", 24))
+	seq_btns.add_child(IndexerTheme.icon_button("v", _on_anim_seq_move_down, "Bajar", 24))
+	seq_btns.add_child(IndexerTheme.spacer())
+	seq_btns.add_child(IndexerTheme.danger_button("Quitar", _on_anim_seq_remove))
+	seq_btns.add_child(IndexerTheme.danger_button("Limpiar", _on_anim_seq_clear))
+
+	_anim_seq_list = ItemList.new()
+	_anim_seq_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_anim_seq_list.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+	right.add_child(_anim_seq_list)
+
+	# ── Bottom: manual add + speed + save ──
+	var bottom := VBoxContainer.new()
+	bottom.add_theme_constant_override("separation", 4)
+	main_vbox.add_child(bottom)
+
+	# Manual GRH add row
+	var manual_row := HBoxContainer.new()
+	manual_row.add_theme_constant_override("separation", 4)
+	bottom.add_child(manual_row)
+	manual_row.add_child(IndexerTheme.label("GRH manual:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	_anim_manual_spin = IndexerTheme.spinbox(1, 999999, 1)
+	_anim_manual_spin.custom_minimum_size.x = 80
+	manual_row.add_child(_anim_manual_spin)
+	manual_row.add_child(IndexerTheme.button("Agregar", _on_anim_manual_add, IndexerTheme.TEXT_ACCENT))
+	manual_row.add_child(IndexerTheme.spacer())
+
+	# Speed + Save row
+	var save_row := HBoxContainer.new()
+	save_row.add_theme_constant_override("separation", 4)
+	bottom.add_child(save_row)
+	save_row.add_child(IndexerTheme.label("Speed (ms):", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	_anim_speed_spin = IndexerTheme.spinbox(10, 99999, 500)
+	_anim_speed_spin.step = 10
+	_anim_speed_spin.custom_minimum_size.x = 80
+	save_row.add_child(_anim_speed_spin)
+	save_row.add_child(IndexerTheme.spacer())
+	save_row.add_child(IndexerTheme.success_button("Guardar en GrhIndex", _on_anim_save))
+
+
+func _open_anim_creator() -> void:
+	if _anim_creator_win == null:
+		return
+	# Attach to tree if needed
+	if not _anim_creator_win.is_inside_tree():
+		get_tree().root.add_child(_anim_creator_win)
+
+	# Populate available GRHs from current image's frames
+	_anim_avail_list.clear()
+	_anim_avail_grhs.clear()
 	for f in _frames_for_anim:
-		indices.append(str(f.get("grh_index", 0)))
-	_edit_anim_indices.text = ", ".join(indices)
+		var grh_idx: int = f.get("grh_index", 0)
+		if grh_idx > 0:
+			_anim_avail_grhs.append(grh_idx)
+			var w: int = f.get("w", 0)
+			var h: int = f.get("h", 0)
+			_anim_avail_list.add_item("GRH %d  (%dx%d)" % [grh_idx, w, h])
+
+	# Clear sequence
+	_anim_seq_indices.clear()
+	_anim_seq_list.clear()
+
+	# Position and show
+	var inspector_rect := get_global_rect()
+	var wx := int(inspector_rect.position.x) - 490
+	if wx < 4:
+		wx = 4
+	var wy := int(inspector_rect.position.y) + 20
+	_anim_creator_win.position = Vector2i(wx, wy)
+	_anim_creator_win.visible = true
 
 
-func _on_create_anim_btn() -> void:
-	var parts := _edit_anim_indices.text.split(",")
-	var indices: Array[int] = []
-	for p in parts:
-		var v := p.strip_edges().to_int()
-		if v > 0:
-			indices.append(v)
-	if indices.size() >= 2:
-		create_anim_pressed.emit(indices, _spin_anim_speed.value)
+func _on_anim_avail_activated(idx: int) -> void:
+	if idx < 0 or idx >= _anim_avail_grhs.size():
+		return
+	var grh_idx: int = _anim_avail_grhs[idx]
+	_anim_seq_indices.append(grh_idx)
+	_anim_seq_list.add_item("GRH %d" % grh_idx)
+
+
+func _on_anim_manual_add() -> void:
+	var grh_idx := int(_anim_manual_spin.value)
+	if grh_idx > 0:
+		_anim_seq_indices.append(grh_idx)
+		_anim_seq_list.add_item("GRH %d (manual)" % grh_idx)
+
+
+func _on_anim_seq_remove() -> void:
+	var sel := _anim_seq_list.get_selected_items()
+	if sel.is_empty():
+		return
+	var idx: int = sel[0]
+	_anim_seq_indices.remove_at(idx)
+	_anim_seq_list.remove_item(idx)
+
+
+func _on_anim_seq_clear() -> void:
+	_anim_seq_indices.clear()
+	_anim_seq_list.clear()
+
+
+func _on_anim_seq_move_up() -> void:
+	var sel := _anim_seq_list.get_selected_items()
+	if sel.is_empty() or sel[0] <= 0:
+		return
+	var idx: int = sel[0]
+	# Swap in data
+	var tmp: int = _anim_seq_indices[idx]
+	_anim_seq_indices[idx] = _anim_seq_indices[idx - 1]
+	_anim_seq_indices[idx - 1] = tmp
+	# Swap in list
+	var text_a := _anim_seq_list.get_item_text(idx)
+	var text_b := _anim_seq_list.get_item_text(idx - 1)
+	_anim_seq_list.set_item_text(idx, text_b)
+	_anim_seq_list.set_item_text(idx - 1, text_a)
+	_anim_seq_list.select(idx - 1)
+
+
+func _on_anim_seq_move_down() -> void:
+	var sel := _anim_seq_list.get_selected_items()
+	if sel.is_empty() or sel[0] >= _anim_seq_indices.size() - 1:
+		return
+	var idx: int = sel[0]
+	var tmp: int = _anim_seq_indices[idx]
+	_anim_seq_indices[idx] = _anim_seq_indices[idx + 1]
+	_anim_seq_indices[idx + 1] = tmp
+	var text_a := _anim_seq_list.get_item_text(idx)
+	var text_b := _anim_seq_list.get_item_text(idx + 1)
+	_anim_seq_list.set_item_text(idx, text_b)
+	_anim_seq_list.set_item_text(idx + 1, text_a)
+	_anim_seq_list.select(idx + 1)
+
+
+func _on_anim_save() -> void:
+	if _anim_seq_indices.size() < 2:
+		return
+	create_anim_pressed.emit(_anim_seq_indices.duplicate(), _anim_speed_spin.value)
+	_anim_creator_win.hide()
 
 
 func _on_props_changed() -> void:
