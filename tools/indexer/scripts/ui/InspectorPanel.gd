@@ -14,6 +14,7 @@ signal split_frame_pressed(cell_w: int, cell_h: int)
 signal save_init_pressed(path: String, content: String)
 signal add_manual_frame_pressed
 signal index_frame_pressed(idx: int)
+signal view_file_num_pressed(file_num: int, grh_index: int)
 signal next_grh_changed(val: int)
 
 var _tabs: TabContainer
@@ -46,6 +47,9 @@ var _frame_list_vbox: VBoxContainer
 var _lbl_frame_count: Label
 var _grh_entries: Dictionary = {}  # grh_index → entry (from Graficos.ind)
 var _current_texture: ImageTexture = null
+var _related_textures: Dictionary = {}  # file_num → ImageTexture (for remote frame thumbnails)
+var _current_file_num: int = 0
+var _related_frames: Array = []  # frames from related animations (other images)
 var _confirm_index_idx: int = -1  # frame idx pending double-confirm
 var _confirm_index_btn: Button = null  # button in confirm state
 
@@ -147,6 +151,18 @@ func set_grh_entries(entries: Dictionary) -> void:
 
 func set_current_texture(tex: ImageTexture) -> void:
 	_current_texture = tex
+
+
+func set_current_file_num(fnum: int) -> void:
+	_current_file_num = fnum
+
+
+func set_related_frames(frames: Array) -> void:
+	_related_frames = frames
+
+
+func set_related_textures_for_list(textures: Dictionary) -> void:
+	_related_textures = textures
 
 
 func set_grh_data(max_idx: int, count: int) -> void:
@@ -747,67 +763,122 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 	_confirm_index_idx = -1
 	_confirm_index_btn = null
 
-	# Count indexed vs total
-	var indexed_count := 0
-	for f in frames:
-		if _grh_entries.has(f.get("grh_index", 0)):
-			indexed_count += 1
-	_lbl_frame_count.text = "%d frames" % frames.size()
-	_lbl_grh_info.text = "%d indexados" % indexed_count if indexed_count > 0 else ""
-
+	# Build combined list: local frames + related remote frames
+	# Each entry: {frame, local_idx (or -1), is_local, file_num}
+	var combined: Array = []
 	for i in range(frames.size()):
-		var f: Dictionary = frames[i]
-		var is_sel := (i == selected)
+		combined.append({
+			"frame": frames[i],
+			"local_idx": i,
+			"is_local": true,
+			"file_num": frames[i].get("file_num", _current_file_num)
+		})
+
+	# Add related frames from other images (skip those already in local frames)
+	var local_grhs: Dictionary = {}
+	for f in frames:
+		local_grhs[f.get("grh_index", 0)] = true
+	for rf in _related_frames:
+		var rf_fnum: int = rf.get("file_num", 0)
+		var rf_grh: int = rf.get("grh_index", 0)
+		if rf_fnum != _current_file_num and not local_grhs.has(rf_grh):
+			combined.append({
+				"frame": rf,
+				"local_idx": -1,
+				"is_local": false,
+				"file_num": rf_fnum
+			})
+			local_grhs[rf_grh] = true  # Prevent dupes
+
+	# Count stats
+	var indexed_count := 0
+	var local_count := 0
+	for entry in combined:
+		var grh_idx: int = entry.frame.get("grh_index", 0)
+		if _grh_entries.has(grh_idx):
+			indexed_count += 1
+		if entry.is_local:
+			local_count += 1
+	_lbl_frame_count.text = "%d frames" % local_count
+	var extra := combined.size() - local_count
+	var info_parts: PackedStringArray = []
+	if indexed_count > 0:
+		info_parts.append("%d indexados" % indexed_count)
+	if extra > 0:
+		info_parts.append("+%d relacionados" % extra)
+	_lbl_grh_info.text = "  ".join(info_parts)
+
+	for ci in range(combined.size()):
+		var entry: Dictionary = combined[ci]
+		var f: Dictionary = entry.frame
+		var is_local: bool = entry.is_local
+		var local_idx: int = entry.local_idx
+		var fnum: int = entry.file_num
+		var is_sel := is_local and (local_idx == selected)
 		var grh_idx: int = f.get("grh_index", 0)
 		var is_indexed: bool = _grh_entries.has(grh_idx)
+		var is_remote := not is_local
 
-		# Row container with background for selected
+		# Row background
 		var row_bg := StyleBoxFlat.new()
 		if is_sel:
 			row_bg.bg_color = IndexerTheme.BG_SELECTED
+		elif is_remote:
+			row_bg.bg_color = Color(0.15, 0.13, 0.18)  # Subtle purple tint for remote
 		else:
 			row_bg.bg_color = Color.TRANSPARENT
 		row_bg.set_corner_radius_all(3)
-		row_bg.content_margin_left = 2
-		row_bg.content_margin_right = 2
-		row_bg.content_margin_top = 1
-		row_bg.content_margin_bottom = 1
+		row_bg.content_margin_left = 3
+		row_bg.content_margin_right = 3
+		row_bg.content_margin_top = 2
+		row_bg.content_margin_bottom = 2
 
 		var panel := PanelContainer.new()
 		panel.add_theme_stylebox_override("panel", row_bg)
 		panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 3)
-		panel.add_child(row)
+		var outer := HBoxContainer.new()
+		outer.add_theme_constant_override("separation", 4)
+		panel.add_child(outer)
 
-		# Thumbnail
-		if _current_texture != null:
+		# Thumbnail (larger: 36x36)
+		var tex: ImageTexture = _current_texture if is_local else _related_textures.get(fnum, null)
+		if tex != null:
 			var preview_rect := TextureRect.new()
 			var atlas := AtlasTexture.new()
-			atlas.atlas = _current_texture
+			atlas.atlas = tex
 			atlas.region = Rect2(f.get("sx", 0), f.get("sy", 0), f.get("w", 32), f.get("h", 32))
 			preview_rect.texture = atlas
 			preview_rect.expand_mode = TextureRect.EXPAND_FIT_WIDTH_PROPORTIONAL
 			preview_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			preview_rect.custom_minimum_size = Vector2(28, 28)
-			row.add_child(preview_rect)
+			preview_rect.custom_minimum_size = Vector2(36, 36)
+			outer.add_child(preview_rect)
 
-		# Info: GRH + pos + size
-		var info_text := "G%d  (%d,%d)  %dx%d" % [grh_idx, f.get("sx", 0), f.get("sy", 0), f.get("w", 0), f.get("h", 0)]
-		var text_col := Color.WHITE if is_sel else IndexerTheme.TEXT_PRIMARY
-		var lbl := IndexerTheme.label(info_text, text_col, IndexerTheme.FONT_SIZE_SM)
-		lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		lbl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		row.add_child(lbl)
+		# Two-line info: line1 = filename + GRH, line2 = offsets + size
+		var info_col := VBoxContainer.new()
+		info_col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		info_col.add_theme_constant_override("separation", 0)
+		outer.add_child(info_col)
 
-		# Status badge: indexed or not
+		# Line 1: (filename.png) — GRH<num>
+		var line1 := HBoxContainer.new()
+		line1.add_theme_constant_override("separation", 4)
+		info_col.add_child(line1)
+
+		var fname_text := "(%d.png)" % fnum
+		var fname_col := IndexerTheme.TEXT_WARNING if is_remote else (Color.WHITE if is_sel else IndexerTheme.TEXT_SECONDARY)
+		line1.add_child(IndexerTheme.label(fname_text, fname_col, IndexerTheme.FONT_SIZE_SM))
+
+		var grh_text := "GRH %d" % grh_idx
+		var grh_col := Color.WHITE if is_sel else IndexerTheme.TEXT_PRIMARY
+		var grh_lbl := IndexerTheme.label(grh_text, grh_col, IndexerTheme.FONT_SIZE_MD)
+		grh_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		line1.add_child(grh_lbl)
+
+		# Indexed badge on line 1
 		if is_indexed:
-			var badge := IndexerTheme.label("INDEXADO", IndexerTheme.TEXT_SUCCESS, 9)
-			badge.tooltip_text = "Indexado en Graficos.ind"
-			row.add_child(badge)
-		else:
-			# "Indexar" button with double confirmation
+			line1.add_child(IndexerTheme.label("INDEXADO", IndexerTheme.TEXT_SUCCESS, 9))
+		elif is_local:
 			var btn_idx := Button.new()
 			btn_idx.text = "+"
 			btn_idx.tooltip_text = "Agregar a Graficos.ind (doble click)"
@@ -816,20 +887,39 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 			btn_idx.add_theme_color_override("font_color", IndexerTheme.TEXT_WARNING)
 			btn_idx.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 2, 2, 1))
 			btn_idx.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 2, 2, 1))
-			btn_idx.pressed.connect(_on_index_frame_btn.bind(i, btn_idx))
-			row.add_child(btn_idx)
+			btn_idx.pressed.connect(_on_index_frame_btn.bind(local_idx, btn_idx))
+			line1.add_child(btn_idx)
 
-		# Select button (non-selected only)
-		if not is_sel:
-			var btn_sel := IndexerTheme.icon_button("Seleccionar", func(): frame_selected.emit(i), "Seleccionar frame", 72)
+		# Line 2: offsets + size
+		var line2_text := "pos (%d, %d)  —  %d x %d px" % [f.get("sx", 0), f.get("sy", 0), f.get("w", 0), f.get("h", 0)]
+		var line2_col := Color(0.75, 0.75, 0.78) if is_sel else IndexerTheme.TEXT_MUTED
+		info_col.add_child(IndexerTheme.label(line2_text, line2_col, IndexerTheme.FONT_SIZE_SM))
+
+		# Action buttons
+		var btn_col := VBoxContainer.new()
+		btn_col.add_theme_constant_override("separation", 1)
+		outer.add_child(btn_col)
+
+		if is_remote:
+			# "Ver" button — navigates to that graphic
+			var r_fnum := fnum
+			var r_grh := grh_idx
+			var btn_ver := IndexerTheme.icon_button("Ver", func(): view_file_num_pressed.emit(r_fnum, r_grh), "Abrir gráfico %d" % fnum, 32)
+			btn_ver.add_theme_font_size_override("font_size", 9)
+			btn_ver.add_theme_color_override("font_color", IndexerTheme.TEXT_ACCENT)
+			btn_col.add_child(btn_ver)
+		elif not is_sel:
+			var l_idx := local_idx
+			var btn_sel := IndexerTheme.icon_button("Sel", func(): frame_selected.emit(l_idx), "Seleccionar", 32)
 			btn_sel.add_theme_font_size_override("font_size", 9)
-			row.add_child(btn_sel)
+			btn_col.add_child(btn_sel)
 
-		# Delete X
-		var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(i), "Eliminar", 22)
-		btn_del.add_theme_font_size_override("font_size", 9)
-		btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
-		row.add_child(btn_del)
+		if is_local:
+			var l_idx2 := local_idx
+			var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(l_idx2), "Eliminar", 22)
+			btn_del.add_theme_font_size_override("font_size", 9)
+			btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
+			btn_col.add_child(btn_del)
 
 		_frame_list_vbox.add_child(panel)
 

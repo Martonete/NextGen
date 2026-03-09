@@ -94,6 +94,29 @@ func get_file_path(idx: int) -> String:
 	return ""
 
 
+func select_by_file_num(fnum: int) -> void:
+	for i in range(_all_files.size()):
+		var path := _all_files[i]
+		if get_file_num(path) == fnum:
+			# Find in filtered list
+			for j in range(_filtered_indices.size()):
+				if _filtered_indices[j] == i:
+					_file_list.select(j)
+					_file_list.ensure_current_is_visible()
+					file_selected.emit(path, fnum)
+					return
+			# Not in current filter — clear filter first
+			_search_edit.text = ""
+			_apply_filter()
+			for j in range(_filtered_indices.size()):
+				if _filtered_indices[j] == i:
+					_file_list.select(j)
+					_file_list.ensure_current_is_visible()
+					file_selected.emit(path, fnum)
+					return
+			return
+
+
 func get_file_num(path: String) -> int:
 	if _using_client:
 		var basename := path.get_file().get_basename()

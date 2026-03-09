@@ -250,6 +250,7 @@ func _connect_signals() -> void:
 	_inspector.save_init_pressed.connect(_on_save_init_file)
 	_inspector.add_manual_frame_pressed.connect(_on_add_manual_frame)
 	_inspector.index_frame_pressed.connect(_on_index_single_frame)
+	_inspector.view_file_num_pressed.connect(_on_view_file_num)
 	_inspector.next_grh_changed.connect(func(v): _next_grh_index = v)
 
 
@@ -439,7 +440,13 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	# Detect related animations (bodies, FXs) that use GRHs from this image
 	var related := _find_related_animations(file_num)
 	_inspector.update_related_animations(related)
-	# Load per-file_num textures for each related animation preview
+	# Collect all related frames for the unified frame list
+	var all_related_frames: Array = []
+	for anim in related:
+		for fr in anim.get("frames", []):
+			all_related_frames.append(fr)
+	_inspector.set_related_frames(all_related_frames)
+	# Load per-file_num textures for each related animation preview + frame list thumbnails
 	_load_related_textures(related, file_num, img)
 
 	var related_info := ""
@@ -901,6 +908,7 @@ func _refresh_all() -> void:
 	_canvas.set_selected(_selected_frame_idx)
 	_inspector.set_grh_entries(_grh_data["entries"])
 	_inspector.set_current_texture(_current_texture)
+	_inspector.set_current_file_num(_current_file_num)
 	_inspector.update_frames(_current_frames, _selected_frame_idx)
 	if _selected_frame_idx >= 0 and _selected_frame_idx < _current_frames.size():
 		_inspector.update_selected_props(_current_frames[_selected_frame_idx])
@@ -949,6 +957,22 @@ func _on_index_single_frame(idx: int) -> void:
 	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
 	_refresh_all()
 	_update_status("GRH %d indexado. Total: %d entradas." % [frame.grh_index, _grh_data["entries"].size()])
+
+
+## Navigate to another graphic file and optionally select a frame by GRH index.
+var _pending_select_grh: int = 0
+
+func _on_view_file_num(file_num: int, grh_index: int) -> void:
+	_pending_select_grh = grh_index
+	_file_list.select_by_file_num(file_num)
+	# After file loads, select the frame matching grh_index
+	if _pending_select_grh > 0:
+		for i in range(_current_frames.size()):
+			if _current_frames[i].get("grh_index", 0) == _pending_select_grh:
+				_selected_frame_idx = i
+				_refresh_all()
+				break
+		_pending_select_grh = 0
 
 
 # ── Save ─────────────────────────────────────────────────────────────────────
@@ -1188,6 +1212,15 @@ func _load_related_textures(related: Array, current_file_num: int, current_img: 
 			if fnum > 0 and img_cache.has(fnum):
 				textures[fnum] = ImageTexture.create_from_image(img_cache[fnum])
 		_inspector._preview.set_textures(textures)
+
+	# Build a global file_num → texture dict for frame list thumbnails
+	var list_textures: Dictionary = {}
+	for fnum in img_cache:
+		if fnum != current_file_num:
+			list_textures[fnum] = ImageTexture.create_from_image(img_cache[fnum])
+	_inspector.set_related_textures_for_list(list_textures)
+	# Re-render frame list now that textures are available
+	_inspector._rebuild_frame_list(_current_frames, _selected_frame_idx)
 
 
 func _load_personajes_ind(path: String) -> Array:
