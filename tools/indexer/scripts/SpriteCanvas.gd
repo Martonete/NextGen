@@ -1,0 +1,576 @@
+## SpriteCanvas.gd — Canvas interactivo con hover-detection de sprites
+
+class_name SpriteCanvas
+extends Control
+
+signal frame_drawn(rect: Rect2)                     # Frame dibujado manualmente
+signal frame_selected(index: int)                   # Frame existente clickeado (-1 = deselect)
+signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para agregar
+signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
+signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
+
+# ── Imagen ───────────────────────────────────────────────────────────────────
+
+var _texture: ImageTexture = null
+var _image_size := Vector2.ZERO
+
+# ── Blob map (pre-computado al cargar imagen) ─────────────────────────────────
+
+var _blob_map: PackedInt32Array = PackedInt32Array()
+var _blob_rects: Array = []             # Array of Rect2i
+var _blob_id_to_rect: PackedInt32Array = PackedInt32Array()
+var _blob_map_w: int = 0
+var _hover_rect: Rect2i = Rect2i()      # Rect del blob bajo el cursor (vacío=nada)
+
+# ── Frames definidos ──────────────────────────────────────────────────────────
+
+var _frames: Array = []
+var _selected_frame: int = -1
+
+# ── Zoom / Pan ────────────────────────────────────────────────────────────────
+
+var _zoom := 1.0
+var _pan  := Vector2.ZERO
+var _panning  := false
+var _pan_start := Vector2.ZERO
+var _pan_start_offset := Vector2.ZERO
+
+# ── Dibujo manual ────────────────────────────────────────────────────────────
+
+var _drawing    := false
+var _draw_start_img  := Vector2.ZERO
+var _draw_cur_img    := Vector2.ZERO
+var _press_pos_screen := Vector2.ZERO   # para distinguir click vs drag
+const DRAG_THRESHOLD := 5.0
+
+# ── Resize handles ────────────────────────────────────────────────────────────
+# Handles: 0=TL 1=T 2=TR 3=R 4=BR 5=B 6=BL 7=L
+
+const HANDLE_R := 6.0      # radio en pixels de pantalla
+var _resize_active: bool = false
+var _resize_handle: int = -1
+var _resize_frame_orig: Rect2 = Rect2()
+var _resize_mouse_start_img: Vector2 = Vector2.ZERO
+var _resize_live: Rect2 = Rect2()   # rect en imagen durante el drag
+
+# ── Mover frame ───────────────────────────────────────────────────────────────
+
+var _move_active: bool = false
+var _move_frame_orig: Rect2 = Rect2()
+var _move_mouse_start_img: Vector2 = Vector2.ZERO
+var _move_live_pos: Vector2 = Vector2.ZERO  # top-left en imagen durante el drag
+
+# ── Snap ─────────────────────────────────────────────────────────────────────
+# snap_mode: 0=ninguno  1=multiplo  2=potencia-de-2 (c/dim)  3=cuadrado-pot2
+
+var snap_mode: int = 0
+var snap_x: int = 32
+var snap_y: int = 32
+
+func set_snap(mode: int, sx: int, sy: int) -> void:
+	snap_mode = mode
+	snap_x = sx
+	snap_y = sy
+	_hover_rect = Rect2i()
+	queue_redraw()
+
+static func _next_pow2(v: int) -> int:
+	if v <= 1: return 1
+	var p := 1
+	while p < v:
+		p <<= 1
+	return p
+
+func _apply_snap(rect: Rect2i) -> Rect2i:
+	var new_x: int = rect.position.x
+	var new_y: int = rect.position.y
+	var new_w: int = rect.size.x
+	var new_h: int = rect.size.y
+	var cx: int = rect.position.x + rect.size.x / 2
+	var cy: int = rect.position.y + rect.size.y / 2
+
+	match snap_mode:
+		0:  # Sin snap
+			pass
+		1:  # Multiplo de snap_x / snap_y
+			var sx: int = maxi(1, snap_x)
+			var sy: int = maxi(1, snap_y)
+			new_w = ((rect.size.x + sx - 1) / sx) * sx
+			new_h = ((rect.size.y + sy - 1) / sy) * sy
+			new_x = cx - new_w / 2
+			new_y = cy - new_h / 2
+		2:  # Potencia de 2 por dimension
+			new_w = _next_pow2(rect.size.x)
+			new_h = _next_pow2(rect.size.y)
+			new_x = cx - new_w / 2
+			new_y = cy - new_h / 2
+		3:  # Cuadrado potencia de 2 (usa la mayor dimension)
+			var dim: int = _next_pow2(maxi(rect.size.x, rect.size.y))
+			new_w = dim
+			new_h = dim
+			new_x = cx - dim / 2
+			new_y = cy - dim / 2
+
+	if _image_size.x > 0 and snap_mode != 0:
+		var img_w: int = int(_image_size.x)
+		var img_h: int = int(_image_size.y)
+		new_x = clampi(new_x, 0, img_w - 1)
+		new_y = clampi(new_y, 0, img_h - 1)
+		new_w = mini(new_w, img_w - new_x)
+		new_h = mini(new_h, img_h - new_y)
+
+	return Rect2i(new_x, new_y, new_w, new_h)
+
+
+# ── Colores ───────────────────────────────────────────────────────────────────
+
+const FRAME_COLORS := [
+	Color(1.0, 0.35, 0.35, 1.0),
+	Color(0.35, 1.0, 0.35, 1.0),
+	Color(0.35, 0.55, 1.0, 1.0),
+	Color(1.0, 0.90, 0.20, 1.0),
+	Color(0.85, 0.35, 1.0, 1.0),
+	Color(0.25, 0.95, 0.85, 1.0),
+	Color(1.0, 0.55, 0.15, 1.0),
+]
+const CHECKER_SIZE := 12.0
+const COL_CHECKER_A := Color(0.67, 0.67, 0.67)
+const COL_CHECKER_B := Color(0.45, 0.45, 0.45)
+const COL_HOVER_FILL   := Color(1.0, 0.85, 0.0, 0.18)
+const COL_HOVER_BORDER := Color(1.0, 0.85, 0.0, 0.95)
+
+
+# ── API pública ───────────────────────────────────────────────────────────────
+
+func load_image(img: Image) -> void:
+	_texture = ImageTexture.create_from_image(img)
+	_image_size = Vector2(img.get_width(), img.get_height())
+	_selected_frame = -1
+	_drawing = false
+	_hover_rect = Rect2i()
+	_blob_map = PackedInt32Array()
+	_blob_rects = []
+	# Diferir fit para que el canvas tenga su tamaño definitivo tras el layout
+	call_deferred("fit_to_canvas")
+	queue_redraw()
+
+
+func set_blob_data(map: PackedInt32Array, rects: Array, id_to_rect: PackedInt32Array, w: int) -> void:
+	_blob_map = map
+	_blob_rects = rects
+	_blob_id_to_rect = id_to_rect
+	_blob_map_w = w
+	_hover_rect = Rect2i()
+	queue_redraw()
+
+
+func set_frames(frames: Array) -> void:
+	_frames = frames
+	queue_redraw()
+
+
+func set_selected(index: int) -> void:
+	_selected_frame = index
+	queue_redraw()
+
+
+func clear_image() -> void:
+	_texture = null
+	_image_size = Vector2.ZERO
+	_frames = []
+	_selected_frame = -1
+	_blob_map = PackedInt32Array()
+	_blob_rects = []
+	_hover_rect = Rect2i()
+	queue_redraw()
+
+
+func fit_to_canvas() -> void:
+	if _image_size == Vector2.ZERO or size == Vector2.ZERO: return
+	# Usar solo el 58% izquierdo del canvas (el resto queda bajo las ventanas flotantes)
+	var usable_w := size.x * 0.58
+	var usable_h := size.y * 0.90
+	_zoom = minf(usable_w / _image_size.x, usable_h / _image_size.y)
+	# Centrar horizontalmente dentro del área usable, verticalmente en todo el canvas
+	_pan = Vector2(
+		(usable_w - _image_size.x * _zoom) * 0.5,
+		(size.y   - _image_size.y * _zoom) * 0.5
+	)
+	queue_redraw()
+
+
+func zoom_in()    -> void: _zoom = minf(_zoom * 1.2, 32.0); queue_redraw()
+func zoom_out()   -> void: _zoom = maxf(_zoom / 1.2, 0.02); queue_redraw()
+func zoom_reset() -> void: _zoom = 1.0; _pan = (size - _image_size) * 0.5; queue_redraw()
+
+
+# ── Coordenadas ───────────────────────────────────────────────────────────────
+
+func _s2i(p: Vector2) -> Vector2: return (p - _pan) / _zoom
+func _i2s(p: Vector2) -> Vector2: return p * _zoom + _pan
+func _irect2srect(r: Rect2) -> Rect2: return Rect2(_i2s(r.position), r.size * _zoom)
+
+
+# ── Resize handles helpers ────────────────────────────────────────────────────
+
+func _handle_positions(sr: Rect2) -> Array:
+	var p: Vector2 = sr.position
+	var s: Vector2 = sr.size
+	return [
+		p,                                   # 0 TL
+		p + Vector2(s.x * 0.5, 0.0),        # 1 T
+		p + Vector2(s.x, 0.0),              # 2 TR
+		p + Vector2(s.x, s.y * 0.5),        # 3 R
+		p + s,                               # 4 BR
+		p + Vector2(s.x * 0.5, s.y),        # 5 B
+		p + Vector2(0.0, s.y),              # 6 BL
+		p + Vector2(0.0, s.y * 0.5),        # 7 L
+	]
+
+
+func _hit_handles(screen_pos: Vector2) -> int:
+	if _selected_frame < 0 or _selected_frame >= _frames.size():
+		return -1
+	var fr: Dictionary = _frames[_selected_frame]
+	var sr := _irect2srect(Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h)))
+	var handles := _handle_positions(sr)
+	for i in range(handles.size()):
+		var h: Vector2 = handles[i]
+		if screen_pos.distance_to(h) <= HANDLE_R + 3.0:
+			return i
+	return -1
+
+
+func _resize_rect_from_drag(handle: int, delta_img: Vector2) -> Rect2:
+	var x1: float = _resize_frame_orig.position.x
+	var y1: float = _resize_frame_orig.position.y
+	var x2: float = x1 + _resize_frame_orig.size.x
+	var y2: float = y1 + _resize_frame_orig.size.y
+	match handle:
+		0: x1 += delta_img.x; y1 += delta_img.y  # TL
+		1: y1 += delta_img.y                       # T
+		2: x2 += delta_img.x; y1 += delta_img.y  # TR
+		3: x2 += delta_img.x                       # R
+		4: x2 += delta_img.x; y2 += delta_img.y  # BR
+		5: y2 += delta_img.y                       # B
+		6: x1 += delta_img.x; y2 += delta_img.y  # BL
+		7: x1 += delta_img.x                       # L
+	var nx1 := minf(x1, x2 - 1.0)
+	var ny1 := minf(y1, y2 - 1.0)
+	var nx2 := maxf(x2, x1 + 1.0)
+	var ny2 := maxf(y2, y1 + 1.0)
+	return Rect2(nx1, ny1, nx2 - nx1, ny2 - ny1)
+
+
+# ── Dibujado ──────────────────────────────────────────────────────────────────
+
+func _draw() -> void:
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0.15, 0.15, 0.15))
+
+	if _texture == null:
+		draw_string(ThemeDB.fallback_font, size * 0.5 - Vector2(120, 0),
+			"Selecciona una imagen de la lista",
+			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.6, 0.6, 0.6))
+		return
+
+	# Checkerboard
+	var img_sw := _image_size.x * _zoom
+	var img_sh := _image_size.y * _zoom
+	var img_sr := Rect2(_pan, Vector2(img_sw, img_sh))
+	_draw_checker(img_sr)
+
+	# Imagen
+	draw_texture_rect(_texture, img_sr, false)
+	draw_rect(img_sr, Color(0.4, 0.4, 0.4), false, 1.0)
+
+	# Hover blob highlight (solo si no solapa frames existentes)
+	if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
+		var hr := Rect2(_hover_rect.position, _hover_rect.size)
+		var sr := _irect2srect(hr)
+		draw_rect(sr, COL_HOVER_FILL)
+		draw_rect(sr, COL_HOVER_BORDER, false, 2.0)
+		# Label "Click para agregar"
+		if sr.size.x > 60:
+			draw_string(ThemeDB.fallback_font, sr.position + Vector2(4, 14),
+				"Click p/ agregar  %d x %d" % [_hover_rect.size.x, _hover_rect.size.y],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 0.5, 0.9))
+
+	# Frames existentes
+	for i in range(_frames.size()):
+		var fr: Dictionary = _frames[i]
+		var col: Color = FRAME_COLORS[i % FRAME_COLORS.size()]
+		var is_sel := (i == _selected_frame)
+		# Durante resize/move activo, usar el rect live para el frame seleccionado
+		var draw_r: Rect2
+		if is_sel and _resize_active:
+			draw_r = _resize_live
+		elif is_sel and _move_active:
+			draw_r = Rect2(_move_live_pos, _move_frame_orig.size)
+		else:
+			draw_r = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+		var sr := _irect2srect(draw_r)
+		draw_rect(sr, Color(col.r, col.g, col.b, 0.28 if is_sel else 0.12))
+		draw_rect(sr, Color.WHITE if is_sel else col, false, 2.5 if is_sel else 1.0)
+		if sr.size.x > 22:
+			var lbl: String
+			if is_sel and _resize_active:
+				lbl = "%d×%d" % [int(draw_r.size.x), int(draw_r.size.y)]
+			else:
+				lbl = "G%d" % fr.get("grh_index", 0)
+			draw_string(ThemeDB.fallback_font, sr.position + Vector2(3, 14),
+				lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.95))
+
+	# Handles del frame seleccionado (dibujados encima)
+	if _selected_frame >= 0 and _selected_frame < _frames.size():
+		var fr: Dictionary = _frames[_selected_frame]
+		var draw_r: Rect2
+		if _resize_active:
+			draw_r = _resize_live
+		elif _move_active:
+			draw_r = Rect2(_move_live_pos, _move_frame_orig.size)
+		else:
+			draw_r = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+		var sr := _irect2srect(draw_r)
+		var handles := _handle_positions(sr)
+		for i in range(handles.size()):
+			var h: Vector2 = handles[i]
+			var hs: float = HANDLE_R if i % 2 == 0 else HANDLE_R * 0.75
+			draw_rect(Rect2(h - Vector2(hs, hs), Vector2(hs * 2.0, hs * 2.0)), Color(0.0, 0.0, 0.0, 0.75))
+			draw_rect(Rect2(h - Vector2(hs, hs), Vector2(hs * 2.0, hs * 2.0)), Color(1.0, 1.0, 1.0, 0.95), false, 1.5)
+		# Info durante resize / move
+		if _resize_active:
+			var info := "%d × %d px" % [int(draw_r.size.x), int(draw_r.size.y)]
+			draw_string(ThemeDB.fallback_font, sr.position + Vector2(0.0, -4.0),
+				info, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1.0, 1.0, 0.3, 0.95))
+		elif _move_active:
+			var info := "(%d, %d)" % [int(draw_r.position.x), int(draw_r.position.y)]
+			draw_string(ThemeDB.fallback_font, sr.position + Vector2(0.0, -4.0),
+				info, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.4, 1.0, 1.0, 0.95))
+
+	# Rubber band manual
+	if _drawing:
+		var ds := _i2s(_draw_start_img)
+		var dc := _i2s(_draw_cur_img)
+		var rb := Rect2(Vector2(minf(ds.x, dc.x), minf(ds.y, dc.y)),
+			Vector2(absf(dc.x - ds.x), absf(dc.y - ds.y)))
+		draw_rect(rb, Color(1, 1, 1, 0.12))
+		draw_rect(rb, Color.WHITE, false, 1.5)
+
+	# Info zoom
+	draw_string(ThemeDB.fallback_font, Vector2(6, size.y - 6),
+		"Zoom %.0f%%  |  %d x %d px" % [_zoom * 100, _image_size.x, _image_size.y],
+		HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.6, 0.6))
+
+
+func _draw_checker(rect: Rect2) -> void:
+	var cols := ceili(rect.size.x / CHECKER_SIZE)
+	var rows := ceili(rect.size.y / CHECKER_SIZE)
+	for row in range(rows):
+		for col in range(cols):
+			var cc := COL_CHECKER_A if (col + row) % 2 == 0 else COL_CHECKER_B
+			draw_rect(Rect2(
+				rect.position.x + col * CHECKER_SIZE,
+				rect.position.y + row * CHECKER_SIZE,
+				minf(CHECKER_SIZE, rect.size.x - col * CHECKER_SIZE),
+				minf(CHECKER_SIZE, rect.size.y - row * CHECKER_SIZE)
+			), cc)
+
+
+# ── Input ─────────────────────────────────────────────────────────────────────
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		_on_mouse_button(event as InputEventMouseButton)
+	elif event is InputEventMouseMotion:
+		_on_mouse_motion(event as InputEventMouseMotion)
+	elif event is InputEventKey:
+		_on_key(event as InputEventKey)
+
+
+func _on_key(k: InputEventKey) -> void:
+	if not k.pressed:
+		return
+	match k.keycode:
+		KEY_ESCAPE:
+			if _selected_frame >= 0:
+				_selected_frame = -1
+				frame_selected.emit(-1)
+				queue_redraw()
+		KEY_DELETE:
+			if _selected_frame >= 0:
+				var idx := _selected_frame
+				_selected_frame = -1
+				frame_delete_pressed.emit(idx)
+				queue_redraw()
+
+
+func _on_mouse_button(mb: InputEventMouseButton) -> void:
+	match mb.button_index:
+		MOUSE_BUTTON_WHEEL_UP:
+			if mb.pressed:
+				var old := _zoom
+				_zoom = minf(_zoom * 1.15, 32.0)
+				_pan = mb.position - (mb.position - _pan) * (_zoom / old)
+				queue_redraw()
+		MOUSE_BUTTON_WHEEL_DOWN:
+			if mb.pressed:
+				var old := _zoom
+				_zoom = maxf(_zoom / 1.15, 0.02)
+				_pan = mb.position - (mb.position - _pan) * (_zoom / old)
+				queue_redraw()
+		MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT:
+			_panning = mb.pressed
+			if mb.pressed:
+				_pan_start = mb.position
+				_pan_start_offset = _pan
+		MOUSE_BUTTON_LEFT:
+			if mb.pressed:
+				_press_pos_screen = mb.position
+				_drawing = false
+				_resize_active = false
+				_move_active = false
+				if _texture != null:
+					var ip := _s2i(mb.position)
+					# 1. Handle de resize del frame seleccionado
+					var handle := _hit_handles(mb.position)
+					if handle >= 0:
+						_resize_handle = handle
+						_resize_active = true
+						var fr: Dictionary = _frames[_selected_frame]
+						_resize_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+						_resize_mouse_start_img = ip
+						_resize_live = _resize_frame_orig
+					else:
+						var hit := _hit_test_frame(ip)
+						if hit >= 0:
+							if hit == _selected_frame:
+								# 2a. Click en el frame ya seleccionado → iniciar mover
+								var fr: Dictionary = _frames[_selected_frame]
+								_move_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+								_move_mouse_start_img = ip
+								_move_live_pos = _move_frame_orig.position
+								_move_active = true
+							else:
+								# 2b. Click en otro frame → seleccionar
+								_selected_frame = hit
+								frame_selected.emit(hit)
+								queue_redraw()
+						else:
+							# 3. Espacio vacío → potencial draw o click en blob
+							if _selected_frame >= 0:
+								_selected_frame = -1
+								frame_selected.emit(-1)
+								queue_redraw()
+							_draw_start_img = ip
+							_draw_cur_img = ip
+			else:
+				if _resize_active:
+					_resize_active = false
+					var delta_img := _s2i(mb.position) - _resize_mouse_start_img
+					var new_rect := _resize_rect_from_drag(_resize_handle, delta_img)
+					frame_resized.emit(_selected_frame, new_rect)
+					queue_redraw()
+				elif _move_active:
+					_move_active = false
+					var delta_img := _s2i(mb.position) - _move_mouse_start_img
+					var new_pos := _move_frame_orig.position + delta_img
+					# Clampar a los límites de la imagen
+					if _image_size.x > 0:
+						new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
+						new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
+					var new_rect := Rect2(new_pos, _move_frame_orig.size)
+					frame_resized.emit(_selected_frame, new_rect)  # reutilizar señal
+					queue_redraw()
+				elif _drawing:
+					_drawing = false
+					var x := minf(_draw_start_img.x, _draw_cur_img.x)
+					var y := minf(_draw_start_img.y, _draw_cur_img.y)
+					var w := absf(_draw_cur_img.x - _draw_start_img.x)
+					var h := absf(_draw_cur_img.y - _draw_start_img.y)
+					if w >= 2.0 and h >= 2.0:
+						if not _overlaps_any_frame(Rect2(x, y, w, h)):
+							frame_drawn.emit(Rect2(x, y, w, h))
+					queue_redraw()
+				else:
+					# Click sin drag → blob hover
+					if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
+						blob_clicked.emit(_hover_rect)
+
+
+func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
+	if _panning:
+		_pan = _pan_start_offset + mm.position - _pan_start
+		queue_redraw()
+		return
+
+	if _resize_active:
+		var delta_img := _s2i(mm.position) - _resize_mouse_start_img
+		_resize_live = _resize_rect_from_drag(_resize_handle, delta_img)
+		queue_redraw()
+		return
+
+	if _move_active:
+		var delta_img := _s2i(mm.position) - _move_mouse_start_img
+		var new_pos := _move_frame_orig.position + delta_img
+		if _image_size.x > 0:
+			new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
+			new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
+		_move_live_pos = new_pos
+		queue_redraw()
+		return
+
+	if Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		var dist := mm.position.distance_to(_press_pos_screen)
+		if dist > DRAG_THRESHOLD or _drawing:
+			_drawing = true
+			_draw_cur_img = _s2i(mm.position)
+			queue_redraw()
+		return
+
+	# Hover: detectar blob bajo el cursor usando el mapa pre-computado
+	if _blob_map.size() > 0 and _texture != null:
+		var ip := _s2i(mm.position)
+		var px := int(ip.x)
+		var py := int(ip.y)
+		var prev_rect := _hover_rect
+		_hover_rect = Rect2i()
+
+		if px >= 0 and px < _blob_map_w and py >= 0:
+			var map_h := _blob_map.size() / _blob_map_w
+			if py < map_h:
+				var blob_id := _blob_map[py * _blob_map_w + px]
+				if blob_id > 0 and blob_id < _blob_id_to_rect.size():
+					var rect_idx := _blob_id_to_rect[blob_id]
+					if rect_idx >= 0 and rect_idx < _blob_rects.size():
+						var raw_rect: Rect2i = _blob_rects[rect_idx]
+						_hover_rect = _apply_snap(raw_rect)
+
+		if _hover_rect != prev_rect:
+			queue_redraw()
+
+
+func _hit_test_frame(img_pos: Vector2) -> int:
+	for i in range(_frames.size() - 1, -1, -1):
+		var fr: Dictionary = _frames[i]
+		if img_pos.x >= fr.sx and img_pos.x < fr.sx + fr.w \
+		and img_pos.y >= fr.sy and img_pos.y < fr.sy + fr.h:
+			return i
+	return -1
+
+
+func _overlaps_any_frame(r: Rect2) -> bool:
+	for i in range(_frames.size()):
+		if i == _selected_frame:
+			continue  # ignorar el frame que se está moviendo
+		var fr: Dictionary = _frames[i]
+		var fr_rect := Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+		if r.intersects(fr_rect):
+			return true
+	return false
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_RESIZED:
+		queue_redraw()
+	elif what == NOTIFICATION_MOUSE_ENTER:
+		grab_focus()  # para recibir teclas (Esc, Delete)
