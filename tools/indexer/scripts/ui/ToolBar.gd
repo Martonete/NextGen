@@ -1,4 +1,4 @@
-## ToolBar.gd — Top toolbar with tool modes, snap, and zoom controls
+## ToolBar.gd — Top toolbar: tool modes, snap, zoom, and primary actions
 class_name IndexerToolBar
 extends PanelContainer
 
@@ -23,20 +23,27 @@ var _current_snap: int = 0
 
 
 func _ready() -> void:
+	# Toolbar background
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = IndexerTheme.BG_HEADER
+	bg.content_margin_left = 6
+	bg.content_margin_right = 6
+	bg.content_margin_top = 4
+	bg.content_margin_bottom = 4
+	add_theme_stylebox_override("panel", bg)
+
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 4)
+	hbox.add_theme_constant_override("separation", 6)
 	add_child(hbox)
 
 	# ── Tool modes ──
-	hbox.add_child(IndexerTheme.label("Herramienta:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
-
 	var tools := [
 		["Seleccionar", "Seleccionar / mover frames (V)", Tool.SELECT],
-		["Dibujar", "Dibujar nuevo frame (R)", Tool.DRAW],
+		["Dibujar", "Dibujar nuevo frame (R/D)", Tool.DRAW],
 		["Mover", "Mover canvas / pan (H)", Tool.PAN],
 	]
 	for t in tools:
-		var btn := IndexerTheme.tool_button(t[0], t[1], true)
+		var btn := IndexerTheme.tool_toggle(t[0], t[1])
 		btn.pressed.connect(_on_tool_pressed.bind(t[2]))
 		hbox.add_child(btn)
 		_tool_buttons.append(btn)
@@ -45,15 +52,12 @@ func _ready() -> void:
 	hbox.add_child(IndexerTheme.separator_v())
 
 	# ── Snap ──
-	hbox.add_child(IndexerTheme.label("Snap:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
-	var snap_defs := [["Off", 0], ["P2", 2], ["Sq", 3], ["Grid", 1]]
+	hbox.add_child(IndexerTheme.label("Snap:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	var snap_defs := [["Off", 0], ["Pot.2", 2], ["Sq", 3], ["Grid", 1]]
 	for sd in snap_defs:
-		var btn := Button.new()
-		btn.text = sd[0]
-		btn.tooltip_text = ["Sin snap", "Multiplo", "Potencia de 2", "Cuadrado P2"][sd[1]]
+		var btn := IndexerTheme.preset_button(sd[0], Callable(), ["Sin snap", "Multiplo", "Potencia de 2", "Cuadrado P2"][sd[1]])
 		btn.toggle_mode = true
-		btn.custom_minimum_size.x = 36
-		btn.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+		btn.custom_minimum_size.x = 42
 		btn.pressed.connect(_on_snap_pressed.bind(sd[1]))
 		hbox.add_child(btn)
 		_snap_buttons.append(btn)
@@ -76,19 +80,18 @@ func _ready() -> void:
 
 	# ── Zoom ──
 	hbox.add_child(IndexerTheme.icon_button("+", func(): zoom_in_pressed.emit(), "Zoom in", 28))
-	hbox.add_child(IndexerTheme.icon_button("-", func(): zoom_out_pressed.emit(), "Zoom out", 28))
-	hbox.add_child(IndexerTheme.icon_button("1:1", func(): zoom_reset_pressed.emit(), "Zoom 100%", 32))
-	hbox.add_child(IndexerTheme.icon_button("Fit", func(): zoom_fit_pressed.emit(), "Ajustar al canvas", 32))
+	hbox.add_child(IndexerTheme.icon_button("–", func(): zoom_out_pressed.emit(), "Zoom out", 28))
+	hbox.add_child(IndexerTheme.icon_button("1:1", func(): zoom_reset_pressed.emit(), "Zoom 100%", 36))
+	hbox.add_child(IndexerTheme.icon_button("Fit", func(): zoom_fit_pressed.emit(), "Ajustar al canvas", 36))
 
 	# ── Spacer ──
 	hbox.add_child(IndexerTheme.spacer())
 
-	# ── Actions ──
-	var btn_index := IndexerTheme.button("INDEXAR", func(): index_pressed.emit(), IndexerTheme.TEXT_SUCCESS)
-	btn_index.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_LG)
+	# ── Primary actions ──
+	var btn_index := IndexerTheme.primary_button("INDEXAR", func(): index_pressed.emit(), 90)
 	hbox.add_child(btn_index)
 
-	var btn_save := IndexerTheme.button("Guardar", func(): save_pressed.emit(), IndexerTheme.TEXT_SUCCESS)
+	var btn_save := IndexerTheme.success_button("Guardar", func(): save_pressed.emit(), 80)
 	hbox.add_child(btn_save)
 
 
@@ -96,6 +99,7 @@ func set_tool(mode: int) -> void:
 	_current_tool = mode
 	for i in range(_tool_buttons.size()):
 		_tool_buttons[i].button_pressed = (i == mode)
+	tool_changed.emit(mode)
 
 
 func set_snap(mode: int, sx: int = -1, sy: int = -1) -> void:
@@ -126,7 +130,7 @@ func _on_snap_pressed(mode: int) -> void:
 
 
 func _get_snap_btn(mode: int) -> Button:
-	# snap_defs order: Off=0, P2=2, Sq=3, Grid=1 → button indices 0,1,2,3
+	# snap_defs order: Off=0, Pot.2=2, Sq=3, Grid=1 → button indices 0,1,2,3
 	var map := {0: 0, 2: 1, 3: 2, 1: 3}
 	return _snap_buttons[map.get(mode, 0)]
 

@@ -107,7 +107,7 @@ func _build_ui() -> void:
 	# Right split: [Canvas | Inspector]
 	var hsplit_inner := HSplitContainer.new()
 	hsplit_inner.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	hsplit_inner.split_offset = -340
+	hsplit_inner.split_offset = -380
 	hsplit_outer.add_child(hsplit_inner)
 
 	# Canvas (center, fills available space)
