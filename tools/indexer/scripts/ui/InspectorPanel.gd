@@ -1173,7 +1173,12 @@ func _build_anim_creator_window() -> void:
 	left.add_theme_constant_override("separation", 2)
 	hsplit.add_child(left)
 
-	left.add_child(IndexerTheme.label("GRHs disponibles", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_MD))
+	var avail_header := HBoxContainer.new()
+	avail_header.add_theme_constant_override("separation", 4)
+	avail_header.add_child(IndexerTheme.label("GRHs disponibles", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_MD))
+	avail_header.add_child(IndexerTheme.spacer())
+	avail_header.add_child(IndexerTheme.primary_button("Agregar todos", _on_anim_add_all, 90))
+	left.add_child(avail_header)
 	left.add_child(IndexerTheme.label("Click para agregar", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 
 	var avail_scroll := ScrollContainer.new()
@@ -1478,6 +1483,13 @@ func _on_seq_remove(idx: int) -> void:
 	if idx < 0 or idx >= _anim_seq_indices.size():
 		return
 	_anim_seq_indices.remove_at(idx)
+	_rebuild_seq_list()
+	_update_anim_seq_preview()
+
+
+func _on_anim_add_all() -> void:
+	for i in range(_anim_avail_grhs.size()):
+		_anim_seq_indices.append(_anim_avail_grhs[i])
 	_rebuild_seq_list()
 	_update_anim_seq_preview()
 
