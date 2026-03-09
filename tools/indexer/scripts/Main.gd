@@ -479,9 +479,20 @@ func _on_detect_blobs(alpha: float, min_size: int, padding: int) -> void:
 		_update_status("Carga una imagen primero.")
 		return
 	var blob_data := FrameDetector.detect_blobs_indexed(_current_image, alpha, min_size, padding)
-	var detected: Array = blob_data["rects"]
-	_apply_detected_frames(detected)
-	_update_status("Blobs: %d regiones detectadas" % detected.size())
+	var rects: Array = blob_data["rects"]
+	if rects.is_empty():
+		_update_status("No se detectaron blobs.")
+		return
+
+	# Analyze blob sizes — if uniform, create a grid covering the full image
+	var grid_result := _try_uniform_blob_grid(rects)
+	if grid_result.size() > 0:
+		_apply_detected_frames(grid_result)
+		var cell: Dictionary = grid_result[0]
+		_update_status("Blobs→Grid: %d frames (%dx%d px, filas adaptativas)" % [grid_result.size(), cell.w, cell.h])
+	else:
+		_apply_detected_frames(rects)
+		_update_status("Blobs: %d regiones detectadas" % rects.size())
 
 
 func _on_split_frame(cell_w: int, cell_h: int) -> void:
@@ -734,6 +745,77 @@ func _detect_snap_hint(rects: Array) -> String:
 		_toolbar.set_snap(0)
 		_canvas.set_snap(0, 32, 32)
 		return "Snap: Off (auto — tamaños irregulares)"
+
+
+## When blobs are uniform size, generate a full grid covering the entire image.
+## Each row is scanned independently: cells that have content get a frame,
+## empty cells are skipped. This handles sprite sheets where some rows have
+## more frames than others (e.g. 6-frame walk N/S vs 5-frame walk E/W).
+## Returns empty array if blobs aren't uniform enough for grid conversion.
+func _try_uniform_blob_grid(rects: Array) -> Array:
+	if rects.size() < 3 or _current_image == null:
+		return []
+
+	# Collect blob sizes
+	var sizes: Array = []
+	for r in rects:
+		var rr: Rect2i = r if r is Rect2i else Rect2i(r.get("sx", 0), r.get("sy", 0), r.get("w", 32), r.get("h", 32))
+		if rr.size.x >= 4 and rr.size.y >= 4:
+			sizes.append(Vector2i(rr.size.x, rr.size.y))
+
+	if sizes.size() < 3:
+		return []
+
+	# Group by ±4px tolerance
+	const TOL := 4
+	var groups: Array = []
+	for s in sizes:
+		var found := false
+		for g in groups:
+			if absi(s.x - g["w"]) <= TOL and absi(s.y - g["h"]) <= TOL:
+				g["count"] += 1
+				# Track average
+				g["sum_w"] += s.x
+				g["sum_h"] += s.y
+				found = true
+				break
+		if not found:
+			groups.append({"w": s.x, "h": s.y, "count": 1, "sum_w": s.x, "sum_h": s.y})
+
+	groups.sort_custom(func(a, b): return a["count"] > b["count"])
+	var best: Dictionary = groups[0]
+	var ratio: float = float(best["count"]) / float(sizes.size())
+
+	# Need at least 50% of blobs to be the same size
+	if ratio < 0.5 or best["count"] < 3:
+		return []
+
+	# Use the average of the dominant group as cell size
+	var cell_w: int = best["sum_w"] / best["count"]
+	var cell_h: int = best["sum_h"] / best["count"]
+	if cell_w < 4 or cell_h < 4:
+		return []
+
+	# Generate grid: iterate rows of cell_h, then columns of cell_w
+	# Per cell, check if it has non-empty content (skip empty cells)
+	var img_w: int = _current_image.get_width()
+	var img_h: int = _current_image.get_height()
+	var result: Array = []
+
+	var row_y := 0
+	while row_y + cell_h <= img_h:
+		var col_x := 0
+		while col_x + cell_w <= img_w:
+			if not FrameDetector._is_empty_sample(_current_image, col_x, row_y, cell_w, cell_h):
+				result.append({"sx": col_x, "sy": row_y, "w": cell_w, "h": cell_h})
+			col_x += cell_w
+		row_y += cell_h
+
+	# If grid produces fewer frames than blobs found, it's probably not a good fit
+	if result.size() < rects.size() * 0.5:
+		return []
+
+	return result
 
 
 func _refresh_all() -> void:

@@ -84,7 +84,7 @@ func _ready() -> void:
 	_tabs = TabContainer.new()
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_tabs.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+	_tabs.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_MD)
 	add_child(_tabs)
 
 	_tabs.add_child(_build_frames_tab())
@@ -368,14 +368,27 @@ func _build_detect_tab() -> Control:
 	_chk_skip_empty.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	vbox.add_child(_chk_skip_empty)
 
-	# Presets
-	var presets := HBoxContainer.new()
-	presets.add_theme_constant_override("separation", 3)
-	vbox.add_child(presets)
-	for p in [[32,32],[32,48],[48,48],[64,64],[128,128]]:
+	# Presets — common AO sprite types
+	vbox.add_child(IndexerTheme.label("Presets:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	var presets_row1 := HBoxContainer.new()
+	presets_row1.add_theme_constant_override("separation", 3)
+	vbox.add_child(presets_row1)
+	# Body/weapon/movement sprites
+	var p_body := IndexerTheme.icon_button("Cuerpo 25x45", _make_preset_cb(25, 45), "Cuerpos, armas, movimientos", 90)
+	presets_row1.add_child(p_body)
+	var p_head := IndexerTheme.icon_button("Cabeza 16x16", _make_preset_cb(16, 16), "Cabezas", 90)
+	presets_row1.add_child(p_head)
+	var p_shield := IndexerTheme.icon_button("Escudo 25x25", _make_preset_cb(25, 25), "Escudos", 90)
+	presets_row1.add_child(p_shield)
+
+	var presets_row2 := HBoxContainer.new()
+	presets_row2.add_theme_constant_override("separation", 3)
+	vbox.add_child(presets_row2)
+	# Tile textures (pow2)
+	for p in [[32,32],[64,64],[128,128],[256,256]]:
 		var pw: int = p[0]; var ph: int = p[1]
-		var pbtn := IndexerTheme.icon_button("%dx%d" % [pw, ph], _make_preset_cb(pw, ph), "", 48)
-		presets.add_child(pbtn)
+		var pbtn := IndexerTheme.icon_button("%dx%d" % [pw, ph], _make_preset_cb(pw, ph), "Tiles %dx%d" % [pw, ph], 56)
+		presets_row2.add_child(pbtn)
 
 	var btn_grid := IndexerTheme.button("Detectar grid", _on_detect_grid_btn, IndexerTheme.TEXT_ACCENT)
 	vbox.add_child(btn_grid)

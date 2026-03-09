@@ -192,13 +192,13 @@ func clear_image() -> void:
 
 func fit_to_canvas() -> void:
 	if _image_size == Vector2.ZERO or size == Vector2.ZERO: return
-	# Fit entire image with generous margin so it's not zoomed in too much
-	var margin_pct := 0.15  # 15% margin on each side
+	# Fit image filling ~80% of canvas (5% margin each side)
+	var margin_pct := 0.05
 	var usable_w := size.x * (1.0 - margin_pct * 2)
 	var usable_h := size.y * (1.0 - margin_pct * 2)
 	_zoom = minf(usable_w / _image_size.x, usable_h / _image_size.y)
-	# Cap max zoom so large images don't appear huge
-	_zoom = minf(_zoom, 1.0)
+	# Cap max zoom so tiny images don't appear enormous
+	_zoom = minf(_zoom, 2.0)
 	_pan = Vector2(
 		(size.x - _image_size.x * _zoom) * 0.5,
 		(size.y - _image_size.y * _zoom) * 0.5

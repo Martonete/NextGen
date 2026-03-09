@@ -31,9 +31,9 @@ func _ready() -> void:
 	hbox.add_child(IndexerTheme.label("Herramienta:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 
 	var tools := [
-		["V", "Seleccionar (V)", Tool.SELECT],
-		["R", "Dibujar frame (R)", Tool.DRAW],
-		["H", "Mover canvas (H)", Tool.PAN],
+		["Seleccionar", "Seleccionar / mover frames (V)", Tool.SELECT],
+		["Dibujar", "Dibujar nuevo frame (R)", Tool.DRAW],
+		["Mover", "Mover canvas / pan (H)", Tool.PAN],
 	]
 	for t in tools:
 		var btn := IndexerTheme.tool_button(t[0], t[1], true)

@@ -22,9 +22,9 @@ const ACCENT         := Color(0.35, 0.65, 1.0)
 const ACCENT_HOVER   := Color(0.45, 0.72, 1.0)
 const BORDER         := Color(0.25, 0.25, 0.30)
 
-const FONT_SIZE_SM := 10
-const FONT_SIZE_MD := 12
-const FONT_SIZE_LG := 14
+const FONT_SIZE_SM := 12
+const FONT_SIZE_MD := 13
+const FONT_SIZE_LG := 15
 
 # ── Widget factories ───────────────────────────────────────────────
 
@@ -66,8 +66,8 @@ static func tool_button(text: String, tooltip: String, toggle := false) -> Butto
 	b.text = text
 	b.tooltip_text = tooltip
 	b.toggle_mode = toggle
-	b.custom_minimum_size = Vector2(36, 28)
-	b.add_theme_font_size_override("font_size", 15)
+	b.custom_minimum_size = Vector2(80, 28)
+	b.add_theme_font_size_override("font_size", 13)
 	return b
 
 static func spinbox(min_val: float, max_val: float, value: float, callback: Callable = Callable()) -> SpinBox:
