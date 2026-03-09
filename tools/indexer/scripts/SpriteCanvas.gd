@@ -27,6 +27,10 @@ var _hover_rect: Rect2i = Rect2i()      # Rect del blob bajo el cursor (vacío=n
 var _frames: Array = []
 var _selected_frame: int = -1
 
+# ── Tool mode (0=Select, 1=Draw, 2=Pan) ─────────────────────────────────────
+
+var tool_mode: int = 0
+
 # ── Zoom / Pan ────────────────────────────────────────────────────────────────
 
 var _zoom := 1.0
@@ -187,14 +191,13 @@ func clear_image() -> void:
 
 func fit_to_canvas() -> void:
 	if _image_size == Vector2.ZERO or size == Vector2.ZERO: return
-	# Usar solo el 58% izquierdo del canvas (el resto queda bajo las ventanas flotantes)
-	var usable_w := size.x * 0.58
-	var usable_h := size.y * 0.90
+	var margin := 20.0
+	var usable_w := size.x - margin * 2
+	var usable_h := size.y - margin * 2
 	_zoom = minf(usable_w / _image_size.x, usable_h / _image_size.y)
-	# Centrar horizontalmente dentro del área usable, verticalmente en todo el canvas
 	_pan = Vector2(
-		(usable_w - _image_size.x * _zoom) * 0.5,
-		(size.y   - _image_size.y * _zoom) * 0.5
+		(size.x - _image_size.x * _zoom) * 0.5,
+		(size.y - _image_size.y * _zoom) * 0.5
 	)
 	queue_redraw()
 
@@ -431,40 +434,51 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 				_move_active = false
 				if _texture != null:
 					var ip := _s2i(mb.position)
-					# 1. Handle de resize del frame seleccionado
-					var handle := _hit_handles(mb.position)
-					if handle >= 0:
-						_resize_handle = handle
-						_resize_active = true
-						var fr: Dictionary = _frames[_selected_frame]
-						_resize_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
-						_resize_mouse_start_img = ip
-						_resize_live = _resize_frame_orig
-					else:
-						var hit := _hit_test_frame(ip)
-						if hit >= 0:
-							if hit == _selected_frame:
-								# 2a. Click en el frame ya seleccionado → iniciar mover
-								var fr: Dictionary = _frames[_selected_frame]
-								_move_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
-								_move_mouse_start_img = ip
-								_move_live_pos = _move_frame_orig.position
-								_move_active = true
-							else:
-								# 2b. Click en otro frame → seleccionar
-								_selected_frame = hit
-								frame_selected.emit(hit)
-								queue_redraw()
+					if tool_mode == 2:
+						# PAN mode: left-click pans
+						_panning = true
+						_pan_start = mb.position
+						_pan_start_offset = _pan
+					elif tool_mode == 0:
+						# SELECT mode: resize handles, frame select/move
+						var handle := _hit_handles(mb.position)
+						if handle >= 0:
+							_resize_handle = handle
+							_resize_active = true
+							var fr: Dictionary = _frames[_selected_frame]
+							_resize_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+							_resize_mouse_start_img = ip
+							_resize_live = _resize_frame_orig
 						else:
-							# 3. Espacio vacío → potencial draw o click en blob
-							if _selected_frame >= 0:
-								_selected_frame = -1
-								frame_selected.emit(-1)
-								queue_redraw()
-							_draw_start_img = ip
-							_draw_cur_img = ip
+							var hit := _hit_test_frame(ip)
+							if hit >= 0:
+								if hit == _selected_frame:
+									var fr: Dictionary = _frames[_selected_frame]
+									_move_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+									_move_mouse_start_img = ip
+									_move_live_pos = _move_frame_orig.position
+									_move_active = true
+								else:
+									_selected_frame = hit
+									frame_selected.emit(hit)
+									queue_redraw()
+							else:
+								if _selected_frame >= 0:
+									_selected_frame = -1
+									frame_selected.emit(-1)
+									queue_redraw()
+					else:
+						# DRAW mode: draw new frame or click blob
+						if _selected_frame >= 0:
+							_selected_frame = -1
+							frame_selected.emit(-1)
+							queue_redraw()
+						_draw_start_img = ip
+						_draw_cur_img = ip
 			else:
-				if _resize_active:
+				if _panning and tool_mode == 2:
+					_panning = false
+				elif _resize_active:
 					_resize_active = false
 					var delta_img := _s2i(mb.position) - _resize_mouse_start_img
 					var new_rect := _resize_rect_from_drag(_resize_handle, delta_img)
@@ -474,12 +488,11 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					_move_active = false
 					var delta_img := _s2i(mb.position) - _move_mouse_start_img
 					var new_pos := _move_frame_orig.position + delta_img
-					# Clampar a los límites de la imagen
 					if _image_size.x > 0:
 						new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
 						new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
 					var new_rect := Rect2(new_pos, _move_frame_orig.size)
-					frame_resized.emit(_selected_frame, new_rect)  # reutilizar señal
+					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
 				elif _drawing:
 					_drawing = false
@@ -487,12 +500,18 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					var y := minf(_draw_start_img.y, _draw_cur_img.y)
 					var w := absf(_draw_cur_img.x - _draw_start_img.x)
 					var h := absf(_draw_cur_img.y - _draw_start_img.y)
+					# Clamp to image borders
+					if _image_size.x > 0:
+						x = maxf(x, 0.0)
+						y = maxf(y, 0.0)
+						w = minf(w, _image_size.x - x)
+						h = minf(h, _image_size.y - y)
 					if w >= 2.0 and h >= 2.0:
 						if not _overlaps_any_frame(Rect2(x, y, w, h)):
 							frame_drawn.emit(Rect2(x, y, w, h))
 					queue_redraw()
 				else:
-					# Click sin drag → blob hover
+					# Click without drag in DRAW mode → blob hover
 					if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
 						blob_clicked.emit(_hover_rect)
 
