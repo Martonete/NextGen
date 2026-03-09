@@ -40,6 +40,7 @@ var _file_list: FileListPanel
 var _canvas: SpriteCanvas
 var _inspector: InspectorPanel
 var _lbl_status: Label
+var _menu_ver: PopupMenu
 
 # Dialogs
 var _dlg_client_folder: FileDialog
@@ -172,14 +173,17 @@ func _build_menu_bar() -> MenuBar:
 	m_guardar.id_pressed.connect(_on_guardar_menu)
 	mb.add_child(m_guardar)
 
-	var m_ver := PopupMenu.new()
-	m_ver.name = "Ver"
-	m_ver.add_item("Zoom +", 0, KEY_EQUAL)
-	m_ver.add_item("Zoom -", 1, KEY_MINUS)
-	m_ver.add_item("Zoom 100%", 2, KEY_1)
-	m_ver.add_item("Ajustar al canvas", 3, KEY_0)
-	m_ver.id_pressed.connect(_on_ver_menu)
-	mb.add_child(m_ver)
+	_menu_ver = PopupMenu.new()
+	_menu_ver.name = "Ver"
+	_menu_ver.add_check_item("Frames", 10)
+	_menu_ver.set_item_checked(_menu_ver.get_item_index(10), true)
+	_menu_ver.add_separator()
+	_menu_ver.add_item("Zoom +", 0, KEY_EQUAL)
+	_menu_ver.add_item("Zoom -", 1, KEY_MINUS)
+	_menu_ver.add_item("Zoom 100%", 2, KEY_1)
+	_menu_ver.add_item("Ajustar al canvas", 3, KEY_0)
+	_menu_ver.id_pressed.connect(_on_ver_menu)
+	mb.add_child(_menu_ver)
 
 	return mb
 
@@ -309,6 +313,13 @@ func _on_ver_menu(id: int) -> void:
 		1: _canvas.zoom_out()
 		2: _canvas.zoom_reset()
 		3: _canvas.fit_to_canvas()
+		10:
+			# Toggle Frames overlay visibility
+			var idx := _menu_ver.get_item_index(10)
+			var checked := not _menu_ver.is_item_checked(idx)
+			_menu_ver.set_item_checked(idx, checked)
+			_canvas.show_frames = checked
+			_canvas.queue_redraw()
 
 
 # ── Load client folder ──────────────────────────────────────────────────────
@@ -427,7 +438,8 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	# Detect related animations (bodies, FXs) that use GRHs from this image
 	var related := _find_related_animations(file_num)
 	_inspector.update_related_animations(related)
-	_inspector.set_related_image(img)
+	# Load per-file_num textures for each related animation preview
+	_load_related_textures(related, file_num, img)
 
 	var related_info := ""
 	if not related.is_empty():
@@ -1098,6 +1110,51 @@ func _find_related_animations(file_num: int) -> Array:
 			})
 
 	return result
+
+
+## Load the image for a given file_num from the graficos folder.
+## Returns null if not found.
+func _load_image_for_file_num(fnum: int) -> Image:
+	if _graficos_folder_path.is_empty() or fnum <= 0:
+		return null
+	# Try common extensions
+	for ext in ["png", "bmp", "jpg", "jpeg", "webp"]:
+		var p := _graficos_folder_path.path_join("%d.%s" % [fnum, ext])
+		if FileAccess.file_exists(p):
+			return _load_image_from_os_path(p)
+	return null
+
+
+## For each related animation preview, collect its unique file_nums,
+## load the images, and pass them as textures dict to the preview.
+func _load_related_textures(related: Array, current_file_num: int, current_img: Image) -> void:
+	# Cache loaded images to avoid reloading the same file_num
+	var img_cache: Dictionary = {}
+	img_cache[current_file_num] = current_img
+
+	for i in range(related.size()):
+		var anim: Dictionary = related[i]
+		var frames: Array = anim.get("frames", [])
+		# Collect unique file_nums in this animation
+		var textures: Dictionary = {}
+		for fr in frames:
+			var fnum: int = fr.get("file_num", 0)
+			if fnum <= 0:
+				continue
+			if textures.has(fnum):
+				continue
+			# Load or use cache
+			var img: Image
+			if img_cache.has(fnum):
+				img = img_cache[fnum]
+			else:
+				img = _load_image_for_file_num(fnum)
+				if img != null:
+					img_cache[fnum] = img
+			if img != null:
+				textures[fnum] = ImageTexture.create_from_image(img)
+		if i < _inspector._related_previews.size():
+			_inspector._related_previews[i].set_textures(textures)
 
 
 func _load_personajes_ind(path: String) -> Array:

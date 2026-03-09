@@ -71,6 +71,10 @@ var snap_mode: int = 0
 var snap_x: int = 32
 var snap_y: int = 32
 
+# ── Visibility toggle ────────────────────────────────────────────────────────
+
+var show_frames: bool = true
+
 func set_snap(mode: int, sx: int, sy: int) -> void:
 	snap_mode = mode
 	snap_x = sx
@@ -308,33 +312,34 @@ func _draw() -> void:
 				"Click p/ agregar  %d x %d" % [_hover_rect.size.x, _hover_rect.size.y],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 0.5, 0.9))
 
-	# Frames existentes
-	for i in range(_frames.size()):
-		var fr: Dictionary = _frames[i]
-		var col: Color = FRAME_COLORS[i % FRAME_COLORS.size()]
-		var is_sel := (i == _selected_frame)
-		# Durante resize/move activo, usar el rect live para el frame seleccionado
-		var draw_r: Rect2
-		if is_sel and _resize_active:
-			draw_r = _resize_live
-		elif is_sel and _move_active:
-			draw_r = Rect2(_move_live_pos, _move_frame_orig.size)
-		else:
-			draw_r = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
-		var sr := _irect2srect(draw_r)
-		draw_rect(sr, Color(col.r, col.g, col.b, 0.28 if is_sel else 0.12))
-		draw_rect(sr, Color.WHITE if is_sel else col, false, 2.5 if is_sel else 1.0)
-		if sr.size.x > 22:
-			var lbl: String
+	# Frames existentes (skip if toggled off in Ver menu)
+	if show_frames:
+		for i in range(_frames.size()):
+			var fr: Dictionary = _frames[i]
+			var col: Color = FRAME_COLORS[i % FRAME_COLORS.size()]
+			var is_sel := (i == _selected_frame)
+			# Durante resize/move activo, usar el rect live para el frame seleccionado
+			var draw_r: Rect2
 			if is_sel and _resize_active:
-				lbl = "%d×%d" % [int(draw_r.size.x), int(draw_r.size.y)]
+				draw_r = _resize_live
+			elif is_sel and _move_active:
+				draw_r = Rect2(_move_live_pos, _move_frame_orig.size)
 			else:
-				lbl = "G%d" % fr.get("grh_index", 0)
-			draw_string(ThemeDB.fallback_font, sr.position + Vector2(3, 14),
-				lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.95))
+				draw_r = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
+			var sr := _irect2srect(draw_r)
+			draw_rect(sr, Color(col.r, col.g, col.b, 0.15 if is_sel else 0.06))
+			draw_rect(sr, Color.WHITE if is_sel else col, false, 2.0 if is_sel else 1.0)
+			if sr.size.x > 22:
+				var lbl: String
+				if is_sel and _resize_active:
+					lbl = "%d×%d" % [int(draw_r.size.x), int(draw_r.size.y)]
+				else:
+					lbl = "G%d" % fr.get("grh_index", 0)
+				draw_string(ThemeDB.fallback_font, sr.position + Vector2(3, 14),
+					lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.85))
 
 	# Handles del frame seleccionado (dibujados encima)
-	if _selected_frame >= 0 and _selected_frame < _frames.size():
+	if show_frames and _selected_frame >= 0 and _selected_frame < _frames.size():
 		var fr: Dictionary = _frames[_selected_frame]
 		var draw_r: Rect2
 		if _resize_active:

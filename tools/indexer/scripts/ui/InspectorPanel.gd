@@ -207,10 +207,15 @@ func update_related_animations(anims: Array) -> void:
 		var grh_idx: int = anim.get("grh_index", 0)
 
 		# Data for animation playback
+		# AO speed → FPS: AO encodes speed as ms per full cycle, roughly
+		# speed=100 means ~1.5s full cycle for 6 frames ≈ 4 FPS
+		# speed=200 means ~0.75s cycle ≈ 8 FPS. Formula: speed / 150 * frames.
+		# Simplified: total_time = frames / (speed / 150), fps = speed / 150
+		var anim_fps := maxf(speed / 150.0, 0.5)
 		var ad := {
 			"playing": true,
 			"time": 0.0,
-			"fps": maxf(speed / 20.0, 1.0),  # AO speed to approx FPS
+			"fps": anim_fps,
 			"frame_idx": 0,
 			"frames": frames
 		}

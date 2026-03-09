@@ -4,6 +4,7 @@ class_name FramePreviewPanel
 extends Control
 
 var _texture: ImageTexture = null
+var _textures: Dictionary = {}  # file_num → ImageTexture (multi-image support)
 var _frames: Array = []
 var _current_idx: int = 0
 
@@ -18,6 +19,15 @@ func set_image(img: Image) -> void:
 		_texture = ImageTexture.create_from_image(img)
 	else:
 		_texture = null
+	queue_redraw()
+
+
+## Set multiple textures keyed by file_num (for animations spanning multiple images).
+func set_textures(textures: Dictionary) -> void:
+	_textures = textures
+	# Set default _texture to the first one if available
+	if not _textures.is_empty() and _texture == null:
+		_texture = _textures.values()[0]
 	queue_redraw()
 
 
@@ -42,7 +52,7 @@ func get_frame_count() -> int:
 func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), COL_BG)
 
-	if _texture == null or _frames.is_empty():
+	if (_texture == null and _textures.is_empty()) or _frames.is_empty():
 		draw_string(ThemeDB.fallback_font, size * 0.5 - Vector2(55, 6),
 			"Sin frames cargados", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.4, 0.4, 0.4))
 		return
@@ -52,6 +62,14 @@ func _draw() -> void:
 	var fw: int = f.w
 	var fh: int = f.h
 	if fw <= 0 or fh <= 0:
+		return
+
+	# Pick the correct texture for this frame's file_num
+	var tex: ImageTexture = _texture
+	var frame_file: int = f.get("file_num", 0)
+	if frame_file > 0 and _textures.has(frame_file):
+		tex = _textures[frame_file]
+	if tex == null:
 		return
 
 	var src_rect := Rect2(float(f.sx), float(f.sy), float(fw), float(fh))
@@ -73,7 +91,7 @@ func _draw() -> void:
 				minf(CS, dw - col * CS), minf(CS, dh - row * CS)
 			), cc)
 
-	draw_texture_rect_region(_texture, dst_rect, src_rect)
+	draw_texture_rect_region(tex, dst_rect, src_rect)
 
 	# Border around frame
 	draw_rect(dst_rect, Color(0.5, 0.5, 0.5, 0.6), false, 1.0)
