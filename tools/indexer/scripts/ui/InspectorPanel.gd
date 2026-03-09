@@ -759,12 +759,11 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 
 		# Status badge: indexed or not
 		if is_indexed:
-			var badge := IndexerTheme.label("IND", IndexerTheme.TEXT_SUCCESS, 9)
+			var badge := IndexerTheme.label("INDEXADO", IndexerTheme.TEXT_SUCCESS, 9)
 			badge.tooltip_text = "Indexado en Graficos.ind"
 			row.add_child(badge)
 		else:
 			# "Indexar" button with double confirmation
-			var idx := i
 			var btn_idx := Button.new()
 			btn_idx.text = "+"
 			btn_idx.tooltip_text = "Agregar a Graficos.ind (doble click)"
@@ -773,19 +772,17 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 			btn_idx.add_theme_color_override("font_color", IndexerTheme.TEXT_WARNING)
 			btn_idx.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 2, 2, 1))
 			btn_idx.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 2, 2, 1))
-			btn_idx.pressed.connect(_on_index_frame_btn.bind(idx, btn_idx))
+			btn_idx.pressed.connect(_on_index_frame_btn.bind(i, btn_idx))
 			row.add_child(btn_idx)
 
 		# Select button (non-selected only)
 		if not is_sel:
-			var idx := i
-			var btn_sel := IndexerTheme.icon_button("Sel", func(): frame_selected.emit(idx), "Seleccionar", 28)
+			var btn_sel := IndexerTheme.icon_button("Seleccionar", func(): frame_selected.emit(i), "Seleccionar frame", 72)
 			btn_sel.add_theme_font_size_override("font_size", 9)
 			row.add_child(btn_sel)
 
 		# Delete X
-		var idx2 := i
-		var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(idx2), "Eliminar", 22)
+		var btn_del := IndexerTheme.icon_button("X", func(): frame_deleted.emit(i), "Eliminar", 22)
 		btn_del.add_theme_font_size_override("font_size", 9)
 		btn_del.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
 		row.add_child(btn_del)
