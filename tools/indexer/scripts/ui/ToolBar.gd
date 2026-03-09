@@ -98,6 +98,18 @@ func set_tool(mode: int) -> void:
 		_tool_buttons[i].button_pressed = (i == mode)
 
 
+func set_snap(mode: int, sx: int = -1, sy: int = -1) -> void:
+	_current_snap = mode
+	for i in range(_snap_buttons.size()):
+		_snap_buttons[i].set_pressed_no_signal(_snap_buttons[i] == _get_snap_btn(mode))
+	_snap_spin_row.visible = (mode == 1)
+	if sx > 0 and _spin_snap_x != null:
+		_spin_snap_x.value = sx
+	if sy > 0 and _spin_snap_y != null:
+		_spin_snap_y.value = sy
+	_emit_snap()
+
+
 func _on_tool_pressed(mode: int) -> void:
 	_current_tool = mode
 	for i in range(_tool_buttons.size()):

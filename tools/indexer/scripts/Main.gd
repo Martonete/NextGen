@@ -369,12 +369,16 @@ func _on_file_selected(path: String, file_num: int) -> void:
 	var blob_data := FrameDetector.detect_blobs_indexed(img, 0.03, 3, 1)
 	_canvas.set_blob_data(blob_data["map"], blob_data["rects"], blob_data["id_to_rect"], blob_data["width"])
 
+	# Auto-detect sprite sheet type and suggest best snap mode
+	var rects: Array = blob_data["rects"]
+	var snap_hint := _detect_snap_hint(rects)
+
 	# Update GRH viewer
 	var grh_entries := _get_grh_entries_for_file_num(file_num)
 	_inspector.update_grh_viewer(grh_entries, _current_texture)
 
-	_update_status("%s — FileNum=%d — %d GRHs — %d blobs" % [
-		path.get_file(), file_num, _current_frames.size(), blob_data["rects"].size()])
+	_update_status("%s — FileNum=%d — %d GRHs — %d blobs — %s" % [
+		path.get_file(), file_num, _current_frames.size(), rects.size(), snap_hint])
 
 
 # ── Canvas signals ───────────────────────────────────────────────────────────
@@ -671,6 +675,63 @@ func _clamp_w(x: int, w: int) -> int:
 func _clamp_h(y: int, h: int) -> int:
 	if _current_image == null: return maxi(h, 1)
 	return clampi(h, 1, _current_image.get_height() - y)
+
+
+## Analyze detected blobs and auto-set the best snap mode.
+## Returns a human-readable hint string for the status bar.
+func _detect_snap_hint(rects: Array) -> String:
+	if rects.size() < 2:
+		return "Snap: Pot.2"
+
+	# Collect all blob sizes (w, h)
+	var sizes: Array = []  # Array of Vector2i
+	for r in rects:
+		if r is Rect2i and r.size.x >= 4 and r.size.y >= 4:
+			sizes.append(Vector2i(r.size.x, r.size.y))
+
+	if sizes.is_empty():
+		return "Snap: Pot.2"
+
+	# Group similar sizes (tolerance ±4px in each dimension)
+	const TOL := 4
+	var groups: Array = []  # [{w, h, count}]
+	for s in sizes:
+		var found := false
+		for g in groups:
+			if absi(s.x - g["w"]) <= TOL and absi(s.y - g["h"]) <= TOL:
+				g["count"] += 1
+				found = true
+				break
+		if not found:
+			groups.append({"w": s.x, "h": s.y, "count": 1})
+
+	# Sort by count descending
+	groups.sort_custom(func(a, b): return a["count"] > b["count"])
+
+	var best: Dictionary = groups[0]
+	var ratio: float = float(best["count"]) / float(sizes.size())
+
+	# Check if best size is already a power of 2
+	var w_is_pow2 := (best["w"] & (best["w"] - 1)) == 0 and best["w"] > 0
+	var h_is_pow2 := (best["h"] & (best["h"] - 1)) == 0 and best["h"] > 0
+
+	if ratio >= 0.5 and best["count"] >= 3:
+		# Majority of blobs share a common size → grid mode
+		var gw: int = best["w"]
+		var gh: int = best["h"]
+		_toolbar.set_snap(1, gw, gh)
+		_canvas.set_snap(1, gw, gh)
+		return "Snap: Grid %dx%d (auto — %d/%d blobs iguales)" % [gw, gh, best["count"], sizes.size()]
+	elif w_is_pow2 and h_is_pow2:
+		# Mixed sizes but pow2 works
+		_toolbar.set_snap(2)
+		_canvas.set_snap(2, 32, 32)
+		return "Snap: Pot.2 (auto — tamaños variados)"
+	else:
+		# Mixed sizes, not all pow2 → no snap
+		_toolbar.set_snap(0)
+		_canvas.set_snap(0, 32, 32)
+		return "Snap: Off (auto — tamaños irregulares)"
 
 
 func _refresh_all() -> void:
