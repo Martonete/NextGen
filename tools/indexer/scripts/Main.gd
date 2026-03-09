@@ -65,6 +65,14 @@ func _ready() -> void:
 	# Default snap: Potencia de 2 per dimension (mode 2)
 	_canvas.set_snap(2, 32, 32)
 	_update_status("Listo. Abre una carpeta de cliente para comenzar.")
+	# Restore previous session
+	call_deferred("_restore_session")
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_session()
+		get_tree().quit()
 
 
 func _process(delta: float) -> void:
@@ -1064,9 +1072,11 @@ func _load_prefs() -> void:
 		return
 	_recent_clients = _prefs.get_value("general", "recent_clients", [])
 
+
 func _save_prefs() -> void:
 	_prefs.set_value("general", "recent_clients", _recent_clients)
 	_prefs.save(PREFS_PATH)
+
 
 func _push_recent_client(path: String) -> void:
 	_recent_clients.erase(path)
@@ -1074,6 +1084,90 @@ func _push_recent_client(path: String) -> void:
 	while _recent_clients.size() > MAX_RECENT:
 		_recent_clients.pop_back()
 	_save_prefs()
+
+
+# ── Session save/restore ─────────────────────────────────────────────────────
+
+func _save_session() -> void:
+	# Save current session state so the app reopens where you left off
+	_prefs.set_value("general", "recent_clients", _recent_clients)
+
+	# Last open folder
+	if not _client_graficos_path.is_empty():
+		_prefs.set_value("session", "last_client_path", _client_graficos_path)
+	elif not _graficos_folder_path.is_empty():
+		_prefs.set_value("session", "last_source_path", _graficos_folder_path)
+
+	# Last selected file
+	if not _current_image_path.is_empty():
+		_prefs.set_value("session", "last_image_path", _current_image_path)
+		_prefs.set_value("session", "last_file_num", _current_file_num)
+
+	# Snap state
+	_prefs.set_value("session", "snap_mode", _canvas.snap_mode)
+	_prefs.set_value("session", "snap_x", _canvas.snap_x)
+	_prefs.set_value("session", "snap_y", _canvas.snap_y)
+
+	# Tool mode
+	_prefs.set_value("session", "tool_mode", _canvas.tool_mode)
+
+	# Inspector tab
+	if _inspector._tabs != null:
+		_prefs.set_value("session", "inspector_tab", _inspector._tabs.current_tab)
+
+	# Next GRH index
+	_prefs.set_value("session", "next_grh", _next_grh_index)
+
+	_prefs.save(PREFS_PATH)
+
+
+func _restore_session() -> void:
+	if _prefs.load(PREFS_PATH) != OK:
+		return
+
+	# Restore client folder
+	var last_client: String = _prefs.get_value("session", "last_client_path", "")
+	var last_source: String = _prefs.get_value("session", "last_source_path", "")
+
+	if not last_client.is_empty() and DirAccess.dir_exists_absolute(last_client):
+		_load_client_folder(last_client)
+	elif not last_source.is_empty() and DirAccess.dir_exists_absolute(last_source):
+		_load_source_folder(last_source)
+	else:
+		# Folder moved or deleted — skip, user will open manually
+		if not last_client.is_empty() or not last_source.is_empty():
+			_update_status("Carpeta anterior no encontrada. Abre una nueva.")
+		return
+
+	# Restore snap
+	var snap_mode: int = _prefs.get_value("session", "snap_mode", 2)
+	var snap_sx: int = _prefs.get_value("session", "snap_x", 32)
+	var snap_sy: int = _prefs.get_value("session", "snap_y", 32)
+	_toolbar.set_snap(snap_mode, snap_sx, snap_sy)
+	_canvas.set_snap(snap_mode, snap_sx, snap_sy)
+
+	# Restore tool mode
+	var tool_mode: int = _prefs.get_value("session", "tool_mode", 0)
+	_toolbar.set_tool(tool_mode)
+
+	# Restore inspector tab
+	var tab_idx: int = _prefs.get_value("session", "inspector_tab", 0)
+	if _inspector._tabs != null and tab_idx < _inspector._tabs.get_tab_count():
+		_inspector._tabs.current_tab = tab_idx
+
+	# Restore next GRH (only if higher than what was loaded from .ind)
+	var saved_next: int = _prefs.get_value("session", "next_grh", 0)
+	if saved_next > _next_grh_index:
+		_next_grh_index = saved_next
+		_inspector.set_next_grh(_next_grh_index)
+
+	# Restore last selected image
+	var last_image: String = _prefs.get_value("session", "last_image_path", "")
+	if not last_image.is_empty() and FileAccess.file_exists(last_image):
+		var last_fnum: int = _prefs.get_value("session", "last_file_num", 0)
+		# Defer so the file list has finished loading
+		call_deferred("_on_file_selected", last_image, last_fnum)
+
 
 func _update_status(msg: String) -> void:
 	if _lbl_status != null:
