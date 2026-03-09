@@ -191,10 +191,13 @@ func clear_image() -> void:
 
 func fit_to_canvas() -> void:
 	if _image_size == Vector2.ZERO or size == Vector2.ZERO: return
-	var margin := 20.0
-	var usable_w := size.x - margin * 2
-	var usable_h := size.y - margin * 2
+	# Fit entire image with generous margin so it's not zoomed in too much
+	var margin_pct := 0.15  # 15% margin on each side
+	var usable_w := size.x * (1.0 - margin_pct * 2)
+	var usable_h := size.y * (1.0 - margin_pct * 2)
 	_zoom = minf(usable_w / _image_size.x, usable_h / _image_size.y)
+	# Cap max zoom so large images don't appear huge
+	_zoom = minf(_zoom, 1.0)
 	_pan = Vector2(
 		(size.x - _image_size.x * _zoom) * 0.5,
 		(size.y - _image_size.y * _zoom) * 0.5
@@ -352,12 +355,27 @@ func _draw() -> void:
 
 	# Rubber band manual
 	if _drawing:
-		var ds := _i2s(_draw_start_img)
-		var dc := _i2s(_draw_cur_img)
-		var rb := Rect2(Vector2(minf(ds.x, dc.x), minf(ds.y, dc.y)),
-			Vector2(absf(dc.x - ds.x), absf(dc.y - ds.y)))
-		draw_rect(rb, Color(1, 1, 1, 0.12))
-		draw_rect(rb, Color.WHITE, false, 1.5)
+		# Show snapped preview while drawing
+		var ix := minf(_draw_start_img.x, _draw_cur_img.x)
+		var iy := minf(_draw_start_img.y, _draw_cur_img.y)
+		var iw := absf(_draw_cur_img.x - _draw_start_img.x)
+		var ih := absf(_draw_cur_img.y - _draw_start_img.y)
+		if snap_mode != 0 and iw >= 2.0 and ih >= 2.0:
+			var snapped := _apply_snap(Rect2i(int(ix), int(iy), int(iw), int(ih)))
+			var sr := _irect2srect(Rect2(snapped.position, snapped.size))
+			draw_rect(sr, Color(0.3, 1.0, 0.3, 0.15))
+			draw_rect(sr, Color(0.3, 1.0, 0.3, 0.9), false, 2.0)
+			# Size label
+			draw_string(ThemeDB.fallback_font, sr.position + Vector2(4, 14),
+				"%d x %d" % [snapped.size.x, snapped.size.y],
+				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.3, 1.0, 0.3, 0.95))
+		else:
+			var ds := _i2s(_draw_start_img)
+			var dc := _i2s(_draw_cur_img)
+			var rb := Rect2(Vector2(minf(ds.x, dc.x), minf(ds.y, dc.y)),
+				Vector2(absf(dc.x - ds.x), absf(dc.y - ds.y)))
+			draw_rect(rb, Color(1, 1, 1, 0.12))
+			draw_rect(rb, Color.WHITE, false, 1.5)
 
 	# Info zoom
 	draw_string(ThemeDB.fallback_font, Vector2(6, size.y - 6),
@@ -506,6 +524,13 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 						y = maxf(y, 0.0)
 						w = minf(w, _image_size.x - x)
 						h = minf(h, _image_size.y - y)
+					# Apply snap (pow2, grid, etc.) to drawn frame
+					if snap_mode != 0 and w >= 2.0 and h >= 2.0:
+						var snapped := _apply_snap(Rect2i(int(x), int(y), int(w), int(h)))
+						x = float(snapped.position.x)
+						y = float(snapped.position.y)
+						w = float(snapped.size.x)
+						h = float(snapped.size.y)
 					if w >= 2.0 and h >= 2.0:
 						if not _overlaps_any_frame(Rect2(x, y, w, h)):
 							frame_drawn.emit(Rect2(x, y, w, h))

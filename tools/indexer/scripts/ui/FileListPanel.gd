@@ -64,7 +64,11 @@ func load_folder(path: String) -> void:
 	while fname != "":
 		var ext := fname.get_extension().to_lower()
 		if ext in ["png", "jpg", "jpeg", "bmp", "tga", "webp"]:
-			_all_files.append(path.path_join(fname))
+			# Only include files with purely numeric basenames (e.g. "041.png", "1.bmp")
+			# Skip interface/UI graphics that have text names (e.g. "VentanaPrincipal.jpg")
+			var basename := fname.get_basename()
+			if basename.is_valid_int():
+				_all_files.append(path.path_join(fname))
 		fname = dir.get_next()
 	dir.list_dir_end()
 

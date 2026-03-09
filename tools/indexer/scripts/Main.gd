@@ -28,6 +28,11 @@ var _bodies_data: Array = []
 var _fxs_data: Array = []
 var _mi_cabecera_fxs: PackedByteArray = PackedByteArray()
 
+# Undo stack: stores snapshots of {frames, selected, next_grh}
+const MAX_UNDO := 50
+var _undo_stack: Array = []
+var _redo_stack: Array = []
+
 # ── UI components ────────────────────────────────────────────────────────────
 
 var _toolbar: IndexerToolBar
@@ -57,6 +62,8 @@ func _ready() -> void:
 	_build_ui()
 	_build_dialogs()
 	_connect_signals()
+	# Default snap: Potencia de 2 per dimension (mode 2)
+	_canvas.set_snap(2, 32, 32)
 	_update_status("Listo. Abre una carpeta de cliente para comenzar.")
 
 
@@ -222,6 +229,12 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		match k.keycode:
 			KEY_S: _on_save_ind()
 			KEY_O: _dlg_client_folder.popup_centered_ratio(0.7)
+			KEY_Z:
+				if k.shift_pressed:
+					_redo()
+				else:
+					_undo()
+			KEY_Y: _redo()
 	else:
 		match k.keycode:
 			KEY_V: _toolbar.set_tool(IndexerToolBar.Tool.SELECT)
@@ -367,6 +380,7 @@ func _on_file_selected(path: String, file_num: int) -> void:
 # ── Canvas signals ───────────────────────────────────────────────────────────
 
 func _on_canvas_frame_drawn(rect: Rect2) -> void:
+	_push_undo()
 	var file_num := _current_file_num
 	var grh_idx := _next_grh_index
 	_next_grh_index += 1
@@ -391,6 +405,7 @@ func _on_canvas_blob_clicked(rect: Rect2i) -> void:
 func _on_canvas_frame_resized(index: int, new_rect: Rect2) -> void:
 	if index < 0 or index >= _current_frames.size():
 		return
+	_push_undo()
 	var f: Dictionary = _current_frames[index]
 	f["sx"] = int(new_rect.position.x)
 	f["sy"] = int(new_rect.position.y)
@@ -424,6 +439,7 @@ func _on_inspector_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh
 		idx = _selected_frame_idx
 	if idx < 0 or idx >= _current_frames.size():
 		return
+	_push_undo()
 	var f: Dictionary = _current_frames[idx]
 	f["sx"] = sx; f["sy"] = sy; f["w"] = w; f["h"] = h; f["grh_index"] = grh
 	_current_frames[idx] = f
@@ -431,6 +447,7 @@ func _on_inspector_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh
 
 
 func _on_clear_frames() -> void:
+	_push_undo()
 	_current_frames = []
 	_selected_frame_idx = -1
 	_refresh_all()
@@ -469,6 +486,7 @@ func _on_split_frame(cell_w: int, cell_h: int) -> void:
 	if cols == 1 and rows == 1:
 		_update_status("Solo cabe 1 celda — nada que dividir.")
 		return
+	_push_undo()
 	var file_num: int = f.file_num
 	var base_x: int = f.sx
 	var base_y: int = f.sy
@@ -528,6 +546,7 @@ func _on_add_manual_frame() -> void:
 	if _current_image == null:
 		_update_status("Carga una imagen primero.")
 		return
+	_push_undo()
 	var frame := {
 		"sx": 0, "sy": 0, "w": 32, "h": 32,
 		"grh_index": _next_grh_index,
@@ -545,6 +564,7 @@ func _on_add_manual_frame() -> void:
 func _delete_frame(idx: int) -> void:
 	if idx < 0 or idx >= _current_frames.size():
 		return
+	_push_undo()
 	_current_frames.remove_at(idx)
 	_selected_frame_idx = mini(_selected_frame_idx, _current_frames.size() - 1)
 	_refresh_all()
@@ -555,6 +575,7 @@ func _apply_detected_frames(detected: Array) -> void:
 	if detected.is_empty():
 		_update_status("No se detectaron frames. Ajusta los parametros.")
 		return
+	_push_undo()
 	_current_frames = []
 	for det in detected:
 		var sx: int; var sy: int; var sw: int; var sh: int
@@ -573,6 +594,57 @@ func _apply_detected_frames(detected: Array) -> void:
 	_inspector.set_next_grh(_next_grh_index)
 	_selected_frame_idx = -1
 	_refresh_all()
+
+
+# ── Undo / Redo ──────────────────────────────────────────────────────────────
+
+func _push_undo() -> void:
+	var snapshot := {
+		"frames": _current_frames.duplicate(true),
+		"selected": _selected_frame_idx,
+		"next_grh": _next_grh_index
+	}
+	_undo_stack.append(snapshot)
+	if _undo_stack.size() > MAX_UNDO:
+		_undo_stack.pop_front()
+	_redo_stack.clear()
+
+
+func _undo() -> void:
+	if _undo_stack.is_empty():
+		_update_status("Nada que deshacer.")
+		return
+	# Save current state for redo
+	_redo_stack.append({
+		"frames": _current_frames.duplicate(true),
+		"selected": _selected_frame_idx,
+		"next_grh": _next_grh_index
+	})
+	var snapshot: Dictionary = _undo_stack.pop_back()
+	_current_frames = snapshot["frames"]
+	_selected_frame_idx = snapshot["selected"]
+	_next_grh_index = snapshot["next_grh"]
+	_inspector.set_next_grh(_next_grh_index)
+	_refresh_all()
+	_update_status("Deshacer. (%d en pila)" % _undo_stack.size())
+
+
+func _redo() -> void:
+	if _redo_stack.is_empty():
+		_update_status("Nada que rehacer.")
+		return
+	_undo_stack.append({
+		"frames": _current_frames.duplicate(true),
+		"selected": _selected_frame_idx,
+		"next_grh": _next_grh_index
+	})
+	var snapshot: Dictionary = _redo_stack.pop_back()
+	_current_frames = snapshot["frames"]
+	_selected_frame_idx = snapshot["selected"]
+	_next_grh_index = snapshot["next_grh"]
+	_inspector.set_next_grh(_next_grh_index)
+	_refresh_all()
+	_update_status("Rehacer. (%d en pila)" % _redo_stack.size())
 
 
 func _refresh_all() -> void:
