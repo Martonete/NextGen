@@ -274,6 +274,18 @@ func _resize_rect_from_drag(handle: int, delta_img: Vector2) -> Rect2:
 	var ny1 := minf(y1, y2 - 1.0)
 	var nx2 := maxf(x2, x1 + 1.0)
 	var ny2 := maxf(y2, y1 + 1.0)
+	# Snap edges to grid tile boundaries
+	if show_grid:
+		var t := float(GRID_TILE)
+		match handle:
+			0: nx1 = floorf(nx1 / t) * t; ny1 = floorf(ny1 / t) * t
+			1: ny1 = floorf(ny1 / t) * t
+			2: nx2 = ceilf(nx2 / t) * t; ny1 = floorf(ny1 / t) * t
+			3: nx2 = ceilf(nx2 / t) * t
+			4: nx2 = ceilf(nx2 / t) * t; ny2 = ceilf(ny2 / t) * t
+			5: ny2 = ceilf(ny2 / t) * t
+			6: nx1 = floorf(nx1 / t) * t; ny2 = ceilf(ny2 / t) * t
+			7: nx1 = floorf(nx1 / t) * t
 	# Clamp to image borders
 	if _image_size.x > 0:
 		nx1 = maxf(nx1, 0.0)
