@@ -1837,11 +1837,32 @@ func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) 
 		if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
 			orig_idx = i
 			break
+	# Determine starting GRH index for split tiles
+	var orig_grh: int = -1
 	if orig_idx >= 0:
+		orig_grh = _current_frames[orig_idx].get("grh_index", -1)
+		# Remove original from grh_data too
+		if orig_grh > 0 and _grh_data["entries"].has(orig_grh):
+			_grh_data["entries"].erase(orig_grh)
 		_current_frames.remove_at(orig_idx)
 
-	# Create NxM 32x32 sub-frames with consecutive GRH indices
-	var first_grh := _next_grh_index
+	# If the original frame was the last GRH (nothing after it), reuse its index
+	# Otherwise start from _next_grh_index to avoid gaps in existing data
+	var first_grh: int
+	if orig_grh > 0 and orig_grh >= _next_grh_index - 1:
+		# It was the last (or beyond) — check no other entries exist after it
+		var has_higher := false
+		for key in _grh_data["entries"]:
+			if int(key) > orig_grh:
+				has_higher = true
+				break
+		if not has_higher:
+			first_grh = orig_grh
+			_next_grh_index = orig_grh
+		else:
+			first_grh = _next_grh_index
+	else:
+		first_grh = _next_grh_index
 	_pending_tex_first_grh = first_grh
 	for row in range(tiles_h):
 		for col in range(tiles_w):
@@ -1948,14 +1969,31 @@ func _on_texture_index_final() -> void:
 
 	if is_single:
 		# 1x1: create indexed frame now (no prior split)
-		first_grh = _next_grh_index
 		_push_undo()
-		# Remove original
+		# Find and remove original, check if it's the last GRH
+		var orig_grh: int = -1
 		for i in range(_current_frames.size()):
 			var f: Dictionary = _current_frames[i]
 			if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
+				orig_grh = f.get("grh_index", -1)
+				if orig_grh > 0 and _grh_data["entries"].has(orig_grh):
+					_grh_data["entries"].erase(orig_grh)
 				_current_frames.remove_at(i)
 				break
+		# Reuse index if it was the last GRH
+		if orig_grh > 0 and orig_grh >= _next_grh_index - 1:
+			var has_higher := false
+			for key in _grh_data["entries"]:
+				if int(key) > orig_grh:
+					has_higher = true
+					break
+			if not has_higher:
+				first_grh = orig_grh
+				_next_grh_index = orig_grh
+			else:
+				first_grh = _next_grh_index
+		else:
+			first_grh = _next_grh_index
 		var grh_idx := _next_grh_index
 		_next_grh_index += 1
 		_current_frames.append({"sx": sx, "sy": sy, "w": fw, "h": fh, "grh_index": grh_idx, "file_num": file_num})
