@@ -526,7 +526,7 @@ pub(super) async fn npc_die(
     // EXP is now given per-hit via CalcularDarExp in user_attack_npc().
     // No death-time exp distribution needed (VB6 parity: exp per hit, not per kill).
 
-    // 6) Gold to killer's inventory (VB6: gold goes to player, NOT floor)
+    // 6) Gold drops to floor at NPC position (VB6: TirarOro in MuereNpc)
     let gold_mult = state.multiplicador_oro;
     let gld_min = (give_gld_min as i64) * (gold_mult as i64);
     let gld_max = (give_gld_max as i64) * (gold_mult as i64);
@@ -536,10 +536,7 @@ pub(super) async fn npc_die(
         gld_min
     };
     if gold_award > 0 {
-        if let Some(user) = state.users.get_mut(&killer_id) {
-            user.gold += gold_award;
-        }
-        send_stats_gold(state, killer_id).await;
+        drop_gold_on_floor(state, map, x, y, gold_award as i32).await;
     }
 
     // 7) Faction points (VB6: GivePTS)
@@ -569,6 +566,55 @@ pub(super) async fn npc_die(
           npc_name, npc_idx, give_exp, gold_award);
 }
 
+
+/// VB6: TirarOro — drop gold on the floor at the given position.
+/// Splits into 10,000-chunk piles (INTMAXGOLD). Stacks with existing gold on tile.
+async fn drop_gold_on_floor(state: &mut GameState, map: i32, x: i32, y: i32, total: i32) {
+    let grh_index = state.get_object(GOLD_OBJ_INDEX)
+        .map(|o| o.grh_index)
+        .unwrap_or(0);
+
+    let mut remaining = total;
+    while remaining > 0 {
+        let chunk = remaining.min(10_000);
+        remaining -= chunk;
+
+        // Check if tile can hold gold (empty or already gold)
+        let can_place = state.world.grid(map)
+            .and_then(|g| g.tile(x, y))
+            .map(|t| t.ground_item.obj_index == 0 || t.ground_item.obj_index == GOLD_OBJ_INDEX)
+            .unwrap_or(false);
+
+        if !can_place {
+            break;
+        }
+
+        let is_new = {
+            let grid = state.world.grid_mut(map);
+            if let Some(tile) = grid.tile_mut(x, y) {
+                if tile.ground_item.obj_index == GOLD_OBJ_INDEX {
+                    tile.ground_item.amount += chunk;
+                    false
+                } else {
+                    tile.ground_item.obj_index = GOLD_OBJ_INDEX;
+                    tile.ground_item.amount = chunk;
+                    true
+                }
+            } else {
+                break;
+            }
+        };
+
+        if is_new && grh_index > 0 {
+            let pkt = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+        }
+
+        clean_world_add_item(state, map, x, y, 10, GOLD_OBJ_INDEX);
+        // Gold stacks on a single tile — no need for multiple piles
+        break;
+    }
+}
 
 /// Drop NPC inventory items on death.
 /// VB6: NPC_TIRAR_ITEMS (Modulo_InventANDobj.bas).

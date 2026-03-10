@@ -550,25 +550,26 @@ pub mod privilege_level {
 
 /// Anti-cheat interval settings loaded from Intervalos.ini.
 /// Values are in game ticks (1 tick = 40ms).
+/// VB6 reference (ms): Melee=1500, Arrows=1400, Spells=1400, Potions=1200, Work=700.
 #[derive(Debug, Clone)]
 pub struct IntervalSettings {
-    pub golpe: i32,           // Melee attack interval (default 37)
-    pub flechas: i32,         // Arrow shot interval (default 28)
-    pub lanzar_hechizo: i32,  // Spell cast interval (default 13)
-    pub poteo_u: i32,         // Potion use interval (default 8)
+    pub golpe: i32,           // Melee attack interval (VB6: 1500ms → 38 ticks)
+    pub flechas: i32,         // Arrow shot interval (VB6: 1400ms → 35 ticks)
+    pub lanzar_hechizo: i32,  // Spell cast interval (VB6: 1400ms → 35 ticks)
+    pub poteo_u: i32,         // Potion use interval (VB6: 1200ms → 30 ticks)
     pub poteo_click: i32,     // Click action interval (default 6)
-    pub work: i32,            // Work/skill interval (default 10)
+    pub work: i32,            // Work/skill interval (VB6: 700ms → 18 ticks)
 }
 
 impl Default for IntervalSettings {
     fn default() -> Self {
         Self {
-            golpe: 37,
-            flechas: 28,
-            lanzar_hechizo: 13,
-            poteo_u: 8,
+            golpe: 38,           // VB6: IntervaloUserPuedeAtacar = 1500ms / 40ms
+            flechas: 35,         // VB6: IntervaloUserPuedeFlechas = 1400ms / 40ms
+            lanzar_hechizo: 35,  // VB6: IntervaloUserPuedeLanzarHechizo = 1400ms / 40ms
+            poteo_u: 30,         // VB6: IntervaloUserPuedePotear = 1200ms / 40ms
             poteo_click: 6,
-            work: 10,
+            work: 18,            // VB6: IntervaloUserPuedeTrabajar = 700ms / 40ms
         }
     }
 }
@@ -1379,12 +1380,12 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
                     .unwrap_or(default)
             };
             let settings = IntervalSettings {
-                golpe: get("Golpe", 37),
-                flechas: get("Flechas", 28),
-                lanzar_hechizo: get("LanzarHechizo", 13),
-                poteo_u: get("PoteoU", 8),
+                golpe: get("Golpe", 38),           // VB6: 1500ms / 40ms
+                flechas: get("Flechas", 35),       // VB6: 1400ms / 40ms
+                lanzar_hechizo: get("LanzarHechizo", 35), // VB6: 1400ms / 40ms
+                poteo_u: get("PoteoU", 30),        // VB6: 1200ms / 40ms
                 poteo_click: get("PoteoClick", 6),
-                work: get("Work", 10),
+                work: get("Work", 18),             // VB6: 700ms / 40ms
             };
             tracing::info!(
                 "Intervals loaded: golpe={}, flechas={}, hechizo={}, poteo={}, click={}, work={}",

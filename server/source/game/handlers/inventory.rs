@@ -11,7 +11,7 @@ use crate::data::objects::{ObjData, ObjType};
 use super::common::*;
 use super::{
     send_inventory_slot, send_full_inventory, build_anm_packet,
-    warp_user, revive_user, naked_body,
+    warp_user, revive_user, naked_body, user_die,
     iniciar_comercio_npc, iniciar_banco, iniciar_boveda_clan,
     DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
 };
@@ -573,48 +573,24 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 return;
             }
 
-            // Remo potion (TipoPocion=6) — special handling: remove paralysis, costs 60 HP
+            // Black potion (TipoPocion=6) — instant death (VB6: Pocion Negra)
+            // Only affects regular players, not GMs
             if obj_data.tipo_pocion == 6 {
-                let (paralyzed, min_hp, class) = match state.users.get(&conn_id) {
-                    Some(u) => (u.paralyzed, u.min_hp, u.class.clone()),
-                    None => return,
-                };
-                if !paralyzed {
-                    state.send_console(conn_id, "No estas paralizado!", font_index::INFO).await;
+                let is_gm = state.users.get(&conn_id).map(|u| u.privileges > 0).unwrap_or(false);
+                if !is_gm {
+                    state.send_console(conn_id, "Sientes un gran mareo y pierdes el conocimiento.", font_index::FIGHT).await;
+                    // Consume item first
+                    if let Some(user) = state.users.get_mut(&conn_id) {
+                        user.inventory[idx].amount -= 1;
+                        if user.inventory[idx].amount <= 0 {
+                            user.inventory[idx] = InventorySlot::default();
+                        }
+                    }
+                    send_inventory_slot(state, conn_id, idx).await;
+                    // Kill the user
+                    user_die(state, conn_id, None).await;
                     return;
                 }
-                if min_hp <= 60 {
-                    state.send_console(conn_id, "No tienes suficiente vida para usar la pocion!", font_index::INFO).await;
-                    return;
-                }
-                // Non-warrior/hunter have 3-round cooldown
-                let is_warrior_or_hunter = class.eq_ignore_ascii_case("Guerrero") || class.eq_ignore_ascii_case("Cazador");
-                if !is_warrior_or_hunter {
-                    let counter_remo = state.users.get(&conn_id).map(|u| u.counter_remo).unwrap_or(0);
-                    if counter_remo > 0 {
-                        state.send_console(conn_id, "Debes esperar para usar otra pocion Remo", font_index::INFO).await;
-                        return;
-                    }
-                }
-                // Apply: remove paralysis, cost 60 HP, set cooldown
-                if let Some(user) = state.users.get_mut(&conn_id) {
-                    user.paralyzed = false;
-                    user.immobilized = false;
-                    user.min_hp -= 60;
-                    if !is_warrior_or_hunter {
-                        user.counter_remo = 3;
-                    }
-                    user.inventory[idx].amount -= 1;
-                    if user.inventory[idx].amount <= 0 {
-                        user.inventory[idx] = InventorySlot::default();
-                    }
-                }
-                // Send PARADOK to toggle paralysis off on client
-                let pkt_para = binary_packets::write_paralize_ok(0);
-                state.send_bytes(conn_id, &pkt_para).await;
-                send_inventory_slot(state, conn_id, idx).await;
-                send_stats_hp(state, conn_id).await;
-                return;
             }
 
             // Apply potion/food effect
@@ -1222,7 +1198,7 @@ pub(super) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 if !user.tomo_pocion {
                     user.attributes_backup = user.attributes;
                 }
-                user.attributes[1] = (user.attributes[1] + amount).min(35);
+                user.attributes[1] = (user.attributes[1] + amount).min(40).min(2 * user.attributes_backup[1]);
                 user.tomo_pocion = true;
                 user.duracion_efecto = obj.duracion_efecto / 40; // ms → ticks (40ms each)
             }
@@ -1231,7 +1207,7 @@ pub(super) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 if !user.tomo_pocion {
                     user.attributes_backup = user.attributes;
                 }
-                user.attributes[0] = (user.attributes[0] + amount).min(35);
+                user.attributes[0] = (user.attributes[0] + amount).min(40).min(2 * user.attributes_backup[0]);
                 user.tomo_pocion = true;
                 user.duracion_efecto = obj.duracion_efecto / 40;
             }
@@ -1256,8 +1232,7 @@ pub(super) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 user.poisoned = false;
             }
             6 => {
-                // Remo potion — Remove paralysis (costs 60 HP, 3-round cooldown for non-warrior/hunter)
-                // Handled separately in handle_use_item since it needs async and class checks
+                // Black potion — handled above (instant death for non-GMs)
             }
             _ => {
                 // Generic consumable (ObjType::UseOnce food items, etc.)

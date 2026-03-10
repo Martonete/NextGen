@@ -461,7 +461,7 @@ pub fn puede_flechear(state: &mut GameState, conn_id: ConnectionId) -> bool {
         return false;
     }
     let flechas = state.intervals.flechas;
-    let golpe = 25;
+    let golpe = state.intervals.golpe;
     if let Some(u) = state.users.get_mut(&conn_id) {
         u.interval_flechas = flechas;
         u.interval_golpe = golpe;

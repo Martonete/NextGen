@@ -478,10 +478,13 @@ pub(super) async fn consume_spell_mana(state: &mut GameState, conn_id: Connectio
                 } else { 0 };
                 if ring_obj == FLAUTAELFICA {
                     if spell.mimetiza {
-                        // Mimicry: 50% less mana
+                        // VB6: Mimicry: 50% less mana
                         mana_cost = (mana_cost as f64 * 0.5) as i32;
+                    } else if spell.tipo == crate::data::spells::SpellType::Invocation {
+                        // VB6: Invocation spells: 30% less mana (mana * 0.7)
+                        mana_cost = (mana_cost as f64 * 0.7) as i32;
                     } else if spell.index as i32 != APOCALIPSIS_SPELL_INDEX {
-                        // Other spells (except Apocalypse): 10% less mana
+                        // VB6: Other spells (except Apocalypse): 10% less mana
                         mana_cost = (mana_cost as f64 * 0.9) as i32;
                     }
                 }
@@ -683,8 +686,8 @@ pub(super) async fn apply_spell_status_npc(
         }
         if spell.paraliza {
             npc.paralyzed = true;
-            // NPCs use 5x the normal paralysis duration (they recover much slower)
-            npc.counter_paralisis = paralisis_interval * 5;
+            // VB6: NPCs use the same paralysis duration as users (IntervaloParalizado)
+            npc.counter_paralisis = paralisis_interval;
         }
         // VB6: RemoverParalisis does NOT work on NPCs (only users)
     }
@@ -1061,11 +1064,18 @@ pub(super) async fn apply_spell_status(
                 .map(|u| u.char_name.clone())
                 .unwrap_or_default();
 
+            let target_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(1);
+
             if caster_class == "CLERIGO" {
                 // Cleric: instant resurrection at full HP
                 revive_user(state, target_id).await;
                 if let Some(target) = state.users.get_mut(&target_id) {
                     target.min_hp = target.max_hp;
+                    // VB6 13.3: reset stats on resurrection
+                    target.min_ham = 0;
+                    target.min_agua = 0;
+                    target.min_mana = 0;
+                    target.min_sta = 0;
                 }
                 send_stats_hp(state, target_id).await;
                 state.send_msg_id(target_id, 749, &caster_name).await;
@@ -1073,13 +1083,19 @@ pub(super) async fn apply_spell_status(
                 // Non-cleric: 10 second delayed resurrection
                 if let Some(target) = state.users.get_mut(&target_id) {
                     target.segundos_para_revivir = 10;
+                    // VB6 13.3: reset stats on resurrection
+                    target.min_ham = 0;
+                    target.min_agua = 0;
+                    target.min_mana = 0;
+                    target.min_sta = 0;
                 }
                 state.send_msg_id(target_id, 845, "").await;
             }
 
-            // Caster pays HP cost (reduced to 10)
+            // Caster pays HP cost — VB6 13.3: hp * (1 - target_level * 0.015)
             if let Some(caster) = state.users.get_mut(&caster_id) {
-                caster.min_hp = 10;
+                caster.min_hp = ((caster.min_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
+                if caster.min_hp < 1 { caster.min_hp = 1; }
             }
             send_stats_hp(state, caster_id).await;
         }
