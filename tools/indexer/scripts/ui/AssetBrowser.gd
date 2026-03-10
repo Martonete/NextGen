@@ -207,7 +207,6 @@ func _build_raw_view() -> void:
 	_raw_text_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_raw_text_edit.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	_raw_text_edit.placeholder_text = "Selecciona un archivo INIT"
-	_raw_text_edit.editable = false
 	raw_split.add_child(_raw_text_edit)
 
 
