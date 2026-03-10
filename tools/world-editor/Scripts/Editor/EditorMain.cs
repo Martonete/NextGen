@@ -544,15 +544,28 @@ public partial class EditorMain : Control
         _dataPath = dataPath;
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
-        // indices.ini ships with the editor itself (res://indices.ini)
-        // Use Godot's own resource path which always works inside the editor
-        string indicesIni = ProjectSettings.GlobalizePath("res://indices.ini");
-        GD.Print($"[Editor] res://indices.ini → {indicesIni} (exists={File.Exists(indicesIni)})");
-        if (!File.Exists(indicesIni))
+        // indices.ini ships with the editor (res://indices.ini)
+        // Read via Godot FileAccess since System.IO can't resolve res:// paths
+        string[]? indicesLines = null;
+        if (Godot.FileAccess.FileExists("res://indices.ini"))
         {
-            // Fallback: try client Data/INIT/ location
-            indicesIni = Path.Combine(dataPath, "INIT", "indices.ini");
-            GD.Print($"[Editor] fallback → {indicesIni} (exists={File.Exists(indicesIni)})");
+            using var f = Godot.FileAccess.Open("res://indices.ini", Godot.FileAccess.ModeFlags.Read);
+            if (f != null)
+            {
+                string text = f.GetAsText();
+                indicesLines = text.Split('\n');
+                GD.Print($"[Editor] Loaded indices.ini from res:// ({indicesLines.Length} lines)");
+            }
+        }
+        // Fallback: try client Data/INIT/ with System.IO
+        if (indicesLines == null)
+        {
+            string indicesFallback = Path.Combine(dataPath, "INIT", "indices.ini");
+            if (File.Exists(indicesFallback))
+            {
+                indicesLines = File.ReadAllLines(indicesFallback);
+                GD.Print($"[Editor] Loaded indices.ini from {indicesFallback}");
+            }
         }
         string mapsDir = Path.Combine(dataPath, "Maps");
 
@@ -565,10 +578,9 @@ public partial class EditorMain : Control
         _grhs = GrhLoader.Load(graficosInd);
         _textures = new TextureManager(graficosDir);
 
-        GD.Print($"[Editor] indices.ini resolved to: {indicesIni} (exists={File.Exists(indicesIni)})");
-        if (File.Exists(indicesIni))
+        if (indicesLines != null)
         {
-            _catalog = TextureCatalog.LoadFromFile(indicesIni);
+            _catalog = TextureCatalog.LoadFromLines(indicesLines);
             SetStatus($"{_grhs.Length} GRHs, {_catalog.AllRefs.Count} texturas, {_catalog.Categories.Count} categorias");
         }
         else

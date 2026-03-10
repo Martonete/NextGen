@@ -97,16 +97,18 @@ public class TextureCatalog
 
     public static TextureCatalog LoadFromFile(string path)
     {
-        var catalog = new TextureCatalog();
-
         if (!File.Exists(path))
         {
             GD.PrintErr($"[Catalog] indices.ini not found: {path}");
-            return catalog;
+            return new TextureCatalog();
         }
+        return LoadFromLines(File.ReadAllLines(path));
+    }
 
-        // Parse INI manually (Godot ConfigFile may not handle all AO INI quirks)
-        var sections = ParseIni(File.ReadAllLines(path));
+    public static TextureCatalog LoadFromLines(string[] lines)
+    {
+        var catalog = new TextureCatalog();
+        var sections = ParseIni(lines);
 
         int refCount = 0;
         if (sections.TryGetValue("INIT", out var initSection))
