@@ -31,7 +31,7 @@ var _content_regions: Array = []         # Array of Rect2i from detect_content_r
 var _frames: Array = []
 var _selected_frame: int = -1
 
-# ── Tool mode (0=Select, 1=Draw, 2=Pan) ─────────────────────────────────────
+# ── Tool mode (0=Select+Draw, 1=Pan) ────────────────────────────────────────
 
 var tool_mode: int = 0
 
@@ -530,13 +530,13 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 				_move_active = false
 				if _texture != null:
 					var ip := _s2i(mb.position)
-					if tool_mode == 2:
+					if tool_mode == 1:
 						# PAN mode: left-click pans
 						_panning = true
 						_pan_start = mb.position
 						_pan_start_offset = _pan
-					elif tool_mode == 0:
-						# SELECT mode: resize handles, frame select/move
+					else:
+						# UNIFIED mode: handles > frame hit > draw on empty
 						var handle := _hit_handles(mb.position)
 						if handle >= 0:
 							_resize_handle = handle
@@ -559,26 +559,20 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 									frame_selected.emit(hit)
 									queue_redraw()
 							else:
+								# Empty space → deselect + start drawing
 								if _selected_frame >= 0:
 									_selected_frame = -1
 									frame_selected.emit(-1)
 									queue_redraw()
-					else:
-						# DRAW mode: draw new frame or click blob
-						if _selected_frame >= 0:
-							_selected_frame = -1
-							frame_selected.emit(-1)
-							queue_redraw()
-						if show_grid:
-							# Snap draw start to nearest tile boundary
-							@warning_ignore("integer_division")
-							ip.x = float((int(ip.x) / GRID_TILE) * GRID_TILE)
-							@warning_ignore("integer_division")
-							ip.y = float((int(ip.y) / GRID_TILE) * GRID_TILE)
-						_draw_start_img = ip
-						_draw_cur_img = ip
+								if show_grid:
+									@warning_ignore("integer_division")
+									ip.x = float((int(ip.x) / GRID_TILE) * GRID_TILE)
+									@warning_ignore("integer_division")
+									ip.y = float((int(ip.y) / GRID_TILE) * GRID_TILE)
+								_draw_start_img = ip
+								_draw_cur_img = ip
 			else:
-				if _panning and tool_mode == 2:
+				if _panning:
 					_panning = false
 				elif _resize_active:
 					_resize_active = false
@@ -641,7 +635,7 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 							frame_drawn.emit(Rect2(x, y, w, h))
 					queue_redraw()
 				else:
-					# Click without drag in DRAW mode → blob click
+					# Click without drag on empty → blob click
 					if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
 						blob_clicked.emit(_hover_rect)
 

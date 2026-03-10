@@ -2,7 +2,7 @@
 class_name IndexerToolBar
 extends PanelContainer
 
-signal tool_changed(mode: int)     # 0=Select, 1=Draw, 2=Pan
+signal tool_changed(mode: int)     # 0=Select+Draw, 1=Pan
 signal detect_toggled(enabled: bool)
 signal zoom_in_pressed
 signal zoom_out_pressed
@@ -13,10 +13,8 @@ signal index_pressed
 signal grid_toggled(visible: bool)
 signal grid_cell_changed(cell_w: int, cell_h: int)
 
-enum Tool { SELECT, DRAW, PAN }
-
 var _tool_buttons: Array[Button] = []
-var _current_tool: int = Tool.SELECT
+var _current_tool: int = 0
 var _chk_detect: CheckBox
 var _chk_grid: CheckBox
 var _opt_grid_cell: OptionButton
@@ -41,9 +39,8 @@ func _ready() -> void:
 
 	# ── Tool modes ──
 	var tools := [
-		["Seleccionar", "Seleccionar / mover frames (V)", Tool.SELECT],
-		["Dibujar", "Dibujar nuevo frame (R/D)", Tool.DRAW],
-		["Mover", "Mover canvas / pan (H)", Tool.PAN],
+		["Editar", "Seleccionar / dibujar / mover frames", 0],
+		["Mover", "Mover canvas / pan (H)", 1],
 	]
 	for t in tools:
 		var btn := IndexerTheme.tool_toggle(t[0], t[1])

@@ -312,9 +312,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			KEY_Y: _redo()
 	else:
 		match k.keycode:
-			KEY_V: _toolbar.set_tool(IndexerToolBar.Tool.SELECT)
-			KEY_R, KEY_D: _toolbar.set_tool(IndexerToolBar.Tool.DRAW)
-			KEY_H: _toolbar.set_tool(IndexerToolBar.Tool.PAN)
+			KEY_V, KEY_R, KEY_D: _toolbar.set_tool(0)  # Edit
+			KEY_H: _toolbar.set_tool(1)  # Pan
 
 
 # ── Tool mode ────────────────────────────────────────────────────────────────
@@ -1540,8 +1539,12 @@ func _restore_session() -> void:
 	_canvas.set_grid_visible(grid_on)
 	_canvas.set_grid_cell(gcw, gch)
 
-	# Restore tool mode
+	# Restore tool mode (migrate old 0=Select,1=Draw,2=Pan → 0=Edit,1=Pan)
 	var tool_mode: int = _prefs.get_value("session", "tool_mode", 0)
+	if tool_mode >= 2:
+		tool_mode = 1  # Pan
+	else:
+		tool_mode = 0  # Edit
 	_toolbar.set_tool(tool_mode)
 
 	# Restore inspector tab
