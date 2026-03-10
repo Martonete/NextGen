@@ -338,6 +338,12 @@ func _connect_signals() -> void:
 	_inspector.index_frame_pressed.connect(_on_index_single_frame)
 	_inspector.view_file_num_pressed.connect(_on_view_file_num)
 	_inspector.next_grh_changed.connect(func(v): _next_grh_index = v)
+	_inspector.save_body_pressed.connect(_on_save_body)
+	_inspector.save_head_pressed.connect(_on_save_head)
+	_inspector.save_helmet_pressed.connect(_on_save_helmet)
+	_inspector.save_weapon_pressed.connect(_on_save_weapon)
+	_inspector.save_shield_pressed.connect(_on_save_shield)
+	_inspector.save_fx_pressed.connect(_on_save_fx)
 
 
 # ── Keyboard shortcuts ───────────────────────────────────────────────────────
@@ -1679,3 +1685,176 @@ func _update_status(msg: String) -> void:
 	if _lbl_status != null:
 		_lbl_status.text = msg
 	print(msg)
+
+
+# ── Asset save handlers ──────────────────────────────────────────────────────
+
+const HEADER_MAGIC := "Argentum Online by Noland-Studios."
+
+func _get_init_path(filename: String) -> String:
+	if _init_folder.is_empty():
+		return ""
+	return _init_folder.path_join(filename)
+
+
+func _read_binary_ind(path: String) -> PackedByteArray:
+	if not FileAccess.file_exists(path):
+		return PackedByteArray()
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return PackedByteArray()
+	var data := f.get_buffer(f.get_length())
+	f.close()
+	return data
+
+
+func _write_binary_ind(path: String, data: PackedByteArray) -> bool:
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		_update_status("Error al escribir: " + path)
+		return false
+	f.store_buffer(data)
+	f.close()
+	return true
+
+
+func _append_binary_entry(filename: String, entry_bytes: PackedByteArray, entry_size: int) -> void:
+	var path := _get_init_path(filename)
+	if path.is_empty():
+		_update_status("Carpeta INIT no configurada. Abrí una carpeta de cliente primero.")
+		return
+
+	var data := _read_binary_ind(path)
+	var new_index: int
+
+	if data.size() == 0:
+		# Create new file: 263-byte header + 2-byte count + entry
+		var header := PackedByteArray()
+		header.resize(263)
+		var magic := HEADER_MAGIC.to_ascii_buffer()
+		for i in range(mini(magic.size(), 263)):
+			header[i] = magic[i]
+		header.append(1)  # count low byte
+		header.append(0)  # count high byte
+		header.append_array(entry_bytes)
+		data = header
+		new_index = 1
+	else:
+		# Read existing count at offset 263
+		if data.size() < 265:
+			_update_status("Archivo corrupto: " + filename)
+			return
+		var count: int = data[263] | (data[264] << 8)
+		new_index = count + 1
+		# Update count
+		data[263] = new_index & 0xFF
+		data[264] = (new_index >> 8) & 0xFF
+		# Append entry
+		data.append_array(entry_bytes)
+
+	if _write_binary_ind(path, data):
+		_update_status("%s: entrada #%d guardada → %s" % [filename, new_index, path.get_file()])
+
+
+func _append_ini_entry(filename: String, section_prefix: String, count_key: String, fields: Dictionary) -> void:
+	var path := _get_init_path(filename)
+	if path.is_empty():
+		_update_status("Carpeta INIT no configurada. Abrí una carpeta de cliente primero.")
+		return
+
+	var lines: PackedStringArray
+	var count: int = 0
+
+	if FileAccess.file_exists(path):
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f != null:
+			lines = f.get_as_text().split("\n")
+			f.close()
+		# Parse current count
+		for line in lines:
+			if line.strip_edges().begins_with(count_key + "="):
+				count = int(line.strip_edges().substr(count_key.length() + 1))
+				break
+	else:
+		lines = PackedStringArray(["[INIT]", count_key + "=0", ""])
+
+	var new_index := count + 1
+
+	# Update count in [INIT]
+	for i in range(lines.size()):
+		if lines[i].strip_edges().begins_with(count_key + "="):
+			lines[i] = count_key + "=" + str(new_index)
+			break
+
+	# Append new section
+	lines.append("")
+	lines.append("[%s%d]" % [section_prefix, new_index])
+	for key in fields:
+		lines.append("%s=%s" % [key, str(fields[key])])
+
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		_update_status("Error al escribir: " + path)
+		return
+	f.store_string("\n".join(lines))
+	f.close()
+	_update_status("%s: %s%d guardado → %s" % [filename, section_prefix, new_index, path.get_file()])
+
+
+func _on_save_body(walk_n: int, walk_e: int, walk_s: int, walk_w: int, off_x: int, off_y: int) -> void:
+	# personajes.ind — binary, 12 bytes per entry
+	var entry := PackedByteArray()
+	entry.resize(12)
+	entry.encode_s16(0, walk_n)
+	entry.encode_s16(2, walk_e)
+	entry.encode_s16(4, walk_s)
+	entry.encode_s16(6, walk_w)
+	entry.encode_s16(8, off_x)
+	entry.encode_s16(10, off_y)
+	_append_binary_entry("Personajes.ind", entry, 12)
+
+
+func _on_save_head(head_n: int, head_e: int, head_s: int, head_w: int) -> void:
+	# cabezas.ind — binary, 8 bytes per entry
+	var entry := PackedByteArray()
+	entry.resize(8)
+	entry.encode_s16(0, head_n)
+	entry.encode_s16(2, head_e)
+	entry.encode_s16(4, head_s)
+	entry.encode_s16(6, head_w)
+	_append_binary_entry("Cabezas.ind", entry, 8)
+
+
+func _on_save_helmet(head_n: int, head_e: int, head_s: int, head_w: int) -> void:
+	# cascos.ind — binary, 8 bytes per entry
+	var entry := PackedByteArray()
+	entry.resize(8)
+	entry.encode_s16(0, head_n)
+	entry.encode_s16(2, head_e)
+	entry.encode_s16(4, head_s)
+	entry.encode_s16(6, head_w)
+	_append_binary_entry("Cascos.ind", entry, 8)
+
+
+func _on_save_fx(anim_grh: int, off_x: int, off_y: int) -> void:
+	# FXs.ind — binary, 6 bytes per entry
+	var entry := PackedByteArray()
+	entry.resize(6)
+	entry.encode_s16(0, anim_grh)
+	entry.encode_s16(2, off_x)
+	entry.encode_s16(4, off_y)
+	_append_binary_entry("FXs.ind", entry, 6)
+
+
+func _on_save_weapon(dir_n: int, dir_e: int, dir_s: int, dir_w: int) -> void:
+	# armas.dat — INI text
+	_append_ini_entry("Armas.dat", "Arma", "NumArmas", {
+		"Dir1": dir_n, "Dir2": dir_e, "Dir3": dir_s, "Dir4": dir_w
+	})
+
+
+func _on_save_shield(dir_n: int, dir_e: int, dir_s: int, dir_w: int) -> void:
+	# escudos.dat — INI text
+	_append_ini_entry("Escudos.dat", "ESC", "NumEscudos", {
+		"Dir1": dir_n, "Dir2": dir_e, "Dir3": dir_s, "Dir4": dir_w
+	})

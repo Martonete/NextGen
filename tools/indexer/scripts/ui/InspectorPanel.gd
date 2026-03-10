@@ -1,8 +1,8 @@
-## InspectorPanel.gd — Right-side docked panel (3 tabs: Frames, Detección, Datos)
+## InspectorPanel.gd — Right-side docked panel (4 tabs: Frames, Animación, Detección, Datos)
 class_name InspectorPanel
 extends VBoxContainer
 
-# ── Signals (unchanged public API) ───────────────────────────────
+# ── Signals ───────────────────────────────
 signal frame_selected(idx: int)
 signal frame_deleted(idx: int)
 signal frame_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh: int)
@@ -18,6 +18,13 @@ signal index_frame_pressed(idx: int)
 @warning_ignore("unused_signal")
 signal view_file_num_pressed(file_num: int, grh_index: int)
 signal next_grh_changed(val: int)
+# Asset creation signals
+signal save_body_pressed(walk_n: int, walk_e: int, walk_s: int, walk_w: int, off_x: int, off_y: int)
+signal save_head_pressed(head_n: int, head_e: int, head_s: int, head_w: int)
+signal save_helmet_pressed(head_n: int, head_e: int, head_s: int, head_w: int)
+signal save_weapon_pressed(dir_n: int, dir_e: int, dir_s: int, dir_w: int)
+signal save_shield_pressed(dir_n: int, dir_e: int, dir_s: int, dir_w: int)
+signal save_fx_pressed(anim_grh: int, off_x: int, off_y: int)
 
 var _tabs: TabContainer
 var _anim_tab: AnimationWindow
@@ -126,13 +133,20 @@ func _ready() -> void:
 	add_child(_tabs)
 
 	_tabs.add_child(_build_frames_tab())
-	_tabs.add_child(_build_detect_tab())
-	_tabs.add_child(_build_data_tab())
 
-	# Animation tab (4th tab)
+	# Animation tab (2nd)
 	_anim_tab = AnimationWindow.new()
 	_anim_tab.create_anim_pressed.connect(func(indices: Array[int], speed: float): create_anim_pressed.emit(indices, speed))
+	_anim_tab.save_body_pressed.connect(func(n: int, e: int, s: int, w: int, ox: int, oy: int): save_body_pressed.emit(n, e, s, w, ox, oy))
+	_anim_tab.save_head_pressed.connect(func(n: int, e: int, s: int, w: int): save_head_pressed.emit(n, e, s, w))
+	_anim_tab.save_helmet_pressed.connect(func(n: int, e: int, s: int, w: int): save_helmet_pressed.emit(n, e, s, w))
+	_anim_tab.save_weapon_pressed.connect(func(n: int, e: int, s: int, w: int): save_weapon_pressed.emit(n, e, s, w))
+	_anim_tab.save_shield_pressed.connect(func(n: int, e: int, s: int, w: int): save_shield_pressed.emit(n, e, s, w))
+	_anim_tab.save_fx_pressed.connect(func(a: int, ox: int, oy: int): save_fx_pressed.emit(a, ox, oy))
 	_tabs.add_child(_anim_tab)
+
+	_tabs.add_child(_build_detect_tab())
+	_tabs.add_child(_build_data_tab())
 
 
 # ── Public API ────────────────────────────────────────────────────
