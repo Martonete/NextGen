@@ -296,6 +296,27 @@ public class GameState
     public byte ForumCanMakeSticky;     // 0=no, 2=GM can make stickies
     public bool ShowForumPanel;         // Trigger to open forum panel
 
+    // Friend list system
+    public List<FriendEntry> FriendList = new();
+    public bool ShowFriendListPanel;    // Trigger to open friend list panel
+    public bool FriendListDirty;        // True when friend list changed (KFM/DFM update)
+
+    // Mail system
+    public List<MailEntry> MailInbox = new();
+    public MailEntry? MailCurrentMessage; // Currently viewed message (from MailContent)
+    public bool ShowMailPanel;           // Trigger to open mail panel
+    public bool MailInboxDirty;          // True when inbox changed
+
+    // Quest system (VB6: frmQuest)
+    public bool ShowQuestPanel;         // Trigger to open quest panel
+    public string QuestDataTag = "";    // Tag for pending quest data ("QuestList"/"QuestCurrent"/"QuestSelected")
+    public string QuestDataPayload = ""; // Payload for pending quest data
+
+    // Pet / Trainer system (VB6: frmEntrenador)
+    public List<PetInfo> PetList = new();          // Current player's pets
+    public bool ShowTrainerPanel;                   // Trigger to open trainer panel
+    public string TrainerCreatureData = "";          // Pending creature list data from server
+
     // Arrow/projectile system (VB6: FLECHI)
     public List<ArrowProjectile> ActiveArrows = new();
 
@@ -491,6 +512,27 @@ public class CraftEntry
     public int Upgrade;
 }
 
+/// A friend entry in the friend list.
+public class FriendEntry
+{
+    public string Name = "";
+    public bool Online;
+}
+
+/// A mail entry in the inbox.
+public class MailEntry
+{
+    public int Id;
+    public string Sender = "";
+    public string Subject = "";
+    public string Body = "";
+    public string Date = "";
+    public bool Read;
+    public int AttachedGold;
+    public int AttachedItemId;
+    public int AttachedItemAmount;
+}
+
 /// A slot in the guild bank (VB6: BancoInventarioB).
 public class GuildBankSlot
 {
@@ -502,4 +544,13 @@ public class GuildBankSlot
     public int MaxHit;
     public int MinHit;
     public int MaxDef;
+}
+
+/// Pet info for display in the trainer/pet panel.
+public class PetInfo
+{
+    public int Index;        // NPC runtime index
+    public int NpcType;      // NPC type number
+    public string Name = ""; // Creature name
+    public int HpPercent = 100;
 }

@@ -59,6 +59,9 @@ public partial class GuildBankPanel : Control
     private Button? _depositarOroBtn;
     private Button? _salirBtn;
 
+    // Rich tooltip panel (set by Main.cs)
+    public TooltipPanel? RichTooltip;
+
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
         _state = state;
@@ -151,6 +154,13 @@ public partial class GuildBankPanel : Control
         _selectedBankIdx = -1;
         _selectedInvIdx = -1;
         HideGoldInputDialog();
+        RichTooltip?.Hide();
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == (int)NotificationMouseExit)
+            RichTooltip?.Hide();
     }
 
     public override void _Process(double delta)

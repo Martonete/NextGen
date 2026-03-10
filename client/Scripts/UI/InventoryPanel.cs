@@ -37,8 +37,11 @@ public partial class InventoryPanel : Control
     private bool _dragPending;     // press happened but drag not yet activated (needs movement threshold)
     private const float DragThreshold = 6f; // pixels of movement before drag activates
 
-    // Tooltip label (set by Main.cs)
+    // Tooltip label (set by Main.cs) — simple name display in bottom bar
     public Label? TooltipLabel;
+
+    // Rich tooltip panel (set by Main.cs) — floating detailed item info
+    public TooltipPanel? RichTooltip;
 
     public int SelectedSlot => _selectedSlot;
     public bool DyDEnabled { get => _dydEnabled; set => _dydEnabled = value; }
@@ -69,6 +72,7 @@ public partial class InventoryPanel : Control
         {
             _hoveredSlot = -1;
             if (TooltipLabel != null) TooltipLabel.Text = "";
+            RichTooltip?.Hide();
         }
     }
 
@@ -314,17 +318,18 @@ public partial class InventoryPanel : Control
 
     private void UpdateTooltip(int slot)
     {
-        if (TooltipLabel == null) return;
-
         if (slot >= 0 && slot < TotalSlots)
         {
             var inv = _state!.Inventory[slot];
             if (inv.ObjIndex > 0)
             {
-                TooltipLabel.Text = $"{inv.Name} - {inv.Amount}";
+                if (TooltipLabel != null)
+                    TooltipLabel.Text = $"{inv.Name} - {inv.Amount}";
+                RichTooltip?.ShowInventoryItem(inv);
                 return;
             }
         }
-        TooltipLabel.Text = "";
+        if (TooltipLabel != null) TooltipLabel.Text = "";
+        RichTooltip?.Hide();
     }
 }

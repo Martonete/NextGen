@@ -131,6 +131,24 @@ async fn main() {
 
     info!("Server is running. Waiting for connections...");
 
+    // Graceful shutdown signal (Ctrl+C / SIGTERM)
+    let mut shutdown_signal = Box::pin(async {
+        let ctrl_c = tokio::signal::ctrl_c();
+        #[cfg(unix)]
+        {
+            let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("Failed to register SIGTERM handler");
+            tokio::select! {
+                _ = ctrl_c => {},
+                _ = sigterm.recv() => {},
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            ctrl_c.await.ok();
+        }
+    });
+
     // Game tick (40ms — anti-cheat interval decrements, matches VB6 TimerRestoTiempo)
     let mut game_tick = tokio::time::interval(std::time::Duration::from_millis(40));
     // AI tick timer — VB6: TIMER_AI.Interval = IntervaloNpcAI (default 1300ms from server.ini)
@@ -151,6 +169,14 @@ async fn main() {
     // Main event loop
     loop {
         tokio::select! {
+            // Graceful shutdown — save all users and exit
+            _ = &mut shutdown_signal => {
+                info!("Server shutting down... saving all users");
+                game::handlers::auto_save_all_users(&state).await;
+                info!("All users saved. Goodbye!");
+                break;
+            }
+
             Some(event) = events.recv() => {
         match event {
             ServerEvent::NewConnection(writer) => {
@@ -300,6 +326,10 @@ async fn main() {
                             recompensas_caos: user.recompensas_caos,
                             reenlistadas: user.reenlistadas,
                             description: user.desc.clone(),
+                            pet_count: user.nro_mascotas,
+                            pet_types: (0..3).filter_map(|i| {
+                                if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
+                            }).collect(),
                         };
                         let pool = state.pool.clone();
                         match db::charfile::save_charfile(&pool, &name, &save_data).await {

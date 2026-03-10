@@ -506,4 +506,109 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
+    // ── Quest ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// QuestList (ID 120) — request quest list from server.
+    /// </summary>
+    public static byte[] WriteQuestList()
+    {
+        return new byte[] { ClientPacketId.QuestList };
+    }
+
+    /// <summary>
+    /// QuestInfo (ID 121) — request quest detail for a specific quest.
+    /// Wire: u8 opcode, string questId
+    /// </summary>
+    public static byte[] WriteQuestInfo(int questId)
+    {
+        return WriteStringPacket(ClientPacketId.QuestInfo, questId.ToString());
+    }
+
+    /// <summary>
+    /// QuestAccept (ID 122) — accept or abandon a quest.
+    /// Wire: u8 opcode, string "questId|action" (action: 1=accept, 0=abandon)
+    /// </summary>
+    public static byte[] WriteQuestAccept(int questId, bool accept)
+    {
+        return WriteStringPacket(ClientPacketId.QuestAccept, $"{questId}|{(accept ? "1" : "0")}");
+    }
+
+    /// <summary>
+    /// Train (wraps TrainCreature ID 92) — train a creature at trainer NPC.
+    /// </summary>
+    public static byte[] WriteTrain(int creatureIndex)
+    {
+        return new byte[] { ClientPacketId.TrainCreature, (byte)creatureIndex };
+    }
+
+    // ── Mail ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// MailSend (ID 125) — send a mail message.
+    /// Wire: u8 opcode, string recipient, string subject, string body
+    /// </summary>
+    public static byte[] WriteMailSend(string recipient, string subject, string body)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.MailSend);
+        bq.WriteString(recipient);
+        bq.WriteString(subject);
+        bq.WriteString(body);
+        return bq.ToArray();
+    }
+
+    /// <summary>
+    /// MailOpen (ID 126) — request to open mail inbox.
+    /// Wire: u8 opcode
+    /// </summary>
+    public static byte[] WriteMailOpen()
+    {
+        return new byte[] { ClientPacketId.MailOpen };
+    }
+
+    /// <summary>
+    /// MailExtract (ID 127) — extract attached items/gold from a mail.
+    /// Wire: u8 opcode, i16 mailId
+    /// </summary>
+    public static byte[] WriteMailExtract(int mailId)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.MailExtract);
+        bq.WriteInteger((short)mailId);
+        return bq.ToArray();
+    }
+
+    /// <summary>
+    /// MailDelete (ID 128) — delete a mail message.
+    /// Wire: u8 opcode, i16 mailId
+    /// </summary>
+    public static byte[] WriteMailDelete(int mailId)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.MailDelete);
+        bq.WriteInteger((short)mailId);
+        return bq.ToArray();
+    }
+
+    // ── Friends ──────────────────────────────────────────────────
+
+    /// <summary>
+    /// FriendAdd (ID 130) — add a friend by name.
+    /// Wire: u8 opcode, string name
+    /// </summary>
+    public static byte[] WriteFriendAdd(string name)
+    {
+        return WriteStringPacket(ClientPacketId.FriendAdd, name);
+    }
+
+    /// <summary>
+    /// FriendRemove (ID 131) — remove a friend by name.
+    /// Wire: u8 opcode, string name
+    /// </summary>
+    public static byte[] WriteFriendRemove(string name)
+    {
+        return WriteStringPacket(ClientPacketId.FriendRemove, name);
+    }
+
 }

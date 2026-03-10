@@ -263,7 +263,12 @@ public partial class PacketHandler
                 _state.UserDumb = false;
                 break;
             case ServerPacketId.TrainerCreatureList: // 72
-                { string _ = bq.ReadString(); GD.Print("[PKT] TrainerCreatureList (binary)"); }
+                {
+                    string creatures = bq.ReadString();
+                    _state.TrainerCreatureData = creatures;
+                    _state.ShowTrainerPanel = true;
+                    GD.Print($"[PKT] TrainerCreatureList len={creatures.Length}");
+                }
                 break;
             case ServerPacketId.GuildNews: // 73
                 {
@@ -779,9 +784,12 @@ public partial class PacketHandler
                 GD.Print("[PKT] TravelsOpen");
                 break;
             case ServerPacketId.MailOpenTrigger: // 252
-                GD.Print("[PKT] MailOpenTrigger (not implemented)");
+                GD.Print("[PKT] MailOpenTrigger");
+                _state.ShowMailPanel = true;
                 break;
             case ServerPacketId.FriendDialog: // 253
+                GD.Print("[PKT] FriendDialog");
+                _state.ShowFriendListPanel = true;
                 break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);
@@ -2963,8 +2971,10 @@ public partial class PacketHandler
 
     private void HandleBinQuestData(ByteQueue bq, string tag)
     {
-        bq.ReadString();
-        return;
+        string data = bq.ReadString();
+        _state.QuestDataTag = tag;
+        _state.QuestDataPayload = data;
+        GD.Print($"[PKT] QuestData tag={tag} len={data.Length}");
     }
 
     // ── Mail ──────────────────────────────────────────────────────
@@ -2977,15 +2987,98 @@ public partial class PacketHandler
     {
         string data = bq.ReadString();
         GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
-        // TODO: display in mail panel when implemented
+
+        if (tag == "MailList")
+        {
+            // Parse inbox: "id,sender,subject,date,read;id2,sender2,..."
+            _state.MailInbox.Clear();
+            if (!string.IsNullOrEmpty(data))
+            {
+                string[] entries = data.Split(';', System.StringSplitOptions.RemoveEmptyEntries);
+                foreach (string entry in entries)
+                {
+                    string[] parts = entry.Split(',');
+                    if (parts.Length >= 4)
+                    {
+                        int.TryParse(parts[0], out int id);
+                        var mail = new MailEntry
+                        {
+                            Id = id,
+                            Sender = parts[1],
+                            Subject = parts[2],
+                            Date = parts[3],
+                            Read = parts.Length >= 5 && parts[4] == "1"
+                        };
+                        _state.MailInbox.Add(mail);
+                    }
+                }
+            }
+            _state.MailInboxDirty = true;
+            _state.ShowMailPanel = true;
+        }
+        else if (tag == "MailContent")
+        {
+            // Parse full message: "id,sender,subject,body,date,gold,itemId,itemAmt"
+            string[] parts = data.Split(',');
+            if (parts.Length >= 5)
+            {
+                int.TryParse(parts[0], out int id);
+                var mail = new MailEntry
+                {
+                    Id = id,
+                    Sender = parts[1],
+                    Subject = parts[2],
+                    Body = parts[3],
+                    Date = parts[4],
+                    Read = true
+                };
+                if (parts.Length >= 6) int.TryParse(parts[5], out mail.AttachedGold);
+                if (parts.Length >= 7) int.TryParse(parts[6], out mail.AttachedItemId);
+                if (parts.Length >= 8) int.TryParse(parts[7], out mail.AttachedItemAmount);
+                _state.MailCurrentMessage = mail;
+
+                // Mark as read in inbox
+                foreach (var m in _state.MailInbox)
+                {
+                    if (m.Id == id) m.Read = true;
+                }
+                _state.MailInboxDirty = true;
+            }
+        }
     }
 
     // ── Friends ───────────────────────────────────────────────────
 
     private void HandleBinFriendList(ByteQueue bq)
     {
-        bq.ReadString();
-        return;
+        string data = bq.ReadString();
+        GD.Print($"[PKT] FriendList: {data.Length} chars");
+
+        // Parse friend list: "name1,status1;name2,status2;..."
+        // status: 1=online, 0=offline
+        _state.FriendList.Clear();
+
+        if (!string.IsNullOrEmpty(data))
+        {
+            string[] entries = data.Split(';', System.StringSplitOptions.RemoveEmptyEntries);
+            foreach (string entry in entries)
+            {
+                string[] parts = entry.Split(',');
+                if (parts.Length >= 1)
+                {
+                    var friend = new FriendEntry
+                    {
+                        Name = parts[0].Trim(),
+                        Online = parts.Length >= 2 && parts[1].Trim() == "1"
+                    };
+                    if (!string.IsNullOrEmpty(friend.Name))
+                        _state.FriendList.Add(friend);
+                }
+            }
+        }
+
+        _state.FriendListDirty = true;
+        _state.ShowFriendListPanel = true;
     }
 
     // ── Misc data ─────────────────────────────────────────────────
@@ -3085,14 +3178,46 @@ public partial class PacketHandler
 
     private void HandleBinKfmData(ByteQueue bq)
     {
-        bq.ReadString();
-        return;
+        string name = bq.ReadString();
+        GD.Print($"[PKT] KfmData (friend online): {name}");
+
+        // Mark friend as online
+        foreach (var f in _state.FriendList)
+        {
+            if (f.Name.Equals(name, System.StringComparison.OrdinalIgnoreCase))
+            {
+                f.Online = true;
+                break;
+            }
+        }
+        _state.FriendListDirty = true;
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"{name} se ha conectado.",
+            Color = "00FF88"
+        });
     }
 
     private void HandleBinDfmData(ByteQueue bq)
     {
-        bq.ReadString();
-        return;
+        string name = bq.ReadString();
+        GD.Print($"[PKT] DfmData (friend offline): {name}");
+
+        // Mark friend as offline
+        foreach (var f in _state.FriendList)
+        {
+            if (f.Name.Equals(name, System.StringComparison.OrdinalIgnoreCase))
+            {
+                f.Online = false;
+                break;
+            }
+        }
+        _state.FriendListDirty = true;
+        _state.ChatMessages.Enqueue(new ChatMessage
+        {
+            Text = $"{name} se ha desconectado.",
+            Color = "888888"
+        });
     }
 
     // ── Cosmetics ─────────────────────────────────────────────────

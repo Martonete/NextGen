@@ -72,6 +72,9 @@ public partial class TradePanel : Control
     private Button? _closeBtn;
     private Button? _offerGoldBtn;
 
+    // Rich tooltip panel (set by Main.cs)
+    public TooltipPanel? RichTooltip;
+
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
         _state = state;
@@ -146,6 +149,13 @@ public partial class TradePanel : Control
     {
         Visible = false;
         _myAccepted = false;
+        RichTooltip?.Hide();
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == (int)NotificationMouseExit)
+            RichTooltip?.Hide();
     }
 
     /// <summary>
@@ -336,11 +346,45 @@ public partial class TradePanel : Control
                     _dragging = false;
             }
         }
-        if (@event is InputEventMouseMotion dragMm && _dragging)
+        if (@event is InputEventMouseMotion dragMm)
         {
-            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
-            AcceptEvent();
-            return;
+            if (_dragging)
+            {
+                GlobalPosition = dragMm.GlobalPosition - _dragOffset;
+                AcceptEvent();
+                return;
+            }
+
+            // Tooltip on hover over trade slot list items
+            if (RichTooltip != null && _state != null)
+            {
+                bool shown = false;
+                // Left column: your offer slots
+                float ly = dragMm.Position.Y - SlotStartY;
+                if (dragMm.Position.X >= LeftColX && dragMm.Position.X < LeftColX + ColW
+                    && ly >= 0 && ly < SlotsAreaH)
+                {
+                    int idx = (int)(ly / SlotH);
+                    if (idx >= 0 && idx < _state.MyTradeSlotCount)
+                    {
+                        RichTooltip.ShowTradeItem(_state.MyTradeSlots[idx]);
+                        shown = true;
+                    }
+                }
+                // Right column: partner offer slots
+                if (!shown && dragMm.Position.X >= RightColX && dragMm.Position.X < RightColX + ColW
+                    && ly >= 0 && ly < SlotsAreaH)
+                {
+                    int idx = (int)(ly / SlotH);
+                    if (idx >= 0 && idx < _state.PartnerTradeSlotCount)
+                    {
+                        RichTooltip.ShowTradeItem(_state.PartnerTradeSlots[idx]);
+                        shown = true;
+                    }
+                }
+                if (!shown)
+                    RichTooltip.Hide();
+            }
         }
 
         if (@event is InputEventMouseButton mb && mb.Pressed)

@@ -34,6 +34,7 @@ pub use quests_party::party_share_exp;
 pub use ticks::{
     tick_npc_ai, tick_npc_respawn, tick_player_passive,
     tick_intervals, tick_clean_world, tick_security,
+    auto_save_all_users,
 };
 // Re-export event functions called from main.rs and other modules
 pub use events::{
@@ -1491,6 +1492,34 @@ async fn connect_user(
 
     // Place on world grid
     state.world.place_user(map, x, y, conn_id);
+
+    // Respawn saved pets near the player
+    if char_data.pet_count > 0 && !char_data.pet_types.is_empty() {
+        for (slot, &npc_type) in char_data.pet_types.iter().enumerate() {
+            if npc_type <= 0 || slot >= 3 { break; }
+            if let Some(npc_idx) = state.spawn_npc(npc_type as usize, map, x, y) {
+                // Link pet to owner
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.maestro_user = Some(conn_id);
+                    npc.hostile = false;
+                    npc.target = None;
+                }
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.mascotas_index[slot] = npc_idx;
+                    user.mascotas_type[slot] = npc_type;
+                    user.nro_mascotas += 1;
+                    // Restore elemental flags
+                    match npc_type {
+                        93 => user.ele_de_fuego = true,
+                        92 => user.ele_de_agua = true,
+                        91 => user.ele_de_tierra = true,
+                        _ => {}
+                    }
+                }
+                tracing::info!("[LOGIN] Spawned saved pet NPC {} (slot {}) for '{}'", npc_type, slot, char_name);
+            }
+        }
+    }
 
     // Set Logged=1 in charfile
     let _ = charfile::set_logged_flag(&state.pool, char_name, true).await;

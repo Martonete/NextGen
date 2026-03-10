@@ -20,6 +20,10 @@ pub mod npcs;
 pub mod maps;
 pub mod guilds;
 pub mod balance;
+pub mod cities;
+pub mod spawn_list;
+pub mod crafting;
+pub mod areas_stats;
 
 use std::path::Path;
 
@@ -31,6 +35,10 @@ pub struct GameData {
     pub npcs: npcs::NpcDatabase,
     pub maps: Vec<Option<maps::GameMap>>,
     pub balance: balance::BalanceData,
+    pub cities: Vec<cities::CityData>,
+    pub spawn_list: Vec<spawn_list::SpawnListEntry>,
+    pub crafting: crafting::CraftingData,
+    pub areas_stats: areas_stats::AreasStats,
 }
 
 impl GameData {
@@ -44,6 +52,10 @@ impl GameData {
         let npcs = npcs::load_npcs(base)?;
         let mut maps = maps::load_all_maps(base)?;
         let balance = balance::load_balance(base).unwrap_or_default();
+        let cities = cities::load_cities(base).unwrap_or_default();
+        let spawn_list_data = spawn_list::load_spawn_list(base).unwrap_or_default();
+        let crafting = crafting::load_crafting(base).unwrap_or_default();
+        let areas_stats = areas_stats::load_areas_stats(base).unwrap_or_default();
 
         // VB6: Doors with cerrada=0 (open) should have their tiles unblocked on startup.
         // The .map file may have blocked=true for tiles where open doors exist.
@@ -102,6 +114,6 @@ impl GameData {
             experience.len(), objects.len(), spells.len(), npcs.count(), map_count
         );
 
-        Ok(Self { experience, objects, spells, npcs, maps, balance })
+        Ok(Self { experience, objects, spells, npcs, maps, balance, cities, spawn_list: spawn_list_data, crafting, areas_stats })
     }
 }

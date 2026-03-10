@@ -84,6 +84,9 @@ public partial class VaultPanel : Control
     private Button? _depositarOroBtn;
     private Button? _salirBtn;
 
+    // Rich tooltip panel (set by Main.cs)
+    public TooltipPanel? RichTooltip;
+
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
         _state = state;
@@ -184,6 +187,13 @@ public partial class VaultPanel : Control
         _selectedVaultIdx = -1;
         _selectedInvIdx = -1;
         HideGoldInputDialog();
+        RichTooltip?.Hide();
+    }
+
+    public override void _Notification(int what)
+    {
+        if (what == (int)NotificationMouseExit)
+            RichTooltip?.Hide();
     }
 
     public override void _Process(double delta)
@@ -375,11 +385,28 @@ public partial class VaultPanel : Control
                     _dragging = false;
             }
         }
-        if (@event is InputEventMouseMotion dragMm && _dragging)
+        if (@event is InputEventMouseMotion dragMm)
         {
-            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
-            AcceptEvent();
-            return;
+            if (_dragging)
+            {
+                GlobalPosition = dragMm.GlobalPosition - _dragOffset;
+                AcceptEvent();
+                return;
+            }
+
+            // Tooltip on hover over grid items
+            if (RichTooltip != null && _state != null)
+            {
+                int vIdx = HitTestGrid(dragMm.Position, VaultGridX, VaultGridY, VaultGridW, VaultGridH, _vaultScrollRow, _state.BankItemCount);
+                int iIdx = HitTestGrid(dragMm.Position, UserGridX, UserGridY, UserGridW, UserGridH, _invScrollRow, _userSlotCount);
+
+                if (vIdx >= 0 && vIdx < _state.BankItemCount)
+                    RichTooltip.ShowBankItem(_state.BankItems[vIdx]);
+                else if (iIdx >= 0 && iIdx < _userSlotCount)
+                    RichTooltip.ShowInventoryItem(_state.Inventory[_userSlots[iIdx]]);
+                else
+                    RichTooltip.Hide();
+            }
         }
 
         if (@event is InputEventMouseButton mb && mb.Pressed)

@@ -111,6 +111,12 @@ public partial class Main : Control
     // Forum panel (frmForo)
     private ForumPanel? _forumPanel;
 
+    // Friend list panel
+    private FriendListPanel? _friendListPanel;
+
+    // Mail panel
+    private MailPanel? _mailPanel;
+
     // Party panel (frmGrupo)
     private PartyPanel? _partyPanel;
 
@@ -131,6 +137,22 @@ public partial class Main : Control
 
     // Key binding panel (frmTeclas)
     private KeyBindPanel? _keyBindPanel;
+
+    // Quest panel (frmQuest)
+    private QuestPanel? _questPanel;
+
+    // Trainer/Pet panel (frmEntrenador)
+    private TrainerPanel? _trainerPanel;
+
+    // Blind screen overlay (VB6: frmMain goes black when blinded)
+    private ColorRect? _blindOverlay;
+    private float _blindAlpha;
+
+    // Tooltip panel (floating item/spell info on hover)
+    private TooltipPanel? _tooltipPanel;
+
+    // Context menu (right-click on characters in game world)
+    private ContextMenu? _contextMenu;
 
     // Window mode startup dialog
     private PanelContainer? _windowModeDialog;
@@ -419,6 +441,7 @@ public partial class Main : Control
         _itemNameLabel.AutowrapMode = TextServer.AutowrapMode.Word;
         _gameUI.AddChild(_itemNameLabel);
         _inventoryPanel.TooltipLabel = _itemNameLabel;
+        // RichTooltip is set after _tooltipPanel creation (below)
 
         // DyD toggle — VB6: DyD at (541,338,21,21) — image toggles between on/off
         // Load via Image.Load() (filesystem), not ResourceLoader (requires Godot import)
@@ -613,6 +636,18 @@ public partial class Main : Control
         _forumPanel.Visible = false;
         _gameUI.AddChild(_forumPanel);
 
+        // Friend list panel — right side of viewport
+        _friendListPanel = new FriendListPanel();
+        _friendListPanel.Position = new Vector2(240, 60);
+        _friendListPanel.Visible = false;
+        _gameUI.AddChild(_friendListPanel);
+
+        // Mail panel — centered on viewport
+        _mailPanel = new MailPanel();
+        _mailPanel.Position = new Vector2(30, 50);
+        _mailPanel.Visible = false;
+        _gameUI.AddChild(_mailPanel);
+
         // Party panel (frmGrupo) — right side of viewport
         _partyPanel = new PartyPanel();
         _partyPanel.Position = new Vector2(480, 150);
@@ -672,6 +707,45 @@ public partial class Main : Control
                 _keyBindPanel.Open();
             }
         };
+
+        // Tooltip panel — floating item info (added last so it renders on top)
+        _tooltipPanel = new TooltipPanel();
+        _gameUI.AddChild(_tooltipPanel);
+
+        // Wire tooltip to all panels with item/spell slots
+        _inventoryPanel.RichTooltip = _tooltipPanel;
+        _spellPanel.RichTooltip = _tooltipPanel;
+        _commercePanel.RichTooltip = _tooltipPanel;
+        _vaultPanel.RichTooltip = _tooltipPanel;
+        _tradePanel.RichTooltip = _tooltipPanel;
+        _guildBankPanel.RichTooltip = _tooltipPanel;
+
+        // Context menu — right-click on characters in game world
+        _contextMenu = new ContextMenu();
+        _gameUI.AddChild(_contextMenu);
+
+        // Quest panel (frmQuest) — centered on viewport
+        _questPanel = new QuestPanel();
+        _questPanel.Position = new Vector2(8 + (544 - 560) / 2, 50);
+        _questPanel.Visible = false;
+        _gameUI.AddChild(_questPanel);
+
+        // Trainer/Pet panel (frmEntrenador) — right of viewport
+        _trainerPanel = new TrainerPanel();
+        _trainerPanel.Position = new Vector2(150, 80);
+        _trainerPanel.Visible = false;
+        _gameUI.AddChild(_trainerPanel);
+
+        // Blind screen overlay (VB6: frmMain goes black when blinded)
+        // Covers entire window — fades in/out smoothly over ~0.3s
+        _blindOverlay = new ColorRect();
+        _blindOverlay.Color = new Color(0, 0, 0, 0);
+        _blindOverlay.Position = Vector2.Zero;
+        _blindOverlay.Size = new Vector2(800, 600);
+        _blindOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _blindOverlay.Visible = true;
+        _blindOverlay.ZIndex = 100; // Above game content but below modal dialogs
+        _gameUI.AddChild(_blindOverlay);
 
         // Window mode startup dialog
         CreateWindowModeDialog();
@@ -938,6 +1012,7 @@ public partial class Main : Control
     private void OnInventoryTabPressed()
     {
         _showingSpells = false;
+        _tooltipPanel?.Hide();
         _inventoryPanel!.Visible = true;
         _itemNameLabel!.Visible = true;
         _dydToggle!.Visible = true;
@@ -956,6 +1031,7 @@ public partial class Main : Control
     private void OnSpellTabPressed()
     {
         _showingSpells = true;
+        _tooltipPanel?.Hide();
         _inventoryPanel!.CancelDrag();
         _inventoryPanel!.Visible = false;
         _itemNameLabel!.Visible = false;
@@ -2565,6 +2641,9 @@ public partial class Main : Control
             UpdateGameUI();
             UpdateConsoleMessages();
 
+            // Update floating tooltip position each frame
+            _tooltipPanel?.UpdatePosition();
+
             // Commerce panel state tracking
             if (_state.Comerciando != _lastComerciando)
             {
@@ -2637,6 +2716,20 @@ public partial class Main : Control
                 _forumPanel?.ShowForum();
             }
 
+            // Friend list panel — open from FriendList/FriendDialog packet
+            if (_state.ShowFriendListPanel)
+            {
+                _state.ShowFriendListPanel = false;
+                _friendListPanel?.ShowPanel();
+            }
+
+            // Mail panel — open from MailList/MailOpenTrigger packet
+            if (_state.ShowMailPanel)
+            {
+                _state.ShowMailPanel = false;
+                _mailPanel?.ShowPanel();
+            }
+
             // Party panel — open from ShowPartyForm packet
             if (_state.ShowPartyPanel)
             {
@@ -2661,6 +2754,39 @@ public partial class Main : Control
             {
                 _state.ShowCarpenterForm = false;
                 _craftPanel?.ShowCarpenter();
+            }
+
+            // Quest panel — handle quest data from server
+            if (!string.IsNullOrEmpty(_state.QuestDataTag))
+            {
+                string tag = _state.QuestDataTag;
+                string payload = _state.QuestDataPayload;
+                _state.QuestDataTag = "";
+                _state.QuestDataPayload = "";
+                _questPanel?.HandleQuestData(tag, payload);
+            }
+            if (_state.ShowQuestPanel)
+            {
+                _state.ShowQuestPanel = false;
+                _questPanel?.OpenPanel();
+            }
+
+            // Trainer panel — open from TrainerCreatureList packet
+            if (_state.ShowTrainerPanel)
+            {
+                _state.ShowTrainerPanel = false;
+                string creatures = _state.TrainerCreatureData;
+                _state.TrainerCreatureData = "";
+                _trainerPanel?.OpenTrainer(creatures);
+            }
+
+            // Blind screen overlay — smooth fade in/out
+            if (_blindOverlay != null)
+            {
+                float targetAlpha = _state.UserBlind ? 0.95f : 0.0f;
+                float fadeSpeed = (float)delta * 3.3f; // ~0.3s transition
+                _blindAlpha = Mathf.MoveToward(_blindAlpha, targetAlpha, fadeSpeed);
+                _blindOverlay.Color = new Color(0, 0, 0, _blindAlpha);
             }
 
             // Death panel — show when player dies, hide on revive
@@ -2760,9 +2886,31 @@ public partial class Main : Control
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
                     _forumPanel!.Init(_state, _tcp);
+                    _friendListPanel!.Init(_state, _tcp);
+                    _mailPanel!.Init(_state, _tcp);
                     _partyPanel!.Init(_state, _tcp);
+                    _questPanel!.Init(_state, _tcp);
+                    _trainerPanel!.Init(_state, _tcp);
                     _optionsPanel!.Init(_state, _state.Config, _dataPath, _tcp);
                     _statsPanel!.Init(_state, _tcp);
+                    _contextMenu!.Init(_state, _tcp);
+                    _contextMenu!.OnWhisper += (name) =>
+                    {
+                        // Activate chat in whisper mode
+                        _state.ChatMode = 7;
+                        _state.ChatModePrefix = "\\";
+                        _state.WhisperTarget = name;
+                        if (_chatInput != null)
+                        {
+                            _chatInput.Visible = true;
+                            _chatInput.GrabFocus();
+                            _state.ChatActive = true;
+                        }
+                    };
+                    _contextMenu!.OnAddFriend += (name) =>
+                    {
+                        _tcp.SendPacket(ClientPackets.WriteTalk($"/AGREGAR {name}"));
+                    };
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -2862,11 +3010,17 @@ public partial class Main : Control
         _craftPanel?.ClosePanel();
         _guildPanel?.Hide();
         _guildFoundationPanel?.Hide();
+        _friendListPanel?.Hide();
+        _mailPanel?.Hide();
         _partyPanel?.Hide();
+        _questPanel?.Hide();
+        _trainerPanel?.Hide();
         _lastBanqueando = false;
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();
         CloseDropDialog();
+        _blindAlpha = 0;
+        if (_blindOverlay != null) _blindOverlay.Color = new Color(0, 0, 0, 0);
 
         // Reset char create button state
         if (_charCreateCreateBtn != null)
@@ -3210,6 +3364,18 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
+                if (_questPanel != null && _questPanel.Visible)
+                {
+                    _questPanel.Hide();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+                if (_trainerPanel != null && _trainerPanel.Visible)
+                {
+                    _trainerPanel.Hide();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.Comerciando)
                 {
                     _tcp?.SendPacket(ClientPackets.WriteCommerceClose());
@@ -3400,6 +3566,29 @@ public partial class Main : Control
             if (clickX >= 0 && clickX < 544 && clickY >= 0 && clickY < 416)
             {
                 var viewPos = new Vector2(clickX, clickY);
+
+                // Close context menu on any left-click in viewport
+                if (mb.Pressed && mb.ButtonIndex == MouseButton.Left && _contextMenu != null && _contextMenu.IsOpen)
+                {
+                    _contextMenu.CloseMenu();
+                }
+
+                // Right-click PRESS in viewport: try to open context menu on character tile.
+                // If a character is found, the menu opens and the event is consumed.
+                // If no character, fall through to VB6 behavior (LC+RC on release).
+                if (mb.Pressed && mb.ButtonIndex == MouseButton.Right)
+                {
+                    int tileX = _state.UserPosX + (int)clickX / 32 - 8;
+                    int tileY = _state.UserPosY + (int)clickY / 32 - 6;
+                    if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+                    {
+                        if (_contextMenu != null && _contextMenu.TryOpen(mb.Position, tileX, tileY))
+                        {
+                            GetViewport().SetInputAsHandled();
+                            return;
+                        }
+                    }
+                }
 
                 // On PRESS: handle double-click, shift+click (GM teleport)
                 // Modifier flags (ShiftPressed) are only reliable on press, not release.

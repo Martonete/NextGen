@@ -712,6 +712,7 @@ pub(super) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
                 for i in 0..3 {
                     if u.mascotas_index[i] == 0 {
                         u.mascotas_index[i] = npc_idx;
+                        u.mascotas_type[i] = npc_number as i32;
                         break;
                     }
                 }
@@ -785,21 +786,34 @@ pub(super) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
 
     let mut weapons = Vec::new();
     let mut armors = Vec::new();
-    for obj in state.game_data.objects.iter() {
-        if obj.sk_herreria > 0 && obj.sk_herreria <= skill_herreria {
-            let item = binary_packets::CraftItem {
-                name: obj.name.clone(),
-                grh_index: obj.grh_index as i16,
-                mat1: obj.ling_h as i16,
-                mat2: obj.ling_p as i16,
-                mat3: obj.ling_o as i16,
-                obj_index: obj.index as i16,
-                upgrade: 0,
-            };
-            if obj.obj_type == ObjType::Weapon {
-                weapons.push(item);
-            } else if obj.obj_type == ObjType::Armor || obj.obj_type == ObjType::Shield || obj.obj_type == ObjType::Helmet {
-                armors.push(item);
+    // VB6: Use parsed ArmasHerrero.dat / ArmadurasHerrero.dat lists instead of scanning all objects
+    for &idx in &state.game_data.crafting.smith_weapons {
+        if let Some(obj) = state.get_object(idx) {
+            if obj.sk_herreria > 0 && obj.sk_herreria <= skill_herreria {
+                weapons.push(binary_packets::CraftItem {
+                    name: obj.name.clone(),
+                    grh_index: obj.grh_index as i16,
+                    mat1: obj.ling_h as i16,
+                    mat2: obj.ling_p as i16,
+                    mat3: obj.ling_o as i16,
+                    obj_index: obj.index as i16,
+                    upgrade: 0,
+                });
+            }
+        }
+    }
+    for &idx in &state.game_data.crafting.smith_armors {
+        if let Some(obj) = state.get_object(idx) {
+            if obj.sk_herreria > 0 && obj.sk_herreria <= skill_herreria {
+                armors.push(binary_packets::CraftItem {
+                    name: obj.name.clone(),
+                    grh_index: obj.grh_index as i16,
+                    mat1: obj.ling_h as i16,
+                    mat2: obj.ling_p as i16,
+                    mat3: obj.ling_o as i16,
+                    obj_index: obj.index as i16,
+                    upgrade: 0,
+                });
             }
         }
     }
@@ -818,17 +832,20 @@ pub(super) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId)
     let skill_carpinteria = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0); // Carpinteria=14 (1-based 15)
 
     let mut items = Vec::new();
-    for obj in state.game_data.objects.iter() {
-        if obj.sk_carpinteria > 0 && obj.sk_carpinteria <= skill_carpinteria {
-            items.push(binary_packets::CraftItem {
-                name: obj.name.clone(),
-                grh_index: obj.grh_index as i16,
-                mat1: obj.madera as i16,
-                mat2: 0, // MaderaElfica — not loaded yet
-                mat3: 0, // unused for carpenter
-                obj_index: obj.index as i16,
-                upgrade: 0,
-            });
+    // VB6: Use parsed ObjCarpintero.dat list instead of scanning all objects
+    for &idx in &state.game_data.crafting.carpenter_items {
+        if let Some(obj) = state.get_object(idx) {
+            if obj.sk_carpinteria > 0 && obj.sk_carpinteria <= skill_carpinteria {
+                items.push(binary_packets::CraftItem {
+                    name: obj.name.clone(),
+                    grh_index: obj.grh_index as i16,
+                    mat1: obj.madera as i16,
+                    mat2: 0, // MaderaElfica — not loaded yet
+                    mat3: 0, // unused for carpenter
+                    obj_index: obj.index as i16,
+                    upgrade: 0,
+                });
+            }
         }
     }
 
@@ -1954,6 +1971,9 @@ pub(super) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 
     if obj.sk_herreria <= 0 { return; }
 
+    // VB6: Validate item is in ArmasHerrero or ArmadurasHerrero list
+    if !state.game_data.crafting.is_smith_item(obj_index) { return; }
+
     // Check skill
     let skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // Herreria=15 (1-based 16)
     if skill < obj.sk_herreria {
@@ -2011,6 +2031,9 @@ pub(super) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     };
 
     if obj.sk_carpinteria <= 0 { return; }
+
+    // VB6: Validate item is in ObjCarpintero list
+    if !state.game_data.crafting.is_carpenter_item(obj_index) { return; }
 
     // Check equipped carpentry tool (VB6: SERRUCHO_CARPINTERO must be equipped)
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);

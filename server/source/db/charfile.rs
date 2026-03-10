@@ -100,6 +100,8 @@ pub struct CharData {
     pub recompensas_caos: i32,
     pub reenlistadas: bool,
     pub password: String,
+    pub pet_count: i32,
+    pub pet_types: Vec<i32>,
 }
 
 /// Check if a character exists.
@@ -175,7 +177,8 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
                 weapon_eqp_slot, armour_eqp_slot, shield_eqp_slot, helmet_eqp_slot, municion_eqp_slot,
                 guild_index, reputation,
                 armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
-                recompensas_real, recompensas_caos, reenlistadas
+                recompensas_real, recompensas_caos, reenlistadas,
+                pet_count, pet_types
          FROM characters WHERE UPPER(name) = UPPER($1)"
     )
     .bind(char_name)
@@ -246,6 +249,13 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     let recompensas_real: i32 = row.get("recompensas_real");
     let recompensas_caos: i32 = row.get("recompensas_caos");
     let reenlistadas: bool = row.get("reenlistadas");
+    let pet_count: i32 = row.try_get("pet_count").unwrap_or(0);
+    let pet_types_str: String = row.try_get("pet_types").unwrap_or_default();
+    let pet_types: Vec<i32> = if pet_types_str.is_empty() {
+        Vec::new()
+    } else {
+        pet_types_str.split(',').filter_map(|s| s.trim().parse::<i32>().ok()).collect()
+    };
 
     // Load inventory
     let inv_rows: Vec<(i16, i32, i32, bool)> = sqlx::query_as(
@@ -317,6 +327,8 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
         recompensas_real, recompensas_caos, reenlistadas,
         password,
+        pet_count,
+        pet_types,
     })
 }
 
@@ -599,6 +611,8 @@ pub struct CharSaveData {
     pub recompensas_caos: i32,
     pub reenlistadas: bool,
     pub description: String,
+    pub pet_count: i32,
+    pub pet_types: Vec<i32>,
 }
 
 /// Save full character state back to DB (called on disconnect / auto-save).
@@ -635,6 +649,7 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             montado = $50, levitando = $51, montado_body = $52,
             recompensas_real = $53, recompensas_caos = $54, reenlistadas = $55,
             description = $56,
+            pet_count = $57, pet_types = $58,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -660,6 +675,8 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(data.montado).bind(data.levitando).bind(data.montado_body)
     .bind(data.recompensas_real).bind(data.recompensas_caos).bind(data.reenlistadas)
     .bind(&data.description)
+    .bind(data.pet_count)
+    .bind(&data.pet_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(","))
     .execute(pool)
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;

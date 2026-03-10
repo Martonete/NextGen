@@ -1415,7 +1415,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
 }
 
 /// Save all logged-in users to DB (periodic auto-save).
-pub(super) async fn auto_save_all_users(state: &GameState) {
+/// Also called from main.rs on graceful shutdown.
+pub async fn auto_save_all_users(state: &GameState) {
     let pool = state.pool.clone();
     let mut saved = 0;
     for (_conn_id, user) in state.users.iter() {
@@ -1487,6 +1488,10 @@ pub(super) async fn auto_save_all_users(state: &GameState) {
             recompensas_caos: user.recompensas_caos,
             reenlistadas: user.reenlistadas,
             description: user.desc.clone(),
+            pet_count: user.nro_mascotas,
+            pet_types: (0..3).filter_map(|i| {
+                if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
+            }).collect(),
         };
         if charfile::save_charfile(&pool, &user.char_name, &data).await.is_ok() {
             saved += 1;
