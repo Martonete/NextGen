@@ -69,8 +69,8 @@ func _ready() -> void:
 	_build_ui()
 	_build_dialogs()
 	_connect_signals()
-	# Default: Smart detection on, grid visible
-	_canvas.set_snap(4)
+	# Default: detection on, grid visible
+	_canvas.set_detect(true)
 	_canvas.set_grid_visible(true)
 	_update_status("Listo. Abre una carpeta de cliente para comenzar.")
 	# Restore previous session
@@ -259,7 +259,7 @@ func _connect_signals() -> void:
 
 	# Toolbar
 	_toolbar.tool_changed.connect(_on_tool_changed)
-	_toolbar.snap_changed.connect(func(mode): _canvas.set_snap(mode))
+	_toolbar.detect_toggled.connect(func(on): _canvas.set_detect(on))
 	_toolbar.grid_toggled.connect(func(on): _canvas.set_grid_visible(on))
 	_toolbar.grid_cell_changed.connect(func(cw, ch): _canvas.set_grid_cell(cw, ch))
 	_toolbar.zoom_in_pressed.connect(func(): _canvas.zoom_in())
@@ -924,8 +924,9 @@ func _detect_snap_hint(rects: Array, content_regions: Array = []) -> String:
 	var h_is_pow2: bool = (bh & (bh - 1)) == 0 and bh > 0
 
 	# Always use Smart mode — auto-detect just reports what it found
-	_toolbar.set_snap(4)
-	_canvas.set_snap(4)
+	# Detection always on after analysis
+	_toolbar.set_detect(true)
+	_canvas.set_detect(true)
 
 	if ratio >= 0.5 and best["count"] >= 3:
 		var gw: int = best["w"]
@@ -1495,8 +1496,8 @@ func _save_session() -> void:
 		_prefs.set_value("session", "last_image_path", _current_image_path)
 		_prefs.set_value("session", "last_file_num", _current_file_num)
 
-	# Snap + grid state
-	_prefs.set_value("session", "snap_mode", _canvas.snap_mode)
+	# Detect + grid state
+	_prefs.set_value("session", "detect_enabled", _canvas.detect_enabled)
 	_prefs.set_value("session", "show_grid", _canvas.show_grid)
 	_prefs.set_value("session", "grid_cell_w", _canvas.grid_cell_w)
 	_prefs.set_value("session", "grid_cell_h", _canvas.grid_cell_h)
@@ -1527,13 +1528,10 @@ func _restore_session() -> void:
 			_update_status("Carpeta anterior no encontrada. Abre una nueva.")
 		return
 
-	# Restore snap + grid
-	var snap_mode: int = _prefs.get_value("session", "snap_mode", 4)
-	# Migrate old modes (1, 2, 3, 5) to Smart (4)
-	if snap_mode != 0 and snap_mode != 4:
-		snap_mode = 4
-	_toolbar.set_snap(snap_mode)
-	_canvas.set_snap(snap_mode)
+	# Restore detect + grid
+	var detect_on: bool = _prefs.get_value("session", "detect_enabled", true)
+	_toolbar.set_detect(detect_on)
+	_canvas.set_detect(detect_on)
 	var grid_on: bool = _prefs.get_value("session", "show_grid", true)
 	var gcw: int = _prefs.get_value("session", "grid_cell_w", 128)
 	var gch: int = _prefs.get_value("session", "grid_cell_h", 128)

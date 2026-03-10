@@ -68,10 +68,9 @@ var _move_frame_orig: Rect2 = Rect2()
 var _move_mouse_start_img: Vector2 = Vector2.ZERO
 var _move_live_pos: Vector2 = Vector2.ZERO  # top-left en imagen durante el drag
 
-# ── Smart detection (hover sprite detection + tile snap) ────────────────────
-# snap_mode: 0=off  4=smart
+# ── Frame detection (hover sprite detection + tile snap) ────────────────────
 
-var snap_mode: int = 0
+var detect_enabled: bool = true
 
 # ── Grid overlay (visual + draw snapping) ────────────────────────────────────
 
@@ -84,8 +83,8 @@ const GRID_TILE: int = 32     # minor grid subdivision (always 32px)
 
 var show_frames: bool = true
 
-func set_snap(mode: int) -> void:
-	snap_mode = mode
+func set_detect(enabled: bool) -> void:
+	detect_enabled = enabled
 	_hover_rect = Rect2i()
 	queue_redraw()
 
@@ -617,7 +616,7 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 							w = minf(w, _image_size.x - x)
 							h = minf(h, _image_size.y - y)
 					# Smart mode: snap drawn frame to tile grid
-					elif snap_mode == 4 and w >= 2.0 and h >= 2.0:
+					elif detect_enabled and w >= 2.0 and h >= 2.0:
 						var snapped := _snap_to_tile_grid(Rect2i(int(x), int(y), int(w), int(h)))
 						x = float(snapped.position.x)
 						y = float(snapped.position.y)
@@ -682,16 +681,16 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 				queue_redraw()
 			return
 
-		if snap_mode == 4 and _content_regions.size() > 0:
-			# Smart mode: find content region → snap to tile grid
+		if detect_enabled and _content_regions.size() > 0:
+			# Content region detection → snap to tile grid
 			for region in _content_regions:
 				var r: Rect2i = region
 				if px >= r.position.x and px < r.position.x + r.size.x \
 				and py >= r.position.y and py < r.position.y + r.size.y:
 					_hover_rect = _snap_to_tile_grid(r)
 					break
-		elif snap_mode == 4 and px >= 0 and px < _blob_map_w and py >= 0:
-			# Smart mode fallback: individual blob → snap to tile grid
+		elif detect_enabled and px >= 0 and px < _blob_map_w and py >= 0:
+			# Blob detection fallback → snap to tile grid
 			var map_h := _blob_map.size() / _blob_map_w
 			if py < map_h:
 				var blob_id := _blob_map[py * _blob_map_w + px]
@@ -700,15 +699,6 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 					if rect_idx >= 0 and rect_idx < _blob_rects.size():
 						var raw_rect: Rect2i = _blob_rects[rect_idx]
 						_hover_rect = _snap_to_tile_grid(raw_rect)
-		elif px >= 0 and px < _blob_map_w and py >= 0:
-			# No snap: raw blob rect
-			var map_h := _blob_map.size() / _blob_map_w
-			if py < map_h:
-				var blob_id := _blob_map[py * _blob_map_w + px]
-				if blob_id > 0 and blob_id < _blob_id_to_rect.size():
-					var rect_idx := _blob_id_to_rect[blob_id]
-					if rect_idx >= 0 and rect_idx < _blob_rects.size():
-						_hover_rect = _blob_rects[rect_idx]
 
 		# Suppress hover if it overlaps an existing frame
 		if _hover_rect.size.x > 0 and _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):

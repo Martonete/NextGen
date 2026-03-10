@@ -3,7 +3,7 @@ class_name IndexerToolBar
 extends PanelContainer
 
 signal tool_changed(mode: int)     # 0=Select, 1=Draw, 2=Pan
-signal snap_changed(mode: int)
+signal detect_toggled(enabled: bool)
 signal zoom_in_pressed
 signal zoom_out_pressed
 signal zoom_fit_pressed
@@ -16,9 +16,8 @@ signal grid_cell_changed(cell_w: int, cell_h: int)
 enum Tool { SELECT, DRAW, PAN }
 
 var _tool_buttons: Array[Button] = []
-var _snap_buttons: Array[Button] = []
 var _current_tool: int = Tool.SELECT
-var _current_snap: int = 0
+var _chk_detect: CheckBox
 var _chk_grid: CheckBox
 var _opt_grid_cell: OptionButton
 var _grid_custom_row: HBoxContainer
@@ -55,17 +54,15 @@ func _ready() -> void:
 
 	hbox.add_child(IndexerTheme.separator_v())
 
-	# ── Smart detection ──
-	var snap_defs := [["Smart", 4], ["Off", 0]]
-	var snap_tips := {4: "Detección inteligente de sprites + snap a grilla", 0: "Sin detección"}
-	for sd in snap_defs:
-		var btn := IndexerTheme.preset_button(sd[0], Callable(), snap_tips.get(sd[1], ""))
-		btn.toggle_mode = true
-		btn.custom_minimum_size.x = 50
-		btn.pressed.connect(_on_snap_pressed.bind(sd[1]))
-		hbox.add_child(btn)
-		_snap_buttons.append(btn)
-	_snap_buttons[0].button_pressed = true
+	# ── Frame detection ──
+	_chk_detect = CheckBox.new()
+	_chk_detect.text = "Frame detect"
+	_chk_detect.button_pressed = true
+	_chk_detect.add_theme_color_override("font_color", Color(0.85, 0.85, 0.88))
+	_chk_detect.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+	_chk_detect.tooltip_text = "Detectar sprites al pasar el mouse"
+	_chk_detect.toggled.connect(func(on: bool): detect_toggled.emit(on))
+	hbox.add_child(_chk_detect)
 
 	hbox.add_child(IndexerTheme.separator_v())
 
@@ -132,11 +129,8 @@ func set_tool(mode: int) -> void:
 	tool_changed.emit(mode)
 
 
-func set_snap(mode: int) -> void:
-	_current_snap = mode
-	for i in range(_snap_buttons.size()):
-		_snap_buttons[i].set_pressed_no_signal(_snap_buttons[i] == _get_snap_btn(mode))
-	snap_changed.emit(mode)
+func set_detect(enabled: bool) -> void:
+	_chk_detect.set_pressed_no_signal(enabled)
 
 
 func set_grid(visible: bool, cell_w: int = -1, cell_h: int = -1) -> void:
@@ -151,18 +145,6 @@ func _on_tool_pressed(mode: int) -> void:
 		_tool_buttons[i].set_pressed_no_signal(i == mode)
 	tool_changed.emit(mode)
 
-
-func _on_snap_pressed(mode: int) -> void:
-	_current_snap = mode
-	for i in range(_snap_buttons.size()):
-		_snap_buttons[i].set_pressed_no_signal(_snap_buttons[i] == _get_snap_btn(mode))
-	snap_changed.emit(mode)
-
-
-func _get_snap_btn(mode: int) -> Button:
-	# snap_defs order: Smart=4, Off=0 → button indices 0, 1
-	var map := {4: 0, 0: 1}
-	return _snap_buttons[map.get(mode, 0)]
 
 
 # ── Grid cell presets ────────────────────────────────────────────────────────
