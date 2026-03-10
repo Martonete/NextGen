@@ -80,7 +80,7 @@ func _ready() -> void:
 	# ── Grid overlay ──
 	_chk_grid = CheckBox.new()
 	_chk_grid.text = "Grid"
-	_chk_grid.add_theme_color_override("font_color", IndexerTheme.TEXT_NORMAL)
+	_chk_grid.add_theme_color_override("font_color", Color(0.85, 0.85, 0.88))
 	_chk_grid.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	_chk_grid.tooltip_text = "Mostrar/ocultar grilla visual (también snap al dibujar)"
 	_chk_grid.toggled.connect(func(on: bool): grid_toggled.emit(on))
