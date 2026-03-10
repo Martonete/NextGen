@@ -1588,11 +1588,9 @@ func _restore_session() -> void:
 	if _inspector._tabs != null and tab_idx < _inspector._tabs.get_tab_count():
 		_inspector._tabs.current_tab = tab_idx
 
-	# Restore next GRH (only if higher than what was loaded from .ind)
-	var saved_next: int = _prefs.get_value("session", "next_grh", 0)
-	if saved_next > _next_grh_index:
-		_next_grh_index = saved_next
-		_inspector.set_next_grh(_next_grh_index)
+	# Next GRH: always use what was loaded from the .ind file (max_index + 1).
+	# Session-saved value is stale if the .ind was modified externally.
+	_inspector.set_next_grh(_next_grh_index)
 
 	# Restore last selected image
 	var last_image: String = _prefs.get_value("session", "last_image_path", "")
