@@ -1002,7 +1002,10 @@ public partial class MapViewport : Control
                         PickStartAt(tile.X, tile.Y);
                         break;
                     case EditorTool.Fill:
-                        FloodFill(tile.X, tile.Y);
+                        if (State.SelectedTexture != null)
+                            StampMosaicPattern(State.SelectedTexture, tile.X, tile.Y);
+                        else
+                            FloodFill(tile.X, tile.Y);
                         break;
                     case EditorTool.Eyedrop:
                         EyedropAt(tile.X, tile.Y);
