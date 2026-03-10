@@ -239,9 +239,15 @@ public partial class NpcPalette : VBoxContainer
         int grhIdx = NpcBodyGrhs[bodyIdx];
         if (grhIdx <= 0 || grhIdx >= Grhs.Length) return null;
 
-        ref var grh = ref Grhs[grhIdx];
+        var grh = Grhs[grhIdx];
         if (grh.FileNum <= 0) return null;
 
-        return Textures.GetRegion(grh.FileNum, grh.SX, grh.SY, grh.Width, grh.Height);
+        var baseTex = Textures.GetTexture(grh.FileNum);
+        if (baseTex == null) return null;
+
+        var atlas = new AtlasTexture();
+        atlas.Atlas = baseTex;
+        atlas.Region = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+        return atlas;
     }
 }

@@ -99,9 +99,10 @@ public static class GrhLoader
         // Second pass: resolve animation dimensions
         for (int i = 1; i < grhs.Length; i++)
         {
-            if (grhs[i].NumFrames > 1 && grhs[i].PixelWidth == 0 && grhs[i].Frames != null)
+            var frames = grhs[i].Frames;
+            if (grhs[i].NumFrames > 1 && grhs[i].PixelWidth == 0 && frames is { Length: > 0 })
             {
-                int firstIdx = grhs[i].Frames[0];
+                int firstIdx = frames[0];
                 if (firstIdx > 0 && firstIdx < grhs.Length)
                 {
                     grhs[i].PixelWidth = grhs[firstIdx].PixelWidth;
