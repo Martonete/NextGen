@@ -525,7 +525,7 @@ func _build_frames_tab() -> Control:
 		_body_dir_tabs.add_child(btn)
 
 	_preview = FramePreviewPanel.new()
-	_preview.custom_minimum_size = Vector2(0, 140)
+	_preview.custom_minimum_size = Vector2(0, 220)
 	_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	preview_vbox.add_child(_preview)
 
@@ -746,17 +746,7 @@ func _build_frames_tab() -> Control:
 	_related_anims_content.add_theme_constant_override("separation", 4)
 	_related_anims_box.add_child(_related_anims_content)
 
-	# Animation creator — just a button that opens the full dialog
-	bottom_content.add_child(IndexerTheme.separator_h())
-
-	_anim_section = VBoxContainer.new()
-	_anim_section.add_theme_constant_override("separation", 3)
-	bottom_content.add_child(_anim_section)
-
-	_anim_section.add_child(IndexerTheme.primary_button("Crear GRH Animado...", _open_anim_creator))
-
-	# Build the animation creator window (hidden until button pressed)
-	_build_anim_creator_window()
+	# Animation creation is now handled via multi-select on canvas (AnimationWindow)
 
 	return root
 

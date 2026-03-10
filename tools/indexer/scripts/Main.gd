@@ -46,6 +46,7 @@ var _toolbar: IndexerToolBar
 var _file_list: FileListPanel
 var _canvas: SpriteCanvas
 var _inspector: InspectorPanel
+var _anim_window: AnimationWindow
 var _lbl_status: Label
 var _menu_ver: PopupMenu
 
@@ -152,6 +153,11 @@ func _build_ui() -> void:
 	# Inspector (right)
 	_inspector = InspectorPanel.new()
 	hsplit_inner.add_child(_inspector)
+
+	# Animation window (hidden until multi-select)
+	_anim_window = AnimationWindow.new()
+	_anim_window.visible = false
+	add_child(_anim_window)
 
 	# Status bar
 	var status_bar := PanelContainer.new()
@@ -302,7 +308,12 @@ func _connect_signals() -> void:
 	_toolbar.tool_changed.connect(_on_tool_changed)
 	_toolbar.detect_toggled.connect(func(on): _canvas.set_detect(on); _save_prefs())
 	_toolbar.grid_toggled.connect(func(on): _canvas.set_grid_visible(on); _save_prefs())
-	_toolbar.grid_cell_changed.connect(func(cw, ch): _canvas.set_grid_cell(cw, ch); _save_prefs())
+	_toolbar.grid_config_changed.connect(func(cw, ch, lw, col):
+		_canvas.set_grid_cell(cw, ch)
+		_canvas.set_grid_line_w(lw)
+		_canvas.set_grid_color(col)
+		_save_prefs()
+	)
 	_toolbar.zoom_in_pressed.connect(func(): _canvas.zoom_in())
 	_toolbar.zoom_out_pressed.connect(func(): _canvas.zoom_out())
 	_toolbar.zoom_fit_pressed.connect(func(): _canvas.fit_to_canvas())
@@ -313,6 +324,7 @@ func _connect_signals() -> void:
 	# Canvas
 	_canvas.frame_drawn.connect(_on_canvas_frame_drawn)
 	_canvas.frame_selected.connect(_on_canvas_frame_selected)
+	_canvas.multi_frame_selected.connect(_on_multi_frame_selected)
 	_canvas.blob_clicked.connect(_on_canvas_blob_clicked)
 	_canvas.frame_resized.connect(_on_canvas_frame_resized)
 	_canvas.frame_delete_pressed.connect(func(idx): _delete_frame(idx))
@@ -326,6 +338,7 @@ func _connect_signals() -> void:
 	_inspector.detect_blobs_pressed.connect(_on_detect_blobs)
 	_inspector.detect_auto_pressed.connect(_on_detect_auto)
 	_inspector.create_anim_pressed.connect(_on_create_anim_grh)
+	_anim_window.create_anim_pressed.connect(_on_create_anim_grh)
 	_inspector.split_frame_pressed.connect(_on_split_frame)
 	_inspector.save_init_pressed.connect(_on_save_init_file)
 	_inspector.add_manual_frame_pressed.connect(_on_add_manual_frame)
@@ -370,6 +383,8 @@ func _save_prefs() -> void:
 	_prefs.set_value("session", "show_grid", _canvas.show_grid)
 	_prefs.set_value("session", "grid_cell_w", _canvas.grid_cell_w)
 	_prefs.set_value("session", "grid_cell_h", _canvas.grid_cell_h)
+	_prefs.set_value("session", "grid_line_w", _canvas.grid_line_width)
+	_prefs.set_value("session", "grid_color", _canvas.grid_color.to_html(false))
 	_prefs.set_value("session", "tool_mode", _canvas.tool_mode)
 	_prefs.save(PREFS_PATH)
 
@@ -638,6 +653,21 @@ func _on_canvas_frame_resized(index: int, new_rect: Rect2) -> void:
 func _on_canvas_frame_selected(frame_idx: int) -> void:
 	_selected_frame_idx = frame_idx
 	_refresh_all()
+
+
+func _on_multi_frame_selected(indices: Array) -> void:
+	if indices.size() >= 2:
+		var frame_dicts: Array = []
+		for idx in indices:
+			if idx >= 0 and idx < _current_frames.size():
+				frame_dicts.append(_current_frames[idx])
+		if frame_dicts.size() >= 2:
+			var textures: Dictionary = {}
+			textures[_current_file_num] = _current_texture
+			_anim_window.open_with_frames(frame_dicts, _current_texture, textures)
+	else:
+		if _anim_window.visible:
+			_anim_window.hide()
 
 
 # ── Inspector signals ────────────────────────────────────────────────────────
@@ -1585,6 +1615,8 @@ func _save_session() -> void:
 	_prefs.set_value("session", "show_grid", _canvas.show_grid)
 	_prefs.set_value("session", "grid_cell_w", _canvas.grid_cell_w)
 	_prefs.set_value("session", "grid_cell_h", _canvas.grid_cell_h)
+	_prefs.set_value("session", "grid_line_w", _canvas.grid_line_width)
+	_prefs.set_value("session", "grid_color", _canvas.grid_color.to_html(false))
 
 	# Tool mode
 	_prefs.set_value("session", "tool_mode", _canvas.tool_mode)
@@ -1619,9 +1651,14 @@ func _restore_session() -> void:
 	var grid_on: bool = _prefs.get_value("session", "show_grid", true)
 	var gcw: int = _prefs.get_value("session", "grid_cell_w", 128)
 	var gch: int = _prefs.get_value("session", "grid_cell_h", 128)
-	_toolbar.set_grid(grid_on, gcw, gch)
+	var glw: float = _prefs.get_value("session", "grid_line_w", 1.0)
+	var gc_hex: String = _prefs.get_value("session", "grid_color", "ffd900")
+	var gcol := Color.from_string(gc_hex, Color(1.0, 0.85, 0.0))
+	_toolbar.set_grid(grid_on, gcw, gch, glw, gcol)
 	_canvas.set_grid_visible(grid_on)
 	_canvas.set_grid_cell(gcw, gch)
+	_canvas.set_grid_line_w(glw)
+	_canvas.set_grid_color(gcol)
 
 	# Restore tool mode (migrate old 0=Select,1=Draw,2=Pan → 0=Edit,1=Pan)
 	var tool_mode: int = _prefs.get_value("session", "tool_mode", 0)

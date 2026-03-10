@@ -11,16 +11,24 @@ signal zoom_reset_pressed
 signal save_pressed
 signal index_pressed
 signal grid_toggled(visible: bool)
-signal grid_cell_changed(cell_w: int, cell_h: int)
+signal grid_config_changed(cell_w: int, cell_h: int, line_w: float, col: Color)
 
 var _tool_buttons: Array[Button] = []
 var _current_tool: int = 0
 var _chk_detect: CheckBox
 var _chk_grid: CheckBox
-var _opt_grid_cell: OptionButton
-var _grid_custom_row: HBoxContainer
-var _spin_grid_w: SpinBox
-var _spin_grid_h: SpinBox
+var _btn_grid_config: MenuButton
+# Grid config state
+var _grid_cell_w: int = 128
+var _grid_cell_h: int = 128
+var _grid_line_w: float = 1.0
+var _grid_color: Color = Color(1.0, 0.85, 0.0)
+# Config popup
+var _config_popup: PopupMenu
+var _size_sub: PopupMenu
+var _border_sub: PopupMenu
+var _color_picker_window: Window
+var _color_picker: ColorPicker
 
 
 func _ready() -> void:
@@ -80,33 +88,12 @@ func _ready() -> void:
 	_chk_grid.toggled.connect(func(on: bool): grid_toggled.emit(on))
 	hbox.add_child(_chk_grid)
 
-	_opt_grid_cell = OptionButton.new()
-	_opt_grid_cell.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	_opt_grid_cell.custom_minimum_size.x = 100
-	_opt_grid_cell.tooltip_text = "Tamaño de celda de la grilla"
-	_opt_grid_cell.add_item("128x128", 0)
-	_opt_grid_cell.add_item("128x64", 1)
-	_opt_grid_cell.add_item("64x64", 2)
-	_opt_grid_cell.add_item("64x32", 3)
-	_opt_grid_cell.add_item("32x32", 4)
-	_opt_grid_cell.add_item("Custom...", 5)
-	_opt_grid_cell.selected = 0
-	_opt_grid_cell.item_selected.connect(_on_grid_cell_selected)
-	hbox.add_child(_opt_grid_cell)
-
-	# Custom grid spinboxes (hidden by default)
-	_grid_custom_row = HBoxContainer.new()
-	_grid_custom_row.add_theme_constant_override("separation", 2)
-	_grid_custom_row.visible = false
-	hbox.add_child(_grid_custom_row)
-	_grid_custom_row.add_child(IndexerTheme.label("W:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	_spin_grid_w = IndexerTheme.spinbox(8, 512, 128, func(_v): _emit_grid_cell())
-	_spin_grid_w.custom_minimum_size.x = 56
-	_grid_custom_row.add_child(_spin_grid_w)
-	_grid_custom_row.add_child(IndexerTheme.label("H:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	_spin_grid_h = IndexerTheme.spinbox(8, 512, 128, func(_v): _emit_grid_cell())
-	_spin_grid_h.custom_minimum_size.x = 56
-	_grid_custom_row.add_child(_spin_grid_h)
+	_btn_grid_config = MenuButton.new()
+	_btn_grid_config.text = "Config"
+	_btn_grid_config.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
+	_btn_grid_config.tooltip_text = "Configurar grilla: tamaño, borde, color"
+	hbox.add_child(_btn_grid_config)
+	_build_grid_config_menu()
 
 	# ── Spacer ──
 	hbox.add_child(IndexerTheme.spacer())
@@ -130,10 +117,17 @@ func set_detect(enabled: bool) -> void:
 	_chk_detect.set_pressed_no_signal(enabled)
 
 
-func set_grid(visible: bool, cell_w: int = -1, cell_h: int = -1) -> void:
+func set_grid(visible: bool, cell_w: int = -1, cell_h: int = -1, line_w: float = -1.0, col: Color = Color(-1, 0, 0)) -> void:
 	_chk_grid.set_pressed_no_signal(visible)
-	if cell_w > 0 and cell_h > 0:
-		_select_grid_preset(cell_w, cell_h)
+	if cell_w > 0:
+		_grid_cell_w = cell_w
+	if cell_h > 0:
+		_grid_cell_h = cell_h
+	if line_w > 0:
+		_grid_line_w = line_w
+	if col.r >= 0:
+		_grid_color = col
+	_rebuild_config_checks()
 
 
 func _on_tool_pressed(mode: int) -> void:
@@ -143,35 +137,92 @@ func _on_tool_pressed(mode: int) -> void:
 	tool_changed.emit(mode)
 
 
+# ── Grid config menu ─────────────────────────────────────────────────────────
 
-# ── Grid cell presets ────────────────────────────────────────────────────────
-# Preset index → [cell_w, cell_h]
-const GRID_PRESETS := [[128, 128], [128, 64], [64, 64], [64, 32], [32, 32]]
+const SIZE_PRESETS := [[128, 128], [128, 64], [64, 64], [64, 32], [32, 32]]
+const SIZE_LABELS := ["128x128", "128x64", "64x64", "64x32", "32x32"]
+const BORDER_OPTIONS := [1, 2, 3, 4]
 
-func _on_grid_cell_selected(idx: int) -> void:
-	if idx < GRID_PRESETS.size():
-		_grid_custom_row.visible = false
-		var preset: Array = GRID_PRESETS[idx]
-		grid_cell_changed.emit(preset[0], preset[1])
-	else:
-		# Custom
-		_grid_custom_row.visible = true
-		_emit_grid_cell()
+func _build_grid_config_menu() -> void:
+	_config_popup = _btn_grid_config.get_popup()
+	_config_popup.clear()
+
+	# Size submenu
+	_size_sub = PopupMenu.new()
+	_size_sub.name = "SizeSubmenu"
+	for i in range(SIZE_LABELS.size()):
+		_size_sub.add_radio_check_item(SIZE_LABELS[i], i)
+	_size_sub.set_item_checked(0, true)
+	_size_sub.id_pressed.connect(_on_size_selected)
+	_config_popup.add_child(_size_sub)
+	_config_popup.add_submenu_item("Tamaño", "SizeSubmenu")
+
+	# Border submenu
+	_border_sub = PopupMenu.new()
+	_border_sub.name = "BorderSubmenu"
+	for i in range(BORDER_OPTIONS.size()):
+		_border_sub.add_radio_check_item("%d px" % BORDER_OPTIONS[i], i)
+	_border_sub.set_item_checked(0, true)
+	_border_sub.id_pressed.connect(_on_border_selected)
+	_config_popup.add_child(_border_sub)
+	_config_popup.add_submenu_item("Borde", "BorderSubmenu")
+
+	# Color item
+	_config_popup.add_item("Color...", 100)
+	_config_popup.id_pressed.connect(_on_config_item)
+
+	# Color picker window (lazy, hidden)
+	_color_picker_window = Window.new()
+	_color_picker_window.title = "Color de grilla"
+	_color_picker_window.size = Vector2i(320, 340)
+	_color_picker_window.exclusive = true
+	_color_picker_window.wrap_controls = true
+	_color_picker_window.close_requested.connect(func(): _color_picker_window.hide())
+	_color_picker = ColorPicker.new()
+	_color_picker.color = _grid_color
+	_color_picker.edit_alpha = false
+	_color_picker.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_color_picker.color_changed.connect(_on_color_changed)
+	_color_picker_window.add_child(_color_picker)
+	add_child(_color_picker_window)
 
 
-func _emit_grid_cell() -> void:
-	grid_cell_changed.emit(int(_spin_grid_w.value), int(_spin_grid_h.value))
+func _on_size_selected(id: int) -> void:
+	if id < SIZE_PRESETS.size():
+		var p: Array = SIZE_PRESETS[id]
+		_grid_cell_w = p[0]
+		_grid_cell_h = p[1]
+		_rebuild_config_checks()
+		_emit_grid_config()
 
 
-func _select_grid_preset(cw: int, ch: int) -> void:
-	for i in range(GRID_PRESETS.size()):
-		var p: Array = GRID_PRESETS[i]
-		if p[0] == cw and p[1] == ch:
-			_opt_grid_cell.selected = i
-			_grid_custom_row.visible = false
-			return
-	# Not a preset → Custom
-	_opt_grid_cell.selected = GRID_PRESETS.size()  # Custom item
-	_grid_custom_row.visible = true
-	_spin_grid_w.value = cw
-	_spin_grid_h.value = ch
+func _on_border_selected(id: int) -> void:
+	if id < BORDER_OPTIONS.size():
+		_grid_line_w = float(BORDER_OPTIONS[id])
+		_rebuild_config_checks()
+		_emit_grid_config()
+
+
+func _on_config_item(id: int) -> void:
+	if id == 100:
+		_color_picker.color = _grid_color
+		_color_picker_window.popup_centered()
+
+
+func _on_color_changed(col: Color) -> void:
+	_grid_color = col
+	_emit_grid_config()
+
+
+func _emit_grid_config() -> void:
+	grid_config_changed.emit(_grid_cell_w, _grid_cell_h, _grid_line_w, _grid_color)
+
+
+func _rebuild_config_checks() -> void:
+	if _size_sub == null:
+		return
+	for i in range(SIZE_PRESETS.size()):
+		var p: Array = SIZE_PRESETS[i]
+		_size_sub.set_item_checked(i, p[0] == _grid_cell_w and p[1] == _grid_cell_h)
+	for i in range(BORDER_OPTIONS.size()):
+		_border_sub.set_item_checked(i, BORDER_OPTIONS[i] == int(_grid_line_w))

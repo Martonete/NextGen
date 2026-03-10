@@ -5,6 +5,7 @@ extends Control
 
 signal frame_drawn(rect: Rect2)                     # Frame dibujado manualmente
 signal frame_selected(index: int)                   # Frame existente clickeado (-1 = deselect)
+signal multi_frame_selected(indices: Array)          # Multi-select via CTRL+click
 signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para agregar
 signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
 signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
@@ -30,6 +31,7 @@ var _content_regions: Array = []         # Array of Rect2i from detect_content_r
 
 var _frames: Array = []
 var _selected_frame: int = -1
+var _selected_frames: Array[int] = []
 
 # ── Tool mode (0=Select+Draw, 1=Pan) ────────────────────────────────────────
 
@@ -77,6 +79,8 @@ var detect_enabled: bool = true
 var show_grid: bool = false
 var grid_cell_w: int = 128    # major grid cell width
 var grid_cell_h: int = 128    # major grid cell height
+var grid_line_width: float = 1.0    # line thickness in pixels
+var grid_color: Color = Color(1.0, 0.85, 0.0)  # base color (alpha computed per line type)
 const GRID_TILE: int = 32     # minor grid subdivision (always 32px)
 
 # ── Visibility toggle ────────────────────────────────────────────────────────
@@ -97,6 +101,16 @@ func set_grid_visible(visible: bool) -> void:
 func set_grid_cell(cw: int, ch: int) -> void:
 	grid_cell_w = maxi(cw, 8)
 	grid_cell_h = maxi(ch, 8)
+	queue_redraw()
+
+
+func set_grid_line_w(w: float) -> void:
+	grid_line_width = maxf(w, 0.5)
+	queue_redraw()
+
+
+func set_grid_color(col: Color) -> void:
+	grid_color = col
 	queue_redraw()
 
 
@@ -153,6 +167,7 @@ func load_image(img: Image) -> void:
 	_texture = ImageTexture.create_from_image(img)
 	_image_size = Vector2(img.get_width(), img.get_height())
 	_selected_frame = -1
+	_selected_frames.clear()
 	_drawing = false
 	_hover_rect = Rect2i()
 	_blob_map = PackedInt32Array()
@@ -191,6 +206,7 @@ func clear_image() -> void:
 	_image_size = Vector2.ZERO
 	_frames = []
 	_selected_frame = -1
+	_selected_frames.clear()
 	_blob_map = PackedInt32Array()
 	_blob_rects = []
 	_content_regions = []
@@ -338,6 +354,7 @@ func _draw() -> void:
 			var fr: Dictionary = _frames[i]
 			var col: Color = FRAME_COLORS[i % FRAME_COLORS.size()]
 			var is_sel := (i == _selected_frame)
+			var is_multi := _selected_frames.has(i)
 			# Durante resize/move activo, usar el rect live para el frame seleccionado
 			var draw_r: Rect2
 			if is_sel and _resize_active:
@@ -347,8 +364,13 @@ func _draw() -> void:
 			else:
 				draw_r = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
 			var sr := _irect2srect(draw_r)
-			draw_rect(sr, Color(col.r, col.g, col.b, 0.15 if is_sel else 0.06))
-			draw_rect(sr, Color.WHITE if is_sel else col, false, 2.0 if is_sel else 1.0)
+			draw_rect(sr, Color(col.r, col.g, col.b, 0.15 if is_sel else (0.10 if is_multi else 0.06)))
+			if is_sel:
+				draw_rect(sr, Color.WHITE, false, 2.0)
+			elif is_multi:
+				draw_rect(sr, Color(0.3, 0.7, 1.0), false, 2.0)
+			else:
+				draw_rect(sr, col, false, 1.0)
 			if sr.size.x > 22:
 				var lbl: String
 				if is_sel and _resize_active:
@@ -438,10 +460,11 @@ func _draw_grid(img_sr: Rect2) -> void:
 	var vis_top := maxf(img_sr.position.y, 0.0)
 	var vis_right := minf(img_sr.position.x + img_sr.size.x, size.x)
 	var vis_bottom := minf(img_sr.position.y + img_sr.size.y, size.y)
-	# Thin lines for tile grid
-	var col_grid := Color(1.0, 0.85, 0.0, 0.12)
-	# Thicker lines at cell boundaries
-	var col_grid_major := Color(1.0, 0.85, 0.0, 0.28)
+	# Colors derived from grid_color with different alpha
+	var col_minor := Color(grid_color.r, grid_color.g, grid_color.b, 0.35)
+	var col_major := Color(grid_color.r, grid_color.g, grid_color.b, 0.7)
+	var w_minor := grid_line_width
+	var w_major := grid_line_width * 2.0
 	# How many tiles per major cell
 	@warning_ignore("integer_division")
 	var tiles_per_cell_x: int = maxi(1, grid_cell_w / GRID_TILE)
@@ -457,8 +480,8 @@ func _draw_grid(img_sr: Rect2) -> void:
 			continue
 		var is_major := (i % tiles_per_cell_x == 0)
 		draw_line(Vector2(sx, vis_top), Vector2(sx, vis_bottom),
-			col_grid_major if is_major else col_grid,
-			2.0 if is_major else 1.0)
+			col_major if is_major else col_minor,
+			w_major if is_major else w_minor)
 	# Horizontal lines
 	@warning_ignore("integer_division")
 	var first_row := int((vis_top - img_sr.position.y) / tile_step)
@@ -469,8 +492,8 @@ func _draw_grid(img_sr: Rect2) -> void:
 			continue
 		var is_major := (i % tiles_per_cell_h == 0)
 		draw_line(Vector2(vis_left, sy), Vector2(vis_right, sy),
-			col_grid_major if is_major else col_grid,
-			2.0 if is_major else 1.0)
+			col_major if is_major else col_minor,
+			w_major if is_major else w_minor)
 
 
 # ── Input ─────────────────────────────────────────────────────────────────────
@@ -489,9 +512,11 @@ func _on_key(k: InputEventKey) -> void:
 		return
 	match k.keycode:
 		KEY_ESCAPE:
-			if _selected_frame >= 0:
+			if _selected_frame >= 0 or not _selected_frames.is_empty():
 				_selected_frame = -1
+				_selected_frames.clear()
 				frame_selected.emit(-1)
+				multi_frame_selected.emit([])
 				queue_redraw()
 		KEY_DELETE:
 			if _selected_frame >= 0:
@@ -548,7 +573,18 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 						else:
 							var hit := _hit_test_frame(ip)
 							if hit >= 0:
-								if hit == _selected_frame:
+								if mb.ctrl_pressed:
+									# CTRL+click: toggle multi-select
+									var pos := _selected_frames.find(hit)
+									if pos >= 0:
+										_selected_frames.remove_at(pos)
+									else:
+										_selected_frames.append(hit)
+									_selected_frame = hit
+									frame_selected.emit(hit)
+									multi_frame_selected.emit(_selected_frames.duplicate())
+									queue_redraw()
+								elif hit == _selected_frame:
 									var fr: Dictionary = _frames[_selected_frame]
 									_move_frame_orig = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
 									_move_mouse_start_img = ip
@@ -556,13 +592,17 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 									_move_active = true
 								else:
 									_selected_frame = hit
+									_selected_frames = [hit] as Array[int]
 									frame_selected.emit(hit)
+									multi_frame_selected.emit(_selected_frames.duplicate())
 									queue_redraw()
 							else:
 								# Empty space → deselect + start drawing
-								if _selected_frame >= 0:
+								if _selected_frame >= 0 or not _selected_frames.is_empty():
 									_selected_frame = -1
+									_selected_frames.clear()
 									frame_selected.emit(-1)
+									multi_frame_selected.emit([])
 									queue_redraw()
 								if show_grid:
 									@warning_ignore("integer_division")
@@ -735,6 +775,16 @@ func _overlaps_any_frame(r: Rect2) -> bool:
 		if r.intersects(fr_rect):
 			return true
 	return false
+
+
+func get_selected_frames() -> Array[int]:
+	return _selected_frames
+
+
+func clear_multi_select() -> void:
+	_selected_frames.clear()
+	multi_frame_selected.emit([])
+	queue_redraw()
 
 
 func _notification(what: int) -> void:
