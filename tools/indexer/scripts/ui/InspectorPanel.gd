@@ -824,7 +824,7 @@ func _build_frames_tab() -> Control:
 func _build_detect_tab() -> Control:
 	var scroll := ScrollContainer.new()
 	scroll.name = "Parsear"
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.clip_contents = true
@@ -912,22 +912,23 @@ func _build_detect_tab() -> Control:
 	blob_section.add_child(blob_inner)
 
 	var bgrid := GridContainer.new()
-	bgrid.columns = 4
+	bgrid.columns = 2
 	bgrid.add_theme_constant_override("h_separation", 3)
 	bgrid.add_theme_constant_override("v_separation", 3)
 	blob_inner.add_child(bgrid)
 
 	bgrid.add_child(IndexerTheme.label("Alpha%:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 	_spin_alpha = IndexerTheme.spinbox(0, 100, 3)
+	_spin_alpha.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bgrid.add_child(_spin_alpha)
 	bgrid.add_child(IndexerTheme.label("MinPx:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 	_spin_min_size = IndexerTheme.spinbox(1, 512, 4)
+	_spin_min_size.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bgrid.add_child(_spin_min_size)
 	bgrid.add_child(IndexerTheme.label("Pad:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 	_spin_padding = IndexerTheme.spinbox(0, 64, 1)
+	_spin_padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bgrid.add_child(_spin_padding)
-	bgrid.add_child(Control.new())
-	bgrid.add_child(Control.new())
 
 	blob_inner.add_child(IndexerTheme.primary_button("Detectar Blobs", _on_detect_blobs_btn))
 
