@@ -601,11 +601,11 @@ func _build_frames_tab() -> Control:
 	grid.add_child(Control.new())
 
 	grid.add_child(IndexerTheme.label("X", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	_spin_sx = IndexerTheme.spinbox(0, 16383, 0, func(_v): _on_props_changed())
+	_spin_sx = IndexerTheme.spinbox(-4096, 16383, 0, func(_v): _on_props_changed())
 	_spin_sx.custom_minimum_size.x = 64
 	grid.add_child(_spin_sx)
 	grid.add_child(IndexerTheme.label("Y", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	_spin_sy = IndexerTheme.spinbox(0, 16383, 0, func(_v): _on_props_changed())
+	_spin_sy = IndexerTheme.spinbox(-4096, 16383, 0, func(_v): _on_props_changed())
 	_spin_sy.custom_minimum_size.x = 64
 	grid.add_child(_spin_sy)
 

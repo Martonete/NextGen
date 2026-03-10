@@ -739,6 +739,12 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 		var prev_rect := _hover_rect
 		_hover_rect = Rect2i()
 
+		# Skip hover detection if cursor is over an existing frame
+		if _hit_test_frame(ip) >= 0:
+			if _hover_rect != prev_rect:
+				queue_redraw()
+			return
+
 		if snap_mode == 4 and _content_regions.size() > 0:
 			# Smart mode: find which pre-computed content region the cursor is in
 			for region in _content_regions:
@@ -784,6 +790,10 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 					if rect_idx >= 0 and rect_idx < _blob_rects.size():
 						var raw_rect: Rect2i = _blob_rects[rect_idx]
 						_hover_rect = _apply_snap(raw_rect)
+
+		# Suppress hover if it overlaps an existing frame
+		if _hover_rect.size.x > 0 and _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
+			_hover_rect = Rect2i()
 
 		if _hover_rect != prev_rect:
 			queue_redraw()

@@ -895,20 +895,19 @@ func _redo() -> void:
 # ── Image bounds clamping ────────────────────────────────────────────────────
 
 func _clamp_x(x: int) -> int:
-	if _current_image == null: return maxi(x, 0)
-	return clampi(x, 0, _current_image.get_width() - 1)
+	# Allow negative offsets for centering (sprite can extend beyond image)
+	if _current_image == null: return x
+	return clampi(x, -4096, _current_image.get_width() - 1)
 
 func _clamp_y(y: int) -> int:
-	if _current_image == null: return maxi(y, 0)
-	return clampi(y, 0, _current_image.get_height() - 1)
+	if _current_image == null: return y
+	return clampi(y, -4096, _current_image.get_height() - 1)
 
 func _clamp_w(x: int, w: int) -> int:
-	if _current_image == null: return maxi(w, 1)
-	return clampi(w, 1, _current_image.get_width() - x)
+	return maxi(w, 1)
 
 func _clamp_h(y: int, h: int) -> int:
-	if _current_image == null: return maxi(h, 1)
-	return clampi(h, 1, _current_image.get_height() - y)
+	return maxi(h, 1)
 
 
 ## Analyze detected blobs and auto-set the best snap mode.
