@@ -805,7 +805,7 @@ public partial class MapViewport : Control
     /// <summary>
     /// Stamp the entire NxM mosaic pattern at the current preview position.
     /// </summary>
-    private void StampMosaicPattern(TextureRef texRef, int hoverX, int hoverY)
+    public void StampMosaicPattern(TextureRef texRef, int hoverX, int hoverY)
     {
         if (Map == null || State == null) return;
         int tw = Math.Max(texRef.TileWidth, 1);

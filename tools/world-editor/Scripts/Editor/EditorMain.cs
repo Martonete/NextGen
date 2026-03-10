@@ -1294,7 +1294,12 @@ public partial class EditorMain : Control
                 case Key.V: newTool = EditorTool.Pick; break;
                 case Key.F:
                     if (_state.HoverValid && _viewport != null)
-                        _viewport.FloodFill(_state.HoverX, _state.HoverY);
+                    {
+                        if (_state.SelectedTexture != null)
+                            _viewport.StampMosaicPattern(_state.SelectedTexture, _state.HoverX, _state.HoverY);
+                        else
+                            _viewport.FloodFill(_state.HoverX, _state.HoverY);
+                    }
                     break;
                 case Key.I: newTool = EditorTool.Eyedrop; break;
                 case Key.B: newTool = EditorTool.Block; break;
