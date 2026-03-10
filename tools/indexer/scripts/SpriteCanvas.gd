@@ -293,6 +293,9 @@ func _hit_handles(screen_pos: Vector2) -> int:
 	return -1
 
 
+func _snap_to_8(v: float) -> float:
+	return float(maxi(8, ((int(v) + 7) / 8) * 8))
+
 func _resize_rect_from_drag(handle: int, delta_img: Vector2) -> Rect2:
 	var x1: float = _resize_frame_orig.position.x
 	var y1: float = _resize_frame_orig.position.y
@@ -312,6 +315,41 @@ func _resize_rect_from_drag(handle: int, delta_img: Vector2) -> Rect2:
 	var nx2 := maxf(x2, x1 + 1.0)
 	var ny2 := maxf(y2, y1 + 1.0)
 	# Clamp to image borders
+	if _image_size.x > 0:
+		nx1 = maxf(nx1, 0.0)
+		ny1 = maxf(ny1, 0.0)
+		nx2 = minf(nx2, _image_size.x)
+		ny2 = minf(ny2, _image_size.y)
+	# Always snap size to multiples of 8 (32x32, 48x48, 128x192, etc.)
+	var w := nx2 - nx1
+	var h := ny2 - ny1
+	var sw := _snap_to_8(w)
+	var sh := _snap_to_8(h)
+	# Adjust edges based on which handle is being dragged
+	# For handles that move the right/bottom edge, grow outward
+	# For handles that move the left/top edge, grow inward (adjust position)
+	match handle:
+		0:  # TL — anchor BR, adjust x1/y1
+			nx1 = nx2 - sw
+			ny1 = ny2 - sh
+		1:  # T — anchor bottom, adjust y1
+			ny1 = ny2 - sh
+		2:  # TR — anchor BL, adjust x2/y1
+			nx2 = nx1 + sw
+			ny1 = ny2 - sh
+		3:  # R — anchor left, adjust x2
+			nx2 = nx1 + sw
+		4:  # BR — anchor TL, adjust x2/y2
+			nx2 = nx1 + sw
+			ny2 = ny1 + sh
+		5:  # B — anchor top, adjust y2
+			ny2 = ny1 + sh
+		6:  # BL — anchor TR, adjust x1/y2
+			nx1 = nx2 - sw
+			ny2 = ny1 + sh
+		7:  # L — anchor right, adjust x1
+			nx1 = nx2 - sw
+	# Re-clamp after snap adjustment
 	if _image_size.x > 0:
 		nx1 = maxf(nx1, 0.0)
 		ny1 = maxf(ny1, 0.0)
@@ -629,9 +667,6 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					_resize_active = false
 					var delta_img := _s2i(mb.position) - _resize_mouse_start_img
 					var new_rect := _resize_rect_from_drag(_resize_handle, delta_img)
-					if snap_mode == 5:
-						var snapped := _apply_snap(Rect2i(int(new_rect.position.x), int(new_rect.position.y), int(new_rect.size.x), int(new_rect.size.y)))
-						new_rect = Rect2(snapped.position, snapped.size)
 					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
 				elif _move_active:
@@ -699,9 +734,6 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 	if _resize_active:
 		var delta_img := _s2i(mm.position) - _resize_mouse_start_img
 		_resize_live = _resize_rect_from_drag(_resize_handle, delta_img)
-		if snap_mode == 5:
-			var snapped := _apply_snap(Rect2i(int(_resize_live.position.x), int(_resize_live.position.y), int(_resize_live.size.x), int(_resize_live.size.y)))
-			_resize_live = Rect2(snapped.position, snapped.size)
 		queue_redraw()
 		return
 
