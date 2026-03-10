@@ -261,6 +261,7 @@ pub struct UserState {
 
     // Admin / moderation flags
     pub admin_invisible: bool,    // GM invisible mode (body=0, head=0)
+    pub gm_show_name: bool,       // GM name visible to players (VB6: /SHOWNAME toggle)
     pub old_body: i32,            // Saved body before going invisible
     pub old_head: i32,            // Saved head before going invisible
     pub emoticons: bool,          // Emoticons enabled (toggle via /EMOTICONS)
@@ -269,6 +270,8 @@ pub struct UserState {
     pub jail_timer: i32,          // Jail countdown in seconds (0 = not jailed)
     pub warnings: i32,            // Warning count (advertencias)
     pub hogar: String,            // Home city (Thir, Inthak, Ruvendel, etc.)
+    pub traveling: bool,           // VB6: Traveling — dead user teleporting home via /HOGAR
+    pub counter_go_home: i32,      // VB6: GoHome counter — counts up to 250 ticks (10s at 40ms) then teleport
 
     // Navigation — barco_slot is the inventory slot (1-based) holding the equipped boat (VB6 BarcoSlot)
     pub barco_slot: usize,
@@ -297,6 +300,7 @@ pub struct UserState {
     // Duel system (VB6: AtacablePor)
     pub atacable_por: ConnectionId,  // 0 = no duel, >0 = can be attacked by this player only
     pub duel_pending: ConnectionId,  // Pending duel challenge from this player
+    pub counter_atacable: i32,       // VB6: 60-second timeout for atacable_por (counts up to 1500 at 40ms/tick)
 
     // Timbero (gambling) stats
     pub timbero_target_npc: usize,   // Currently interacting with gambler NPC
@@ -462,6 +466,7 @@ impl UserState {
             interval_trabajar: 0,
             interval_pu: 0,
             admin_invisible: false,
+            gm_show_name: false,
             old_body: 0,
             old_head: 0,
             emoticons: false,
@@ -470,6 +475,8 @@ impl UserState {
             jail_timer: 0,
             warnings: 0,
             hogar: String::new(),
+            traveling: false,
+            counter_go_home: 0,
             barco_slot: 0,
             consulta_enviada: false,
             numero_consulta: 0,
@@ -482,6 +489,7 @@ impl UserState {
             pareja: String::new(),
             atacable_por: 0,
             duel_pending: 0,
+            counter_atacable: 0,
             timbero_target_npc: 0,
         }
     }
@@ -707,6 +715,13 @@ pub struct GameState {
     /// Flood strike counter per connection. Incremented each second the
     /// connection exceeds the packet rate limit. At 3 strikes, disconnected.
     pub flood_strikes: HashMap<ConnectionId, u32>,
+
+    // Rain system (VB6: Lloviendo)
+    pub raining: bool,
+    pub rain_counter: i32,  // Tick counter for rain STA drain (incremented each 40ms tick)
+
+    // GM forced night mode (VB6: /NOCHE toggle)
+    pub forced_night: bool,
 }
 
 /// SOS message (help request from player)
@@ -826,6 +841,9 @@ impl GameState {
             max_packets_per_second: max_pps,
             security_kick_queue: Vec::new(),
             flood_strikes: HashMap::new(),
+            raining: false,
+            rain_counter: 0,
+            forced_night: false,
         }
     }
 

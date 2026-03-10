@@ -489,4 +489,21 @@ public static class ClientPackets
         return WriteStringPacket(ClientPacketId.TradeChat, msg);
     }
 
+    // ── Forum ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// ForumPost (ID 123) — post a message to a forum board.
+    /// Wire: u8 opcode, u8 msgType, string title, string body
+    /// msgType: 0=General, 1=GeneralSticky, 2=Caos, 3=CaosSticky, 4=Real, 5=RealSticky
+    /// </summary>
+    public static byte[] WriteForumPost(byte msgType, string title, string body)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.ForumPost);
+        bq.WriteByte(msgType);
+        bq.WriteString(title);
+        bq.WriteString(body);
+        return bq.ToArray();
+    }
+
 }

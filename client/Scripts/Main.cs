@@ -93,6 +93,10 @@ public partial class Main : Control
     private CommercePanel? _commercePanel;
     private bool _lastComerciando;
 
+    // Trade panel (frmComerciarUsu — player-to-player)
+    private TradePanel? _tradePanel;
+    private bool _lastTrading;
+
     // Bank panels (frmBanco + frmNuevoBancoObj)
     private BankPanel? _bankPanel;
     private VaultPanel? _vaultPanel;
@@ -104,6 +108,12 @@ public partial class Main : Control
     private GuildPanel? _guildPanel;
     private GuildFoundationPanel? _guildFoundationPanel;
 
+    // Forum panel (frmForo)
+    private ForumPanel? _forumPanel;
+
+    // Party panel (frmGrupo)
+    private PartyPanel? _partyPanel;
+
     // Travel panel (frmViajar)
     private TravelPanel? _travelPanel;
 
@@ -112,6 +122,9 @@ public partial class Main : Control
 
     // Macro panel (frmMakro)
     private MacroPanel? _macroPanel;
+
+    // Stats panel (frmEstadisticas)
+    private StatsPanel? _statsPanel;
 
     // Options panel (frmOpcionesNew)
     private OptionsPanel? _optionsPanel;
@@ -245,6 +258,18 @@ public partial class Main : Control
         _soundManager.SetSfxVolume(_state.Config.SfxVolume);
         _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
         _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
+
+        // Wire floating text callback: spawns rising damage/heal numbers above characters
+        _packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
+        {
+            var floatingLayer = _worldRenderer?.FloatingText;
+            if (floatingLayer == null) return;
+            var color = Color.FromHtml(colorHex);
+            floatingLayer.AddText(charIndex, text, color);
+        };
+
+        // Initialize weather renderer with sound manager (rain sound)
+        _worldRenderer?.InitWeather(_soundManager);
 
         // Set Linear texture filtering on UI layers so fonts/text scale smoothly.
         // Game viewport keeps Nearest (pixel art) via project default_texture_filter=0.
@@ -482,7 +507,7 @@ public partial class Main : Control
 
         var grupoButton = CreateInvisibleButton(681, 466, 94, 21);
         _gameUI.AddChild(grupoButton);
-        grupoButton.Pressed += () => GD.Print("[UI] Grupo button — not implemented yet");
+        grupoButton.Pressed += () => _partyPanel?.TogglePanel();
 
         var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
         _gameUI.AddChild(opcionesButton);
@@ -499,7 +524,16 @@ public partial class Main : Control
 
         var estadisticasButton = CreateInvisibleButton(681, 507, 95, 24);
         _gameUI.AddChild(estadisticasButton);
-        estadisticasButton.Pressed += () => GD.Print("[UI] Estadisticas button — not implemented yet");
+        estadisticasButton.Pressed += () =>
+        {
+            if (_statsPanel != null)
+            {
+                if (_state.StatsPanelOpen)
+                    _statsPanel.Close();
+                else
+                    _statsPanel.Open();
+            }
+        };
 
         var clanesButton = CreateInvisibleButton(683, 532, 92, 26);
         _gameUI.AddChild(clanesButton);
@@ -527,6 +561,13 @@ public partial class Main : Control
         _commercePanel.Position = new Vector2(57, 109);
         _commercePanel.Visible = false;
         _gameUI.AddChild(_commercePanel);
+
+        // Trade panel (frmComerciarUsu — player-to-player) — centered on game viewport
+        _tradePanel = new TradePanel();
+        // Center: 8 + (544 - 420) / 2 = 70, y: 144 + (416 - 420) / 2 = 142
+        _tradePanel.Position = new Vector2(70, 142);
+        _tradePanel.Visible = false;
+        _gameUI.AddChild(_tradePanel);
 
         // Bank panel (frmBanco) — centered on viewport
         _bankPanel = new BankPanel();
@@ -566,6 +607,18 @@ public partial class Main : Control
         _guildFoundationPanel.Visible = false;
         _gameUI.AddChild(_guildFoundationPanel);
 
+        // Forum panel (frmForo) — centered on viewport
+        _forumPanel = new ForumPanel();
+        _forumPanel.Position = new Vector2(20, 80);
+        _forumPanel.Visible = false;
+        _gameUI.AddChild(_forumPanel);
+
+        // Party panel (frmGrupo) — right side of viewport
+        _partyPanel = new PartyPanel();
+        _partyPanel.Position = new Vector2(480, 150);
+        _partyPanel.Visible = false;
+        _gameUI.AddChild(_partyPanel);
+
         // Travel panel (frmViajar) — centered on viewport
         _travelPanel = new TravelPanel();
         // Center: 8 + (544 - 450) / 2 = 55, y: 144 + (416 - 350) / 2 = 177
@@ -586,6 +639,13 @@ public partial class Main : Control
         _macroPanel.Visible = false;
         _gameUI.AddChild(_macroPanel);
         _macroPanel.Init(_state, _dataPath);
+
+        // Stats panel (frmEstadisticas) — centered on viewport
+        _statsPanel = new StatsPanel();
+        _statsPanel.Position = new Vector2(8 + (544 - 380) / 2, 20);
+        _statsPanel.Visible = false;
+        _gameUI.AddChild(_statsPanel);
+        _statsPanel.Init(_state);
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
@@ -2515,6 +2575,22 @@ public partial class Main : Control
                     _commercePanel?.CloseShop();
             }
 
+            // Trade panel state tracking (player-to-player)
+            if (_state.Trading != _lastTrading)
+            {
+                _lastTrading = _state.Trading;
+                if (_state.Trading)
+                    _tradePanel?.OpenTrade();
+                else
+                    _tradePanel?.CloseTrade();
+            }
+            // Consume TradeJustOpened flag (set by PacketHandler on trade init)
+            if (_state.TradeJustOpened)
+            {
+                _state.TradeJustOpened = false;
+                _tradePanel?.OpenTrade();
+            }
+
             // Bank panel state tracking
             if (_state.Banqueando != _lastBanqueando)
             {
@@ -2552,6 +2628,20 @@ public partial class Main : Control
                 _state.ShowGuildFoundation = false;
                 _optionsPanel?.Close();
                 _guildFoundationPanel?.Show();
+            }
+
+            // Forum panel — open from ShowForumForm packet
+            if (_state.ShowForumPanel)
+            {
+                _state.ShowForumPanel = false;
+                _forumPanel?.ShowForum();
+            }
+
+            // Party panel — open from ShowPartyForm packet
+            if (_state.ShowPartyPanel)
+            {
+                _state.ShowPartyPanel = false;
+                _partyPanel?.OpenPanel();
             }
 
             // Guild bank panel
@@ -2660,6 +2750,7 @@ public partial class Main : Control
                     _inventoryPanel!.Init(_state, _gameData, _tcp);
                     _spellPanel!.Init(_state, _gameData, _tcp);
                     _commercePanel!.Init(_state, _gameData, _tcp);
+                    _tradePanel!.Init(_state, _gameData, _tcp);
                     _bankPanel!.Init(_state, _gameData, _tcp);
                     _vaultPanel!.Init(_state, _gameData, _tcp);
                     _guildBankPanel!.Init(_state, _gameData, _tcp);
@@ -2668,7 +2759,10 @@ public partial class Main : Control
                     _deathPanel!.Init(_state, _tcp, _dataPath);
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
+                    _forumPanel!.Init(_state, _tcp);
+                    _partyPanel!.Init(_state, _tcp);
                     _optionsPanel!.Init(_state, _state.Config, _dataPath, _tcp);
+                    _statsPanel!.Init(_state, _tcp);
                 }
                 GD.Print("[MAIN] Entered game world");
                 break;
@@ -2760,12 +2854,15 @@ public partial class Main : Control
         // Close commerce, bank, guild, and travel panels
         _commercePanel?.CloseShop();
         _lastComerciando = false;
+        _tradePanel?.CloseTrade();
+        _lastTrading = false;
         _bankPanel?.CloseBank();
         _vaultPanel?.CloseVault();
         _guildBankPanel?.CloseGuildBank();
         _craftPanel?.ClosePanel();
         _guildPanel?.Hide();
         _guildFoundationPanel?.Hide();
+        _partyPanel?.Hide();
         _lastBanqueando = false;
         _travelPanel?.CloseTravel();
         _deathPanel?.Hide();
@@ -2831,6 +2928,7 @@ public partial class Main : Control
         _state.UsingSkill = 0;
         _state.ChatActive = false;
         _state.Comerciando = false;
+        _state.Trading = false;
         _state.Dead = false;
         _state.ShowDeathPanel = false;
         _state.Resting = false;
@@ -3022,6 +3120,8 @@ public partial class Main : Control
         while (_state.ChatMessages.Count > 0)
         {
             var msg = _state.ChatMessages.Dequeue();
+            // Feed to party panel for state tracking (non-destructive — always shows in console too)
+            _partyPanel?.TryParsePartyMessage(msg.Text);
             // VB6 console uses bold font (Weight=700 in RecTxt)
             _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
             hadMessages = true;
@@ -3092,6 +3192,12 @@ public partial class Main : Control
                     GetViewport().SetInputAsHandled();
                     return;
                 }
+                if (_state.StatsPanelOpen)
+                {
+                    _statsPanel?.Close();
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
                 if (_state.OptionsPanelOpen)
                 {
                     _optionsPanel?.Close();
@@ -3107,6 +3213,12 @@ public partial class Main : Control
                 if (_state.Comerciando)
                 {
                     _tcp?.SendPacket(ClientPackets.WriteCommerceClose());
+                    GetViewport().SetInputAsHandled();
+                    return;
+                }
+                if (_state.Trading)
+                {
+                    _tcp?.SendPacket(ClientPackets.WriteTradeCancel());
                     GetViewport().SetInputAsHandled();
                     return;
                 }
@@ -3189,6 +3301,20 @@ public partial class Main : Control
                 return;
             }
 
+            // F5: toggle stats panel (VB6: frmEstadisticas)
+            if (key.Keycode == Key.F5 && !_state.ChatActive)
+            {
+                if (_statsPanel != null)
+                {
+                    if (_state.StatsPanelOpen)
+                        _statsPanel.Close();
+                    else
+                        _statsPanel.Open();
+                }
+                GetViewport().SetInputAsHandled();
+                return;
+            }
+
             // F9: toggle macro panel (VB6: frmMakro)
             if (key.Keycode == Key.F9 && !_state.ChatActive)
             {
@@ -3253,6 +3379,7 @@ public partial class Main : Control
 
         // Block mouse clicks on game world when any modal panel is open
         if (_state.Comerciando || _state.Banqueando || _state.BovedaAbierta
+            || _state.Trading
             || _state.MacroPanelOpen || _state.OptionsPanelOpen || _state.KeyBindPanelOpen
             || _state.ShowTravelPanel)
         {

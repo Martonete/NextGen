@@ -60,8 +60,13 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.UserCommerceEnd: // 11
                 _state.Trading = false;
+                _state.MyTradeSlotCount = 0;
+                _state.PartnerTradeSlotCount = 0;
+                _state.MyTradeGold = 0;
+                _state.PartnerTradeGold = 0;
                 break;
             case ServerPacketId.UserOfferConfirm: // 12
+                _state.TradePartnerAccepted = true;
                 GD.Print("[PKT] UserOfferConfirm");
                 break;
             case ServerPacketId.CommerceChat: // 13
@@ -123,7 +128,7 @@ public partial class PacketHandler
                 HandleBinCharacterMove(bq);
                 break;
             case ServerPacketId.ForceCharMove: // 32
-                bq.ReadByte(); // direction — TODO: implement forced movement
+                HandleBinForceCharMove(bq);
                 break;
             case ServerPacketId.CharacterChange: // 33
                 HandleBinCharacterChange(bq);
@@ -364,10 +369,14 @@ public partial class PacketHandler
                 HandleBinMultiMessage(bq);
                 break;
             case ServerPacketId.CancelOfferItem: // 105
-                { byte slot = bq.ReadByte(); GD.Print($"[PKT] CancelOfferItem slot={slot}"); }
+                HandleBinCancelOfferItem(bq);
                 break;
             case ServerPacketId.ShowPartyForm: // 106
-                { byte pType = bq.ReadByte(); GD.Print($"[PKT] ShowPartyForm type={pType}"); }
+                {
+                    byte pType = bq.ReadByte();
+                    _state.ShowPartyPanel = true;
+                    GD.Print($"[PKT] ShowPartyForm type={pType}");
+                }
                 break;
 
             // ── Auth / Login (continued) ──────────────────────────
@@ -416,6 +425,14 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.ChatGuild2: // 113
                 HandleBinChatGuild2(bq);
+                break;
+
+            // ── Forum ────────────────────────────────────────────
+            case ServerPacketId.AddForumMsg: // 117
+                HandleBinAddForumMsg(bq);
+                break;
+            case ServerPacketId.ShowForumForm: // 118
+                HandleBinShowForumForm(bq);
                 break;
 
             // ── Stat variants ─────────────────────────────────────
@@ -472,6 +489,7 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.NpcSwing: // 136
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000" });
+                OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             case ServerPacketId.NpcHit: // 137
                 HandleBinNpcHit(bq);
@@ -605,6 +623,10 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.TradeCancelOK: // 185
                 _state.Trading = false;
+                _state.MyTradeSlotCount = 0;
+                _state.PartnerTradeSlotCount = 0;
+                _state.MyTradeGold = 0;
+                _state.PartnerTradeGold = 0;
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "Comercio cancelado.", Color = "FF0000" });
                 GD.Print("[PKT] TradeCancelOK");
                 break;
@@ -687,7 +709,7 @@ public partial class PacketHandler
                 HandleBinStringOnly(bq, "BkwData");
                 break;
             case ServerPacketId.FestData: // 227
-                HandleBinStringOnly(bq, "FestData");
+                HandleBinFestData(bq);
                 break;
             case ServerPacketId.EnchatData: // 228
                 HandleBinEnchatData(bq);
@@ -893,6 +915,13 @@ public partial class PacketHandler
     {
         string otherName = bq.ReadString();
         _state.Trading = true;
+        _state.TradePartnerName = otherName;
+        _state.TradeJustOpened = true;
+        _state.TradePartnerAccepted = false;
+        _state.MyTradeSlotCount = 0;
+        _state.PartnerTradeSlotCount = 0;
+        _state.MyTradeGold = 0;
+        _state.PartnerTradeGold = 0;
         GD.Print($"[PKT] UserCommerceInit (binary): {otherName}");
     }
 
@@ -924,8 +953,16 @@ public partial class PacketHandler
     {
         short maxHp = bq.ReadInteger();
         short minHp = bq.ReadInteger();
+        int oldHp = _state.MinHp;
         _state.MaxHp = maxHp;
         _state.MinHp = minHp;
+
+        // Detect healing: HP increased and we already had HP data (oldHp > 0)
+        int delta = minHp - oldHp;
+        if (delta > 0 && oldHp > 0)
+        {
+            OnFloatingText?.Invoke(_state.UserCharIndex, $"+{delta}", "33FF33");
+        }
     }
 
     private void HandleBinUpdateExp(ByteQueue bq)
@@ -1528,9 +1565,9 @@ public partial class PacketHandler
     {
         _state.Strength = bq.ReadByte();
         _state.Agility = bq.ReadByte();
-        byte intel = bq.ReadByte(); // Intelligence — stored if needed
-        byte con = bq.ReadByte();   // Constitution
-        byte cha = bq.ReadByte();   // Charisma
+        _state.Intelligence = bq.ReadByte();
+        _state.Constitution = bq.ReadByte();
+        _state.Charisma = bq.ReadByte();
     }
 
     private void HandleBinSendSkills(ByteQueue bq)
@@ -1538,7 +1575,8 @@ public partial class PacketHandler
         for (int i = 0; i < 20; i++)
         {
             byte skillVal = bq.ReadByte();
-            // TODO: store skill values in GameState
+            if (i < _state.Skills.Length)
+                _state.Skills[i] = skillVal;
         }
     }
 
@@ -1632,8 +1670,17 @@ public partial class PacketHandler
 
     private void HandleBinFame(ByteQueue bq)
     {
+        // VB6 fame order: Asesino, Bandido, Burgues, Ladron, Noble, Plebe, Promedio
+        int[] fameValues = new int[7];
         for (int i = 0; i < 7; i++)
-            bq.ReadLong(); // 7 fame values — TODO: store in GameState
+            fameValues[i] = bq.ReadLong();
+        _state.FameAsesino = fameValues[0];
+        _state.FameBandido = fameValues[1];
+        _state.FameBurgues = fameValues[2];
+        _state.FameLadron = fameValues[3];
+        _state.FameNoble = fameValues[4];
+        _state.FamePlebe = fameValues[5];
+        _state.Reputation = fameValues[6]; // Promedio (index 6)
     }
 
     private void HandleBinMiniStats(ByteQueue bq)
@@ -1647,6 +1694,7 @@ public partial class PacketHandler
     private void HandleBinLevelUp(ByteQueue bq)
     {
         short skillPoints = bq.ReadInteger();
+        _state.FreeSkillPoints = skillPoints;
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"Has subido de nivel! Tienes {skillPoints} puntos de habilidad.",
@@ -1770,6 +1818,10 @@ public partial class PacketHandler
     private void HandleBinTradeOk()
     {
         _state.Trading = false;
+        _state.MyTradeSlotCount = 0;
+        _state.PartnerTradeSlotCount = 0;
+        _state.MyTradeGold = 0;
+        _state.PartnerTradeGold = 0;
         _state.ChatMessages.Enqueue(new ChatMessage { Text = "Comercio exitoso.", Color = "00FF00" });
     }
 
@@ -1786,7 +1838,42 @@ public partial class PacketHandler
         short minDef = bq.ReadInteger();
         int value = bq.ReadLong();
         string name = bq.ReadString();
+
+        // Store in GameState (offerSlot is 1-based)
+        if (offerSlot >= 1 && offerSlot <= 10)
+        {
+            int idx = offerSlot - 1;
+            _state.MyTradeSlots[idx] = new TradeOfferSlot
+            {
+                ObjIndex = objIndex, Amount = amount, GrhIndex = grhIndex,
+                ObjType = objType, MaxHit = maxHit, MinHit = minHit,
+                MaxDef = maxDef, MinDef = minDef, Value = value, Name = name
+            };
+            if (idx >= _state.MyTradeSlotCount)
+                _state.MyTradeSlotCount = idx + 1;
+            _state.TradePartnerAccepted = false;
+        }
         GD.Print($"[PKT] ChangeUserTradeSlot (binary): slot={offerSlot} {name} x{amount}");
+    }
+
+    private void HandleBinCancelOfferItem(ByteQueue bq)
+    {
+        byte slot = bq.ReadByte();
+        // Remove the slot from our offer (slot is 1-based)
+        if (slot >= 1 && slot <= 10)
+        {
+            int idx = slot - 1;
+            // Shift remaining slots down
+            for (int i = idx; i < _state.MyTradeSlotCount - 1; i++)
+                _state.MyTradeSlots[i] = _state.MyTradeSlots[i + 1];
+            if (_state.MyTradeSlotCount > 0)
+            {
+                _state.MyTradeSlots[_state.MyTradeSlotCount - 1] = new TradeOfferSlot();
+                _state.MyTradeSlotCount--;
+            }
+            _state.TradePartnerAccepted = false;
+        }
+        GD.Print($"[PKT] CancelOfferItem slot={slot}");
     }
 
     private void HandleBinPong()
@@ -2002,12 +2089,14 @@ public partial class PacketHandler
         {
             case 0: // NPCSwing
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000" });
+                OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             case 1: // NPCKillUser
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura te ha matado!!!", Color = "FF0000" });
                 break;
             case 2: // BlockedWithShieldUser
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has bloqueado el ataque con el escudo!", Color = "FF0000" });
+                OnFloatingText?.Invoke(_state.UserCharIndex, "Escudo!", "6699FF");
                 break;
             case 3: // BlockedWithShieldOther
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "El escudo del enemigo bloqueo tu ataque!", Color = "FF0000" });
@@ -2043,12 +2132,14 @@ public partial class PacketHandler
                 short damage = bq.ReadInteger();
                 string bodyName = GetNpcHitBodyPartText(bodyPart);
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000" });
+                OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
                 break;
             }
             case 13: // UserHitNPC
             {
                 int damage = bq.ReadLong();
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Le has pegado a la criatura por {damage}!!", Color = "FF0000" });
+                // No target charIndex available for NPC hits in this packet
                 break;
             }
             case 14: // UserAttackedSwing
@@ -2058,6 +2149,7 @@ public partial class PacketHandler
                 if (_state.Characters.TryGetValue(attackerIndex, out var attacker))
                     attackerName = attacker.Name;
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{attackerName} te ataco y fallo!!", Color = "FF0000" });
+                OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             }
             case 15: // UserHittedByUser
@@ -2070,6 +2162,7 @@ public partial class PacketHandler
                     attackerName = attacker.Name;
                 string bodyName = GetPvpReceivedBodyPartText(bodyPart);
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{attackerName}{bodyName}{damage}", Color = "FF0000" });
+                OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
                 break;
             }
             case 16: // UserHittedUser
@@ -2082,6 +2175,7 @@ public partial class PacketHandler
                     victimName = victim.Name;
                 string bodyName = GetPvpDealtBodyPartText(bodyPart);
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Le has pegado a {victimName}{bodyName}{damage}", Color = "FF0000" });
+                OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
                 break;
             }
             case 17: // WorkRequestTarget
@@ -2467,6 +2561,8 @@ public partial class PacketHandler
             Text = $"{attackerName} te ataco y fallo!!",
             Color = "FF0000"
         });
+        // Floating "miss" text above player character
+        OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
     }
 
     /// <summary>
@@ -2485,6 +2581,8 @@ public partial class PacketHandler
             Text = $"{attackerName} te pego {damage}!!",
             Color = "FF0000"
         });
+        // Floating red damage on player (damage received)
+        OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
 
     /// <summary>
@@ -2496,6 +2594,8 @@ public partial class PacketHandler
         short damage = bq.ReadInteger();
         string bodyName = GetNpcHitBodyPartText(bodyPart);
         _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000" });
+        // Floating red damage on player (NPC hit us)
+        OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
 
     /// <summary>
@@ -2513,6 +2613,8 @@ public partial class PacketHandler
             Text = $"{attackerName} te pego {damage} en PvP!!",
             Color = "FF0000"
         });
+        // Floating red damage on player (PvP received)
+        OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
 
     /// <summary>
@@ -2530,6 +2632,8 @@ public partial class PacketHandler
             Text = $"Le pegaste {damage} a {victimName} en PvP!!",
             Color = "FF0000"
         });
+        // Floating yellow damage on victim (PvP dealt)
+        OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
     }
 
     // ── Spells ────────────────────────────────────────────────────
@@ -2728,6 +2832,13 @@ public partial class PacketHandler
     {
         string partnerName = bq.ReadString();
         _state.Trading = true;
+        _state.TradePartnerName = partnerName;
+        _state.TradeJustOpened = true;
+        _state.TradePartnerAccepted = false;
+        _state.MyTradeSlotCount = 0;
+        _state.PartnerTradeSlotCount = 0;
+        _state.MyTradeGold = 0;
+        _state.PartnerTradeGold = 0;
         GD.Print($"[PKT] TradeInitLegacy: partner={partnerName}");
     }
 
@@ -2737,8 +2848,9 @@ public partial class PacketHandler
     private void HandleBinTradeOfferRecv(ByteQueue bq)
     {
         int gold = bq.ReadLong();
+        _state.PartnerTradeGold = gold;
+        _state.TradePartnerAccepted = false;
         GD.Print($"[PKT] TradeOfferRecv: gold={gold}");
-        // TODO: display partner gold in trade panel when implemented
     }
 
     /// <summary>
@@ -2749,6 +2861,17 @@ public partial class PacketHandler
         short objIndex = bq.ReadInteger();
         short amount = bq.ReadInteger();
         string name = bq.ReadString();
+
+        // Store partner item in GameState
+        if (_state.PartnerTradeSlotCount < 10)
+        {
+            _state.PartnerTradeSlots[_state.PartnerTradeSlotCount] = new TradeOfferSlot
+            {
+                ObjIndex = objIndex, Amount = amount, Name = name
+            };
+            _state.PartnerTradeSlotCount++;
+            _state.TradePartnerAccepted = false;
+        }
         GD.Print($"[PKT] TradeItems: {name} x{amount} (obj={objIndex})");
     }
 
@@ -2902,7 +3025,36 @@ public partial class PacketHandler
     }
 
     /// <summary>
-    /// Generic single-string packets (ImageData, BkwData, FestData, GinfData,
+    /// FestData (ID 227) — character stats summary from /EST command.
+    /// Wire: string "crimMatados,ciudMatados,level,class,status,0,guildIndex,reputation"
+    /// </summary>
+    private void HandleBinFestData(ByteQueue bq)
+    {
+        string data = bq.ReadString();
+        GD.Print($"[PKT] FestData: {data}");
+        var parts = data.Split(',');
+        if (parts.Length >= 8)
+        {
+            int.TryParse(parts[0], out int crimMatados);
+            int.TryParse(parts[1], out int ciudMatados);
+            int.TryParse(parts[2], out int level);
+            string className = parts[3];
+            string status = parts[4];
+            // parts[5] = 0 (unused)
+            // parts[6] = guild index
+            int.TryParse(parts[7], out int reputation);
+
+            _state.FameCrimMatados = crimMatados;
+            _state.FameCiudMatados = ciudMatados;
+            _state.Level = level;
+            _state.UserClassName = className;
+            _state.UserCriminal = status == "Criminal";
+            _state.Reputation = reputation;
+        }
+    }
+
+    /// <summary>
+    /// Generic single-string packets (ImageData, BkwData, GinfData,
     /// IcoData, ZsosData, SbrData, AuctionList, CosmeticImage/Pcgn/Pcss/Pccc,
     /// FullCharInfo) — read one string and log.
     /// </summary>
@@ -3001,6 +3153,101 @@ public partial class PacketHandler
     {
         bq.ReadString();
         return;
+    }
+
+    // ── ForceCharMove ─────────────────────────────────────────────
+
+    /// <summary>
+    /// ForceCharMove (ID 32) — server pushes the player in a direction.
+    /// Used for ghost push, spell knockback, etc.
+    /// Wire: u8 heading (1=N, 2=E, 3=S, 4=W)
+    /// Same logic as InputHandler.TryMove but without LegalPos check or packet send.
+    /// </summary>
+    private void HandleBinForceCharMove(ByteQueue bq)
+    {
+        byte heading = bq.ReadByte();
+
+        if (!_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
+            return;
+
+        // Direction deltas: 1=N(0,-1), 2=E(1,0), 3=S(0,1), 4=W(-1,0)
+        int dx = 0, dy = 0;
+        switch (heading)
+        {
+            case 1: dy = -1; break;
+            case 2: dx = 1; break;
+            case 3: dy = 1; break;
+            case 4: dx = -1; break;
+        }
+
+        int newX = ch.PosX + dx;
+        int newY = ch.PosY + dy;
+
+        // Clear meditation FX on forced movement
+        ClearMeditationFx(ch);
+
+        // VB6 Char_Move_by_Head: update character logical position + start animation
+        ch.Heading = heading;
+        ch.MoveOffsetX = -(dx * 32);
+        ch.MoveOffsetY = -(dy * 32);
+        ch.ScrollDirectionX = dx;
+        ch.ScrollDirectionY = dy;
+        ch.Moving = true;
+        ch.PosX = newX;
+        ch.PosY = newY;
+
+        // VB6 Engine_MoveScreen: start camera scroll
+        _state.AddToUserPosX = dx;
+        _state.AddToUserPosY = dy;
+        _state.UserPosX = newX;
+        _state.UserPosY = newY;
+        _state.UserMoving = true;
+        _state.ScreenOffsetX = 0;
+        _state.ScreenOffsetY = 0;
+
+        GD.Print($"[PKT] ForceCharMove heading={heading} -> ({newX},{newY})");
+    }
+
+    // ── Forum ───────────────────────────────────────────────────
+
+    /// <summary>
+    /// AddForumMsg (ID 117) — server sends a forum post to accumulate before showing the form.
+    /// Wire: u8 forumType, string title, string author, string message
+    /// forumType: 0=General, 1=GeneralSticky, 2=Caos, 3=CaosSticky, 4=Real, 5=RealSticky
+    /// </summary>
+    private void HandleBinAddForumMsg(ByteQueue bq)
+    {
+        byte forumType = bq.ReadByte();
+        string title = bq.ReadString();
+        string author = bq.ReadString();
+        string message = bq.ReadString();
+
+        var post = new Game.ForumPostEntry
+        {
+            ForumType = forumType,
+            Title = title,
+            Author = author,
+            Body = message,
+            IsSticky = (forumType == 1 || forumType == 3 || forumType == 5)
+        };
+
+        _state.ForumPosts.Add(post);
+    }
+
+    /// <summary>
+    /// ShowForumForm (ID 118) — server signals to open the forum UI.
+    /// Wire: u8 visibility (bitflags: 1=General, 2=Caos, 4=Real), u8 canMakeSticky
+    /// </summary>
+    private void HandleBinShowForumForm(ByteQueue bq)
+    {
+        byte visibility = bq.ReadByte();
+        byte canMakeSticky = bq.ReadByte();
+
+        _state.ForumVisibility = visibility;
+        _state.ForumCanMakeSticky = canMakeSticky;
+        _state.ShowForumPanel = true;
+
+        GD.Print($"[PKT] ShowForumForm visibility={visibility} canMakeSticky={canMakeSticky} posts={_state.ForumPosts.Count}");
     }
 
     // ── GenericText fallback ──────────────────────────────────────

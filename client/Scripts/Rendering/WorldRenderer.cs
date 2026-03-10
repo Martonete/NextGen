@@ -41,6 +41,8 @@ public partial class WorldRenderer : Node2D
     private DialogOverlayLayer? _dialogLayer;
     private AdditiveParticleLayer? _additiveLayer;
     private RoofLayer? _roofLayer;
+    private WeatherRenderer? _weatherRenderer;
+    private FloatingTextLayer? _floatingTextLayer;
 
     private const int TileSize = 32;
 
@@ -222,7 +224,33 @@ void fragment() {
         _roofLayer.SetRenderer(this);
         AddChild(_roofLayer);
 
+        // Floating text layer: z=4 (above roof, below weather)
+        _floatingTextLayer = new FloatingTextLayer();
+        _floatingTextLayer.Name = "FloatingTextLayer";
+        _floatingTextLayer.ZIndex = 4;
+        _floatingTextLayer.Init(this, state);
+        AddChild(_floatingTextLayer);
+
+        // Weather layer: z=5 (topmost overlay — rain, lightning)
+        _weatherRenderer = new WeatherRenderer();
+        _weatherRenderer.Name = "WeatherRenderer";
+        _weatherRenderer.ZIndex = 5;
+        AddChild(_weatherRenderer);
+
     }
+
+    /// <summary>
+    /// Initialize weather renderer with sound manager (called from Main after Init).
+    /// </summary>
+    public void InitWeather(SoundManager? soundManager)
+    {
+        _weatherRenderer?.Init(_state!, soundManager);
+    }
+
+    /// <summary>
+    /// Access the floating text layer to spawn damage/heal numbers.
+    /// </summary>
+    public FloatingTextLayer? FloatingText => _floatingTextLayer;
 
     public override void _Process(double delta)
     {

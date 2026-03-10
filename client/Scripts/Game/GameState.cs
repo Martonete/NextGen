@@ -23,6 +23,19 @@ public class ChatMessage
 }
 
 /// <summary>
+/// A forum post entry received from the server (AddForumMsg packet).
+/// ForumType: 0=General, 1=GeneralSticky, 2=Caos, 3=CaosSticky, 4=Real, 5=RealSticky
+/// </summary>
+public class ForumPostEntry
+{
+    public byte ForumType;
+    public string Title = "";
+    public string Author = "";
+    public string Body = "";
+    public bool IsSticky;
+}
+
+/// <summary>
 /// Central game state: player position, characters, map, inventory, stats.
 /// Updated by PacketHandler, read by renderers.
 /// </summary>
@@ -91,6 +104,9 @@ public class GameState
     public bool Meditating;     // VB6: Meditando
     public bool Dead;           // VB6: UserMuerto
     public bool Trading;        // VB6: Comerciando (player-to-player trade)
+    public string TradePartnerName = ""; // Name of trade partner
+    public bool TradeJustOpened;         // Flag to signal Main.cs to open panel
+    public bool TradePartnerAccepted;    // Partner clicked accept
     public int UsingSkill; // VB6: spell slot being targeted (0 = none)
     public bool ChatActive; // VB6: true when chat input is visible/focused
     public string ChatModePrefix = ";"; // VB6 modoHabla: ";" normal, "-" yell, "/cmsg " clan, etc.
@@ -152,9 +168,37 @@ public class GameState
     // Combat stats (from ANM packet)
     public int Strength;
     public int Agility;
+    public int Intelligence;
+    public int Constitution;
+    public int Charisma;
     public int AttackMin, AttackMax;
     public int DefenseMin, DefenseMax;
     public int MagDefMin, MagDefMax;
+
+    // Skills (22 skill values, indices 0-21 map to skill IDs 1-22)
+    public int[] Skills = new int[22];
+    public int FreeSkillPoints;
+
+    // Character info strings (from server)
+    public string UserClassName = "";
+    public string UserRaceName = "";
+    public bool UserCriminal;
+    public bool UserFactionReal;
+    public bool UserFactionCaos;
+
+    // Fame / kills (from Fame + FestData packets)
+    // Fame packet order: Asesino, Bandido, Burgues, Ladron, Noble, Plebe, Promedio
+    public int FameAsesino;
+    public int FameBandido;
+    public int FameBurgues;
+    public int FameLadron;
+    public int FameNoble;
+    public int FamePlebe;
+    public int FameCrimMatados;
+    public int FameCiudMatados;
+
+    // Stats panel
+    public bool StatsPanelOpen;
 
     // Per-equipment labels (VB6: UserWeaponEqpSlot, etc.)
     // These track which inventory slot holds each equipment type,
@@ -181,6 +225,14 @@ public class GameState
     public int NpcShopCount;
     public bool Comerciando;
 
+    // Player-to-player trade (frmComerciarUsu)
+    public TradeOfferSlot[] MyTradeSlots = new TradeOfferSlot[10];
+    public int MyTradeSlotCount;
+    public int MyTradeGold;
+    public TradeOfferSlot[] PartnerTradeSlots = new TradeOfferSlot[10];
+    public int PartnerTradeSlotCount;
+    public int PartnerTradeGold;
+
     // Travel panel (frmViajar)
     public bool ShowTravelPanel;
 
@@ -201,7 +253,7 @@ public class GameState
     public bool AnyFormOpen =>
         EscapeMenuOpen || Comerciando || Banqueando || BovedaAbierta
         || MacroPanelOpen || OptionsPanelOpen || KeyBindPanelOpen
-        || ShowTravelPanel || Trading || DropDialogOpen;
+        || ShowTravelPanel || Trading || DropDialogOpen || StatsPanelOpen;
 
     // Extended stat fields
     public int CarryBulk;           // StatBulk (ID 127) — current carry weight
@@ -231,9 +283,18 @@ public class GameState
     public bool ShowGuildFoundation;  // Trigger to open guild creation form
     public bool SeguroClan = true;    // Clan safe toggle (local mirror)
     public string UserGuildName = ""; // Current user's guild name (from CC tag)
+    // Party
+    public bool ShowPartyPanel;       // Trigger to open party panel (from ShowPartyForm packet)
+
     public string GuildNewsText = ""; // Guild news from server
     public string GuildMotdText = ""; // Guild MOTD from server
     public string GuildCodexText = ""; // Guild codex from server
+
+    // Forum system (VB6: frmForo — 3 boards: General, Real, Caos)
+    public List<ForumPostEntry> ForumPosts = new(); // Accumulated posts from AddForumMsg packets
+    public byte ForumVisibility;        // Bitflags: 1=General, 2=Caos, 4=Real
+    public byte ForumCanMakeSticky;     // 0=no, 2=GM can make stickies
+    public bool ShowForumPanel;         // Trigger to open forum panel
 
     // Arrow/projectile system (VB6: FLECHI)
     public List<ArrowProjectile> ActiveArrows = new();
@@ -319,6 +380,17 @@ public class BankItem
     public int GrhIndex;
     public int ObjType;
     public int MaxHit, MinHit, MaxDef, MinDef;
+}
+
+public class TradeOfferSlot
+{
+    public short ObjIndex;
+    public int Amount;
+    public short GrhIndex;
+    public byte ObjType;
+    public short MaxHit, MinHit, MaxDef, MinDef;
+    public int Value;
+    public string Name = "";
 }
 
 /// <summary>

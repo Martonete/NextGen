@@ -1649,6 +1649,150 @@ pub async fn tick_intervals(state: &mut GameState) {
             }
         }
     }
+
+    // --- EfectoEstadoAtacable timeout (VB6: 60-second duel attackable timer) ---
+    // When atacable_por != 0, count up. At 1500 ticks (60s at 40ms/tick), clear attackable state.
+    let mut clear_atacable: Vec<ConnectionId> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.logged && user.atacable_por != 0 {
+            user.counter_atacable += 1;
+            if user.counter_atacable >= 1500 {
+                user.atacable_por = 0;
+                user.counter_atacable = 0;
+                clear_atacable.push(conn_id);
+            }
+        }
+    }
+    for conn_id in clear_atacable {
+        state.send_console(conn_id, "El estado de duelo ha expirado.", font_index::INFO).await;
+    }
+
+    // --- GoHome traveling system (VB6: dead user /HOGAR teleport after 10s delay) ---
+    let mut teleport_home: Vec<ConnectionId> = Vec::new();
+    for (&conn_id, user) in state.users.iter_mut() {
+        if user.logged && user.traveling {
+            user.counter_go_home += 1;
+            if user.counter_go_home >= 250 { // 250 ticks * 40ms = 10 seconds
+                teleport_home.push(conn_id);
+            }
+        }
+    }
+    for conn_id in teleport_home {
+        // Get home city and resolve coordinates
+        let hogar = state.users.get(&conn_id).map(|u| u.hogar.clone()).unwrap_or_default();
+        // Clear traveling state
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.traveling = false;
+            u.counter_go_home = 0;
+        }
+        // VB6 home city coordinates (common spawn points)
+        let (home_map, home_x, home_y) = resolve_home_city(&hogar);
+        if home_map > 0 {
+            warp_user(state, conn_id, home_map, home_x, home_y).await;
+            state.send_console(conn_id, "Has llegado a tu hogar.", font_index::INFO).await;
+        }
+    }
+
+    // --- NPC pet ownership expiry (VB6: TiemPerdique — 18s inactivity timer) ---
+    // Pets with an owner: if owner is too far or offline, increment counter. At 450 ticks (18s), despawn.
+    let pet_indices: Vec<usize> = state.npcs.iter().enumerate()
+        .filter_map(|(i, slot)| {
+            slot.as_ref().filter(|n| n.active && n.maestro_user.is_some()).map(|_| i)
+        })
+        .collect();
+    for npc_idx in pet_indices {
+        let (owner_conn, npc_map, npc_x, npc_y) = match state.get_npc(npc_idx) {
+            Some(n) => (n.maestro_user.unwrap(), n.map, n.x, n.y),
+            None => continue,
+        };
+        let owner_nearby = state.users.get(&owner_conn)
+            .map(|u| u.logged && u.pos_map == npc_map && (u.pos_x - npc_x).abs() <= 15 && (u.pos_y - npc_y).abs() <= 15)
+            .unwrap_or(false);
+
+        if owner_nearby {
+            // Owner is nearby — reset counter
+            if let Some(n) = state.get_npc_mut(npc_idx) {
+                n.counter_perdio_npc = 0;
+            }
+        } else {
+            // Owner is far or offline — increment counter
+            let counter = state.get_npc(npc_idx).map(|n| n.counter_perdio_npc).unwrap_or(0);
+            if counter >= 450 { // 450 ticks * 40ms = 18 seconds
+                // Despawn pet
+                let (map, x, y, char_index) = match state.get_npc(npc_idx) {
+                    Some(n) => (n.map, n.x, n.y, n.char_index),
+                    None => continue,
+                };
+                let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+                remove_pet_from_owner(state, owner_conn, npc_idx);
+                state.kill_npc(npc_idx);
+            } else {
+                if let Some(n) = state.get_npc_mut(npc_idx) {
+                    n.counter_perdio_npc += 1;
+                }
+            }
+        }
+    }
+
+    // --- Rain STA drain (VB6: EfectoLluvia — 3% MaxSTA drain on exterior maps) ---
+    if state.raining {
+        state.rain_counter += 1;
+        if state.rain_counter >= 100 { // 100 ticks * 40ms = 4 seconds
+            state.rain_counter = 0;
+            let user_ids: Vec<ConnectionId> = state.users.keys().copied().collect();
+            for conn_id in user_ids {
+                let should_drain = state.users.get(&conn_id).map(|u| {
+                    u.logged && !u.dead && u.privileges == 0 && is_exterior_map(state, u.pos_map)
+                }).unwrap_or(false);
+                if should_drain {
+                    let sta_drain = state.users.get(&conn_id)
+                        .map(|u| ((u.max_sta as f64 * 3.0) / 100.0) as i32)
+                        .unwrap_or(0);
+                    if sta_drain > 0 {
+                        if let Some(u) = state.users.get_mut(&conn_id) {
+                            u.min_sta = (u.min_sta - sta_drain).max(0);
+                        }
+                        send_stats_sta(state, conn_id).await;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Check if a map is an exterior map (affected by rain).
+/// VB6: Maps are "intemperie" if they are outdoor maps (not dungeons/interiors).
+/// We check: pk=true (PvP/exterior maps), or if the terrain is not explicitly a dungeon.
+fn is_exterior_map(state: &GameState, map_num: i32) -> bool {
+    state.game_data.maps.get(map_num as usize)
+        .and_then(|m| m.as_ref())
+        .map(|m| {
+            // Maps with pk=true are exterior (PvP-enabled outdoor maps).
+            // Also check terreno — dungeons/caves are explicitly marked.
+            m.info.pk || m.info.terreno.eq_ignore_ascii_case("CAMPO")
+                || m.info.terreno.eq_ignore_ascii_case("BOSQUE")
+                || m.info.terreno.eq_ignore_ascii_case("NIEVE")
+                || m.info.terreno.eq_ignore_ascii_case("DESIERTO")
+                || m.info.terreno.is_empty()
+        })
+        .unwrap_or(false)
+}
+
+/// Resolve a home city name to (map, x, y) coordinates.
+/// VB6: Standard Argentum cities with their spawn points.
+fn resolve_home_city(hogar: &str) -> (i32, i32, i32) {
+    match hogar.to_uppercase().as_str() {
+        "ULLATHORPE" => (1, 50, 50),
+        "NIX" => (3, 50, 50),
+        "BANDERBILL" => (14, 50, 50),
+        "LINDOS" => (28, 50, 50),
+        "ARGHAL" => (35, 50, 50),
+        _ => {
+            // Default: Ullathorpe if home not recognized
+            if hogar.is_empty() { (0, 0, 0) } else { (1, 50, 50) }
+        }
+    }
 }
 
 /// Tick the world cleanup — decrement timers and remove expired items.

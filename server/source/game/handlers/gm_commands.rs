@@ -3169,3 +3169,440 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     info!("[GM] {} used /RESETINV on NPC {} ({})", gm_name, target_npc_idx, npc_name);
     state.send_console(conn_id, &format!("Inventario de {} reseteado.", npc_name), font_index::INFO).await;
 }
+
+// =============================================================================
+// NEW GM Commands (HIGH priority batch)
+// =============================================================================
+
+/// /PERDON <name> — Forgive user: set criminal=false, broadcast updated appearance. Requires ADMIN+.
+pub(super) async fn handle_slash_perdon(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            return;
+        }
+    };
+
+    let (map, x, y) = match state.users.get(&target_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+
+    if let Some(user) = state.users.get_mut(&target_id) {
+        user.criminal = false;
+    }
+
+    // Re-broadcast appearance with updated nick color (citizen = blue)
+    let cc = state.users.get(&target_id).unwrap().build_cc_binary();
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(target_id, "Has sido perdonado.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ha sido perdonado.", target), font_index::INFO).await;
+    info!("[GM] {} forgave {}", gm_name, target);
+}
+
+/// /EJECUTAR <name> — Execute user: kill with full penalty (lose exp, drop items). Requires DIOS+.
+pub(super) async fn handle_slash_ejecutar(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            return;
+        }
+    };
+
+    let is_dead = state.users.get(&target_id).map(|u| u.dead).unwrap_or(true);
+    if is_dead {
+        state.send_console(conn_id, "Ese usuario ya esta muerto.", font_index::INFO).await;
+        return;
+    }
+
+    // Kill with full penalty (user_die handles exp loss, item drop, etc.)
+    user_die(state, target_id, None).await;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(target_id, "Has sido ejecutado por un GM.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ha sido ejecutado.", target), font_index::INFO).await;
+    info!("[GM] {} executed {}", gm_name, target);
+}
+
+/// /NOCAOS <name> — Kick from Chaos faction: set fuerzas_caos=false, reset kills. Requires ADMIN+.
+pub(super) async fn handle_slash_nocaos(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            return;
+        }
+    };
+
+    if let Some(user) = state.users.get_mut(&target_id) {
+        user.fuerzas_caos = false;
+        user.ciudadanos_matados = 0;
+        user.recompensas_caos = 0;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(target_id, "Has sido expulsado de la Legion del Caos.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} expulsado de la Legion del Caos.", target), font_index::INFO).await;
+    info!("[GM] {} kicked {} from Chaos faction", gm_name, target);
+}
+
+/// /NOREAL <name> — Kick from Royal Army: set armada_real=false, reset kills. Requires ADMIN+.
+pub(super) async fn handle_slash_noreal(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            return;
+        }
+    };
+
+    if let Some(user) = state.users.get_mut(&target_id) {
+        user.armada_real = false;
+        user.criminales_matados = 0;
+        user.recompensas_real = 0;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(target_id, "Has sido expulsado de la Armada Real.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} expulsado de la Armada Real.", target), font_index::INFO).await;
+    info!("[GM] {} kicked {} from Royal Army", gm_name, target);
+}
+
+/// /LLUVIA — Toggle rain. Requires DIOS+.
+pub(super) async fn handle_slash_lluvia(state: &mut GameState, conn_id: ConnectionId) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    state.raining = !state.raining;
+    state.rain_counter = 0;
+
+    let status = if state.raining { "activada" } else { "desactivada" };
+    state.send_console(conn_id, &format!("Lluvia {}.", status), font_index::INFO).await;
+
+    // Broadcast rain toggle to all connected users
+    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_rain_toggle()).await;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} toggled rain: {}", gm_name, state.raining);
+}
+
+/// /NOCHE — Toggle forced night mode. Requires DIOS+.
+pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: ConnectionId) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    state.forced_night = !state.forced_night;
+
+    let status = if state.forced_night { "activada" } else { "desactivada" };
+    state.send_console(conn_id, &format!("Noche forzada {}.", status), font_index::INFO).await;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} toggled forced night: {}", gm_name, state.forced_night);
+}
+
+/// /SHOWNAME — Toggle GM visible name. Requires CONSEJERO+.
+pub(super) async fn handle_slash_showname(state: &mut GameState, conn_id: ConnectionId) {
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {
+            (u.pos_map, u.pos_x, u.pos_y)
+        }
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let new_val = !state.users.get(&conn_id).map(|u| u.gm_show_name).unwrap_or(false);
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.gm_show_name = new_val;
+    }
+
+    // Re-broadcast CC so clients see updated name visibility
+    let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+
+    let status = if new_val { "visible" } else { "oculto" };
+    state.send_console(conn_id, &format!("Tu nombre ahora es {}.", status), font_index::INFO).await;
+}
+
+/// /LASTIP <name> — Show last IP of a user. Requires ADMIN+.
+pub(super) async fn handle_slash_lastip(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let target_upper = target.to_uppercase();
+    let found = state.users.values()
+        .find(|u| u.logged && u.char_name.to_uppercase() == target_upper)
+        .map(|u| (u.char_name.clone(), u.ip.clone()));
+
+    match found {
+        Some((name, ip)) => {
+            state.send_console(conn_id, &format!("Ultima IP de {}: {}", name, ip), font_index::INFO).await;
+        }
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+        }
+    }
+}
+
+/// /CONSULTA <name> — Toggle en_consulta flag on target user (GM consultation mode). Requires CONSEJERO+.
+/// When ON, NPCs ignore the user.
+pub(super) async fn handle_slash_consulta(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let target_id = match state.find_user_by_name(target) {
+        Some(id) => id,
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            return;
+        }
+    };
+
+    let new_val = !state.users.get(&target_id).map(|u| u.en_consulta).unwrap_or(false);
+    if let Some(user) = state.users.get_mut(&target_id) {
+        user.en_consulta = new_val;
+    }
+
+    let status = if new_val { "en consulta" } else { "fuera de consulta" };
+    let target_name = state.users.get(&target_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(target_id, &format!("Estas {}.", status), font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ahora esta {}.", target_name, status), font_index::INFO).await;
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    info!("[GM] {} set {} to {}", gm_name, target_name, status);
+}
+
+/// /SLOT <name> <slot> — Show contents of a user's inventory slot. Requires DIOS+.
+pub(super) async fn handle_slash_slot(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() < 2 {
+        state.send_console(conn_id, "Uso: /SLOT nombre slot_num", font_index::INFO).await;
+        return;
+    }
+
+    let name = parts[0];
+    let slot_num: usize = parts[1].parse().unwrap_or(0);
+
+    if slot_num < 1 || slot_num > 36 {
+        state.send_console(conn_id, "Slot debe ser entre 1 y 36.", font_index::INFO).await;
+        return;
+    }
+
+    let target_id = match state.find_user_by_name(name) {
+        Some(id) => id,
+        None => {
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", name), font_index::INFO).await;
+            return;
+        }
+    };
+
+    let slot_idx = slot_num - 1; // 0-based
+    let slot_info = state.users.get(&target_id).map(|u| {
+        if slot_idx < u.inventory.len() {
+            let s = &u.inventory[slot_idx];
+            (s.obj_index, s.amount, s.equipped)
+        } else {
+            (0, 0, false)
+        }
+    }).unwrap_or((0, 0, false));
+
+    let (obj_idx, amount, equipped) = slot_info;
+    if obj_idx == 0 {
+        state.send_console(conn_id, &format!("{} - Slot {}: (vacio)", name, slot_num), font_index::INFO).await;
+    } else {
+        let obj_name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_else(|| format!("OBJ#{}", obj_idx));
+        let eq_str = if equipped { " [equipado]" } else { "" };
+        state.send_console(conn_id, &format!("{} - Slot {}: {} x{}{}", name, slot_num, obj_name, amount, eq_str), font_index::INFO).await;
+    }
+}
+
+/// /PISO — List all items on the floor near the GM (±8x, ±6y). Requires DIOS+.
+pub(super) async fn handle_slash_piso(state: &mut GameState, conn_id: ConnectionId) {
+    let (map, cx, cy) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {
+            (u.pos_map, u.pos_x, u.pos_y)
+        }
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    let mut items_found: Vec<String> = Vec::new();
+    let grid = match state.world.grid(map) {
+        Some(g) => g,
+        None => {
+            state.send_console(conn_id, "Mapa no cargado.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    for dy in -6i32..=6 {
+        for dx in -8i32..=8 {
+            let tx = cx + dx;
+            let ty = cy + dy;
+            if let Some(tile) = grid.tile(tx, ty) {
+                if tile.ground_item.obj_index > 0 {
+                    let obj_idx = tile.ground_item.obj_index;
+                    let amount = tile.ground_item.amount;
+                    let obj_name = state.get_object(obj_idx)
+                        .map(|o| o.name.clone())
+                        .unwrap_or_else(|| format!("OBJ#{}", obj_idx));
+                    items_found.push(format!("({},{}) {} x{}", tx, ty, obj_name, amount));
+                }
+            }
+        }
+    }
+
+    if items_found.is_empty() {
+        state.send_console(conn_id, "No hay items en el piso cercano.", font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, &format!("Items en el piso ({}):", items_found.len()), font_index::INFO).await;
+        for item_str in &items_found {
+            state.send_console(conn_id, item_str, font_index::INFO).await;
+        }
+    }
+}
+
+/// /MAPMSG <text> — Send message to all users on current map. Requires DIOS+.
+pub(super) async fn handle_slash_mapmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
+    let map = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => u.pos_map,
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    if text.is_empty() {
+        state.send_console(conn_id, "Uso: /MAPMSG mensaje", font_index::INFO).await;
+        return;
+    }
+
+    let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let msg = format!("[GM {}] {}", gm_name, text);
+
+    // Collect all connection IDs on this map
+    let map_users: Vec<ConnectionId> = state.users.values()
+        .filter(|u| u.logged && u.pos_map == map)
+        .map(|u| u.conn_id)
+        .collect();
+
+    for uid in &map_users {
+        state.send_console(*uid, &msg, font_index::SERVER).await;
+    }
+
+    state.send_console(conn_id, &format!("Mensaje enviado a {} usuarios en mapa {}.", map_users.len(), map), font_index::INFO).await;
+    info!("[GM] {} sent MAPMSG on map {}: {}", gm_name, map, text);
+}
+
+/// /ONLINEREAL — List online Royal Army members. Requires CONSEJERO+.
+pub(super) async fn handle_slash_onlinereal(state: &mut GameState, conn_id: ConnectionId) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let members: Vec<String> = state.users.values()
+        .filter(|u| u.logged && u.armada_real)
+        .map(|u| u.char_name.clone())
+        .collect();
+
+    if members.is_empty() {
+        state.send_console(conn_id, "No hay miembros de la Armada Real online.", font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, &format!("Armada Real online ({}):", members.len()), font_index::INFO).await;
+        state.send_console(conn_id, &members.join(", "), font_index::INFO).await;
+    }
+}
+
+/// /ONLINECAOS — List online Chaos Legion members. Requires CONSEJERO+.
+pub(super) async fn handle_slash_onlinecaos(state: &mut GameState, conn_id: ConnectionId) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
+        _ => {
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            return;
+        }
+    }
+
+    let members: Vec<String> = state.users.values()
+        .filter(|u| u.logged && u.fuerzas_caos)
+        .map(|u| u.char_name.clone())
+        .collect();
+
+    if members.is_empty() {
+        state.send_console(conn_id, "No hay miembros de la Legion del Caos online.", font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, &format!("Legion del Caos online ({}):", members.len()), font_index::INFO).await;
+        state.send_console(conn_id, &members.join(", "), font_index::INFO).await;
+    }
+}

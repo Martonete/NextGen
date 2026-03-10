@@ -106,6 +106,9 @@ public static class ClientPacketId
     public const byte QuestInfo = 121;
     public const byte QuestAccept = 122;
 
+    // Forum (123)
+    public const byte ForumPost = 123;
+
     // Mail (125-128)
     public const byte MailSend = 125;
     public const byte MailOpen = 126;
@@ -272,6 +275,10 @@ public static class ServerPacketId
     public const byte ChatClan = 114;
     public const byte ConsoleMsgId = 115;
     public const byte GmBroadcast = 116;
+
+    // Forum
+    public const byte AddForumMsg = 117;
+    public const byte ShowForumForm = 118;
 
     // Stat variants
     public const byte OnlineCount = 129;

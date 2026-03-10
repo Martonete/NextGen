@@ -25,6 +25,10 @@ public partial class PacketHandler
     /// Callback to play music (MIDI/MP3).
     public Action<int>? OnPlayMusic;
 
+    /// Callback to spawn a floating text above a character.
+    /// Args: (charIndex, text, colorHex)
+    public Action<int, string, string>? OnFloatingText;
+
     // Meditation FX IDs — cleared when character moves
     private static readonly HashSet<int> MeditationFxIds = new()
     {

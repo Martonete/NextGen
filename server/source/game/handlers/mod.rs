@@ -1691,6 +1691,11 @@ async fn connect_user(
     // --- PHASE 15: Spells (VB6 line 1787) ---
     send_full_spells(state, conn_id).await;
 
+    // --- PHASE 16: Rain state (VB6: send rain toggle if currently raining) ---
+    if state.raining {
+        state.send_bytes(conn_id, &binary_packets::write_rain_toggle()).await;
+    }
+
     info!(
         "[AUTH] '{}' logged in (CharIdx={}, Map {}, {},{}) — {} users online",
         char_name, char_index.0, map, x, y, state.num_users
@@ -1706,10 +1711,10 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.meditating, u.navigating, u.resting),
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.paralyzed, u.dead, u.meditating, u.navigating, u.resting, u.traveling),
         _ => return,
     };
-    let (map, old_x, old_y, char_index, paralyzed, dead, meditating, navigating, resting) = user_data;
+    let (map, old_x, old_y, char_index, paralyzed, dead, meditating, navigating, resting, traveling) = user_data;
 
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
@@ -1751,6 +1756,15 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
         }
         state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
         state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
+    }
+
+    // Cancel GoHome traveling on movement (VB6: movement interrupts /HOGAR travel)
+    if traveling {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.traveling = false;
+            user.counter_go_home = 0;
+        }
+        state.send_console(conn_id, "Has cancelado el viaje a tu hogar.", font_index::INFO).await;
     }
 
     let (dx, dy) = world::heading_to_offset(heading);
@@ -2901,6 +2915,45 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         gm_commands::handle_slash_nene(state, conn_id, args).await;
     } else if cmd_upper == "/RESETINV" {
         gm_commands::handle_slash_resetinv(state, conn_id).await;
+    // =====================================================================
+    // NEW GM Commands (HIGH priority batch)
+    // =====================================================================
+    } else if cmd_upper.starts_with("/PERDON ") {
+        let target = cmd[8..].trim();
+        handle_slash_perdon(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/EJECUTAR ") {
+        let target = cmd[10..].trim();
+        handle_slash_ejecutar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/NOCAOS ") {
+        let target = cmd[8..].trim();
+        handle_slash_nocaos(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/NOREAL ") {
+        let target = cmd[8..].trim();
+        handle_slash_noreal(state, conn_id, target).await;
+    } else if cmd_upper == "/LLUVIA" {
+        handle_slash_lluvia(state, conn_id).await;
+    } else if cmd_upper == "/NOCHE" {
+        handle_slash_noche(state, conn_id).await;
+    } else if cmd_upper == "/SHOWNAME" {
+        handle_slash_showname(state, conn_id).await;
+    } else if cmd_upper.starts_with("/LASTIP ") {
+        let target = cmd[8..].trim();
+        handle_slash_lastip(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/CONSULTA ") {
+        let target = cmd[10..].trim();
+        handle_slash_consulta(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/SLOT ") {
+        let args = cmd[6..].trim();
+        handle_slash_slot(state, conn_id, args).await;
+    } else if cmd_upper == "/PISO" {
+        handle_slash_piso(state, conn_id).await;
+    } else if cmd_upper.starts_with("/MAPMSG ") {
+        let text = &cmd[8..];
+        handle_slash_mapmsg(state, conn_id, text).await;
+    } else if cmd_upper == "/ONLINEREAL" {
+        handle_slash_onlinereal(state, conn_id).await;
+    } else if cmd_upper == "/ONLINECAOS" {
+        handle_slash_onlinecaos(state, conn_id).await;
     } else {
         // Unknown command — send feedback
         state.send_msg_id(conn_id, 714, "").await; // TEXTO714: Comando no reconocido
@@ -2963,6 +3016,9 @@ async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
         user.min_hp = revive_hp;
         user.body = new_body;
         user.head = orig_head;
+        // Cancel GoHome traveling on revive (VB6: revive interrupts /HOGAR travel)
+        user.traveling = false;
+        user.counter_go_home = 0;
         // VB6: weapon/shield/helmet stay as-is (already 0 from death), ChangeUserChar sends current values
     }
 
