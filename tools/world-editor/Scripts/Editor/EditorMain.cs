@@ -544,29 +544,16 @@ public partial class EditorMain : Control
         _dataPath = dataPath;
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
-        // indices.ini ships with the editor itself (not in client Data/)
-        // Try multiple resolution strategies for the editor root directory
-        string indicesIni = "";
-        foreach (var editorRoot in new[] {
-            // 1. Godot project root (works when running from editor)
-            ProjectSettings.GlobalizePath("res://"),
-            // 2. Relative from CWD (common when launched from project dir)
-            System.Environment.CurrentDirectory,
-            // 3. Relative from executable location
-            Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? "",
-            // 4. Up from .godot/mono (runtime assembly location)
-            Path.GetFullPath(Path.Combine(
-                Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location) ?? ".",
-                "..", "..")),
-        })
+        // indices.ini ships with the editor itself (res://indices.ini)
+        // Use Godot's own resource path which always works inside the editor
+        string indicesIni = ProjectSettings.GlobalizePath("res://indices.ini");
+        GD.Print($"[Editor] res://indices.ini → {indicesIni} (exists={File.Exists(indicesIni)})");
+        if (!File.Exists(indicesIni))
         {
-            if (string.IsNullOrEmpty(editorRoot)) continue;
-            string candidate = Path.Combine(editorRoot, "indices.ini");
-            if (File.Exists(candidate)) { indicesIni = candidate; break; }
-        }
-        // Last fallback: old client Data/INIT/ location
-        if (string.IsNullOrEmpty(indicesIni))
+            // Fallback: try client Data/INIT/ location
             indicesIni = Path.Combine(dataPath, "INIT", "indices.ini");
+            GD.Print($"[Editor] fallback → {indicesIni} (exists={File.Exists(indicesIni)})");
+        }
         string mapsDir = Path.Combine(dataPath, "Maps");
 
         if (!File.Exists(graficosInd))
