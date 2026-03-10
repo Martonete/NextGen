@@ -72,12 +72,26 @@ public class TextureCatalog
         ("CERCO", "Estructuras"),
         ("BARANDA", "Estructuras"),
 
-        // --- Terrain ---
+        // --- Terrain (all ground/surface types) ---
         ("(PRD)", "Terreno"),
         ("(PRADERA)", "Terreno"),
         ("(ESP)", "Terreno"),
         ("(DESFILADERO)", "Terreno"),
+        ("DESFILADERO", "Terreno"),
         ("PASTO", "Terreno"),
+        ("(AGUA)", "Terreno"),
+        ("CASCADA", "Terreno"),
+        ("PECES", "Terreno"),
+        ("(NIEVE)", "Terreno"),
+        ("NEVADO", "Terreno"),
+        ("(DESIERTO)", "Terreno"),
+        ("DESIERTO", "Terreno"),
+        ("DECIERTO", "Terreno"),       // typo
+        ("(LAVA)", "Terreno"),
+        ("LAVA", "Terreno"),
+        ("(INFERNO)", "Terreno"),
+        ("INFERNO", "Terreno"),
+        ("(ANCIENT)", "Terreno"),
 
         // --- Nature ---
         ("(ARBOL)", "Naturaleza"),
@@ -85,12 +99,6 @@ public class TextureCatalog
         ("HOJAS", "Naturaleza"),
         ("(MONTAÑA)", "Naturaleza"),
         ("MONTAÍA", "Naturaleza"),     // encoding variant
-        ("(NIEVE)", "Nieve"),
-
-        // --- Water ---
-        ("(AGUA)", "Agua"),
-        ("CASCADA", "Agua"),
-        ("PECES", "Agua"),
 
         // --- Buildings & Interiors ---
         ("HERRERIA", "Edificios"),
@@ -124,25 +132,13 @@ public class TextureCatalog
         ("ALCANTARILLA", "Objetos"),
         ("ANIMACI", "Objetos"),        // ANIMACIÓN
 
-        // --- Dungeons (all underground/cave variants) ---
+        // --- Dungeons (underground/cave variants) ---
         ("(DUNGEON)", "Dungeons"),
         ("(CAVERNA)", "Dungeons"),
         ("(CLOACA)", "Dungeons"),
-        ("(ANCIENT)", "Dungeons"),
         ("CUEVAS", "Dungeons"),
         ("CUEVA", "Dungeons"),
         ("CATAS", "Dungeons"),
-
-        // --- Lava & Inferno ---
-        ("(LAVA)", "Lava/Inferno"),
-        ("LAVA", "Lava/Inferno"),
-        ("(INFERNO)", "Lava/Inferno"),
-        ("INFERNO", "Lava/Inferno"),
-
-        // --- Desert ---
-        ("(DESIERTO)", "Desierto"),
-        ("DESIERTO", "Desierto"),
-        ("DECIERTO", "Desierto"),      // typo
 
         // --- Cemetery ---
         ("CEMENTERIO", "Cementerio"),
