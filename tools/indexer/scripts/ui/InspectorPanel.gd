@@ -788,7 +788,7 @@ func _build_frames_tab() -> Control:
 
 func _build_detect_tab() -> Control:
 	var root := VBoxContainer.new()
-	root.name = "Detección"
+	root.name = "Parsear"
 	root.add_theme_constant_override("separation", 6)
 
 	# ── Grid section ──
@@ -902,7 +902,7 @@ func _build_detect_tab() -> Control:
 
 func _build_data_tab() -> Control:
 	var root := VBoxContainer.new()
-	root.name = "Datos"
+	root.name = "INITs"
 	root.add_theme_constant_override("separation", 6)
 
 	# ── Config section ──
