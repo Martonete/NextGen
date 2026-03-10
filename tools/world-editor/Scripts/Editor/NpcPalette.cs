@@ -130,19 +130,12 @@ public partial class NpcPalette : VBoxContainer
 
         _infoLabel!.Text = $"{_filteredList.Count} NPCs";
 
-        // Build buttons (limit display to avoid lag with 600+ NPCs)
-        int limit = Math.Min(_filteredList.Count, 200);
-        for (int i = 0; i < limit; i++)
+        for (int i = 0; i < _filteredList.Count; i++)
         {
             var npc = _filteredList[i];
             var btn = CreateNpcButton(npc);
             _listContainer.AddChild(btn);
             _itemButtons.Add(btn);
-        }
-
-        if (_filteredList.Count > limit)
-        {
-            _infoLabel.Text = $"{_filteredList.Count} NPCs (mostrando {limit}, usa el buscador)";
         }
     }
 
