@@ -648,16 +648,29 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
 // Governor NPC — Set home city (VB6: Gobernador type 11)
 // =====================================================================
 
-/// /HOGAR — Set home city via Governor NPC.
-/// VB6: Gobernador NPC has a Ciudad field; interacting sets player home.
+/// /HOGAR — Set home city via Governor NPC (alive), or start traveling home (dead).
+/// VB6: Alive + Gobernador NPC → set home city. Dead + has home → start GoHome timer (10s).
 pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: ConnectionId) {
-    let (dead, target_npc) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.target_npc),
+    let (dead, target_npc, hogar, traveling) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc, u.hogar.clone(), u.traveling),
         _ => return,
     };
 
+    // Dead user: start traveling home (VB6 GoHome mechanic)
     if dead {
-        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        if hogar.is_empty() {
+            state.send_console(conn_id, "No tienes un hogar establecido.", font_index::INFO).await;
+            return;
+        }
+        if traveling {
+            state.send_console(conn_id, "Ya estas viajando a tu hogar.", font_index::INFO).await;
+            return;
+        }
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.traveling = true;
+            u.counter_go_home = 0;
+        }
+        state.send_console(conn_id, "Viajando a tu hogar, espera...", font_index::INFO).await;
         return;
     }
 
