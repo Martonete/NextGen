@@ -205,8 +205,8 @@ public partial class EditorMain : Control
             (EditorTool.Erase,   "\u232b", "Borrar",      "E"),
             (EditorTool.Select,  "\u25a1", "Seleccionar", "R"),
             (EditorTool.Move,    "\u2725", "Mover",       "M"),
+            (EditorTool.Fill,    "\u25a3", "Rellenar",    "F"),
             (EditorTool.Pick,    "\u261d", "Agarrar",     "V"),
-            (EditorTool.Fill,    "\u25a8", "Rellenar",    "F"),
             (EditorTool.Eyedrop, "\u25ce", "Cuentagotas", "I"),
             (EditorTool.Block,   "\u2298", "Bloquear",    "B"),
         };
