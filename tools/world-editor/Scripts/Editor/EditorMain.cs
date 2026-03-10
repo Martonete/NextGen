@@ -143,60 +143,9 @@ public partial class EditorMain : Control
 
         AddChild(_menuBar);
 
-        // --- Map navigation bar (themed) ---
-        _mapNavBar = new HBoxContainer();
-        _mapNavBar.AddThemeConstantOverride("separation", 2);
-
-        var navLabel = EditorTheme.MakeLabel("Mapa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
-        _mapNavBar.AddChild(navLabel);
-
-        // Left arrow
-        var btnPrev = EditorTheme.MakeButton("<", () => NavigateMapOffset(-NavButtonCount));
-        btnPrev.CustomMinimumSize = new Vector2(28, 0);
-        _mapNavBar.AddChild(btnPrev);
-
-        // Map number buttons
-        _mapNavButtons = new Button[NavButtonCount];
-        for (int i = 0; i < NavButtonCount; i++)
-        {
-            var btn = new Button
-            {
-                CustomMinimumSize = new Vector2(48, 0),
-                SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
-            };
-            btn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-            int capturedIdx = i;
-            btn.Pressed += () => OnNavButtonPressed(capturedIdx);
-            _mapNavBar.AddChild(btn);
-            _mapNavButtons[i] = btn;
-        }
-
-        // Right arrow
-        var btnNext = EditorTheme.MakeButton(">", () => NavigateMapOffset(NavButtonCount));
-        btnNext.CustomMinimumSize = new Vector2(28, 0);
-        _mapNavBar.AddChild(btnNext);
-
-        // Separator
-        _mapNavBar.AddChild(EditorTheme.MakeVSeparator());
-
-        // Quick jump
-        var goLabel = EditorTheme.MakeLabel("Ir a:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
-        _mapNavBar.AddChild(goLabel);
-
-        _mapNumSpin = EditorTheme.MakeSpinBox(1, 999, 1, 1);
-        _mapNavBar.AddChild(_mapNumSpin);
-
-        var goBtn = EditorTheme.PrimaryButton("Ir", () => RequestLoadMap((int)_mapNumSpin!.Value));
-        goBtn.CustomMinimumSize = new Vector2(40, 0);
-        _mapNavBar.AddChild(goBtn);
-
-        AddChild(_mapNavBar);
-
         // --- Tool bar (themed, Excalidraw-style) ---
         _toolBar = new HBoxContainer();
         _toolBar.AddThemeConstantOverride("separation", 2);
-        var tbBg = EditorTheme.FlatBox(EditorTheme.BG_HEADER, 0, 4, 0);
-        _toolBar.AddThemeStyleboxOverride("panel", tbBg);
 
         var toolDefs = new (EditorTool tool, string icon, string label, string shortcut)[]
         {
@@ -247,7 +196,7 @@ public partial class EditorMain : Control
         Array.Copy(extButtons, 0, allBtns, _toolBarButtons.Length, extButtons.Length);
         _toolBarButtons = allBtns;
 
-        // Layer tab buttons in toolbar
+        // Separator + Layer tab buttons (labeled, color-coded)
         _toolBar.AddChild(EditorTheme.MakeVSeparator());
         for (int li = 1; li <= 4; li++)
         {
@@ -264,6 +213,56 @@ public partial class EditorMain : Control
         AddChild(_toolBar);
         SyncToolBar();
         SyncLayerTabs();
+
+        // --- Map navigation bar (below toolbar) ---
+        _mapNavBar = new HBoxContainer();
+        _mapNavBar.AddThemeConstantOverride("separation", 2);
+
+        var navLabel = EditorTheme.MakeLabel("Mapa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _mapNavBar.AddChild(navLabel);
+
+        // Left arrow
+        var btnPrev = EditorTheme.MakeButton("\u25c0", () => NavigateMapOffset(-NavButtonCount));
+        btnPrev.CustomMinimumSize = new Vector2(28, 0);
+        btnPrev.TooltipText = "Retroceder";
+        _mapNavBar.AddChild(btnPrev);
+
+        // Map number buttons
+        _mapNavButtons = new Button[NavButtonCount];
+        for (int i = 0; i < NavButtonCount; i++)
+        {
+            var btn = new Button
+            {
+                CustomMinimumSize = new Vector2(48, 0),
+                SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
+            };
+            btn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+            int capturedIdx = i;
+            btn.Pressed += () => OnNavButtonPressed(capturedIdx);
+            _mapNavBar.AddChild(btn);
+            _mapNavButtons[i] = btn;
+        }
+
+        // Right arrow
+        var btnNext = EditorTheme.MakeButton("\u25b6", () => NavigateMapOffset(NavButtonCount));
+        btnNext.CustomMinimumSize = new Vector2(28, 0);
+        btnNext.TooltipText = "Avanzar";
+        _mapNavBar.AddChild(btnNext);
+
+        // Separator + Quick jump
+        _mapNavBar.AddChild(EditorTheme.MakeVSeparator());
+
+        var goLabel = EditorTheme.MakeLabel("Ir a:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _mapNavBar.AddChild(goLabel);
+
+        _mapNumSpin = EditorTheme.MakeSpinBox(1, 999, 1, 1);
+        _mapNavBar.AddChild(_mapNumSpin);
+
+        var goBtn = EditorTheme.PrimaryButton("Ir", () => RequestLoadMap((int)_mapNumSpin!.Value));
+        goBtn.CustomMinimumSize = new Vector2(40, 0);
+        _mapNavBar.AddChild(goBtn);
+
+        AddChild(_mapNavBar);
 
         // --- Tile palette (left sidebar) ---
         _palette = new TilePalette { State = _state };
@@ -385,21 +384,21 @@ public partial class EditorMain : Control
             _menuBar.Size = new Vector2(win.X, menuH);
         }
 
-        float navTop = menuH;
-        if (_mapNavBar != null)
-        {
-            _mapNavBar.Position = new Vector2(0, navTop);
-            _mapNavBar.Size = new Vector2(win.X, NavBarHeight);
-        }
-
-        float tbTop = navTop + NavBarHeight;
+        float tbTop = menuH;
         if (_toolBar != null)
         {
             _toolBar.Position = new Vector2(0, tbTop);
             _toolBar.Size = new Vector2(win.X, ToolBarHeight);
         }
 
-        float contentTop = tbTop + ToolBarHeight;
+        float navTop = tbTop + ToolBarHeight;
+        if (_mapNavBar != null)
+        {
+            _mapNavBar.Position = new Vector2(0, navTop);
+            _mapNavBar.Size = new Vector2(win.X, NavBarHeight);
+        }
+
+        float contentTop = navTop + NavBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
 
@@ -1220,8 +1219,8 @@ public partial class EditorMain : Control
     // Maps toolbar button index to EditorTool
     private static readonly EditorTool[] ToolBarOrder = {
         EditorTool.Hand, EditorTool.Paint, EditorTool.Erase,
-        EditorTool.Select, EditorTool.Move, EditorTool.Pick,
-        EditorTool.Fill, EditorTool.Eyedrop, EditorTool.Block,
+        EditorTool.Select, EditorTool.Move, EditorTool.Fill,
+        EditorTool.Pick, EditorTool.Eyedrop, EditorTool.Block,
         // property tools (after separator)
         EditorTool.Light, EditorTool.Exit, EditorTool.Npc,
         EditorTool.Object, EditorTool.Trigger,

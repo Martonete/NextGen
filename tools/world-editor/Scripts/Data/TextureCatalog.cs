@@ -58,47 +58,103 @@ public class TextureCatalog
     public List<string> CategoryOrder { get; } = new();
 
     // Category mapping from name prefixes to display names.
-    // ORDER MATTERS: first match wins. Put specific keywords before generic ones.
+    // ORDER MATTERS: first match wins. Consolidated into ~14 logical groups.
     private static readonly (string prefix, string display)[] CategoryMap = new[]
     {
-        // High-priority: keywords that override parent categories
-        ("TECHO", "Techos"),           // "(CASA) 1 TECHO" → Techos (not Casas)
-        ("(COSTA)", "Costas"),
-        ("COSTA ARENA", "Costas"),
-        ("COSTA", "Costas"),           // any remaining "Costa" references
-        // Standard categories
-        ("(PRD)", "Pradera"),
-        ("(PRADERA)", "Pradera"),
-        ("(ARBOL)", "Arboles"),
-        ("(ESP)", "Especial"),
-        ("(ROCA)", "Rocas"),
-        ("(OBJ)", "Objetos"),
-        ("(CASA)", "Casas"),
-        ("(IGLESIA)", "Iglesia"),
-        ("(DESIERTO)", "Desierto"),
-        ("(AGUA)", "Agua"),
-        ("(MONTAÑA)", "Montaña"),
+        // --- High-priority keywords (override parent categories) ---
+        ("TECHO", "Techos"),
+        ("COSTA", "Costas"),
+        ("PISO", "Pisos"),
+        ("PIDO", "Pisos"),             // typo in indices.ini
+        ("PARED", "Estructuras"),
+        ("PUERTA", "Estructuras"),
+        ("MURALLA", "Estructuras"),
+        ("CERCO", "Estructuras"),
+        ("BARANDA", "Estructuras"),
+
+        // --- Terrain ---
+        ("(PRD)", "Terreno"),
+        ("(PRADERA)", "Terreno"),
+        ("(ESP)", "Terreno"),
+        ("(DESFILADERO)", "Terreno"),
+        ("PASTO", "Terreno"),
+
+        // --- Nature ---
+        ("(ARBOL)", "Naturaleza"),
+        ("(ROCA)", "Naturaleza"),
+        ("HOJAS", "Naturaleza"),
+        ("(MONTAÑA)", "Naturaleza"),
+        ("MONTAÍA", "Naturaleza"),     // encoding variant
         ("(NIEVE)", "Nieve"),
-        ("(MURALLA)", "Murallas"),
-        ("(HERRERIA)", "Herreria"),
-        ("(PUERTA)", "Puertas"),
-        ("(PARED)", "Paredes"),
-        ("(PISO)", "Pisos"),
-        ("(PIDO)", "Pisos"),   // typo in indices.ini
-        ("(DUNGEON)", "Dungeon"),
-        ("(CAVERNA)", "Caverna"),
-        ("(LAVA)", "Lava"),
-        ("(INFERNO)", "Inferno"),
-        ("(ANCIENT)", "Ancient Dungeon"),
-        ("(CLOACA)", "Cloaca"),
-        ("(COLISEO)", "Coliseo"),
-        ("CASA(", "Casas Interior"),
-        ("(FOGATA)", "Objetos"),
-        ("(ENTRADA)", "Objetos"),
-        ("(DESFILADERO)", "Desfiladero"),
-        ("CARTEL", "Carteles"),
+
+        // --- Water ---
+        ("(AGUA)", "Agua"),
+        ("CASCADA", "Agua"),
+        ("PECES", "Agua"),
+
+        // --- Buildings & Interiors ---
+        ("HERRERIA", "Edificios"),
+        ("MINERIA", "Edificios"),
+        ("PESCADERIA", "Edificios"),
+        ("POCIONES", "Edificios"),
+        ("PROPIEDADES", "Edificios"),
+        ("PROVISIONES", "Edificios"),
+        ("ARMERIA", "Edificios"),
+        ("SASTRE", "Edificios"),
+        ("CARPINTERO", "Edificios"),
+        ("MERCADO", "Edificios"),
+        ("CARPA", "Edificios"),
+        ("IGLESIA", "Edificios"),
+        ("(CASA)", "Edificios"),
+        ("CASA(", "Edificios"),
+
+        // --- Decorations & Objects ---
+        ("(OBJ)", "Objetos"),
+        ("CARTEL", "Objetos"),
+        ("MONUMENTO", "Objetos"),
         ("LAPIDA", "Objetos"),
         ("BANCO", "Objetos"),
+        ("MUEBLE", "Objetos"),
+        ("(FOGATA)", "Objetos"),
+        ("(ENTRADA)", "Objetos"),
+        ("RECIPIENTE", "Objetos"),
+        ("HORNO", "Objetos"),
+        ("POSTE", "Objetos"),
+        ("PALCO", "Objetos"),
+        ("ALCANTARILLA", "Objetos"),
+        ("ANIMACI", "Objetos"),        // ANIMACIÓN
+
+        // --- Dungeons (all underground/cave variants) ---
+        ("(DUNGEON)", "Dungeons"),
+        ("(CAVERNA)", "Dungeons"),
+        ("(CLOACA)", "Dungeons"),
+        ("(ANCIENT)", "Dungeons"),
+        ("CUEVAS", "Dungeons"),
+        ("CUEVA", "Dungeons"),
+        ("CATAS", "Dungeons"),
+
+        // --- Lava & Inferno ---
+        ("(LAVA)", "Lava/Inferno"),
+        ("LAVA", "Lava/Inferno"),
+        ("(INFERNO)", "Lava/Inferno"),
+        ("INFERNO", "Lava/Inferno"),
+
+        // --- Desert ---
+        ("(DESIERTO)", "Desierto"),
+        ("DESIERTO", "Desierto"),
+        ("DECIERTO", "Desierto"),      // typo
+
+        // --- Cemetery ---
+        ("CEMENTERIO", "Cementerio"),
+
+        // --- Ships ---
+        ("GALEON", "Barcos"),
+        ("GALERA", "Barcos"),
+        ("BARCA", "Barcos"),
+        ("BARCO", "Barcos"),
+
+        // --- Coliseum ---
+        ("(COLISEO)", "Coliseo"),
     };
 
     public static TextureCatalog LoadFromFile(string path)

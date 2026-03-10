@@ -228,42 +228,49 @@ public static class EditorTheme
     }
 
     /// <summary>
-    /// Layer tab button (compact, with colored left border indicator).
+    /// Layer tab button — labeled with layer name + number, color-coded background.
+    /// Active state: filled with layer color. Inactive: dark with colored left bar.
     /// </summary>
     public static Button LayerTab(int layerNum, Action? cb = null)
     {
         var color = layerNum >= 1 && layerNum <= 4 ? LAYER_COLORS[layerNum] : TEXT_PRIMARY;
+        string label = layerNum switch
+        {
+            1 => "L1 Terreno",
+            2 => "L2 Mascara",
+            3 => "L3 Objetos",
+            4 => "L4 Techos",
+            _ => $"L{layerNum}"
+        };
         var btn = new Button
         {
-            Text = layerNum.ToString(),
+            Text = label,
             ToggleMode = true,
-            CustomMinimumSize = new Vector2(28, 26),
-            TooltipText = layerNum switch
-            {
-                1 => "Terreno (1)",
-                2 => "Mascara (2)",
-                3 => "Objetos (3)",
-                4 => "Techos (4)",
-                _ => $"Capa {layerNum}"
-            },
+            CustomMinimumSize = new Vector2(80, 28),
+            TooltipText = $"Capa {layerNum} ({label.Substring(3)}) — tecla {layerNum}",
         };
         btn.AddThemeFontSizeOverride("font_size", FONT_SM);
-        btn.AddThemeColorOverride("font_color", color);
 
-        var normal = FlatBox(BG_TOOL_NORMAL, 3, 4, 2);
-        normal.BorderWidthLeft = 2;
-        normal.BorderColor = color with { A = 0.4f };
+        // Normal: dark bg, colored left bar, muted text
+        var normal = FlatBox(BG_TOOL_NORMAL, 3, 6, 3);
+        normal.BorderWidthLeft = 3;
+        normal.BorderColor = color with { A = 0.5f };
         btn.AddThemeStyleboxOverride("normal", normal);
+        btn.AddThemeColorOverride("font_color", TEXT_SECONDARY);
 
-        var hover = FlatBox(BG_TOOL_HOVER, 3, 4, 2);
-        hover.BorderWidthLeft = 2;
+        // Hover: slightly lighter
+        var hover = FlatBox(BG_TOOL_HOVER, 3, 6, 3);
+        hover.BorderWidthLeft = 3;
         hover.BorderColor = color;
         btn.AddThemeStyleboxOverride("hover", hover);
+        btn.AddThemeColorOverride("font_hover_color", TEXT_PRIMARY);
 
-        var pressed = FlatBox(BG_SELECTED, 3, 4, 2);
-        pressed.BorderWidthLeft = 3;
-        pressed.BorderColor = color;
+        // Pressed/Active: filled with layer color (dimmed), white text
+        var darkColor = color with { A = 1.0f } * 0.35f;
+        darkColor.A = 1.0f;
+        var pressed = FlatBox(darkColor, 3, 6, 3, color, 1);
         btn.AddThemeStyleboxOverride("pressed", pressed);
+        btn.AddThemeColorOverride("font_pressed_color", Colors.White);
 
         if (cb != null) btn.Pressed += cb;
         return btn;

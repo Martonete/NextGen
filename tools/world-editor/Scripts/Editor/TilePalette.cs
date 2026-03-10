@@ -7,18 +7,17 @@ using AOWorldEditor.Data;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// Sidebar panel showing texture references from indices.ini, organized by category tabs.
-/// Renders GRH previews in a scrollable grid.
+/// Sidebar panel showing texture references from indices.ini, organized by category.
+/// Categories displayed as a wrapped button grid (2 rows) instead of a scrolling TabBar.
 /// </summary>
 public partial class TilePalette : VBoxContainer
 {
     [Signal] public delegate void LayerChangedEventHandler(int layer);
 
-    private OptionButton? _layerSelect;
-    private TabBar? _tabBar;
     private ScrollContainer? _scrollContainer;
     private GridContainer? _grid;
     private Label? _infoLabel;
+    private FlowContainer? _categoryFlow;
 
     public TextureCatalog? Catalog;
     public GrhData[]? Grhs;
@@ -26,42 +25,30 @@ public partial class TilePalette : VBoxContainer
     public EditorState? State;
 
     private string _activeCategory = "";
+    private readonly List<Button> _categoryButtons = new();
     private const int PreviewSize = 64; // px per preview cell
     private const int Columns = 4;
 
     public override void _Ready()
     {
         CustomMinimumSize = new Vector2(300, 0);
+        AddThemeConstantOverride("separation", 3);
 
-        // Layer selector (syncs with toolbar layer tabs)
-        var layerBox = new HBoxContainer();
-        layerBox.AddChild(EditorTheme.MakeLabel("Capa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-
-        _layerSelect = new OptionButton();
-        _layerSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        _layerSelect.AddItem("1 - Terreno", 0);
-        _layerSelect.AddItem("2 - Mascara", 1);
-        _layerSelect.AddItem("3 - Objetos/Arboles", 2);
-        _layerSelect.AddItem("4 - Techos", 3);
-        _layerSelect.Selected = 0;
-        _layerSelect.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _layerSelect.ItemSelected += OnLayerSelected;
-        layerBox.AddChild(_layerSelect);
-        AddChild(layerBox);
-
-        // Category tab bar
-        _tabBar = new TabBar();
-        _tabBar.TabChanged += OnTabChanged;
-        AddChild(_tabBar);
+        // Category buttons (wrapped flow — always fully visible, no scrollbar)
+        _categoryFlow = new FlowContainer();
+        _categoryFlow.CustomMinimumSize = new Vector2(290, 0);
+        _categoryFlow.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        AddChild(_categoryFlow);
 
         // Info label
         _infoLabel = EditorTheme.MakeLabel("Selecciona una textura", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        _infoLabel.CustomMinimumSize = new Vector2(0, 18);
         AddChild(_infoLabel);
 
         // Scroll + Grid for texture previews
         _scrollContainer = new ScrollContainer();
         _scrollContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _scrollContainer.CustomMinimumSize = new Vector2(290, 400);
+        _scrollContainer.CustomMinimumSize = new Vector2(290, 200);
         AddChild(_scrollContainer);
 
         _grid = new GridContainer();
@@ -72,29 +59,61 @@ public partial class TilePalette : VBoxContainer
     }
 
     /// <summary>
-    /// Called after data is loaded to populate tabs.
+    /// Called after data is loaded to populate category buttons.
     /// </summary>
     public void Rebuild()
     {
-        if (_tabBar == null || Catalog == null) return;
+        if (_categoryFlow == null || Catalog == null) return;
 
-        _tabBar.ClearTabs();
+        // Clear old buttons
+        foreach (var child in _categoryFlow.GetChildren())
+            child.QueueFree();
+        _categoryButtons.Clear();
+
         foreach (var cat in Catalog.CategoryOrder)
-            _tabBar.AddTab(cat);
+        {
+            var btn = new Button
+            {
+                Text = cat,
+                ToggleMode = true,
+                CustomMinimumSize = new Vector2(0, 24),
+            };
+            btn.AddThemeFontSizeOverride("font_size", 10);
+            btn.AddThemeStyleboxOverride("normal",
+                EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 3, 6, 2));
+            btn.AddThemeStyleboxOverride("hover",
+                EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 3, 6, 2));
+            btn.AddThemeStyleboxOverride("pressed",
+                EditorTheme.FlatBox(EditorTheme.BG_TOOL_ACTIVE, 3, 6, 2, EditorTheme.ACCENT, 1));
+            btn.AddThemeColorOverride("font_color", EditorTheme.TEXT_SECONDARY);
+            btn.AddThemeColorOverride("font_pressed_color", Colors.White);
+
+            var capturedCat = cat;
+            btn.Pressed += () => OnCategorySelected(capturedCat);
+            _categoryFlow.AddChild(btn);
+            _categoryButtons.Add(btn);
+        }
 
         if (Catalog.CategoryOrder.Count > 0)
         {
             _activeCategory = Catalog.CategoryOrder[0];
+            SyncCategoryButtons();
             PopulateGrid();
         }
     }
 
-    private void OnTabChanged(long tabIndex)
+    private void OnCategorySelected(string category)
+    {
+        _activeCategory = category;
+        SyncCategoryButtons();
+        PopulateGrid();
+    }
+
+    private void SyncCategoryButtons()
     {
         if (Catalog == null) return;
-        if (tabIndex < 0 || tabIndex >= Catalog.CategoryOrder.Count) return;
-        _activeCategory = Catalog.CategoryOrder[(int)tabIndex];
-        PopulateGrid();
+        for (int i = 0; i < _categoryButtons.Count && i < Catalog.CategoryOrder.Count; i++)
+            _categoryButtons[i].ButtonPressed = Catalog.CategoryOrder[i] == _activeCategory;
     }
 
     private void PopulateGrid()
@@ -132,24 +151,11 @@ public partial class TilePalette : VBoxContainer
         }
     }
 
-    private void OnLayerSelected(long index)
-    {
-        if (State != null)
-            State.ActiveLayer = (int)index + 1;
-    }
-
     /// <summary>
-    /// Sync the dropdown if layer was changed externally (keyboard 1-4).
+    /// Sync the layer dropdown if layer was changed externally (keyboard 1-4).
     /// </summary>
     public void SyncLayerUI()
     {
-        if (_layerSelect != null && State != null)
-        {
-            int idx = State.ActiveLayer - 1;
-            if (idx >= 0 && idx < 4 && _layerSelect.Selected != idx)
-                _layerSelect.Selected = idx;
-        }
-
         // Show eyedrop GRH info when no catalog texture is selected
         if (_infoLabel != null && State != null && State.SelectedTexture == null && State.EyedropGrh > 0)
             _infoLabel.Text = $"Eyedrop GRH {State.EyedropGrh}";
@@ -166,7 +172,6 @@ public partial class TilePalette : VBoxContainer
         if (texRef.Layer >= 1 && texRef.Layer <= 4)
         {
             State.ActiveLayer = texRef.Layer;
-            SyncLayerUI();
             EmitSignal(SignalName.LayerChanged, texRef.Layer);
         }
 
