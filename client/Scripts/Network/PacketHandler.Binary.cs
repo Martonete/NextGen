@@ -763,7 +763,7 @@ public partial class PacketHandler
 
             // ── Guild bank / Full char info ───────────────────────
             case ServerPacketId.FullCharInfo: // 245
-                HandleBinStringOnly(bq, "FullCharInfo");
+                HandleBinFullCharInfo(bq);
                 break;
             case ServerPacketId.GuildBankInitResp: // 247
                 HandleBinGuildBankInitResp(bq);
@@ -1134,6 +1134,19 @@ public partial class PacketHandler
         if (charIndex > 0)
         {
             SetCharDialog(charIndex, chat, hexColor);
+
+            // If this is an NPC speaking, also show it in the NPC dialog panel
+            if (_state.Characters.TryGetValue(charIndex, out var ch) && ch.NpcNumber > 0)
+            {
+                // Extract clean name (strip clan tag if present)
+                string npcName = ch.Name;
+                int tagPos = npcName.IndexOf('<');
+                if (tagPos >= 0) npcName = npcName.Substring(0, tagPos).Trim();
+
+                _state.NpcDialogName = npcName;
+                _state.NpcDialogText = chat;
+                _state.ShowNpcDialog = true;
+            }
         }
         else
         {
@@ -3147,9 +3160,43 @@ public partial class PacketHandler
     }
 
     /// <summary>
+    /// FullCharInfo (ID 245) — character info from /MIRAR or DAMINF.
+    /// CSV: name,race,class,level,gold,reputation,crimMatados,ciudMatados,status,faction,guildIndex,0,maxHp,maxMana,maxSta
+    /// </summary>
+    private void HandleBinFullCharInfo(ByteQueue bq)
+    {
+        string data = bq.ReadString();
+        GD.Print($"[PKT] FullCharInfo: {data}");
+
+        string[] fields = data.Split(',');
+        if (fields.Length < 15) return;
+
+        var info = new CharInfoData
+        {
+            Name = fields[0],
+            Race = fields[1],
+            ClassName = fields[2],
+            Level = int.TryParse(fields[3], out int lvl) ? lvl : 0,
+            Gold = int.TryParse(fields[4], out int gold) ? gold : 0,
+            Reputation = int.TryParse(fields[5], out int rep) ? rep : 0,
+            CrimMatados = int.TryParse(fields[6], out int cm) ? cm : 0,
+            CiudMatados = int.TryParse(fields[7], out int cim) ? cim : 0,
+            Status = fields[8],
+            Faction = fields[9],
+            GuildIndex = int.TryParse(fields[10], out int gi) ? gi : 0,
+            MaxHp = int.TryParse(fields[12], out int hp) ? hp : 0,
+            MaxMana = int.TryParse(fields[13], out int mp) ? mp : 0,
+            MaxSta = int.TryParse(fields[14], out int sta) ? sta : 0,
+        };
+
+        _state.CharInfoCurrent = info;
+        _state.ShowCharInfo = true;
+    }
+
+    /// <summary>
     /// Generic single-string packets (ImageData, BkwData, GinfData,
-    /// IcoData, ZsosData, SbrData, AuctionList, CosmeticImage/Pcgn/Pcss/Pccc,
-    /// FullCharInfo) — read one string and log.
+    /// IcoData, ZsosData, SbrData, AuctionList, CosmeticImage/Pcgn/Pcss/Pccc)
+    /// — read one string and log.
     /// </summary>
     private void HandleBinStringOnly(ByteQueue bq, string tag)
     {

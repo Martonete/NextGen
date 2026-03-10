@@ -2710,6 +2710,11 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         // Party message
         let text = &cmd[6..];
         handle_slash_pmsg(state, conn_id, text).await;
+    } else if cmd_upper.starts_with("/MIRAR ") {
+        // /MIRAR <name> — look at character info (routes to DAMINF handler)
+        let target = cmd[7..].trim();
+        let text = format!("DAMINF{}", target);
+        handle_daminf(state, conn_id, &text).await;
     // =====================================================================
     // Duel system
     // =====================================================================

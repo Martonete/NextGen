@@ -536,6 +536,16 @@ pub fn puede_clickear(state: &mut GameState, conn_id: ConnectionId) -> bool {
 // =====================================================================
 
 pub fn clean_world_add_item(state: &mut GameState, map: i32, x: i32, y: i32, tiempo: i32, obj_index: i32) {
+    // First check if there's already an entry for the same tile — update it instead
+    // of creating a duplicate. This handles gold stacking and item replacement.
+    for entry in state.clean_world.iter_mut() {
+        if entry.map == map && entry.x == x && entry.y == y && entry.tiempo > 0 {
+            entry.tiempo = tiempo;
+            entry.obj_index = obj_index;
+            return;
+        }
+    }
+    // No existing entry — find an empty slot
     for entry in state.clean_world.iter_mut() {
         if entry.map == 0 && entry.x == 0 && entry.y == 0 && entry.tiempo == 0 {
             *entry = CleanWorldEntry { map, x, y, tiempo, obj_index };

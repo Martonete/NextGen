@@ -317,6 +317,15 @@ public class GameState
     public bool ShowTrainerPanel;                   // Trigger to open trainer panel
     public string TrainerCreatureData = "";          // Pending creature list data from server
 
+    // NPC dialog popup (triggered by ChatOverHead from NPC interaction)
+    public bool ShowNpcDialog;
+    public string NpcDialogName = "";
+    public string NpcDialogText = "";
+
+    // Character info popup (triggered by FullCharInfo packet / /MIRAR command)
+    public bool ShowCharInfo;
+    public CharInfoData? CharInfoCurrent;
+
     // Arrow/projectile system (VB6: FLECHI)
     public List<ArrowProjectile> ActiveArrows = new();
 
@@ -553,4 +562,24 @@ public class PetInfo
     public int NpcType;      // NPC type number
     public string Name = ""; // Creature name
     public int HpPercent = 100;
+}
+
+/// Character info data from FullCharInfo (ID 245) packet.
+/// CSV format: name,race,class,level,gold,reputation,crimMatados,ciudMatados,status,faction,guildIndex,0,maxHp,maxMana,maxSta
+public class CharInfoData
+{
+    public string Name = "";
+    public string Race = "";
+    public string ClassName = "";
+    public int Level;
+    public int Gold;
+    public int Reputation;
+    public int CrimMatados;
+    public int CiudMatados;
+    public string Status = "";     // "Criminal" or "Ciudadano"
+    public string Faction = "";    // "Armada Real", "Fuerzas del Caos", or "Ninguna"
+    public int GuildIndex;
+    public int MaxHp;
+    public int MaxMana;
+    public int MaxSta;
 }

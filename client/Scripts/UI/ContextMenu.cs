@@ -191,7 +191,7 @@ public partial class ContextMenu : PanelContainer
                 CloseMenu();
             });
             AddMenuItem("Ver Info", () => {
-                _tcp?.SendPacket(ClientPackets.WriteTalk($"/MIRAR {cleanName}"));
+                _tcp?.SendPacket(ClientPackets.WritePlayerInfo(cleanName));
                 CloseMenu();
             });
             AddSeparator();

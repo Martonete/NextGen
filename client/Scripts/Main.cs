@@ -144,6 +144,12 @@ public partial class Main : Control
     // Trainer/Pet panel (frmEntrenador)
     private TrainerPanel? _trainerPanel;
 
+    // NPC dialog panel (shows NPC speech in fixed bottom-center panel)
+    private NpcDialogPanel? _npcDialogPanel;
+
+    // Character info popup (shows /MIRAR results centered on screen)
+    private CharInfoPopup? _charInfoPopup;
+
     // Blind screen overlay (VB6: frmMain goes black when blinded)
     private ColorRect? _blindOverlay;
     private float _blindAlpha;
@@ -681,6 +687,19 @@ public partial class Main : Control
         _statsPanel.Visible = false;
         _gameUI.AddChild(_statsPanel);
         _statsPanel.Init(_state);
+
+        // NPC dialog panel — fixed at bottom-center
+        _npcDialogPanel = new NpcDialogPanel();
+        // Bottom-center: x = 8 + (544 - 300) / 2 = 130, y = viewport bottom - panel height - margin
+        _npcDialogPanel.Position = new Vector2(8 + (544 - 300) / 2, 144 + 416 - 120 - 10);
+        _npcDialogPanel.Visible = false;
+        _gameUI.AddChild(_npcDialogPanel);
+        _npcDialogPanel.Init(_state);
+
+        // Character info popup — centered (position set dynamically on show)
+        _charInfoPopup = new CharInfoPopup();
+        _charInfoPopup.Visible = false;
+        _gameUI.AddChild(_charInfoPopup);
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
@@ -2780,6 +2799,21 @@ public partial class Main : Control
                 _trainerPanel?.OpenTrainer(creatures);
             }
 
+            // NPC dialog panel — show when NPC speaks via ChatOverHead
+            if (_state.ShowNpcDialog)
+            {
+                _state.ShowNpcDialog = false;
+                _npcDialogPanel?.ShowDialog(_state.NpcDialogName, _state.NpcDialogText);
+            }
+
+            // Character info popup — show from FullCharInfo packet (/MIRAR)
+            if (_state.ShowCharInfo)
+            {
+                _state.ShowCharInfo = false;
+                if (_state.CharInfoCurrent != null)
+                    _charInfoPopup?.ShowInfo(_state.CharInfoCurrent);
+            }
+
             // Blind screen overlay — smooth fade in/out
             if (_blindOverlay != null)
             {
@@ -2893,6 +2927,7 @@ public partial class Main : Control
                     _trainerPanel!.Init(_state, _tcp);
                     _optionsPanel!.Init(_state, _state.Config, _dataPath, _tcp);
                     _statsPanel!.Init(_state, _tcp);
+                    _charInfoPopup!.Init(_state);
                     _contextMenu!.Init(_state, _tcp);
                     _contextMenu!.OnWhisper += (name) =>
                     {

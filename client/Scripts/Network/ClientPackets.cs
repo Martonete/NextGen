@@ -195,6 +195,19 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
+    // ── Player info ───────────────────────────────────────────
+
+    /// <summary>
+    /// Request character info (DAMINF). Server responds with FullCharInfo (ID 245).
+    /// </summary>
+    public static byte[] WritePlayerInfo(string targetName)
+    {
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.PlayerInfo);
+        bq.WriteString(targetName);
+        return bq.ToArray();
+    }
+
     // ── Items ──────────────────────────────────────────────────
 
     public static byte[] WritePickUp()

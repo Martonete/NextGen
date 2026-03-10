@@ -1814,11 +1814,14 @@ pub async fn tick_clean_world(state: &mut GameState) {
         let tiempo = entry.tiempo;
 
         if tiempo <= 1 {
-            // Timer expired — remove item from world
-            let has_item = {
+            let tracked_obj = state.clean_world[i].obj_index;
+
+            // Timer expired — remove item from world only if the same item is still there.
+            // If the item was picked up or replaced by a different item, skip deletion.
+            let should_remove = {
                 if let Some(grid) = state.world.grid(map) {
                     if let Some(tile) = grid.tile(x, y) {
-                        tile.ground_item.obj_index > 0
+                        tile.ground_item.obj_index > 0 && tile.ground_item.obj_index == tracked_obj
                     } else {
                         false
                     }
@@ -1827,7 +1830,7 @@ pub async fn tick_clean_world(state: &mut GameState) {
                 }
             };
 
-            if has_item {
+            if should_remove {
                 // Erase the object from the tile
                 let grid = state.world.grid_mut(map);
                 if let Some(tile) = grid.tile_mut(x, y) {
