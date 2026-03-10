@@ -248,6 +248,7 @@ func _build_menu_bar() -> MenuBar:
 	var m_archivo := PopupMenu.new()
 	m_archivo.name = "Archivo"
 	m_archivo.add_item("Abrir carpeta Cliente...", 0, KEY_MASK_CTRL | KEY_O)
+	m_archivo.add_item("Guardar todo...", 1, KEY_MASK_CTRL | KEY_S)
 	m_archivo.add_separator()
 	m_archivo.add_item("Salir", 99, KEY_MASK_CTRL | KEY_Q)
 	m_archivo.id_pressed.connect(_on_archivo_menu)
@@ -261,16 +262,6 @@ func _build_menu_bar() -> MenuBar:
 	m_editar.add_item("Limpiar frames", 2)
 	m_editar.id_pressed.connect(_on_editar_menu)
 	mb.add_child(m_editar)
-
-	var m_guardar := PopupMenu.new()
-	m_guardar.name = "Guardar"
-	m_guardar.add_item("Guardar Graficos.ind", 0, KEY_MASK_CTRL | KEY_S)
-	m_guardar.add_item("Guardar Personajes.ind", 1)
-	m_guardar.add_item("Guardar Fxs.ind", 2)
-	m_guardar.add_separator()
-	m_guardar.add_item("Guardar como...", 3, KEY_MASK_CTRL | KEY_MASK_SHIFT | KEY_S)
-	m_guardar.id_pressed.connect(_on_guardar_menu)
-	mb.add_child(m_guardar)
 
 	_menu_ver = PopupMenu.new()
 	_menu_ver.name = "Ver"
@@ -466,6 +457,7 @@ func _save_prefs() -> void:
 func _on_archivo_menu(id: int) -> void:
 	match id:
 		0: _dlg_client_folder.popup_centered_ratio(0.7)
+		1: _on_save_ind()
 		99:
 			if _dirty:
 				_show_close_confirm()
@@ -478,14 +470,6 @@ func _on_editar_menu(id: int) -> void:
 		0: _undo()
 		1: _redo()
 		2: _on_clear_frames()
-
-
-func _on_guardar_menu(id: int) -> void:
-	match id:
-		0: _on_save_ind()
-		1: _save_personajes_ind()
-		2: _save_fxs_ind()
-		3: _dlg_save_ind.popup_centered_ratio(0.7)
 
 
 func _on_ver_menu(id: int) -> void:

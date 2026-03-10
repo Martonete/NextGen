@@ -824,8 +824,19 @@ func _on_raw_file_selected(idx: int) -> void:
 func _on_save_raw_file() -> void:
 	if _raw_current_path.is_empty():
 		return
-	if _raw_current_path.get_extension().to_lower() == "ind":
-		return  # Binary files can't be saved as text
+	var filename := _raw_current_path.get_file().to_lower()
+	var ext := _raw_current_path.get_extension().to_lower()
+
+	# Graficos.ind: parse text back into in-memory grh_data
+	if "graficos" in filename and ext == "ind":
+		_parse_text_to_grh_data(_raw_text_edit.text)
+		data_changed.emit()
+		return
+
+	# Other .ind: still read-only
+	if ext == "ind":
+		return
+
 	var f := FileAccess.open(_raw_current_path, FileAccess.WRITE)
 	if f == null:
 		return
@@ -836,7 +847,15 @@ func _on_save_raw_file() -> void:
 func _load_raw_file(path: String) -> void:
 	_raw_current_path = path
 	var ext := path.get_extension().to_lower()
+	var filename := path.get_file().to_lower()
 
+	# Graficos.ind: dump from in-memory grh_data (editable)
+	if "graficos" in filename and ext == "ind":
+		_raw_text_edit.text = _grh_data_to_text()
+		_raw_text_edit.editable = true
+		return
+
+	# Other .ind files: read-only binary dump
 	if ext == "ind":
 		_raw_text_edit.text = _parse_ind_to_text(path)
 		_raw_text_edit.editable = false
@@ -879,6 +898,90 @@ func _parse_ind_to_text(path: String) -> String:
 
 	f.close()
 	return "\n".join(lines)
+
+
+## Dump in-memory grh_data to classic AO Graficos.ini text format:
+## Grh<idx>=<NumFrames>-<Frame1>-<Frame2>-...-<Speed>   (animation)
+## Grh<idx>=1-<FileNum>-<SX>-<SY>-<Width>-<Height>      (single frame)
+func _grh_data_to_text() -> String:
+	var entries: Dictionary = grh_data.get("entries", {})
+	var keys: Array = entries.keys()
+	keys.sort()
+	var lines: PackedStringArray = []
+	lines.append("# Graficos — %d entradas (max GRH: %d)" % [keys.size(), grh_data.get("max_index", 0)])
+	lines.append("")
+	for gi in keys:
+		var e: Dictionary = entries[gi]
+		var nf: int = e.get("num_frames", 1)
+		if nf > 1:
+			# Animation: Grh<idx>=<NumFrames>-<F1>-<F2>-...-<Speed>
+			var parts := "Grh%d=%d" % [gi, nf]
+			var frames_arr: Array = e.get("frames", [])
+			for fi in frames_arr:
+				parts += "-%d" % int(fi)
+			parts += "-%.1f" % e.get("speed", 100.0)
+			lines.append(parts)
+		else:
+			# Single frame: Grh<idx>=1-<FileNum>-<SX>-<SY>-<W>-<H>
+			lines.append("Grh%d=1-%d-%d-%d-%d-%d" % [
+				gi, e.get("file_num", 0),
+				e.get("sx", 0), e.get("sy", 0),
+				e.get("width", 0), e.get("height", 0)])
+	return "\n".join(lines)
+
+
+## Parse classic AO text format back into grh_data (replaces all entries).
+func _parse_text_to_grh_data(text: String) -> void:
+	var new_entries := {}
+	var max_idx := 0
+	for line in text.split("\n"):
+		line = line.strip_edges()
+		if line.is_empty() or line.begins_with("#"):
+			continue
+		# Expected: Grh<idx>=<data>
+		if not line.begins_with("Grh"):
+			continue
+		var eq_pos := line.find("=")
+		if eq_pos < 4:
+			continue
+		var idx_str := line.substr(3, eq_pos - 3)
+		if not idx_str.is_valid_int():
+			continue
+		var gi := idx_str.to_int()
+		if gi <= 0:
+			continue
+		var data_str := line.substr(eq_pos + 1)
+		var parts := data_str.split("-")
+		if parts.is_empty():
+			continue
+		var nf := parts[0].to_int()
+		if nf <= 0:
+			continue
+		if nf == 1 and parts.size() >= 6:
+			# Single frame: 1-FileNum-SX-SY-W-H
+			new_entries[gi] = {
+				"grh_index": gi, "num_frames": 1,
+				"file_num": parts[1].to_int(),
+				"sx": parts[2].to_int(), "sy": parts[3].to_int(),
+				"width": parts[4].to_int(), "height": parts[5].to_int()
+			}
+		elif nf > 1 and parts.size() >= nf + 2:
+			# Animation: NumFrames-F1-F2-...-Speed
+			var frames_arr: Array = []
+			for fi in range(1, nf + 1):
+				frames_arr.append(parts[fi].to_int())
+			var speed := parts[nf + 1].to_float()
+			new_entries[gi] = {
+				"grh_index": gi, "num_frames": nf,
+				"frames": frames_arr, "speed": speed
+			}
+		if gi > max_idx:
+			max_idx = gi
+	grh_data["entries"] = new_entries
+	if max_idx > 0:
+		grh_data["max_index"] = max_idx
+	_rebuild_grh_keys()
+	_rebuild_list()
 
 
 static func _ri16(f: FileAccess) -> int:
