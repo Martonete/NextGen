@@ -551,7 +551,7 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 		MOUSE_BUTTON_RIGHT:
 			if mb.pressed and _texture != null and tool_mode == 0:
 				var ip := _s2i(mb.position)
-				var hit := _hit_frame(ip)
+				var hit := _hit_test_frame(ip)
 				if hit >= 0:
 					frame_context_menu.emit(hit, mb.global_position)
 					accept_event()
