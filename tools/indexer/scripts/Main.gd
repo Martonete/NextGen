@@ -212,6 +212,7 @@ func _build_ui() -> void:
 	_confirm_dialog.title = "Confirmar indexación"
 	_confirm_dialog.ok_button_text = "Confirmar"
 	_confirm_dialog.cancel_button_text = "Cancelar"
+	_confirm_dialog.visible = false
 	add_child(_confirm_dialog)
 
 
