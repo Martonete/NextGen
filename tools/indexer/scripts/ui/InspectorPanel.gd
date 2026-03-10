@@ -908,7 +908,7 @@ func _build_data_tab() -> Control:
 	config_inner.add_child(config_grid)
 
 	config_grid.add_child(IndexerTheme.label("Próximo GRH:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
-	_spin_next_grh = IndexerTheme.spinbox(1, 999999, 1, func(v): next_grh_changed.emit(int(v)))
+	_spin_next_grh = IndexerTheme.spinbox(1, 99999, 1, func(v): next_grh_changed.emit(int(v)))
 	config_grid.add_child(_spin_next_grh)
 
 	config_grid.add_child(IndexerTheme.label("FileNum base:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
@@ -968,8 +968,8 @@ func _show_props(vis: bool) -> void:
 		return
 	# Position to the left of the inspector panel
 	var inspector_rect := get_global_rect()
-	var popup_w := 280
-	var popup_h := 240
+	var popup_w := 420
+	var popup_h := 380
 	var px := int(inspector_rect.position.x) - popup_w - 8
 	var py := int(inspector_rect.position.y) + 40
 	# Clamp to screen

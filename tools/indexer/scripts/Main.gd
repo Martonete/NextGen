@@ -1552,8 +1552,7 @@ func _save_session() -> void:
 	if _inspector._tabs != null:
 		_prefs.set_value("session", "inspector_tab", _inspector._tabs.current_tab)
 
-	# Next GRH index
-	_prefs.set_value("session", "next_grh", _next_grh_index)
+	# Next GRH index — no longer saved; always derived from .ind on load
 
 	_prefs.save(PREFS_PATH)
 
