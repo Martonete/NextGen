@@ -139,8 +139,8 @@ func _on_tool_pressed(mode: int) -> void:
 
 # ── Grid config menu ─────────────────────────────────────────────────────────
 
-const SIZE_PRESETS := [[128, 128], [128, 64], [64, 64], [64, 32], [32, 32]]
-const SIZE_LABELS := ["128x128", "128x64", "64x64", "64x32", "32x32"]
+const SIZE_PRESETS := [[512, 512], [256, 256], [256, 128], [128, 128], [128, 64], [64, 64], [64, 32], [32, 32]]
+const SIZE_LABELS := ["512x512", "256x256", "256x128", "128x128", "128x64", "64x64", "64x32", "32x32"]
 const BORDER_OPTIONS := [1, 2, 3, 4]
 
 func _build_grid_config_menu() -> void:
@@ -177,6 +177,7 @@ func _build_grid_config_menu() -> void:
 	_color_picker_window.size = Vector2i(320, 340)
 	_color_picker_window.exclusive = true
 	_color_picker_window.wrap_controls = true
+	_color_picker_window.visible = false
 	_color_picker_window.close_requested.connect(func(): _color_picker_window.hide())
 	_color_picker = ColorPicker.new()
 	_color_picker.color = _grid_color

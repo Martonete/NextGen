@@ -2,7 +2,6 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -20,13 +19,8 @@ public class TextureRef
     public int TileWidth;    // Pattern width in tiles (0 = single)
     public int TileHeight;   // Pattern height in tiles (0 = single)
     public int Layer;         // Preferred layer (from Capa field, 0 = unspecified)
-    public string Category = "Otros"; // Extracted category
+    public string Category = "Otros"; // From Type= field in indices.ini
 
-    /// <summary>
-    /// Returns all GRH indices that compose this texture pattern.
-    /// For a 4x4 pattern starting at GrhIndex G: G, G+1, G+2, ..., G+15.
-    /// For single tiles (0x0): just [GrhIndex].
-    /// </summary>
     public int[] GetGrhIndices()
     {
         int w = Math.Max(TileWidth, 1);
@@ -37,9 +31,6 @@ public class TextureRef
         return indices;
     }
 
-    /// <summary>
-    /// Get the GRH index at a specific tile position within the pattern.
-    /// </summary>
     public int GetGrhAt(int tileX, int tileY)
     {
         int w = Math.Max(TileWidth, 1);
@@ -49,107 +40,20 @@ public class TextureRef
 
 /// <summary>
 /// Parses indices.ini and organizes texture references into categories.
-/// Categories are auto-extracted from name prefixes like (PRD), (ARBOL), (CASA), etc.
+/// Each [REFERENCIA*] section must have a Type= field with its category.
 /// </summary>
 public class TextureCatalog
 {
+    // Preferred display order for categories
+    private static readonly string[] PreferredOrder =
+    {
+        "Terreno", "Dungeons", "Techos", "Estructuras",
+        "Naturaleza", "Objetos", "Otros"
+    };
+
     public List<TextureRef> AllRefs { get; } = new();
     public Dictionary<string, List<TextureRef>> Categories { get; } = new();
     public List<string> CategoryOrder { get; } = new();
-
-    // Category mapping from name prefixes to display names.
-    // ORDER MATTERS: first match wins. Consolidated into ~14 logical groups.
-    private static readonly (string prefix, string display)[] CategoryMap = new[]
-    {
-        // --- High-priority keywords (override parent categories) ---
-        ("TECHO", "Techos"),
-        ("COSTA", "Costas"),
-        ("PISO", "Pisos"),
-        ("PIDO", "Pisos"),             // typo in indices.ini
-        ("PARED", "Estructuras"),
-        ("PUERTA", "Estructuras"),
-        ("MURALLA", "Estructuras"),
-        ("CERCO", "Estructuras"),
-        ("BARANDA", "Estructuras"),
-
-        // --- Terrain (all ground/surface types) ---
-        ("(PRD)", "Terreno"),
-        ("(PRADERA)", "Terreno"),
-        ("(ESP)", "Terreno"),
-        ("(DESFILADERO)", "Terreno"),
-        ("DESFILADERO", "Terreno"),
-        ("PASTO", "Terreno"),
-        ("(AGUA)", "Terreno"),
-        ("CASCADA", "Terreno"),
-        ("PECES", "Terreno"),
-        ("(NIEVE)", "Terreno"),
-        ("NEVADO", "Terreno"),
-        ("(DESIERTO)", "Terreno"),
-        ("DESIERTO", "Terreno"),
-        ("DECIERTO", "Terreno"),       // typo
-        ("(LAVA)", "Terreno"),
-        ("LAVA", "Terreno"),
-        ("(INFERNO)", "Terreno"),
-        ("INFERNO", "Terreno"),
-        ("ANCIENT", "Terreno"),
-        ("(DUNGEON)", "Terreno"),
-        ("(CAVERNA)", "Terreno"),
-        ("(CLOACA)", "Terreno"),
-        ("CUEVAS", "Terreno"),
-        ("CUEVA", "Terreno"),
-        ("CATAS", "Terreno"),
-
-        // --- Nature ---
-        ("(ARBOL)", "Naturaleza"),
-        ("(ROCA)", "Naturaleza"),
-        ("HOJAS", "Naturaleza"),
-        ("(MONTAÑA)", "Naturaleza"),
-        ("MONTAÍA", "Naturaleza"),     // encoding variant
-
-        // --- Buildings & Interiors ---
-        ("HERRERIA", "Edificios"),
-        ("MINERIA", "Edificios"),
-        ("PESCADERIA", "Edificios"),
-        ("POCIONES", "Edificios"),
-        ("PROPIEDADES", "Edificios"),
-        ("PROVISIONES", "Edificios"),
-        ("ARMERIA", "Edificios"),
-        ("SASTRE", "Edificios"),
-        ("CARPINTERO", "Edificios"),
-        ("MERCADO", "Edificios"),
-        ("CARPA", "Edificios"),
-        ("IGLESIA", "Edificios"),
-        ("(CASA)", "Edificios"),
-        ("CASA(", "Edificios"),
-
-        // --- Decorations & Objects ---
-        ("(OBJ)", "Objetos"),
-        ("CARTEL", "Objetos"),
-        ("MONUMENTO", "Objetos"),
-        ("LAPIDA", "Objetos"),
-        ("BANCO", "Objetos"),
-        ("MUEBLE", "Objetos"),
-        ("(FOGATA)", "Objetos"),
-        ("(ENTRADA)", "Objetos"),
-        ("RECIPIENTE", "Objetos"),
-        ("HORNO", "Objetos"),
-        ("POSTE", "Objetos"),
-        ("PALCO", "Objetos"),
-        ("ALCANTARILLA", "Objetos"),
-        ("ANIMACI", "Objetos"),        // ANIMACIÓN
-
-        // --- Cemetery ---
-        ("CEMENTERIO", "Cementerio"),
-
-        // --- Ships ---
-        ("GALEON", "Barcos"),
-        ("GALERA", "Barcos"),
-        ("BARCA", "Barcos"),
-        ("BARCO", "Barcos"),
-
-        // --- Coliseum ---
-        ("(COLISEO)", "Coliseo"),
-    };
 
     public static TextureCatalog LoadFromFile(string path)
     {
@@ -179,6 +83,7 @@ public class TextureCatalog
             if (!sections.TryGetValue(sectionName, out var sec)) continue;
 
             string name = sec.GetValueOrDefault("Nombre", "");
+            string type = sec.GetValueOrDefault("Type", "Otros");
             int grhIndex = 0, ancho = 0, alto = 0, capa = 0;
             if (sec.TryGetValue("GrhIndice", out var g)) int.TryParse(g, out grhIndex);
             if (sec.TryGetValue("Ancho", out var w)) int.TryParse(w, out ancho);
@@ -187,12 +92,6 @@ public class TextureCatalog
 
             if (grhIndex <= 0) continue;
 
-            string category = ExtractCategory(name);
-            // Override layer for specific categories
-            int layer = capa;
-            if (category == "Costas") layer = 2;
-            else if (category == "Techos") layer = 4;
-
             var texRef = new TextureRef
             {
                 Index = i,
@@ -200,18 +99,27 @@ public class TextureCatalog
                 GrhIndex = grhIndex,
                 TileWidth = ancho,
                 TileHeight = alto,
-                Layer = layer,
-                Category = category,
+                Layer = capa,
+                Category = type,
             };
 
             catalog.AllRefs.Add(texRef);
 
-            if (!catalog.Categories.ContainsKey(texRef.Category))
-            {
-                catalog.Categories[texRef.Category] = new List<TextureRef>();
-                catalog.CategoryOrder.Add(texRef.Category);
-            }
-            catalog.Categories[texRef.Category].Add(texRef);
+            if (!catalog.Categories.ContainsKey(type))
+                catalog.Categories[type] = new List<TextureRef>();
+            catalog.Categories[type].Add(texRef);
+        }
+
+        // Build category order: preferred first, then any extras alphabetically
+        foreach (var cat in PreferredOrder)
+        {
+            if (catalog.Categories.ContainsKey(cat))
+                catalog.CategoryOrder.Add(cat);
+        }
+        foreach (var cat in catalog.Categories.Keys)
+        {
+            if (!catalog.CategoryOrder.Contains(cat))
+                catalog.CategoryOrder.Add(cat);
         }
 
         GD.Print($"[Catalog] Loaded {catalog.AllRefs.Count} refs in {catalog.Categories.Count} categories");
@@ -246,25 +154,5 @@ public class TextureCatalog
         }
 
         return sections;
-    }
-
-    private static string ExtractCategory(string name)
-    {
-        string upper = name.ToUpperInvariant();
-        foreach (var (prefix, display) in CategoryMap)
-        {
-            if (upper.Contains(prefix.ToUpperInvariant()))
-                return display;
-        }
-
-        // Try to extract from parenthetical prefix
-        if (name.StartsWith("("))
-        {
-            int end = name.IndexOf(')');
-            if (end > 1)
-                return name.Substring(1, end - 1);
-        }
-
-        return "Otros";
     }
 }
