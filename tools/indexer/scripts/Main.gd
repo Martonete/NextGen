@@ -312,7 +312,6 @@ func _build_dialogs() -> void:
 	btn_confirm.text = "Confirmar e indexar"
 	btn_confirm.pressed.connect(_on_index_confirmed)
 	btn_row.add_child(btn_confirm)
-	add_child(_dlg_index_confirm)
 
 
 func _connect_signals() -> void:
@@ -1180,6 +1179,8 @@ func _on_index_image() -> void:
 		lines += "\n[b]Archivo:[/b] %s" % _ind_path.get_file()
 
 	_index_preview_label.text = lines
+	if not _dlg_index_confirm.is_inside_tree():
+		add_child(_dlg_index_confirm)
 	_dlg_index_confirm.popup_centered()
 
 
