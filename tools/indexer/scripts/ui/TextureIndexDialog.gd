@@ -4,11 +4,14 @@ extends Window
 
 signal confirmed(name: String, category: String, capa: int)
 
+var _spin_w: SpinBox
+var _spin_h: SpinBox
 var _input_name: LineEdit
 var _opt_type: OptionButton
 var _spin_capa: SpinBox
 var _preview: TextureRect
 var _lbl_summary: Label
+var _lbl_warn: Label
 var _btn_save: Button
 
 # Source frame info (set before popup)
@@ -20,7 +23,7 @@ var _tiles_h: int = 0
 
 func _ready() -> void:
 	title = "Indexar Textura"
-	size = Vector2i(420, 480)
+	size = Vector2i(440, 560)
 	exclusive = true
 	wrap_controls = true
 	visible = false
@@ -49,6 +52,32 @@ func _ready() -> void:
 	_input_name.add_theme_font_size_override("font_size", 13)
 	name_row.add_child(_input_name)
 
+	# Tile size (editable)
+	var size_row := HBoxContainer.new()
+	size_row.add_theme_constant_override("separation", 6)
+	root.add_child(size_row)
+	size_row.add_child(_label("Tiles:"))
+	_spin_w = SpinBox.new()
+	_spin_w.min_value = 1
+	_spin_w.max_value = 64
+	_spin_w.value = 1
+	_spin_w.suffix = " ancho"
+	_spin_w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spin_w.value_changed.connect(func(_v): _on_tiles_changed())
+	size_row.add_child(_spin_w)
+	var lbl_x := Label.new()
+	lbl_x.text = "×"
+	lbl_x.add_theme_font_size_override("font_size", 14)
+	size_row.add_child(lbl_x)
+	_spin_h = SpinBox.new()
+	_spin_h.min_value = 1
+	_spin_h.max_value = 64
+	_spin_h.value = 1
+	_spin_h.suffix = " alto"
+	_spin_h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_spin_h.value_changed.connect(func(_v): _on_tiles_changed())
+	size_row.add_child(_spin_h)
+
 	# Category dropdown
 	var type_row := HBoxContainer.new()
 	type_row.add_theme_constant_override("separation", 6)
@@ -71,7 +100,7 @@ func _ready() -> void:
 	_spin_capa.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	capa_row.add_child(_spin_capa)
 
-	# Preview
+	# Preview + summary
 	root.add_child(_separator())
 
 	_lbl_summary = Label.new()
@@ -79,6 +108,13 @@ func _ready() -> void:
 	_lbl_summary.add_theme_color_override("font_color", Color(0.7, 0.7, 0.75))
 	_lbl_summary.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(_lbl_summary)
+
+	_lbl_warn = Label.new()
+	_lbl_warn.add_theme_font_size_override("font_size", 11)
+	_lbl_warn.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3))
+	_lbl_warn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_lbl_warn.visible = false
+	root.add_child(_lbl_warn)
 
 	_preview = TextureRect.new()
 	_preview.custom_minimum_size = Vector2(0, 180)
@@ -112,15 +148,16 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 
 	var fw: int = frame.get("w", 0)
 	var fh: int = frame.get("h", 0)
-	_tiles_w = maxi(fw / 32, 1)
-	_tiles_h = maxi(fh / 32, 1)
 
-	# Validate: frame must be divisible by 32
-	if fw % 32 != 0 or fh % 32 != 0 or fw < 32 or fh < 32:
-		_lbl_summary.text = "El frame debe ser divisible por 32px (%dx%d)" % [fw, fh]
-		_btn_save.disabled = true
-	else:
-		_btn_save.disabled = false
+	# Pre-calculate tiles from frame size (default suggestion)
+	var suggested_w := maxi(fw / 32, 1)
+	var suggested_h := maxi(fh / 32, 1)
+
+	# Set max based on frame pixel size / 32
+	_spin_w.max_value = maxi(fw / 32, 1)
+	_spin_h.max_value = maxi(fh / 32, 1)
+	_spin_w.value = suggested_w
+	_spin_h.value = suggested_h
 
 	# Populate category dropdown
 	_opt_type.clear()
@@ -132,8 +169,42 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 			break
 
 	_input_name.text = ""
-	_update_preview()
+	_on_tiles_changed()
 	popup_centered()
+
+
+func _on_tiles_changed() -> void:
+	_tiles_w = int(_spin_w.value)
+	_tiles_h = int(_spin_h.value)
+	_validate_and_preview()
+
+
+func _validate_and_preview() -> void:
+	if _source_texture == null or _source_frame.is_empty():
+		return
+
+	var fw: int = _source_frame.get("w", 0)
+	var fh: int = _source_frame.get("h", 0)
+	var is_single := (_tiles_w == 1 and _tiles_h == 1)
+	var needed_w := _tiles_w * 32
+	var needed_h := _tiles_h * 32
+
+	# Validate: frame must be large enough for the tile grid
+	var valid := true
+	_lbl_warn.visible = false
+
+	if not is_single:
+		if needed_w > fw or needed_h > fh:
+			_lbl_warn.text = "Frame %dx%d es menor que %dx%d px necesarios" % [fw, fh, needed_w, needed_h]
+			_lbl_warn.visible = true
+			valid = false
+		elif fw % 32 != 0 or fh % 32 != 0:
+			_lbl_warn.text = "Frame debe ser divisible por 32px (%dx%d)" % [fw, fh]
+			_lbl_warn.visible = true
+			valid = false
+
+	_btn_save.disabled = not valid
+	_update_preview()
 
 
 func _update_preview() -> void:
@@ -144,20 +215,31 @@ func _update_preview() -> void:
 	var sy: int = _source_frame.get("sy", 0)
 	var fw: int = _source_frame.get("w", 0)
 	var fh: int = _source_frame.get("h", 0)
-	var total := _tiles_w * _tiles_h
+	var is_single := (_tiles_w == 1 and _tiles_h == 1)
 
 	var img := _source_texture.get_image()
 	if img == null:
 		return
 
-	# Crop the region from the source image
-	var crop_w := mini(fw, img.get_width() - sx)
-	var crop_h := mini(fh, img.get_height() - sy)
-	if crop_w > 0 and crop_h > 0:
-		var region := img.get_region(Rect2i(sx, sy, crop_w, crop_h))
-		_preview.texture = ImageTexture.create_from_image(region)
-
-	_lbl_summary.text = "Textura %d×%d = %d GRHs de 32×32 (%dx%d px)" % [_tiles_w, _tiles_h, total, fw, fh]
+	if is_single:
+		# 1x1: show the full frame as-is
+		var crop_w := mini(fw, img.get_width() - sx)
+		var crop_h := mini(fh, img.get_height() - sy)
+		if crop_w > 0 and crop_h > 0:
+			var region := img.get_region(Rect2i(sx, sy, crop_w, crop_h))
+			_preview.texture = ImageTexture.create_from_image(region)
+		_lbl_summary.text = "1×1 = 1 GRH (%dx%d px, sin dividir)" % [fw, fh]
+	else:
+		# NxM: show the tile grid area
+		var pw := _tiles_w * 32
+		var ph := _tiles_h * 32
+		var crop_w := mini(pw, img.get_width() - sx)
+		var crop_h := mini(ph, img.get_height() - sy)
+		if crop_w > 0 and crop_h > 0:
+			var region := img.get_region(Rect2i(sx, sy, crop_w, crop_h))
+			_preview.texture = ImageTexture.create_from_image(region)
+		var total := _tiles_w * _tiles_h
+		_lbl_summary.text = "%d×%d = %d GRHs de 32×32 (%dx%d px)" % [_tiles_w, _tiles_h, total, pw, ph]
 
 
 func _on_save() -> void:
