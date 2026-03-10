@@ -26,6 +26,8 @@ const TYPE_LABELS: Array[String] = [
 var grh_data: Dictionary = {}           # {"entries": {grh_idx: {...}}, "max_index": N}
 var graficos_folder: String = ""        # Path to Graficos/ for loading textures
 var init_folder: String = ""            # Path to INIT/
+## Wrapped in Dictionary for reference semantics: {"lines": PackedStringArray}
+var indices_ini_ref: Dictionary = {}  # {"lines": PackedStringArray} — shared with Main
 
 var bodies_data: Array = []             # [{index, walk_n/e/s/w, head_x, head_y}]
 var heads_data: Array = []              # [{index, head_n/e/s/w}]
@@ -837,6 +839,12 @@ func _on_save_raw_file() -> void:
 		data_changed.emit()
 		return
 
+	# indices.ini: save back to in-memory lines
+	if filename == "indices.ini" and indices_ini_ref.has("lines"):
+		indices_ini_ref["lines"] = _raw_text_edit.text.split("\n")
+		data_changed.emit()
+		return
+
 	# Other .ind: still read-only
 	if ext == "ind":
 		return
@@ -856,6 +864,12 @@ func _load_raw_file(path: String) -> void:
 	# Graficos.ind: dump from in-memory grh_data (editable)
 	if "graficos" in filename and ext == "ind":
 		_raw_text_edit.text = GrhIO.to_text(grh_data)
+		_raw_text_edit.editable = true
+		return
+
+	# indices.ini: show in-memory version (editable)
+	if filename == "indices.ini" and indices_ini_ref.has("lines"):
+		_raw_text_edit.text = "\n".join(indices_ini_ref["lines"])
 		_raw_text_edit.editable = true
 		return
 

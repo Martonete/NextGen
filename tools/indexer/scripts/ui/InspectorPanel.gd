@@ -260,6 +260,11 @@ func set_asset_init_folder(path: String) -> void:
 		_asset_browser.init_folder = path
 
 
+func set_asset_indices_ini(ref: Dictionary) -> void:
+	if _asset_browser:
+		_asset_browser.indices_ini_ref = ref
+
+
 func refresh_asset_browser() -> void:
 	if _asset_browser:
 		_asset_browser.refresh()

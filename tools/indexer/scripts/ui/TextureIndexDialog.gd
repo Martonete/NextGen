@@ -26,6 +26,7 @@ var _source_frame: Dictionary = {}
 var _source_texture: ImageTexture = null
 var _tiles_w: int = 0
 var _tiles_h: int = 0
+var _last_category: String = ""
 
 
 func _ready() -> void:
@@ -207,12 +208,13 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 	_btn_split.visible = false
 	_split_done = false
 
-	# Populate category dropdown
+	# Populate category dropdown, remember last selection
 	_opt_type.clear()
 	for cat in categories:
 		_opt_type.add_item(cat)
+	var target_cat := _last_category if not _last_category.is_empty() else "Terreno"
 	for i in range(_opt_type.item_count):
-		if _opt_type.get_item_text(i) == "Terreno":
+		if _opt_type.get_item_text(i) == target_cat:
 			_opt_type.select(i)
 			break
 
@@ -361,6 +363,7 @@ func _on_save() -> void:
 	if name_text.is_empty():
 		name_text = "Textura %dx%d" % [_tiles_w, _tiles_h]
 
+	_last_category = category
 	confirmed.emit(name_text, category, capa)
 	hide()
 

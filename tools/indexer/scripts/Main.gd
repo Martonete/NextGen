@@ -31,7 +31,7 @@ var _weapons_data: Array = []
 var _shields_data: Array = []
 var _fxs_data: Array = []
 var _mi_cabecera_fxs: PackedByteArray = PackedByteArray()
-var _indices_ini_data: PackedStringArray = []  # Raw lines of indices.ini
+var _indices_ini_ref: Dictionary = {"lines": PackedStringArray([])}  # Wrapped for ref sharing
 var _indices_ini_data_original: PackedStringArray = []  # Snapshot at load time
 var _indices_categories: PackedStringArray = []  # Unique category names
 var _dirty: bool = false  # True when there are unsaved changes in memory
@@ -566,10 +566,10 @@ func _load_client_folder(path: String) -> void:
 		if FileAccess.file_exists(indices_path):
 			var f := FileAccess.open(indices_path, FileAccess.READ)
 			if f != null:
-				_indices_ini_data = f.get_as_text().split("\n")
-				_indices_ini_data_original = _indices_ini_data.duplicate()
+				_indices_ini_ref["lines"] = f.get_as_text().split("\n")
+				_indices_ini_data_original = _indices_ini_ref["lines"].duplicate()
 				f.close()
-				_indices_categories = _parse_indices_categories(_indices_ini_data)
+				_indices_categories = _parse_indices_categories(_indices_ini_ref["lines"])
 				msgs.append("indices.ini: %d categorías" % _indices_categories.size())
 
 		_inspector.load_init_files(_init_folder)
@@ -577,6 +577,7 @@ func _load_client_folder(path: String) -> void:
 			_weapons_data, _shields_data, _fxs_data)
 		_inspector.set_asset_grh_data(_grh_data)
 		_inspector.set_asset_init_folder(_init_folder)
+		_inspector.set_asset_indices_ini(_indices_ini_ref)
 	if not _graficos_folder_path.is_empty():
 		_inspector.set_asset_graficos_folder(_graficos_folder_path)
 		msgs.append("INIT: archivos cargados")
@@ -1497,7 +1498,7 @@ func _show_save_confirm_dialog() -> void:
 	if not ini_path.is_empty():
 		var cur_refs := 0
 		var orig_refs := 0
-		for line in _indices_ini_data:
+		for line in _indices_ini_ref["lines"]:
 			if line.strip_edges().begins_with("Referencias="):
 				cur_refs = int(line.strip_edges().substr(12))
 				break
@@ -1552,10 +1553,10 @@ func _on_save_confirmed() -> void:
 
 	# Save indices.ini
 	var ini_path := _get_init_path("indices.ini")
-	if not ini_path.is_empty() and _indices_ini_data.size() > 0:
+	if not ini_path.is_empty() and _indices_ini_ref["lines"].size() > 0:
 		var f := FileAccess.open(ini_path, FileAccess.WRITE)
 		if f != null:
-			f.store_string("\n".join(_indices_ini_data))
+			f.store_string("\n".join(_indices_ini_ref["lines"]))
 			f.close()
 			saved.append("indices.ini")
 
@@ -1586,7 +1587,7 @@ func _on_save_confirmed() -> void:
 		for key in _grh_data["entries"]:
 			_grh_data_original[key] = _grh_data["entries"][key].duplicate()
 	if saved.has("indices.ini"):
-		_indices_ini_data_original = _indices_ini_data.duplicate()
+		_indices_ini_data_original = _indices_ini_ref["lines"].duplicate()
 
 	_dirty = false
 	_refresh_all()
@@ -2397,12 +2398,12 @@ func _on_texture_index_final() -> void:
 
 
 func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alto: int, capa: int, category: String) -> void:
-	# Memory-only — updates _indices_ini_data, does NOT write to disk
+	# Memory-only — updates _indices_ini_ref["lines"], does NOT write to disk
 	# Find current ref count
 	var ref_count: int = 0
 	var ref_line_idx: int = -1
-	for i in range(_indices_ini_data.size()):
-		var line := _indices_ini_data[i].strip_edges()
+	for i in range(_indices_ini_ref["lines"].size()):
+		var line := _indices_ini_ref["lines"][i].strip_edges()
 		if line.begins_with("Referencias="):
 			ref_count = int(line.substr(12))
 			ref_line_idx = i
@@ -2412,20 +2413,20 @@ func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alt
 
 	# Update count
 	if ref_line_idx >= 0:
-		_indices_ini_data[ref_line_idx] = "Referencias=%d" % new_ref
+		_indices_ini_ref["lines"][ref_line_idx] = "Referencias=%d" % new_ref
 	else:
 		var header: PackedStringArray = ["[INIT]", "Referencias=%d" % new_ref, ""]
-		_indices_ini_data = header + _indices_ini_data
+		_indices_ini_ref["lines"] = header + _indices_ini_ref["lines"]
 
 	# Append new section
-	_indices_ini_data.append("")
-	_indices_ini_data.append("[REFERENCIA%d]" % new_ref)
-	_indices_ini_data.append("Nombre=%s" % tex_name)
-	_indices_ini_data.append("GrhIndice=%d" % grh_index)
-	_indices_ini_data.append("Ancho=%d" % ancho)
-	_indices_ini_data.append("Alto=%d" % alto)
-	_indices_ini_data.append("Capa=%d" % capa)
-	_indices_ini_data.append("Type=%s" % category)
+	_indices_ini_ref["lines"].append("")
+	_indices_ini_ref["lines"].append("[REFERENCIA%d]" % new_ref)
+	_indices_ini_ref["lines"].append("Nombre=%s" % tex_name)
+	_indices_ini_ref["lines"].append("GrhIndice=%d" % grh_index)
+	_indices_ini_ref["lines"].append("Ancho=%d" % ancho)
+	_indices_ini_ref["lines"].append("Alto=%d" % alto)
+	_indices_ini_ref["lines"].append("Capa=%d" % capa)
+	_indices_ini_ref["lines"].append("Type=%s" % category)
 
 	# Update category list
 	if not _indices_categories.has(category):
