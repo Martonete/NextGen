@@ -49,6 +49,8 @@ var _props_updating: bool = false
 
 var _spin_split_w: SpinBox
 var _spin_split_h: SpinBox
+var _spin_resize_w: SpinBox
+var _spin_resize_h: SpinBox
 
 var _frame_list_vbox: VBoxContainer
 var _lbl_frame_count: Label
@@ -649,6 +651,42 @@ func _build_frames_tab() -> Control:
 	split_row.add_child(_spin_split_h)
 	split_row.add_child(IndexerTheme.button("Cortar", _on_split_btn, IndexerTheme.TEXT_ACCENT))
 
+	# ── Resize presets ──
+	_props_box.add_child(IndexerTheme.label("Tamaño:", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM))
+
+	# Row 1: common square sizes
+	var preset_row1 := HBoxContainer.new()
+	preset_row1.add_theme_constant_override("separation", 3)
+	_props_box.add_child(preset_row1)
+	for sz in [32, 48, 64, 96, 128, 192, 256]:
+		var label := "%d²" % sz
+		var w := sz
+		var h := sz
+		preset_row1.add_child(_make_resize_preset_btn(label, w, h))
+
+	# Row 2: common rectangular sizes
+	var preset_row2 := HBoxContainer.new()
+	preset_row2.add_theme_constant_override("separation", 3)
+	_props_box.add_child(preset_row2)
+	for pair in [[64, 128], [128, 192], [128, 256], [192, 256], [192, 384], [256, 512]]:
+		var label := "%dx%d" % [pair[0], pair[1]]
+		preset_row2.add_child(_make_resize_preset_btn(label, pair[0], pair[1]))
+
+	# Custom resize: W x H inputs + button
+	var custom_row := HBoxContainer.new()
+	custom_row.add_theme_constant_override("separation", 3)
+	_props_box.add_child(custom_row)
+	_spin_resize_w = IndexerTheme.spinbox(8, 16383, 128)
+	_spin_resize_w.custom_minimum_size.x = 58
+	_spin_resize_w.step = 8
+	custom_row.add_child(_spin_resize_w)
+	custom_row.add_child(IndexerTheme.label("x", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	_spin_resize_h = IndexerTheme.spinbox(8, 16383, 128)
+	_spin_resize_h.custom_minimum_size.x = 58
+	_spin_resize_h.step = 8
+	custom_row.add_child(_spin_resize_h)
+	custom_row.add_child(IndexerTheme.button("Aplicar", _on_resize_custom_btn, IndexerTheme.TEXT_ACCENT))
+
 	# ── Resizable split: frame list (top) + related anims + anim creator (bottom) ──
 	var split := VSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1159,6 +1197,53 @@ func _on_save_init_btn() -> void:
 
 func _on_split_btn() -> void:
 	split_frame_pressed.emit(int(_spin_split_w.value), int(_spin_split_h.value))
+
+
+func _make_resize_preset_btn(label: String, w: int, h: int) -> Button:
+	var btn := Button.new()
+	btn.text = label
+	btn.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM - 1)
+	btn.custom_minimum_size.x = 0
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = IndexerTheme.BG_BTN_GHOST
+	sb.set_corner_radius_all(3)
+	sb.set_content_margin_all(2)
+	sb.content_margin_left = 4
+	sb.content_margin_right = 4
+	btn.add_theme_stylebox_override("normal", sb)
+	var sb_hover := StyleBoxFlat.new()
+	sb_hover.bg_color = IndexerTheme.ACCENT.darkened(0.3)
+	sb_hover.set_corner_radius_all(3)
+	sb_hover.set_content_margin_all(2)
+	sb_hover.content_margin_left = 4
+	sb_hover.content_margin_right = 4
+	btn.add_theme_stylebox_override("hover", sb_hover)
+	btn.pressed.connect(func(): _apply_resize_preset(w, h))
+	return btn
+
+
+func _apply_resize_preset(w: int, h: int) -> void:
+	# Resize the selected frame: keep center, apply new size
+	var sx := int(_spin_sx.value)
+	var sy := int(_spin_sy.value)
+	var old_w := int(_spin_fw.value)
+	var old_h := int(_spin_fh.value)
+	var cx := sx + old_w / 2
+	var cy := sy + old_h / 2
+	var new_sx := cx - w / 2
+	var new_sy := cy - h / 2
+	_props_updating = true
+	_spin_sx.value = new_sx
+	_spin_sy.value = new_sy
+	_spin_fw.value = w
+	_spin_fh.value = h
+	_props_updating = false
+	_on_props_changed()
+
+
+func _on_resize_custom_btn() -> void:
+	_apply_resize_preset(int(_spin_resize_w.value), int(_spin_resize_h.value))
 
 
 func _build_anim_creator_window() -> void:
