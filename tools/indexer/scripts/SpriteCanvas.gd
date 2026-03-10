@@ -508,12 +508,14 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 				var old := _zoom
 				_zoom = minf(_zoom * 1.15, 32.0)
 				_pan = mb.position - (mb.position - _pan) * (_zoom / old)
+				accept_event()
 				queue_redraw()
 		MOUSE_BUTTON_WHEEL_DOWN:
 			if mb.pressed:
 				var old := _zoom
 				_zoom = maxf(_zoom / 1.15, 0.02)
 				_pan = mb.position - (mb.position - _pan) * (_zoom / old)
+				accept_event()
 				queue_redraw()
 		MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT:
 			_panning = mb.pressed
