@@ -12,6 +12,7 @@ var _all_files: Array[String] = []
 var _filtered_indices: Array[int] = []  # indices into _all_files matching filter
 var _thumb_queue: Array[int] = []       # indices into _all_files pending thumb load
 var _loaded_thumbs: Dictionary = {}     # path -> bool
+var _pending_scroll: int = -1           # list index to keep visible while thumbs load
 
 # External: set by Main when using client mode
 var _using_client: bool = false
@@ -82,6 +83,11 @@ func process_thumbnails(count: int = 5) -> void:
 		var file_idx: int = _thumb_queue.pop_front()
 		_load_thumb(file_idx)
 		processed += 1
+	# Keep selected item visible while thumbnails shift layout
+	if processed > 0 and _pending_scroll >= 0:
+		_file_list.ensure_current_is_visible()
+		if _thumb_queue.is_empty():
+			_pending_scroll = -1
 
 
 func get_file_count() -> int:
@@ -118,6 +124,7 @@ func select_by_file_num(fnum: int) -> void:
 
 
 ## Select and scroll to a file number without emitting file_selected.
+## Keeps re-scrolling while thumbnails load to prevent drift.
 func scroll_to_file_num(fnum: int) -> void:
 	for i in range(_all_files.size()):
 		if get_file_num(_all_files[i]) == fnum:
@@ -125,6 +132,7 @@ func scroll_to_file_num(fnum: int) -> void:
 				if _filtered_indices[j] == i:
 					_file_list.select(j)
 					_file_list.ensure_current_is_visible()
+					_pending_scroll = j
 					return
 			_search_edit.text = ""
 			_apply_filter()
@@ -132,6 +140,7 @@ func scroll_to_file_num(fnum: int) -> void:
 				if _filtered_indices[j] == i:
 					_file_list.select(j)
 					_file_list.ensure_current_is_visible()
+					_pending_scroll = j
 					return
 			return
 
