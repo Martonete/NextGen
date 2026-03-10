@@ -2,10 +2,11 @@
 //! Extracted from mod.rs to reduce file size.
 
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, InventorySlot};
+use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::protocol::font_index;
 use crate::data::balance;
 use super::common::*;
+use super::send_inventory_slot;
 
 /// VB6: GiveFactionArmours — give 3 tiers of faction armor based on class+race+faction+rank.
 async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_caos: bool) {
@@ -24,13 +25,14 @@ async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_c
         let amount = balance::faction_armor_amount(rango, tier);
         if amount <= 0 { continue; }
 
-        // Try to add to inventory (stack or empty slot)
+        // Try to add to inventory (stack or empty slot within current_inventory_slots)
         let added = if let Some(user) = state.users.get_mut(&conn_id) {
+            let max_slots = user.current_inventory_slots;
             // First try stacking
             if let Some(slot_idx) = user.inventory.iter().position(|s| s.obj_index == obj_index && !s.equipped) {
                 user.inventory[slot_idx].amount += amount;
                 Some(slot_idx)
-            } else if let Some(slot_idx) = user.inventory.iter().position(|s| s.obj_index == 0) {
+            } else if let Some(slot_idx) = user.inventory.iter().take(max_slots).position(|s| s.obj_index == 0) {
                 user.inventory[slot_idx] = InventorySlot { obj_index, amount, equipped: false };
                 Some(slot_idx)
             } else {
@@ -333,6 +335,100 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
     }
 
     state.send_console(conn_id, "Has renunciado a tu faccion.", font_index::INFO).await;
+}
+
+/// /DESERTAR — Desert from faction. VB6: ExpulsarFaccionReal/ExpulsarFaccionCaos.
+/// Resets faction flag, unequips faction armor/shield, removes faction armors from inventory.
+pub(super) async fn handle_slash_desertar(state: &mut GameState, conn_id: ConnectionId) {
+    let (armada, caos) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.armada_real, u.fuerzas_caos),
+        _ => return,
+    };
+
+    if !armada && !caos {
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        return;
+    }
+
+    let is_real = armada;
+
+    // Unequip faction armor if equipped (VB6: ObjData(ArmourEqpObjIndex).Real/Caos = 1)
+    let armor_slot = state.users.get(&conn_id).map(|u| u.equip.armor).unwrap_or(0);
+    if armor_slot > 0 && armor_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id).map(|u| u.inventory[armor_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_faction = state.game_data.objects.get(obj_idx as usize)
+                .map(|o| if is_real { o.real } else { o.caos })
+                .unwrap_or(false);
+            if is_faction {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[armor_slot - 1].equipped = false;
+                    user.equip.armor = 0;
+                }
+                send_inventory_slot(state, conn_id, armor_slot - 1).await;
+            }
+        }
+    }
+
+    // Unequip faction shield if equipped (VB6: ObjData(EscudoEqpObjIndex).Real/Caos = 1)
+    let shield_slot = state.users.get(&conn_id).map(|u| u.equip.shield).unwrap_or(0);
+    if shield_slot > 0 && shield_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id).map(|u| u.inventory[shield_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_faction = state.game_data.objects.get(obj_idx as usize)
+                .map(|o| if is_real { o.real } else { o.caos })
+                .unwrap_or(false);
+            if is_faction {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[shield_slot - 1].equipped = false;
+                    user.equip.shield = 0;
+                    user.shield_anim = 0;
+                }
+                send_inventory_slot(state, conn_id, shield_slot - 1).await;
+            }
+        }
+    }
+
+    // Remove all faction armors from inventory
+    let mut slots_to_clear = Vec::new();
+    if let Some(user) = state.users.get(&conn_id) {
+        for i in 0..MAX_INVENTORY_SLOTS {
+            let obj_idx = user.inventory[i].obj_index;
+            if obj_idx <= 0 { continue; }
+            let is_faction = state.game_data.objects.get(obj_idx as usize)
+                .map(|o| if is_real { o.real } else { o.caos })
+                .unwrap_or(false);
+            if is_faction {
+                slots_to_clear.push(i);
+            }
+        }
+    }
+    for slot_idx in &slots_to_clear {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.inventory[*slot_idx] = InventorySlot::default();
+        }
+        send_inventory_slot(state, conn_id, *slot_idx).await;
+    }
+
+    // Reset faction state
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        if is_real {
+            user.armada_real = false;
+            user.criminales_matados = 0;
+            user.recompensas_real = 0;
+        } else {
+            user.fuerzas_caos = false;
+            user.ciudadanos_matados = 0;
+            user.recompensas_caos = 0;
+        }
+        user.reenlistadas = true; // Cannot re-enlist
+    }
+
+    if is_real {
+        state.send_console(conn_id, "Has desertado de la Armada Real.", font_index::FIGHT).await;
+    } else {
+        state.send_console(conn_id, "Has desertado de las Fuerzas del Caos.", font_index::FIGHT).await;
+    }
 }
 
 // =====================================================================

@@ -71,7 +71,7 @@ use crate::db::{accounts, charfile, guilds};
 use crate::db::password;
 use crate::data::objects::ObjType;
 use crate::data::maps::Trigger;
-use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
+use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
 use super::world;
 use super::npc;
 use crate::data::npcs::NpcType;
@@ -1399,6 +1399,23 @@ async fn connect_user(
             ring: ring_slot,
         };
 
+        // Restore backpack (VB6: MochilaEqpSlot → CurrentInventorySlots on login)
+        user.backpack_slot = 0;
+        user.current_inventory_slots = MAX_NORMAL_INVENTORY_SLOTS;
+        for i in 0..MAX_INVENTORY_SLOTS {
+            if user.inventory[i].equipped && user.inventory[i].obj_index > 0 {
+                let oi = user.inventory[i].obj_index as usize;
+                if let Some(obj) = state.game_data.objects.get(oi.wrapping_sub(1)) {
+                    if obj.obj_type == ObjType::Backpack {
+                        user.backpack_slot = i + 1; // 1-indexed
+                        let new_slots = MAX_NORMAL_INVENTORY_SLOTS + (obj.mochila_type as usize) * 5;
+                        user.current_inventory_slots = new_slots.min(MAX_INVENTORY_SLOTS);
+                        break;
+                    }
+                }
+            }
+        }
+
         // Bank
         for (i, &(obj_idx, amount)) in char_data.bank.iter().enumerate() {
             if i < user.bank.len() {
@@ -2385,6 +2402,8 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_recompensa(state, conn_id).await;
     } else if cmd_upper.starts_with("/RENUNCIA") {
         handle_slash_renunciar(state, conn_id).await;
+    } else if cmd_upper == "/DESERTAR" {
+        handle_slash_desertar(state, conn_id).await;
     } else if cmd_upper.starts_with("/NUEVAPARTY") {
         handle_slash_nuevaparty(state, conn_id).await;
     } else if cmd_upper.starts_with("/PARTY ") {
@@ -2398,6 +2417,12 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_finparty(state, conn_id).await;
     } else if cmd_upper.starts_with("/PINFO") {
         handle_slash_pinfo(state, conn_id).await;
+    } else if cmd_upper.starts_with("/SACAR ") {
+        let target = cmd[7..].trim();
+        handle_slash_sacar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/DARPARTIDO ") {
+        let target = cmd[12..].trim();
+        handle_slash_darpartido(state, conn_id, target).await;
     } else if cmd_upper == "/ONLINE" {
         handle_slash_online(state, conn_id).await;
     } else if cmd_upper == "/PING" {
@@ -2566,6 +2591,8 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/DESC ") {
         let desc = cmd[6..].trim();
         handle_slash_desc(state, conn_id, desc).await;
+    } else if cmd_upper == "/VERASPEC" {
+        handle_slash_veraspec(state, conn_id).await;
     } else if cmd_upper == "/COMERCIAR" {
         handle_slash_comerciar(state, conn_id).await;
     } else if cmd_upper == "/BOVEDA" {

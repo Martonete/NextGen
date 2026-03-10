@@ -1,7 +1,7 @@
-//! Party system handlers (mdParty.bas).
+//! Party system handlers (mdParty.bas + clsParty.cls).
 
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, PartyState, MAX_PARTIES, MAX_PARTY_MEMBERS};
+use crate::game::types::{GameState, PartyState, MAX_PARTIES, MAX_PARTY_MEMBERS, PARTY_MAX_DISTANCE, MAX_DISTANCE_INGRESO_PARTY};
 use crate::protocol::font_index;
 use super::common::*;
 
@@ -48,7 +48,8 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
     state.send_console(conn_id, "Has creado un grupo. Usa /PARTY <nombre> para invitar jugadores.", font_index::INFO).await;
 }
 
-/// /PARTY <target> — Invite a player to party (leader only, max 3 tiles distance).
+/// /PARTY <target> — Invite a player to party (leader only, max 2 tiles distance).
+/// VB6: SolicitarIngresoAParty + AprobarIngresoAParty combined.
 pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
     let (party_index, map, x, y) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => (u.party_index, u.pos_map, u.pos_x, u.pos_y),
@@ -104,8 +105,8 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
         return;
     }
 
-    // Check distance (max 3 tiles)
-    if t_map != map || (t_x - x).abs() > 3 || (t_y - y).abs() > 3 {
+    // Check distance (VB6: MAXDISTANCIAINGRESOPARTY = 2)
+    if t_map != map || (t_x - x).abs() > MAX_DISTANCE_INGRESO_PARTY || (t_y - y).abs() > MAX_DISTANCE_INGRESO_PARTY {
         state.send_console(conn_id, "El jugador esta muy lejos.", font_index::INFO).await;
         return;
     }
@@ -280,6 +281,129 @@ pub(super) async fn handle_slash_pinfo(state: &mut GameState, conn_id: Connectio
     }
 }
 
+/// /SACAR <name> — Kick a member from party (leader only).
+/// VB6: ExpulsarDeParty in mdParty.bas
+pub(super) async fn handle_slash_sacar(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+    let party_index = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.party_index > 0 => u.party_index,
+        _ => {
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    // Must be leader
+    let is_leader = state.parties.get(party_index as usize)
+        .and_then(|p| p.as_ref())
+        .map(|p| p.leader == conn_id)
+        .unwrap_or(false);
+    if !is_leader {
+        state.send_console(conn_id, "Solo el lider puede expulsar jugadores.", font_index::INFO).await;
+        return;
+    }
+
+    // Find target
+    let target_conn = match state.online_names.get(&target_name.to_uppercase()) {
+        Some(&c) => c,
+        None => {
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    // Can't kick yourself (leader)
+    if target_conn == conn_id {
+        state.send_console(conn_id, "No puedes expulsarte a ti mismo. Usa /FINPARTY.", font_index::INFO).await;
+        return;
+    }
+
+    // Check target is in same party (VB6: PI = UserList(OldMember).PartyIndex, if PI = leader's PI)
+    let target_party = state.users.get(&target_conn).map(|u| u.party_index).unwrap_or(0);
+    if target_party != party_index {
+        let target_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+        state.send_console(conn_id, &format!("{} no pertenece a tu grupo.", target_display), font_index::INFO).await;
+        return;
+    }
+
+    let target_name_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+
+    // Remove from party
+    if let Some(Some(party)) = state.parties.get_mut(party_index as usize) {
+        party.members.retain(|&c| c != target_conn);
+    }
+
+    if let Some(user) = state.users.get_mut(&target_conn) {
+        user.party_index = 0;
+    }
+
+    // Notify
+    let notify = format!("{} ha sido expulsado del grupo.", target_name_display);
+    send_console_to_party(state, party_index, &notify, font_index::INFO).await;
+    state.send_console(target_conn, "Has sido expulsado del grupo.", font_index::INFO).await;
+}
+
+/// /DARPARTIDO <name> — Transfer party leadership (leader only).
+/// VB6: TransformarEnLider in mdParty.bas
+pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
+    let party_index = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.party_index > 0 => u.party_index,
+        _ => {
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    // Must be leader
+    let is_leader = state.parties.get(party_index as usize)
+        .and_then(|p| p.as_ref())
+        .map(|p| p.leader == conn_id)
+        .unwrap_or(false);
+    if !is_leader {
+        state.send_console(conn_id, "Solo el lider puede transferir el liderazgo.", font_index::INFO).await;
+        return;
+    }
+
+    // Find target
+    let target_conn = match state.online_names.get(&target_name.to_uppercase()) {
+        Some(&c) => c,
+        None => {
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    if target_conn == conn_id {
+        state.send_console(conn_id, "Ya eres el lider.", font_index::INFO).await;
+        return;
+    }
+
+    // Check target is in same party
+    let target_party = state.users.get(&target_conn).map(|u| u.party_index).unwrap_or(0);
+    if target_party != party_index {
+        let target_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+        state.send_console(conn_id, &format!("{} no pertenece a tu grupo.", target_display), font_index::INFO).await;
+        return;
+    }
+
+    // Check target not dead (VB6 check)
+    let target_dead = state.users.get(&target_conn).map(|u| u.dead).unwrap_or(true);
+    if target_dead {
+        state.send_console(conn_id, "Esta muerto!", font_index::INFO).await;
+        return;
+    }
+
+    let target_name_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+    let old_leader_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+
+    // Transfer leadership (VB6: HacerLeader swaps positions in array)
+    if let Some(Some(party)) = state.parties.get_mut(party_index as usize) {
+        party.leader = target_conn;
+    }
+
+    let notify = format!("El nuevo lider del grupo es {}.", target_name_display);
+    send_console_to_party(state, party_index, &notify, font_index::INFO).await;
+}
+
 /// Send binary packet to all party members.
 pub(super) async fn send_to_party(state: &mut GameState, party_index: i32, data: &[u8]) {
     let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
@@ -304,7 +428,9 @@ pub(super) async fn send_console_to_party(state: &mut GameState, party_index: i3
     }
 }
 
-/// Share experience among party members within 15 tiles.
+/// Share experience among party members within 18 tiles.
+/// VB6: clsParty.ObtenerExito — Formula: Exp * (Level ^ ExponenteNivelParty) / SumaNivelesElevados
+/// ExponenteNivelParty default = 1.75 (from Balance.dat)
 pub async fn party_share_exp(state: &mut GameState, killer_conn: ConnectionId, total_exp: i64) {
     let (party_index, map, x, y) = match state.users.get(&killer_conn) {
         Some(u) if u.logged && u.party_index > 0 => (u.party_index, u.pos_map, u.pos_x, u.pos_y),
@@ -316,25 +442,37 @@ pub async fn party_share_exp(state: &mut GameState, killer_conn: ConnectionId, t
         .map(|p| p.members.clone())
         .unwrap_or_default();
 
-    // Filter members within 15 tiles on same map
-    let nearby: Vec<ConnectionId> = members.iter()
-        .copied()
-        .filter(|&c| {
-            state.users.get(&c)
-                .map(|u| u.logged && u.pos_map == map && (u.pos_x - x).abs() <= 15 && (u.pos_y - y).abs() <= 15)
-                .unwrap_or(false)
-        })
-        .collect();
+    let exponent = state.game_data.balance.exponente_nivel_party as f64;
 
-    if nearby.is_empty() { return; }
+    // Collect levels and filter nearby+alive members (VB6: same map, within PARTY_MAXDISTANCIA, not dead)
+    let mut nearby: Vec<(ConnectionId, f64)> = Vec::new();
+    let mut sum_levels_elevated: f64 = 0.0;
 
-    let share = total_exp / nearby.len() as i64;
-    if share <= 0 { return; }
-
-    for &member_conn in &nearby {
-        if let Some(user) = state.users.get_mut(&member_conn) {
-            user.exp += share;
+    for &c in &members {
+        if let Some(u) = state.users.get(&c) {
+            let level_elevated = (u.level as f64).powf(exponent);
+            // VB6: all members get their share calculated, but only nearby+alive receive it
+            if u.logged && u.pos_map == map && !u.dead
+                && (u.pos_x - x).abs() <= PARTY_MAX_DISTANCE
+                && (u.pos_y - y).abs() <= PARTY_MAX_DISTANCE
+            {
+                nearby.push((c, level_elevated));
+            }
+            // Sum ALL members' levels (VB6: p_SumaNivelesElevados includes everyone)
+            sum_levels_elevated += level_elevated;
         }
-        send_stats_exp(state, member_conn).await;
+    }
+
+    if nearby.is_empty() || sum_levels_elevated <= 0.0 { return; }
+
+    // VB6: expThisUser = ExpGanada * (Level ^ ExponenteNivelParty) / p_SumaNivelesElevados
+    for (member_conn, level_elevated) in &nearby {
+        let exp_this_user = (total_exp as f64 * level_elevated / sum_levels_elevated).floor() as i64;
+        if exp_this_user <= 0 { continue; }
+
+        if let Some(user) = state.users.get_mut(member_conn) {
+            user.exp += exp_this_user;
+        }
+        send_stats_exp(state, *member_conn).await;
     }
 }

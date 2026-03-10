@@ -123,6 +123,9 @@ pub struct NpcState {
     pub lanza_spells: i32,
     pub spells: Vec<i32>,
 
+    // VB6: AtacaDoble — 50% chance to cast spell instead of melee each AI tick
+    pub ataca_doble: bool,
+
     // Aura (VB6: Char.AuraA — dynamically set, e.g. pre-dragon 937 gets aura 3)
     pub aura: i32,
 
@@ -243,6 +246,7 @@ impl NpcState {
             counter_paralisis: 0,
             lanza_spells: data.lanza_spells,
             spells: data.spells.clone(),
+            ataca_doble: data.ataca_doble,
             aura: data.aura,
             maestro_user: None,
             area_id: 0,

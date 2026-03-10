@@ -212,12 +212,13 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
         return;
     }
 
-    // Find user inventory slot (try stacking first, then empty)
+    // Find user inventory slot (try stacking first, then empty within current_inventory_slots)
     let user_inv_slot = {
         let user = match state.users.get(&conn_id) {
             Some(u) => u,
             None => return,
         };
+        let max_slots = user.current_inventory_slots;
 
         // Try to stack
         let mut stack_slot = None;
@@ -227,7 +228,7 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
                 stack_slot = Some(i);
                 break;
             }
-            if inv.obj_index == 0 && empty_slot.is_none() {
+            if i < max_slots && inv.obj_index == 0 && empty_slot.is_none() {
                 empty_slot = Some(i);
             }
         }
@@ -1015,7 +1016,7 @@ pub(super) async fn handle_bank_close(state: &mut GameState, conn_id: Connection
 
 const MAX_GUILD_BANK_SLOTS: usize = 40;
 const MAX_GUILD_BANK_STACK: i32 = 999;
-const MAX_GUILD_BANK_GOLD: i64 = 999_999_999;
+const MAX_GUILD_BANK_GOLD: i64 = 90_000_000;
 
 /// Open guild bank — triggered by NpcType::BoveClan interaction.
 /// VB6: BIniciarDeposito — loads bank from file, sends INITCBANK with permissions.

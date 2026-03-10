@@ -13,8 +13,11 @@ use crate::net::connection::ConnectionWriter;
 use super::world::{self, CharIndex, WorldState};
 use super::npc::{NpcState, NpcIndex};
 
-/// Maximum inventory slots (VB6: MAX_INVENTORY_SLOTS = 25)
-pub const MAX_INVENTORY_SLOTS: usize = 25;
+/// Maximum possible inventory slots (VB6 13.3: MAX_INVENTORY_SLOTS = 30 with backpack).
+pub const MAX_INVENTORY_SLOTS: usize = 30;
+
+/// Normal inventory slots without backpack (VB6 13.3: MAX_NORMAL_INVENTORY_SLOTS = 20).
+pub const MAX_NORMAL_INVENTORY_SLOTS: usize = 20;
 
 /// Maximum spell slots (VB6: MAXUSERHECHIZOS)
 pub const MAX_SPELL_SLOTS: usize = 20;
@@ -116,9 +119,13 @@ pub struct UserState {
     pub skill_pts_libres: i32,  // Free skill points to distribute
     pub reputation: i32,
 
-    // Inventory (25 slots, 1-indexed in VB6 but 0-indexed here)
+    // Inventory (30 max slots, 1-indexed in VB6 but 0-indexed here)
     pub inventory: Vec<InventorySlot>,
     pub equip: EquipSlots,
+    /// Current inventory slot limit (VB6: CurrentInventorySlots). Default 20, expanded by backpack.
+    pub current_inventory_slots: usize,
+    /// Equipped backpack slot (VB6: MochilaEqpSlot, 1-indexed; 0 = none).
+    pub backpack_slot: usize,
 
     // Spells (20 slots)
     pub spells: [i32; MAX_SPELL_SLOTS],
@@ -229,6 +236,8 @@ pub struct UserState {
     pub resting: bool,         // VB6 flags.Descansar — resting (DOK) for faster HP/STA regen
     pub mimetizado: bool,      // VB6 flags.Mimetizado — disguised via Druid mimicry spell
     pub ignorado: bool,        // VB6 flags.Ignorado — ignored by NPCs (during mimicry)
+    pub en_consulta: bool,     // VB6 flags.EnConsulta — being attended by GM, NPCs skip
+    pub no_puede_ser_atacado: bool, // VB6 flags.NoPuedeSerAtacado — invulnerable to NPC aggro
     // Backup of original char appearance before mimicry
     pub char_mimetizado_body: i32,
     pub char_mimetizado_head: i32,
@@ -350,6 +359,8 @@ impl UserState {
             reputation: 0,
             inventory: (0..MAX_INVENTORY_SLOTS).map(|_| InventorySlot::default()).collect(),
             equip: EquipSlots::default(),
+            current_inventory_slots: MAX_NORMAL_INVENTORY_SLOTS,
+            backpack_slot: 0,
             spells: [0; MAX_SPELL_SLOTS],
             dead: false,
             hidden: false,
@@ -433,6 +444,8 @@ impl UserState {
             resting: false,
             mimetizado: false,
             ignorado: false,
+            en_consulta: false,
+            no_puede_ser_atacado: false,
             char_mimetizado_body: 0,
             char_mimetizado_head: 0,
             char_mimetizado_weapon: 0,
@@ -723,13 +736,15 @@ pub struct ForumData {
 }
 
 /// Party runtime state (matches VB6 tParty)
-pub const MAX_PARTIES: usize = 1000;
-pub const MAX_PARTY_MEMBERS: usize = 10;
+pub const MAX_PARTIES: usize = 300; // VB6: MAX_PARTIES
+pub const MAX_PARTY_MEMBERS: usize = 5; // VB6: PARTY_MAXMEMBERS
+pub const PARTY_MAX_DISTANCE: i32 = 18; // VB6: PARTY_MAXDISTANCIA (exp share range)
+pub const MAX_DISTANCE_INGRESO_PARTY: i32 = 2; // VB6: MAXDISTANCIAINGRESOPARTY
 
 #[derive(Debug, Clone)]
 pub struct PartyState {
     pub leader: ConnectionId,
-    pub members: Vec<ConnectionId>, // Up to 10 members (including leader)
+    pub members: Vec<ConnectionId>, // Up to 5 members (including leader)
 }
 
 impl GameState {
@@ -854,6 +869,32 @@ impl GameState {
                 // Remove from world grid
                 if user.pos_map > 0 {
                     self.world.remove_user(user.pos_map, user.pos_x, user.pos_y);
+                }
+                // VB6: SalirDeParty on disconnect — remove from party
+                if user.party_index > 0 {
+                    let pi = user.party_index as usize;
+                    let mut dissolve = false;
+                    if let Some(Some(party)) = self.parties.get_mut(pi) {
+                        if party.leader == conn_id {
+                            // Leader disconnects → party dissolves (VB6 behavior)
+                            dissolve = true;
+                        } else {
+                            party.members.retain(|&c| c != conn_id);
+                        }
+                    }
+                    if dissolve {
+                        // Clear all members' party_index
+                        let members: Vec<ConnectionId> = self.parties.get(pi)
+                            .and_then(|p| p.as_ref())
+                            .map(|p| p.members.clone())
+                            .unwrap_or_default();
+                        for &m in &members {
+                            if let Some(mu) = self.users.get_mut(&m) {
+                                mu.party_index = 0;
+                            }
+                        }
+                        self.parties[pi] = None;
+                    }
                 }
             }
         }

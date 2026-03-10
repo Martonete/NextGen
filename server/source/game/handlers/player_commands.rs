@@ -29,8 +29,8 @@ pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: Connection
         _ => return,
     };
 
-    if desc.len() > 200 {
-        state.send_console(conn_id, "Descripcion muy larga (max 200 caracteres).", font_index::INFO).await;
+    if desc.len() > 128 {
+        state.send_console(conn_id, "Descripcion muy larga (max 128 caracteres).", font_index::INFO).await;
         return;
     }
 
@@ -39,6 +39,34 @@ pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: Connection
     }
 
     state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO).await;
+}
+
+/// /VERASPEC — View target user's character description.
+/// VB6: uses TargetUser to look up description.
+pub(super) async fn handle_slash_veraspec(state: &mut GameState, conn_id: ConnectionId) {
+    let target_conn = match state.users.get(&conn_id) {
+        Some(u) if u.logged => u.target_user,
+        _ => return,
+    };
+
+    if target_conn == 0 {
+        state.send_console(conn_id, "Primero selecciona un jugador.", font_index::INFO).await;
+        return;
+    }
+
+    let (target_name, target_desc) = match state.users.get(&target_conn) {
+        Some(u) if u.logged => (u.char_name.clone(), u.desc.clone()),
+        _ => {
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            return;
+        }
+    };
+
+    if target_desc.is_empty() {
+        state.send_console(conn_id, &format!("{} no tiene descripcion.", target_name), font_index::INFO).await;
+    } else {
+        state.send_console(conn_id, &format!("[{}] {}", target_name, target_desc), font_index::INFO).await;
+    }
 }
 
 /// /COMERCIAR — Trade with target player (VB6: comManda). Requires mutual confirmation.

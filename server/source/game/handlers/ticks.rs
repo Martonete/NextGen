@@ -56,12 +56,12 @@ pub async fn tick_npc_ai(state: &mut GameState) {
         let npc_data = match state.get_npc(npc_idx) {
             Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target,
                         n.lanza_spells, n.spells.clone(), n.npc_type, n.attacked_by.clone(),
-                        n.min_hp, n.max_hp, n.alineacion),
+                        n.min_hp, n.max_hp, n.alineacion, n.ataca_doble),
             None => continue,
         };
         let (movement, hostile, can_attack, map, x, y, target,
              lanza_spells, spells, npc_type, attacked_by,
-             cur_hp, max_hp, alineacion) = npc_data;
+             cur_hp, max_hp, alineacion, ataca_doble) = npc_data;
 
         // Skip NPCs on maps with no users (VB6 optimization)
         let map_users = state.map_user_counts.get(&map).copied().unwrap_or(0);
@@ -119,7 +119,14 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // First: check adjacent tiles for attack
                 if can_attack {
                     if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
-                        npc_attack_user(state, npc_idx, target_conn).await;
+                        // VB6 AtacaDoble: 50% chance to cast spell instead of melee
+                        if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
+                            let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                            let spell_id = spells[spell_idx];
+                            npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                        } else {
+                            npc_attack_user(state, npc_idx, target_conn).await;
+                        }
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
                             n.target = Some(target_conn);
@@ -279,12 +286,11 @@ pub async fn tick_npc_ai(state: &mut GameState) {
             }
 
             npc::AI_GUARD => {
-                // VB6 AI_AI_Guardia — Royal guards chase criminals, Chaos guards chase citizens
-                // Castle guards (map 620/621) don't move
+                // VB6 AI_AI_Guardia — Guards do NOT chase players.
+                // They only attack adjacent hostile players (±1 tile).
+                // Royal guards attack criminals, Chaos guards attack citizens.
                 let is_royal = npc_type == NpcType::RoyalGuard || alineacion == 1;
-                let is_castle = map == 620 || map == 621;
 
-                // First check adjacent for attack
                 if can_attack {
                     if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
                         let should_attack = if is_royal {
@@ -298,41 +304,6 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
-                        }
-                    }
-                }
-
-                // Chase behavior (skip for castle guards)
-                if !is_castle {
-                    let chase_target = if is_royal {
-                        find_nearest_criminal(state, map, x, y)
-                    } else {
-                        find_nearest_citizen(state, map, x, y)
-                    };
-
-                    if let Some(target_conn) = chase_target {
-                        let target_pos = state.users.get(&target_conn)
-                            .filter(|u| u.logged && !u.dead && u.pos_map == map)
-                            .map(|u| (u.pos_x, u.pos_y));
-
-                        if let Some((tx, ty)) = target_pos {
-                            let dist = (x - tx).abs() + (y - ty).abs();
-                            if dist > 1 {
-                                let heading = chase_heading(x, y, tx, ty);
-                                {
-                                    let (moved, ghost) = move_npc(state, npc_idx, heading);
-                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                                    if moved { send_npc_move(state, npc_idx).await; }
-                                }
-                            }
-                        }
-                    } else if rand_range(1, 12) == 3 {
-                        // No target — random wander
-                        let heading = rand_range(1, 4);
-                        {
-                            let (moved, ghost) = move_npc(state, npc_idx, heading);
-                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
-                            if moved { send_npc_move(state, npc_idx).await; }
                         }
                     }
                 }
@@ -710,8 +681,10 @@ pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) 
             if let Some(tile) = grid.tile(tx, ty) {
                 if let Some(conn) = tile.user_conn {
                     // Check if player is alive, logged, and NOT a GM (VB6: Privilegios = User)
+                    // VB6: skip NoPuedeSerAtacado, Ignorado, EnConsulta
                     if let Some(user) = state.users.get(&conn) {
-                        if user.logged && !user.dead && user.privileges == 0 && !user.admin_invisible {
+                        if user.logged && !user.dead && user.privileges == 0 && !user.admin_invisible
+                            && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta {
                             return Some((conn, heading));
                         }
                     }
@@ -739,7 +712,8 @@ pub(super) fn find_nearest_player(state: &GameState, map: i32, x: i32, y: i32) -
                 if let Some(tile) = grid.tile(cx, cy) {
                     if let Some(conn) = tile.user_conn {
                         if let Some(user) = state.users.get(&conn) {
-                            if user.logged && !user.dead && user.privileges == 0 {
+                            if user.logged && !user.dead && user.privileges == 0
+                                && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta {
                                 let dist = (x - cx).abs() + (y - cy).abs();
                                 if best.is_none() || dist < best.unwrap().1 {
                                     best = Some((conn, dist));
@@ -789,7 +763,8 @@ pub(super) fn find_nearest_criminal(state: &GameState, map: i32, x: i32, y: i32)
                 if let Some(tile) = grid.tile(cx, cy) {
                     if let Some(conn) = tile.user_conn {
                         if let Some(user) = state.users.get(&conn) {
-                            if user.logged && !user.dead && user.criminal && user.privileges == 0 {
+                            if user.logged && !user.dead && user.criminal && user.privileges == 0
+                                && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta {
                                 let dist = (x - cx).abs() + (y - cy).abs();
                                 if best.is_none() || dist < best.unwrap().1 {
                                     best = Some((conn, dist));
@@ -822,7 +797,8 @@ pub(super) fn find_nearest_citizen(state: &GameState, map: i32, x: i32, y: i32) 
                 if let Some(tile) = grid.tile(cx, cy) {
                     if let Some(conn) = tile.user_conn {
                         if let Some(user) = state.users.get(&conn) {
-                            if user.logged && !user.dead && !user.criminal && user.privileges == 0 {
+                            if user.logged && !user.dead && !user.criminal && user.privileges == 0
+                                && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta {
                                 let dist = (x - cx).abs() + (y - cy).abs();
                                 if best.is_none() || dist < best.unwrap().1 {
                                     best = Some((conn, dist));

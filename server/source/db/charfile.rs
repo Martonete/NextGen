@@ -257,10 +257,10 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     .await
     .map_err(|e| format!("DB error loading inventory: {}", e))?;
 
-    let mut inventory = vec![(0i32, 0i32, false); 25];
+    let mut inventory = vec![(0i32, 0i32, false); 30];
     for (slot, obj_idx, amount, equipped) in &inv_rows {
         let s = *slot as usize;
-        if s < 25 {
+        if s < 30 {
             inventory[s] = (*obj_idx, *amount, *equipped);
         }
     }
@@ -664,8 +664,8 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;
 
-    // Upsert inventory (25 slots)
-    for i in 0..data.inventory.len().min(25) {
+    // Upsert inventory (30 slots max)
+    for i in 0..data.inventory.len().min(30) {
         let (obj_idx, amount, equipped) = data.inventory[i];
         sqlx::query(
             "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped)

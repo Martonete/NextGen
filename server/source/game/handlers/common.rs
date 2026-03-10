@@ -550,22 +550,25 @@ pub fn clean_world_add_item(state: &mut GameState, map: i32, x: i32, y: i32, tie
 
 /// Maximum items per stack.
 pub(super) const MAX_INVENTORY_OBJS: i32 = 10000;
-/// Maximum gold.
-pub(super) const MAX_GOLD: i64 = 999_999_999;
+/// Maximum gold (VB6: MAXORO = 90,000,000).
+pub(super) const MAX_GOLD: i64 = 90_000_000;
 /// Gold item object index.
 pub(super) const GOLD_OBJ_INDEX: i32 = 12;
 
 pub(super) fn find_or_add_inv_slot(state: &mut GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> Option<usize> {
     let user = state.users.get(&conn_id)?;
+    let max_slots = user.current_inventory_slots;
 
     let mut stack_slot = None;
     let mut empty_slot = None;
     for (i, slot) in user.inventory.iter().enumerate() {
+        // Stacking is allowed in any slot that already has the item
         if slot.obj_index == obj_index && slot.amount + amount <= MAX_INVENTORY_OBJS {
             stack_slot = Some(i);
             break;
         }
-        if slot.obj_index == 0 && empty_slot.is_none() {
+        // Empty slots only within current inventory limit
+        if i < max_slots && slot.obj_index == 0 && empty_slot.is_none() {
             empty_slot = Some(i);
         }
     }

@@ -35,7 +35,8 @@ pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, da
     }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
-        if slot1 == 0 || slot2 == 0 || slot1 > MAX_INVENTORY_SLOTS || slot2 > MAX_INVENTORY_SLOTS || slot1 == slot2 {
+        let max_slots = user.current_inventory_slots;
+        if slot1 == 0 || slot2 == 0 || slot1 > max_slots || slot2 > max_slots || slot1 == slot2 {
             return;
         }
         let s1 = slot1 - 1;
@@ -55,6 +56,8 @@ pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, da
         else if user.equip.municion == slot2 { user.equip.municion = slot1; }
         if user.equip.ring == slot1 { user.equip.ring = slot2; }
         else if user.equip.ring == slot2 { user.equip.ring = slot1; }
+        if user.backpack_slot == slot1 { user.backpack_slot = slot2; }
+        else if user.backpack_slot == slot2 { user.backpack_slot = slot1; }
     }
     send_full_inventory(state, conn_id).await;
 }

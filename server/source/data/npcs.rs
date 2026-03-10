@@ -157,6 +157,9 @@ pub struct NpcData {
 
     // Default aura (VB6: NPC can have CreaAura set in dat file, applied on spawn)
     pub aura: i32,
+
+    // VB6: AtacaDoble — 50% chance to cast spell instead of melee each AI tick
+    pub ataca_doble: bool,
 }
 
 /// Trainer creature entry (VB6: tCriaturasEntrenador).
@@ -201,6 +204,7 @@ impl Default for NpcData {
             snd1: 0, snd2: 0, snd3: 0,
             nro_criaturas: 0, criaturas: Vec::new(),
             aura: 0,
+            ataca_doble: false,
         }
     }
 }
@@ -298,6 +302,7 @@ fn load_npc_from_ini(ini: &IniFile, section: &str, index: usize) -> NpcData {
         snd2: get_int("Snd2"),
         snd3: get_int("SND3"),
         aura: get_int("CreaAura"),
+        ataca_doble: get_bool("AtacaDoble"),
         nro_criaturas: get_int("NroCriaturas"),
         criaturas: {
             let nro = get_int("NroCriaturas") as usize;

@@ -165,7 +165,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         match obj_data.obj_type {
             ObjType::Weapon | ObjType::Armor | ObjType::Shield |
             ObjType::Helmet | ObjType::Arrow | ObjType::Instrument |
-            ObjType::Tool => {},
+            ObjType::Tool | ObjType::Backpack => {},
             _ => {
                 // Not an equippable item type — reject silently
                 return;
@@ -217,6 +217,43 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                 user.inventory[idx].equipped = true;
             }
             send_inventory_slot(state, conn_id, idx).await;
+            return;
+        }
+
+        // Backpack equip: VB6 — toggle equip, expand/shrink inventory slots
+        if obj_data.obj_type == ObjType::Backpack {
+            let bp_slot = state.users.get(&conn_id).map(|u| u.backpack_slot).unwrap_or(0);
+            if bp_slot == slot {
+                // Already wearing this backpack — unequip it
+                // VB6: TirarTodosLosItemsEnMochila + reset CurrentInventorySlots
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[idx].equipped = false;
+                    user.backpack_slot = 0;
+                    user.current_inventory_slots = crate::game::types::MAX_NORMAL_INVENTORY_SLOTS;
+                }
+                send_inventory_slot(state, conn_id, idx).await;
+                return;
+            }
+            // Unequip old backpack first
+            if bp_slot > 0 && bp_slot <= MAX_INVENTORY_SLOTS {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[bp_slot - 1].equipped = false;
+                    user.backpack_slot = 0;
+                    user.current_inventory_slots = crate::game::types::MAX_NORMAL_INVENTORY_SLOTS;
+                }
+                send_inventory_slot(state, conn_id, bp_slot - 1).await;
+            }
+            // Equip new backpack: CurrentInventorySlots = 20 + MochilaType * 5
+            let mochila_type = obj_data.mochila_type;
+            let new_slots = crate::game::types::MAX_NORMAL_INVENTORY_SLOTS + (mochila_type as usize) * 5;
+            let new_slots = new_slots.min(MAX_INVENTORY_SLOTS);
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.inventory[idx].equipped = true;
+                user.backpack_slot = slot;
+                user.current_inventory_slots = new_slots;
+            }
+            send_inventory_slot(state, conn_id, idx).await;
+            state.send_console(conn_id, &format!("Mochila equipada. Espacios de inventario: {}.", new_slots), font_index::INFO).await;
             return;
         }
 
@@ -441,8 +478,9 @@ pub(super) async fn handle_use_item_click(state: &mut GameState, conn_id: Connec
         return;
     }
 
+    let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
     let slot: usize = match slot_str.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= MAX_INVENTORY_SLOTS => s,
+        Ok(s) if s >= 1 && s <= max_slots => s,
         _ => return,
     };
     let idx = slot - 1;
@@ -495,8 +533,9 @@ pub(super) async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId
 /// so we skip the puede_potear() check to avoid double-blocking.
 pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, data: &str, from_click: bool) {
     let slot_str = strip_opcode(data, 3);
+    let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
     let slot: usize = match slot_str.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= MAX_INVENTORY_SLOTS => s,
+        Ok(s) if s >= 1 && s <= max_slots => s,
         _ => return,
     };
     let idx = slot - 1;
@@ -1203,9 +1242,13 @@ pub(super) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 }
             }
             4 => {
-                // Blue potion — Mana restoration (5% of max mana)
-                let mana_restore = (user.max_mana as f64 * 0.05) as i32;
-                let mana_restore = mana_restore.max(1);
+                // Blue potion — Mana restoration
+                // VB6: MinMAN + Porcentaje(MaxMAN, 4) + ELV \ 2 + 40 / ELV
+                let level = user.level.max(1) as f64;
+                let mana_restore = ((user.max_mana as f64 * 4.0) / 100.0)
+                    + (level / 2.0_f64).floor()
+                    + (40.0_f64 / level).floor();
+                let mana_restore = (mana_restore as i32).max(1);
                 user.min_mana = (user.min_mana + mana_restore).min(user.max_mana);
             }
             5 => {
@@ -1306,6 +1349,7 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => u,
             None => return,
         };
+        let max_slots = user.current_inventory_slots;
         // First check if we can stack with an existing slot
         let mut stack_slot = None;
         let mut empty_slot = None;
@@ -1314,7 +1358,7 @@ pub(super) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
                 stack_slot = Some(i);
                 break;
             }
-            if user.inventory[i].obj_index == 0 && empty_slot.is_none() {
+            if i < max_slots && user.inventory[i].obj_index == 0 && empty_slot.is_none() {
                 empty_slot = Some(i);
             }
         }
@@ -1382,7 +1426,8 @@ pub(super) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     }
 
     let slot = slot_raw as usize;
-    if slot < 1 || slot > MAX_INVENTORY_SLOTS {
+    let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
+    if slot < 1 || slot > max_slots {
         return;
     }
     let idx = slot - 1;

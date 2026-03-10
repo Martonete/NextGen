@@ -41,8 +41,8 @@ pub enum ObjType {
     FullBottle = 34,
     Stain = 35,
     Ram = 36,
-    GemFire = 37,
-    GemWater = 38,
+    Backpack = 37,       // otMochilas — expandable inventory backpack
+    FishingSpot = 38,    // otYacimientoPez — fishing spot (VB6 13.3)
     GemEarth = 39,
     GemWind = 40,
     Crystal = 41,
@@ -95,8 +95,8 @@ impl ObjType {
             34 => Self::FullBottle,
             35 => Self::Stain,
             36 => Self::Ram,
-            37 => Self::GemFire,
-            38 => Self::GemWater,
+            37 => Self::Backpack,
+            38 => Self::FishingSpot,
             39 => Self::GemEarth,
             40 => Self::GemWind,
             41 => Self::Crystal,
@@ -226,6 +226,9 @@ pub struct ObjData {
 
     // Forum identifier (VB6: ForoID — string ID linking object to a forum board)
     pub foro_id: String,
+
+    // Backpack (VB6: MochilaType — 1=small +5 slots, 2=large +10 slots)
+    pub mochila_type: i32,
 }
 
 impl Default for ObjData {
@@ -298,6 +301,7 @@ impl Default for ObjData {
             acuchilla: false,
             upgrade: 0,
             foro_id: String::new(),
+            mochila_type: 0,
         }
     }
 }
@@ -400,6 +404,7 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             acuchilla: get_bool("Acuchilla"),
             upgrade: get_int("Upgrade"),
             foro_id: get_str("ForoID"),
+            mochila_type: get_int("MochilaType"),
             ..Default::default()
         };
 
