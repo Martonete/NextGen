@@ -9,6 +9,7 @@ signal zoom_out_pressed
 signal zoom_fit_pressed
 signal zoom_reset_pressed
 signal save_pressed
+signal revert_pressed
 signal grid_toggled(visible: bool)
 signal grid_config_changed(cell_w: int, cell_h: int, line_w: float, col: Color)
 signal frames_toggled(visible: bool)
@@ -103,6 +104,8 @@ func _ready() -> void:
 	hbox.add_child(IndexerTheme.spacer())
 
 	# ── Primary actions ──
+	var btn_revert := IndexerTheme.danger_button("DESHACER TODO", func(): revert_pressed.emit())
+	hbox.add_child(btn_revert)
 	var btn_save := IndexerTheme.success_button("GUARDAR", func(): save_pressed.emit(), 100)
 	hbox.add_child(btn_save)
 

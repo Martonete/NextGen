@@ -371,6 +371,7 @@ func _connect_signals() -> void:
 	_toolbar.zoom_fit_pressed.connect(func(): _canvas.fit_to_canvas())
 	_toolbar.zoom_reset_pressed.connect(func(): _canvas.zoom_reset())
 	_toolbar.save_pressed.connect(_on_save_ind)
+	_toolbar.revert_pressed.connect(_on_revert_all)
 
 	# Canvas
 	_canvas.frame_drawn.connect(_on_canvas_frame_drawn)
@@ -1414,6 +1415,43 @@ func _on_save_ind() -> void:
 		_update_status("Abrí una carpeta de cliente primero.")
 		return
 	_show_save_confirm_dialog()
+
+
+func _on_revert_all() -> void:
+	if not _dirty:
+		_update_status("No hay cambios para deshacer.")
+		return
+	var dlg := AcceptDialog.new()
+	dlg.title = "Deshacer todos los cambios"
+	dlg.dialog_text = "Se descartarán TODOS los cambios de esta sesión y se recargarán los archivos desde disco.\n\n¿Continuar?"
+	dlg.ok_button_text = "Deshacer todo"
+	dlg.add_cancel_button("Cancelar")
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		_do_revert_all()
+	)
+	dlg.canceled.connect(func(): dlg.queue_free())
+	add_child(dlg)
+	dlg.popup_centered()
+
+
+func _do_revert_all() -> void:
+	if _client_graficos_path.is_empty():
+		_update_status("No hay carpeta de cliente cargada.")
+		return
+	# Clear undo stacks
+	_undo_stack.clear()
+	_redo_stack.clear()
+	_current_frames = []
+	_selected_frame_idx = -1
+	_dirty = false
+	# Reload everything from disk
+	_load_client_folder(_client_graficos_path)
+	# Re-select current image if any
+	if not _current_image_path.is_empty() and _current_file_num > 0:
+		call_deferred("_on_file_selected", _current_image_path, _current_file_num)
+		call_deferred("_scroll_file_list_to", _current_file_num)
+	_update_status("Todos los cambios descartados. Datos recargados desde disco.")
 
 
 func _show_save_confirm_dialog() -> void:
