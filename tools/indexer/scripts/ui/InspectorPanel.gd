@@ -662,19 +662,24 @@ func _build_frames_tab() -> Control:
 	var preset_row1 := HBoxContainer.new()
 	preset_row1.add_theme_constant_override("separation", 3)
 	_props_box.add_child(preset_row1)
-	for sz in [32, 48, 64, 96, 128, 192, 256]:
-		var label := "%d²" % sz
-		var w := sz
-		var h := sz
-		preset_row1.add_child(_make_resize_preset_btn(label, w, h))
+	preset_row1.add_child(_make_resize_preset_btn("32²", 32, 32))
+	preset_row1.add_child(_make_resize_preset_btn("48²", 48, 48))
+	preset_row1.add_child(_make_resize_preset_btn("64²", 64, 64))
+	preset_row1.add_child(_make_resize_preset_btn("96²", 96, 96))
+	preset_row1.add_child(_make_resize_preset_btn("128²", 128, 128))
+	preset_row1.add_child(_make_resize_preset_btn("192²", 192, 192))
+	preset_row1.add_child(_make_resize_preset_btn("256²", 256, 256))
 
 	# Row 2: common rectangular sizes
 	var preset_row2 := HBoxContainer.new()
 	preset_row2.add_theme_constant_override("separation", 3)
 	_props_box.add_child(preset_row2)
-	for pair in [[64, 128], [128, 192], [128, 256], [192, 256], [192, 384], [256, 512]]:
-		var label := "%dx%d" % [pair[0], pair[1]]
-		preset_row2.add_child(_make_resize_preset_btn(label, pair[0], pair[1]))
+	preset_row2.add_child(_make_resize_preset_btn("64x128", 64, 128))
+	preset_row2.add_child(_make_resize_preset_btn("128x192", 128, 192))
+	preset_row2.add_child(_make_resize_preset_btn("128x256", 128, 256))
+	preset_row2.add_child(_make_resize_preset_btn("192x256", 192, 256))
+	preset_row2.add_child(_make_resize_preset_btn("192x384", 192, 384))
+	preset_row2.add_child(_make_resize_preset_btn("256x512", 256, 512))
 
 	# Custom resize: W x H inputs + button
 	var custom_row := HBoxContainer.new()
