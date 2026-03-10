@@ -260,9 +260,9 @@ func _connect_signals() -> void:
 
 	# Toolbar
 	_toolbar.tool_changed.connect(_on_tool_changed)
-	_toolbar.detect_toggled.connect(func(on): _canvas.set_detect(on))
-	_toolbar.grid_toggled.connect(func(on): _canvas.set_grid_visible(on))
-	_toolbar.grid_cell_changed.connect(func(cw, ch): _canvas.set_grid_cell(cw, ch))
+	_toolbar.detect_toggled.connect(func(on): _canvas.set_detect(on); _save_prefs())
+	_toolbar.grid_toggled.connect(func(on): _canvas.set_grid_visible(on); _save_prefs())
+	_toolbar.grid_cell_changed.connect(func(cw, ch): _canvas.set_grid_cell(cw, ch); _save_prefs())
 	_toolbar.zoom_in_pressed.connect(func(): _canvas.zoom_in())
 	_toolbar.zoom_out_pressed.connect(func(): _canvas.zoom_out())
 	_toolbar.zoom_fit_pressed.connect(func(): _canvas.fit_to_canvas())
@@ -320,6 +320,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 func _on_tool_changed(mode: int) -> void:
 	_canvas.tool_mode = mode
+	_save_prefs()
+
+
+## Save user preferences immediately (detect, grid, tool mode).
+func _save_prefs() -> void:
+	_prefs.set_value("session", "detect_enabled", _canvas.detect_enabled)
+	_prefs.set_value("session", "show_grid", _canvas.show_grid)
+	_prefs.set_value("session", "grid_cell_w", _canvas.grid_cell_w)
+	_prefs.set_value("session", "grid_cell_h", _canvas.grid_cell_h)
+	_prefs.set_value("session", "tool_mode", _canvas.tool_mode)
+	_prefs.save(PREFS_PATH)
 
 
 # ── Menu handlers ────────────────────────────────────────────────────────────
