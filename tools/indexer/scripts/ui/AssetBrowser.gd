@@ -37,7 +37,7 @@ var fxs_data: Array = []               # [{index, animacion, offset_x, offset_y}
 # ── UI elements ──────────────────────────────────────────────────
 var _type_dropdown: OptionButton
 var _search_box: LineEdit
-var _content_split: HSplitContainer
+var _content_split: VSplitContainer
 var _item_list: ItemList
 var _detail_panel: VBoxContainer
 var _detail_scroll: ScrollContainer
