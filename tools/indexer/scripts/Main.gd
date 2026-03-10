@@ -290,6 +290,8 @@ func _connect_signals() -> void:
 	_inspector.index_frame_pressed.connect(_on_index_single_frame)
 	_inspector.view_file_num_pressed.connect(_on_view_file_num)
 	_inspector.next_grh_changed.connect(func(v): _next_grh_index = v)
+	_inspector.undo_requested.connect(_undo)
+	_inspector.redo_requested.connect(_redo)
 
 
 # ── Keyboard shortcuts ───────────────────────────────────────────────────────

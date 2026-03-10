@@ -18,6 +18,8 @@ signal index_frame_pressed(idx: int)
 @warning_ignore("unused_signal")
 signal view_file_num_pressed(file_num: int, grh_index: int)
 signal next_grh_changed(val: int)
+signal undo_requested
+signal redo_requested
 
 var _tabs: TabContainer
 
@@ -575,6 +577,8 @@ func _build_frames_tab() -> Control:
 	_props_popup.visible = false
 	_props_popup.wrap_controls = true
 	_props_popup.close_requested.connect(func(): _props_popup.hide())
+	# Forward Ctrl+Z/Y from popup to main (popups capture unhandled input)
+	_props_popup.connect("window_input", _on_props_popup_input)
 	# Dark background panel
 	var popup_bg := PanelContainer.new()
 	var popup_sb := StyleBoxFlat.new()
@@ -1267,6 +1271,7 @@ func _build_anim_creator_window() -> void:
 	bg.add_theme_stylebox_override("panel", sb)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_anim_creator_win.add_child(bg)
+	_anim_creator_win.connect("window_input", _on_props_popup_input)
 
 	var main_vbox := VBoxContainer.new()
 	main_vbox.add_theme_constant_override("separation", 6)
@@ -1651,6 +1656,22 @@ func _on_anim_save() -> void:
 	create_anim_pressed.emit(_anim_seq_indices.duplicate(), _anim_speed_spin.value)
 	_anim_creator_win.hide()
 	_anim_preview_playing = false
+
+
+func _on_props_popup_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed:
+		var k := event as InputEventKey
+		if k.ctrl_pressed:
+			match k.keycode:
+				KEY_Z:
+					if k.shift_pressed:
+						redo_requested.emit()
+					else:
+						undo_requested.emit()
+					_props_popup.set_input_as_handled()
+				KEY_Y:
+					redo_requested.emit()
+					_props_popup.set_input_as_handled()
 
 
 func _on_props_changed() -> void:
