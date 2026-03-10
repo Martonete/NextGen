@@ -117,6 +117,25 @@ func select_by_file_num(fnum: int) -> void:
 			return
 
 
+## Select and scroll to a file number without emitting file_selected.
+func scroll_to_file_num(fnum: int) -> void:
+	for i in range(_all_files.size()):
+		if get_file_num(_all_files[i]) == fnum:
+			for j in range(_filtered_indices.size()):
+				if _filtered_indices[j] == i:
+					_file_list.select(j)
+					_file_list.ensure_current_is_visible()
+					return
+			_search_edit.text = ""
+			_apply_filter()
+			for j in range(_filtered_indices.size()):
+				if _filtered_indices[j] == i:
+					_file_list.select(j)
+					_file_list.ensure_current_is_visible()
+					return
+			return
+
+
 func get_file_num(path: String) -> int:
 	if _using_client:
 		var basename := path.get_file().get_basename()

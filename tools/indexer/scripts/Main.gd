@@ -84,6 +84,7 @@ var _recent_clients: Array = []
 func _ready() -> void:
 	_prefs = ConfigFile.new()
 	_load_prefs()
+	get_tree().set_auto_accept_quit(false)
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_MAXIMIZED)
 	_build_ui()
 	_build_dialogs()
@@ -98,9 +99,31 @@ func _ready() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_WM_CLOSE_REQUEST:
-		_finish_analysis_thread()
-		_save_session()
-		get_tree().quit()
+		if _dirty:
+			_show_close_confirm()
+		else:
+			_do_quit()
+
+
+func _show_close_confirm() -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Cambios sin guardar"
+	dlg.dialog_text = "Hay cambios sin guardar. ¿Descartar y salir?"
+	dlg.ok_button_text = "Descartar y salir"
+	dlg.add_cancel_button("Cancelar")
+	dlg.confirmed.connect(func():
+		dlg.queue_free()
+		_do_quit()
+	)
+	dlg.canceled.connect(func(): dlg.queue_free())
+	add_child(dlg)
+	dlg.popup_centered()
+
+
+func _do_quit() -> void:
+	_finish_analysis_thread()
+	_save_session()
+	get_tree().quit()
 
 
 func _process(delta: float) -> void:
@@ -444,8 +467,10 @@ func _on_archivo_menu(id: int) -> void:
 	match id:
 		0: _dlg_client_folder.popup_centered_ratio(0.7)
 		99:
-			_save_session()
-			get_tree().quit()
+			if _dirty:
+				_show_close_confirm()
+			else:
+				_do_quit()
 
 
 func _on_editar_menu(id: int) -> void:
@@ -1394,6 +1419,10 @@ func _do_navigate_to_file(file_num: int) -> void:
 		_pending_select_grh = 0
 
 
+func _scroll_file_list_to(file_num: int) -> void:
+	_file_list.scroll_to_file_num(file_num)
+
+
 # ── Save ─────────────────────────────────────────────────────────────────────
 
 func _on_save_ind() -> void:
@@ -2096,12 +2125,13 @@ func _restore_session() -> void:
 	# Session-saved value is stale if the .ind was modified externally.
 	_inspector.set_next_grh(_next_grh_index)
 
-	# Restore last selected image
+	# Restore last selected image and scroll file list to it
 	var last_image: String = _prefs.get_value("session", "last_image_path", "")
 	if not last_image.is_empty() and FileAccess.file_exists(last_image):
 		var last_fnum: int = _prefs.get_value("session", "last_file_num", 0)
 		# Defer so the file list has finished loading
 		call_deferred("_on_file_selected", last_image, last_fnum)
+		call_deferred("_scroll_file_list_to", last_fnum)
 
 
 func _update_status(msg: String) -> void:
