@@ -1247,11 +1247,13 @@ public partial class PacketHandler
                 if (nowDead && !wasDead)
                 {
                     _state.Dead = true;
+                    OnPlaySound?.Invoke(SoundManager.SND_DEATH);
                     GD.Print($"[CP] User character died (head={newHead})");
                 }
                 else if (!nowDead && wasDead)
                 {
                     _state.Dead = false;
+                    OnPlaySound?.Invoke(SoundManager.SND_REVIVE);
                     GD.Print($"[CP] User character revived (body={ch.Body}, head={newHead})");
                 }
             }
@@ -1483,7 +1485,10 @@ public partial class PacketHandler
 
     private void HandleGold(string data)
     {
+        int oldGold = _state.Gold;
         _state.Gold = ParseInt(data);
+        if (_state.Gold > oldGold)
+            OnPlaySound?.Invoke(SoundManager.SND_GOLD);
     }
 
     private void HandleExp(string data)
@@ -1602,7 +1607,12 @@ public partial class PacketHandler
             }
 
             string color = Data.FontTypes.GetHexColor(tmpl.FontId);
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+            var type = ChatType.System;
+            if (tmpl.FontId == 19) type = ChatType.Combat;
+            else if (tmpl.FontId == 25) type = ChatType.Party;
+            else if (tmpl.FontId == 27 || tmpl.FontId == 31) type = ChatType.Clan;
+            else if (tmpl.FontId == 3 || tmpl.FontId == 43 || tmpl.FontId == 44 || tmpl.FontId == 45) type = ChatType.Global;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color, Type = type });
             GD.Print($"[CONSOLE] [{textId}] {text}");
         }
         else
@@ -1646,7 +1656,7 @@ public partial class PacketHandler
         }
 
         if (!bubbled)
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color, Type = ChatType.Global });
     }
 
     private void HandleYell(string data)
@@ -1685,7 +1695,7 @@ public partial class PacketHandler
             }
 
             if (!bubbled)
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color, Type = ChatType.Global });
         }
         else
         {
@@ -1731,11 +1741,11 @@ public partial class PacketHandler
             int g = ParseInt(parts[2]);
             int b = ParseInt(parts[3]);
             string color = $"{r:X2}{g:X2}{b:X2}";
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[0], Color = color });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[0], Color = color, Type = ChatType.Whisper });
         }
         else if (parts.Length >= 1)
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[0], Color = "00FFFF" });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = parts[0], Color = "00FFFF", Type = ChatType.Whisper });
         }
         GD.Print($"[WHISPER] {parts[0]}");
     }
@@ -2145,7 +2155,8 @@ public partial class PacketHandler
             _state.ChatMessages.Enqueue(new ChatMessage
             {
                 Text = $"{attacker}{bodyName}{damage}",
-                Color = "FF0000"
+                Color = "FF0000",
+                Type = ChatType.Combat
             });
         }
     }
@@ -2165,7 +2176,8 @@ public partial class PacketHandler
             _state.ChatMessages.Enqueue(new ChatMessage
             {
                 Text = $"Le has pegado a {victim}{bodyName}{damage}",
-                Color = "FF0000"
+                Color = "FF0000",
+                Type = ChatType.Combat
             });
         }
     }
@@ -2178,7 +2190,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = "Has fallado el golpe!!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
     }
 
@@ -2191,7 +2204,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"Le has pegado a la criatura por {damage}!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
     }
 
@@ -2204,7 +2218,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"{attacker} te ataco y fallo!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
     }
 
@@ -2216,7 +2231,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = "La criatura fallo el golpe!!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
     }
 
@@ -2234,7 +2250,8 @@ public partial class PacketHandler
             _state.ChatMessages.Enqueue(new ChatMessage
             {
                 Text = $"{bodyName}{damage}",
-                Color = "FF0000"
+                Color = "FF0000",
+                Type = ChatType.Combat
             });
         }
     }
@@ -2247,7 +2264,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = "La criatura te ha matado!!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
     }
 
@@ -2307,11 +2325,11 @@ public partial class PacketHandler
     {
         _state.Dead = true;
         _state.ShowDeathPanel = true;
-        _state.ChatMessages.Enqueue(new ChatMessage
-        {
+        _state.ChatMessages.Enqueue(new ChatMessage { Type = ChatType.Combat,
             Text = "¡Has muerto!",
             Color = "FF0000"
         });
+        OnPlaySound?.Invoke(SoundManager.SND_DEATH);
         GD.Print("[GAME] Player died — MUERT received");
     }
 

@@ -2463,7 +2463,13 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/SACAR ") {
         let target = cmd[7..].trim();
         handle_slash_sacar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/ECHARPARTY ") {
+        let target = cmd[12..].trim();
+        handle_slash_sacar(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/DARPARTIDO ") {
+        let target = cmd[12..].trim();
+        handle_slash_darpartido(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/PARTYLIDER ") {
         let target = cmd[12..].trim();
         handle_slash_darpartido(state, conn_id, target).await;
     } else if cmd_upper == "/ONLINE" {

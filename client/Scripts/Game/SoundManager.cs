@@ -15,6 +15,20 @@ public partial class SoundManager : Node
     private const float DefaultSfxVolume = SfxHeadroomDb;
     private const float DefaultMusicVolume = MusicHeadroomDb;
 
+    // VB6 sound IDs — well-known event sounds
+    public const int SND_CLICK = 1;       // UI click
+    public const int SND_SWING = 2;       // melee swing
+    public const int SND_GOLD = 3;        // gold pickup/drop
+    public const int SND_LEVEL = 5;       // level up fanfare
+    public const int SND_IMPACTO = 10;    // hit impact
+    public const int SND_DEATH = 11;      // player death
+    public const int SND_REVIVE = 41;     // resurrection/revive
+    public const int SND_EQUIP = 46;      // equip item
+    public const int SND_UNEQUIP = 47;    // unequip item
+    public const int SND_ITEMMOVE = 48;   // inventory item move/swap
+    public const int SND_PANELOPEN = 49;  // panel open
+    public const int SND_PANELCLOSE = 50; // panel close
+
     private readonly List<AudioStreamPlayer> _sfxPlayers = new();
     private AudioStreamPlayer? _musicPlayer;
     private readonly Dictionary<int, AudioStream?> _sfxCache = new();

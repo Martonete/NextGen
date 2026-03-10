@@ -328,9 +328,14 @@ pub(super) async fn user_attack_npc(
                         npc.hostile = true;
                         npc.attacked_by = attacker_name.to_string();
                         npc.target = Some(conn_id);
-                    } else if npc.target.is_none() {
-                        // Already hostile — just set target
+                    } else {
+                        // VB6 AttackedBy queue: hostile NPC prioritizes most recent
+                        // attacker as target (not just first adjacent player found).
+                        // Always update target to the latest attacker.
                         npc.target = Some(conn_id);
+                        if npc.movement == npc::AI_DEFENSE {
+                            npc.attacked_by = attacker_name.to_string();
+                        }
                     }
                 }
 

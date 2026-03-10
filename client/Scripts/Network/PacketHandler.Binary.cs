@@ -92,7 +92,11 @@ public partial class PacketHandler
                 HandleBinUpdateHp(bq);
                 break;
             case ServerPacketId.UpdateGold: // 19
-                _state.Gold = bq.ReadLong();
+                {
+                    int oldGold19 = _state.Gold;
+                    _state.Gold = bq.ReadLong();
+                    if (_state.Gold > oldGold19) OnPlaySound?.Invoke(SoundManager.SND_GOLD);
+                }
                 break;
             case ServerPacketId.UpdateExp: // 20
                 HandleBinUpdateExp(bq);
@@ -451,7 +455,11 @@ public partial class PacketHandler
                 _state.MinSta = bq.ReadInteger();
                 break;
             case ServerPacketId.StatGold: // 123
-                _state.Gold = bq.ReadLong();
+                {
+                    int oldGold123 = _state.Gold;
+                    _state.Gold = bq.ReadLong();
+                    if (_state.Gold > oldGold123) OnPlaySound?.Invoke(SoundManager.SND_GOLD);
+                }
                 break;
             case ServerPacketId.StatExp: // 124
                 _state.Exp = bq.ReadLong();
@@ -493,7 +501,7 @@ public partial class PacketHandler
                 HandleBinUserHit(bq);
                 break;
             case ServerPacketId.NpcSwing: // 136
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             case ServerPacketId.NpcHit: // 137
@@ -506,7 +514,7 @@ public partial class PacketHandler
                 HandleBinPvpDmgDeal(bq);
                 break;
             case ServerPacketId.UserMiss: // 140
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
                 break;
             case ServerPacketId.YouDied: // 141
                 HandleBinDead();
@@ -1150,7 +1158,7 @@ public partial class PacketHandler
         }
         else
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = hexColor });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = hexColor, Type = ChatType.Global });
         }
     }
 
@@ -1159,13 +1167,19 @@ public partial class PacketHandler
         string chat = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = color });
+        // Classify by font index: 19=FIGHT, 25=PARTY, 27/31=GUILD, 3/43-45=GLOBAL
+        var type = ChatType.System;
+        if (fontIndex == 19) type = ChatType.Combat;
+        else if (fontIndex == 25) type = ChatType.Party;
+        else if (fontIndex == 27 || fontIndex == 31) type = ChatType.Clan;
+        else if (fontIndex == 3 || fontIndex == 43 || fontIndex == 44 || fontIndex == 45) type = ChatType.Global;
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = color, Type = type });
     }
 
     private void HandleBinGuildChat(ByteQueue bq)
     {
         string chat = bq.ReadString();
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = "00FF00" });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = chat, Color = "00FF00", Type = ChatType.Clan });
     }
 
     // ── Character ─────────────────────────────────────────────────
@@ -1334,8 +1348,18 @@ public partial class PacketHandler
 
         if (idx == _state.UserCharIndex)
         {
-            if (nowDead && !wasDead) { _state.Dead = true; GD.Print($"[CP] User died (head={head}, binary)"); }
-            else if (!nowDead && wasDead) { _state.Dead = false; GD.Print($"[CP] User revived (binary)"); }
+            if (nowDead && !wasDead)
+            {
+                _state.Dead = true;
+                OnPlaySound?.Invoke(SoundManager.SND_DEATH);
+                GD.Print($"[CP] User died (head={head}, binary)");
+            }
+            else if (!nowDead && wasDead)
+            {
+                _state.Dead = false;
+                OnPlaySound?.Invoke(SoundManager.SND_REVIVE);
+                GD.Print($"[CP] User revived (binary)");
+            }
         }
     }
 
@@ -1442,6 +1466,9 @@ public partial class PacketHandler
 
         if (slot < 1 || slot > 25) return;
 
+        // Track equip state change for sound feedback
+        bool wasEquipped = _state.Inventory[slot - 1].Equipped;
+
         if (objIndex <= 0)
         {
             _state.Inventory[slot - 1] = new InventorySlot();
@@ -1462,6 +1489,12 @@ public partial class PacketHandler
                 MinDef = minDef,
                 Value = (int)value,
             };
+
+            // Play equip/unequip sound on state change
+            if (equipped && !wasEquipped)
+                OnPlaySound?.Invoke(SoundManager.SND_EQUIP);
+            else if (!equipped && wasEquipped)
+                OnPlaySound?.Invoke(SoundManager.SND_UNEQUIP);
         }
 
         // VB6: Update per-equipment bottom bar labels
@@ -1708,8 +1741,12 @@ public partial class PacketHandler
     {
         int gold = bq.ReadLong();
         int exp = bq.ReadLong();
+        int oldGold = _state.Gold;
         _state.Gold = gold;
         _state.Exp = exp;
+        // Play gold sound when gold increases (pickup, receive)
+        if (gold > oldGold)
+            OnPlaySound?.Invoke(SoundManager.SND_GOLD);
     }
 
     private void HandleBinLevelUp(ByteQueue bq)
@@ -1721,6 +1758,8 @@ public partial class PacketHandler
             Text = $"Has subido de nivel! Tienes {skillPoints} puntos de habilidad.",
             Color = "00FF00"
         });
+        // Play level-up fanfare sound
+        OnPlaySound?.Invoke(SoundManager.SND_LEVEL);
     }
 
     // ── Login flow ────────────────────────────────────────────────
@@ -1795,7 +1834,8 @@ public partial class PacketHandler
     {
         _state.Dead = true;
         _state.ShowDeathPanel = true;
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = "¡Has muerto!", Color = "FF0000" });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = "¡Has muerto!", Color = "FF0000", Type = ChatType.Combat });
+        OnPlaySound?.Invoke(SoundManager.SND_DEATH);
         GD.Print("[GAME] Player died — Dead (binary)");
     }
 
@@ -2017,7 +2057,12 @@ public partial class PacketHandler
             }
 
             string color = FontTypes.GetHexColor(tmpl.FontId);
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color });
+            var type = ChatType.System;
+            if (tmpl.FontId == 19) type = ChatType.Combat;
+            else if (tmpl.FontId == 25) type = ChatType.Party;
+            else if (tmpl.FontId == 27 || tmpl.FontId == 31) type = ChatType.Clan;
+            else if (tmpl.FontId == 3 || tmpl.FontId == 43 || tmpl.FontId == 44 || tmpl.FontId == 45) type = ChatType.Global;
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = color, Type = type });
         }
         else
         {
@@ -2031,7 +2076,7 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         // GM broadcasts show in red bold in console
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = "FF0000" });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = "FF0000", Type = ChatType.Global });
     }
 
     // ── Chat variants (binary) ──────────────────────────────────
@@ -2053,7 +2098,7 @@ public partial class PacketHandler
         }
         else
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = hexColor });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = hexColor, Type = ChatType.Global });
         }
     }
 
@@ -2074,7 +2119,7 @@ public partial class PacketHandler
         }
         else
         {
-            _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = hexColor });
+            _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = hexColor, Type = ChatType.Global });
         }
     }
 
@@ -2083,7 +2128,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Whisper });
     }
 
     private void HandleBinChatClan(ByteQueue bq)
@@ -2091,7 +2136,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
     private void HandleBinOnlineCount(ByteQueue bq)
@@ -2109,21 +2154,21 @@ public partial class PacketHandler
         switch (subType)
         {
             case 0: // NPCSwing
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura fallo el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             case 1: // NPCKillUser
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura te ha matado!!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "La criatura te ha matado!!!", Color = "FF0000", Type = ChatType.Combat });
                 break;
             case 2: // BlockedWithShieldUser
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has bloqueado el ataque con el escudo!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has bloqueado el ataque con el escudo!", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, "Escudo!", "6699FF");
                 break;
             case 3: // BlockedWithShieldOther
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "El escudo del enemigo bloqueo tu ataque!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "El escudo del enemigo bloqueo tu ataque!", Color = "FF0000", Type = ChatType.Combat });
                 break;
             case 4: // UserSwing
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has fallado el golpe!!!", Color = "FF0000", Type = ChatType.Combat });
                 break;
             case 5: // SafeModeOn
                 _state.SafeMode = true;
@@ -2152,14 +2197,14 @@ public partial class PacketHandler
                 byte bodyPart = bq.ReadByte();
                 short damage = bq.ReadInteger();
                 string bodyName = GetNpcHitBodyPartText(bodyPart);
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
                 break;
             }
             case 13: // UserHitNPC
             {
                 int damage = bq.ReadLong();
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Le has pegado a la criatura por {damage}!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Le has pegado a la criatura por {damage}!!", Color = "FF0000", Type = ChatType.Combat });
                 // No target charIndex available for NPC hits in this packet
                 break;
             }
@@ -2169,7 +2214,7 @@ public partial class PacketHandler
                 string attackerName = "";
                 if (_state.Characters.TryGetValue(attackerIndex, out var attacker))
                     attackerName = attacker.Name;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{attackerName} te ataco y fallo!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{attackerName} te ataco y fallo!!", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
                 break;
             }
@@ -2182,7 +2227,7 @@ public partial class PacketHandler
                 if (_state.Characters.TryGetValue(attackerIndex, out var attacker))
                     attackerName = attacker.Name;
                 string bodyName = GetPvpReceivedBodyPartText(bodyPart);
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{attackerName}{bodyName}{damage}", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{attackerName}{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
                 break;
             }
@@ -2195,7 +2240,7 @@ public partial class PacketHandler
                 if (_state.Characters.TryGetValue(victimIndex, out var victim))
                     victimName = victim.Name;
                 string bodyName = GetPvpDealtBodyPartText(bodyPart);
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Le has pegado a {victimName}{bodyName}{damage}", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Le has pegado a {victimName}{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
                 OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
                 break;
             }
@@ -2209,7 +2254,7 @@ public partial class PacketHandler
                 string killedName = "";
                 if (_state.Characters.TryGetValue(killedIndex, out var killed))
                     killedName = killed.Name;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Has matado a {killedName}! Ganaste {expGained} exp.", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"Has matado a {killedName}! Ganaste {expGained} exp.", Color = "FF0000", Type = ChatType.Combat });
                 break;
             }
             case 19: // UserKill
@@ -2218,7 +2263,7 @@ public partial class PacketHandler
                 string killerName = "";
                 if (_state.Characters.TryGetValue(killerIndex, out var killer))
                     killerName = killer.Name;
-                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{killerName} te ha matado!!!", Color = "FF0000" });
+                _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{killerName} te ha matado!!!", Color = "FF0000", Type = ChatType.Combat });
                 break;
             }
             case 20: // EarnExp
@@ -2534,7 +2579,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
     // ── Stat variants ─────────────────────────────────────────────
@@ -2580,7 +2625,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"{attackerName} te ataco y fallo!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
         // Floating "miss" text above player character
         OnFloatingText?.Invoke(_state.UserCharIndex, "Fallo!", "CCCCCC");
@@ -2600,7 +2646,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"{attackerName} te pego {damage}!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
         // Floating red damage on player (damage received)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
@@ -2614,7 +2661,7 @@ public partial class PacketHandler
         byte bodyPart = bq.ReadByte();
         short damage = bq.ReadInteger();
         string bodyName = GetNpcHitBodyPartText(bodyPart);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000" });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = $"{bodyName}{damage}", Color = "FF0000", Type = ChatType.Combat });
         // Floating red damage on player (NPC hit us)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
@@ -2632,7 +2679,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"{attackerName} te pego {damage} en PvP!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
         // Floating red damage on player (PvP received)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
@@ -2651,7 +2699,8 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage
         {
             Text = $"Le pegaste {damage} a {victimName} en PvP!!",
-            Color = "FF0000"
+            Color = "FF0000",
+            Type = ChatType.Combat
         });
         // Floating yellow damage on victim (PvP dealt)
         OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
@@ -2941,7 +2990,7 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         byte fontIndex = bq.ReadByte();
         string color = FontTypes.GetHexColor(fontIndex);
-        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color });
+        _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
     /// <summary>

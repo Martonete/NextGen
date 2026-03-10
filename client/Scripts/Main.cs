@@ -150,6 +150,9 @@ public partial class Main : Control
     // Character info popup (shows /MIRAR results centered on screen)
     private CharInfoPopup? _charInfoPopup;
 
+    // Minimap panel (shows player/NPC dots on 100x100 tile grid)
+    private MinimapPanel? _minimapPanel;
+
     // Blind screen overlay (VB6: frmMain goes black when blinded)
     private ColorRect? _blindOverlay;
     private float _blindAlpha;
@@ -173,6 +176,10 @@ public partial class Main : Control
     // Message dialog (VB6: Mensaje form — modal error/info dialog)
     private PanelContainer? _mensajeDialog;
     private Label? _mensajeLabel;
+
+    // Chat tab filter buttons (above console)
+    private HBoxContainer? _chatTabBar;
+    private Button[] _chatTabButtons = new Button[7]; // All + 6 ChatType values
 
     // Drop quantity dialog (VB6: frmCantidad)
     private PanelContainer? _dropDialog;
@@ -329,6 +336,29 @@ public partial class Main : Control
         consoleStyle.ContentMarginTop = 1;
         consoleStyle.ContentMarginBottom = 6;
         _console.AddThemeStyleboxOverride("normal", consoleStyle);
+
+        // Chat tab filter bar — sits above the console (Y 4-22)
+        _chatTabBar = new HBoxContainer();
+        _chatTabBar.Position = new Vector2(10, 4);
+        _chatTabBar.Size = new Vector2(547, 18);
+        _chatTabBar.AddThemeConstantOverride("separation", 2);
+        _gameUI.AddChild(_chatTabBar);
+        string[] tabLabels = { "Todo", "Global", "Party", "Clan", "Whisper", "Combat", "Sistema" };
+        int[] tabFilters = { -1, (int)ChatType.Global, (int)ChatType.Party, (int)ChatType.Clan, (int)ChatType.Whisper, (int)ChatType.Combat, (int)ChatType.System };
+        for (int i = 0; i < tabLabels.Length; i++)
+        {
+            int filterVal = tabFilters[i];
+            var tabBtn = new Button();
+            tabBtn.Text = tabLabels[i];
+            tabBtn.CustomMinimumSize = new Vector2(0, 16);
+            tabBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            tabBtn.AddThemeFontSizeOverride("font_size", 8);
+            tabBtn.Pressed += () => SetChatFilter(filterVal);
+            _chatTabBar.AddChild(tabBtn);
+            _chatTabButtons[i] = tabBtn;
+        }
+        UpdateChatTabHighlight();
+
         _chatInput = GetNode<LineEdit>("GameUI/ChatInput");
         _chatInput.Visible = false; // VB6: chat input hidden by default, shown on Enter
         _chatInput.MaxLength = 160; // VB6: frmMain.frm txtChat MaxLength=160
@@ -421,11 +451,11 @@ public partial class Main : Control
         // Tab buttons — VB6 13.3: Label4 "Inventario" (592,128,93,29), Label7 "Hechizos" (688,128,75,30)
         _invTabButton = CreateInvisibleButton(592, 128, 93, 29);
         _gameUI.AddChild(_invTabButton);
-        _invTabButton.Pressed += OnInventoryTabPressed;
+        _invTabButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); OnInventoryTabPressed(); };
 
         _spellTabButton = CreateInvisibleButton(688, 128, 75, 30);
         _gameUI.AddChild(_spellTabButton);
-        _spellTabButton.Pressed += OnSpellTabPressed;
+        _spellTabButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); OnSpellTabPressed(); };
 
         // Inventory panel — VB6: picInv at (600,160) 160×128 pixels
         _inventoryPanel = new InventoryPanel();
@@ -459,6 +489,7 @@ public partial class Main : Control
         _dydToggle.StretchMode = TextureButton.StretchModeEnum.Scale;
         _dydToggle.TextureNormal = _dydOffTex;
         _dydToggle.Pressed += () => {
+            _soundManager?.PlaySound(SoundManager.SND_CLICK);
             _inventoryPanel!.DyDEnabled = !_inventoryPanel.DyDEnabled;
             _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
         };
@@ -532,16 +563,17 @@ public partial class Main : Control
         // imgEstadisticas(681,507,95,24), imgClanes(683,532,92,26)
         var mapaButton = CreateInvisibleButton(682, 445, 93, 20);
         _gameUI.AddChild(mapaButton);
-        mapaButton.Pressed += () => GD.Print("[UI] Mapa button — not implemented yet");
+        mapaButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); _minimapPanel?.Toggle(); };
 
         var grupoButton = CreateInvisibleButton(681, 466, 94, 21);
         _gameUI.AddChild(grupoButton);
-        grupoButton.Pressed += () => _partyPanel?.TogglePanel();
+        grupoButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); _partyPanel?.TogglePanel(); };
 
         var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
         {
+            _soundManager?.PlaySound(SoundManager.SND_CLICK);
             if (_optionsPanel != null)
             {
                 if (_state.OptionsPanelOpen)
@@ -555,6 +587,7 @@ public partial class Main : Control
         _gameUI.AddChild(estadisticasButton);
         estadisticasButton.Pressed += () =>
         {
+            _soundManager?.PlaySound(SoundManager.SND_CLICK);
             if (_statsPanel != null)
             {
                 if (_state.StatsPanelOpen)
@@ -566,7 +599,7 @@ public partial class Main : Control
 
         var clanesButton = CreateInvisibleButton(683, 532, 92, 26);
         _gameUI.AddChild(clanesButton);
-        clanesButton.Pressed += OnClanesButtonPressed;
+        clanesButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); OnClanesButtonPressed(); };
 
         // Minimize button — VB6: Image5 at (768, 0, 19, 17)
         var minimizeButton = CreateInvisibleButton(768, 0, 19, 17);
@@ -742,6 +775,15 @@ public partial class Main : Control
         // Context menu — right-click on characters in game world
         _contextMenu = new ContextMenu();
         _gameUI.AddChild(_contextMenu);
+
+        // Minimap panel — positioned above the sidebar buttons area
+        // VB6 imgMapa button is at (682, 445). Place minimap above it.
+        _minimapPanel = new MinimapPanel();
+        _minimapPanel.Init(_state);
+        // Position: right-aligned with sidebar, above the buttons
+        _minimapPanel.Position = new Vector2(635, 300);
+        _minimapPanel.Visible = _state.Config.ShowMinimap;
+        _gameUI.AddChild(_minimapPanel);
 
         // Quest panel (frmQuest) — centered on viewport
         _questPanel = new QuestPanel();
@@ -1761,6 +1803,71 @@ public partial class Main : Control
             _dropDialog.Visible = false;
     }
 
+    /// <summary>
+    /// Handle inventory drag & drop that ended outside the inventory panel.
+    /// Routes to trade panel, vault panel, guild bank, or ground drop based on drop position.
+    /// </summary>
+    private void OnInventoryDropOutside(int slot, Vector2 globalPos)
+    {
+        if (_tcp == null || slot < 0 || slot >= 25) return;
+        var item = _state.Inventory[slot];
+        if (item.ObjIndex <= 0) return;
+
+        byte slot1 = (byte)(slot + 1); // server uses 1-indexed slots
+
+        // Check if drop landed on the trade panel (player-to-player trade)
+        if (_state.Trading && _tradePanel != null && _tradePanel.Visible)
+        {
+            var tradeRect = new Rect2(_tradePanel.GlobalPosition, _tradePanel.Size);
+            if (tradeRect.HasPoint(globalPos))
+            {
+                _tcp.SendPacket(ClientPackets.WriteTradeOfferItem(slot1, (short)item.Amount));
+                return;
+            }
+        }
+
+        // Check if drop landed on the vault panel (item bank/boveda)
+        if (_state.BovedaAbierta && _vaultPanel != null && _vaultPanel.Visible)
+        {
+            var vaultRect = new Rect2(_vaultPanel.GlobalPosition, _vaultPanel.Size);
+            if (vaultRect.HasPoint(globalPos))
+            {
+                _tcp.SendPacket(ClientPackets.WriteBankDeposit(slot1, (short)item.Amount));
+                return;
+            }
+        }
+
+        // Check if drop landed on the guild bank panel
+        if (_state.ShowGuildBank && _guildBankPanel != null && _guildBankPanel.Visible)
+        {
+            var gbRect = new Rect2(_guildBankPanel.GlobalPosition, _guildBankPanel.Size);
+            if (gbRect.HasPoint(globalPos))
+            {
+                _tcp.SendPacket(ClientPackets.WriteGuildBankDepositItem(slot1, (short)item.Amount));
+                return;
+            }
+        }
+
+        // Not on any panel — drop on ground.
+        // If ItemSafety is on and amount > 1, show quantity dialog. Otherwise drop whole stack.
+        if (_state.ItemSafety && item.Amount > 1)
+        {
+            _state.DropDialogSlot = slot;
+            _state.DropDialogOpen = true;
+            if (_dropDialog != null)
+            {
+                _dropDialog.Visible = true;
+                _dropDialogLabel!.Text = $"Tirar {item.Name}:";
+                _dropDialogInput!.Text = "1";
+                _dropDialogInput.GrabFocus();
+                _dropDialogInput.SelectAll();
+            }
+        }
+        else
+        {
+            _tcp.SendPacket(ClientPackets.WriteDropItem(slot1, (short)item.Amount));
+        }
+    }
 
     // =====================================================================
     // Character Creation Panel
@@ -2668,9 +2775,15 @@ public partial class Main : Control
             {
                 _lastComerciando = _state.Comerciando;
                 if (_state.Comerciando)
+                {
                     _commercePanel?.OpenShop();
+                    _soundManager?.PlaySound(SoundManager.SND_PANELOPEN);
+                }
                 else
+                {
                     _commercePanel?.CloseShop();
+                    _soundManager?.PlaySound(SoundManager.SND_PANELCLOSE);
+                }
             }
 
             // Trade panel state tracking (player-to-player)
@@ -2678,15 +2791,22 @@ public partial class Main : Control
             {
                 _lastTrading = _state.Trading;
                 if (_state.Trading)
+                {
                     _tradePanel?.OpenTrade();
+                    _soundManager?.PlaySound(SoundManager.SND_PANELOPEN);
+                }
                 else
+                {
                     _tradePanel?.CloseTrade();
+                    _soundManager?.PlaySound(SoundManager.SND_PANELCLOSE);
+                }
             }
             // Consume TradeJustOpened flag (set by PacketHandler on trade init)
             if (_state.TradeJustOpened)
             {
                 _state.TradeJustOpened = false;
                 _tradePanel?.OpenTrade();
+                _soundManager?.PlaySound(SoundManager.SND_PANELOPEN);
             }
 
             // Bank panel state tracking
@@ -2697,13 +2817,17 @@ public partial class Main : Control
                 {
                     // Only open BankPanel if vault isn't already open
                     if (!_state.BovedaAbierta)
+                    {
                         _bankPanel?.OpenBank();
+                        _soundManager?.PlaySound(SoundManager.SND_PANELOPEN);
+                    }
                 }
                 else
                 {
                     _bankPanel?.CloseBank();
                     _vaultPanel?.CloseVault();
                     _state.BovedaAbierta = false;
+                    _soundManager?.PlaySound(SoundManager.SND_PANELCLOSE);
                 }
             }
 
@@ -2908,6 +3032,7 @@ public partial class Main : Control
                 if (_tcp != null)
                 {
                     _inventoryPanel!.Init(_state, _gameData, _tcp);
+                    _inventoryPanel!.OnDropOutside += OnInventoryDropOutside;
                     _spellPanel!.Init(_state, _gameData, _tcp);
                     _commercePanel!.Init(_state, _gameData, _tcp);
                     _tradePanel!.Init(_state, _gameData, _tcp);
@@ -3189,8 +3314,12 @@ public partial class Main : Control
         for (int i = 0; i < 40; i++)
             _state.BankItems[i] = new BankItem();
 
-        // Chat queue
+        // Chat queue and history
         _state.ChatMessages.Clear();
+        _state.ChatHistory.Clear();
+        _state.ActiveChatFilter = -1;
+        _state.ChatFilterDirty = false;
+        UpdateChatTabHighlight();
     }
 
     private void PopulateCharList()
@@ -3258,7 +3387,16 @@ public partial class Main : Control
         // FPS
         _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
 
-        // (minimap removed — VB6 13.3 has no minimap)
+        // Update minimap party member names from PartyPanel
+        if (_minimapPanel != null && _partyPanel != null)
+        {
+            _minimapPanel.PartyMemberNames.Clear();
+            foreach (var m in _partyPanel.Members)
+            {
+                if (!string.IsNullOrEmpty(m.Name))
+                    _minimapPanel.PartyMemberNames.Add(m.Name);
+            }
+        }
     }
 
     /// <summary>
@@ -3299,31 +3437,99 @@ public partial class Main : Control
     }
 
     /// <summary>
-    /// Drain chat message queue and append to console RichTextLabel.
+    /// Drain chat message queue, store in history, and display filtered in console.
     /// </summary>
     private void UpdateConsoleMessages()
     {
         if (_console == null) return;
 
-        bool hadMessages = false;
+        bool hadNew = false;
         while (_state.ChatMessages.Count > 0)
         {
             var msg = _state.ChatMessages.Dequeue();
-            // Feed to party panel for state tracking (non-destructive — always shows in console too)
+            // Feed to party panel for state tracking (non-destructive)
             _partyPanel?.TryParsePartyMessage(msg.Text);
-            // VB6 console uses bold font (Weight=700 in RecTxt)
-            _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
-            hadMessages = true;
+            // Store in history
+            _state.ChatHistory.Add(msg);
+            if (_state.ChatHistory.Count > GameState.MaxChatHistory)
+                _state.ChatHistory.RemoveAt(0);
+
+            // Append to console if it passes the active filter
+            if (PassesChatFilter(msg, _state.ActiveChatFilter))
+            {
+                _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
+            }
+            hadNew = true;
         }
-        // Auto-scroll to bottom when new messages arrive.
-        // ScrollFollowing alone doesn't work reliably after the user scrolls up —
-        // Godot disables it on manual scroll and re-enabling on the same frame as
-        // AppendText can miss the update. Force-scroll the VScrollBar to max.
-        if (hadMessages)
+
+        // If chat filter changed, rebuild console from history
+        if (_state.ChatFilterDirty)
+        {
+            _state.ChatFilterDirty = false;
+            RebuildConsoleFromHistory();
+            hadNew = true;
+        }
+
+        // Auto-scroll to bottom when new messages arrive
+        if (hadNew)
         {
             _console.ScrollFollowing = true;
             var vbar = _console.GetVScrollBar();
             vbar.Value = vbar.MaxValue;
+        }
+    }
+
+    /// <summary>
+    /// Check if a message passes the active chat tab filter.
+    /// </summary>
+    private static bool PassesChatFilter(ChatMessage msg, int filter)
+    {
+        if (filter < 0) return true; // "All" tab
+        return (int)msg.Type == filter;
+    }
+
+    /// <summary>
+    /// Rebuild the console RichTextLabel from stored chat history with current filter.
+    /// </summary>
+    private void RebuildConsoleFromHistory()
+    {
+        if (_console == null) return;
+        _console.Clear();
+        foreach (var msg in _state.ChatHistory)
+        {
+            if (PassesChatFilter(msg, _state.ActiveChatFilter))
+            {
+                _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Set the active chat tab filter and trigger console rebuild.
+    /// </summary>
+    private void SetChatFilter(int filter)
+    {
+        if (_state.ActiveChatFilter == filter) return;
+        _state.ActiveChatFilter = filter;
+        _state.ChatFilterDirty = true;
+        UpdateChatTabHighlight();
+    }
+
+    /// <summary>
+    /// Update chat tab button colors to highlight the active filter.
+    /// </summary>
+    private void UpdateChatTabHighlight()
+    {
+        int[] tabFilters = { -1, (int)ChatType.Global, (int)ChatType.Party, (int)ChatType.Clan, (int)ChatType.Whisper, (int)ChatType.Combat, (int)ChatType.System };
+        var activeColor = new Color(0.9f, 0.8f, 0.5f);
+        var normalColor = new Color(0.7f, 0.7f, 0.7f);
+        for (int i = 0; i < _chatTabButtons.Length; i++)
+        {
+            if (_chatTabButtons[i] != null)
+            {
+                bool active = tabFilters[i] == _state.ActiveChatFilter;
+                _chatTabButtons[i].AddThemeColorOverride("font_color", active ? activeColor : normalColor);
+            }
         }
     }
 

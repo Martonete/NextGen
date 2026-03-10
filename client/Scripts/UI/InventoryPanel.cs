@@ -11,6 +11,7 @@ namespace ArgentumNextgen.UI;
 /// VB6-accurate 5x5 inventory grid (174x174 px).
 /// Custom-drawn using _Draw() for pixel-perfect match with VB6 picInv.
 /// Slot layout: x = col*34 + 1 + col, y = row*34 + row (VB6 pixel corrections).
+/// Supports cross-panel drag & drop: inventory → ground/trade/vault.
 /// </summary>
 public partial class InventoryPanel : Control
 {
@@ -46,6 +47,19 @@ public partial class InventoryPanel : Control
     public int SelectedSlot => _selectedSlot;
     public bool DyDEnabled { get => _dydEnabled; set => _dydEnabled = value; }
 
+    /// <summary>True when a drag is in progress (used by Main.cs for cross-panel routing).</summary>
+    public bool IsDragging => _dragging && _dydEnabled && _dragSourceSlot >= 0;
+
+    /// <summary>The inventory slot being dragged (0-based), or -1 if none.</summary>
+    public int DragSourceSlot => _dragSourceSlot;
+
+    /// <summary>
+    /// Fired when a drag ends outside the inventory panel bounds.
+    /// Args: (int slot0based, Vector2 globalDropPosition).
+    /// Main.cs uses this to route to trade/vault/ground.
+    /// </summary>
+    public event Action<int, Vector2>? OnDropOutside;
+
     /// <summary>Cancel any in-progress drag operation (e.g. when switching tabs).</summary>
     public void CancelDrag()
     {
@@ -73,6 +87,49 @@ public partial class InventoryPanel : Control
             _hoveredSlot = -1;
             if (TooltipLabel != null) TooltipLabel.Text = "";
             RichTooltip?.Hide();
+        }
+    }
+
+    /// <summary>
+    /// Global input handler: catches mouse release outside the inventory during drag.
+    /// Without this, releasing the mouse outside the panel would leave drag state stuck.
+    /// </summary>
+    public override void _Input(InputEvent @event)
+    {
+        if (!_dragging || !_dydEnabled || _dragSourceSlot < 0) return;
+
+        // Track mouse position globally during drag (for ghost item rendering even outside panel)
+        if (@event is InputEventMouseMotion globalMotion)
+        {
+            _dragMousePos = globalMotion.Position - GlobalPosition;
+        }
+        else if (@event is InputEventMouseButton globalMb
+            && globalMb.ButtonIndex == MouseButton.Left
+            && !globalMb.Pressed)
+        {
+            // Mouse released globally — check if inside inventory or outside
+            var localPos = globalMb.Position - GlobalPosition;
+            int destSlot = HitTestSlot(localPos);
+
+            if (destSlot >= 0 && destSlot < TotalSlots && destSlot != _dragSourceSlot)
+            {
+                // Drop inside inventory — swap
+                _tcp?.SendPacket(ClientPackets.WriteSwapItems(
+                    (byte)(_dragSourceSlot + 1), (byte)(destSlot + 1)));
+            }
+            else if (destSlot < 0)
+            {
+                // Drop outside inventory — cross-panel or ground drop
+                OnDropOutside?.Invoke(_dragSourceSlot, globalMb.Position);
+            }
+
+            // Clear drag state
+            _dragSourceSlot = -1;
+            _dragging = false;
+            _dragPending = false;
+
+            // Consume event so other controls don't process this release
+            GetViewport().SetInputAsHandled();
         }
     }
 
@@ -250,19 +307,8 @@ public partial class InventoryPanel : Control
                 }
                 else // Released
                 {
-                    if (_dragging && _dydEnabled && _dragSourceSlot >= 0)
-                    {
-                        // Drag completed — check for swap
-                        int destSlot = HitTestSlot(mb.Position);
-                        if (destSlot >= 0 && destSlot < TotalSlots && destSlot != _dragSourceSlot)
-                        {
-                            // Send SWAP packet (1-indexed)
-                            _tcp.SendPacket(ClientPackets.WriteSwapItems((byte)(_dragSourceSlot + 1), (byte)(destSlot + 1)));
-                        }
-                    }
-                    // Always clear drag state on release
-                    _dragSourceSlot = -1;
-                    _dragging = false;
+                    // Drag release is handled by _Input (global handler) for both
+                    // inside and outside panel drops. Just clear pending state here.
                     _dragPending = false;
                 }
             }

@@ -1,7 +1,7 @@
 //! Commerce handlers: NPC buy/sell, user-to-user trading, personal bank, guild bank.
 //! Extracted from mod.rs to reduce file size.
 
-use tracing::info;
+use tracing::{info, warn};
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, InventorySlot, MAX_BANK_SLOTS};
 use crate::protocol::{fields::read_field, binary_packets, font_index};
@@ -198,6 +198,21 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
         None => return,
     };
 
+    // VB6: Faction armor restriction — Real/Chaos items can only be bought by faction members
+    if obj.real || obj.caos {
+        let (is_real, is_caos) = state.users.get(&conn_id)
+            .map(|u| (u.armada_real, u.fuerzas_caos))
+            .unwrap_or((false, false));
+        if obj.real && !is_real {
+            state.send_console(conn_id, "Solo miembros de la Armada Real pueden comprar este objeto.", font_index::INFO).await;
+            return;
+        }
+        if obj.caos && !is_caos {
+            state.send_console(conn_id, "Solo miembros de la Legion del Caos pueden comprar este objeto.", font_index::INFO).await;
+            return;
+        }
+    }
+
     // Calculate buy price
     let descuento = 1.0 + comerciar_skill as f64 / 100.0;
     let descuento = if descuento <= 0.0 { 1.0 } else { descuento };
@@ -286,6 +301,14 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
     let pkt = binary_packets::write_trans_ok(slot as u8, 0); // 0 = buy
     state.send_bytes(conn_id, &pkt).await;
 
+    // Security audit: log high-quantity transactions (>1000 items)
+    if cantidad > 1000 {
+        let char_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let obj_name = obj.name.clone();
+        warn!("[COMMERCE-AUDIT] BUY: user='{}' conn={} obj='{}' (#{}) qty={} total_gold={}",
+            char_name, conn_id, obj_name, obj_index, cantidad, total_price);
+    }
+
     // VB6: SubirSkill(UserIndex, Comerciar, True) — commerce XP on buy
     if let Some(user) = state.users.get_mut(&conn_id) {
         try_level_skill_with_hit(user, SK_COMERCIAR, true);
@@ -346,6 +369,12 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
         Some(o) => o.clone(),
         None => return,
     };
+
+    // VB6: Faction items cannot be sold to NPCs (they are bound to the faction)
+    if obj.real || obj.caos {
+        state.send_console(conn_id, "No puedes vender objetos de faccion.", font_index::INFO).await;
+        return;
+    }
 
     // Reject conditions (VB6: NpcCompraObj)
     if obj.newbie {
@@ -433,6 +462,14 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
 
     let pkt = binary_packets::write_trans_ok(slot as u8, 1); // 1 = sell
     state.send_bytes(conn_id, &pkt).await;
+
+    // Security audit: log high-quantity transactions (>1000 items)
+    if cantidad > 1000 {
+        let char_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+        let obj_name = obj.name.clone();
+        warn!("[COMMERCE-AUDIT] SELL: user='{}' conn={} obj='{}' (#{}) qty={} gold_gained={}",
+            char_name, conn_id, obj_name, obj_index, cantidad, sell_price);
+    }
 
     // VB6: SubirSkill(UserIndex, Comerciar, True) — commerce XP on sell
     if let Some(user) = state.users.get_mut(&conn_id) {

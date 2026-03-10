@@ -242,7 +242,14 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         let dist = (x - tx).abs() + (y - ty).abs();
 
                         if dist <= 1 && can_attack {
-                            npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: 50% chance to cast spell instead of melee
+                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            } else {
+                                npc_attack_user(state, npc_idx, target_conn).await;
+                            }
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
@@ -325,7 +332,14 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     if let Some((tx, ty)) = target_pos {
                         let dist = (x - tx).abs() + (y - ty).abs();
                         if dist <= 1 && can_attack {
-                            npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: 50% chance to cast spell instead of melee
+                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            } else {
+                                npc_attack_user(state, npc_idx, target_conn).await;
+                            }
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
@@ -387,6 +401,48 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         }
                     }
                 }
+            }
+
+            npc::AI_NPC_OBJETO => {
+                // VB6 NpcObjeto — stationary "turret" NPC. No movement.
+                // Attack phase (VB6 NPCAI lines 160-189): can melee adjacent + spells.
+                // NpcObjeto has 1/3 chance to skip attacking a given user (RandomNumber(1,3)==3).
+                // Movement phase (AiNpcObjeto): scans vision for spell targets.
+                if hostile && can_attack {
+                    // Adjacent melee/spell attack (VB6: same attack phase as other hostiles)
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                        // VB6: NpcObjeto → RandomNumber(1,3) < 3 → 2/3 chance to attack
+                        if rand_range(1, 3) < 3 {
+                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            } else if lanza_spells > 0 && !spells.is_empty() {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            } else {
+                                npc_attack_user(state, npc_idx, target_conn).await;
+                            }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = false;
+                            }
+                        }
+                    } else if lanza_spells > 0 && !spells.is_empty() {
+                        // VB6 AiNpcObjeto: scan vision for spell targets at range
+                        if let Some(target_conn) = find_nearest_player(state, map, x, y) {
+                            if rand_range(1, 3) < 3 {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                            }
+                        }
+                    }
+                }
+                // No movement — NpcObjeto is stationary
             }
 
             npc::AI_FOLLOW_OWNER => {

@@ -14,12 +14,26 @@ public class CharacterPreview
 }
 
 /// <summary>
+/// Chat message category for tab filtering.
+/// </summary>
+public enum ChatType
+{
+    System,   // Default: system messages, server notices, info
+    Global,   // Public/global chat
+    Party,    // Party messages
+    Clan,     // Guild/clan messages
+    Whisper,  // Private messages
+    Combat,   // Damage, hit, fight messages
+}
+
+/// <summary>
 /// A chat/console message with color for the UI console.
 /// </summary>
 public class ChatMessage
 {
     public string Text = "";
     public string Color = "FFFFFF"; // hex color without #
+    public ChatType Type = ChatType.System;
 }
 
 /// <summary>
@@ -341,6 +355,14 @@ public class GameState
 
     // Chat message queue — drained by Main.cs each frame
     public Queue<ChatMessage> ChatMessages = new();
+
+    // Chat tab filter: -1 = All, otherwise index into ChatType enum (0-5)
+    public int ActiveChatFilter = -1;
+    // Full chat history for tab switching (last N messages retained)
+    public List<ChatMessage> ChatHistory = new();
+    public const int MaxChatHistory = 300;
+    // True when chat filter changed (forces console rebuild)
+    public bool ChatFilterDirty;
 
     // Textos.ao message templates — loaded once, used by PacketHandler for console messages
     public TextMessage[] TextMessages = System.Array.Empty<TextMessage>();

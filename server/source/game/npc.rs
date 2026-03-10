@@ -24,6 +24,7 @@ pub const AI_RANDOM: i32 = 2;
 pub const AI_HOSTILE_CHASE: i32 = 3;
 pub const AI_DEFENSE: i32 = 4;
 pub const AI_GUARD: i32 = 5;
+pub const AI_NPC_OBJETO: i32 = 6;
 pub const AI_FOLLOW_OWNER: i32 = 8;
 pub const AI_PATHFINDING: i32 = 10;
 

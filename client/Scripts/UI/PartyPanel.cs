@@ -53,6 +53,9 @@ public partial class PartyPanel : Control
     private bool _inParty;
     private bool _isLeader;
 
+    /// <summary>Read-only access to party members for minimap markers.</summary>
+    public IReadOnlyList<PartyMemberInfo> Members => _members;
+
     // Tracks whether we're expecting PINFO response lines
     private bool _parsingPinfo;
     private readonly List<string> _pinfoLines = new();
