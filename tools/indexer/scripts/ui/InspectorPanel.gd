@@ -18,8 +18,6 @@ signal index_frame_pressed(idx: int)
 @warning_ignore("unused_signal")
 signal view_file_num_pressed(file_num: int, grh_index: int)
 signal next_grh_changed(val: int)
-signal undo_requested
-signal redo_requested
 
 var _tabs: TabContainer
 
@@ -39,7 +37,7 @@ var _body_anims: Array = []  # Array of body animation dicts (one per heading)
 var _body_dir_tabs: HBoxContainer  # Norte/Este/Sur/Oeste tabs
 var _body_current_dir: int = 0  # Currently selected direction index
 
-var _props_popup: Window
+var _props_section: VBoxContainer
 var _props_box: VBoxContainer
 var _spin_sx: SpinBox
 var _spin_sy: SpinBox
@@ -130,8 +128,7 @@ func _ready() -> void:
 	_tabs.add_child(_build_detect_tab())
 	_tabs.add_child(_build_data_tab())
 
-	# Deferred: add popup to root window (must be done after entering tree)
-	call_deferred("_attach_props_popup")
+	# (props section is inline now, no deferred attach needed)
 
 
 # ── Public API ────────────────────────────────────────────────────
@@ -567,39 +564,26 @@ func _build_frames_tab() -> Control:
 	_lbl_anim_info.custom_minimum_size.x = 60
 	playbar.add_child(_lbl_anim_info)
 
-	# ── Properties popup (floats to the left of the inspector) ──
-	_props_popup = Window.new()
-	_props_popup.title = "Propiedades del frame"
-	_props_popup.unresizable = true
-	_props_popup.always_on_top = true
-	_props_popup.transient = true
-	_props_popup.exclusive = false
-	_props_popup.visible = false
-	_props_popup.wrap_controls = true
-	_props_popup.close_requested.connect(func(): _props_popup.hide())
-	# Forward Ctrl+Z/Y from popup to main (popups capture unhandled input)
-	_props_popup.connect("window_input", _on_props_popup_input)
-	# Dark background panel
-	var popup_bg := PanelContainer.new()
-	var popup_sb := StyleBoxFlat.new()
-	popup_sb.bg_color = IndexerTheme.BG_PANEL
-	popup_sb.border_color = IndexerTheme.ACCENT
-	popup_sb.set_border_width_all(1)
-	popup_sb.set_corner_radius_all(4)
-	popup_sb.set_content_margin_all(8)
-	popup_bg.add_theme_stylebox_override("panel", popup_sb)
-	popup_bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_props_popup.add_child(popup_bg)
+	# ── Properties section (inline, collapsible) ──
+	_props_section = VBoxContainer.new()
+	_props_section.add_theme_constant_override("separation", 4)
+	_props_section.visible = false
+	var props_bg := PanelContainer.new()
+	var props_sb := StyleBoxFlat.new()
+	props_sb.bg_color = IndexerTheme.BG_SECTION
+	props_sb.border_color = IndexerTheme.ACCENT
+	props_sb.set_border_width_all(1)
+	props_sb.set_corner_radius_all(3)
+	props_sb.set_content_margin_all(6)
+	props_bg.add_theme_stylebox_override("panel", props_sb)
+	props_bg.add_child(_props_section)
+	root.add_child(props_bg)
 
-	_props_box = VBoxContainer.new()
-	_props_box.add_theme_constant_override("separation", 4)
-	popup_bg.add_child(_props_box)
+	_props_box = _props_section
 
 	var props_header := HBoxContainer.new()
 	props_header.add_theme_constant_override("separation", 6)
 	_props_box.add_child(props_header)
-	props_header.add_child(IndexerTheme.section_label("Propiedades"))
-	props_header.add_child(IndexerTheme.spacer())
 	_lbl_prop_info = IndexerTheme.label("", IndexerTheme.TEXT_ACCENT, IndexerTheme.FONT_SIZE_SM)
 	props_header.add_child(_lbl_prop_info)
 
@@ -963,31 +947,9 @@ func _build_data_tab() -> Control:
 
 # ── Internal helpers ──────────────────────────────────────────────
 
-func _attach_props_popup() -> void:
-	if _props_popup == null or _props_popup.is_inside_tree():
-		return
-	get_tree().root.add_child(_props_popup)
-	_props_popup.visible = false
-
-
 func _show_props(vis: bool) -> void:
-	if _props_popup == null or not _props_popup.is_inside_tree():
-		return
-	if not vis:
-		_props_popup.visible = false
-		return
-	# Position to the left of the inspector panel
-	var inspector_rect := get_global_rect()
-	var popup_w := 420
-	var popup_h := 380
-	var px := int(inspector_rect.position.x) - popup_w - 8
-	var py := int(inspector_rect.position.y) + 40
-	# Clamp to screen
-	if px < 4:
-		px = 4
-	_props_popup.position = Vector2i(px, py)
-	_props_popup.size = Vector2i(popup_w, popup_h)
-	_props_popup.visible = true
+	if _props_section != null:
+		_props_section.visible = vis
 
 
 func _rebuild_frame_list(frames: Array, selected: int) -> void:
@@ -1281,7 +1243,6 @@ func _build_anim_creator_window() -> void:
 	bg.add_theme_stylebox_override("panel", sb)
 	bg.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_anim_creator_win.add_child(bg)
-	_anim_creator_win.connect("window_input", _on_props_popup_input)
 
 	var main_vbox := VBoxContainer.new()
 	main_vbox.add_theme_constant_override("separation", 6)
@@ -1667,21 +1628,6 @@ func _on_anim_save() -> void:
 	_anim_creator_win.hide()
 	_anim_preview_playing = false
 
-
-func _on_props_popup_input(event: InputEvent) -> void:
-	if event is InputEventKey and event.pressed:
-		var k := event as InputEventKey
-		if k.ctrl_pressed:
-			match k.keycode:
-				KEY_Z:
-					if k.shift_pressed:
-						redo_requested.emit()
-					else:
-						undo_requested.emit()
-					_props_popup.set_input_as_handled()
-				KEY_Y:
-					redo_requested.emit()
-					_props_popup.set_input_as_handled()
 
 
 func _on_props_changed() -> void:
