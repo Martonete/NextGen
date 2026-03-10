@@ -16,6 +16,7 @@ var _lbl_summary: Label
 var _lbl_warn: Label
 var _btn_split: Button
 var _btn_save: Button
+var _lbl_save_hint: Label
 
 # Source frame info (set before popup)
 var _source_frame: Dictionary = {}
@@ -161,6 +162,13 @@ func _ready() -> void:
 	_btn_save.add_theme_stylebox_override("hover", save_hover)
 	_btn_save.pressed.connect(_on_save)
 	root.add_child(_btn_save)
+
+	_lbl_save_hint = Label.new()
+	_lbl_save_hint.text = "Escribe un nombre para continuar"
+	_lbl_save_hint.add_theme_font_size_override("font_size", 11)
+	_lbl_save_hint.add_theme_color_override("font_color", Color(0.6, 0.55, 0.4))
+	_lbl_save_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	root.add_child(_lbl_save_hint)
 
 
 func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: PackedStringArray) -> void:
@@ -308,6 +316,7 @@ func _update_save_state() -> void:
 	# 1x1 doesn't need split; NxM requires split first
 	var split_ok := is_single or _split_done
 	_btn_save.disabled = not (name_ok and split_ok)
+	_lbl_save_hint.visible = not name_ok
 
 
 func _on_save() -> void:

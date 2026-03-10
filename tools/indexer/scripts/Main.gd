@@ -1755,12 +1755,14 @@ func _on_ctx_menu_item(id: int) -> void:
 
 
 func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) -> void:
-	# Create visual split frames on canvas without saving anything yet
+	# Split a large frame into NxM 32x32 tiles with GRH indices
 	var sx: int = frame.get("sx", 0)
 	var sy: int = frame.get("sy", 0)
 	var fw: int = frame.get("w", 0)
 	var fh: int = frame.get("h", 0)
 	var file_num: int = frame.get("file_num", _current_file_num)
+
+	_push_undo()
 
 	# Remove the original frame
 	var orig_idx := -1
@@ -1770,20 +1772,36 @@ func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) 
 			orig_idx = i
 			break
 	if orig_idx >= 0:
-		_push_undo()
 		_current_frames.remove_at(orig_idx)
 
-	# Create NxM 32x32 sub-frames visually
+	# Create NxM 32x32 sub-frames with consecutive GRH indices
+	var first_grh := _next_grh_index
+	_pending_tex_first_grh = first_grh
 	for row in range(tiles_h):
 		for col in range(tiles_w):
+			var grh_idx := _next_grh_index
+			_next_grh_index += 1
 			var tile_sx := sx + col * 32
 			var tile_sy := sy + row * 32
-			var frame_dict := {"sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32, "file_num": file_num}
+			var frame_dict := {
+				"sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32,
+				"grh_index": grh_idx, "file_num": file_num
+			}
 			_current_frames.append(frame_dict)
+			_grh_data["entries"][grh_idx] = {
+				"grh_index": grh_idx, "num_frames": 1,
+				"file_num": file_num, "sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32
+			}
 
+	if _next_grh_index - 1 > _grh_data["max_index"]:
+		_grh_data["max_index"] = _next_grh_index - 1
+	_inspector.set_next_grh(_next_grh_index)
+	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+
+	var total := tiles_w * tiles_h
 	_selected_frame_idx = -1
 	_refresh_all()
-	_update_status("Frame dividido en %d×%d = %d tiles de 32×32" % [tiles_w, tiles_h, tiles_w * tiles_h])
+	_update_status("Frame dividido: %d×%d = %d tiles (G%d–G%d)" % [tiles_w, tiles_h, total, first_grh, first_grh + total - 1])
 
 
 func _open_texture_index_dialog(idx: int) -> void:
@@ -1800,6 +1818,7 @@ func _open_texture_index_dialog(idx: int) -> void:
 var _pending_tex_name: String = ""
 var _pending_tex_category: String = ""
 var _pending_tex_capa: int = 0
+var _pending_tex_first_grh: int = -1  # set by split_requested for NxM
 
 func _on_texture_index_confirmed(tex_name: String, category: String, capa: int) -> void:
 	var tiles := _tex_index_dialog.get_tiles()
@@ -1840,69 +1859,45 @@ func _on_texture_index_final() -> void:
 	var file_num: int = source.get("file_num", _current_file_num)
 	var tw: int = tiles.x
 	var th: int = tiles.y
-
 	var is_single := (tw == 1 and th == 1)
-
-	var first_grh := _next_grh_index
-	var created_grhs: Array[int] = []
+	var first_grh: int
+	var total: int
 
 	if is_single:
-		# 1x1: keep original size — remove original, create indexed frame
-		var orig_idx := -1
+		# 1x1: create indexed frame now (no prior split)
+		first_grh = _next_grh_index
+		_push_undo()
+		# Remove original
 		for i in range(_current_frames.size()):
 			var f: Dictionary = _current_frames[i]
 			if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
-				orig_idx = i
+				_current_frames.remove_at(i)
 				break
-		if orig_idx >= 0:
-			_push_undo()
-			_current_frames.remove_at(orig_idx)
-
 		var grh_idx := _next_grh_index
 		_next_grh_index += 1
-		var frame_dict := {"sx": sx, "sy": sy, "w": fw, "h": fh, "grh_index": grh_idx, "file_num": file_num}
-		_current_frames.append(frame_dict)
+		_current_frames.append({"sx": sx, "sy": sy, "w": fw, "h": fh, "grh_index": grh_idx, "file_num": file_num})
 		_grh_data["entries"][grh_idx] = {
 			"grh_index": grh_idx, "num_frames": 1,
 			"file_num": file_num, "sx": sx, "sy": sy, "w": fw, "h": fh
 		}
-		created_grhs.append(grh_idx)
+		if grh_idx > _grh_data["max_index"]:
+			_grh_data["max_index"] = grh_idx
+		_inspector.set_next_grh(_next_grh_index)
+		_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+		total = 1
 	else:
-		# NxM: frames already split on canvas by split_requested — assign GRH indices
-		for row in range(th):
-			for col in range(tw):
-				var grh_idx := _next_grh_index
-				_next_grh_index += 1
-				var tile_sx := sx + col * 32
-				var tile_sy := sy + row * 32
-				# Find existing split frame and tag it with grh_index
-				for i in range(_current_frames.size()):
-					var f: Dictionary = _current_frames[i]
-					if f.get("sx", -1) == tile_sx and f.get("sy", -1) == tile_sy and f.get("w", -1) == 32 and f.get("h", -1) == 32 and not f.has("grh_index"):
-						_current_frames[i]["grh_index"] = grh_idx
-						_current_frames[i]["file_num"] = file_num
-						break
-				_grh_data["entries"][grh_idx] = {
-					"grh_index": grh_idx, "num_frames": 1,
-					"file_num": file_num, "sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32
-				}
-				created_grhs.append(grh_idx)
+		# NxM: GRHs already assigned in _on_texture_split_requested — just persist
+		first_grh = _pending_tex_first_grh
+		total = tw * th
 
-	if _next_grh_index - 1 > _grh_data["max_index"]:
-		_grh_data["max_index"] = _next_grh_index - 1
-	_inspector.set_next_grh(_next_grh_index)
-	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
-
-	# Append to indices.ini atomically
+	# Save indices.ini entry
 	_append_indices_ini_entry(_pending_tex_name, first_grh, tw, th, _pending_tex_capa, _pending_tex_category)
 
-	# Save Graficos.ind
+	# Save Graficos.ind to disk
 	if not _ind_path.is_empty():
 		GrhIO.save_ind(_ind_path, _grh_data)
 
-	var total := created_grhs.size()
 	_update_status("Textura '%s' indexada: %d GRHs (G%d–G%d) + indices.ini" % [_pending_tex_name, total, first_grh, first_grh + total - 1])
-
 	_selected_frame_idx = -1
 	_refresh_all()
 
