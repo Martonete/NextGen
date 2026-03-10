@@ -62,7 +62,8 @@ var _spin_resize_h: SpinBox
 
 var _frame_list_vbox: VBoxContainer
 var _lbl_frame_count: Label
-var _grh_entries: Dictionary = {}  # grh_index → entry (from Graficos.ind)
+var _grh_entries: Dictionary = {}  # grh_index → entry (current in-memory)
+var _grh_entries_original: Dictionary = {}  # grh_index → entry (snapshot from disk)
 var _current_texture: ImageTexture = null
 var _related_textures: Dictionary = {}  # file_num → ImageTexture (for remote frame thumbnails)
 var _current_file_num: int = 0
@@ -188,8 +189,10 @@ func set_image(img: Image) -> void:
 	_preview.set_image(img)
 
 
-func set_grh_entries(entries: Dictionary) -> void:
+func set_grh_entries(entries: Dictionary, original: Dictionary = {}) -> void:
 	_grh_entries = entries
+	if original.size() > 0:
+		_grh_entries_original = original
 
 
 func set_current_texture(tex: ImageTexture) -> void:
@@ -976,6 +979,13 @@ func _build_data_tab() -> Control:
 
 # ── Internal helpers ──────────────────────────────────────────────
 
+func _entry_differs(current: Dictionary, original: Dictionary) -> bool:
+	for key in ["file_num", "sx", "sy", "w", "h", "num_frames"]:
+		if current.get(key, 0) != original.get(key, 0):
+			return true
+	return false
+
+
 func _show_props(vis: bool) -> void:
 	if _props_section != null:
 		_props_section.visible = vis
@@ -1014,20 +1024,29 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 			})
 			local_grhs[rf_grh] = true  # Prevent dupes
 
-	# Count stats
-	var indexed_count := 0
+	# Count stats by status
 	var local_count := 0
+	var new_count := 0
+	var modified_count := 0
+	var saved_count := 0
 	for entry in combined:
-		var grh_idx: int = entry.frame.get("grh_index", 0)
-		if _grh_entries.has(grh_idx):
-			indexed_count += 1
 		if entry.is_local:
 			local_count += 1
+		var grh_idx: int = entry.frame.get("grh_index", 0)
+		if grh_idx > 0 and _grh_entries.has(grh_idx):
+			if not _grh_entries_original.has(grh_idx):
+				new_count += 1
+			elif _entry_differs(_grh_entries[grh_idx], _grh_entries_original[grh_idx]):
+				modified_count += 1
+			else:
+				saved_count += 1
 	_lbl_frame_count.text = "%d frames" % local_count
 	var extra := combined.size() - local_count
 	var info_parts: PackedStringArray = []
-	if indexed_count > 0:
-		info_parts.append("%d indexados" % indexed_count)
+	if new_count > 0:
+		info_parts.append("+%d nuevos" % new_count)
+	if modified_count > 0:
+		info_parts.append("~%d modif." % modified_count)
 	if extra > 0:
 		info_parts.append("+%d relacionados" % extra)
 	_lbl_grh_info.text = "  ".join(info_parts)
@@ -1040,7 +1059,18 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 		var fnum: int = entry.file_num
 		var is_sel := is_local and (local_idx == selected)
 		var grh_idx: int = f.get("grh_index", 0)
-		var is_indexed: bool = _grh_entries.has(grh_idx)
+		# Determine frame status relative to disk
+		var in_current := grh_idx > 0 and _grh_entries.has(grh_idx)
+		var in_original := grh_idx > 0 and _grh_entries_original.has(grh_idx)
+		# "NUEVO" = in memory but not on disk, "MODIFICADO" = differs from disk, "GUARDADO" = same as disk
+		var frame_status := ""  # empty = no grh assigned
+		if in_current:
+			if not in_original:
+				frame_status = "NUEVO"
+			elif _entry_differs(_grh_entries[grh_idx], _grh_entries_original[grh_idx]):
+				frame_status = "MODIFICADO"
+			else:
+				frame_status = "GUARDADO"
 		var is_remote := not is_local
 
 		# Row background
@@ -1099,20 +1129,13 @@ func _rebuild_frame_list(frames: Array, selected: int) -> void:
 		grh_lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		line1.add_child(grh_lbl)
 
-		# Indexed badge on line 1
-		if is_indexed:
-			line1.add_child(IndexerTheme.label("INDEXADO", IndexerTheme.TEXT_SUCCESS, 9))
-		elif is_local:
-			var btn_idx := Button.new()
-			btn_idx.text = "+"
-			btn_idx.tooltip_text = "Agregar a Graficos.ind (doble click)"
-			btn_idx.custom_minimum_size.x = 22
-			btn_idx.add_theme_font_size_override("font_size", 9)
-			btn_idx.add_theme_color_override("font_color", IndexerTheme.TEXT_WARNING)
-			btn_idx.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 2, 2, 1))
-			btn_idx.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 2, 2, 1))
-			btn_idx.pressed.connect(_on_index_frame_btn.bind(local_idx, btn_idx))
-			line1.add_child(btn_idx)
+		# Status badge on line 1
+		if frame_status == "NUEVO":
+			line1.add_child(IndexerTheme.label("NUEVO", IndexerTheme.TEXT_WARNING, 9))
+		elif frame_status == "MODIFICADO":
+			line1.add_child(IndexerTheme.label("MODIFICADO", Color(0.9, 0.6, 0.2), 9))
+		elif frame_status == "GUARDADO":
+			line1.add_child(IndexerTheme.label("GUARDADO", IndexerTheme.TEXT_SUCCESS, 9))
 
 		# Line 2: offsets + size
 		var line2_text := "pos (%d, %d)  —  %d x %d px" % [f.get("sx", 0), f.get("sy", 0), f.get("w", 0), f.get("h", 0)]

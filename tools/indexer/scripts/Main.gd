@@ -28,8 +28,10 @@ var _bodies_data: Array = []
 var _fxs_data: Array = []
 var _mi_cabecera_fxs: PackedByteArray = PackedByteArray()
 var _indices_ini_data: PackedStringArray = []  # Raw lines of indices.ini
+var _indices_ini_data_original: PackedStringArray = []  # Snapshot at load time
 var _indices_categories: PackedStringArray = []  # Unique category names
 var _dirty: bool = false  # True when there are unsaved changes in memory
+var _grh_data_original: Dictionary = {}  # Snapshot of entries at load time
 
 # Undo stack: stores snapshots of {frames, selected, next_grh}
 const MAX_UNDO := 50
@@ -486,6 +488,10 @@ func _load_client_folder(path: String) -> void:
 			_grh_data = GrhIO.load_ind(grh_path)
 			_ind_path = grh_path
 			_next_grh_index = _grh_data["max_index"] + 1
+			# Deep-copy original entries for diff tracking
+			_grh_data_original = {}
+			for key in _grh_data["entries"]:
+				_grh_data_original[key] = _grh_data["entries"][key].duplicate()
 			_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
 			msgs.append("Graficos.ind: %d GRHs" % _grh_data["entries"].size())
 
@@ -505,6 +511,7 @@ func _load_client_folder(path: String) -> void:
 			var f := FileAccess.open(indices_path, FileAccess.READ)
 			if f != null:
 				_indices_ini_data = f.get_as_text().split("\n")
+				_indices_ini_data_original = _indices_ini_data.duplicate()
 				f.close()
 				_indices_categories = _parse_indices_categories(_indices_ini_data)
 				msgs.append("indices.ini: %d categorías" % _indices_categories.size())
@@ -1132,7 +1139,7 @@ func _try_uniform_blob_grid(rects: Array) -> Array:
 func _refresh_all() -> void:
 	_canvas.set_frames(_current_frames)
 	_canvas.set_selected(_selected_frame_idx)
-	_inspector.set_grh_entries(_grh_data["entries"])
+	_inspector.set_grh_entries(_grh_data["entries"], _grh_data_original)
 	_inspector.set_current_texture(_current_texture)
 	_inspector.set_current_file_num(_current_file_num)
 	_inspector.update_frames(_current_frames, _selected_frame_idx)
@@ -1196,13 +1203,9 @@ func _on_index_confirmed() -> void:
 		added += 1
 	_index_pending_entries.clear()
 	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+	_dirty = true
 	_refresh_all()
-	# Auto-save .ind if path is known
-	if not _ind_path.is_empty():
-		_save_ind_to_path(_ind_path)
-		_update_status("Indexados %d frames y guardado en %s" % [added, _ind_path.get_file()])
-	else:
-		_update_status("Indexados %d frames (no guardado — usa Guardar)" % added)
+	_update_status("Indexados %d frames en memoria. Presiona GUARDAR para escribir a disco." % added)
 
 
 func _on_index_single_frame(idx: int) -> void:
@@ -1220,8 +1223,9 @@ func _on_index_single_frame(idx: int) -> void:
 	if frame.grh_index > _grh_data["max_index"]:
 		_grh_data["max_index"] = frame.grh_index
 	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+	_dirty = true
 	_refresh_all()
-	_update_status("GRH %d indexado. Total: %d entradas." % [frame.grh_index, _grh_data["entries"].size()])
+	_update_status("GRH %d en memoria. Presiona GUARDAR para escribir a disco." % frame.grh_index)
 
 
 ## Navigate to another graphic file and optionally select a frame by GRH index.
@@ -1255,34 +1259,67 @@ func _on_save_ind() -> void:
 
 
 func _show_save_confirm_dialog() -> void:
-	# Build diff summary of all pending changes
+	# Build diff summary comparing current memory vs original disk state
 	var lines: PackedStringArray = []
 	lines.append("[b]Cambios pendientes:[/b]\n")
+	var has_changes := false
 
+	# Diff Graficos.ind
 	if not _ind_path.is_empty():
-		lines.append("[color=#8f8]• Graficos.ind[/color] → %d entradas (max GRH: %d)" % [_grh_data["entries"].size(), _grh_data["max_index"]])
+		var added := 0
+		var modified := 0
+		var deleted := 0
+		# Check current vs original
+		for key in _grh_data["entries"]:
+			if not _grh_data_original.has(key):
+				added += 1
+			else:
+				var cur: Dictionary = _grh_data["entries"][key]
+				var orig: Dictionary = _grh_data_original[key]
+				for field in ["file_num", "sx", "sy", "w", "h", "num_frames"]:
+					if cur.get(field, 0) != orig.get(field, 0):
+						modified += 1
+						break
+		# Check deleted
+		for key in _grh_data_original:
+			if not _grh_data["entries"].has(key):
+				deleted += 1
 
+		if added > 0 or modified > 0 or deleted > 0:
+			has_changes = true
+			lines.append("[b]Graficos.ind[/b]:")
+			if added > 0:
+				lines.append("  [color=#8f8]+%d GRHs nuevos[/color]" % added)
+			if modified > 0:
+				lines.append("  [color=#fd8]~%d GRHs modificados[/color]" % modified)
+			if deleted > 0:
+				lines.append("  [color=#f88]-%d GRHs eliminados[/color]" % deleted)
+			lines.append("")
+
+	# Diff indices.ini
 	var ini_path := _get_init_path("indices.ini")
-	if not ini_path.is_empty() and _indices_ini_data.size() > 0:
-		# Count references
-		var ref_count := 0
+	if not ini_path.is_empty():
+		var cur_refs := 0
+		var orig_refs := 0
 		for line in _indices_ini_data:
 			if line.strip_edges().begins_with("Referencias="):
-				ref_count = int(line.strip_edges().substr(12))
+				cur_refs = int(line.strip_edges().substr(12))
 				break
-		lines.append("[color=#8f8]• indices.ini[/color] → %d referencias" % ref_count)
+		for line in _indices_ini_data_original:
+			if line.strip_edges().begins_with("Referencias="):
+				orig_refs = int(line.strip_edges().substr(12))
+				break
+		var new_refs := cur_refs - orig_refs
+		if new_refs > 0:
+			has_changes = true
+			lines.append("[b]indices.ini[/b]:")
+			lines.append("  [color=#8f8]+%d referencias nuevas[/color]" % new_refs)
+			lines.append("")
 
-	# Check other modified .ind files
-	if _bodies_data.size() > 0:
-		lines.append("[color=#8f8]• Personajes.ind[/color] → %d entradas" % _bodies_data.size())
-	if _fxs_data.size() > 0:
-		lines.append("[color=#8f8]• FXs.ind[/color] → %d entradas" % _fxs_data.size())
-
-	if lines.size() <= 1:
+	if not has_changes:
 		_update_status("No hay cambios pendientes.")
 		return
 
-	lines.append("")
 	lines.append("[color=#aaa]Se escribirán estos archivos al cliente.[/color]")
 	lines.append("[color=#aaa]Esta acción sobrescribe los archivos originales.[/color]")
 
@@ -1311,7 +1348,16 @@ func _on_save_confirmed() -> void:
 			f.close()
 			saved.append("indices.ini")
 
+	# Update snapshots to reflect new disk state
+	if saved.has("Graficos.ind"):
+		_grh_data_original = {}
+		for key in _grh_data["entries"]:
+			_grh_data_original[key] = _grh_data["entries"][key].duplicate()
+	if saved.has("indices.ini"):
+		_indices_ini_data_original = _indices_ini_data.duplicate()
+
 	_dirty = false
+	_refresh_all()
 	if saved.size() > 0:
 		_update_status("Guardado: %s" % ", ".join(saved))
 	else:
