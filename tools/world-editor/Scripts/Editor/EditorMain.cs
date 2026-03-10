@@ -1153,7 +1153,10 @@ public partial class EditorMain : Control
                 case Key.R: newTool = EditorTool.Select; break;
                 case Key.M: newTool = EditorTool.Move; break;
                 case Key.V: newTool = EditorTool.Pick; break;
-                case Key.F: newTool = EditorTool.Fill; break;
+                case Key.F:
+                    if (_state.HoverValid && _viewport != null)
+                        _viewport.FloodFill(_state.HoverX, _state.HoverY);
+                    break;
                 case Key.I: newTool = EditorTool.Eyedrop; break;
                 case Key.B: newTool = EditorTool.Block; break;
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;

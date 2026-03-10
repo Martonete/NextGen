@@ -337,7 +337,6 @@ func _connect_signals() -> void:
 	_toolbar.zoom_fit_pressed.connect(func(): _canvas.fit_to_canvas())
 	_toolbar.zoom_reset_pressed.connect(func(): _canvas.zoom_reset())
 	_toolbar.save_pressed.connect(_on_save_ind)
-	_toolbar.index_pressed.connect(_on_index_image)
 
 	# Canvas
 	_canvas.frame_drawn.connect(_on_canvas_frame_drawn)
@@ -735,6 +734,14 @@ func _on_inspector_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh
 	f["h"] = _clamp_h(f["sy"], h)
 	f["grh_index"] = grh
 	_current_frames[idx] = f
+	# Sync to _grh_data
+	if grh > 0:
+		_grh_data["entries"][grh] = {
+			"grh_index": grh, "num_frames": 1,
+			"file_num": f.get("file_num", _current_file_num),
+			"sx": f["sx"], "sy": f["sy"], "width": f["w"], "height": f["h"]
+		}
+		_dirty = true
 	_refresh_all()
 
 
@@ -885,14 +892,22 @@ func _on_add_manual_frame() -> void:
 		_update_status("Carga una imagen primero.")
 		return
 	_push_undo()
+	var grh_idx := _next_grh_index
+	_next_grh_index += 1
 	var frame := {
 		"sx": 0, "sy": 0, "w": 32, "h": 32,
-		"grh_index": _next_grh_index,
-		"file_num": _current_file_num
+		"grh_index": grh_idx, "file_num": _current_file_num
 	}
 	_current_frames.append(frame)
-	_next_grh_index += 1
+	_grh_data["entries"][grh_idx] = {
+		"grh_index": grh_idx, "num_frames": 1,
+		"file_num": _current_file_num, "sx": 0, "sy": 0, "width": 32, "height": 32
+	}
+	if grh_idx > _grh_data["max_index"]:
+		_grh_data["max_index"] = grh_idx
 	_inspector.set_next_grh(_next_grh_index)
+	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+	_dirty = true
 	_selected_frame_idx = _current_frames.size() - 1
 	_refresh_all()
 
@@ -924,12 +939,21 @@ func _apply_detected_frames(detected: Array) -> void:
 			sw = det.get("w", 32); sh = det.get("h", 32)
 		else:
 			continue
+		var grh_idx := _next_grh_index
+		_next_grh_index += 1
 		_current_frames.append({
 			"sx": sx, "sy": sy, "w": sw, "h": sh,
-			"grh_index": _next_grh_index, "file_num": _current_file_num
+			"grh_index": grh_idx, "file_num": _current_file_num
 		})
-		_next_grh_index += 1
+		_grh_data["entries"][grh_idx] = {
+			"grh_index": grh_idx, "num_frames": 1,
+			"file_num": _current_file_num, "sx": sx, "sy": sy, "width": sw, "height": sh
+		}
+	if _next_grh_index - 1 > _grh_data["max_index"]:
+		_grh_data["max_index"] = _next_grh_index - 1
 	_inspector.set_next_grh(_next_grh_index)
+	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+	_dirty = true
 	_selected_frame_idx = -1
 	_refresh_all()
 

@@ -1375,7 +1375,7 @@ public partial class MapViewport : Control
         }
     }
 
-    private void FloodFill(int startX, int startY)
+    public void FloodFill(int startX, int startY)
     {
         if (Map == null || State == null) return;
         if (!Map.InBounds(startX, startY)) return;
