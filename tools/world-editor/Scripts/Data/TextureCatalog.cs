@@ -19,6 +19,7 @@ public class TextureRef
     public int GrhIndex;     // Starting GRH index
     public int TileWidth;    // Pattern width in tiles (0 = single)
     public int TileHeight;   // Pattern height in tiles (0 = single)
+    public int Layer;         // Preferred layer (from Capa field, 0 = unspecified)
     public string Category = "Otros"; // Extracted category
 
     /// <summary>
@@ -56,9 +57,16 @@ public class TextureCatalog
     public Dictionary<string, List<TextureRef>> Categories { get; } = new();
     public List<string> CategoryOrder { get; } = new();
 
-    // Category mapping from name prefixes to display names
+    // Category mapping from name prefixes to display names.
+    // ORDER MATTERS: first match wins. Put specific keywords before generic ones.
     private static readonly (string prefix, string display)[] CategoryMap = new[]
     {
+        // High-priority: keywords that override parent categories
+        ("TECHO", "Techos"),           // "(CASA) 1 TECHO" → Techos (not Casas)
+        ("(COSTA)", "Costas"),
+        ("COSTA ARENA", "Costas"),
+        ("COSTA", "Costas"),           // any remaining "Costa" references
+        // Standard categories
         ("(PRD)", "Pradera"),
         ("(PRADERA)", "Pradera"),
         ("(ARBOL)", "Arboles"),
@@ -72,11 +80,9 @@ public class TextureCatalog
         ("(MONTAÑA)", "Montaña"),
         ("(NIEVE)", "Nieve"),
         ("(MURALLA)", "Murallas"),
-        ("(COSTA)", "Costa"),
         ("(HERRERIA)", "Herreria"),
         ("(PUERTA)", "Puertas"),
         ("(PARED)", "Paredes"),
-        ("(TECHO)", "Techos"),
         ("(PISO)", "Pisos"),
         ("(PIDO)", "Pisos"),   // typo in indices.ini
         ("(DUNGEON)", "Dungeon"),
@@ -123,12 +129,19 @@ public class TextureCatalog
             if (!sections.TryGetValue(sectionName, out var sec)) continue;
 
             string name = sec.GetValueOrDefault("Nombre", "");
-            int grhIndex = 0, ancho = 0, alto = 0;
+            int grhIndex = 0, ancho = 0, alto = 0, capa = 0;
             if (sec.TryGetValue("GrhIndice", out var g)) int.TryParse(g, out grhIndex);
             if (sec.TryGetValue("Ancho", out var w)) int.TryParse(w, out ancho);
             if (sec.TryGetValue("Alto", out var h)) int.TryParse(h, out alto);
+            if (sec.TryGetValue("Capa", out var c)) int.TryParse(c, out capa);
 
             if (grhIndex <= 0) continue;
+
+            string category = ExtractCategory(name);
+            // Override layer for specific categories
+            int layer = capa;
+            if (category == "Costas") layer = 2;
+            else if (category == "Techos") layer = 4;
 
             var texRef = new TextureRef
             {
@@ -137,7 +150,8 @@ public class TextureCatalog
                 GrhIndex = grhIndex,
                 TileWidth = ancho,
                 TileHeight = alto,
-                Category = ExtractCategory(name),
+                Layer = layer,
+                Category = category,
             };
 
             catalog.AllRefs.Add(texRef);

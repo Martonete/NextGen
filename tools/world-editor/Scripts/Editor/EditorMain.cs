@@ -267,6 +267,7 @@ public partial class EditorMain : Control
 
         // --- Tile palette (left sidebar) ---
         _palette = new TilePalette { State = _state };
+        _palette.LayerChanged += (layer) => SyncLayerTabs();
         AddChild(_palette);
 
         // --- Tile info panel (bottom of left sidebar, themed) ---

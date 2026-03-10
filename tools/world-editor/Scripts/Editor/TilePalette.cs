@@ -12,6 +12,8 @@ namespace AOWorldEditor.Editor;
 /// </summary>
 public partial class TilePalette : VBoxContainer
 {
+    [Signal] public delegate void LayerChangedEventHandler(int layer);
+
     private OptionButton? _layerSelect;
     private TabBar? _tabBar;
     private ScrollContainer? _scrollContainer;
@@ -159,7 +161,16 @@ public partial class TilePalette : VBoxContainer
         State.SelectedTexture = texRef;
         State.EyedropGrh = 0; // Clear raw eyedrop when selecting from catalog
         State.ActiveTool = EditorTool.Paint;
-        _infoLabel!.Text = $"{texRef.Name} | GRH {texRef.GrhIndex} | {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
+
+        // Auto-switch layer based on texture category (e.g. Costas→L2, Techos→L4)
+        if (texRef.Layer >= 1 && texRef.Layer <= 4)
+        {
+            State.ActiveLayer = texRef.Layer;
+            SyncLayerUI();
+            EmitSignal(SignalName.LayerChanged, texRef.Layer);
+        }
+
+        _infoLabel!.Text = $"{texRef.Name} | GRH {texRef.GrhIndex} | L{Math.Max(texRef.Layer, 1)} | {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
 
         PopulateGrid();
     }
