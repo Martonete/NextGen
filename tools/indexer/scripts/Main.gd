@@ -143,6 +143,7 @@ func _build_ui() -> void:
 	_canvas.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_canvas.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_canvas.focus_mode = Control.FOCUS_CLICK
+	_canvas.clip_contents = true
 	hsplit_inner.add_child(_canvas)
 
 	# Inspector (right)
