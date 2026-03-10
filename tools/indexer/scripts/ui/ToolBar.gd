@@ -16,7 +16,6 @@ signal grid_config_changed(cell_w: int, cell_h: int, line_w: float, col: Color)
 var _tool_buttons: Array[Button] = []
 var _current_tool: int = 0
 var _chk_detect: CheckBox
-var _chk_grid: CheckBox
 var _btn_grid_config: MenuButton
 # Grid config state
 var _grid_cell_w: int = 128
@@ -29,6 +28,7 @@ var _size_sub: PopupMenu
 var _border_sub: PopupMenu
 var _color_picker_window: Window
 var _color_picker: ColorPicker
+var _grid_visible: bool = false
 
 
 func _ready() -> void:
@@ -62,7 +62,7 @@ func _ready() -> void:
 	# ── Frame detection ──
 	_chk_detect = CheckBox.new()
 	_chk_detect.text = "Frame detect"
-	_chk_detect.button_pressed = true
+	_chk_detect.button_pressed = false
 	_chk_detect.add_theme_color_override("font_color", Color(0.85, 0.85, 0.88))
 	_chk_detect.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	_chk_detect.tooltip_text = "Detectar sprites al pasar el mouse"
@@ -79,19 +79,12 @@ func _ready() -> void:
 
 	hbox.add_child(IndexerTheme.separator_v())
 
-	# ── Grid overlay ──
-	_chk_grid = CheckBox.new()
-	_chk_grid.text = "Grid"
-	_chk_grid.add_theme_color_override("font_color", Color(0.85, 0.85, 0.88))
-	_chk_grid.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	_chk_grid.tooltip_text = "Mostrar/ocultar grilla visual (también snap al dibujar)"
-	_chk_grid.toggled.connect(func(on: bool): grid_toggled.emit(on))
-	hbox.add_child(_chk_grid)
-
+	# ── Grid overlay (single dropdown) ──
 	_btn_grid_config = MenuButton.new()
-	_btn_grid_config.text = "Config"
+	_btn_grid_config.text = "Grid ▾"
 	_btn_grid_config.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	_btn_grid_config.tooltip_text = "Configurar grilla: tamaño, borde, color"
+	_btn_grid_config.add_theme_color_override("font_color", Color(0.85, 0.85, 0.88))
+	_btn_grid_config.tooltip_text = "Grilla: mostrar/ocultar + configurar"
 	hbox.add_child(_btn_grid_config)
 	_build_grid_config_menu()
 
@@ -118,7 +111,11 @@ func set_detect(enabled: bool) -> void:
 
 
 func set_grid(visible: bool, cell_w: int = -1, cell_h: int = -1, line_w: float = -1.0, col: Color = Color(-1, 0, 0)) -> void:
-	_chk_grid.set_pressed_no_signal(visible)
+	_grid_visible = visible
+	if _config_popup != null:
+		var item_idx := _config_popup.get_item_index(200)
+		if item_idx >= 0:
+			_config_popup.set_item_checked(item_idx, visible)
 	if cell_w > 0:
 		_grid_cell_w = cell_w
 	if cell_h > 0:
@@ -146,6 +143,12 @@ const BORDER_OPTIONS := [1, 2, 3, 4]
 func _build_grid_config_menu() -> void:
 	_config_popup = _btn_grid_config.get_popup()
 	_config_popup.clear()
+
+	# Toggle visibility item
+	_config_popup.add_check_item("Mostrar Grid", 200)
+	_config_popup.set_item_checked(_config_popup.get_item_index(200), false)
+
+	_config_popup.add_separator()
 
 	# Size submenu
 	_size_sub = PopupMenu.new()
@@ -205,7 +208,12 @@ func _on_border_selected(id: int) -> void:
 
 
 func _on_config_item(id: int) -> void:
-	if id == 100:
+	if id == 200:
+		_grid_visible = not _grid_visible
+		var item_idx := _config_popup.get_item_index(200)
+		_config_popup.set_item_checked(item_idx, _grid_visible)
+		grid_toggled.emit(_grid_visible)
+	elif id == 100:
 		_color_picker.color = _grid_color
 		_color_picker_window.popup_centered()
 

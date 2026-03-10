@@ -1,6 +1,6 @@
-## AnimationWindow.gd — Ventana de creacion de animacion por multi-seleccion
+## AnimationTab.gd — Tab de creacion de animacion por multi-seleccion (sidebar)
 class_name AnimationWindow
-extends Window
+extends VBoxContainer
 
 signal create_anim_pressed(indices: Array[int], speed: float)
 
@@ -16,6 +16,7 @@ var _seq_scroll: ScrollContainer
 var _speed_spin: SpinBox
 var _btn_create: Button
 var _lbl_info: Label
+var _empty_label: Label
 
 # Playback
 var _playing: bool = true
@@ -24,55 +25,45 @@ var _play_idx: int = 0
 
 
 func _ready() -> void:
-	title = "Animacion"
-	size = Vector2i(500, 600)
-	always_on_top = true
-	unresizable = false
-	wrap_controls = true
-	close_requested.connect(func(): hide())
+	name = "Animación"
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
+	add_theme_constant_override("separation", 6)
 
-	var root := VBoxContainer.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	root.add_theme_constant_override("separation", 6)
-
-	var margin := MarginContainer.new()
-	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 8)
-	margin.add_theme_constant_override("margin_right", 8)
-	margin.add_theme_constant_override("margin_top", 8)
-	margin.add_theme_constant_override("margin_bottom", 8)
-	margin.add_child(root)
-	add_child(margin)
+	# Empty state message
+	_empty_label = IndexerTheme.label("Seleccioná 2+ frames con CTRL+click\npara crear una animación", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM)
+	_empty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	add_child(_empty_label)
 
 	# Preview area
 	_preview = FramePreviewPanel.new()
-	_preview.custom_minimum_size = Vector2(0, 200)
+	_preview.custom_minimum_size = Vector2(0, 180)
 	_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	root.add_child(_preview)
+	add_child(_preview)
 
 	# Info label
 	_lbl_info = IndexerTheme.label("0 frames seleccionados", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_MD)
-	root.add_child(_lbl_info)
+	add_child(_lbl_info)
 
-	root.add_child(IndexerTheme.separator_h())
+	add_child(IndexerTheme.separator_h())
 
 	# Sequence list (scrollable)
 	_seq_scroll = ScrollContainer.new()
 	_seq_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_seq_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	root.add_child(_seq_scroll)
+	add_child(_seq_scroll)
 
 	_seq_list = VBoxContainer.new()
 	_seq_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_seq_list.add_theme_constant_override("separation", 2)
 	_seq_scroll.add_child(_seq_list)
 
-	root.add_child(IndexerTheme.separator_h())
+	add_child(IndexerTheme.separator_h())
 
 	# Bottom bar: speed + create button
 	var bottom := HBoxContainer.new()
 	bottom.add_theme_constant_override("separation", 6)
-	root.add_child(bottom)
+	add_child(bottom)
 
 	bottom.add_child(IndexerTheme.label("Velocidad", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 
@@ -87,8 +78,19 @@ func _ready() -> void:
 	_btn_create = IndexerTheme.success_button("Crear GRH Animacion", _on_create)
 	bottom.add_child(_btn_create)
 
+	_show_empty(true)
 
-func open_with_frames(frames: Array, texture: ImageTexture, textures: Dictionary) -> void:
+
+func _show_empty(empty: bool) -> void:
+	_empty_label.visible = empty
+	_preview.visible = not empty
+	_lbl_info.visible = not empty
+	_seq_scroll.visible = not empty
+	_btn_create.visible = not empty
+	_speed_spin.get_parent().visible = not empty
+
+
+func set_frames(frames: Array, texture: ImageTexture, textures: Dictionary) -> void:
 	_frames = frames.duplicate()
 	_texture = texture
 	_textures = textures.duplicate()
@@ -109,10 +111,17 @@ func open_with_frames(frames: Array, texture: ImageTexture, textures: Dictionary
 	if not _textures.is_empty():
 		_preview.set_textures(_textures)
 
+	_show_empty(_sequence.size() < 2)
 	_rebuild_list()
 	_update_preview()
 
-	popup_centered()
+
+func clear() -> void:
+	_frames.clear()
+	_sequence.clear()
+	_show_empty(true)
+	for c in _seq_list.get_children():
+		c.queue_free()
 
 
 func _rebuild_list() -> void:
@@ -146,7 +155,7 @@ func _build_row(idx: int) -> void:
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 
 	var hbox := HBoxContainer.new()
-	hbox.add_theme_constant_override("separation", 6)
+	hbox.add_theme_constant_override("separation", 4)
 	panel.add_child(hbox)
 
 	# Thumbnail
@@ -155,14 +164,14 @@ func _build_row(idx: int) -> void:
 	# Label
 	var w: int = frame_dict.get("w", 0)
 	var h: int = frame_dict.get("h", 0)
-	var lbl := IndexerTheme.label("GRH %d  —  %dx%d" % [grh_idx, w, h], IndexerTheme.TEXT_PRIMARY, IndexerTheme.FONT_SIZE_SM)
+	var lbl := IndexerTheme.label("GRH %d — %dx%d" % [grh_idx, w, h], IndexerTheme.TEXT_PRIMARY, IndexerTheme.FONT_SIZE_SM)
 	lbl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hbox.add_child(lbl)
 
 	# Up button
 	var btn_up := Button.new()
-	btn_up.text = "▲"  # Unicode up arrow
-	btn_up.custom_minimum_size = Vector2(28, 28)
+	btn_up.text = "▲"
+	btn_up.custom_minimum_size = Vector2(24, 24)
 	btn_up.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	btn_up.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 3, 4, 2))
 	btn_up.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 3, 4, 2))
@@ -173,8 +182,8 @@ func _build_row(idx: int) -> void:
 
 	# Down button
 	var btn_down := Button.new()
-	btn_down.text = "▼"  # Unicode down arrow
-	btn_down.custom_minimum_size = Vector2(28, 28)
+	btn_down.text = "▼"
+	btn_down.custom_minimum_size = Vector2(24, 24)
 	btn_down.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	btn_down.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 3, 4, 2))
 	btn_down.add_theme_stylebox_override("hover", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST_H, 3, 4, 2))
@@ -186,7 +195,7 @@ func _build_row(idx: int) -> void:
 	# Remove button
 	var btn_remove := Button.new()
 	btn_remove.text = "✕"
-	btn_remove.custom_minimum_size = Vector2(28, 28)
+	btn_remove.custom_minimum_size = Vector2(24, 24)
 	btn_remove.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
 	btn_remove.add_theme_color_override("font_color", IndexerTheme.TEXT_DANGER)
 	btn_remove.add_theme_stylebox_override("normal", IndexerTheme._flat_box(IndexerTheme.BG_BTN_GHOST, 3, 4, 2))
@@ -199,7 +208,6 @@ func _build_row(idx: int) -> void:
 
 
 func _update_preview() -> void:
-	# Build preview frames from sequence order
 	var preview_frames: Array = []
 	for grh_idx in _sequence:
 		for f in _frames:
@@ -238,12 +246,11 @@ func _on_create() -> void:
 	for grh in _sequence:
 		indices.append(grh)
 	create_anim_pressed.emit(indices, _speed_spin.value)
-	hide()
 
 
 func _make_thumb(f: Dictionary) -> TextureRect:
 	var tr := TextureRect.new()
-	tr.custom_minimum_size = Vector2(36, 36)
+	tr.custom_minimum_size = Vector2(32, 32)
 	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	if _texture != null and f.get("w", 0) > 0 and f.get("h", 0) > 0:

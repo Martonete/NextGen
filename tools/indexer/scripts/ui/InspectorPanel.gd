@@ -20,6 +20,7 @@ signal view_file_num_pressed(file_num: int, grh_index: int)
 signal next_grh_changed(val: int)
 
 var _tabs: TabContainer
+var _anim_tab: AnimationWindow
 
 # ── Frames tab ──
 var _preview: FramePreviewPanel
@@ -128,7 +129,10 @@ func _ready() -> void:
 	_tabs.add_child(_build_detect_tab())
 	_tabs.add_child(_build_data_tab())
 
-	# (props section is inline now, no deferred attach needed)
+	# Animation tab (4th tab)
+	_anim_tab = AnimationWindow.new()
+	_anim_tab.create_anim_pressed.connect(func(indices: Array[int], speed: float): create_anim_pressed.emit(indices, speed))
+	_tabs.add_child(_anim_tab)
 
 
 # ── Public API ────────────────────────────────────────────────────
@@ -199,6 +203,19 @@ func get_next_grh() -> int:
 
 func set_next_grh(val: int) -> void:
 	_spin_next_grh.value = val
+
+
+func set_anim_frames(frames: Array, texture: ImageTexture, textures: Dictionary) -> void:
+	_anim_tab.set_frames(frames, texture, textures)
+	# Switch to animation tab
+	for i in range(_tabs.get_tab_count()):
+		if _tabs.get_tab_title(i) == "Animación":
+			_tabs.current_tab = i
+			break
+
+
+func clear_anim() -> void:
+	_anim_tab.clear()
 
 
 func get_filenum_base() -> int:

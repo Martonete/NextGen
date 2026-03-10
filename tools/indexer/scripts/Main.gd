@@ -46,7 +46,6 @@ var _toolbar: IndexerToolBar
 var _file_list: FileListPanel
 var _canvas: SpriteCanvas
 var _inspector: InspectorPanel
-var _anim_window: AnimationWindow
 var _lbl_status: Label
 var _menu_ver: PopupMenu
 
@@ -73,8 +72,8 @@ func _ready() -> void:
 	_build_ui()
 	_build_dialogs()
 	_connect_signals()
-	# Default: detection on, grid visible
-	_canvas.set_detect(true)
+	# Default: detection off, grid visible
+	_canvas.set_detect(false)
 	_canvas.set_grid_visible(true)
 	_update_status("Listo. Abre una carpeta de cliente para comenzar.")
 	# Restore previous session
@@ -153,11 +152,6 @@ func _build_ui() -> void:
 	# Inspector (right)
 	_inspector = InspectorPanel.new()
 	hsplit_inner.add_child(_inspector)
-
-	# Animation window (hidden until multi-select)
-	_anim_window = AnimationWindow.new()
-	_anim_window.visible = false
-	add_child(_anim_window)
 
 	# Status bar
 	var status_bar := PanelContainer.new()
@@ -338,7 +332,6 @@ func _connect_signals() -> void:
 	_inspector.detect_blobs_pressed.connect(_on_detect_blobs)
 	_inspector.detect_auto_pressed.connect(_on_detect_auto)
 	_inspector.create_anim_pressed.connect(_on_create_anim_grh)
-	_anim_window.create_anim_pressed.connect(_on_create_anim_grh)
 	_inspector.split_frame_pressed.connect(_on_split_frame)
 	_inspector.save_init_pressed.connect(_on_save_init_file)
 	_inspector.add_manual_frame_pressed.connect(_on_add_manual_frame)
@@ -664,10 +657,9 @@ func _on_multi_frame_selected(indices: Array) -> void:
 		if frame_dicts.size() >= 2:
 			var textures: Dictionary = {}
 			textures[_current_file_num] = _current_texture
-			_anim_window.open_with_frames(frame_dicts, _current_texture, textures)
+			_inspector.set_anim_frames(frame_dicts, _current_texture, textures)
 	else:
-		if _anim_window.visible:
-			_anim_window.hide()
+		_inspector.clear_anim()
 
 
 # ── Inspector signals ────────────────────────────────────────────────────────
@@ -1006,9 +998,7 @@ func _detect_snap_hint(rects: Array, content_regions: Array = []) -> String:
 	var h_is_pow2: bool = (bh & (bh - 1)) == 0 and bh > 0
 
 	# Always use Smart mode — auto-detect just reports what it found
-	# Detection always on after analysis
-	_toolbar.set_detect(true)
-	_canvas.set_detect(true)
+	# Preserve user's detect preference (don't force on)
 
 	if ratio >= 0.5 and best["count"] >= 3:
 		var gw: int = best["w"]
@@ -1645,7 +1635,7 @@ func _restore_session() -> void:
 		return
 
 	# Restore detect + grid
-	var detect_on: bool = _prefs.get_value("session", "detect_enabled", true)
+	var detect_on: bool = _prefs.get_value("session", "detect_enabled", false)
 	_toolbar.set_detect(detect_on)
 	_canvas.set_detect(detect_on)
 	var grid_on: bool = _prefs.get_value("session", "show_grid", true)
