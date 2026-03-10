@@ -3,7 +3,9 @@ class_name TextureIndexDialog
 extends Window
 
 signal confirmed(name: String, category: String, capa: int)
+signal split_requested(frame: Dictionary, tiles_w: int, tiles_h: int)
 
+var _split_done: bool = false
 var _spin_w: SpinBox
 var _spin_h: SpinBox
 var _input_name: LineEdit
@@ -12,6 +14,7 @@ var _spin_capa: SpinBox
 var _preview: TextureRect
 var _lbl_summary: Label
 var _lbl_warn: Label
+var _btn_split: Button
 var _btn_save: Button
 
 # Source frame info (set before popup)
@@ -50,6 +53,7 @@ func _ready() -> void:
 	_input_name.placeholder_text = "Ej: (PRD) Terreno Nuevo"
 	_input_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_input_name.add_theme_font_size_override("font_size", 13)
+	_input_name.text_changed.connect(func(_t): _update_save_state())
 	name_row.add_child(_input_name)
 
 	# Tile size (editable)
@@ -123,6 +127,23 @@ func _ready() -> void:
 	_preview.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_child(_preview)
 
+	# Split button
+	_btn_split = Button.new()
+	_btn_split.text = "Dividir en tiles"
+	_btn_split.add_theme_font_size_override("font_size", 13)
+	var split_bg := StyleBoxFlat.new()
+	split_bg.bg_color = Color(0.25, 0.4, 0.6)
+	split_bg.set_corner_radius_all(4)
+	split_bg.set_content_margin_all(6)
+	_btn_split.add_theme_stylebox_override("normal", split_bg)
+	var split_hover := StyleBoxFlat.new()
+	split_hover.bg_color = Color(0.3, 0.5, 0.7)
+	split_hover.set_corner_radius_all(4)
+	split_hover.set_content_margin_all(6)
+	_btn_split.add_theme_stylebox_override("hover", split_hover)
+	_btn_split.pressed.connect(_on_split)
+	root.add_child(_btn_split)
+
 	# Save button
 	root.add_child(_separator())
 	_btn_save = Button.new()
@@ -169,6 +190,14 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 			break
 
 	_input_name.text = ""
+	_split_done = false
+	var is_single := (suggested_w == 1 and suggested_h == 1)
+	if is_single:
+		_btn_split.visible = false
+	else:
+		_btn_split.visible = true
+		_btn_split.disabled = false
+		_btn_split.text = "Dividir en tiles"
 	_on_tiles_changed()
 	popup_centered()
 
@@ -176,7 +205,17 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 func _on_tiles_changed() -> void:
 	_tiles_w = int(_spin_w.value)
 	_tiles_h = int(_spin_h.value)
+	var is_single := (_tiles_w == 1 and _tiles_h == 1)
+	# Changing tiles resets split state
+	_split_done = false
+	if is_single:
+		_btn_split.visible = false
+	else:
+		_btn_split.visible = true
+		_btn_split.disabled = false
+		_btn_split.text = "Dividir en tiles"
 	_validate_and_preview()
+	_update_save_state()
 
 
 func _validate_and_preview() -> void:
@@ -203,7 +242,11 @@ func _validate_and_preview() -> void:
 			_lbl_warn.visible = true
 			valid = false
 
-	_btn_save.disabled = not valid
+	if not valid:
+		_btn_save.disabled = true
+		_btn_split.disabled = true
+	else:
+		_btn_split.disabled = _split_done
 	_update_preview()
 
 
@@ -240,6 +283,31 @@ func _update_preview() -> void:
 			_preview.texture = ImageTexture.create_from_image(region)
 		var total := _tiles_w * _tiles_h
 		_lbl_summary.text = "%d×%d = %d GRHs de 32×32 (%dx%d px)" % [_tiles_w, _tiles_h, total, pw, ph]
+
+
+func _on_split() -> void:
+	if _btn_split.disabled:
+		return
+	var is_single := (_tiles_w == 1 and _tiles_h == 1)
+	if is_single:
+		# 1x1: no real split needed, just mark as done
+		_split_done = true
+		_btn_split.disabled = true
+		_btn_split.text = "Sin subdivisión (1×1)"
+	else:
+		split_requested.emit(_source_frame, _tiles_w, _tiles_h)
+		_split_done = true
+		_btn_split.disabled = true
+		_btn_split.text = "Dividido ✓"
+	_update_save_state()
+
+
+func _update_save_state() -> void:
+	var name_ok := not _input_name.text.strip_edges().is_empty()
+	var is_single := (_tiles_w == 1 and _tiles_h == 1)
+	# 1x1 doesn't need split; NxM requires split first
+	var split_ok := is_single or _split_done
+	_btn_save.disabled = not (name_ok and split_ok)
 
 
 func _on_save() -> void:

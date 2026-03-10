@@ -55,7 +55,7 @@ var _menu_ver: PopupMenu
 var _ctx_menu: PopupMenu
 var _ctx_frame_idx: int = -1
 var _tex_index_dialog: TextureIndexDialog
-var _confirm_dialog: ConfirmationDialog
+var _confirm_dialog: ConfirmationDialog = null
 
 # Dialogs
 var _dlg_client_folder: FileDialog
@@ -202,16 +202,12 @@ func _build_ui() -> void:
 	_ctx_menu.id_pressed.connect(_on_ctx_menu_item)
 	add_child(_ctx_menu)
 
-	# Texture indexing dialog
+	# Texture indexing dialog (not added as child yet — lazy add on popup)
 	_tex_index_dialog = TextureIndexDialog.new()
 	_tex_index_dialog.confirmed.connect(_on_texture_index_confirmed)
-	add_child(_tex_index_dialog)
+	_tex_index_dialog.split_requested.connect(_on_texture_split_requested)
 
-	# Confirmation dialog (created on demand, not added as child yet)
-	_confirm_dialog = ConfirmationDialog.new()
-	_confirm_dialog.title = "Confirmar indexación"
-	_confirm_dialog.ok_button_text = "Confirmar"
-	_confirm_dialog.cancel_button_text = "Cancelar"
+	# Confirmation dialog — created lazily in _ensure_confirm_dialog()
 
 
 func _build_menu_bar() -> MenuBar:
@@ -1757,11 +1753,45 @@ func _on_ctx_menu_item(id: int) -> void:
 		_open_texture_index_dialog(_ctx_frame_idx)
 
 
+func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) -> void:
+	# Create visual split frames on canvas without saving anything yet
+	var sx: int = frame.get("sx", 0)
+	var sy: int = frame.get("sy", 0)
+	var fw: int = frame.get("w", 0)
+	var fh: int = frame.get("h", 0)
+	var file_num: int = frame.get("file_num", _current_file_num)
+
+	# Remove the original frame
+	var orig_idx := -1
+	for i in range(_current_frames.size()):
+		var f: Dictionary = _current_frames[i]
+		if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
+			orig_idx = i
+			break
+	if orig_idx >= 0:
+		_push_undo()
+		_current_frames.remove_at(orig_idx)
+
+	# Create NxM 32x32 sub-frames visually
+	for row in range(tiles_h):
+		for col in range(tiles_w):
+			var tile_sx := sx + col * 32
+			var tile_sy := sy + row * 32
+			var frame_dict := {"sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32, "file_num": file_num}
+			_current_frames.append(frame_dict)
+
+	_selected_frame_idx = -1
+	_refresh_all()
+	_update_status("Frame dividido en %d×%d = %d tiles de 32×32" % [tiles_w, tiles_h, tiles_w * tiles_h])
+
+
 func _open_texture_index_dialog(idx: int) -> void:
 	if _init_folder.is_empty():
 		_update_status("Abrí una carpeta de cliente primero (necesita INIT/).")
 		return
 	var frame: Dictionary = _current_frames[idx]
+	if not _tex_index_dialog.is_inside_tree():
+		add_child(_tex_index_dialog)
 	_tex_index_dialog.open_with_frame(frame, _current_texture, _indices_categories)
 
 
@@ -1783,11 +1813,20 @@ func _on_texture_index_confirmed(tex_name: String, category: String, capa: int) 
 	_pending_tex_category = category
 	_pending_tex_capa = capa
 
+	_ensure_confirm_dialog()
 	_confirm_dialog.dialog_text = "Se crearán %d GRH(s) estáticos y 1 entrada en indices.ini.\n\nTextura: %s\nTamaño: %dx%d tiles\nCategoría: %s\n\n¿Confirmar?" % [total, tex_name, tiles.x, tiles.y, category]
 	_confirm_dialog.confirmed.connect(_on_texture_index_final, CONNECT_ONE_SHOT)
-	if not _confirm_dialog.is_inside_tree():
-		add_child(_confirm_dialog)
 	_confirm_dialog.popup_centered()
+
+
+func _ensure_confirm_dialog() -> void:
+	if _confirm_dialog == null:
+		_confirm_dialog = ConfirmationDialog.new()
+		_confirm_dialog.title = "Confirmar indexación"
+		_confirm_dialog.ok_button_text = "Confirmar"
+		_confirm_dialog.cancel_button_text = "Cancelar"
+		_confirm_dialog.visible = false
+		add_child(_confirm_dialog)
 
 
 func _on_texture_index_final() -> void:
@@ -1803,22 +1842,21 @@ func _on_texture_index_final() -> void:
 
 	var is_single := (tw == 1 and th == 1)
 
-	# Remove the original frame from the canvas
-	var orig_idx := -1
-	for i in range(_current_frames.size()):
-		var f: Dictionary = _current_frames[i]
-		if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
-			orig_idx = i
-			break
-	if orig_idx >= 0:
-		_push_undo()
-		_current_frames.remove_at(orig_idx)
-
 	var first_grh := _next_grh_index
 	var created_grhs: Array[int] = []
 
 	if is_single:
-		# 1x1: keep original size, single GRH
+		# 1x1: keep original size — remove original, create indexed frame
+		var orig_idx := -1
+		for i in range(_current_frames.size()):
+			var f: Dictionary = _current_frames[i]
+			if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
+				orig_idx = i
+				break
+		if orig_idx >= 0:
+			_push_undo()
+			_current_frames.remove_at(orig_idx)
+
 		var grh_idx := _next_grh_index
 		_next_grh_index += 1
 		var frame_dict := {"sx": sx, "sy": sy, "w": fw, "h": fh, "grh_index": grh_idx, "file_num": file_num}
@@ -1829,15 +1867,20 @@ func _on_texture_index_final() -> void:
 		}
 		created_grhs.append(grh_idx)
 	else:
-		# NxM: divide into 32x32 tiles, row by row
+		# NxM: frames already split on canvas by split_requested — assign GRH indices
 		for row in range(th):
 			for col in range(tw):
 				var grh_idx := _next_grh_index
 				_next_grh_index += 1
 				var tile_sx := sx + col * 32
 				var tile_sy := sy + row * 32
-				var frame_dict := {"sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32, "grh_index": grh_idx, "file_num": file_num}
-				_current_frames.append(frame_dict)
+				# Find existing split frame and tag it with grh_index
+				for i in range(_current_frames.size()):
+					var f: Dictionary = _current_frames[i]
+					if f.get("sx", -1) == tile_sx and f.get("sy", -1) == tile_sy and f.get("w", -1) == 32 and f.get("h", -1) == 32 and not f.has("grh_index"):
+						_current_frames[i]["grh_index"] = grh_idx
+						_current_frames[i]["file_num"] = file_num
+						break
 				_grh_data["entries"][grh_idx] = {
 					"grh_index": grh_idx, "num_frames": 1,
 					"file_num": file_num, "sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32

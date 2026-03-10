@@ -188,7 +188,6 @@ func _build_grid_config_menu() -> void:
 	_color_picker.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_color_picker.color_changed.connect(_on_color_changed)
 	_color_picker_window.add_child(_color_picker)
-	add_child(_color_picker_window)
 
 
 func _on_size_selected(id: int) -> void:
@@ -215,6 +214,8 @@ func _on_config_item(id: int) -> void:
 		grid_toggled.emit(_grid_visible)
 	elif id == 100:
 		_color_picker.color = _grid_color
+		if not _color_picker_window.is_inside_tree():
+			add_child(_color_picker_window)
 		_color_picker_window.popup_centered()
 
 
