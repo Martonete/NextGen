@@ -719,6 +719,17 @@ func _on_canvas_frame_drawn(rect: Rect2) -> void:
 	}
 	_current_frames.append(frame)
 	_selected_frame_idx = _current_frames.size() - 1
+
+	# Persist to in-memory GRH database so it survives image switches
+	_grh_data["entries"][grh_idx] = {
+		"grh_index": grh_idx, "num_frames": 1,
+		"file_num": file_num, "sx": frame.sx, "sy": frame.sy,
+		"width": frame.w, "height": frame.h
+	}
+	if grh_idx > _grh_data["max_index"]:
+		_grh_data["max_index"] = grh_idx
+	_dirty = true
+
 	_refresh_all()
 	_update_status("Frame dibujado: G%d (%d,%d) %dx%d" % [
 		grh_idx, frame.sx, frame.sy, frame.w, frame.h])
@@ -738,6 +749,15 @@ func _on_canvas_frame_resized(index: int, new_rect: Rect2) -> void:
 	f["w"] = _clamp_w(f["sx"], int(new_rect.size.x))
 	f["h"] = _clamp_h(f["sy"], int(new_rect.size.y))
 	_current_frames[index] = f
+	# Sync to _grh_data
+	var gi: int = f.get("grh_index", 0)
+	if gi > 0:
+		_grh_data["entries"][gi] = {
+			"grh_index": gi, "num_frames": 1,
+			"file_num": f.get("file_num", _current_file_num),
+			"sx": f["sx"], "sy": f["sy"], "width": f["w"], "height": f["h"]
+		}
+		_dirty = true
 	_refresh_all()
 
 
@@ -800,8 +820,14 @@ func _on_inspector_props_changed(idx: int, sx: int, sy: int, w: int, h: int, grh
 
 func _on_clear_frames() -> void:
 	_push_undo()
+	# Remove all GRH entries for current frames
+	for f in _current_frames:
+		var gi: int = f.get("grh_index", 0)
+		if gi > 0:
+			_grh_data["entries"].erase(gi)
 	_current_frames = []
 	_selected_frame_idx = -1
+	_dirty = true
 	_refresh_all()
 	_update_status("Frames limpiados.")
 
@@ -888,18 +914,31 @@ func _on_split_frame(cell_w: int, cell_h: int) -> void:
 	var file_num: int = f.file_num
 	var base_x: int = f.sx
 	var base_y: int = f.sy
+	var orig_grh: int = f.get("grh_index", 0)
 	var insert_at: int = _selected_frame_idx
+	# Remove original frame and its GRH entry
+	if orig_grh > 0:
+		_grh_data["entries"].erase(orig_grh)
 	_current_frames.remove_at(_selected_frame_idx)
 	for row in range(rows):
 		for col in range(cols):
+			var grh_idx := _next_grh_index
 			var sub := {
 				"sx": base_x + col * cell_w, "sy": base_y + row * cell_h,
 				"w": cell_w, "h": cell_h,
-				"grh_index": _next_grh_index, "file_num": file_num
+				"grh_index": grh_idx, "file_num": file_num
 			}
 			_current_frames.insert(insert_at + row * cols + col, sub)
+			_grh_data["entries"][grh_idx] = {
+				"grh_index": grh_idx, "num_frames": 1,
+				"file_num": file_num, "sx": sub["sx"], "sy": sub["sy"],
+				"width": cell_w, "height": cell_h
+			}
 			_next_grh_index += 1
+	if _next_grh_index - 1 > _grh_data["max_index"]:
+		_grh_data["max_index"] = _next_grh_index - 1
 	_inspector.set_next_grh(_next_grh_index)
+	_dirty = true
 	_selected_frame_idx = insert_at
 	_refresh_all()
 	_update_status("Dividido en %dx%d = %d celdas de %dx%d px" % [cols, rows, cols * rows, cell_w, cell_h])
@@ -971,8 +1010,13 @@ func _delete_frame(idx: int) -> void:
 	if idx < 0 or idx >= _current_frames.size():
 		return
 	_push_undo()
+	# Remove GRH entry for this frame
+	var gi: int = _current_frames[idx].get("grh_index", 0)
+	if gi > 0:
+		_grh_data["entries"].erase(gi)
 	_current_frames.remove_at(idx)
 	_selected_frame_idx = mini(_selected_frame_idx, _current_frames.size() - 1)
+	_dirty = true
 	_refresh_all()
 	_update_status("Frame eliminado. Quedan %d." % _current_frames.size())
 
@@ -1035,10 +1079,12 @@ func _undo() -> void:
 		"selected": _selected_frame_idx,
 		"next_grh": _next_grh_index
 	})
+	var old_frames := _current_frames
 	var snapshot: Dictionary = _undo_stack.pop_back()
 	_current_frames = snapshot["frames"]
 	_selected_frame_idx = snapshot["selected"]
 	_next_grh_index = snapshot["next_grh"]
+	_sync_grh_after_frame_swap(old_frames, _current_frames)
 	_inspector.set_next_grh(_next_grh_index)
 	_refresh_all()
 	_update_status("Deshacer. (%d en pila)" % _undo_stack.size())
@@ -1053,13 +1099,34 @@ func _redo() -> void:
 		"selected": _selected_frame_idx,
 		"next_grh": _next_grh_index
 	})
+	var old_frames := _current_frames
 	var snapshot: Dictionary = _redo_stack.pop_back()
 	_current_frames = snapshot["frames"]
 	_selected_frame_idx = snapshot["selected"]
 	_next_grh_index = snapshot["next_grh"]
+	_sync_grh_after_frame_swap(old_frames, _current_frames)
 	_inspector.set_next_grh(_next_grh_index)
 	_refresh_all()
 	_update_status("Rehacer. (%d en pila)" % _redo_stack.size())
+
+
+## Sync _grh_data["entries"] after swapping _current_frames (undo/redo).
+## Removes GRH entries from old frames that aren't in new, adds/updates new ones.
+func _sync_grh_after_frame_swap(old_frames: Array, new_frames: Array) -> void:
+	var new_grhs := {}
+	for f in new_frames:
+		var gi: int = f.get("grh_index", 0)
+		if gi > 0:
+			new_grhs[gi] = true
+			_grh_data["entries"][gi] = {
+				"grh_index": gi, "num_frames": 1,
+				"file_num": f.get("file_num", _current_file_num),
+				"sx": f["sx"], "sy": f["sy"], "width": f["w"], "height": f["h"]
+			}
+	for f in old_frames:
+		var gi: int = f.get("grh_index", 0)
+		if gi > 0 and not new_grhs.has(gi):
+			_grh_data["entries"].erase(gi)
 
 
 # ── Image bounds clamping ────────────────────────────────────────────────────
