@@ -544,10 +544,16 @@ public partial class EditorMain : Control
         _dataPath = dataPath;
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
-        // indices.ini ships with the editor (res://indices.ini)
-        // Read via Godot FileAccess since System.IO can't resolve res:// paths
+        // indices.ini lives in client Data/INIT/ — load via System.IO
         string[]? indicesLines = null;
-        if (Godot.FileAccess.FileExists("res://indices.ini"))
+        string indicesPath = Path.Combine(dataPath, "INIT", "indices.ini");
+        if (File.Exists(indicesPath))
+        {
+            indicesLines = File.ReadAllLines(indicesPath);
+            GD.Print($"[Editor] Loaded indices.ini from {indicesPath} ({indicesLines.Length} lines)");
+        }
+        // Fallback: try res:// (legacy editor-bundled location)
+        if (indicesLines == null && Godot.FileAccess.FileExists("res://indices.ini"))
         {
             using var f = Godot.FileAccess.Open("res://indices.ini", Godot.FileAccess.ModeFlags.Read);
             if (f != null)
@@ -555,16 +561,6 @@ public partial class EditorMain : Control
                 string text = f.GetAsText();
                 indicesLines = text.Split('\n');
                 GD.Print($"[Editor] Loaded indices.ini from res:// ({indicesLines.Length} lines)");
-            }
-        }
-        // Fallback: try client Data/INIT/ with System.IO
-        if (indicesLines == null)
-        {
-            string indicesFallback = Path.Combine(dataPath, "INIT", "indices.ini");
-            if (File.Exists(indicesFallback))
-            {
-                indicesLines = File.ReadAllLines(indicesFallback);
-                GD.Print($"[Editor] Loaded indices.ini from {indicesFallback}");
             }
         }
         string mapsDir = Path.Combine(dataPath, "Maps");

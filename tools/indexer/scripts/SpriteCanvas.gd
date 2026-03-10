@@ -9,6 +9,7 @@ signal multi_frame_selected(indices: Array)          # Multi-select via CTRL+cli
 signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para agregar
 signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
 signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
+signal frame_context_menu(index: int, screen_pos: Vector2)  # Right-click on frame
 
 # ── Imagen ───────────────────────────────────────────────────────────────────
 
@@ -542,7 +543,19 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 				_pan = mb.position - (mb.position - _pan) * (_zoom / old)
 				accept_event()
 				queue_redraw()
-		MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_RIGHT:
+		MOUSE_BUTTON_MIDDLE:
+			_panning = mb.pressed
+			if mb.pressed:
+				_pan_start = mb.position
+				_pan_start_offset = _pan
+		MOUSE_BUTTON_RIGHT:
+			if mb.pressed and _texture != null and tool_mode == 0:
+				var ip := _s2i(mb.position)
+				var hit := _hit_frame(ip)
+				if hit >= 0:
+					frame_context_menu.emit(hit, mb.global_position)
+					accept_event()
+					return
 			_panning = mb.pressed
 			if mb.pressed:
 				_pan_start = mb.position

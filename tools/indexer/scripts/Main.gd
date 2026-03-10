@@ -27,6 +27,8 @@ var _init_folder: String = ""
 var _bodies_data: Array = []
 var _fxs_data: Array = []
 var _mi_cabecera_fxs: PackedByteArray = PackedByteArray()
+var _indices_ini_data: PackedStringArray = []  # Raw lines of indices.ini
+var _indices_categories: PackedStringArray = []  # Unique category names
 
 # Undo stack: stores snapshots of {frames, selected, next_grh}
 const MAX_UNDO := 50
@@ -48,6 +50,12 @@ var _canvas: SpriteCanvas
 var _inspector: InspectorPanel
 var _lbl_status: Label
 var _menu_ver: PopupMenu
+
+# Context menu & texture indexing
+var _ctx_menu: PopupMenu
+var _ctx_frame_idx: int = -1
+var _tex_index_dialog: TextureIndexDialog
+var _confirm_dialog: ConfirmationDialog
 
 # Dialogs
 var _dlg_client_folder: FileDialog
@@ -188,6 +196,24 @@ func _build_ui() -> void:
 	_loading_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	overlay_box.add_child(_loading_label)
 
+	# Context menu for right-click on frame
+	_ctx_menu = PopupMenu.new()
+	_ctx_menu.add_item("Indexar como textura", 0)
+	_ctx_menu.id_pressed.connect(_on_ctx_menu_item)
+	add_child(_ctx_menu)
+
+	# Texture indexing dialog
+	_tex_index_dialog = TextureIndexDialog.new()
+	_tex_index_dialog.confirmed.connect(_on_texture_index_confirmed)
+	add_child(_tex_index_dialog)
+
+	# Confirmation dialog
+	_confirm_dialog = ConfirmationDialog.new()
+	_confirm_dialog.title = "Confirmar indexación"
+	_confirm_dialog.ok_button_text = "Confirmar"
+	_confirm_dialog.cancel_button_text = "Cancelar"
+	add_child(_confirm_dialog)
+
 
 func _build_menu_bar() -> MenuBar:
 	var mb := MenuBar.new()
@@ -322,6 +348,7 @@ func _connect_signals() -> void:
 	_canvas.blob_clicked.connect(_on_canvas_blob_clicked)
 	_canvas.frame_resized.connect(_on_canvas_frame_resized)
 	_canvas.frame_delete_pressed.connect(func(idx): _delete_frame(idx))
+	_canvas.frame_context_menu.connect(_on_canvas_context_menu)
 
 	# Inspector
 	_inspector.frame_selected.connect(_on_inspector_frame_selected)
@@ -475,6 +502,16 @@ func _load_client_folder(path: String) -> void:
 		if FileAccess.file_exists(fxs_path):
 			_load_fxs_ind(fxs_path)
 			msgs.append("Fxs.ind: %d efectos" % _fxs_data.size())
+
+		# Load indices.ini for texture indexing
+		var indices_path := _init_folder.path_join("indices.ini")
+		if FileAccess.file_exists(indices_path):
+			var f := FileAccess.open(indices_path, FileAccess.READ)
+			if f != null:
+				_indices_ini_data = f.get_as_text().split("\n")
+				f.close()
+				_indices_categories = _parse_indices_categories(_indices_ini_data)
+				msgs.append("indices.ini: %d categorías" % _indices_categories.size())
 
 		_inspector.load_init_files(_init_folder)
 		msgs.append("INIT: archivos cargados")
@@ -1685,6 +1722,190 @@ func _update_status(msg: String) -> void:
 	if _lbl_status != null:
 		_lbl_status.text = msg
 	print(msg)
+
+
+# ── Texture indexing ─────────────────────────────────────────────────────────
+
+func _parse_indices_categories(lines: PackedStringArray) -> PackedStringArray:
+	var cats: Dictionary = {}
+	for line in lines:
+		var stripped := line.strip_edges()
+		if stripped.begins_with("Type="):
+			var val := stripped.substr(5).strip_edges()
+			if not val.is_empty():
+				cats[val] = true
+	var result: PackedStringArray = []
+	# Preferred order first
+	for pref in ["Terreno", "Dungeons", "Techos", "Estructuras", "Naturaleza", "Objetos", "Otros"]:
+		if cats.has(pref):
+			result.append(pref)
+			cats.erase(pref)
+	for key in cats:
+		result.append(key)
+	return result
+
+
+func _on_canvas_context_menu(idx: int, screen_pos: Vector2) -> void:
+	if idx < 0 or idx >= _current_frames.size():
+		return
+	_ctx_frame_idx = idx
+	_ctx_menu.position = Vector2i(screen_pos)
+	_ctx_menu.popup()
+
+
+func _on_ctx_menu_item(id: int) -> void:
+	if id == 0 and _ctx_frame_idx >= 0 and _ctx_frame_idx < _current_frames.size():
+		_open_texture_index_dialog(_ctx_frame_idx)
+
+
+func _open_texture_index_dialog(idx: int) -> void:
+	if _init_folder.is_empty():
+		_update_status("Abrí una carpeta de cliente primero (necesita INIT/).")
+		return
+	var frame: Dictionary = _current_frames[idx]
+	_tex_index_dialog.open_with_frame(frame, _current_texture, _indices_categories)
+
+
+# Pending texture index data (between dialog confirm and user confirmation)
+var _pending_tex_name: String = ""
+var _pending_tex_category: String = ""
+var _pending_tex_capa: int = 0
+
+func _on_texture_index_confirmed(tex_name: String, category: String, capa: int) -> void:
+	var tiles := _tex_index_dialog.get_tiles()
+	var frame := _tex_index_dialog.get_source_frame()
+	var total: int
+	if tiles.x == 1 and tiles.y == 1:
+		total = 1
+	else:
+		total = tiles.x * tiles.y
+
+	_pending_tex_name = tex_name
+	_pending_tex_category = category
+	_pending_tex_capa = capa
+
+	_confirm_dialog.dialog_text = "Se crearán %d GRH(s) estáticos y 1 entrada en indices.ini.\n\nTextura: %s\nTamaño: %dx%d tiles\nCategoría: %s\n\n¿Confirmar?" % [total, tex_name, tiles.x, tiles.y, category]
+	_confirm_dialog.confirmed.connect(_on_texture_index_final, CONNECT_ONE_SHOT)
+	_confirm_dialog.popup_centered()
+
+
+func _on_texture_index_final() -> void:
+	var tiles := _tex_index_dialog.get_tiles()
+	var source := _tex_index_dialog.get_source_frame()
+	var sx: int = source.get("sx", 0)
+	var sy: int = source.get("sy", 0)
+	var fw: int = source.get("w", 0)
+	var fh: int = source.get("h", 0)
+	var file_num: int = source.get("file_num", _current_file_num)
+	var tw: int = tiles.x
+	var th: int = tiles.y
+
+	var is_single := (tw == 1 and th == 1)
+
+	# Remove the original frame from the canvas
+	var orig_idx := -1
+	for i in range(_current_frames.size()):
+		var f: Dictionary = _current_frames[i]
+		if f.get("sx", -1) == sx and f.get("sy", -1) == sy and f.get("w", -1) == fw and f.get("h", -1) == fh:
+			orig_idx = i
+			break
+	if orig_idx >= 0:
+		_push_undo()
+		_current_frames.remove_at(orig_idx)
+
+	var first_grh := _next_grh_index
+	var created_grhs: Array[int] = []
+
+	if is_single:
+		# 1x1: keep original size, single GRH
+		var grh_idx := _next_grh_index
+		_next_grh_index += 1
+		var frame_dict := {"sx": sx, "sy": sy, "w": fw, "h": fh, "grh_index": grh_idx, "file_num": file_num}
+		_current_frames.append(frame_dict)
+		_grh_data["entries"][grh_idx] = {
+			"grh_index": grh_idx, "num_frames": 1,
+			"file_num": file_num, "sx": sx, "sy": sy, "w": fw, "h": fh
+		}
+		created_grhs.append(grh_idx)
+	else:
+		# NxM: divide into 32x32 tiles, row by row
+		for row in range(th):
+			for col in range(tw):
+				var grh_idx := _next_grh_index
+				_next_grh_index += 1
+				var tile_sx := sx + col * 32
+				var tile_sy := sy + row * 32
+				var frame_dict := {"sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32, "grh_index": grh_idx, "file_num": file_num}
+				_current_frames.append(frame_dict)
+				_grh_data["entries"][grh_idx] = {
+					"grh_index": grh_idx, "num_frames": 1,
+					"file_num": file_num, "sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32
+				}
+				created_grhs.append(grh_idx)
+
+	if _next_grh_index - 1 > _grh_data["max_index"]:
+		_grh_data["max_index"] = _next_grh_index - 1
+	_inspector.set_next_grh(_next_grh_index)
+	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
+
+	# Append to indices.ini atomically
+	_append_indices_ini_entry(_pending_tex_name, first_grh, tw, th, _pending_tex_capa, _pending_tex_category)
+
+	# Save Graficos.ind
+	if not _ind_path.is_empty():
+		GrhIO.save_ind(_ind_path, _grh_data)
+
+	var total := created_grhs.size()
+	_update_status("Textura '%s' indexada: %d GRHs (G%d–G%d) + indices.ini" % [_pending_tex_name, total, first_grh, first_grh + total - 1])
+
+	_selected_frame_idx = -1
+	_refresh_all()
+
+
+func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alto: int, capa: int, category: String) -> void:
+	var path := _get_init_path("indices.ini")
+	if path.is_empty():
+		return
+
+	# Find current ref count
+	var ref_count: int = 0
+	var ref_line_idx: int = -1
+	for i in range(_indices_ini_data.size()):
+		var line := _indices_ini_data[i].strip_edges()
+		if line.begins_with("Referencias="):
+			ref_count = int(line.substr(12))
+			ref_line_idx = i
+			break
+
+	var new_ref := ref_count + 1
+
+	# Update count
+	if ref_line_idx >= 0:
+		_indices_ini_data[ref_line_idx] = "Referencias=%d" % new_ref
+	else:
+		# No [INIT] section found, create one
+		var header: PackedStringArray = ["[INIT]", "Referencias=%d" % new_ref, ""]
+		_indices_ini_data = header + _indices_ini_data
+
+	# Append new section
+	_indices_ini_data.append("")
+	_indices_ini_data.append("[REFERENCIA%d]" % new_ref)
+	_indices_ini_data.append("Nombre=%s" % tex_name)
+	_indices_ini_data.append("GrhIndice=%d" % grh_index)
+	_indices_ini_data.append("Ancho=%d" % ancho)
+	_indices_ini_data.append("Alto=%d" % alto)
+	_indices_ini_data.append("Capa=%d" % capa)
+	_indices_ini_data.append("Type=%s" % category)
+
+	# Write file
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string("\n".join(_indices_ini_data))
+		f.close()
+
+	# Update category list
+	if not _indices_categories.has(category):
+		_indices_categories.append(category)
 
 
 # ── Asset save handlers ──────────────────────────────────────────────────────
