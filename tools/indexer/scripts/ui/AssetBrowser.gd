@@ -301,13 +301,9 @@ func _rebuild_list() -> void:
 
 func _rebuild_grh_list(search: String) -> void:
 	var entries: Dictionary = grh_data.get("entries", {})
-	var count := 0
 	var total := _grh_sorted_keys.size()
-	const MAX_DISPLAY := 500
 
 	for grh_idx in _grh_sorted_keys:
-		if count >= MAX_DISPLAY:
-			break
 		var e: Dictionary = entries.get(grh_idx, {})
 		var nf: int = e.get("num_frames", 1)
 
@@ -326,11 +322,10 @@ func _rebuild_grh_list(search: String) -> void:
 
 		_item_list.add_item(label)
 		_filtered_indices.append(grh_idx)
-		count += 1
 
 	_lbl_info.text = "%d GRHs" % total
-	if count < total:
-		_lbl_info.text += " (mostrando %d, usa el buscador)" % count
+	if _filtered_indices.size() < total:
+		_lbl_info.text += " (mostrando %d)" % _filtered_indices.size()
 
 
 func _rebuild_asset_list(search: String) -> void:
