@@ -8,8 +8,6 @@ signal frame_selected(index: int)                   # Frame existente clickeado 
 signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para agregar
 signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
 signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
-signal ao_candidate_clicked(rect: Rect2i)           # AO candidate frame clicked to add
-signal ao_add_all_pressed(rects: Array)             # Add all AO candidates at once
 
 # ── Imagen ───────────────────────────────────────────────────────────────────
 
@@ -27,9 +25,6 @@ var _hover_rect: Rect2i = Rect2i()      # Rect del blob bajo el cursor (vacío=n
 # ── Content regions (smart mode) ──────────────────────────────────────────────
 var _content_regions: Array = []         # Array of Rect2i from detect_content_rows
 
-# ── AO candidate frames (subdivision mode) ───────────────────────────────────
-var _ao_candidates: Array = []           # Array of Rect2i — detected sub-frames
-var _ao_hover_idx: int = -1              # Which candidate is hovered
 
 # ── Frames definidos ──────────────────────────────────────────────────────────
 
@@ -73,86 +68,57 @@ var _move_frame_orig: Rect2 = Rect2()
 var _move_mouse_start_img: Vector2 = Vector2.ZERO
 var _move_live_pos: Vector2 = Vector2.ZERO  # top-left en imagen durante el drag
 
-# ── Snap ─────────────────────────────────────────────────────────────────────
-# snap_mode: 0=ninguno  1=multiplo  2=potencia-de-2 (c/dim)  3=cuadrado-pot2
+# ── Smart detection (hover sprite detection + tile snap) ────────────────────
+# snap_mode: 0=off  4=smart
 
 var snap_mode: int = 0
-var snap_x: int = 32
-var snap_y: int = 32
+
+# ── Grid overlay (visual + draw snapping) ────────────────────────────────────
+
+var show_grid: bool = false
+var grid_cell_w: int = 128    # major grid cell width
+var grid_cell_h: int = 128    # major grid cell height
+const GRID_TILE: int = 32     # minor grid subdivision (always 32px)
 
 # ── Visibility toggle ────────────────────────────────────────────────────────
 
 var show_frames: bool = true
 
-func set_snap(mode: int, sx: int, sy: int) -> void:
+func set_snap(mode: int) -> void:
 	snap_mode = mode
-	snap_x = sx
-	snap_y = sy
 	_hover_rect = Rect2i()
 	queue_redraw()
 
-static func _next_pow2(v: int) -> int:
-	if v <= 1: return 1
-	var p := 1
-	while p < v:
-		p <<= 1
-	return p
 
-func _apply_snap(rect: Rect2i) -> Rect2i:
-	var new_x: int = rect.position.x
-	var new_y: int = rect.position.y
-	var new_w: int = rect.size.x
-	var new_h: int = rect.size.y
+func set_grid_visible(visible: bool) -> void:
+	show_grid = visible
+	queue_redraw()
+
+
+func set_grid_cell(cw: int, ch: int) -> void:
+	grid_cell_w = maxi(cw, 8)
+	grid_cell_h = maxi(ch, 8)
+	queue_redraw()
+
+
+## Snap a rect to tile grid (32px boundaries), expanding to contain content.
+## Used by Smart mode hover detection to align detected sprites to tile grid.
+func _snap_to_tile_grid(rect: Rect2i) -> Rect2i:
+	var t: int = GRID_TILE
+	# Floor position to tile boundary
 	@warning_ignore("integer_division")
-	var cx: int = rect.position.x + rect.size.x / 2
+	var new_x: int = (rect.position.x / t) * t
 	@warning_ignore("integer_division")
-	var cy: int = rect.position.y + rect.size.y / 2
+	var new_y: int = (rect.position.y / t) * t
+	# Ceil right/bottom edge to tile boundary
+	var right_edge: int = rect.position.x + rect.size.x
+	var bottom_edge: int = rect.position.y + rect.size.y
+	@warning_ignore("integer_division")
+	var new_w: int = maxi(t, ((right_edge + t - 1) / t) * t - new_x)
+	@warning_ignore("integer_division")
+	var new_h: int = maxi(t, ((bottom_edge + t - 1) / t) * t - new_y)
 
-	match snap_mode:
-		0:  # Sin snap
-			pass
-		1:  # Multiplo de snap_x / snap_y
-			var sx: int = maxi(1, snap_x)
-			var sy: int = maxi(1, snap_y)
-			@warning_ignore("integer_division")
-			new_w = ((rect.size.x + sx - 1) / sx) * sx
-			@warning_ignore("integer_division")
-			new_h = ((rect.size.y + sy - 1) / sy) * sy
-			@warning_ignore("integer_division")
-			new_x = cx - new_w / 2
-			@warning_ignore("integer_division")
-			new_y = cy - new_h / 2
-		2:  # Potencia de 2 por dimension
-			new_w = _next_pow2(rect.size.x)
-			new_h = _next_pow2(rect.size.y)
-			@warning_ignore("integer_division")
-			new_x = cx - new_w / 2
-			@warning_ignore("integer_division")
-			new_y = cy - new_h / 2
-		3:  # Cuadrado potencia de 2 (usa la mayor dimension)
-			var dim: int = _next_pow2(maxi(rect.size.x, rect.size.y))
-			new_w = dim
-			new_h = dim
-			@warning_ignore("integer_division")
-			new_x = cx - dim / 2
-			@warning_ignore("integer_division")
-			new_y = cy - dim / 2
-		5:  # AO Tiles: offset ×8, size ×8
-			# Snap position DOWN to nearest 8px
-			@warning_ignore("integer_division")
-			new_x = (rect.position.x / 8) * 8
-			@warning_ignore("integer_division")
-			new_y = (rect.position.y / 8) * 8
-			# Right/bottom edge of original content
-			var right_edge: int = rect.position.x + rect.size.x
-			var bottom_edge: int = rect.position.y + rect.size.y
-			# Size = ceil to next multiple of 8 so all content fits
-			@warning_ignore("integer_division")
-			new_w = maxi(8, ((right_edge - new_x + 7) / 8) * 8)
-			@warning_ignore("integer_division")
-			new_h = maxi(8, ((bottom_edge - new_y + 7) / 8) * 8)
-
-	# Always clamp to image borders regardless of snap mode
+	# Clamp to image borders
 	if _image_size.x > 0:
 		var img_w: int = int(_image_size.x)
 		var img_h: int = int(_image_size.y)
@@ -193,8 +159,6 @@ func load_image(img: Image) -> void:
 	_blob_map = PackedInt32Array()
 	_blob_rects = []
 	_content_regions = []
-	_ao_candidates = []
-	_ao_hover_idx = -1
 	# Diferir fit para que el canvas tenga su tamaño definitivo tras el layout
 	call_deferred("fit_to_canvas")
 	queue_redraw()
@@ -341,9 +305,9 @@ func _draw() -> void:
 	draw_texture_rect(_texture, img_sr, false)
 	draw_rect(img_sr, Color(0.4, 0.4, 0.4), false, 1.0)
 
-	# AO 32px grid overlay
-	if snap_mode == 5 and _zoom >= 0.15:
-		_draw_ao_grid(img_sr)
+	# Grid overlay (independent of snap mode)
+	if show_grid and _zoom >= 0.15:
+		_draw_grid(img_sr)
 
 	# Hover blob highlight (solo si no solapa frames existentes)
 	if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
@@ -412,17 +376,16 @@ func _draw() -> void:
 
 	# Rubber band manual
 	if _drawing:
-		# Show snapped preview while drawing
 		var ix := minf(_draw_start_img.x, _draw_cur_img.x)
 		var iy := minf(_draw_start_img.y, _draw_cur_img.y)
 		var iw := absf(_draw_cur_img.x - _draw_start_img.x)
 		var ih := absf(_draw_cur_img.y - _draw_start_img.y)
-		if snap_mode != 0 and iw >= 2.0 and ih >= 2.0:
-			var snapped := _apply_snap(Rect2i(int(ix), int(iy), int(iw), int(ih)))
+		if show_grid and iw >= 2.0 and ih >= 2.0:
+			# Snap to tile grid while drawing
+			var snapped := _snap_to_tile_grid(Rect2i(int(ix), int(iy), int(iw), int(ih)))
 			var sr := _irect2srect(Rect2(snapped.position, snapped.size))
 			draw_rect(sr, Color(0.3, 1.0, 0.3, 0.15))
 			draw_rect(sr, Color(0.3, 1.0, 0.3, 0.9), false, 2.0)
-			# Size label
 			draw_string(ThemeDB.fallback_font, sr.position + Vector2(4, 14),
 				"%d x %d" % [snapped.size.x, snapped.size.y],
 				HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.3, 1.0, 0.3, 0.95))
@@ -433,28 +396,6 @@ func _draw() -> void:
 				Vector2(absf(dc.x - ds.x), absf(dc.y - ds.y)))
 			draw_rect(rb, Color(1, 1, 1, 0.12))
 			draw_rect(rb, Color.WHITE, false, 1.5)
-
-	# AO candidate frames
-	if _ao_candidates.size() > 0:
-		for i in range(_ao_candidates.size()):
-			var cr: Rect2i = _ao_candidates[i]
-			var sr := _irect2srect(Rect2(cr.position, cr.size))
-			var is_hovered := (i == _ao_hover_idx)
-			var col_fill := Color(0.0, 1.0, 0.5, 0.20) if is_hovered else Color(0.0, 0.8, 1.0, 0.10)
-			var col_border := Color(0.0, 1.0, 0.5, 0.95) if is_hovered else Color(0.0, 0.8, 1.0, 0.70)
-			draw_rect(sr, col_fill)
-			draw_rect(sr, col_border, false, 2.0 if is_hovered else 1.0)
-			if sr.size.x > 30:
-				var lbl := "%dx%d" % [cr.size.x, cr.size.y]
-				if is_hovered:
-					lbl = "Click: %d,%d %dx%d" % [cr.position.x, cr.position.y, cr.size.x, cr.size.y]
-				draw_string(ThemeDB.fallback_font, sr.position + Vector2(3, 14),
-					lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11,
-					Color(0.0, 1.0, 0.5, 0.95) if is_hovered else Color(0.0, 0.8, 1.0, 0.85))
-		# Show count + hint at top
-		var hint := "%d candidatos AO  |  Click=agregar  |  Enter=agregar todos  |  Esc=cancelar" % _ao_candidates.size()
-		draw_string(ThemeDB.fallback_font, Vector2(6, 16), hint,
-			HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.0, 1.0, 0.7, 0.9))
 
 	# Info zoom
 	draw_string(ThemeDB.fallback_font, Vector2(6, size.y - 6),
@@ -476,41 +417,46 @@ func _draw_checker(rect: Rect2) -> void:
 			), cc)
 
 
-func _draw_ao_grid(img_sr: Rect2) -> void:
-	var grid_step := 32.0 * _zoom
+func _draw_grid(img_sr: Rect2) -> void:
+	var tile_step := float(GRID_TILE) * _zoom
 	# Skip drawing if grid lines would be too dense (< 4px apart)
-	if grid_step < 4.0:
+	if tile_step < 4.0:
 		return
 	# Determine visible area
 	var vis_left := maxf(img_sr.position.x, 0.0)
 	var vis_top := maxf(img_sr.position.y, 0.0)
 	var vis_right := minf(img_sr.position.x + img_sr.size.x, size.x)
 	var vis_bottom := minf(img_sr.position.y + img_sr.size.y, size.y)
-	# Thin lines for 32px grid
+	# Thin lines for tile grid
 	var col_grid := Color(1.0, 0.85, 0.0, 0.12)
-	# Thicker lines every 128px (4 tiles)
+	# Thicker lines at cell boundaries
 	var col_grid_major := Color(1.0, 0.85, 0.0, 0.28)
+	# How many tiles per major cell
+	@warning_ignore("integer_division")
+	var tiles_per_cell_x: int = maxi(1, grid_cell_w / GRID_TILE)
+	@warning_ignore("integer_division")
+	var tiles_per_cell_h: int = maxi(1, grid_cell_h / GRID_TILE)
 	# Vertical lines
 	@warning_ignore("integer_division")
-	var first_col := int((vis_left - img_sr.position.x) / grid_step)
-	var total_cols := ceili(_image_size.x / 32.0)
+	var first_col := int((vis_left - img_sr.position.x) / tile_step)
+	var total_cols := ceili(_image_size.x / float(GRID_TILE))
 	for i in range(first_col, total_cols + 1):
-		var sx := img_sr.position.x + float(i) * grid_step
+		var sx := img_sr.position.x + float(i) * tile_step
 		if sx < vis_left or sx > vis_right:
 			continue
-		var is_major := (i % 4 == 0)
+		var is_major := (i % tiles_per_cell_x == 0)
 		draw_line(Vector2(sx, vis_top), Vector2(sx, vis_bottom),
 			col_grid_major if is_major else col_grid,
 			2.0 if is_major else 1.0)
 	# Horizontal lines
 	@warning_ignore("integer_division")
-	var first_row := int((vis_top - img_sr.position.y) / grid_step)
-	var total_rows := ceili(_image_size.y / 32.0)
+	var first_row := int((vis_top - img_sr.position.y) / tile_step)
+	var total_rows := ceili(_image_size.y / float(GRID_TILE))
 	for i in range(first_row, total_rows + 1):
-		var sy := img_sr.position.y + float(i) * grid_step
+		var sy := img_sr.position.y + float(i) * tile_step
 		if sy < vis_top or sy > vis_bottom:
 			continue
-		var is_major := (i % 4 == 0)
+		var is_major := (i % tiles_per_cell_h == 0)
 		draw_line(Vector2(vis_left, sy), Vector2(vis_right, sy),
 			col_grid_major if is_major else col_grid,
 			2.0 if is_major else 1.0)
@@ -532,15 +478,10 @@ func _on_key(k: InputEventKey) -> void:
 		return
 	match k.keycode:
 		KEY_ESCAPE:
-			if _ao_candidates.size() > 0:
-				ao_clear()
-			elif _selected_frame >= 0:
+			if _selected_frame >= 0:
 				_selected_frame = -1
 				frame_selected.emit(-1)
 				queue_redraw()
-		KEY_ENTER, KEY_KP_ENTER:
-			if _ao_candidates.size() > 0:
-				ao_add_all()
 		KEY_DELETE:
 			if _selected_frame >= 0:
 				var idx := _selected_frame
@@ -615,11 +556,12 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 							_selected_frame = -1
 							frame_selected.emit(-1)
 							queue_redraw()
-						if snap_mode == 5:
+						if show_grid:
+							# Snap draw start to nearest tile boundary
 							@warning_ignore("integer_division")
-							ip.x = float((int(ip.x) / 8) * 8)
+							ip.x = float((int(ip.x) / GRID_TILE) * GRID_TILE)
 							@warning_ignore("integer_division")
-							ip.y = float((int(ip.y) / 8) * 8)
+							ip.y = float((int(ip.y) / GRID_TILE) * GRID_TILE)
 						_draw_start_img = ip
 						_draw_cur_img = ip
 			else:
@@ -638,11 +580,11 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					if _image_size.x > 0:
 						new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
 						new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
-					if snap_mode == 5:
+					if show_grid:
 						@warning_ignore("integer_division")
-						new_pos.x = float((int(new_pos.x) / 8) * 8)
+						new_pos.x = float((int(new_pos.x) / GRID_TILE) * GRID_TILE)
 						@warning_ignore("integer_division")
-						new_pos.y = float((int(new_pos.y) / 8) * 8)
+						new_pos.y = float((int(new_pos.y) / GRID_TILE) * GRID_TILE)
 					var new_rect := Rect2(new_pos, _move_frame_orig.size)
 					frame_resized.emit(_selected_frame, new_rect)
 					queue_redraw()
@@ -658,32 +600,36 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 						y = maxf(y, 0.0)
 						w = minf(w, _image_size.x - x)
 						h = minf(h, _image_size.y - y)
-					# Apply snap (pow2, grid, etc.) to drawn frame
-					if snap_mode != 0 and w >= 2.0 and h >= 2.0:
-						var snapped := _apply_snap(Rect2i(int(x), int(y), int(w), int(h)))
+					# Grid snap: snap edges to tile boundaries
+					if show_grid and w >= 2.0 and h >= 2.0:
+						@warning_ignore("integer_division")
+						x = float((int(x) / GRID_TILE) * GRID_TILE)
+						@warning_ignore("integer_division")
+						y = float((int(y) / GRID_TILE) * GRID_TILE)
+						var right_edge := x + w
+						var bottom_edge := y + h
+						@warning_ignore("integer_division")
+						w = float(((int(right_edge) + GRID_TILE - 1) / GRID_TILE) * GRID_TILE) - x
+						@warning_ignore("integer_division")
+						h = float(((int(bottom_edge) + GRID_TILE - 1) / GRID_TILE) * GRID_TILE) - y
+						# Clamp again after snap
+						if _image_size.x > 0:
+							w = minf(w, _image_size.x - x)
+							h = minf(h, _image_size.y - y)
+					# Smart mode: snap drawn frame to tile grid
+					elif snap_mode == 4 and w >= 2.0 and h >= 2.0:
+						var snapped := _snap_to_tile_grid(Rect2i(int(x), int(y), int(w), int(h)))
 						x = float(snapped.position.x)
 						y = float(snapped.position.y)
 						w = float(snapped.size.x)
 						h = float(snapped.size.y)
 					if w >= 2.0 and h >= 2.0:
-						if snap_mode == 5:
-							# AO mode: subdivide drawn area into individual blob-based frames
-							_ao_subdivide(Rect2i(int(x), int(y), int(w), int(h)))
-						elif not _overlaps_any_frame(Rect2(x, y, w, h)):
+						if not _overlaps_any_frame(Rect2(x, y, w, h)):
 							frame_drawn.emit(Rect2(x, y, w, h))
 					queue_redraw()
 				else:
-					# Click without drag in DRAW mode
-					if snap_mode == 5 and _ao_candidates.size() > 0:
-						# AO mode: click on a candidate to add it
-						var ip := _s2i(mb.position)
-						var clicked_idx := _ao_hit_test(ip)
-						if clicked_idx >= 0:
-							ao_candidate_clicked.emit(_ao_candidates[clicked_idx])
-							_ao_candidates.remove_at(clicked_idx)
-							_ao_hover_idx = -1
-							queue_redraw()
-					elif _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
+					# Click without drag in DRAW mode → blob click
+					if _hover_rect.size.x > 0 and not _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
 						blob_clicked.emit(_hover_rect)
 
 
@@ -705,11 +651,11 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 		if _image_size.x > 0:
 			new_pos.x = clampf(new_pos.x, 0.0, _image_size.x - _move_frame_orig.size.x)
 			new_pos.y = clampf(new_pos.y, 0.0, _image_size.y - _move_frame_orig.size.y)
-		if snap_mode == 5:
+		if show_grid:
 			@warning_ignore("integer_division")
-			new_pos.x = float((int(new_pos.x) / 32) * 32)
+			new_pos.x = float((int(new_pos.x) / GRID_TILE) * GRID_TILE)
 			@warning_ignore("integer_division")
-			new_pos.y = float((int(new_pos.y) / 32) * 32)
+			new_pos.y = float((int(new_pos.y) / GRID_TILE) * GRID_TILE)
 		_move_live_pos = new_pos
 		queue_redraw()
 		return
@@ -719,15 +665,6 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 		if dist > DRAG_THRESHOLD or _drawing:
 			_drawing = true
 			_draw_cur_img = _s2i(mm.position)
-			queue_redraw()
-		return
-
-	# AO candidates hover
-	if _ao_candidates.size() > 0:
-		var ip := _s2i(mm.position)
-		var prev_idx := _ao_hover_idx
-		_ao_hover_idx = _ao_hit_test(ip)
-		if _ao_hover_idx != prev_idx:
 			queue_redraw()
 		return
 
@@ -746,42 +683,15 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 			return
 
 		if snap_mode == 4 and _content_regions.size() > 0:
-			# Smart mode: find which pre-computed content region the cursor is in
+			# Smart mode: find content region → snap to tile grid
 			for region in _content_regions:
 				var r: Rect2i = region
 				if px >= r.position.x and px < r.position.x + r.size.x \
 				and py >= r.position.y and py < r.position.y + r.size.y:
-					_hover_rect = r
+					_hover_rect = _snap_to_tile_grid(r)
 					break
-		elif snap_mode == 5 and _blob_rects.size() > 0:
-			# AO mode: find which 8px-aligned cell the cursor is in,
-			# then merge all blobs that overlap that cell into one frame
-			@warning_ignore("integer_division")
-			var cell_x: int = (px / 8) * 8
-			@warning_ignore("integer_division")
-			var cell_y: int = (py / 8) * 8
-			# Start with a minimal cell, grow to include all intersecting blobs
-			var merged := Rect2i(cell_x, cell_y, 8, 8)
-			var found_any := false
-			var changed := true
-			while changed:
-				changed = false
-				for blob_rect in _blob_rects:
-					var br: Rect2i = blob_rect
-					if _rects_overlap(merged, br):
-						# Expand merged to contain the blob, then re-snap
-						var union_x := mini(merged.position.x, br.position.x)
-						var union_y := mini(merged.position.y, br.position.y)
-						var union_r := maxi(merged.position.x + merged.size.x, br.position.x + br.size.x)
-						var union_b := maxi(merged.position.y + merged.size.y, br.position.y + br.size.y)
-						var snapped := _apply_snap(Rect2i(union_x, union_y, union_r - union_x, union_b - union_y))
-						if snapped != merged:
-							merged = snapped
-							changed = true
-						found_any = true
-			if found_any:
-				_hover_rect = merged
-		elif px >= 0 and px < _blob_map_w and py >= 0:
+		elif snap_mode == 4 and px >= 0 and px < _blob_map_w and py >= 0:
+			# Smart mode fallback: individual blob → snap to tile grid
 			var map_h := _blob_map.size() / _blob_map_w
 			if py < map_h:
 				var blob_id := _blob_map[py * _blob_map_w + px]
@@ -789,7 +699,16 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 					var rect_idx := _blob_id_to_rect[blob_id]
 					if rect_idx >= 0 and rect_idx < _blob_rects.size():
 						var raw_rect: Rect2i = _blob_rects[rect_idx]
-						_hover_rect = _apply_snap(raw_rect)
+						_hover_rect = _snap_to_tile_grid(raw_rect)
+		elif px >= 0 and px < _blob_map_w and py >= 0:
+			# No snap: raw blob rect
+			var map_h := _blob_map.size() / _blob_map_w
+			if py < map_h:
+				var blob_id := _blob_map[py * _blob_map_w + px]
+				if blob_id > 0 and blob_id < _blob_id_to_rect.size():
+					var rect_idx := _blob_id_to_rect[blob_id]
+					if rect_idx >= 0 and rect_idx < _blob_rects.size():
+						_hover_rect = _blob_rects[rect_idx]
 
 		# Suppress hover if it overlaps an existing frame
 		if _hover_rect.size.x > 0 and _overlaps_any_frame(Rect2(_hover_rect.position, _hover_rect.size)):
@@ -797,89 +716,6 @@ func _on_mouse_motion(mm: InputEventMouseMotion) -> void:
 
 		if _hover_rect != prev_rect:
 			queue_redraw()
-
-
-# ── AO subdivision ───────────────────────────────────────────────────────────
-
-func _ao_subdivide(area: Rect2i) -> void:
-	# Find all blobs that overlap the drawn area, snap each to ×8
-	_ao_candidates.clear()
-	_ao_hover_idx = -1
-	var used_blobs: Array = []  # track which blobs are already merged
-	for i in range(_blob_rects.size()):
-		var br: Rect2i = _blob_rects[i]
-		if not _rects_overlap(area, br):
-			continue
-		# Check if this blob is already part of an existing candidate (merged)
-		var already := false
-		for u in used_blobs:
-			if u == i:
-				already = true
-				break
-		if already:
-			continue
-		# Start with this blob snapped
-		var snapped := _apply_snap(br)
-		# Iteratively merge nearby blobs that overlap the snapped rect
-		var changed := true
-		while changed:
-			changed = false
-			for j in range(_blob_rects.size()):
-				var br2: Rect2i = _blob_rects[j]
-				if not _rects_overlap(area, br2):
-					continue
-				if not _rects_overlap(snapped, br2):
-					continue
-				var union_x := mini(snapped.position.x, br2.position.x)
-				var union_y := mini(snapped.position.y, br2.position.y)
-				var union_r := maxi(snapped.position.x + snapped.size.x, br2.position.x + br2.size.x)
-				var union_b := maxi(snapped.position.y + snapped.size.y, br2.position.y + br2.size.y)
-				var new_snapped := _apply_snap(Rect2i(union_x, union_y, union_r - union_x, union_b - union_y))
-				if new_snapped != snapped:
-					snapped = new_snapped
-					changed = true
-				# Mark blob as used
-				var found_j := false
-				for u in used_blobs:
-					if u == j:
-						found_j = true
-						break
-				if not found_j:
-					used_blobs.append(j)
-		# Skip if overlaps existing frames
-		if not _overlaps_any_frame(Rect2(snapped.position, snapped.size)):
-			# Skip duplicates
-			var dupe := false
-			for c in _ao_candidates:
-				if c == snapped:
-					dupe = true
-					break
-			if not dupe:
-				_ao_candidates.append(snapped)
-	queue_redraw()
-
-
-func _ao_hit_test(img_pos: Vector2) -> int:
-	for i in range(_ao_candidates.size() - 1, -1, -1):
-		var r: Rect2i = _ao_candidates[i]
-		if img_pos.x >= r.position.x and img_pos.x < r.position.x + r.size.x \
-		and img_pos.y >= r.position.y and img_pos.y < r.position.y + r.size.y:
-			return i
-	return -1
-
-
-func ao_add_all() -> void:
-	if _ao_candidates.size() > 0:
-		ao_add_all_pressed.emit(_ao_candidates.duplicate())
-		_ao_candidates.clear()
-		_ao_hover_idx = -1
-		queue_redraw()
-
-
-func ao_clear() -> void:
-	_ao_candidates.clear()
-	_ao_hover_idx = -1
-	queue_redraw()
 
 
 func _hit_test_frame(img_pos: Vector2) -> int:
@@ -890,12 +726,6 @@ func _hit_test_frame(img_pos: Vector2) -> int:
 			return i
 	return -1
 
-
-static func _rects_overlap(a: Rect2i, b: Rect2i) -> bool:
-	return a.position.x < b.position.x + b.size.x \
-		and a.position.x + a.size.x > b.position.x \
-		and a.position.y < b.position.y + b.size.y \
-		and a.position.y + a.size.y > b.position.y
 
 
 func _overlaps_any_frame(r: Rect2) -> bool:

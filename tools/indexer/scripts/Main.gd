@@ -69,8 +69,9 @@ func _ready() -> void:
 	_build_ui()
 	_build_dialogs()
 	_connect_signals()
-	# Default snap: Potencia de 2 per dimension (mode 2)
-	_canvas.set_snap(2, 32, 32)
+	# Default: Smart detection on, grid visible
+	_canvas.set_snap(4)
+	_canvas.set_grid_visible(true)
 	_update_status("Listo. Abre una carpeta de cliente para comenzar.")
 	# Restore previous session
 	call_deferred("_restore_session")
@@ -258,7 +259,9 @@ func _connect_signals() -> void:
 
 	# Toolbar
 	_toolbar.tool_changed.connect(_on_tool_changed)
-	_toolbar.snap_changed.connect(func(mode, sx, sy): _canvas.set_snap(mode, sx, sy))
+	_toolbar.snap_changed.connect(func(mode): _canvas.set_snap(mode))
+	_toolbar.grid_toggled.connect(func(on): _canvas.set_grid_visible(on))
+	_toolbar.grid_cell_changed.connect(func(cw, ch): _canvas.set_grid_cell(cw, ch))
 	_toolbar.zoom_in_pressed.connect(func(): _canvas.zoom_in())
 	_toolbar.zoom_out_pressed.connect(func(): _canvas.zoom_out())
 	_toolbar.zoom_fit_pressed.connect(func(): _canvas.fit_to_canvas())
@@ -272,8 +275,6 @@ func _connect_signals() -> void:
 	_canvas.blob_clicked.connect(_on_canvas_blob_clicked)
 	_canvas.frame_resized.connect(_on_canvas_frame_resized)
 	_canvas.frame_delete_pressed.connect(func(idx): _delete_frame(idx))
-	_canvas.ao_candidate_clicked.connect(_on_ao_candidate_clicked)
-	_canvas.ao_add_all_pressed.connect(_on_ao_add_all)
 
 	# Inspector
 	_inspector.frame_selected.connect(_on_inspector_frame_selected)
@@ -567,34 +568,6 @@ func _on_canvas_frame_drawn(rect: Rect2) -> void:
 
 func _on_canvas_blob_clicked(rect: Rect2i) -> void:
 	_on_canvas_frame_drawn(Rect2(rect.position, rect.size))
-
-
-func _on_ao_candidate_clicked(rect: Rect2i) -> void:
-	_on_canvas_frame_drawn(Rect2(rect.position, rect.size))
-
-
-func _on_ao_add_all(rects: Array) -> void:
-	if rects.size() == 0:
-		return
-	_push_undo()
-	for r in rects:
-		var rect: Rect2i = r
-		var file_num := _current_file_num
-		var grh_idx := _next_grh_index
-		_next_grh_index += 1
-		var sx := _clamp_x(rect.position.x)
-		var sy := _clamp_y(rect.position.y)
-		var frame := {
-			"sx": sx, "sy": sy,
-			"w": _clamp_w(sx, rect.size.x),
-			"h": _clamp_h(sy, rect.size.y),
-			"grh_index": grh_idx, "file_num": file_num
-		}
-		_current_frames.append(frame)
-	_inspector.set_next_grh(_next_grh_index)
-	_selected_frame_idx = _current_frames.size() - 1
-	_refresh_all()
-	_update_status("AO: %d frames agregados" % rects.size())
 
 
 func _on_canvas_frame_resized(index: int, new_rect: Rect2) -> void:
@@ -950,33 +923,18 @@ func _detect_snap_hint(rects: Array, content_regions: Array = []) -> String:
 	var w_is_pow2: bool = (bw & (bw - 1)) == 0 and bw > 0
 	var h_is_pow2: bool = (bh & (bh - 1)) == 0 and bh > 0
 
+	# Always use Smart mode — auto-detect just reports what it found
+	_toolbar.set_snap(4)
+	_canvas.set_snap(4)
+
 	if ratio >= 0.5 and best["count"] >= 3:
-		# Majority of blobs share a common size → grid mode
 		var gw: int = best["w"]
 		var gh: int = best["h"]
-		_toolbar.set_snap(1, gw, gh)
-		_canvas.set_snap(1, gw, gh)
-		return "Snap: Grid %dx%d (auto — %d/%d blobs iguales)" % [gw, gh, best["count"], sizes.size()]
-	elif content_regions.size() >= 2 and content_regions.size() <= rects.size() + 2:
-		# Multiple distinct content regions detected → Smart mode
-		# (content_regions merges overlapping blobs into logical groups)
-		_toolbar.set_snap(4)
-		_canvas.set_snap(4, 32, 32)
-		return "Snap: Smart (auto — %d regiones de contenido)" % content_regions.size()
-	elif w_is_pow2 and h_is_pow2:
-		# Mixed sizes but pow2 works
-		_toolbar.set_snap(2)
-		_canvas.set_snap(2, 32, 32)
-		return "Snap: Pot.2 (auto — tamaños variados)"
+		return "Smart (auto — %d/%d blobs %dx%d)" % [best["count"], sizes.size(), gw, gh]
+	elif content_regions.size() >= 2:
+		return "Smart (auto — %d regiones de contenido)" % content_regions.size()
 	else:
-		# Mixed sizes, not all pow2 → Smart if we have regions
-		if content_regions.size() >= 2:
-			_toolbar.set_snap(4)
-			_canvas.set_snap(4, 32, 32)
-			return "Snap: Smart (auto — %d regiones)" % content_regions.size()
-		_toolbar.set_snap(0)
-		_canvas.set_snap(0, 32, 32)
-		return "Snap: Off (auto — tamaños irregulares)"
+		return "Smart (auto — %d blobs detectados)" % rects.size()
 
 
 ## When blobs are uniform size, generate a full grid covering the entire image.
@@ -1537,10 +1495,11 @@ func _save_session() -> void:
 		_prefs.set_value("session", "last_image_path", _current_image_path)
 		_prefs.set_value("session", "last_file_num", _current_file_num)
 
-	# Snap state
+	# Snap + grid state
 	_prefs.set_value("session", "snap_mode", _canvas.snap_mode)
-	_prefs.set_value("session", "snap_x", _canvas.snap_x)
-	_prefs.set_value("session", "snap_y", _canvas.snap_y)
+	_prefs.set_value("session", "show_grid", _canvas.show_grid)
+	_prefs.set_value("session", "grid_cell_w", _canvas.grid_cell_w)
+	_prefs.set_value("session", "grid_cell_h", _canvas.grid_cell_h)
 
 	# Tool mode
 	_prefs.set_value("session", "tool_mode", _canvas.tool_mode)
@@ -1568,12 +1527,19 @@ func _restore_session() -> void:
 			_update_status("Carpeta anterior no encontrada. Abre una nueva.")
 		return
 
-	# Restore snap
-	var snap_mode: int = _prefs.get_value("session", "snap_mode", 2)
-	var snap_sx: int = _prefs.get_value("session", "snap_x", 32)
-	var snap_sy: int = _prefs.get_value("session", "snap_y", 32)
-	_toolbar.set_snap(snap_mode, snap_sx, snap_sy)
-	_canvas.set_snap(snap_mode, snap_sx, snap_sy)
+	# Restore snap + grid
+	var snap_mode: int = _prefs.get_value("session", "snap_mode", 4)
+	# Migrate old modes (1, 2, 3, 5) to Smart (4)
+	if snap_mode != 0 and snap_mode != 4:
+		snap_mode = 4
+	_toolbar.set_snap(snap_mode)
+	_canvas.set_snap(snap_mode)
+	var grid_on: bool = _prefs.get_value("session", "show_grid", true)
+	var gcw: int = _prefs.get_value("session", "grid_cell_w", 128)
+	var gch: int = _prefs.get_value("session", "grid_cell_h", 128)
+	_toolbar.set_grid(grid_on, gcw, gch)
+	_canvas.set_grid_visible(grid_on)
+	_canvas.set_grid_cell(gcw, gch)
 
 	# Restore tool mode
 	var tool_mode: int = _prefs.get_value("session", "tool_mode", 0)
