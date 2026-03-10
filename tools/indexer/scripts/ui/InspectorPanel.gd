@@ -789,9 +789,15 @@ func _build_frames_tab() -> Control:
 # ══════════════════════════════════════════════════════════════════
 
 func _build_detect_tab() -> Control:
+	var scroll := ScrollContainer.new()
+	scroll.name = "Parsear"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var root := VBoxContainer.new()
-	root.name = "Parsear"
+	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	root.add_theme_constant_override("separation", 6)
+	scroll.add_child(root)
 
 	# ── Grid section ──
 	root.add_child(IndexerTheme.section_label("Cuadrícula"))
@@ -895,7 +901,7 @@ func _build_detect_tab() -> Control:
 		IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	auto_inner.add_child(IndexerTheme.success_button("Auto-Detectar Frames", _on_detect_auto_btn))
 
-	return root
+	return scroll
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -938,7 +944,7 @@ func _build_data_tab() -> Control:
 
 	var init_split := VSplitContainer.new()
 	init_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	init_split.split_offset = 100
+	init_split.split_offset = 200
 	root.add_child(init_split)
 
 	var init_top := VBoxContainer.new()

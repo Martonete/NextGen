@@ -148,7 +148,7 @@ func _ready() -> void:
 	# Save button
 	root.add_child(_separator())
 	_btn_save = Button.new()
-	_btn_save.text = "Guardar Textura"
+	_btn_save.text = "Indexar"
 	_btn_save.add_theme_font_size_override("font_size", 14)
 	var save_bg := StyleBoxFlat.new()
 	save_bg.bg_color = Color(0.2, 0.6, 0.3)

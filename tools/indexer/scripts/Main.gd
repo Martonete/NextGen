@@ -29,6 +29,7 @@ var _fxs_data: Array = []
 var _mi_cabecera_fxs: PackedByteArray = PackedByteArray()
 var _indices_ini_data: PackedStringArray = []  # Raw lines of indices.ini
 var _indices_categories: PackedStringArray = []  # Unique category names
+var _dirty: bool = false  # True when there are unsaved changes in memory
 
 # Undo stack: stores snapshots of {frames, selected, next_grh}
 const MAX_UNDO := 50
@@ -55,7 +56,8 @@ var _menu_ver: PopupMenu
 var _ctx_menu: PopupMenu
 var _ctx_frame_idx: int = -1
 var _tex_index_dialog: TextureIndexDialog
-var _confirm_dialog: ConfirmationDialog = null
+var _dlg_save_confirm: Window = null
+var _index_preview_label_save: RichTextLabel = null
 
 # Dialogs
 var _dlg_client_folder: FileDialog
@@ -1246,10 +1248,74 @@ func _do_navigate_to_file(file_num: int) -> void:
 # ── Save ─────────────────────────────────────────────────────────────────────
 
 func _on_save_ind() -> void:
-	if _ind_path.is_empty():
-		_dlg_save_ind.popup_centered_ratio(0.7)
+	if _ind_path.is_empty() and _init_folder.is_empty():
+		_update_status("Abrí una carpeta de cliente primero.")
+		return
+	_show_save_confirm_dialog()
+
+
+func _show_save_confirm_dialog() -> void:
+	# Build diff summary of all pending changes
+	var lines: PackedStringArray = []
+	lines.append("[b]Cambios pendientes:[/b]\n")
+
+	if not _ind_path.is_empty():
+		lines.append("[color=#8f8]• Graficos.ind[/color] → %d entradas (max GRH: %d)" % [_grh_data["entries"].size(), _grh_data["max_index"]])
+
+	var ini_path := _get_init_path("indices.ini")
+	if not ini_path.is_empty() and _indices_ini_data.size() > 0:
+		# Count references
+		var ref_count := 0
+		for line in _indices_ini_data:
+			if line.strip_edges().begins_with("Referencias="):
+				ref_count = int(line.strip_edges().substr(12))
+				break
+		lines.append("[color=#8f8]• indices.ini[/color] → %d referencias" % ref_count)
+
+	# Check other modified .ind files
+	if _bodies_data.size() > 0:
+		lines.append("[color=#8f8]• Personajes.ind[/color] → %d entradas" % _bodies_data.size())
+	if _fxs_data.size() > 0:
+		lines.append("[color=#8f8]• FXs.ind[/color] → %d entradas" % _fxs_data.size())
+
+	if lines.size() <= 1:
+		_update_status("No hay cambios pendientes.")
+		return
+
+	lines.append("")
+	lines.append("[color=#aaa]Se escribirán estos archivos al cliente.[/color]")
+	lines.append("[color=#aaa]Esta acción sobrescribe los archivos originales.[/color]")
+
+	_ensure_confirm_dialog()
+	_index_preview_label_save.text = "\n".join(lines)
+	if not _dlg_save_confirm.is_inside_tree():
+		add_child(_dlg_save_confirm)
+	_dlg_save_confirm.popup_centered()
+
+
+func _on_save_confirmed() -> void:
+	_dlg_save_confirm.hide()
+	var saved: PackedStringArray = []
+
+	# Save Graficos.ind
+	if not _ind_path.is_empty():
+		if GrhIO.save_ind(_ind_path, _grh_data):
+			saved.append("Graficos.ind")
+
+	# Save indices.ini
+	var ini_path := _get_init_path("indices.ini")
+	if not ini_path.is_empty() and _indices_ini_data.size() > 0:
+		var f := FileAccess.open(ini_path, FileAccess.WRITE)
+		if f != null:
+			f.store_string("\n".join(_indices_ini_data))
+			f.close()
+			saved.append("indices.ini")
+
+	_dirty = false
+	if saved.size() > 0:
+		_update_status("Guardado: %s" % ", ".join(saved))
 	else:
-		_save_ind_to_path(_ind_path)
+		_update_status("No se guardó ningún archivo.")
 
 
 func _save_ind_to_path(path: String) -> void:
@@ -1799,6 +1865,7 @@ func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) 
 	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
 
 	var total := tiles_w * tiles_h
+	_dirty = true
 	_selected_frame_idx = -1
 	_refresh_all()
 	_update_status("Frame dividido: %d×%d = %d tiles (G%d–G%d)" % [tiles_w, tiles_h, total, first_grh, first_grh + total - 1])
@@ -1821,32 +1888,48 @@ var _pending_tex_capa: int = 0
 var _pending_tex_first_grh: int = -1  # set by split_requested for NxM
 
 func _on_texture_index_confirmed(tex_name: String, category: String, capa: int) -> void:
-	var tiles := _tex_index_dialog.get_tiles()
-	var frame := _tex_index_dialog.get_source_frame()
-	var total: int
-	if tiles.x == 1 and tiles.y == 1:
-		total = 1
-	else:
-		total = tiles.x * tiles.y
-
 	_pending_tex_name = tex_name
 	_pending_tex_category = category
 	_pending_tex_capa = capa
-
-	_ensure_confirm_dialog()
-	_confirm_dialog.dialog_text = "Se crearán %d GRH(s) estáticos y 1 entrada en indices.ini.\n\nTextura: %s\nTamaño: %dx%d tiles\nCategoría: %s\n\n¿Confirmar?" % [total, tex_name, tiles.x, tiles.y, category]
-	_confirm_dialog.confirmed.connect(_on_texture_index_final, CONNECT_ONE_SHOT)
-	_confirm_dialog.popup_centered()
+	_on_texture_index_final()
 
 
 func _ensure_confirm_dialog() -> void:
-	if _confirm_dialog == null:
-		_confirm_dialog = ConfirmationDialog.new()
-		_confirm_dialog.title = "Confirmar indexación"
-		_confirm_dialog.ok_button_text = "Confirmar"
-		_confirm_dialog.cancel_button_text = "Cancelar"
-		_confirm_dialog.visible = false
-		add_child(_confirm_dialog)
+	if _dlg_save_confirm != null:
+		return
+	_dlg_save_confirm = Window.new()
+	_dlg_save_confirm.title = "Guardar cambios"
+	_dlg_save_confirm.size = Vector2i(520, 400)
+	_dlg_save_confirm.exclusive = true
+	_dlg_save_confirm.wrap_controls = true
+	_dlg_save_confirm.close_requested.connect(func(): _dlg_save_confirm.hide())
+	var margin := MarginContainer.new()
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	_dlg_save_confirm.add_child(margin)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 8)
+	margin.add_child(vb)
+	_index_preview_label_save = RichTextLabel.new()
+	_index_preview_label_save.bbcode_enabled = true
+	_index_preview_label_save.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_index_preview_label_save.scroll_following = false
+	vb.add_child(_index_preview_label_save)
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_END
+	btn_row.add_theme_constant_override("separation", 8)
+	vb.add_child(btn_row)
+	var btn_cancel := Button.new()
+	btn_cancel.text = "Cancelar"
+	btn_cancel.pressed.connect(func(): _dlg_save_confirm.hide())
+	btn_row.add_child(btn_cancel)
+	var btn_save := Button.new()
+	btn_save.text = "Guardar todo"
+	btn_save.pressed.connect(_on_save_confirmed)
+	btn_row.add_child(btn_save)
 
 
 func _on_texture_index_final() -> void:
@@ -1890,23 +1973,17 @@ func _on_texture_index_final() -> void:
 		first_grh = _pending_tex_first_grh
 		total = tw * th
 
-	# Save indices.ini entry
+	# Save indices.ini entry IN MEMORY (no disk write)
 	_append_indices_ini_entry(_pending_tex_name, first_grh, tw, th, _pending_tex_capa, _pending_tex_category)
 
-	# Save Graficos.ind to disk
-	if not _ind_path.is_empty():
-		GrhIO.save_ind(_ind_path, _grh_data)
-
-	_update_status("Textura '%s' indexada: %d GRHs (G%d–G%d) + indices.ini" % [_pending_tex_name, total, first_grh, first_grh + total - 1])
+	_dirty = true
+	_update_status("Textura '%s' indexada en memoria: %d GRHs (G%d–G%d). Presiona GUARDAR para escribir a disco." % [_pending_tex_name, total, first_grh, first_grh + total - 1])
 	_selected_frame_idx = -1
 	_refresh_all()
 
 
 func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alto: int, capa: int, category: String) -> void:
-	var path := _get_init_path("indices.ini")
-	if path.is_empty():
-		return
-
+	# Memory-only — updates _indices_ini_data, does NOT write to disk
 	# Find current ref count
 	var ref_count: int = 0
 	var ref_line_idx: int = -1
@@ -1923,7 +2000,6 @@ func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alt
 	if ref_line_idx >= 0:
 		_indices_ini_data[ref_line_idx] = "Referencias=%d" % new_ref
 	else:
-		# No [INIT] section found, create one
 		var header: PackedStringArray = ["[INIT]", "Referencias=%d" % new_ref, ""]
 		_indices_ini_data = header + _indices_ini_data
 
@@ -1936,12 +2012,6 @@ func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alt
 	_indices_ini_data.append("Alto=%d" % alto)
 	_indices_ini_data.append("Capa=%d" % capa)
 	_indices_ini_data.append("Type=%s" % category)
-
-	# Write file
-	var f := FileAccess.open(path, FileAccess.WRITE)
-	if f != null:
-		f.store_string("\n".join(_indices_ini_data))
-		f.close()
 
 	# Update category list
 	if not _indices_categories.has(category):
