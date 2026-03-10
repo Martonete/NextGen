@@ -6,8 +6,11 @@ signal confirmed(name: String, category: String, capa: int)
 signal split_requested(frame: Dictionary, tiles_w: int, tiles_h: int)
 
 var _split_done: bool = false
+var _chk_split: CheckBox
 var _spin_w: SpinBox
 var _spin_h: SpinBox
+var _lbl_x: Label
+var _size_row: HBoxContainer
 var _input_name: LineEdit
 var _opt_type: OptionButton
 var _spin_capa: SpinBox
@@ -57,31 +60,40 @@ func _ready() -> void:
 	_input_name.text_changed.connect(func(_t): _update_save_state())
 	name_row.add_child(_input_name)
 
-	# Tile size (editable)
-	var size_row := HBoxContainer.new()
-	size_row.add_theme_constant_override("separation", 6)
-	root.add_child(size_row)
-	size_row.add_child(_label("Tiles:"))
+	# Tile split checkbox
+	_chk_split = CheckBox.new()
+	_chk_split.text = "Dividir textura en tiles mapeables (pisos, paredes, etc)"
+	_chk_split.add_theme_font_size_override("font_size", 12)
+	_chk_split.toggled.connect(_on_split_check_toggled)
+	root.add_child(_chk_split)
+
+	# Tile size (starts disabled — 1x1 by default)
+	_size_row = HBoxContainer.new()
+	_size_row.add_theme_constant_override("separation", 6)
+	root.add_child(_size_row)
+	_size_row.add_child(_label("Tiles:"))
 	_spin_w = SpinBox.new()
 	_spin_w.min_value = 1
 	_spin_w.max_value = 64
 	_spin_w.value = 1
 	_spin_w.suffix = " ancho"
+	_spin_w.editable = false
 	_spin_w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spin_w.value_changed.connect(func(_v): _on_tiles_changed())
-	size_row.add_child(_spin_w)
-	var lbl_x := Label.new()
-	lbl_x.text = "×"
-	lbl_x.add_theme_font_size_override("font_size", 14)
-	size_row.add_child(lbl_x)
+	_size_row.add_child(_spin_w)
+	_lbl_x = Label.new()
+	_lbl_x.text = "×"
+	_lbl_x.add_theme_font_size_override("font_size", 14)
+	_size_row.add_child(_lbl_x)
 	_spin_h = SpinBox.new()
 	_spin_h.min_value = 1
 	_spin_h.max_value = 64
 	_spin_h.value = 1
 	_spin_h.suffix = " alto"
+	_spin_h.editable = false
 	_spin_h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_spin_h.value_changed.connect(func(_v): _on_tiles_changed())
-	size_row.add_child(_spin_h)
+	_size_row.add_child(_spin_h)
 
 	# Category dropdown
 	var type_row := HBoxContainer.new()
@@ -178,15 +190,22 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 	var fw: int = frame.get("w", 0)
 	var fh: int = frame.get("h", 0)
 
-	# Pre-calculate tiles from frame size (default suggestion)
-	var suggested_w := maxi(fw / 32, 1)
-	var suggested_h := maxi(fh / 32, 1)
-
 	# Set max based on frame pixel size / 32
 	_spin_w.max_value = maxi(fw / 32, 1)
 	_spin_h.max_value = maxi(fh / 32, 1)
-	_spin_w.value = suggested_w
-	_spin_h.value = suggested_h
+
+	# Always start as 1x1 (full frame = single decorative object)
+	_chk_split.set_pressed_no_signal(false)
+	_spin_w.value = 1
+	_spin_h.value = 1
+	_spin_w.editable = false
+	_spin_h.editable = false
+	_tiles_w = 1
+	_tiles_h = 1
+
+	# Hide split button until checkbox is toggled
+	_btn_split.visible = false
+	_split_done = false
 
 	# Populate category dropdown
 	_opt_type.clear()
@@ -198,30 +217,50 @@ func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: Packe
 			break
 
 	_input_name.text = ""
+	_validate_and_preview()
+	_update_save_state()
+	popup_centered()
+
+
+func _on_split_check_toggled(on: bool) -> void:
 	_split_done = false
-	var is_single := (suggested_w == 1 and suggested_h == 1)
-	if is_single:
-		_btn_split.visible = false
-	else:
+	if on:
+		# Calculate tiles from frame dimensions / 32
+		var fw: int = _source_frame.get("w", 0)
+		var fh: int = _source_frame.get("h", 0)
+		var calc_w := maxi(fw / 32, 1)
+		var calc_h := maxi(fh / 32, 1)
+		_spin_w.editable = true
+		_spin_h.editable = true
+		_spin_w.value = calc_w
+		_spin_h.value = calc_h
 		_btn_split.visible = true
 		_btn_split.disabled = false
 		_btn_split.text = "Dividir en tiles"
-	_on_tiles_changed()
-	popup_centered()
+	else:
+		# Back to 1x1 single object
+		_spin_w.editable = false
+		_spin_h.editable = false
+		_spin_w.value = 1
+		_spin_h.value = 1
+		_btn_split.visible = false
+	_tiles_w = int(_spin_w.value)
+	_tiles_h = int(_spin_h.value)
+	_validate_and_preview()
+	_update_save_state()
 
 
 func _on_tiles_changed() -> void:
 	_tiles_w = int(_spin_w.value)
 	_tiles_h = int(_spin_h.value)
-	var is_single := (_tiles_w == 1 and _tiles_h == 1)
 	# Changing tiles resets split state
 	_split_done = false
-	if is_single:
-		_btn_split.visible = false
-	else:
+	if _chk_split.button_pressed:
 		_btn_split.visible = true
 		_btn_split.disabled = false
 		_btn_split.text = "Dividir en tiles"
+	else:
+		_btn_split.visible = false
 	_validate_and_preview()
 	_update_save_state()
 
@@ -232,7 +271,7 @@ func _validate_and_preview() -> void:
 
 	var fw: int = _source_frame.get("w", 0)
 	var fh: int = _source_frame.get("h", 0)
-	var is_single := (_tiles_w == 1 and _tiles_h == 1)
+	var splitting := _chk_split.button_pressed
 	var needed_w := _tiles_w * 32
 	var needed_h := _tiles_h * 32
 
@@ -240,7 +279,7 @@ func _validate_and_preview() -> void:
 	var valid := true
 	_lbl_warn.visible = false
 
-	if not is_single:
+	if splitting:
 		if needed_w > fw or needed_h > fh:
 			_lbl_warn.text = "Frame %dx%d es menor que %dx%d px necesarios" % [fw, fh, needed_w, needed_h]
 			_lbl_warn.visible = true
@@ -253,7 +292,7 @@ func _validate_and_preview() -> void:
 	if not valid:
 		_btn_save.disabled = true
 		_btn_split.disabled = true
-	else:
+	elif splitting:
 		_btn_split.disabled = _split_done
 	_update_preview()
 
@@ -266,20 +305,20 @@ func _update_preview() -> void:
 	var sy: int = _source_frame.get("sy", 0)
 	var fw: int = _source_frame.get("w", 0)
 	var fh: int = _source_frame.get("h", 0)
-	var is_single := (_tiles_w == 1 and _tiles_h == 1)
+	var splitting := _chk_split.button_pressed
 
 	var img := _source_texture.get_image()
 	if img == null:
 		return
 
-	if is_single:
-		# 1x1: show the full frame as-is
+	if not splitting:
+		# Single object: show the full frame as-is
 		var crop_w := mini(fw, img.get_width() - sx)
 		var crop_h := mini(fh, img.get_height() - sy)
 		if crop_w > 0 and crop_h > 0:
 			var region := img.get_region(Rect2i(sx, sy, crop_w, crop_h))
 			_preview.texture = ImageTexture.create_from_image(region)
-		_lbl_summary.text = "1×1 = 1 GRH (%dx%d px, sin dividir)" % [fw, fh]
+		_lbl_summary.text = "1 GRH (%dx%d px — objeto decorativo)" % [fw, fh]
 	else:
 		# NxM: show the tile grid area
 		var pw := _tiles_w * 32
@@ -296,25 +335,18 @@ func _update_preview() -> void:
 func _on_split() -> void:
 	if _btn_split.disabled:
 		return
-	var is_single := (_tiles_w == 1 and _tiles_h == 1)
-	if is_single:
-		# 1x1: no real split needed, just mark as done
-		_split_done = true
-		_btn_split.disabled = true
-		_btn_split.text = "Sin subdivisión (1×1)"
-	else:
-		split_requested.emit(_source_frame, _tiles_w, _tiles_h)
-		_split_done = true
-		_btn_split.disabled = true
-		_btn_split.text = "Dividido ✓"
+	split_requested.emit(_source_frame, _tiles_w, _tiles_h)
+	_split_done = true
+	_btn_split.disabled = true
+	_btn_split.text = "Dividido ✓"
 	_update_save_state()
 
 
 func _update_save_state() -> void:
 	var name_ok := not _input_name.text.strip_edges().is_empty()
-	var is_single := (_tiles_w == 1 and _tiles_h == 1)
-	# 1x1 doesn't need split; NxM requires split first
-	var split_ok := is_single or _split_done
+	# Checkbox off = 1x1 single object, no split needed
+	# Checkbox on = NxM tiles, must split first
+	var split_ok := (not _chk_split.button_pressed) or _split_done
 	_btn_save.disabled = not (name_ok and split_ok)
 	_lbl_save_hint.visible = not name_ok
 
