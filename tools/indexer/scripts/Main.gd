@@ -52,6 +52,9 @@ var _menu_ver: PopupMenu
 # Dialogs
 var _dlg_client_folder: FileDialog
 var _dlg_save_ind: FileDialog
+var _dlg_index_confirm: Window
+var _index_preview_label: RichTextLabel
+var _index_pending_entries: Array = []
 
 # Prefs
 const PREFS_PATH := "user://indexer_prefs.cfg"
@@ -252,6 +255,43 @@ func _build_dialogs() -> void:
 		var last: String = _recent_clients[0]
 		if DirAccess.dir_exists_absolute(last):
 			_dlg_client_folder.current_dir = last
+
+	# Index confirmation dialog
+	_dlg_index_confirm = Window.new()
+	_dlg_index_confirm.title = "Confirmar indexación"
+	_dlg_index_confirm.size = Vector2i(520, 400)
+	_dlg_index_confirm.exclusive = true
+	_dlg_index_confirm.wrap_controls = true
+	_dlg_index_confirm.close_requested.connect(func(): _dlg_index_confirm.hide())
+	var vb := VBoxContainer.new()
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.add_theme_constant_override("separation", 8)
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_top", 12)
+	margin.add_theme_constant_override("margin_bottom", 12)
+	margin.set_anchors_preset(Control.PRESET_FULL_RECT)
+	margin.add_child(vb)
+	_dlg_index_confirm.add_child(margin)
+	_index_preview_label = RichTextLabel.new()
+	_index_preview_label.bbcode_enabled = true
+	_index_preview_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_index_preview_label.scroll_following = false
+	vb.add_child(_index_preview_label)
+	var btn_row := HBoxContainer.new()
+	btn_row.alignment = BoxContainer.ALIGNMENT_END
+	btn_row.add_theme_constant_override("separation", 8)
+	vb.add_child(btn_row)
+	var btn_cancel := Button.new()
+	btn_cancel.text = "Cancelar"
+	btn_cancel.pressed.connect(func(): _dlg_index_confirm.hide())
+	btn_row.add_child(btn_cancel)
+	var btn_confirm := Button.new()
+	btn_confirm.text = "Confirmar e indexar"
+	btn_confirm.pressed.connect(_on_index_confirmed)
+	btn_row.add_child(btn_confirm)
+	add_child(_dlg_index_confirm)
 
 
 func _connect_signals() -> void:
@@ -1049,22 +1089,59 @@ func _on_index_image() -> void:
 	if _current_frames.is_empty():
 		_update_status("No hay frames definidos para esta imagen.")
 		return
-	var added := 0
+
+	# Build preview of what will change
+	_index_pending_entries.clear()
+	var lines := "[b]Imagen:[/b] %s  (FileNum %d)\n" % [_current_image_path.get_file(), _current_file_num]
+	lines += "[b]Frames a indexar:[/b] %d\n\n" % _current_frames.size()
+
+	var new_count := 0
+	var overwrite_count := 0
 	for frame in _current_frames:
+		var grh: int = frame.grh_index
 		var entry := {
-			"grh_index": frame.grh_index,
+			"grh_index": grh,
 			"num_frames": 1,
 			"file_num": frame.file_num,
 			"sx": frame.sx, "sy": frame.sy,
 			"width": frame.w, "height": frame.h
 		}
-		_grh_data["entries"][frame.grh_index] = entry
-		if frame.grh_index > _grh_data["max_index"]:
-			_grh_data["max_index"] = frame.grh_index
+		_index_pending_entries.append(entry)
+		var exists: bool = _grh_data["entries"].has(grh)
+		if exists:
+			overwrite_count += 1
+			lines += "[color=yellow]SOBREESCRIBIR[/color] "
+		else:
+			new_count += 1
+			lines += "[color=lime]NUEVO[/color]         "
+		lines += "GRH %d  →  File %d  (%d,%d  %dx%d)\n" % [
+			grh, frame.file_num, frame.sx, frame.sy, frame.w, frame.h]
+
+	lines += "\n[b]Resumen:[/b] %d nuevos, %d sobreescritos" % [new_count, overwrite_count]
+	if not _ind_path.is_empty():
+		lines += "\n[b]Archivo:[/b] %s" % _ind_path.get_file()
+
+	_index_preview_label.text = lines
+	_dlg_index_confirm.popup_centered()
+
+
+func _on_index_confirmed() -> void:
+	_dlg_index_confirm.hide()
+	var added := 0
+	for entry in _index_pending_entries:
+		_grh_data["entries"][entry.grh_index] = entry
+		if entry.grh_index > _grh_data["max_index"]:
+			_grh_data["max_index"] = entry.grh_index
 		added += 1
+	_index_pending_entries.clear()
 	_inspector.set_grh_data(_grh_data["max_index"], _grh_data["entries"].size())
 	_refresh_all()
-	_update_status("Indexados %d frames. Total: %d entradas." % [added, _grh_data["entries"].size()])
+	# Auto-save .ind if path is known
+	if not _ind_path.is_empty():
+		_save_ind_to_path(_ind_path)
+		_update_status("Indexados %d frames y guardado en %s" % [added, _ind_path.get_file()])
+	else:
+		_update_status("Indexados %d frames (no guardado — usa Guardar)" % added)
 
 
 func _on_index_single_frame(idx: int) -> void:
