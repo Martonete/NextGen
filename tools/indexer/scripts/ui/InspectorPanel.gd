@@ -669,6 +669,8 @@ func _build_frames_tab() -> Control:
 	preset_row1.add_child(_make_resize_preset_btn("128²", 128, 128))
 	preset_row1.add_child(_make_resize_preset_btn("192²", 192, 192))
 	preset_row1.add_child(_make_resize_preset_btn("256²", 256, 256))
+	preset_row1.add_child(_make_resize_preset_btn("512²", 512, 512))
+	preset_row1.add_child(_make_resize_preset_btn("1024²", 1024, 1024))
 
 	# Row 2: common rectangular sizes
 	var preset_row2 := HBoxContainer.new()
@@ -680,6 +682,9 @@ func _build_frames_tab() -> Control:
 	preset_row2.add_child(_make_resize_preset_btn("192x256", 192, 256))
 	preset_row2.add_child(_make_resize_preset_btn("192x384", 192, 384))
 	preset_row2.add_child(_make_resize_preset_btn("256x512", 256, 512))
+	preset_row2.add_child(_make_resize_preset_btn("512x256", 512, 256))
+	preset_row2.add_child(_make_resize_preset_btn("512x1024", 512, 1024))
+	preset_row2.add_child(_make_resize_preset_btn("1024x512", 1024, 512))
 
 	# Custom resize: W x H inputs + button
 	var custom_row := HBoxContainer.new()
