@@ -2403,7 +2403,7 @@ func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alt
 	var ref_count: int = 0
 	var ref_line_idx: int = -1
 	for i in range(_indices_ini_ref["lines"].size()):
-		var line := _indices_ini_ref["lines"][i].strip_edges()
+		var line: String = str(_indices_ini_ref["lines"][i]).strip_edges()
 		if line.begins_with("Referencias="):
 			ref_count = int(line.substr(12))
 			ref_line_idx = i
