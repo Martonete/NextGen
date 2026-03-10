@@ -91,7 +91,13 @@ public class TextureCatalog
         ("LAVA", "Terreno"),
         ("(INFERNO)", "Terreno"),
         ("INFERNO", "Terreno"),
-        ("(ANCIENT)", "Terreno"),
+        ("ANCIENT", "Terreno"),
+        ("(DUNGEON)", "Terreno"),
+        ("(CAVERNA)", "Terreno"),
+        ("(CLOACA)", "Terreno"),
+        ("CUEVAS", "Terreno"),
+        ("CUEVA", "Terreno"),
+        ("CATAS", "Terreno"),
 
         // --- Nature ---
         ("(ARBOL)", "Naturaleza"),
@@ -131,14 +137,6 @@ public class TextureCatalog
         ("PALCO", "Objetos"),
         ("ALCANTARILLA", "Objetos"),
         ("ANIMACI", "Objetos"),        // ANIMACIÓN
-
-        // --- Dungeons (underground/cave variants) ---
-        ("(DUNGEON)", "Dungeons"),
-        ("(CAVERNA)", "Dungeons"),
-        ("(CLOACA)", "Dungeons"),
-        ("CUEVAS", "Dungeons"),
-        ("CUEVA", "Dungeons"),
-        ("CATAS", "Dungeons"),
 
         // --- Cemetery ---
         ("CEMENTERIO", "Cementerio"),
