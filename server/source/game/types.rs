@@ -301,6 +301,7 @@ pub struct UserState {
     pub atacable_por: ConnectionId,  // 0 = no duel, >0 = can be attacked by this player only
     pub duel_pending: ConnectionId,  // Pending duel challenge from this player
     pub counter_atacable: i32,       // VB6: 60-second timeout for atacable_por (counts up to 1500 at 40ms/tick)
+    pub warp_immunity_ticks: i32,    // Ticks after warp where NPCs won't target this user (prevents phantom sounds)
 
     // Timbero (gambling) stats
     pub timbero_target_npc: usize,   // Currently interacting with gambler NPC
@@ -490,6 +491,7 @@ impl UserState {
             atacable_por: 0,
             duel_pending: 0,
             counter_atacable: 0,
+            warp_immunity_ticks: 0,
             timbero_target_npc: 0,
         }
     }

@@ -228,6 +228,75 @@ public static class CharRenderer
             DrawShadowProjected(canvas, headRes, headDrawX, headDrawY, feetY,
                 ShearRatio, FlatRatio, shadowColor, data);
         }
+
+        // Draw helmet shadow (projected from same feetY)
+        if (ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length)
+        {
+            var casco = data.Cascos[ch.CascoAnim];
+            if (casco.Head != null && casco.Head[heading] > 0)
+            {
+                var cascoRes = data.ResolveGrh(casco.Head[heading], 0);
+                if (cascoRes != null && cascoRes.FileNum > 0)
+                {
+                    float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
+                    float cascoDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX + xAdj;
+                    float cascoDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY;
+                    if (cascoRes.TileWidth != 1f && cascoRes.TileWidth > 0)
+                        cascoDrawX -= (int)(cascoRes.TileWidth * (TileSize / 2)) - TileSize / 2;
+                    if (cascoRes.TileHeight != 1f && cascoRes.TileHeight > 0)
+                        cascoDrawY -= (int)(cascoRes.TileHeight * TileSize) - TileSize;
+
+                    DrawShadowProjected(canvas, cascoRes, cascoDrawX, cascoDrawY, feetY,
+                        ShearRatio, FlatRatio, shadowColor, data);
+                }
+            }
+        }
+
+        // Draw weapon shadow (projected from same feetY)
+        if (ch.WeaponAnim > 0 && ch.WeaponAnim < data.Weapons.Length)
+        {
+            int weapGrh = data.Weapons[ch.WeaponAnim].Walk[heading];
+            if (weapGrh > 0)
+            {
+                int weapFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+                var weapRes = data.ResolveGrh(weapGrh, weapFrame);
+                if (weapRes != null && weapRes.FileNum > 0)
+                {
+                    float weapDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
+                    float weapDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + 38;
+                    if (weapRes.TileWidth != 1f && weapRes.TileWidth > 0)
+                        weapDrawX -= (int)(weapRes.TileWidth * (TileSize / 2)) - TileSize / 2;
+                    if (weapRes.TileHeight != 1f && weapRes.TileHeight > 0)
+                        weapDrawY -= (int)(weapRes.TileHeight * TileSize) - TileSize;
+
+                    DrawShadowProjected(canvas, weapRes, weapDrawX, weapDrawY, feetY,
+                        ShearRatio, FlatRatio, shadowColor, data);
+                }
+            }
+        }
+
+        // Draw shield shadow (projected from same feetY)
+        if (ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length)
+        {
+            int shieldGrh = data.Shields[ch.ShieldAnim].Walk[heading];
+            if (shieldGrh > 0)
+            {
+                int shieldFrame = ch.Moving ? (int)ch.WalkFrame : 0;
+                var shieldRes = data.ResolveGrh(shieldGrh, shieldFrame);
+                if (shieldRes != null && shieldRes.FileNum > 0)
+                {
+                    float shieldDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
+                    float shieldDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + 38;
+                    if (shieldRes.TileWidth != 1f && shieldRes.TileWidth > 0)
+                        shieldDrawX -= (int)(shieldRes.TileWidth * (TileSize / 2)) - TileSize / 2;
+                    if (shieldRes.TileHeight != 1f && shieldRes.TileHeight > 0)
+                        shieldDrawY -= (int)(shieldRes.TileHeight * TileSize) - TileSize;
+
+                    DrawShadowProjected(canvas, shieldRes, shieldDrawX, shieldDrawY, feetY,
+                        ShearRatio, FlatRatio, shadowColor, data);
+                }
+            }
+        }
     }
 
     /// <summary>

@@ -684,7 +684,8 @@ pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) 
                     // VB6: skip NoPuedeSerAtacado, Ignorado, EnConsulta
                     if let Some(user) = state.users.get(&conn) {
                         if user.logged && !user.dead && user.privileges == 0 && !user.admin_invisible
-                            && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta {
+                            && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta
+                            && user.warp_immunity_ticks <= 0 {
                             return Some((conn, heading));
                         }
                     }
@@ -713,7 +714,8 @@ pub(super) fn find_nearest_player(state: &GameState, map: i32, x: i32, y: i32) -
                     if let Some(conn) = tile.user_conn {
                         if let Some(user) = state.users.get(&conn) {
                             if user.logged && !user.dead && user.privileges == 0
-                                && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta {
+                                && !user.no_puede_ser_atacado && !user.ignorado && !user.en_consulta
+                                && user.warp_immunity_ticks <= 0 {
                                 let dist = (x - cx).abs() + (y - cy).abs();
                                 if best.is_none() || dist < best.unwrap().1 {
                                     best = Some((conn, dist));
@@ -1525,6 +1527,7 @@ pub async fn tick_intervals(state: &mut GameState) {
         if user.interval_click > 0 { user.interval_click -= 1; }
         if user.interval_trabajar > 0 { user.interval_trabajar -= 1; }
         if user.interval_pu > 0 { user.interval_pu -= 1; }
+        if user.warp_immunity_ticks > 0 { user.warp_immunity_ticks -= 1; }
 
         // VB6: EfectoParalisisUser — count down paralysis timer each tick
         if user.paralyzed {

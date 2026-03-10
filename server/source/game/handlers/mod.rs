@@ -3941,6 +3941,9 @@ async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: 
         user.pos_map = new_map;
         user.pos_x = final_x;
         user.pos_y = final_y;
+        // Brief NPC targeting immunity after warp — prevents phantom combat sounds
+        // on arrival (NPCs in range would otherwise attack on the very next AI tick)
+        user.warp_immunity_ticks = 5; // ~200ms at 40ms/tick
     }
 
     // 6. Place on new grid
