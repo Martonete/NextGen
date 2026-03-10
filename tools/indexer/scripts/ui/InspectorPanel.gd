@@ -25,6 +25,7 @@ signal save_helmet_pressed(head_n: int, head_e: int, head_s: int, head_w: int)
 signal save_weapon_pressed(dir_n: int, dir_e: int, dir_s: int, dir_w: int)
 signal save_shield_pressed(dir_n: int, dir_e: int, dir_s: int, dir_w: int)
 signal save_fx_pressed(anim_grh: int, off_x: int, off_y: int)
+signal asset_data_changed()  # Fired when AssetBrowser modifies in-memory data
 
 var _tabs: TabContainer
 var _anim_tab: AnimationWindow
@@ -109,10 +110,8 @@ var _spin_filenum: SpinBox
 var _lbl_max_grh: Label
 var _grh_viewer_vbox: VBoxContainer
 var _lbl_grh_info: Label
-var _init_file_list: ItemList
-var _init_text_edit: TextEdit
 var _init_files: Array[String] = []
-var _init_current_path: String = ""
+var _asset_browser: AssetBrowser
 
 
 func _ready() -> void:
@@ -231,6 +230,39 @@ func set_anim_frames(frames: Array, texture: ImageTexture, textures: Dictionary)
 		if _tabs.get_tab_title(i) == "Animación":
 			_tabs.current_tab = i
 			break
+
+
+## Pass asset data to the browser panel.
+func set_asset_data(bodies: Array, heads: Array, helmets: Array,
+					weapons: Array, shields: Array, fxs: Array) -> void:
+	if _asset_browser:
+		_asset_browser.bodies_data = bodies
+		_asset_browser.heads_data = heads
+		_asset_browser.helmets_data = helmets
+		_asset_browser.weapons_data = weapons
+		_asset_browser.shields_data = shields
+		_asset_browser.fxs_data = fxs
+		_asset_browser.refresh()
+
+
+func set_asset_grh_data(grh: Dictionary) -> void:
+	if _asset_browser:
+		_asset_browser.grh_data = grh
+
+
+func set_asset_graficos_folder(path: String) -> void:
+	if _asset_browser:
+		_asset_browser.graficos_folder = path
+
+
+func set_asset_init_folder(path: String) -> void:
+	if _asset_browser:
+		_asset_browser.init_folder = path
+
+
+func refresh_asset_browser() -> void:
+	if _asset_browser:
+		_asset_browser.refresh()
 
 
 func clear_anim() -> void:
@@ -502,7 +534,6 @@ func update_grh_viewer(entries: Array, texture: ImageTexture) -> void:
 
 func load_init_files(folder: String) -> void:
 	_init_files.clear()
-	_init_file_list.clear()
 	var dir := DirAccess.open(folder)
 	if dir == null:
 		return
@@ -514,10 +545,9 @@ func load_init_files(folder: String) -> void:
 			_init_files.append(folder.path_join(f))
 		f = dir.get_next()
 	dir.list_dir_end()
-	# Sort BEFORE populating the ItemList so indices match
 	_init_files.sort()
-	for path in _init_files:
-		_init_file_list.add_item(path.get_file())
+	if _asset_browser:
+		_asset_browser.load_init_files(folder)
 
 
 func use_current_frames_for_anim(_frames: Array) -> void:
@@ -913,7 +943,7 @@ func _build_detect_tab() -> Control:
 
 func _build_data_tab() -> Control:
 	var root := VBoxContainer.new()
-	root.name = "INITs"
+	root.name = "Datos"
 	root.add_theme_constant_override("separation", 6)
 
 	# ── Config section ──
@@ -941,38 +971,14 @@ func _build_data_tab() -> Control:
 	_spin_filenum = IndexerTheme.spinbox(1, 99999, 1)
 	config_grid.add_child(_spin_filenum)
 
-	# ── INIT file editor ──
+	# ── Asset browser ──
 	root.add_child(IndexerTheme.separator_h())
-	root.add_child(IndexerTheme.section_label("Archivos INIT"))
+	root.add_child(IndexerTheme.section_label("Assets INIT"))
 
-	var init_split := VSplitContainer.new()
-	init_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	init_split.split_offset = 200
-	root.add_child(init_split)
-
-	var init_top := VBoxContainer.new()
-	init_top.add_theme_constant_override("separation", 3)
-	init_split.add_child(init_top)
-
-	_init_file_list = ItemList.new()
-	_init_file_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_init_file_list.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	_init_file_list.item_selected.connect(_on_init_file_selected)
-	init_top.add_child(_init_file_list)
-
-	var init_btn_row := HBoxContainer.new()
-	init_btn_row.add_theme_constant_override("separation", 4)
-	init_top.add_child(init_btn_row)
-	init_btn_row.add_child(IndexerTheme.success_button("Guardar", _on_save_init_btn))
-	init_btn_row.add_child(IndexerTheme.button("Recargar", func():
-		if not _init_current_path.is_empty():
-			_load_init_file(_init_current_path)))
-
-	_init_text_edit = TextEdit.new()
-	_init_text_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_init_text_edit.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
-	_init_text_edit.placeholder_text = "Selecciona un archivo INIT"
-	init_split.add_child(_init_text_edit)
+	_asset_browser = AssetBrowser.new()
+	_asset_browser.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_asset_browser.data_changed.connect(func(): asset_data_changed.emit())
+	root.add_child(_asset_browser)
 
 	return root
 
@@ -1212,15 +1218,6 @@ func _on_detect_blobs_btn() -> void:
 
 func _on_detect_auto_btn() -> void:
 	detect_auto_pressed.emit()
-
-
-func _on_save_init_btn() -> void:
-	if _init_current_path.is_empty():
-		return
-	# Don't save binary .ind files as text — they have dedicated save paths
-	if _init_current_path.get_extension().to_lower() == "ind":
-		return
-	save_init_pressed.emit(_init_current_path, _init_text_edit.text)
 
 
 func _on_split_btn() -> void:
@@ -1696,115 +1693,3 @@ func _anim_step(dir: int) -> void:
 	_lbl_anim_info.text = "%d / %d" % [_anim_frame_idx + 1, _frames_for_anim.size()]
 
 
-func _on_init_file_selected(idx: int) -> void:
-	if idx < 0 or idx >= _init_files.size():
-		return
-	_load_init_file(_init_files[idx])
-
-
-func _load_init_file(path: String) -> void:
-	_init_current_path = path
-	var ext := path.get_extension().to_lower()
-
-	# Binary .ind files → parsed text view
-	if ext == "ind":
-		_init_text_edit.text = _parse_ind_to_text(path)
-		_init_text_edit.editable = false
-		return
-
-	# Text files (.ini, .dat) → normal editable text
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		_init_text_edit.text = "(no se pudo abrir)"
-		return
-	_init_text_edit.text = f.get_as_text()
-	_init_text_edit.editable = true
-	f.close()
-
-
-static func _read_i16(f: FileAccess) -> int:
-	var val := f.get_16()
-	if val >= 0x8000:
-		return val - 0x10000
-	return val
-
-
-static func _read_i32(f: FileAccess) -> int:
-	var val := f.get_32()
-	if val >= 0x80000000:
-		return val - 0x100000000
-	return val
-
-
-func _parse_ind_to_text(path: String) -> String:
-	var fname := path.get_file().to_lower()
-
-	# Graficos.ind → use GrhIO for full round-trip text
-	if fname == "graficos.ind":
-		var data := GrhIO.load_ind(path)
-		return GrhIO.to_text(data)
-
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return "(no se pudo abrir)"
-
-	# Personajes.ind
-	if fname == "personajes.ind":
-		if f.get_length() < 265:
-			f.close()
-			return "(archivo muy pequeño)"
-		f.seek(263)
-		var count: int = _read_i16(f)
-		var lines: PackedStringArray = PackedStringArray()
-		lines.append("# Personajes.ind  count=%d" % count)
-		lines.append("# Index  WalkN  WalkE  WalkS  WalkW  HeadX  HeadY")
-		for i in range(1, count + 1):
-			if f.get_position() + 12 > f.get_length():
-				break
-			var wn := _read_i16(f)
-			var we := _read_i16(f)
-			var ws := _read_i16(f)
-			var ww := _read_i16(f)
-			var hx := _read_i16(f)
-			var hy := _read_i16(f)
-			lines.append("%d  %d  %d  %d  %d  %d  %d" % [i, wn, we, ws, ww, hx, hy])
-		f.close()
-		return "\n".join(lines)
-
-	# Fxs.ind
-	if fname == "fxs.ind":
-		if f.get_length() < 265:
-			f.close()
-			return "(archivo muy pequeño)"
-		f.seek(263)
-		var count: int = _read_i16(f)
-		var lines: PackedStringArray = PackedStringArray()
-		lines.append("# Fxs.ind  count=%d" % count)
-		lines.append("# Index  Animacion  OffsetX  OffsetY")
-		for i in range(1, count + 1):
-			if f.get_position() + 6 > f.get_length():
-				break
-			var anim := _read_i16(f)
-			var ox := _read_i16(f)
-			var oy := _read_i16(f)
-			lines.append("%d  %d  %d  %d" % [i, anim, ox, oy])
-		f.close()
-		return "\n".join(lines)
-
-	# Unknown .ind → hex dump (first 512 bytes)
-	var size := f.get_length()
-	var to_read := mini(512, size)
-	var data := f.get_buffer(to_read)
-	f.close()
-	var lines: PackedStringArray = PackedStringArray()
-	lines.append("# %s  (%d bytes, formato desconocido)" % [path.get_file(), size])
-	lines.append("# Hex dump (primeros %d bytes):" % to_read)
-	var line := ""
-	for i in range(to_read):
-		if i > 0 and i % 16 == 0:
-			lines.append(line)
-			line = ""
-		line += "%02X " % data[i]
-	if not line.is_empty():
-		lines.append(line)
-	return "\n".join(lines)

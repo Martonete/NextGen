@@ -25,6 +25,10 @@ var _client_graficos_path: String = ""
 # INIT data
 var _init_folder: String = ""
 var _bodies_data: Array = []
+var _heads_data: Array = []
+var _helmets_data: Array = []
+var _weapons_data: Array = []
+var _shields_data: Array = []
 var _fxs_data: Array = []
 var _mi_cabecera_fxs: PackedByteArray = PackedByteArray()
 var _indices_ini_data: PackedStringArray = []  # Raw lines of indices.ini
@@ -384,6 +388,7 @@ func _connect_signals() -> void:
 	_inspector.save_weapon_pressed.connect(_on_save_weapon)
 	_inspector.save_shield_pressed.connect(_on_save_shield)
 	_inspector.save_fx_pressed.connect(_on_save_fx)
+	_inspector.asset_data_changed.connect(_on_asset_data_changed)
 
 
 # ── Keyboard shortcuts ───────────────────────────────────────────────────────
@@ -521,6 +526,26 @@ func _load_client_folder(path: String) -> void:
 			_bodies_data = _load_personajes_ind(body_path)
 			msgs.append("Personajes.ind: %d cuerpos" % _bodies_data.size())
 
+		var heads_path := _init_folder.path_join("Cabezas.ind")
+		if FileAccess.file_exists(heads_path):
+			_heads_data = _load_cabezas_ind(heads_path)
+			msgs.append("Cabezas.ind: %d cabezas" % _heads_data.size())
+
+		var helmets_path := _init_folder.path_join("Cascos.ind")
+		if FileAccess.file_exists(helmets_path):
+			_helmets_data = _load_cabezas_ind(helmets_path)
+			msgs.append("Cascos.ind: %d cascos" % _helmets_data.size())
+
+		var weapons_path := _init_folder.path_join("Armas.dat")
+		if FileAccess.file_exists(weapons_path):
+			_weapons_data = _load_armas_dat(weapons_path)
+			msgs.append("Armas.dat: %d armas" % _weapons_data.size())
+
+		var shields_path := _init_folder.path_join("Escudos.dat")
+		if FileAccess.file_exists(shields_path):
+			_shields_data = _load_escudos_dat(shields_path)
+			msgs.append("Escudos.dat: %d escudos" % _shields_data.size())
+
 		var fxs_path := _init_folder.path_join("Fxs.ind")
 		if FileAccess.file_exists(fxs_path):
 			_load_fxs_ind(fxs_path)
@@ -538,6 +563,12 @@ func _load_client_folder(path: String) -> void:
 				msgs.append("indices.ini: %d categorías" % _indices_categories.size())
 
 		_inspector.load_init_files(_init_folder)
+		_inspector.set_asset_data(_bodies_data, _heads_data, _helmets_data,
+			_weapons_data, _shields_data, _fxs_data)
+		_inspector.set_asset_grh_data(_grh_data)
+		_inspector.set_asset_init_folder(_init_folder)
+	if not _graficos_folder_path.is_empty():
+		_inspector.set_asset_graficos_folder(_graficos_folder_path)
 		msgs.append("INIT: archivos cargados")
 
 	# Load images
@@ -1189,6 +1220,7 @@ func _refresh_all() -> void:
 	_inspector.set_current_texture(_current_texture)
 	_inspector.set_current_file_num(_current_file_num)
 	_inspector.update_frames(_current_frames, _selected_frame_idx)
+	_inspector.refresh_asset_browser()
 	if _selected_frame_idx >= 0 and _selected_frame_idx < _current_frames.size():
 		_inspector.update_selected_props(_current_frames[_selected_frame_idx])
 	else:
@@ -1362,7 +1394,22 @@ func _show_save_confirm_dialog() -> void:
 			lines.append("  [color=#8f8]+%d referencias nuevas[/color]" % new_refs)
 			lines.append("")
 
-	if not has_changes:
+	# Asset files changed check
+	if not _init_folder.is_empty():
+		var asset_files: PackedStringArray = []
+		if _bodies_data.size() > 0: asset_files.append("Personajes.ind")
+		if _heads_data.size() > 0: asset_files.append("Cabezas.ind")
+		if _helmets_data.size() > 0: asset_files.append("Cascos.ind")
+		if _weapons_data.size() > 0: asset_files.append("Armas.dat")
+		if _shields_data.size() > 0: asset_files.append("Escudos.dat")
+		if _fxs_data.size() > 0: asset_files.append("Fxs.ind")
+		if asset_files.size() > 0:
+			has_changes = true
+			lines.append("[b]Assets INIT[/b]:")
+			lines.append("  Se guardarán: %s" % ", ".join(asset_files))
+			lines.append("")
+
+	if not has_changes and not _dirty:
 		_update_status("No hay cambios pendientes.")
 		return
 
@@ -1393,6 +1440,27 @@ func _on_save_confirmed() -> void:
 			f.store_string("\n".join(_indices_ini_data))
 			f.close()
 			saved.append("indices.ini")
+
+	# Save asset files (bodies, heads, helmets, weapons, shields, fxs)
+	if not _init_folder.is_empty():
+		if _bodies_data.size() > 0:
+			_save_personajes_ind()
+			saved.append("Personajes.ind")
+		if _heads_data.size() > 0:
+			_save_cabezas_ind("Cabezas.ind", _heads_data)
+			saved.append("Cabezas.ind")
+		if _helmets_data.size() > 0:
+			_save_cabezas_ind("Cascos.ind", _helmets_data)
+			saved.append("Cascos.ind")
+		if _weapons_data.size() > 0:
+			_save_armas_dat()
+			saved.append("Armas.dat")
+		if _shields_data.size() > 0:
+			_save_escudos_dat()
+			saved.append("Escudos.dat")
+		if _fxs_data.size() > 0:
+			_save_fxs_ind()
+			saved.append("Fxs.ind")
 
 	# Update snapshots to reflect new disk state
 	if saved.has("Graficos.ind"):
@@ -1695,6 +1763,85 @@ func _load_fxs_ind(path: String) -> void:
 			"offset_y": _read_i16(f)
 		})
 	f.close()
+
+
+func _load_cabezas_ind(path: String) -> Array:
+	var entries: Array = []
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return entries
+	if f.get_length() < 265:
+		f.close()
+		return entries
+	f.seek(263)
+	var count: int = _read_i16(f)
+	for i in range(1, count + 1):
+		entries.append({
+			"index": i,
+			"head_n": _read_i16(f), "head_e": _read_i16(f),
+			"head_s": _read_i16(f), "head_w": _read_i16(f)
+		})
+	f.close()
+	return entries
+
+
+func _load_armas_dat(path: String) -> Array:
+	var entries: Array = []
+	var sections := _parse_ini_file(path)
+	var count: int = int(sections.get("INIT", {}).get("NumArmas", "0"))
+	for i in range(1, count + 1):
+		var sec: Dictionary = sections.get("Arma%d" % i, {})
+		entries.append({
+			"index": i,
+			"dir_n": int(sec.get("Dir1", "0")),
+			"dir_e": int(sec.get("Dir2", "0")),
+			"dir_s": int(sec.get("Dir3", "0")),
+			"dir_w": int(sec.get("Dir4", "0"))
+		})
+	return entries
+
+
+func _load_escudos_dat(path: String) -> Array:
+	var entries: Array = []
+	var sections := _parse_ini_file(path)
+	var count: int = int(sections.get("INIT", {}).get("NumEscudos", "0"))
+	for i in range(1, count + 1):
+		var sec: Dictionary = sections.get("ESC%d" % i, {})
+		entries.append({
+			"index": i,
+			"dir_n": int(sec.get("Dir1", "0")),
+			"dir_e": int(sec.get("Dir2", "0")),
+			"dir_s": int(sec.get("Dir3", "0")),
+			"dir_w": int(sec.get("Dir4", "0"))
+		})
+	return entries
+
+
+func _parse_ini_file(path: String) -> Dictionary:
+	var sections: Dictionary = {}
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return sections
+	var text := f.get_as_text()
+	f.close()
+	var current_section := ""
+	for raw_line in text.split("\n"):
+		var line := raw_line.strip_edges()
+		if line.is_empty() or line.begins_with("'"):
+			continue
+		if line.begins_with("["):
+			var end := line.find("]")
+			if end > 1:
+				current_section = line.substr(1, end - 1).strip_edges()
+				if not sections.has(current_section):
+					sections[current_section] = {}
+			continue
+		var eq := line.find("=")
+		if eq > 0 and current_section.length() > 0:
+			var key := line.substr(0, eq).strip_edges()
+			var val := line.substr(eq + 1).strip_edges()
+			sections[current_section][key] = val
+	return sections
 
 
 func _load_image_from_os_path(path: String) -> Image:
@@ -2337,3 +2484,94 @@ func _on_save_shield(dir_n: int, dir_e: int, dir_s: int, dir_w: int) -> void:
 	_append_ini_entry("Escudos.dat", "ESC", "NumEscudos", {
 		"Dir1": dir_n, "Dir2": dir_e, "Dir3": dir_s, "Dir4": dir_w
 	})
+
+
+# ── Asset browser modification handlers ──────────────────────────────────────
+
+func _on_asset_data_changed() -> void:
+	_dirty = true
+	_update_status("Cambios en memoria — presiona GUARDAR para escribir a disco.")
+
+
+func _save_cabezas_ind(filename: String, data: Array) -> void:
+	if data.is_empty():
+		_update_status("No hay datos de %s." % filename)
+		return
+	var path := _init_folder.path_join(filename)
+	if not FileAccess.file_exists(path):
+		_update_status("No se encontro %s en: %s" % [filename, _init_folder])
+		return
+	var orig := FileAccess.open(path, FileAccess.READ)
+	if orig == null:
+		_update_status("No se pudo leer %s" % filename)
+		return
+	var header: PackedByteArray = orig.get_buffer(263)
+	orig.close()
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		_update_status("No se pudo escribir %s" % filename)
+		return
+	f.store_buffer(header)
+	f.store_16(data.size())
+	for e in data:
+		f.store_16(e.head_n & 0xFFFF)
+		f.store_16(e.head_e & 0xFFFF)
+		f.store_16(e.head_s & 0xFFFF)
+		f.store_16(e.head_w & 0xFFFF)
+	f.close()
+	_update_status("%s guardado (%d entradas)" % [filename, data.size()])
+
+
+func _save_armas_dat() -> void:
+	if _weapons_data.is_empty():
+		_update_status("No hay datos de Armas.dat.")
+		return
+	var path := _init_folder.path_join("Armas.dat")
+	_save_ini_dat(path, "Arma", "NumArmas", _weapons_data, ["Dir1", "Dir2", "Dir3", "Dir4"],
+		func(e): return [str(e.dir_n), str(e.dir_e), str(e.dir_s), str(e.dir_w)])
+
+
+func _save_escudos_dat() -> void:
+	if _shields_data.is_empty():
+		_update_status("No hay datos de Escudos.dat.")
+		return
+	var path := _init_folder.path_join("Escudos.dat")
+	_save_ini_dat(path, "ESC", "NumEscudos", _shields_data, ["Dir1", "Dir2", "Dir3", "Dir4"],
+		func(e): return [str(e.dir_n), str(e.dir_e), str(e.dir_s), str(e.dir_w)])
+
+
+func _save_ini_dat(path: String, sec_prefix: String, count_key: String,
+					data: Array, field_keys: Array, get_vals: Callable) -> void:
+	# Read existing file to preserve extra fields we don't edit
+	var existing_sections := _parse_ini_file(path) if FileAccess.file_exists(path) else {}
+
+	var lines: PackedStringArray = []
+	lines.append("[INIT]")
+	lines.append("%s=%d" % [count_key, data.size()])
+	lines.append("")
+
+	for entry in data:
+		var idx: int = entry.get("index", 0)
+		var sec_name := "%s%d" % [sec_prefix, idx]
+		lines.append("[%s]" % sec_name)
+
+		# Get our edited values
+		var vals: Array = get_vals.call(entry)
+		for fi in range(field_keys.size()):
+			lines.append("%s=%s" % [field_keys[fi], vals[fi]])
+
+		# Preserve any extra fields from the original file
+		var orig_sec: Dictionary = existing_sections.get(sec_name, {})
+		for key in orig_sec:
+			if key not in field_keys:
+				lines.append("%s=%s" % [key, orig_sec[key]])
+
+		lines.append("")
+
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		_update_status("No se pudo escribir %s" % path.get_file())
+		return
+	f.store_string("\n".join(lines))
+	f.close()
+	_update_status("%s guardado (%d entradas)" % [path.get_file(), data.size()])
