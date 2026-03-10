@@ -323,8 +323,9 @@ func _on_tool_changed(mode: int) -> void:
 	_save_prefs()
 
 
-## Save user preferences immediately (detect, grid, tool mode).
+## Save user preferences immediately (detect, grid, tool mode, recent clients).
 func _save_prefs() -> void:
+	_prefs.set_value("general", "recent_clients", _recent_clients)
 	_prefs.set_value("session", "detect_enabled", _canvas.detect_enabled)
 	_prefs.set_value("session", "show_grid", _canvas.show_grid)
 	_prefs.set_value("session", "grid_cell_w", _canvas.grid_cell_w)
@@ -1477,11 +1478,6 @@ func _load_prefs() -> void:
 	if _prefs.load(PREFS_PATH) != OK:
 		return
 	_recent_clients = _prefs.get_value("general", "recent_clients", [])
-
-
-func _save_prefs() -> void:
-	_prefs.set_value("general", "recent_clients", _recent_clients)
-	_prefs.save(PREFS_PATH)
 
 
 func _push_recent_client(path: String) -> void:
