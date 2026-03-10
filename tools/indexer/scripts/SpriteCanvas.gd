@@ -88,6 +88,13 @@ const GRID_TILE: int = 32     # minor grid subdivision (always 32px)
 
 var show_frames: bool = true
 
+# ── Frame appearance config ──────────────────────────────────────────────────
+
+var frame_bg_color: Color = Color(0.2, 0.5, 0.9)
+var frame_bg_alpha: float = 0.15
+var frame_border_color: Color = Color(0.3, 0.6, 1.0)
+var frame_border_width: float = 1.0
+
 func set_detect(enabled: bool) -> void:
 	detect_enabled = enabled
 	_hover_rect = Rect2i()
@@ -351,9 +358,12 @@ func _draw() -> void:
 
 	# Frames existentes (skip if toggled off in Ver menu)
 	if show_frames:
+		var bg_col := frame_bg_color
+		var brd_col := frame_border_color
+		var brd_w := frame_border_width
+		var bg_a := frame_bg_alpha
 		for i in range(_frames.size()):
 			var fr: Dictionary = _frames[i]
-			var col: Color = FRAME_COLORS[i % FRAME_COLORS.size()]
 			var is_sel := (i == _selected_frame)
 			var is_multi := _selected_frames.has(i)
 			# Durante resize/move activo, usar el rect live para el frame seleccionado
@@ -365,13 +375,16 @@ func _draw() -> void:
 			else:
 				draw_r = Rect2(float(fr.sx), float(fr.sy), float(fr.w), float(fr.h))
 			var sr := _irect2srect(draw_r)
-			draw_rect(sr, Color(col.r, col.g, col.b, 0.15 if is_sel else (0.10 if is_multi else 0.06)))
+			# Fill: same bg color, brighter alpha for selected/multi
+			var fill_alpha := bg_a * 2.0 if is_sel else (bg_a * 1.5 if is_multi else bg_a)
+			draw_rect(sr, Color(bg_col.r, bg_col.g, bg_col.b, fill_alpha))
+			# Border: white for selected, lighter for multi, configured for normal
 			if is_sel:
-				draw_rect(sr, Color.WHITE, false, 2.0)
+				draw_rect(sr, Color.WHITE, false, brd_w + 1.0)
 			elif is_multi:
-				draw_rect(sr, Color(0.3, 0.7, 1.0), false, 2.0)
+				draw_rect(sr, Color(brd_col.r, brd_col.g, brd_col.b, 1.0), false, brd_w + 0.5)
 			else:
-				draw_rect(sr, col, false, 1.0)
+				draw_rect(sr, Color(brd_col.r, brd_col.g, brd_col.b, 0.85), false, brd_w)
 			if sr.size.x > 22:
 				var lbl: String
 				if is_sel and _resize_active:

@@ -332,6 +332,22 @@ func _connect_signals() -> void:
 		_canvas.set_grid_color(col)
 		_save_prefs()
 	)
+	_toolbar.frames_toggled.connect(func(on):
+		_canvas.show_frames = on
+		_canvas.queue_redraw()
+		# Sync Ver menu checkbox
+		var idx := _menu_ver.get_item_index(10)
+		_menu_ver.set_item_checked(idx, on)
+		_save_prefs()
+	)
+	_toolbar.frames_config_changed.connect(func(bg_col, bg_alpha, brd_col, brd_w):
+		_canvas.frame_bg_color = bg_col
+		_canvas.frame_bg_alpha = bg_alpha
+		_canvas.frame_border_color = brd_col
+		_canvas.frame_border_width = brd_w
+		_canvas.queue_redraw()
+		_save_prefs()
+	)
 	_toolbar.zoom_in_pressed.connect(func(): _canvas.zoom_in())
 	_toolbar.zoom_out_pressed.connect(func(): _canvas.zoom_out())
 	_toolbar.zoom_fit_pressed.connect(func(): _canvas.fit_to_canvas())
@@ -409,6 +425,11 @@ func _save_prefs() -> void:
 	_prefs.set_value("session", "grid_line_w", _canvas.grid_line_width)
 	_prefs.set_value("session", "grid_color", _canvas.grid_color.to_html(false))
 	_prefs.set_value("session", "tool_mode", _canvas.tool_mode)
+	_prefs.set_value("session", "show_frames", _canvas.show_frames)
+	_prefs.set_value("session", "frame_bg_color", _canvas.frame_bg_color.to_html(false))
+	_prefs.set_value("session", "frame_bg_alpha", _canvas.frame_bg_alpha)
+	_prefs.set_value("session", "frame_border_color", _canvas.frame_border_color.to_html(false))
+	_prefs.set_value("session", "frame_border_width", _canvas.frame_border_width)
 	_prefs.save(PREFS_PATH)
 
 
@@ -444,12 +465,13 @@ func _on_ver_menu(id: int) -> void:
 		2: _canvas.zoom_reset()
 		3: _canvas.fit_to_canvas()
 		10:
-			# Toggle Frames overlay visibility
+			# Toggle Frames overlay visibility (sync toolbar + canvas)
 			var idx := _menu_ver.get_item_index(10)
 			var checked := not _menu_ver.is_item_checked(idx)
 			_menu_ver.set_item_checked(idx, checked)
 			_canvas.show_frames = checked
 			_canvas.queue_redraw()
+			_toolbar.set_frames_visible(checked)
 
 
 # ── Load client folder ──────────────────────────────────────────────────────
@@ -1824,6 +1846,24 @@ func _restore_session() -> void:
 	_canvas.set_grid_cell(gcw, gch)
 	_canvas.set_grid_line_w(glw)
 	_canvas.set_grid_color(gcol)
+
+	# Restore frames config
+	var frames_on: bool = _prefs.get_value("session", "show_frames", true)
+	var fbg_hex: String = _prefs.get_value("session", "frame_bg_color", "3380e6")
+	var fbg_col := Color.from_string(fbg_hex, Color(0.2, 0.5, 0.9))
+	var fbg_alpha: float = _prefs.get_value("session", "frame_bg_alpha", 0.15)
+	var fbd_hex: String = _prefs.get_value("session", "frame_border_color", "4d99ff")
+	var fbd_col := Color.from_string(fbd_hex, Color(0.3, 0.6, 1.0))
+	var fbd_w: float = _prefs.get_value("session", "frame_border_width", 1.0)
+	_toolbar.set_frames_visible(frames_on)
+	_toolbar.set_frames_config(fbg_col, fbg_alpha, fbd_col, fbd_w)
+	_canvas.show_frames = frames_on
+	_canvas.frame_bg_color = fbg_col
+	_canvas.frame_bg_alpha = fbg_alpha
+	_canvas.frame_border_color = fbd_col
+	_canvas.frame_border_width = fbd_w
+	var ver_idx := _menu_ver.get_item_index(10)
+	_menu_ver.set_item_checked(ver_idx, frames_on)
 
 	# Restore tool mode (migrate old 0=Select,1=Draw,2=Pan → 0=Edit,1=Pan)
 	var tool_mode: int = _prefs.get_value("session", "tool_mode", 0)
