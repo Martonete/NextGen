@@ -196,6 +196,13 @@ func _build_raw_view() -> void:
 	_raw_file_list.item_selected.connect(_on_raw_file_selected)
 	raw_top.add_child(_raw_file_list)
 
+	var raw_btn_row := HBoxContainer.new()
+	raw_btn_row.add_theme_constant_override("separation", 4)
+	raw_top.add_child(raw_btn_row)
+	raw_btn_row.add_child(IndexerTheme.success_button("Guardar archivo", _on_save_raw_file))
+	raw_btn_row.add_child(IndexerTheme.button("Recargar", func():
+		if not _raw_current_path.is_empty(): _load_raw_file(_raw_current_path)))
+
 	_raw_text_edit = TextEdit.new()
 	_raw_text_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_raw_text_edit.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_SM)
@@ -596,9 +603,15 @@ func _show_anim_preview(grh_index: int) -> void:
 	_preview_panel.show_frame(0)
 	_anim_frame_idx = 0
 	_anim_time = 0.0
-	_anim_fps = entry.get("speed", 6.0)
-	if _anim_fps <= 0:
-		_anim_fps = 6.0
+
+	# Convert AO speed to FPS: fps = (num_frames * 1000) / speed
+	var raw_speed: float = entry.get("speed", 100.0)
+	var safe_speed := maxf(raw_speed, 10.0)
+	_anim_fps = (frames.size() * 1000.0) / safe_speed
+	# Body walks get 0.7x slowdown for natural look
+	if _current_type == AssetType.BODIES:
+		_anim_fps *= 0.7
+	_anim_fps = clampf(_anim_fps, 1.0, 30.0)
 	_anim_playing = frames.size() > 1
 
 
@@ -814,6 +827,18 @@ func _on_raw_file_selected(idx: int) -> void:
 	_load_raw_file(_raw_init_files[idx])
 
 
+func _on_save_raw_file() -> void:
+	if _raw_current_path.is_empty():
+		return
+	if _raw_current_path.get_extension().to_lower() == "ind":
+		return  # Binary files can't be saved as text
+	var f := FileAccess.open(_raw_current_path, FileAccess.WRITE)
+	if f == null:
+		return
+	f.store_string(_raw_text_edit.text)
+	f.close()
+
+
 func _load_raw_file(path: String) -> void:
 	_raw_current_path = path
 	var ext := path.get_extension().to_lower()
@@ -828,7 +853,7 @@ func _load_raw_file(path: String) -> void:
 		_raw_text_edit.text = "(no se pudo abrir)"
 		return
 	_raw_text_edit.text = f.get_as_text()
-	_raw_text_edit.editable = false  # Read-only — edits go through the structured views
+	_raw_text_edit.editable = true
 	f.close()
 
 
