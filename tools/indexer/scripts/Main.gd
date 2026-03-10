@@ -1276,7 +1276,7 @@ func _show_save_confirm_dialog() -> void:
 			else:
 				var cur: Dictionary = _grh_data["entries"][key]
 				var orig: Dictionary = _grh_data_original[key]
-				for field in ["file_num", "sx", "sy", "w", "h", "num_frames"]:
+				for field in ["file_num", "sx", "sy", "width", "height", "num_frames"]:
 					if cur.get(field, 0) != orig.get(field, 0):
 						modified += 1
 						break
@@ -1923,7 +1923,7 @@ func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) 
 			_current_frames.append(frame_dict)
 			_grh_data["entries"][grh_idx] = {
 				"grh_index": grh_idx, "num_frames": 1,
-				"file_num": file_num, "sx": tile_sx, "sy": tile_sy, "w": 32, "h": 32
+				"file_num": file_num, "sx": tile_sx, "sy": tile_sy, "width": 32, "height": 32
 			}
 
 	if _next_grh_index - 1 > _grh_data["max_index"]:
@@ -2045,7 +2045,7 @@ func _on_texture_index_final() -> void:
 		_current_frames.append({"sx": sx, "sy": sy, "w": fw, "h": fh, "grh_index": grh_idx, "file_num": file_num})
 		_grh_data["entries"][grh_idx] = {
 			"grh_index": grh_idx, "num_frames": 1,
-			"file_num": file_num, "sx": sx, "sy": sy, "w": fw, "h": fh
+			"file_num": file_num, "sx": sx, "sy": sy, "width": fw, "height": fh
 		}
 		if grh_idx > _grh_data["max_index"]:
 			_grh_data["max_index"] = grh_idx

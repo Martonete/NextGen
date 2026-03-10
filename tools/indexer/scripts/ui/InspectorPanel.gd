@@ -980,7 +980,7 @@ func _build_data_tab() -> Control:
 # ── Internal helpers ──────────────────────────────────────────────
 
 func _entry_differs(current: Dictionary, original: Dictionary) -> bool:
-	for key in ["file_num", "sx", "sy", "w", "h", "num_frames"]:
+	for key in ["file_num", "sx", "sy", "width", "height", "num_frames"]:
 		if current.get(key, 0) != original.get(key, 0):
 			return true
 	return false
