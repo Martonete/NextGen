@@ -115,8 +115,9 @@ var _init_current_path: String = ""
 
 
 func _ready() -> void:
-	custom_minimum_size.x = 380
+	custom_minimum_size.x = 250
 	size_flags_horizontal = Control.SIZE_FILL
+	size_flags_stretch_ratio = 0
 	clip_contents = true
 	add_theme_constant_override("separation", 0)
 
@@ -129,6 +130,7 @@ func _ready() -> void:
 	_tabs = TabContainer.new()
 	_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_tabs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tabs.clip_contents = true
 	_tabs.add_theme_font_size_override("font_size", IndexerTheme.FONT_SIZE_MD)
 	add_child(_tabs)
 
@@ -848,7 +850,7 @@ func _build_detect_tab() -> Control:
 		var pw: int = p[0]; var ph: int = p[1]
 		presets_row2.add_child(IndexerTheme.preset_button("%dx%d" % [pw, ph], _make_preset_cb(pw, ph), "Tiles %dx%d" % [pw, ph]))
 
-	grid_inner.add_child(IndexerTheme.primary_button("Detectar Grid", _on_detect_grid_btn))
+	grid_inner.add_child(IndexerTheme.primary_button("Generar frames", _on_detect_grid_btn))
 
 	# ── Blob section ──
 	root.add_child(IndexerTheme.separator_h())

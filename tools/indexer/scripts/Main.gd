@@ -207,13 +207,11 @@ func _build_ui() -> void:
 	_tex_index_dialog.confirmed.connect(_on_texture_index_confirmed)
 	add_child(_tex_index_dialog)
 
-	# Confirmation dialog
+	# Confirmation dialog (created on demand, not added as child yet)
 	_confirm_dialog = ConfirmationDialog.new()
 	_confirm_dialog.title = "Confirmar indexación"
 	_confirm_dialog.ok_button_text = "Confirmar"
 	_confirm_dialog.cancel_button_text = "Cancelar"
-	_confirm_dialog.visible = false
-	add_child(_confirm_dialog)
 
 
 func _build_menu_bar() -> MenuBar:
@@ -1787,6 +1785,8 @@ func _on_texture_index_confirmed(tex_name: String, category: String, capa: int) 
 
 	_confirm_dialog.dialog_text = "Se crearán %d GRH(s) estáticos y 1 entrada en indices.ini.\n\nTextura: %s\nTamaño: %dx%d tiles\nCategoría: %s\n\n¿Confirmar?" % [total, tex_name, tiles.x, tiles.y, category]
 	_confirm_dialog.confirmed.connect(_on_texture_index_final, CONNECT_ONE_SHOT)
+	if not _confirm_dialog.is_inside_tree():
+		add_child(_confirm_dialog)
 	_confirm_dialog.popup_centered()
 
 
