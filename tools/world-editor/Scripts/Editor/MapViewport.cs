@@ -25,6 +25,7 @@ public partial class MapViewport : Control
     public int[]? NpcHeadOfsX;
     public int[]? NpcHeadOfsY;
     public int[]? HeadGrhs;
+    public NpcDatabase? NpcDb;
 
     // Interaction state
     private bool _isPainting;
@@ -533,11 +534,13 @@ public partial class MapViewport : Control
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].HasNpc)
                     {
+                        int npcNum = Map.Tiles[x, y].NpcIndex;
                         DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
                             TileSize * 0.3f, EditorTheme.OVERLAY_NPC);
+                        string npcLabel = NpcDb?.Get(npcNum)?.Name ?? $"N{npcNum}";
                         DrawString(ThemeDB.FallbackFont,
                             new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
-                            $"N{Map.Tiles[x, y].NpcIndex}", HorizontalAlignment.Left, -1, 7,
+                            npcLabel, HorizontalAlignment.Left, -1, 7,
                             new Color(1f, 0.7f, 0.3f, 0.8f));
                     }
 
@@ -1004,9 +1007,20 @@ public partial class MapViewport : Control
                     case EditorTool.Eyedrop:
                         EyedropAt(tile.X, tile.Y);
                         break;
+                    case EditorTool.Npc:
+                        if (State.SelectedNpcNumber > 0)
+                        {
+                            PlaceNpcAt(tile.X, tile.Y, (short)State.SelectedNpcNumber);
+                        }
+                        else
+                        {
+                            State.ShowTileProperties = true;
+                            State.PropTileX = tile.X;
+                            State.PropTileY = tile.Y;
+                        }
+                        break;
                     case EditorTool.Light:
                     case EditorTool.Exit:
-                    case EditorTool.Npc:
                     case EditorTool.Object:
                     case EditorTool.Trigger:
                         State.ShowTileProperties = true;
@@ -1247,6 +1261,18 @@ public partial class MapViewport : Control
             PickTarget.Object => GetObjGrh(tile.ObjIndex),
             _ => 0,
         };
+    }
+
+    /// <summary>Place (or replace) an NPC on a tile with undo support.</summary>
+    private void PlaceNpcAt(int x, int y, short npcNumber)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].NpcIndex = npcNumber;
+        Undo?.BeginBatch("Place NPC");
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        Undo?.EndBatch();
+        QueueRedraw();
     }
 
     private int GetNpcBodyGrh(int npcIdx)

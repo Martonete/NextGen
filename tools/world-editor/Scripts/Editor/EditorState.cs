@@ -52,6 +52,9 @@ public class EditorState
     public bool ShowTileProperties;
     public int PropTileX, PropTileY;
 
+    // Selected NPC from palette (for quick-place with NPC tool)
+    public int SelectedNpcNumber;
+
     // Pick tool state
     public readonly PickState Pick = new();
 

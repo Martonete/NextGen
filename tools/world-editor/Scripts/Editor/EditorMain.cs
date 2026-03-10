@@ -21,7 +21,11 @@ public partial class EditorMain : Control
     private int[]? _npcBodies;
     private int[]? _npcHeads;
     private int[]? _headGrhs;
+    private NpcDatabase? _npcDb;
     private string _dataPath = "";
+    private string _clientMapDir = "";  // client/Data/Maps/
+    private string _serverMapDir = "";  // server/maps/
+    private string _serverDatDir = "";  // server/dat/
 
     // Editor
     private readonly EditorState _state = new();
@@ -29,13 +33,16 @@ public partial class EditorMain : Control
 
     // UI components
     private MenuBar? _menuBar;
+    private TabContainer? _sidebarTabs;
     private TilePalette? _palette;
+    private NpcPalette? _npcPalette;
     private MapViewport? _viewport;
     private Window? _propsWindow;
     private TilePropertiesPanel? _propsPanel;
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
+    private FileDialog? _serverPathDialog;
     private PopupMenu? _viewMenu;
 
     // Status bar
@@ -103,7 +110,8 @@ public partial class EditorMain : Control
         fileMenu.AddItem("Propiedades del Mapa...", 4);
         fileMenu.AddItem("Propiedades de Tile (T)", 5);
         fileMenu.AddSeparator();
-        fileMenu.AddItem("Configurar Ruta de Datos...", 6);
+        fileMenu.AddItem("Configurar Ruta Cliente (Data/)...", 6);
+        fileMenu.AddItem("Configurar Ruta Server...", 7);
         fileMenu.IdPressed += OnFileMenuId;
         _menuBar.AddChild(fileMenu);
 
@@ -264,10 +272,19 @@ public partial class EditorMain : Control
 
         AddChild(_mapNavBar);
 
-        // --- Tile palette (left sidebar) ---
-        _palette = new TilePalette { State = _state };
+        // --- Left sidebar: TabContainer with Tiles + NPCs ---
+        _sidebarTabs = new TabContainer();
+        _sidebarTabs.TabAlignment = TabBar.AlignmentMode.Center;
+        _sidebarTabs.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        AddChild(_sidebarTabs);
+
+        _palette = new TilePalette { Name = "Tiles", State = _state };
         _palette.LayerChanged += (layer) => SyncLayerTabs();
-        AddChild(_palette);
+        _sidebarTabs.AddChild(_palette);
+
+        _npcPalette = new NpcPalette { Name = "NPCs", State = _state };
+        _npcPalette.NpcSelected += OnNpcPaletteSelected;
+        _sidebarTabs.AddChild(_npcPalette);
 
         // --- Tile info panel (bottom of left sidebar, themed) ---
         _tileInfoPanel = new VBoxContainer();
@@ -369,6 +386,16 @@ public partial class EditorMain : Control
         _dataPathDialog.DirSelected += OnDataPathSelected;
         AddChild(_dataPathDialog);
 
+        _serverPathDialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenDir,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Title = "Seleccionar carpeta server/ (contiene dat/ y maps/)",
+            Size = new Vector2I(600, 400),
+        };
+        _serverPathDialog.DirSelected += OnServerPathSelected;
+        AddChild(_serverPathDialog);
+
         BuildMapPropsDialog();
         BuildUnsavedDialog();
     }
@@ -406,10 +433,10 @@ public partial class EditorMain : Control
         float tileInfoH = Math.Min(TileInfoHeight, contentH * 0.2f);
         float paletteH = contentH - tileInfoH;
 
-        if (_palette != null)
+        if (_sidebarTabs != null)
         {
-            _palette.Position = new Vector2(0, contentTop);
-            _palette.Size = new Vector2(PaletteWidth, paletteH);
+            _sidebarTabs.Position = new Vector2(0, contentTop);
+            _sidebarTabs.Size = new Vector2(PaletteWidth, paletteH);
         }
 
         if (_tileInfoPanel != null)
@@ -585,24 +612,33 @@ public partial class EditorMain : Control
             SetStatus($"{_grhs.Length} GRHs (indices.ini no encontrado)");
         }
 
+        // Client maps directory
+        _clientMapDir = mapsDir;
         _state.MapDir = mapsDir;
 
-        // Find server directory
-        string serverDir = "";
-        foreach (var rel in new[] { "..", "../.." })
+        // Find server directory (auto-detect relative to client Data/)
+        string serverDir = _serverDatDir.Length > 0
+            ? Path.GetDirectoryName(_serverDatDir) ?? ""
+            : "";
+        if (serverDir.Length == 0)
         {
-            string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
-            if (Directory.Exists(candidate)) { serverDir = candidate; break; }
+            foreach (var rel in new[] { "..", "../.." })
+            {
+                string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
+                if (Directory.Exists(candidate)) { serverDir = candidate; break; }
+            }
         }
 
-        // Prefer server maps dir
+        // Store server paths
         if (serverDir.Length > 0)
         {
+            _serverDatDir = Path.Combine(serverDir, "dat");
             string serverMapsDir = Path.Combine(serverDir, "maps");
             if (Directory.Exists(serverMapsDir))
             {
-                _state.MapDir = serverMapsDir;
-                GD.Print($"[Editor] Using server maps: {serverMapsDir}");
+                _serverMapDir = serverMapsDir;
+                _state.MapDir = serverMapsDir; // Prefer server maps for loading
+                GD.Print($"[Editor] Server maps: {serverMapsDir}");
             }
         }
 
@@ -620,14 +656,18 @@ public partial class EditorMain : Control
         _headGrhs = GameDataLoader.LoadHeadGrhs(cabezasInd);
 
         // Load object and NPC data from server dat/
-        if (serverDir.Length > 0)
+        if (_serverDatDir.Length > 0 && Directory.Exists(_serverDatDir))
         {
-            string datDir = Path.Combine(serverDir, "dat");
-            string objDat = Path.Combine(datDir, "Obj.dat");
+            string objDat = Path.Combine(_serverDatDir, "Obj.dat");
             _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
-            string npcDat = Path.Combine(datDir, "NPCs.dat");
+            string npcDat = Path.Combine(_serverDatDir, "NPCs.dat");
             (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
-            GD.Print($"[Editor] Server data: {datDir}");
+            _npcDb = NpcDatabase.Load(_serverDatDir);
+            GD.Print($"[Editor] Server data: {_serverDatDir}");
+        }
+        else
+        {
+            GD.Print("[Editor] Server dat/ not found — NPC names unavailable. Use Archivo > Configurar Ruta Server");
         }
 
         // Push data to palette
@@ -636,12 +676,25 @@ public partial class EditorMain : Control
         _palette.Catalog = _catalog;
         _palette.Rebuild();
 
+        // Push data to NPC palette
+        SyncNpcPaletteData();
+
         // Push data to viewport
         SyncViewportData();
 
         // Scan available maps and update nav bar
         _state.ScanAvailableMaps(_state.MapDir);
         GD.Print($"[Editor] Found {_state.AvailableMaps.Count} maps in {_state.MapDir}");
+
+        // Show path status
+        string pathInfo = "";
+        if (_clientMapDir.Length > 0) pathInfo += $"Cliente: {_clientMapDir}  ";
+        if (_serverMapDir.Length > 0) pathInfo += $"Server: {_serverMapDir}  ";
+        if (_serverMapDir.Length == 0)
+            pathInfo += "⚠ Sin ruta server — Archivo > Configurar Ruta Server";
+        if (_clientMapDir.Length == 0)
+            pathInfo += "⚠ Sin ruta cliente";
+        GD.Print($"[Editor] {pathInfo}");
 
         CreateNewMap(1);
     }
@@ -659,6 +712,7 @@ public partial class EditorMain : Control
         _viewport.NpcHeadOfsX = _npcHeadOfsX;
         _viewport.NpcHeadOfsY = _npcHeadOfsY;
         _viewport.HeadGrhs = _headGrhs;
+        _viewport.NpcDb = _npcDb;
     }
 
     #endregion
@@ -676,6 +730,7 @@ public partial class EditorMain : Control
             case 4: ShowMapProperties(); break;
             case 5: ToggleTileProperties(); break;
             case 6: _dataPathDialog?.Popup(); break;
+            case 7: _serverPathDialog?.Popup(); break;
         }
     }
 
@@ -835,11 +890,28 @@ public partial class EditorMain : Control
     {
         if (_map == null) return;
         if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
+
+        // Save to primary map dir (server if available)
         MapLoader.Save(_state.MapDir, _map);
+
+        // Also save to the other map dir (dual-save: client + server)
+        string secondaryDir = "";
+        if (_state.MapDir == _serverMapDir && _clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+            secondaryDir = _clientMapDir;
+        else if (_state.MapDir == _clientMapDir && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+            secondaryDir = _serverMapDir;
+
+        if (secondaryDir.Length > 0)
+        {
+            MapLoader.Save(secondaryDir, _map);
+            GD.Print($"[Editor] Dual-save: also saved to {secondaryDir}");
+        }
+
         _state.ResetDirty();
         _state.ScanAvailableMaps(_state.MapDir);
         UpdateNavBar();
-        SetStatus($"Mapa {_map.MapNumber} guardado");
+        string dualMsg = secondaryDir.Length > 0 ? " (cliente + server)" : "";
+        SetStatus($"Mapa {_map.MapNumber} guardado{dualMsg}");
     }
 
     private void OnSaveAsMap()
@@ -856,13 +928,80 @@ public partial class EditorMain : Control
         string dir = Path.GetDirectoryName(path) ?? _state.MapDir;
         _state.MapDir = dir;
         MapLoader.Save(dir, _map);
+
+        // Dual-save: also save to the other map dir
+        string otherDir = "";
+        if (dir != _clientMapDir && _clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+            otherDir = _clientMapDir;
+        if (dir != _serverMapDir && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+            otherDir = _serverMapDir;
+        if (otherDir.Length > 0)
+            MapLoader.Save(otherDir, _map);
+
         _state.ResetDirty();
         _state.ScanAvailableMaps(dir);
         UpdateNavBar();
-        SetStatus($"Mapa {_map.MapNumber} guardado en {dir}");
+        string dualMsg = otherDir.Length > 0 ? " (cliente + server)" : "";
+        SetStatus($"Mapa {_map.MapNumber} guardado en {dir}{dualMsg}");
     }
 
     private void OnDataPathSelected(string path) => LoadDataPath(path);
+
+    private void OnServerPathSelected(string path)
+    {
+        // Validate: must contain dat/ subfolder
+        string datDir = Path.Combine(path, "dat");
+        if (!Directory.Exists(datDir))
+        {
+            SetStatus($"ERROR: {path} no contiene carpeta dat/");
+            return;
+        }
+
+        _serverDatDir = datDir;
+        string mapsDir = Path.Combine(path, "maps");
+        if (Directory.Exists(mapsDir))
+        {
+            _serverMapDir = mapsDir;
+            _state.MapDir = mapsDir;
+            _state.ScanAvailableMaps(mapsDir);
+            GD.Print($"[Editor] Server maps: {mapsDir}");
+        }
+
+        // Load NPC + object data from the new server path
+        string objDat = Path.Combine(datDir, "Obj.dat");
+        _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
+        string npcDat = Path.Combine(datDir, "NPCs.dat");
+        (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
+        _npcDb = NpcDatabase.Load(datDir);
+
+        SyncNpcPaletteData();
+        SyncViewportData();
+        UpdateNavBar();
+        SetStatus($"Server configurado: {path}");
+    }
+
+    private void SyncNpcPaletteData()
+    {
+        if (_npcPalette == null) return;
+        _npcPalette.Database = _npcDb;
+        _npcPalette.Grhs = _grhs;
+        _npcPalette.Textures = _textures;
+        _npcPalette.NpcBodies = _npcBodies;
+        _npcPalette.NpcBodyGrhs = _npcBodyGrhs;
+        _npcPalette.NpcHeads = _npcHeads;
+        _npcPalette.HeadGrhs = _headGrhs;
+        _npcPalette.NpcHeadOfsX = _npcHeadOfsX;
+        _npcPalette.NpcHeadOfsY = _npcHeadOfsY;
+        _npcPalette.Rebuild();
+    }
+
+    private void OnNpcPaletteSelected(int npcNumber)
+    {
+        // Set NPC tool as active and update tile properties for quick placement
+        SetActiveTool(EditorTool.Npc);
+        _state.SelectedNpcNumber = npcNumber;
+        SetStatus($"NPC #{npcNumber} seleccionado — click en el mapa para colocar");
+    }
 
     private void OnExitFollow(int mapNum, int x, int y)
     {
@@ -1309,7 +1448,13 @@ public partial class EditorMain : Control
         if (tile.Blocked) lines.AppendLine("Bloqueado");
         if (tile.Trigger > 0) lines.AppendLine($"Trigger: {tile.Trigger}");
         if (tile.HasExit) lines.AppendLine($"Exit: M{tile.ExitMap} ({tile.ExitX},{tile.ExitY})");
-        if (tile.HasNpc) lines.AppendLine($"NPC: {tile.NpcIndex}");
+        if (tile.HasNpc)
+        {
+            string npcName = _npcDb?.Get(tile.NpcIndex)?.Name ?? "";
+            lines.AppendLine(npcName.Length > 0
+                ? $"NPC: #{tile.NpcIndex} {npcName}"
+                : $"NPC: #{tile.NpcIndex}");
+        }
         if (tile.HasObject) lines.AppendLine($"Obj: {tile.ObjIndex} x{tile.ObjAmount}");
         if (tile.HasLight) lines.AppendLine($"Luz: R{tile.LightRange} ({tile.LightR},{tile.LightG},{tile.LightB})");
         if (tile.ParticleGroup > 0) lines.AppendLine($"Particula: {tile.ParticleGroup}");
