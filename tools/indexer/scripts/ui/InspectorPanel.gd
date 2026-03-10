@@ -827,8 +827,10 @@ func _build_detect_tab() -> Control:
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.clip_contents = true
 	var root := VBoxContainer.new()
 	root.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	root.clip_contents = true
 	root.add_theme_constant_override("separation", 6)
 	scroll.add_child(root)
 
@@ -841,30 +843,36 @@ func _build_detect_tab() -> Control:
 	grid_section.add_child(grid_inner)
 
 	var grid := GridContainer.new()
-	grid.columns = 4
+	grid.columns = 2
 	grid.add_theme_constant_override("h_separation", 3)
 	grid.add_theme_constant_override("v_separation", 3)
 	grid_inner.add_child(grid)
 
-	grid.add_child(IndexerTheme.label("W:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
+	grid.add_child(IndexerTheme.label("Ancho:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 	_spin_cell_w = IndexerTheme.spinbox(1, 2048, 32)
+	_spin_cell_w.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(_spin_cell_w)
-	grid.add_child(IndexerTheme.label("H:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
+	grid.add_child(IndexerTheme.label("Alto:", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM))
 	_spin_cell_h = IndexerTheme.spinbox(1, 2048, 32)
+	_spin_cell_h.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(_spin_cell_h)
 
-	grid.add_child(IndexerTheme.label("OffX:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	grid.add_child(IndexerTheme.label("Off X:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_off_x = IndexerTheme.spinbox(0, 2048, 0)
+	_spin_off_x.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(_spin_off_x)
-	grid.add_child(IndexerTheme.label("OffY:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	grid.add_child(IndexerTheme.label("Off Y:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_off_y = IndexerTheme.spinbox(0, 2048, 0)
+	_spin_off_y.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(_spin_off_y)
 
-	grid.add_child(IndexerTheme.label("MrgX:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	grid.add_child(IndexerTheme.label("Mrg X:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_mrg_x = IndexerTheme.spinbox(0, 512, 0)
+	_spin_mrg_x.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(_spin_mrg_x)
-	grid.add_child(IndexerTheme.label("MrgY:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
+	grid.add_child(IndexerTheme.label("Mrg Y:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	_spin_mrg_y = IndexerTheme.spinbox(0, 512, 0)
+	_spin_mrg_y.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_child(_spin_mrg_y)
 
 	_chk_skip_empty = CheckButton.new()
@@ -875,15 +883,17 @@ func _build_detect_tab() -> Control:
 
 	# Presets
 	grid_inner.add_child(IndexerTheme.label("Presets:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	var presets_row1 := HBoxContainer.new()
-	presets_row1.add_theme_constant_override("separation", 3)
+	var presets_row1 := HFlowContainer.new()
+	presets_row1.add_theme_constant_override("h_separation", 3)
+	presets_row1.add_theme_constant_override("v_separation", 2)
 	grid_inner.add_child(presets_row1)
 	presets_row1.add_child(IndexerTheme.preset_button("Cuerpo 25x45", _make_preset_cb(25, 45), "Cuerpos, armas, movimientos"))
 	presets_row1.add_child(IndexerTheme.preset_button("Cabeza 17x50", _make_preset_cb(17, 50), "Cabezas"))
 	presets_row1.add_child(IndexerTheme.preset_button("Escudo 25x25", _make_preset_cb(25, 25), "Escudos"))
 
-	var presets_row2 := HBoxContainer.new()
-	presets_row2.add_theme_constant_override("separation", 3)
+	var presets_row2 := HFlowContainer.new()
+	presets_row2.add_theme_constant_override("h_separation", 3)
+	presets_row2.add_theme_constant_override("v_separation", 2)
 	grid_inner.add_child(presets_row2)
 	for p in [[32,32],[64,64],[128,128],[256,256]]:
 		var pw: int = p[0]; var ph: int = p[1]
@@ -945,6 +955,7 @@ func _build_data_tab() -> Control:
 	var root := VBoxContainer.new()
 	root.name = "Datos"
 	root.add_theme_constant_override("separation", 6)
+	root.clip_contents = true
 
 	# ── Config section ──
 	root.add_child(IndexerTheme.section_label("Configuración"))

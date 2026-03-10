@@ -208,7 +208,7 @@ static func spinbox(min_val: float, max_val: float, value: float, callback: Call
 	s.min_value = min_val
 	s.max_value = max_val
 	s.value = value
-	s.custom_minimum_size.x = 70
+	s.custom_minimum_size.x = 50
 	s.add_theme_font_size_override("font_size", FONT_SIZE_MD)
 	if callback.is_valid():
 		s.value_changed.connect(callback)

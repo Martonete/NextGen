@@ -76,6 +76,7 @@ var _raw_current_path: String = ""
 
 func _ready() -> void:
 	add_theme_constant_override("separation", 4)
+	clip_contents = true
 
 	# Type selector row
 	var type_row := HBoxContainer.new()
@@ -126,16 +127,15 @@ func _ready() -> void:
 
 
 func _build_asset_view() -> void:
-	_content_split = HSplitContainer.new()
+	_content_split = VSplitContainer.new()
 	_content_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_content_split.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_content_split.split_offset = 130
+	_content_split.split_offset = 150
 	add_child(_content_split)
 
-	# Left: item list
+	# Top: item list
 	var left_vbox := VBoxContainer.new()
 	left_vbox.add_theme_constant_override("separation", 0)
-	left_vbox.custom_minimum_size.x = 110
 	_content_split.add_child(left_vbox)
 
 	_item_list = ItemList.new()
@@ -158,7 +158,7 @@ func _build_asset_view() -> void:
 
 	# Preview
 	_preview_panel = FramePreviewPanel.new()
-	_preview_panel.custom_minimum_size = Vector2(120, 96)
+	_preview_panel.custom_minimum_size = Vector2(0, 80)
 	_preview_panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_detail_panel.add_child(_preview_panel)
 
@@ -500,7 +500,7 @@ func _add_field(key: String, label_text: String, value, min_val: int = 0, max_va
 	_fields_container.add_child(row)
 
 	var lbl := IndexerTheme.label(label_text + ":", IndexerTheme.TEXT_SECONDARY, IndexerTheme.FONT_SIZE_SM)
-	lbl.custom_minimum_size.x = 95
+	lbl.custom_minimum_size.x = 70
 	row.add_child(lbl)
 
 	var spin := IndexerTheme.spinbox(min_val, max_val, int(value))
