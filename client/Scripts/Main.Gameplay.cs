@@ -1,0 +1,802 @@
+using Godot;
+using System;
+using System.Threading.Tasks;
+using ArgentumNextgen.Data;
+using ArgentumNextgen.Game;
+using ArgentumNextgen.Network;
+using ArgentumNextgen.Rendering;
+using ArgentumNextgen.UI;
+
+namespace ArgentumNextgen;
+
+/// <summary>
+/// Partial class containing gameplay logic: movement, map loading, screen transitions,
+/// disconnect handling, config application, and login/account connection flows.
+/// Split from Main.cs to keep the orchestrator under 800 lines.
+/// </summary>
+public partial class Main
+{
+    // VB6 movement constants
+    private const float EngineBaseSpeed = 0.0172f;   // VB6 timerTicksPerFrame = deltaMs * 0.0172
+    private const float ScrollPixelsPerFrame = 8f;   // VB6 ScrollPixelsPerFrameX/Y
+
+    private void HandleScreenChange(Screen newScreen)
+    {
+        GD.Print($"[MAIN] Screen → {newScreen}");
+
+        // Always hide delete confirm dialog on screen change
+        _charCreateScreen?.HideDeleteConfirm();
+
+        switch (newScreen)
+        {
+            case Screen.Login:
+                _loginPanel!.Visible = true;
+                _charSelectPanel!.Visible = false;
+                _charCreateScreen!.Panel!.Visible = false;
+                _accountCreateScreen!.Panel!.Visible = false;
+                _gameUI!.Visible = false;
+                break;
+
+            case Screen.CharSelect:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = true;
+                _charCreateScreen!.Panel!.Visible = false;
+                _accountCreateScreen!.Panel!.Visible = false;
+                _gameUI!.Visible = false;
+                _enterButton!.Disabled = false;
+                _noticeLabel!.Text = "";
+                PopulateCharList();
+                break;
+
+            case Screen.AccountCreate:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = false;
+                _charCreateScreen!.Panel!.Visible = false;
+                _accountCreateScreen!.Panel!.Visible = true;
+                _gameUI!.Visible = false;
+                _accountCreateScreen?.ResetForm();
+                break;
+
+            case Screen.CharCreate:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = false;
+                _charCreateScreen!.Panel!.Visible = true;
+                _accountCreateScreen!.Panel!.Visible = false;
+                _gameUI!.Visible = false;
+                _charCreateScreen?.ResetForm();
+                break;
+
+            case Screen.Game:
+                _loginPanel!.Visible = false;
+                _charSelectPanel!.Visible = false;
+                _charCreateScreen!.Panel!.Visible = false;
+                _accountCreateScreen!.Panel!.Visible = false;
+                _gameUI!.Visible = true;
+                // Initialize inventory/spell panels with TCP (only available after connect)
+                if (_tcp != null)
+                {
+                    _inventoryPanel!.Init(_state, _gameData, _tcp);
+                    _inventoryPanel!.OnDropOutside += OnInventoryDropOutside;
+                    _spellPanel!.Init(_state, _gameData, _tcp);
+                    _commercePanel!.Init(_state, _gameData, _tcp);
+                    _tradePanel!.Init(_state, _gameData, _tcp);
+                    _bankPanel!.Init(_state, _gameData, _tcp);
+                    _vaultPanel!.Init(_state, _gameData, _tcp);
+                    _guildBankPanel!.Init(_state, _gameData, _tcp);
+                    _craftPanel!.Init(_state, _gameData, _tcp);
+                    _travelPanel!.Init(_state, _tcp, _dataPath);
+                    _deathPanel!.Init(_state, _tcp, _dataPath);
+                    _guildPanel!.Init(_state, _tcp);
+                    _guildFoundationPanel!.Init(_state, _tcp);
+                    _forumPanel!.Init(_state, _tcp);
+                    _friendListPanel!.Init(_state, _tcp);
+                    _mailPanel!.Init(_state, _tcp);
+                    _partyPanel!.Init(_state, _tcp);
+                    if (_chatSystem != null) _chatSystem.PartyPanel = _partyPanel;
+                    _gameUIUpdater?.BindMinimap(_minimapPanel, _partyPanel);
+                    _questPanel!.Init(_state, _tcp);
+                    _trainerPanel!.Init(_state, _tcp);
+                    _optionsPanel!.Init(_state, _state.Config, _dataPath, _tcp);
+                    _statsPanel!.Init(_state, _tcp);
+                    _charInfoPopup!.Init(_state);
+                    _contextMenu!.Init(_state, _tcp);
+                    _changePasswordPanel!.Init(_state, _tcp);
+                    _contextMenu!.OnWhisper += (name) =>
+                    {
+                        // Activate chat in whisper mode
+                        _state.ChatMode = 7;
+                        _state.ChatModePrefix = "\\";
+                        _state.WhisperTarget = name;
+                        _chatSystem?.ShowChat();
+                    };
+                    _contextMenu!.OnAddFriend += (name) =>
+                    {
+                        _tcp.SendPacket(ClientPackets.WriteTalk($"/AGREGAR {name}"));
+                    };
+
+                    // Wire TCP to new panels
+                    _gmPanel?.SetTcp(_tcp);
+                    _spawnListPanel?.SetTcp(_tcp);
+                    _sosPanel?.SetTcp(_tcp);
+                    _motdEditorPanel?.SetTcp(_tcp);
+                    _guildAlignmentPanel?.SetTcp(_tcp);
+                    _peaceProposalPanel?.SetTcp(_tcp);
+                    _guildMemberPanel?.SetTcp(_tcp);
+
+                    // Show tutorial for first-time players
+                    if (_tutorialPanel != null && !_tutorialPanel.IsCompleted())
+                        _tutorialPanel.Open();
+                }
+                GD.Print("[MAIN] Entered game world");
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Apply GameConfig values to all subsystems (called after options are saved).
+    /// </summary>
+    private void ApplyConfigToSystems()
+    {
+        var cfg = _state.Config;
+
+        // Sync ShowNames to GameState (used by CharRenderer directly)
+        _state.ShowNames = cfg.ShowNames;
+
+        // Apply audio settings
+        if (_soundManager != null)
+        {
+            _soundManager.MusicEnabled = cfg.MusicEnabled;
+            _soundManager.SoundEnabled = cfg.SfxEnabled;
+            _soundManager.SetMusicVolume(cfg.MusicVolume);
+            _soundManager.SetSfxVolume(cfg.SfxVolume);
+        }
+
+        // Apply V-Sync
+        DisplayServer.WindowSetVsyncMode(
+            cfg.VsyncEnabled ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
+
+        // Apply FPS limit
+        Engine.MaxFps = cfg.FpsLimit > 0 ? cfg.FpsLimit : 0;
+
+        // Apply display mode
+        if (cfg.Fullscreen)
+        {
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        }
+        else
+        {
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+            var winSize = new Vector2I(800, 600);
+            DisplayServer.WindowSetSize(winSize);
+            var screenSize = DisplayServer.ScreenGetSize();
+            DisplayServer.WindowSetPosition(new Vector2I(
+                (screenSize.X - winSize.X) / 2,
+                (screenSize.Y - winSize.Y) / 2));
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+        }
+
+        // Apply day/night cycle toggle
+        if (_dayNightCycle != null)
+            _dayNightCycle.Enabled = cfg.ShowDayNight;
+
+        GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
+    }
+
+    /// <summary>
+    /// VB6 Socket1_Disconnect: clean up everything and return to login.
+    /// Called when TCP connection is lost (server close, error, timeout).
+    /// </summary>
+    private void HandleDisconnect(string message)
+    {
+        GD.Print($"[MAIN] Disconnect: {message}");
+
+        // Clean up TCP resources (VB6: Socket1.Disconnect + Socket1.Cleanup)
+        _tcp?.Dispose();
+        _tcp = null;
+        _packetHandler = null;
+        _inputHandler = null;
+        _connecting = false;
+        _packetCount = 0;
+
+        // Reset all game state (VB6: clear logged, skills, attributes, etc.)
+        ResetGameState();
+
+        // Hide chat input and clear console
+        _chatSystem?.HideChat();
+        _chatSystem?.ClearConsole();
+
+        // Clear minimap
+        // Close escape menu
+        HideEscapeMenu();
+
+        // Close all game panels and reset tracking state
+        _panelSync?.CloseAll();
+        CloseDropDialog();
+        if (_blindOverlay != null) _blindOverlay.Color = new Color(0, 0, 0, 0);
+
+        // Reset char create button state
+        if (_charCreateScreen?.CreateButton != null)
+            _charCreateScreen.CreateButton.Disabled = false;
+
+        // Reset account create state
+        _accountCreateScreen?.EnableCreateButton();
+        if (_accountCreateScreen != null) _accountCreateScreen.SuccessTimer = 0;
+        if (_accountCreateScreen?.Panel != null)
+            _accountCreateScreen.Panel.Visible = false;
+
+        // Reset spell/inventory tab to default (inventory)
+        OnInventoryTabPressed();
+
+        // Switch to login screen with error message
+        _state.CurrentScreen = Screen.Login;
+        HandleScreenChange(Screen.Login);
+        _lastScreen = Screen.Login;
+        if (_loginController?.StatusLabel != null) _loginController.StatusLabel.Text = message;
+        if (_loginController?.ConnectButton != null) _loginController.ConnectButton.Disabled = false;
+
+        // VB6: frmConnect.MousePointer = 1 (normal cursor)
+        Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
+    }
+
+    /// <summary>
+    /// Reset GameState to defaults (VB6: Socket1_Disconnect cleanup).
+    /// Clears all character data, stats, inventory, spells, flags.
+    /// </summary>
+    private void ResetGameState()
+    {
+        _state.IsLogged = false;
+        _state.Paused = false;
+        _state.LoginError = "";
+        _state.ServerNotice = "";
+        _state.SecurityCode = "";
+        _state.CharacterList.Clear();
+        _state.SelectedCharIndex = -1;
+
+        // Map
+        _state.CurrentMap = 0;
+        _state.MapName = "";
+        _state.MapColorR = 200;
+        _state.MapColorG = 200;
+        _state.MapColorB = 200;
+        _state.MapData = null;
+        _state.NeedMapLoad = false;
+
+        // Position & movement
+        _state.UserPosX = 0;
+        _state.UserPosY = 0;
+        _state.UserCharIndex = 0;
+        _state.UserName = "";
+        _state.UserParalyzed = false;
+        _state.ParalysisTimer = 0;
+        _state.UserNavigating = false;
+        _state.UserStopped = false;
+        _state.UsingSkill = 0;
+        _state.ChatActive = false;
+        _state.Comerciando = false;
+        _state.Trading = false;
+        _state.Dead = false;
+        _state.ShowDeathPanel = false;
+        _state.Resting = false;
+        _state.Meditating = false;
+        _state.SafeMode = false;
+        _state.ItemSafety = true; // Re-enable on reconnect (VB6: ISItem starts true)
+        _state.SeguroResu = false;
+        _state.DropDialogOpen = false;
+        _state.ShowTravelPanel = false;
+        _state.UserMoving = false;
+        _state.AddToUserPosX = 0;
+        _state.AddToUserPosY = 0;
+        _state.ScreenOffsetX = 0;
+        _state.ScreenOffsetY = 0;
+        _state.PtCooldownFrames = 0;
+        _state.PendingMoves = 0;
+
+        // Characters & objects
+        _state.Characters.Clear();
+        _state.GroundObjects.Clear();
+
+        // Stats
+        _state.MaxHp = 0; _state.MinHp = 0;
+        _state.MaxMana = 0; _state.MinMana = 0;
+        _state.MaxSta = 0; _state.MinSta = 0;
+        _state.MaxAgua = 0; _state.MinAgua = 0;
+        _state.MaxHam = 0; _state.MinHam = 0;
+        _state.Gold = 0;
+        _state.Level = 0;
+        _state.Exp = 0; _state.ExpNext = 0;
+        _state.Reputation = 0;
+        _state.Privileges = 0;
+        _state.MusicId = 0;
+        _state.OnlineCount = 0;
+        _state.Strength = 0;
+        _state.Agility = 0;
+        _state.AttackMin = 0; _state.AttackMax = 0;
+        _state.DefenseMin = 0; _state.DefenseMax = 0;
+        _state.MagDefMin = 0; _state.MagDefMax = 0;
+        _state.WeaponEqpSlot = 0; _state.ArmourEqpSlot = 0;
+        _state.ShieldEqpSlot = 0; _state.HelmEqpSlot = 0;
+        _state.WeaponLabel = "0/0"; _state.ArmourLabel = "0/0";
+        _state.ShieldLabel = "0/0"; _state.HelmLabel = "0/0";
+
+        // Inventory & spells
+        for (int i = 0; i < 25; i++)
+            _state.Inventory[i] = new InventorySlot();
+        for (int i = 0; i < 20; i++)
+            _state.Spells[i] = new SpellSlot();
+
+        // Commerce
+        _state.NpcShopCount = 0;
+        for (int i = 0; i < 50; i++)
+            _state.NpcShopItems[i] = new NpcShopItem();
+
+        // Bank
+        _state.BankItemCount = 0;
+        _state.BankGold = 0;
+        _state.Banqueando = false;
+        _state.BovedaAbierta = false;
+
+        // Guild Bank
+        _state.ShowGuildBank = false;
+        _state.GuildBankGold = 0;
+        _state.GuildBankCanObj = false;
+        _state.GuildBankCanGold = false;
+        for (int i = 0; i < _state.GuildBankItems.Length; i++)
+            _state.GuildBankItems[i] = new GuildBankSlot();
+        for (int i = 0; i < 40; i++)
+            _state.BankItems[i] = new BankItem();
+
+        // Chat queue and history
+        _state.ChatMessages.Clear();
+        _state.ChatHistory.Clear();
+        _state.ActiveChatFilter = -1;
+        _state.ChatFilterDirty = false;
+        _chatSystem?.UpdateChatTabHighlight();
+    }
+
+    /// <summary>
+    /// VB6-accurate movement interpolation.
+    /// timerTicksPerFrame = deltaMs * EngineBaseSpeed (0.0172)
+    /// scrollPixels = ScrollPixelsPerFrame (8) * timerTicksPerFrame
+    /// Full tile (32px) ≈ 14 frames ≈ 233ms at 60fps.
+    ///
+    /// Delta is capped to prevent lag spikes from completing scrolls in one frame,
+    /// which would let the client send moves faster than intended.
+    /// VB6 timer was fixed ~17ms; we allow up to 50ms (3 frames) for flexibility.
+    /// </summary>
+    private void UpdateMovement(float delta)
+    {
+        // Cap delta to prevent lag-spike acceleration (VB6 timer was ~17ms fixed)
+        float deltaMs = Math.Min(delta * 1000f, 50f);
+        float ticksPerFrame = deltaMs * EngineBaseSpeed;
+        float scrollPixels = ScrollPixelsPerFrame * ticksPerFrame;
+
+        // Camera scroll (VB6 ShowNextFrame → OffsetCounterX/Y)
+        if (_state.UserMoving)
+        {
+            _state.ScreenOffsetX += ScrollPixelsPerFrame * _state.AddToUserPosX * ticksPerFrame;
+            _state.ScreenOffsetY += ScrollPixelsPerFrame * _state.AddToUserPosY * ticksPerFrame;
+
+            // Complete when offset reaches a full tile (32px)
+            bool doneX = _state.AddToUserPosX == 0 || Math.Abs(_state.ScreenOffsetX) >= 32f;
+            bool doneY = _state.AddToUserPosY == 0 || Math.Abs(_state.ScreenOffsetY) >= 32f;
+
+            if (doneX && doneY)
+            {
+                _state.ScreenOffsetX = 0;
+                _state.ScreenOffsetY = 0;
+                _state.AddToUserPosX = 0;
+                _state.AddToUserPosY = 0;
+                _state.UserMoving = false;
+
+                // Scroll completed — assume server accepted the move
+                if (_state.PendingMoves > 0)
+                    _state.PendingMoves--;
+
+                // Sync: force self char's MoveOffset to complete too (avoid 1-frame glitch)
+                if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
+                {
+                    selfCh.MoveOffsetX = 0;
+                    selfCh.MoveOffsetY = 0;
+                    selfCh.Moving = false;
+                    selfCh.ScrollDirectionX = 0;
+                    selfCh.ScrollDirectionY = 0;
+                }
+            }
+        }
+
+        // Character sprite interpolation + per-character walk animation
+        foreach (var kvp in _state.Characters)
+        {
+            var ch = kvp.Value;
+
+            // Advance walk animation frame only while Moving (VB6: per-char FrameCounter)
+            if (ch.Moving && ch.Body > 0 && ch.Body < _gameData.Bodies.Length)
+            {
+                int heading = ch.Heading;
+                if (heading < 1 || heading > 4) heading = 3;
+                int walkGrh = _gameData.Bodies[ch.Body].Walk[heading];
+                if (walkGrh > 0 && walkGrh < _gameData.Grhs.Length)
+                {
+                    var grh = _gameData.Grhs[walkGrh];
+                    if (grh.NumFrames > 1)
+                    {
+                        float speed = grh.Speed > 0 ? grh.Speed : 100f;
+                        ch.WalkFrame += (deltaMs * grh.NumFrames / speed) * 0.7f;
+                        if (ch.WalkFrame >= grh.NumFrames)
+                            ch.WalkFrame %= grh.NumFrames;
+                    }
+                }
+            }
+
+            if (!ch.Moving && ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
+                continue;
+
+            // Interpolate X using ScrollDirection
+            if (ch.MoveOffsetX != 0)
+            {
+                ch.MoveOffsetX += scrollPixels * ch.ScrollDirectionX;
+                // Complete when offset crosses zero (moved past destination)
+                if ((ch.ScrollDirectionX > 0 && ch.MoveOffsetX >= 0) ||
+                    (ch.ScrollDirectionX < 0 && ch.MoveOffsetX <= 0) ||
+                    ch.ScrollDirectionX == 0)
+                {
+                    ch.MoveOffsetX = 0;
+                }
+            }
+
+            // Interpolate Y using ScrollDirection
+            if (ch.MoveOffsetY != 0)
+            {
+                ch.MoveOffsetY += scrollPixels * ch.ScrollDirectionY;
+                if ((ch.ScrollDirectionY > 0 && ch.MoveOffsetY >= 0) ||
+                    (ch.ScrollDirectionY < 0 && ch.MoveOffsetY <= 0) ||
+                    ch.ScrollDirectionY == 0)
+                {
+                    ch.MoveOffsetY = 0;
+                }
+            }
+
+            if (ch.MoveOffsetX == 0 && ch.MoveOffsetY == 0)
+            {
+                ch.Moving = false;
+                ch.ScrollDirectionX = 0;
+                ch.ScrollDirectionY = 0;
+            }
+        }
+    }
+
+    private void LoadCurrentMap()
+    {
+        // Show loading screen during map transition
+        _loadingScreen?.Show(_state.MapName);
+        _loadingScreen?.SetProgress(0.2f);
+
+        string mapDir;
+        if (OS.HasFeature("editor"))
+            mapDir = ProjectSettings.GlobalizePath("res://Data/Maps");
+        else
+            mapDir = System.IO.Path.Combine(
+                System.IO.Path.GetDirectoryName(OS.GetExecutablePath()) ?? ".",
+                "Data", "Maps"
+            );
+
+        try
+        {
+            _loadingScreen?.SetProgress(0.5f);
+            _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
+            _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
+
+            // Load particles and lights embedded in tile data (byFlags bits 5/6)
+            _loadingScreen?.SetProgress(0.8f);
+            LoadTileParticlesAndLights(_state);
+
+            _loadingScreen?.Complete();
+            GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
+        }
+        catch (Exception ex)
+        {
+            _loadingScreen?.ForceHide();
+            GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
+        }
+    }
+
+    private void LoadTileParticlesAndLights(GameState state)
+    {
+        if (state.MapData == null) return;
+        var map = state.MapData;
+        for (int y = 1; y <= 100; y++)
+        {
+            for (int x = 1; x <= 100; x++)
+            {
+                ref var tile = ref map.Tiles[x, y];
+                if (tile.ParticleGroup > 0)
+                    ParticleSystem.CreateMapStream(state, tile.ParticleGroup, x, y);
+                if (tile.LightRange > 0)
+                {
+                    state.MapLights.Add(new MapLight
+                    {
+                        X = x, Y = y, Range = tile.LightRange,
+                        R = (byte)tile.LightR, G = (byte)tile.LightG, B = (byte)tile.LightB,
+                        Active = true
+                    });
+                    state.LightsDirty = true;
+                }
+            }
+        }
+    }
+
+    private void LoadBackgroundImage(string dataPath)
+    {
+        // All Principal assets live in the Godot client's own Data/Graficos/Principal/
+        string principalDir = System.IO.Path.Combine(dataPath, "Graficos", "Principal");
+        string principalPath = System.IO.Path.Combine(principalDir, "Principal.jpg");
+
+        GD.Print($"[MAIN] Looking for Principal.jpg at {principalPath}");
+
+        if (!System.IO.File.Exists(principalPath))
+        {
+            GD.Print("[MAIN] Principal.jpg not found — using dark background");
+            return;
+        }
+
+        // Load Principal.jpg
+        try
+        {
+            var image = new Image();
+            image.Load(principalPath);
+            _backgroundImage!.Texture = ImageTexture.CreateFromImage(image);
+            GD.Print($"[MAIN] Loaded Principal.jpg from {principalDir}");
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Failed to load Principal.jpg: {ex.Message}");
+        }
+
+        // Load InvEqu textures (inventory / spells panel backgrounds)
+        _invEquInvTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroInventario.jpg"));
+        _invEquSpellTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroHechizos.jpg"));
+
+        // Wire textures to InventoryUI and set default
+        _inventoryUI?.SetInvEquTextures(_invEquInvTexture, _invEquSpellTexture);
+        if (_invEquImage != null && _invEquInvTexture != null)
+            _invEquImage.Texture = _invEquInvTexture;
+    }
+
+    private void PopulateCharList()
+    {
+        _charList!.Clear();
+        foreach (var ch in _state.CharacterList)
+        {
+            string label = $"{ch.Name} — Lvl {ch.Level} ({ch.Class})";
+            if (ch.Dead) label += " [MUERTO]";
+            _charList.AddItem(label);
+        }
+        if (!string.IsNullOrEmpty(_state.ServerNotice))
+            _noticeLabel!.Text = _state.ServerNotice;
+    }
+
+    private void OnEnterPressed()
+    {
+        if (_charList!.IsAnythingSelected())
+        {
+            int[] selected = _charList.GetSelectedItems();
+            if (selected.Length > 0 && selected[0] < _state.CharacterList.Count)
+            {
+                var charPreview = _state.CharacterList[selected[0]];
+                string charName = charPreview.Name;
+                string account = _state.AccountName;
+                string code = _state.SecurityCode;
+
+                _enterButton!.Disabled = true;
+                _noticeLabel!.Text = "Entrando al mundo...";
+
+                _tcp!.SendPacket(ClientPackets.WriteOologi(charName, account, code));
+                GD.Print($"[MAIN] Sent: OOLOGI {charName}");
+            }
+        }
+        else
+        {
+            _noticeLabel!.Text = "Seleccione un personaje";
+        }
+    }
+
+    /// <summary>
+    /// Double-click on character list → enter game (same as clicking Enter button).
+    /// </summary>
+    private void OnCharListDoubleClick(long index)
+    {
+        OnEnterPressed();
+    }
+
+    /// <summary>
+    /// Called when BankPanel's "Abrir Bóveda" button is clicked.
+    /// Opens VaultPanel (the item vault).
+    /// </summary>
+    private void OnBankOpenVault()
+    {
+        _vaultPanel?.OpenVault();
+    }
+
+    private void OnClanesButtonPressed()
+    {
+        // VB6 imgClanes_Click: sends WriteRequestGuildLeaderInfo
+        _tcp?.SendPacket(ClientPackets.WriteGuildInfo());
+    }
+
+    private void OnCrearCuentaPressed()
+    {
+        _state.CurrentScreen = Screen.AccountCreate;
+        HandleScreenChange(Screen.AccountCreate);
+        _lastScreen = Screen.AccountCreate;
+    }
+
+    private void OnAccountCreateBack()
+    {
+        // Disconnect if we connected for account creation
+        _tcp?.Dispose();
+        _tcp = null;
+        _packetHandler = null;
+        _connecting = false;
+        if (_accountCreateScreen != null) _accountCreateScreen.SuccessTimer = 0;
+
+        _state.CurrentScreen = Screen.Login;
+        HandleScreenChange(Screen.Login);
+        _lastScreen = Screen.Login;
+    }
+
+    private void OnWindowModeChosen(bool windowed)
+    {
+        _state.Config.Fullscreen = !windowed;
+        if (!windowed)
+            _state.Config.AspectRatioMode = 1;
+
+        if (!windowed)
+        {
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        }
+        else
+        {
+            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+            var winSize = new Vector2I(800, 600);
+            DisplayServer.WindowSetSize(winSize);
+            var screenSize = DisplayServer.ScreenGetSize();
+            DisplayServer.WindowSetPosition(new Vector2I(
+                (screenSize.X - winSize.X) / 2,
+                (screenSize.Y - winSize.Y) / 2));
+            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+        }
+
+        _state.Config.Save(_dataPath);
+        _dialogManager?.HideWindowModeDialog();
+
+        if (_loginPanel != null)
+            _loginPanel.Visible = true;
+
+        CallDeferred(MethodName.FocusAccountInput);
+    }
+
+    private async Task ConnectAndLogin(string account, string password)
+    {
+        try
+        {
+            GD.Print($"[MAIN] Connecting to {ServerHost}:{ServerPort}...");
+            await _tcp!.ConnectAsync(ServerHost, ServerPort);
+            _connecting = false;
+            if (_loginController != null) _loginController.Connecting = false;
+            GD.Print("[MAIN] Connected! Sending login...");
+
+            if (_loginController?.StatusLabel != null) _loginController.StatusLabel.Text = "Enviando login...";
+
+            await Task.Delay(100);
+            _tcp.SendPacket(ClientPackets.WriteKerd22());
+
+            await Task.Delay(50);
+            _tcp.SendPacket(ClientPackets.WriteAlogin(account, password));
+            GD.Print("[MAIN] Sent: ALOGIN (binary)");
+
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(8000);
+                if (_state.CurrentScreen == Screen.Login && !_connecting
+                    && _loginController?.StatusLabel?.Text == "Enviando login...")
+                {
+                    CallDeferred(nameof(LoginTimeout));
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Connection failed: {ex}");
+            _connecting = false;
+            if (_loginController != null) _loginController.Connecting = false;
+            _tcp?.Dispose();
+            _tcp = null;
+            _inputHandler = null;
+
+            if (_loginController?.StatusLabel != null)
+                _loginController.StatusLabel.Text = FriendlyConnectionError(ex);
+            if (_loginController?.ConnectButton != null)
+                _loginController.ConnectButton.Disabled = false;
+        }
+    }
+
+    private void LoginTimeout()
+    {
+        GD.PrintErr("[MAIN] Login timeout — server did not respond");
+        _tcp?.Dispose();
+        _tcp = null;
+        _inputHandler = null;
+        _loginController?.LoginTimeout();
+    }
+
+    private async Task ConnectAndCreateAccount(string account, string password, string pin)
+    {
+        try
+        {
+            // Dispose any existing connection
+            _tcp?.Dispose();
+
+            _tcp = new AoTcpClient();
+            _packetHandler = new PacketHandler(_state);
+            _packetHandler.OnMapLoad = LoadCurrentMap;
+            _connecting = true;
+
+            GD.Print($"[MAIN] Connecting for account creation...");
+            await _tcp.ConnectAsync(ServerHost, ServerPort);
+            _connecting = false;
+            GD.Print("[MAIN] Connected! Sending NACCNT...");
+
+            await Task.Delay(100);
+            _tcp.SendPacket(ClientPackets.WriteKerd22());
+
+            await Task.Delay(50);
+            _tcp.SendPacket(ClientPackets.WriteNaccnt(account, password, pin));
+            GD.Print("[MAIN] Sent: NACCNT (binary)");
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[MAIN] Account creation connection failed: {ex}");
+            _connecting = false;
+            _tcp?.Dispose();
+            _tcp = null;
+            _accountCreateScreen?.ShowError(FriendlyConnectionError(ex));
+            _accountCreateScreen?.EnableCreateButton();
+        }
+    }
+
+    /// <summary>
+    /// Load patch PCK files from the exe directory.
+    /// Files named "patch.pck" or "patch_*.pck" override base resources,
+    /// allowing delta updates without replacing the full game.
+    /// Patches are loaded in alphabetical order so later patches win.
+    /// </summary>
+    private void LoadPatchPacks(string exeDir)
+    {
+        // Single patch file
+        string singlePatch = System.IO.Path.Combine(exeDir, "patch.pck");
+        if (System.IO.File.Exists(singlePatch))
+        {
+            bool ok = ProjectSettings.LoadResourcePack(singlePatch, true);
+            GD.Print($"[PATCH] patch.pck: {(ok ? "loaded" : "FAILED")}");
+        }
+
+        // Numbered patches: patch_001.pck, patch_002.pck, etc.
+        string[] patchFiles;
+        try
+        {
+            patchFiles = System.IO.Directory.GetFiles(exeDir, "patch_*.pck");
+            System.Array.Sort(patchFiles);
+        }
+        catch { return; }
+
+        foreach (string pf in patchFiles)
+        {
+            bool ok = ProjectSettings.LoadResourcePack(pf, true);
+            string name = System.IO.Path.GetFileName(pf);
+            GD.Print($"[PATCH] {name}: {(ok ? "loaded" : "FAILED")}");
+        }
+    }
+}
