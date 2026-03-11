@@ -148,6 +148,9 @@ public partial class Main : Control
     // NPC dialog panel (shows NPC speech in fixed bottom-center panel)
     private NpcDialogPanel? _npcDialogPanel;
 
+    // Change password panel
+    private ChangePasswordPanel? _changePasswordPanel;
+
     // Character info popup (shows /MIRAR results centered on screen)
     private CharInfoPopup? _charInfoPopup;
 
@@ -745,6 +748,11 @@ public partial class Main : Control
         _charInfoPopup = new CharInfoPopup();
         _charInfoPopup.Visible = false;
         _gameUI.AddChild(_charInfoPopup);
+
+        // Change password panel
+        _changePasswordPanel = new ChangePasswordPanel();
+        _changePasswordPanel.Visible = false;
+        _gameUI.AddChild(_changePasswordPanel);
 
         // Options panel (frmOpcionesNew) — centered on viewport
         _optionsPanel = new OptionsPanel();
@@ -3068,6 +3076,13 @@ public partial class Main : Control
                 _npcDialogPanel?.ShowDialog(_state.NpcDialogName, _state.NpcDialogText);
             }
 
+            // Change password panel — triggered by /PASSWD chat command
+            if (_state.ShowChangePassword)
+            {
+                _state.ShowChangePassword = false;
+                _changePasswordPanel?.Open();
+            }
+
             // Character info popup — show from FullCharInfo packet (/MIRAR)
             if (_state.ShowCharInfo)
             {
@@ -3192,6 +3207,7 @@ public partial class Main : Control
                     _statsPanel!.Init(_state, _tcp);
                     _charInfoPopup!.Init(_state);
                     _contextMenu!.Init(_state, _tcp);
+                    _changePasswordPanel!.Init(_state, _tcp);
                     _contextMenu!.OnWhisper += (name) =>
                     {
                         // Activate chat in whisper mode

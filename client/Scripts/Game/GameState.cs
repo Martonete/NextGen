@@ -342,6 +342,9 @@ public class GameState
     public string NpcDialogName = "";
     public string NpcDialogText = "";
 
+    // Change password panel (triggered by /PASSWD chat command)
+    public bool ShowChangePassword;
+
     // Character info popup (triggered by FullCharInfo packet / /MIRAR command)
     public bool ShowCharInfo;
     public CharInfoData? CharInfoCurrent;
