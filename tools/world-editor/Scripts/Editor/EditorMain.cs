@@ -45,6 +45,12 @@ public partial class EditorMain : Control
     private FileDialog? _serverPathDialog;
     private PopupMenu? _viewMenu;
 
+    // Walk mode
+    private Window? _walkWindow;
+    private WalkModePanel? _walkPanel;
+    private BodyAnimData[]? _walkBodies;
+    private HeadAnimData[]? _walkHeads;
+
     // Status bar
     private HBoxContainer? _statusBar;
     private Label? _statusLabel;
@@ -141,6 +147,8 @@ public partial class EditorMain : Control
         _viewMenu.AddCheckItem("Objetos", 8);
         _viewMenu.AddCheckItem("Particulas", 9);
         _viewMenu.AddCheckItem("Luces", 10);
+        _viewMenu.AddSeparator();
+        _viewMenu.AddItem("Modo Caminata (F5)", 11);
         for (int id = 0; id <= 10; id++)
         {
             int idx = _viewMenu.GetItemIndex(id);
@@ -762,6 +770,7 @@ public partial class EditorMain : Control
             case 8: _state.ShowObjects = !_state.ShowObjects; break;
             case 9: _state.ShowParticles = !_state.ShowParticles; break;
             case 10: _state.ShowLights = !_state.ShowLights; break;
+            case 11: OpenWalkMode(); return; // not a checkbox — early return
         }
 
         if (_viewMenu != null)
@@ -1046,6 +1055,67 @@ public partial class EditorMain : Control
                 (int)GetViewportRect().Size.X - 300, 60);
     }
 
+    private void OpenWalkMode()
+    {
+        if (_map == null)
+        {
+            SetStatus("Carga un mapa primero para usar el modo caminata.");
+            return;
+        }
+
+        // Load body/head data once
+        if (_walkBodies == null && _dataPath.Length > 0)
+        {
+            string initDir = Path.Combine(_dataPath, "INIT");
+            _walkBodies = WalkModeData.LoadBodies(Path.Combine(initDir, "Personajes.ind"));
+            _walkHeads = WalkModeData.LoadHeads(Path.Combine(initDir, "Cabezas.ind"));
+        }
+
+        // Create window if needed
+        if (_walkWindow == null)
+        {
+            _walkWindow = new Window
+            {
+                Title = "Modo Caminata",
+                Size = new Vector2I(560, 440),
+                Visible = false,
+                Exclusive = false,
+                AlwaysOnTop = true,
+                Unresizable = false,
+            };
+            _walkWindow.CloseRequested += () => _walkWindow.Visible = false;
+            AddChild(_walkWindow);
+
+            _walkPanel = new WalkModePanel();
+            _walkWindow.AddChild(_walkPanel);
+        }
+
+        // Inject dependencies
+        _walkPanel!.Map = _map;
+        _walkPanel.Grhs = _grhs;
+        _walkPanel.Textures = _textures;
+        _walkPanel.Bodies = _walkBodies;
+        _walkPanel.Heads = _walkHeads;
+
+        // Start at current editor camera center tile
+        int startX = Math.Clamp(_state.HoverX > 0 ? _state.HoverX : 50, 1, _map.Width);
+        int startY = Math.Clamp(_state.HoverY > 0 ? _state.HoverY : 50, 1, _map.Height);
+        _walkPanel.CharX = startX;
+        _walkPanel.CharY = startY;
+
+        // Default body/head (common male)
+        if (_walkPanel.BodyIndex <= 0) _walkPanel.BodyIndex = 1;
+        if (_walkPanel.HeadIndex <= 0) _walkPanel.HeadIndex = 1;
+
+        _walkWindow.Visible = true;
+        _walkWindow.Position = new Vector2I(
+            (int)(GetViewportRect().Size.X / 2 - 280),
+            (int)(GetViewportRect().Size.Y / 2 - 220));
+
+        // Give focus to walk panel
+        _walkPanel.GrabFocus();
+    }
+
     #endregion
 
     #region Clipboard
@@ -1305,6 +1375,7 @@ public partial class EditorMain : Control
                 case Key.B: newTool = EditorTool.Block; break;
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
+                case Key.F5: OpenWalkMode(); break;
                 case Key.Key1: _state.ActiveLayer = 1; break;
                 case Key.Key2: _state.ActiveLayer = 2; break;
                 case Key.Key3: _state.ActiveLayer = 3; break;
