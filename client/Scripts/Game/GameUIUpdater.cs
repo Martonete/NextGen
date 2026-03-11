@@ -93,11 +93,11 @@ public class GameUIUpdater
 
         _expLabel!.Text = $"{_state.Exp}/{_state.ExpNext}";
         _goldLabel!.Text = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
-        _levelLabel!.Text = $"{_state.Level}";
+        _levelLabel!.Text = $"Nivel: {_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"{_state.OnlineCount}";
-        // VB6: Coord.Caption = NombreMapa & " (" & Map & "," & X & "," & Y & ")"
-        _coordsLabel!.Text = $"{_state.MapName} ({_state.CurrentMap},{_state.UserPosX},{_state.UserPosY})";
+        // VB6: Coord.Caption = NombreMapa on first line, (Map, X, Y) on second
+        _coordsLabel!.Text = $"{_state.MapName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
 
         // GM button visibility
         if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;

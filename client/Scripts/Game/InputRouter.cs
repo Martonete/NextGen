@@ -319,19 +319,12 @@ public class InputRouter
             _contextMenu.CloseMenu();
         }
 
-        // Right-click PRESS: try to open context menu on character tile
+        // Right-click: send packet to server (VB6 behavior — no context menu)
         if (mb.Pressed && mb.ButtonIndex == MouseButton.Right)
         {
-            int tileX = _state.UserPosX + (int)clickX / 32 - 8;
-            int tileY = _state.UserPosY + (int)clickY / 32 - 6;
-            if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-            {
-                if (_contextMenu != null && _contextMenu.TryOpen(mb.Position, tileX, tileY))
-                {
-                    viewport.SetInputAsHandled();
-                    return;
-                }
-            }
+            InputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
+            viewport.SetInputAsHandled();
+            return;
         }
 
         // On PRESS: handle double-click, shift+click (GM teleport)

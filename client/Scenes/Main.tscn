@@ -151,17 +151,18 @@ layout_mode = 0
 offset_left = 584.0
 offset_top = 24.0
 offset_right = 759.0
-offset_bottom = 37.0
+offset_bottom = 40.0
 horizontal_alignment = 1
-theme_override_colors/font_color = Color(0.502, 1, 1, 1)
-theme_override_font_sizes/font_size = 14
+clip_text = true
+theme_override_colors/font_color = Color(1, 0, 0, 1)
+theme_override_font_sizes/font_size = 10
 
 [node name="LevelLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 655.0
-offset_top = 76.0
-offset_right = 673.0
-offset_bottom = 91.0
+offset_left = 620.0
+offset_top = 80.0
+offset_right = 740.0
+offset_bottom = 95.0
 clip_text = false
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 10
@@ -197,9 +198,9 @@ theme_override_font_sizes/font_size = 7
 [node name="CoordsLabel" type="Label" parent="GameUI"]
 layout_mode = 0
 offset_left = 580.0
-offset_top = 578.0
+offset_top = 570.0
 offset_right = 669.0
-offset_bottom = 595.0
+offset_bottom = 598.0
 horizontal_alignment = 1
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 9

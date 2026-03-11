@@ -22,7 +22,7 @@ public partial class MinimapPanel : Control
     private const float NpcMarkerRadius = 1.0f;
 
     // Marker colors
-    private static readonly Color SelfColor = new(0f, 1f, 1f);        // Cyan
+    private static readonly Color SelfColor = new(1f, 0f, 0f);        // Red
     private static readonly Color PartyColor = new(0.2f, 1f, 0.2f);   // Green
     private static readonly Color GuildColor = new(0.3f, 0.5f, 1f);   // Blue
     private static readonly Color PlayerColor = new(0.9f, 0.9f, 0.9f); // White

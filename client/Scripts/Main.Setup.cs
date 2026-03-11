@@ -33,11 +33,11 @@ public partial class Main
         // Tab buttons -- VB6 13.3: Label4 "Inventario" (592,128,93,29), Label7 "Hechizos" (688,128,75,30)
         _invTabButton = CreateInvisibleButton(592, 128, 93, 29);
         _gameUI.AddChild(_invTabButton);
-        _invTabButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); OnInventoryTabPressed(); };
+        _invTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnInventoryTabPressed(); };
 
         _spellTabButton = CreateInvisibleButton(688, 128, 75, 30);
         _gameUI.AddChild(_spellTabButton);
-        _spellTabButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); OnSpellTabPressed(); };
+        _spellTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnSpellTabPressed(); };
 
         // Inventory panel -- VB6: picInv at (600,160) 160x128 pixels
         _inventoryPanel = new InventoryPanel();
@@ -58,16 +58,16 @@ public partial class Main
         _dydToggle.StretchMode = TextureButton.StretchModeEnum.Scale;
         _dydToggle.TextureNormal = _dydOffTex;
         _dydToggle.Pressed += () => {
-            _soundManager?.PlaySound(SoundManager.SND_CLICK);
+            _soundManager?.PlayNamedSound("click.wav");
             _inventoryPanel!.DyDEnabled = !_inventoryPanel.DyDEnabled;
             _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
         };
         _gameUI.AddChild(_dydToggle);
 
-        // Spell panel -- VB6: hlst at (585,165,164,159)
+        // Spell panel -- VB6: hlst at (8880,2400,2565,2790) = (592,160,171,186)
         _spellPanel = new SpellPanel();
-        _spellPanel.Position = new Vector2(585, 165);
-        _spellPanel.Size = new Vector2(164, 159);
+        _spellPanel.Position = new Vector2(592, 160);
+        _spellPanel.Size = new Vector2(171, 186);
         _spellPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _spellPanel.FocusMode = Control.FocusModeEnum.None;
         _spellPanel.Visible = false;
@@ -97,13 +97,13 @@ public partial class Main
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
         // === Bottom bar labels -- VB6 13.3 exact positions ===
-        _armorLabel = CreateStatLabel(78, 576, 57, 17, Colors.White, 8);
+        _armorLabel = CreateStatLabel(78, 580, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_armorLabel);
-        _helmLabel = CreateStatLabel(196, 576, 57, 17, Colors.White, 8);
+        _helmLabel = CreateStatLabel(196, 580, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_helmLabel);
-        _shieldLabel = CreateStatLabel(342, 576, 57, 17, Colors.White, 8);
+        _shieldLabel = CreateStatLabel(342, 580, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_shieldLabel);
-        _weaponLabel = CreateStatLabel(464, 576, 57, 17, Colors.White, 8);
+        _weaponLabel = CreateStatLabel(464, 580, 57, 17, Colors.White, 8);
         _gameUI.AddChild(_weaponLabel);
         _fuerzaLabel = CreateStatLabel(648, 415, 14, 14, new Color(0, 1, 0), 9);
         _gameUI.AddChild(_fuerzaLabel);
@@ -111,7 +111,7 @@ public partial class Main
         _gameUI.AddChild(_agilidadLabel);
         _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 10, "Cambria", 400);
         _gameUI.AddChild(_repLabel);
-        _fpsLabel = CreateStatLabel(444, 4, 37, 12, Colors.White, 7);
+        _fpsLabel = CreateStatLabel(440, 6, 37, 12, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Macro status indicator
@@ -150,17 +150,17 @@ public partial class Main
     {
         var mapaButton = CreateInvisibleButton(682, 445, 93, 20);
         _gameUI!.AddChild(mapaButton);
-        mapaButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); _minimapPanel?.Toggle(); };
+        mapaButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); _minimapPanel?.Toggle(); };
 
         var grupoButton = CreateInvisibleButton(681, 466, 94, 21);
         _gameUI.AddChild(grupoButton);
-        grupoButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); _partyPanel?.TogglePanel(); };
+        grupoButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); _partyPanel?.TogglePanel(); };
 
         var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
         {
-            _soundManager?.PlaySound(SoundManager.SND_CLICK);
+            _soundManager?.PlayNamedSound("click.wav");
             if (_optionsPanel != null)
             {
                 if (_state.OptionsPanelOpen) _optionsPanel.Close();
@@ -172,7 +172,7 @@ public partial class Main
         _gameUI.AddChild(estadisticasButton);
         estadisticasButton.Pressed += () =>
         {
-            _soundManager?.PlaySound(SoundManager.SND_CLICK);
+            _soundManager?.PlayNamedSound("click.wav");
             if (_statsPanel != null)
             {
                 if (_state.StatsPanelOpen) _statsPanel.Close();
@@ -182,15 +182,15 @@ public partial class Main
 
         var clanesButton = CreateInvisibleButton(683, 532, 92, 26);
         _gameUI.AddChild(clanesButton);
-        clanesButton.Pressed += () => { _soundManager?.PlaySound(SoundManager.SND_CLICK); OnClanesButtonPressed(); };
+        clanesButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnClanesButtonPressed(); };
 
-        // Minimize button -- VB6: Image5 at (768, 0, 19, 17)
-        var minimizeButton = CreateInvisibleButton(768, 0, 19, 17);
+        // Minimize button -- VB6: lblMinimizar at (11280,60) = (752,4) 17x17
+        var minimizeButton = CreateInvisibleButton(752, 4, 17, 17);
         _gameUI.AddChild(minimizeButton);
         minimizeButton.Pressed += () => _dialogManager?.OnMinimizePressed();
 
-        // Close/Menu button -- VB6: Image4 at (784, 0, 18, 17)
-        var closeMenuButton = CreateInvisibleButton(784, 0, 18, 17);
+        // Close/Menu button -- VB6: lblCerrar at (11550,60) = (770,4) 17x17
+        var closeMenuButton = CreateInvisibleButton(770, 4, 17, 17);
         _gameUI.AddChild(closeMenuButton);
         closeMenuButton.Pressed += () =>
         {

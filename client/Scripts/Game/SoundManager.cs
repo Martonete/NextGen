@@ -110,6 +110,43 @@ public partial class SoundManager : Node
     }
 
     /// <summary>
+    /// Play a named sound file (e.g. "click.wav") — VB6 uses named constants for UI sounds.
+    /// </summary>
+    public void PlayNamedSound(string fileName)
+    {
+        if (!_soundEnabled || string.IsNullOrEmpty(fileName)) return;
+
+        // Use negative hash as cache key to avoid collision with numeric IDs
+        int cacheKey = -Math.Abs(fileName.GetHashCode());
+
+        if (!_sfxCache.TryGetValue(cacheKey, out var stream))
+        {
+            string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", fileName);
+            if (System.IO.File.Exists(filePath))
+            {
+                try
+                {
+                    byte[] raw = System.IO.File.ReadAllBytes(filePath);
+                    stream = ParseWav(raw);
+                }
+                catch { stream = null; }
+            }
+            _sfxCache[cacheKey] = stream;
+        }
+
+        if (stream == null) return;
+
+        AudioStreamPlayer? player = null;
+        foreach (var p in _sfxPlayers)
+            if (!p.Playing) { player = p; break; }
+        player ??= _sfxPlayers[0];
+
+        player.VolumeDb = _sfxVolumeDb;
+        player.Stream = stream;
+        player.Play();
+    }
+
+    /// <summary>
     /// Play a sound with VB6-style spatial audio (distance attenuation).
     /// VB6: clsAudio.PlayWave → Update3DSound with Euclidean distance.
     /// srcX/srcY=0 means no spatial (UI/self sounds) — plays at full volume.
