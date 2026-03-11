@@ -217,17 +217,26 @@ public partial class ContextMenu : PanelContainer
         // Flat button style with hover highlight
         var normalStyle = new StyleBoxFlat();
         normalStyle.BgColor = Colors.Transparent;
-        normalStyle.SetContentMarginIndividual(ItemPadding, 2, ItemPadding, 2);
+        normalStyle.ContentMarginLeft = ItemPadding;
+        normalStyle.ContentMarginTop = 2;
+        normalStyle.ContentMarginRight = ItemPadding;
+        normalStyle.ContentMarginBottom = 2;
         btn.AddThemeStyleboxOverride("normal", normalStyle);
 
         var hoverStyle = new StyleBoxFlat();
         hoverStyle.BgColor = new Color(0.3f, 0.3f, 0.6f, 0.5f);
-        hoverStyle.SetContentMarginIndividual(ItemPadding, 2, ItemPadding, 2);
+        hoverStyle.ContentMarginLeft = ItemPadding;
+        hoverStyle.ContentMarginTop = 2;
+        hoverStyle.ContentMarginRight = ItemPadding;
+        hoverStyle.ContentMarginBottom = 2;
         btn.AddThemeStyleboxOverride("hover", hoverStyle);
 
         var pressedStyle = new StyleBoxFlat();
         pressedStyle.BgColor = new Color(0.2f, 0.2f, 0.5f, 0.7f);
-        pressedStyle.SetContentMarginIndividual(ItemPadding, 2, ItemPadding, 2);
+        pressedStyle.ContentMarginLeft = ItemPadding;
+        pressedStyle.ContentMarginTop = 2;
+        pressedStyle.ContentMarginRight = ItemPadding;
+        pressedStyle.ContentMarginBottom = 2;
         btn.AddThemeStyleboxOverride("pressed", pressedStyle);
 
         if (color.HasValue)

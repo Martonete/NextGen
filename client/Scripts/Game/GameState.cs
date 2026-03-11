@@ -621,6 +621,7 @@ public class GuildBankSlot
     public int MaxHit;
     public int MinHit;
     public int MaxDef;
+    public int MinDef;
 }
 
 /// Pet info for display in the trainer/pet panel.

@@ -418,7 +418,7 @@ public class PanelStateSync
         _questPanel?.Hide();
         _trainerPanel?.Hide();
         _npcDialogPanel?.Hide();
-        _changePasswordPanel?.Close();
+        _changePasswordPanel?.Hide();
         _deathPanel?.Hide();
         _craftPanel?.ClosePanel();
         _gmPanel?.Close();
