@@ -122,8 +122,11 @@ public partial class WalkModePanel : Control
         CharX = nx;
         CharY = ny;
         _isMoving = true;
-        _moveOffsetX = -(dx * TileSize);
-        _moveOffsetY = -(dy * TileSize);
+        // Offset compensates the instant tile jump: CharX changed by dx,
+        // so tiles shifted by -dx*32 on screen. Start at +dx*32 to cancel,
+        // then animate toward 0 for smooth scroll.
+        _moveOffsetX = dx * TileSize;
+        _moveOffsetY = dy * TileSize;
         _walkFrame = 0;
 
         // Update roof detection
