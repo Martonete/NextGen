@@ -447,7 +447,7 @@ public partial class Main
         // Minimap — next to the console (console ends at X=447, minimap at X=450)
         _minimapPanel = new MinimapPanel();
         _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"));
-        _minimapPanel.Position = new Vector2(450, 24);
+        _minimapPanel.Position = new Vector2(456, 24);
         _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
         _gameUI.AddChild(_minimapPanel);

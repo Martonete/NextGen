@@ -109,10 +109,10 @@ mouse_filter = 2
 
 [node name="GameViewportContainer" type="SubViewportContainer" parent="GameUI"]
 layout_mode = 0
-offset_left = 8.0
-offset_top = 144.0
-offset_right = 552.0
-offset_bottom = 560.0
+offset_left = 13.0
+offset_top = 149.0
+offset_right = 557.0
+offset_bottom = 565.0
 stretch = true
 
 [node name="GameViewport" type="SubViewport" parent="GameUI/GameViewportContainer"]
@@ -126,7 +126,7 @@ render_target_update_mode = 3
 layout_mode = 0
 offset_left = 10.0
 offset_top = 24.0
-offset_right = 447.0
+offset_right = 453.0
 offset_bottom = 123.0
 theme_override_font_sizes/normal_font_size = 9
 theme_override_font_sizes/bold_font_size = 9
