@@ -240,6 +240,25 @@ public partial class TilePalette : VBoxContainer
     }
 
     /// <summary>
+    /// Pre-generate all preview textures. Call after texture preload finishes.
+    /// Returns an enumerator for time-budgeted incremental processing.
+    /// </summary>
+    public IEnumerator<int> PreloadAllPreviews()
+    {
+        if (Catalog == null || Grhs == null || Textures == null) yield break;
+
+        int done = 0;
+        foreach (var texRef in Catalog.AllRefs)
+        {
+            GetOrCreatePreview(texRef);
+            done++;
+            yield return done;
+        }
+    }
+
+    public int PreviewPreloadTotal => Catalog?.AllRefs.Count ?? 0;
+
+    /// <summary>
     /// Get a cached preview or create one. Uses AtlasTexture for single-tile
     /// (zero-copy, GPU-side) and composited+cached for multi-tile.
     /// </summary>

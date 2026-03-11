@@ -97,7 +97,9 @@ public partial class EditorMain : Control
     private Label? _preloadLabel;
     private ProgressBar? _preloadBar;
     private Panel? _preloadOverlay;
-    // Preload uses time-budgeted batching (8ms/frame) — see TickTexturePreload
+    // Preload phases: 1=textures, 2=previews. Time-budgeted (8ms/frame).
+    private IEnumerator<int>? _previewPreloadIter;
+    private int _preloadPhase; // 0=idle, 1=textures, 2=previews
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
@@ -871,11 +873,14 @@ public partial class EditorMain : Control
         if (_textures == null || _grhs == null) return;
 
         _preloadIter = _textures.PreloadAll(_grhs);
+        _preloadPhase = 1;
 
         // Create full-screen loading overlay (blocks interaction, centered content)
         _preloadOverlay = new Panel();
         _preloadOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _preloadOverlay.MouseFilter = MouseFilterEnum.Stop; // block clicks
+        _preloadOverlay.MouseFilter = MouseFilterEnum.Stop; // block all clicks
+        _preloadOverlay.ZIndex = 100; // above everything
+        _preloadOverlay.FocusMode = FocusModeEnum.All; // capture keyboard focus
         var overlayStyle = new StyleBoxFlat
         {
             BgColor = new Color(0.1f, 0.1f, 0.12f, 0.92f),
@@ -904,35 +909,85 @@ public partial class EditorMain : Control
         vbox.AddChild(_preloadBar);
 
         AddChild(_preloadOverlay);
+        _preloadOverlay.GrabFocus(); // block keyboard shortcuts during preload
     }
 
     private void TickTexturePreload()
     {
-        if (_preloadIter == null || _textures == null) return;
+        if (_preloadPhase == 0) return;
 
-        // Time-budgeted: load textures until 8ms spent (leaves ~8ms for rendering at 60fps)
-        bool done = _textures.TickPreload(_preloadIter, 8.0);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
 
-        if (done)
+        if (_preloadPhase == 1 && _preloadIter != null && _textures != null)
         {
-            _preloadIter.Dispose();
-            _preloadIter = null;
-            _preloadOverlay?.QueueFree();
-            _preloadOverlay = null;
-            _preloadLabel = null;
-            _preloadBar = null;
-            SetStatus("Texturas precargadas");
-            return;
-        }
+            // Phase 1: load texture files from disk
+            bool done = _textures.TickPreload(_preloadIter, 8.0);
 
-        // Update progress UI
-        if (_preloadBar != null && _textures.PreloadTotal > 0)
-        {
-            float pct = (float)_textures.PreloadDone / _textures.PreloadTotal * 100f;
-            _preloadBar.Value = pct;
+            if (done)
+            {
+                _preloadIter.Dispose();
+                _preloadIter = null;
+
+                // Start phase 2: preview generation
+                _previewPreloadIter = _palette?.PreloadAllPreviews();
+                if (_previewPreloadIter != null)
+                {
+                    _preloadPhase = 2;
+                }
+                else
+                {
+                    FinishPreload();
+                    return;
+                }
+            }
+
+            // Update progress UI — phase 1
+            if (_preloadBar != null && _textures.PreloadTotal > 0)
+            {
+                float pct = (float)_textures.PreloadDone / _textures.PreloadTotal * 100f;
+                _preloadBar.Value = pct;
+            }
+            if (_preloadLabel != null)
+                _preloadLabel.Text = $"Cargando texturas... {_textures.PreloadDone}/{_textures.PreloadTotal}";
         }
-        if (_preloadLabel != null)
-            _preloadLabel.Text = $"Cargando texturas... {_textures.PreloadDone}/{_textures.PreloadTotal}";
+        else if (_preloadPhase == 2 && _previewPreloadIter != null)
+        {
+            // Phase 2: generate preview thumbnails (time-budgeted)
+            double budgetMs = 8.0;
+            int total = _palette?.PreviewPreloadTotal ?? 1;
+            int count = 0;
+
+            while (sw.Elapsed.TotalMilliseconds < budgetMs)
+            {
+                if (!_previewPreloadIter.MoveNext())
+                {
+                    _previewPreloadIter.Dispose();
+                    _previewPreloadIter = null;
+                    FinishPreload();
+                    return;
+                }
+                count = _previewPreloadIter.Current;
+            }
+
+            // Update progress UI — phase 2
+            if (_preloadBar != null && total > 0)
+            {
+                float pct = (float)count / total * 100f;
+                _preloadBar.Value = pct;
+            }
+            if (_preloadLabel != null)
+                _preloadLabel.Text = $"Generando previews... {count}/{total}";
+        }
+    }
+
+    private void FinishPreload()
+    {
+        _preloadPhase = 0;
+        _preloadOverlay?.QueueFree();
+        _preloadOverlay = null;
+        _preloadLabel = null;
+        _preloadBar = null;
+        SetStatus("Texturas y previews precargados");
     }
 
     private void SyncViewportData()
@@ -1575,6 +1630,7 @@ public partial class EditorMain : Control
     public override void _UnhandledKeyInput(InputEvent @event)
     {
         if (@event is not InputEventKey key || !key.Pressed) return;
+        if (_preloadPhase > 0) return; // block keyboard during preload
 
         bool ctrl = key.CtrlPressed;
         EditorTool? newTool = null;
