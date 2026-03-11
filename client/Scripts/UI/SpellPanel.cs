@@ -15,7 +15,7 @@ public partial class SpellPanel : Control
 {
     private const int MaxSpells = 20;
     private const int LineHeight = 16;
-    private const int VisibleLines = 10;
+    private const int VisibleLines = 11;
 
     private GameState? _state;
     private GameData? _data;

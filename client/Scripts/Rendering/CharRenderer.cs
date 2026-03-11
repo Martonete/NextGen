@@ -262,8 +262,8 @@ public static partial class CharRenderer
                 var weapRes = data.ResolveGrh(weapGrh, weapFrame);
                 if (weapRes != null && weapRes.FileNum > 0)
                 {
-                    float weapDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
-                    float weapDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + 38;
+                    float weapDrawX = screenPos.X;
+                    float weapDrawY = screenPos.Y;
                     if (weapRes.TileWidth != 1f && weapRes.TileWidth > 0)
                         weapDrawX -= (int)(weapRes.TileWidth * (TileSize / 2)) - TileSize / 2;
                     if (weapRes.TileHeight != 1f && weapRes.TileHeight > 0)
@@ -285,8 +285,8 @@ public static partial class CharRenderer
                 var shieldRes = data.ResolveGrh(shieldGrh, shieldFrame);
                 if (shieldRes != null && shieldRes.FileNum > 0)
                 {
-                    float shieldDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
-                    float shieldDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + 38;
+                    float shieldDrawX = screenPos.X;
+                    float shieldDrawY = screenPos.Y;
                     if (shieldRes.TileWidth != 1f && shieldRes.TileWidth > 0)
                         shieldDrawX -= (int)(shieldRes.TileWidth * (TileSize / 2)) - TileSize / 2;
                     if (shieldRes.TileHeight != 1f && shieldRes.TileHeight > 0)
@@ -490,10 +490,9 @@ public static partial class CharRenderer
         int grhIndex = weapon.Walk[heading];
         if (grhIndex <= 0) return;
 
-        // VB6: dibArm → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
+        // VB6: Arma.WeaponWalk drawn at PixelOffsetX, PixelOffsetY (same as body), center=1
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        Vector2 weaponPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, grhIndex, frame, weaponPos, true, colorOverride);
+        DrawGrh(canvas, data, grhIndex, frame, bodyPos, true, colorOverride);
     }
 
     private static void DrawShield(
@@ -524,10 +523,9 @@ public static partial class CharRenderer
             Godot.GD.Print($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} heading={heading} grh={grhIndex} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
         }
 
-        // VB6: dibEsc → Draw_Grh at PixelOffsetX + HeadOffset.X, PixelOffsetY + HeadOffset.Y + 38, center=1
+        // VB6: Escudo.ShieldWalk drawn at PixelOffsetX, PixelOffsetY (same as body), center=1
         int frame = ch.Moving ? (int)ch.WalkFrame : 0;
-        Vector2 shieldPos = bodyPos + new Vector2(headOffset.X, headOffset.Y + 38);
-        DrawGrh(canvas, data, grhIndex, frame, shieldPos, true, colorOverride);
+        DrawGrh(canvas, data, grhIndex, frame, bodyPos, true, colorOverride);
     }
 
     /// <summary>
