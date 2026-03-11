@@ -406,7 +406,6 @@ public partial class EditorMain : Control
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area
         _headerBg = new ColorRect { Color = EditorTheme.BG_PANEL, MouseFilter = MouseFilterEnum.Ignore };
-        _headerBg.ZIndex = 4; // above viewport (0) but below navbar (5)
         AddChild(_headerBg);
 
         // Sidebar right border (1px separator between sidebar and viewport)
@@ -528,7 +527,7 @@ public partial class EditorMain : Control
         {
             _menuBar.Position = Vector2.Zero;
             _menuBar.Size = new Vector2(win.X, menuH);
-            _menuBar.ZIndex = 5;
+            _menuBar.ZIndex = 2;
         }
 
         float tbTop = menuH;
@@ -536,7 +535,7 @@ public partial class EditorMain : Control
         {
             _toolBar.Position = new Vector2(4, tbTop);
             _toolBar.Size = new Vector2(win.X - 8, ToolBarHeight);
-            _toolBar.ZIndex = 5;
+            _toolBar.ZIndex = 2;
         }
 
         float navTop = tbTop + ToolBarHeight;
@@ -544,18 +543,20 @@ public partial class EditorMain : Control
         {
             _mapNavBar.Position = new Vector2(4, navTop);
             _mapNavBar.Size = new Vector2(win.X - 8, NavBarHeight);
-            _mapNavBar.ZIndex = 5; // draw above viewport to prevent overflow bleed
+            _mapNavBar.ZIndex = 2;
         }
 
         float contentTop = navTop + NavBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
 
-        // Header background covers menu+toolbar+navbar area to prevent viewport overflow bleed
+        // Header background covers viewport overflow bleed in toolbar/navbar area
+        // ZIndex: viewport=0 < headerBg=1 < toolbar/navbar/menu=2
         if (_headerBg != null)
         {
             _headerBg.Position = Vector2.Zero;
             _headerBg.Size = new Vector2(win.X, contentTop);
+            _headerBg.ZIndex = 1;
         }
 
         // Left sidebar: palette + tile info
@@ -1517,12 +1518,14 @@ public partial class EditorMain : Control
             {
                 btn.Text = "";
                 btn.Disabled = true;
+                btn.Visible = false;
                 btn.Modulate = Colors.White;
                 continue;
             }
 
             btn.Text = mapNum.ToString();
             btn.Disabled = false;
+            btn.Visible = true;
             bool isCurrent = mapNum == _state.CurrentMapNumber;
             bool exists = _state.AvailableMaps.Contains(mapNum);
             EditorTheme.StyleNavButtonCompact(btn, isCurrent, exists);
