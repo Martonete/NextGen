@@ -67,6 +67,7 @@ public partial class WalkModePanel : Control
 
     // ── Roof detection cache (updated per tile move) ────────────────────────
     private bool _underRoof;
+    private bool _diagPrinted;
 
     public override void _Ready()
     {
@@ -194,6 +195,7 @@ public partial class WalkModePanel : Control
         _moveOffsetY = 0;
         _walkFrame = 0;
         _underRoof = IsUnderRoof(CharX, CharY);
+        _diagPrinted = false; // print diagnostics for new map
 
         // Update window title
         var parentWindow = GetParent<Window>();
@@ -262,6 +264,52 @@ public partial class WalkModePanel : Control
     public override void _Draw()
     {
         if (Map == null || Grhs == null || Textures == null) return;
+
+        if (!_diagPrinted)
+        {
+            _diagPrinted = true;
+            GD.Print($"[WalkMode] DIAG: MapDir=\"{MapDir}\" Map#={Map.MapNumber} Grhs={Grhs.Length}");
+            GD.Print($"[WalkMode] DIAG: ObjGrhs={(ObjGrhs != null ? ObjGrhs.Length.ToString() : "NULL")} NpcBodies={(NpcBodies != null ? NpcBodies.Length.ToString() : "NULL")} NpcBodyGrhs={(NpcBodyGrhs != null ? NpcBodyGrhs.Length.ToString() : "NULL")} HeadGrhs={(HeadGrhs != null ? HeadGrhs.Length.ToString() : "NULL")}");
+            // Count tiles with NPCs, objects, exits
+            int npcCount = 0, objCount = 0, exitCount = 0;
+            for (int y = 1; y <= 100; y++)
+                for (int x = 1; x <= 100; x++)
+                {
+                    if (Map.InBounds(x, y))
+                    {
+                        if (Map.Tiles[x, y].NpcIndex > 0) npcCount++;
+                        if (Map.Tiles[x, y].ObjIndex > 0) objCount++;
+                        if (Map.Tiles[x, y].ExitMap > 0) exitCount++;
+                    }
+                }
+            GD.Print($"[WalkMode] DIAG: Map has {npcCount} NPC tiles, {objCount} Object tiles, {exitCount} Exit tiles");
+            if (npcCount > 0 && NpcBodies != null)
+            {
+                // Print first NPC for debugging
+                for (int y = 1; y <= 100; y++)
+                    for (int x = 1; x <= 100; x++)
+                        if (Map.InBounds(x, y) && Map.Tiles[x, y].NpcIndex > 0)
+                        {
+                            int ni = Map.Tiles[x, y].NpcIndex;
+                            int bi = ni < NpcBodies.Length ? NpcBodies[ni] : -1;
+                            int bg = (bi > 0 && NpcBodyGrhs != null && bi < NpcBodyGrhs.Length) ? NpcBodyGrhs[bi] : -1;
+                            GD.Print($"[WalkMode] DIAG: First NPC at ({x},{y}) npcIdx={ni} bodyIdx={bi} bodyGrh={bg}");
+                            goto doneDiag;
+                        }
+                doneDiag:;
+            }
+            if (exitCount > 0)
+            {
+                for (int y = 1; y <= 100; y++)
+                    for (int x = 1; x <= 100; x++)
+                        if (Map.InBounds(x, y) && Map.Tiles[x, y].ExitMap > 0)
+                        {
+                            GD.Print($"[WalkMode] DIAG: First exit at ({x},{y}) → Map{Map.Tiles[x,y].ExitMap} ({Map.Tiles[x,y].ExitX},{Map.Tiles[x,y].ExitY})");
+                            goto doneExitDiag;
+                        }
+                doneExitDiag:;
+            }
+        }
 
         DrawRect(new Rect2(Vector2.Zero, Size), Colors.Black);
 
