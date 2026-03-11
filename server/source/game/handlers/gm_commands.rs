@@ -1270,6 +1270,7 @@ pub(super) async fn handle_slash_mata(state: &mut GameState, conn_id: Connection
                 let bp = binary_packets::write_character_remove(ci.0 as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp).await;
                 state.npcs[npc_idx] = None;
+                state.active_npc_indices.remove(&npc_idx);
                 state.send_console(conn_id, &format!("NPC #{} eliminado.", npc_idx), font_index::INFO).await;
                 return;
             }
@@ -1287,8 +1288,9 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
     };
 
     let mut killed = 0;
-    let npc_indices: Vec<usize> = state.npcs.iter().enumerate()
-        .filter_map(|(i, n)| n.as_ref().filter(|n| n.map == map).map(|_| i))
+    let npc_indices: Vec<usize> = state.active_npc_indices.iter()
+        .copied()
+        .filter(|&i| state.npcs.get(i).and_then(|s| s.as_ref()).map(|n| n.map == map).unwrap_or(false))
         .collect();
 
     for idx in npc_indices {
@@ -1305,6 +1307,7 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
             killed += 1;
         }
         state.npcs[idx] = None;
+        state.active_npc_indices.remove(&idx);
     }
 
     state.send_console(conn_id, &format!("{} NPCs eliminados en mapa {}.", killed, map), font_index::INFO).await;
@@ -1436,7 +1439,7 @@ pub(super) async fn handle_slash_fps(state: &mut GameState, conn_id: ConnectionI
     }
 
     let online = state.users.values().filter(|u| u.logged).count();
-    let npc_count = state.npcs.iter().filter(|n| n.is_some()).count();
+    let npc_count = state.active_npc_indices.len();
     state.send_console(conn_id, &format!("Online: {} | NPCs: {} | Record: {}", online, npc_count, state.record_users), font_index::INFO).await;
 }
 
@@ -3100,11 +3103,13 @@ pub(super) async fn handle_slash_nene(state: &mut GameState, conn_id: Connection
     }
 
     let mut names: Vec<String> = Vec::new();
-    for npc_opt in state.npcs.iter().flatten() {
-        if npc_opt.active && npc_opt.is_alive() && npc_opt.map == target_map
-            && npc_opt.hostile && npc_opt.alineacion == 2
-        {
-            names.push(npc_opt.name.clone());
+    for &idx in &state.active_npc_indices {
+        if let Some(npc_opt) = state.npcs.get(idx).and_then(|s| s.as_ref()) {
+            if npc_opt.is_alive() && npc_opt.map == target_map
+                && npc_opt.hostile && npc_opt.alineacion == 2
+            {
+                names.push(npc_opt.name.clone());
+            }
         }
     }
 

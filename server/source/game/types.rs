@@ -1,6 +1,6 @@
 // Core game types — per-connection state and global server state.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use crate::config::ServerConfig;
@@ -613,6 +613,8 @@ pub struct GameState {
     // NPC runtime instances (index 0 is unused — NPC indices start at 1)
     pub npcs: Vec<Option<NpcState>>,
     pub next_npc_index: NpcIndex,
+    /// Indices of active (alive) NPCs — avoids scanning all 10,000 slots every tick.
+    pub active_npc_indices: HashSet<usize>,
 
     // Party system (runtime only, not persisted)
     pub parties: Vec<Option<PartyState>>,
@@ -799,6 +801,7 @@ impl GameState {
             online_names: HashMap::new(),
             npcs: vec![None; 10000], // Pre-allocate (VB6: MAXNPCS)
             next_npc_index: 1,
+            active_npc_indices: HashSet::new(),
             parties: vec![None; MAX_PARTIES + 1], // 1-indexed
             next_party_index: 1,
             num_users: 0,
@@ -1215,6 +1218,7 @@ impl GameState {
         }
 
         self.npcs[npc_idx] = Some(npc);
+        self.active_npc_indices.insert(npc_idx);
         self.next_npc_index += 1;
 
         Some(npc_idx)
@@ -1303,6 +1307,7 @@ impl GameState {
                 }
             }
         }
+        self.active_npc_indices.remove(&npc_idx);
     }
 
     /// Respawn an NPC at its original position.
@@ -1347,6 +1352,7 @@ impl GameState {
             tile.npc_index = npc_idx as i32;
         }
 
+        self.active_npc_indices.insert(npc_idx);
         true
     }
 

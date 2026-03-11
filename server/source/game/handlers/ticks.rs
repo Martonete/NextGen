@@ -29,12 +29,11 @@ pub async fn tick_npc_ai(state: &mut GameState) {
     state.npc_can_attack_counter += 1;
     if state.npc_can_attack_counter >= 3 {
         state.npc_can_attack_counter = 0;
-        // Reset all NPCs' can_attack flag
-        for slot in state.npcs.iter_mut() {
-            if let Some(npc) = slot.as_mut() {
-                if npc.active {
-                    npc.can_attack = true;
-                }
+        // Reset active NPCs' can_attack flag (uses index set instead of scanning all 10k)
+        let indices: Vec<usize> = state.active_npc_indices.iter().copied().collect();
+        for idx in &indices {
+            if let Some(npc) = state.npcs.get_mut(*idx).and_then(|n| n.as_mut()) {
+                npc.can_attack = true;
             }
         }
     }
@@ -42,11 +41,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
     // Update map user counts for skipping empty maps
     update_map_user_counts(state);
 
-    // Collect active NPC indices to process
-    let active_npcs: Vec<usize> = state.npcs.iter().enumerate()
-        .filter_map(|(i, slot)| {
-            slot.as_ref().filter(|n| n.is_alive()).map(|_| i)
-        })
+    // Use active NPC index set instead of scanning all 10,000 slots
+    let active_npcs: Vec<usize> = state.active_npc_indices.iter()
+        .copied()
+        .filter(|&i| state.npcs.get(i).and_then(|s| s.as_ref()).map(|n| n.is_alive()).unwrap_or(false))
         .collect();
 
     for npc_idx in active_npcs {
@@ -1703,8 +1701,10 @@ pub async fn tick_intervals(state: &mut GameState) {
     }
 
     // NPC paralysis countdown (same 40ms tick as user paralysis)
-    for slot in state.npcs.iter_mut() {
-        if let Some(npc) = slot.as_mut() {
+    // Only iterate active NPCs via index set
+    let npc_para_indices: Vec<usize> = state.active_npc_indices.iter().copied().collect();
+    for idx in npc_para_indices {
+        if let Some(npc) = state.npcs.get_mut(idx).and_then(|n| n.as_mut()) {
             if npc.paralyzed {
                 if npc.counter_paralisis > 0 {
                     npc.counter_paralisis -= 1;
@@ -1760,9 +1760,13 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // --- NPC pet ownership expiry (VB6: TiemPerdique — 18s inactivity timer) ---
     // Pets with an owner: if owner is too far or offline, increment counter. At 450 ticks (18s), despawn.
-    let pet_indices: Vec<usize> = state.npcs.iter().enumerate()
-        .filter_map(|(i, slot)| {
-            slot.as_ref().filter(|n| n.active && n.maestro_user.is_some()).map(|_| i)
+    let pet_indices: Vec<usize> = state.active_npc_indices.iter()
+        .copied()
+        .filter(|&i| {
+            state.npcs.get(i)
+                .and_then(|slot| slot.as_ref())
+                .map(|n| n.maestro_user.is_some())
+                .unwrap_or(false)
         })
         .collect();
     for npc_idx in pet_indices {
