@@ -305,6 +305,21 @@ pub struct UserState {
 
     // Timbero (gambling) stats
     pub timbero_target_npc: usize,   // Currently interacting with gambler NPC
+
+    // Council membership (VB6: PlayerType.RoyalCouncil / ChaosCouncil)
+    pub royal_council: bool,         // Member of Royal Army council
+    pub chaos_council: bool,         // Member of Chaos Legion council
+
+    // ShareNpc (VB6: flags.ShareNpcWith)
+    pub share_npc_with: ConnectionId, // 0 = not sharing, >0 = sharing pets with this user
+
+    // Centinela anti-bot system
+    pub centinela_number: i32,       // Number the player must type (0 = no active check)
+    pub centinela_timer: i32,        // Ticks remaining to answer (0 = inactive)
+    pub centinela_fails: i32,        // Number of failed attempts
+
+    // SOS help request (/GM)
+    pub gm_request_pending: bool,    // Has pending /GM request
 }
 
 impl UserState {
@@ -493,6 +508,13 @@ impl UserState {
             counter_atacable: 0,
             warp_immunity_ticks: 0,
             timbero_target_npc: 0,
+            royal_council: false,
+            chaos_council: false,
+            share_npc_with: 0,
+            centinela_number: 0,
+            centinela_timer: 0,
+            centinela_fails: 0,
+            gm_request_pending: false,
         }
     }
 
@@ -727,6 +749,10 @@ pub struct GameState {
 
     // GM forced night mode (VB6: /NOCHE toggle)
     pub forced_night: bool,
+
+    // Server shutdown/restart countdown (VB6: /APAGAR, /REINICIAR)
+    pub shutdown_countdown: i32,     // Seconds remaining until shutdown (0 = inactive)
+    pub shutdown_restart: bool,      // true = restart, false = shutdown
 }
 
 /// SOS message (help request from player)
@@ -850,6 +876,8 @@ impl GameState {
             raining: false,
             rain_counter: 0,
             forced_night: false,
+            shutdown_countdown: 0,
+            shutdown_restart: false,
         }
     }
 
