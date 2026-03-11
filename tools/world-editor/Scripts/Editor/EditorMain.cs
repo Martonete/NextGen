@@ -97,7 +97,7 @@ public partial class EditorMain : Control
     private Label? _preloadLabel;
     private ProgressBar? _preloadBar;
     private Panel? _preloadOverlay;
-    private const int PreloadBatchSize = 3; // textures per frame (low to avoid freezing on 2048x2048 images)
+    // Preload uses time-budgeted batching (8ms/frame) — see TickTexturePreload
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
@@ -906,20 +906,19 @@ public partial class EditorMain : Control
     {
         if (_preloadIter == null || _textures == null) return;
 
-        for (int i = 0; i < PreloadBatchSize; i++)
+        // Time-budgeted: load textures until 8ms spent (leaves ~8ms for rendering at 60fps)
+        bool done = _textures.TickPreload(_preloadIter, 8.0);
+
+        if (done)
         {
-            if (!_preloadIter.MoveNext())
-            {
-                // Done
-                _preloadIter.Dispose();
-                _preloadIter = null;
-                _preloadOverlay?.QueueFree();
-                _preloadOverlay = null;
-                _preloadLabel = null;
-                _preloadBar = null;
-                SetStatus("Texturas precargadas");
-                return;
-            }
+            _preloadIter.Dispose();
+            _preloadIter = null;
+            _preloadOverlay?.QueueFree();
+            _preloadOverlay = null;
+            _preloadLabel = null;
+            _preloadBar = null;
+            SetStatus("Texturas precargadas");
+            return;
         }
 
         // Update progress UI

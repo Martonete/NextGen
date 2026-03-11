@@ -284,6 +284,7 @@ public partial class WalkModePanel : Control
             _diagPrinted = true;
             GD.Print($"[WalkMode] DIAG: MapDir=\"{MapDir}\" Map#={Map.MapNumber} Grhs={Grhs.Length}");
             GD.Print($"[WalkMode] DIAG: ObjGrhs={(ObjGrhs != null ? ObjGrhs.Length.ToString() : "NULL")} NpcBodies={(NpcBodies != null ? NpcBodies.Length.ToString() : "NULL")} NpcBodyGrhs={(NpcBodyGrhs != null ? NpcBodyGrhs.Length.ToString() : "NULL")} HeadGrhs={(HeadGrhs != null ? HeadGrhs.Length.ToString() : "NULL")}");
+            GD.Print($"[WalkMode] DIAG: DoorData={(DoorData != null ? DoorData.Count + " doors" : "NULL")}");
             // Count tiles with NPCs, objects, exits
             int npcCount = 0, objCount = 0, exitCount = 0;
             for (int y = 1; y <= 100; y++)
@@ -531,11 +532,20 @@ public partial class WalkModePanel : Control
 
     private void TryToggleDoor(int tx, int ty)
     {
-        if (Map == null || DoorData == null || ObjGrhs == null) return;
-        if (!Map.InBounds(tx, ty)) return;
+        if (Map == null) { GD.Print("[WalkMode] TryToggleDoor: Map is null"); return; }
+        if (DoorData == null) { GD.Print("[WalkMode] TryToggleDoor: DoorData is null"); return; }
+        if (ObjGrhs == null) { GD.Print("[WalkMode] TryToggleDoor: ObjGrhs is null"); return; }
+        if (!Map.InBounds(tx, ty)) { GD.Print($"[WalkMode] TryToggleDoor: ({tx},{ty}) out of bounds"); return; }
 
         // VB6: distance check ≤ 2 tiles
-        if (Math.Abs(tx - CharX) > 2 || Math.Abs(ty - CharY) > 2) return;
+        if (Math.Abs(tx - CharX) > 2 || Math.Abs(ty - CharY) > 2)
+        {
+            GD.Print($"[WalkMode] TryToggleDoor: ({tx},{ty}) too far from char ({CharX},{CharY})");
+            return;
+        }
+
+        int tileObj = Map.Tiles[tx, ty].ObjIndex;
+        GD.Print($"[WalkMode] TryToggleDoor at ({tx},{ty}): tileObjIdx={tileObj}, DoorData has {DoorData.Count} entries");
 
         // Find door object on this tile or adjacent tiles (VB6 checks X, X+1, X+1/Y+1, X/Y+1)
         int doorX = tx, doorY = ty;
@@ -552,7 +562,12 @@ public partial class WalkModePanel : Control
                 if (adjDoor != null) { door = adjDoor; doorX = ax; doorY = ay; break; }
             }
         }
-        if (door == null) return;
+        if (door == null)
+        {
+            GD.Print($"[WalkMode] No door found at ({tx},{ty}) or adjacent tiles");
+            return;
+        }
+        GD.Print($"[WalkMode] Found door: IndexAbierta={door.IndexAbierta} IndexCerrada={door.IndexCerrada} Abierta={door.Abierta} Llave={door.Llave}");
 
         // VB6: Llave=1 means locked — can't toggle
         if (door.Llave == 1)

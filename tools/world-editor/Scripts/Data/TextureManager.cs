@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -8,7 +9,8 @@ namespace AOWorldEditor.Data;
 /// <summary>
 /// LRU cache of textures from Graficos/ folder.
 /// Black (0,0,0) color key → transparent.
-/// Supports bulk preload at startup to avoid runtime freezes.
+/// Supports bulk preload at startup with time-budgeted batching
+/// to avoid frame drops on large textures (2048x2048).
 /// </summary>
 public class TextureManager
 {
@@ -56,6 +58,27 @@ public class TextureManager
 
         PreloadFinished = true;
         GD.Print($"[TextureManager] Preloaded {PreloadDone} textures ({_cache.Count} cached)");
+    }
+
+    /// <summary>
+    /// Time-budgeted preload tick. Loads textures until the frame budget is exhausted.
+    /// Returns true when preload is complete.
+    /// </summary>
+    public bool TickPreload(IEnumerator<int> iter, double budgetMs = 8.0)
+    {
+        var sw = Stopwatch.StartNew();
+
+        while (sw.Elapsed.TotalMilliseconds < budgetMs)
+        {
+            if (!iter.MoveNext())
+            {
+                PreloadFinished = true;
+                GD.Print($"[TextureManager] Preloaded {PreloadDone} textures ({_cache.Count} cached)");
+                return true; // done
+            }
+        }
+
+        return false; // more to load
     }
 
     public Texture2D? GetTexture(int fileNum)
@@ -114,17 +137,39 @@ public class TextureManager
     }
 
     /// <summary>
-    /// Fast black color key using raw byte buffer instead of per-pixel Get/SetPixel.
-    /// ~20-50x faster on large images (2048x2048 = 4M pixels → 16MB buffer).
+    /// Fast black color key using raw byte buffer.
+    /// Skips images that already have meaningful alpha (PNG with transparency).
+    /// Uses SetData to avoid double allocation.
     /// </summary>
     private static void ApplyBlackColorKeyFast(Image image)
     {
-        if (image.GetFormat() != Image.Format.Rgba8)
+        // If the image loaded as RGB8 (no alpha), it definitely needs color key
+        bool needsConvert = image.GetFormat() != Image.Format.Rgba8;
+        if (needsConvert)
             image.Convert(Image.Format.Rgba8);
 
         byte[] data = image.GetData();
         int len = data.Length;
 
+        // If the image already had alpha, check if it has any non-opaque pixels.
+        // If yes, the PNG has proper transparency — skip color key to preserve black pixels.
+        if (!needsConvert)
+        {
+            bool hasAlpha = false;
+            for (int i = 3; i < len; i += 4)
+            {
+                if (data[i] < 250) // some pixel is not fully opaque
+                {
+                    hasAlpha = true;
+                    break;
+                }
+            }
+            if (hasAlpha)
+                return; // image already has real transparency, don't touch it
+        }
+
+        // Apply black color key: (R,G,B) near (0,0,0) → alpha=0
+        bool modified = false;
         for (int i = 0; i < len; i += 4)
         {
             if (data[i] <= BlackThreshold &&     // R
@@ -132,12 +177,15 @@ public class TextureManager
                 data[i + 2] <= BlackThreshold)    // B
             {
                 data[i + 3] = 0; // A = transparent
+                modified = true;
             }
         }
 
-        var result = Image.CreateFromData(
-            image.GetWidth(), image.GetHeight(),
-            false, Image.Format.Rgba8, data);
-        image.CopyFrom(result);
+        if (modified)
+        {
+            // SetData replaces image data in-place — no extra Image allocation
+            image.SetData(image.GetWidth(), image.GetHeight(),
+                false, Image.Format.Rgba8, data);
+        }
     }
 }
