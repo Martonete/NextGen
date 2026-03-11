@@ -3,6 +3,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
+use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field};
@@ -121,7 +122,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         // Item restriction checks (VB6: InvUsuario.bas)
         let (user_level, user_class, user_privileges, user_criminal,
              user_armada, user_caos) = match state.users.get(&conn_id) {
-            Some(u) => (u.level, u.class.clone(), u.privileges, u.criminal,
+            Some(u) => (u.level, u.class, u.privileges, u.criminal,
                        u.armada_real, u.fuerzas_caos),
             None => return,
         };
@@ -137,7 +138,7 @@ pub(super) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
 
         // Class restriction (VB6: ClasePuedeUsarItem Or Privilegios >= Semidios)
         if !is_gm && !obj_data.class_prohibida.is_empty() {
-            let uc = user_class.to_uppercase();
+            let uc = user_class.to_string().to_uppercase();
             if obj_data.class_prohibida.iter().any(|c| c.to_uppercase() == uc) {
                 state.send_msg_id(conn_id, 113, "").await; // TEXTO113: Tu clase, genero o raza no puede usar este objeto
                 return;
@@ -431,9 +432,7 @@ pub(super) fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: us
             }
             ObjType::Armor => {
                 user.equip.armor = 0;
-                let race = user.race.clone();
-                let gender = user.gender.to_string();
-                user.body = naked_body(&race, &gender);
+                user.body = naked_body(user.race, user.gender);
                 if item_aura > 0 && user.aura_a == item_aura {
                     user.aura_a = 0;
                 }
@@ -748,7 +747,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                         get_inv_obj(u.equip.weapon),
                         get_inv_obj(u.equip.shield),
                         get_inv_obj(u.equip.helmet),
-                        u.old_head, u.dead, u.race.clone(), u.gender,
+                        u.old_head, u.dead, u.race, u.gender,
                     )
                 });
                 if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, dead, race, gender)) = equip_info {
@@ -761,7 +760,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                         u.barco_slot = 0;
                         if !dead {
                             u.head = saved_head;
-                            u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
+                            u.body = if armor_body > 0 { armor_body } else { naked_body(race, gender) };
                             u.weapon_anim = weapon_anim;
                             u.shield_anim = shield_anim;
                             u.casco_anim = casco_anim;
@@ -949,7 +948,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                         get_inv_obj(u.equip.weapon),
                         get_inv_obj(u.equip.shield),
                         get_inv_obj(u.equip.helmet),
-                        u.old_head, u.race.clone(), u.gender,
+                        u.old_head, u.race, u.gender,
                     )
                 });
                 if let Some((armor_obj, weapon_obj, shield_obj, helmet_obj, saved_head, race, gender)) = equip_info {
@@ -961,7 +960,7 @@ pub(super) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                         u.navigating = false;
                         u.barco_slot = 0;
                         u.head = saved_head;
-                        u.body = if armor_body > 0 { armor_body } else { naked_body(&race, &gender.to_string()) };
+                        u.body = if armor_body > 0 { armor_body } else { naked_body(race, gender) };
                         u.weapon_anim = weapon_anim;
                         u.shield_anim = shield_anim;
                         u.casco_anim = casco_anim;

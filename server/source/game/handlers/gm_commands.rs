@@ -5,6 +5,7 @@
 
 use tracing::{info, error};
 use crate::net::ConnectionId;
+use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget, InventorySlot, EquipSlots, privilege_level};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
 use super::common::*;
@@ -884,12 +885,11 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
             // Revive: restore HP, clear dead flag, restore body
             // VB6: uses in-memory OrigChar.Head (not DB), DarCuerpoDesnudo for body
             let (map, x, y, race, max_hp, orig_head, gender) = match state.users.get(&tc) {
-                Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.race.clone(), u.max_hp, u.orig_head, u.gender),
+                Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.race, u.max_hp, u.orig_head, u.gender),
                 None => return,
             };
 
-            let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
-            let new_body = naked_body(&race, gender_str);
+            let new_body = naked_body(race, gender);
 
             if let Some(user) = state.users.get_mut(&tc) {
                 user.dead = false;
@@ -1909,7 +1909,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
         }
         "CLASE" => {
             if let Some(user) = state.users.get_mut(&target) {
-                user.class = value_str.to_string();
+                user.class = PlayerClass::from_str_or_default(value_str);
             }
             state.send_msg_id(conn_id, 578, &value_str.to_string()).await;
         }

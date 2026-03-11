@@ -5,6 +5,7 @@
 // - world: map grids, area visibility, character index management
 // - handlers: packet routing and login flow implementation
 
+pub mod class_race;
 pub mod types;
 pub mod world;
 pub mod npc;

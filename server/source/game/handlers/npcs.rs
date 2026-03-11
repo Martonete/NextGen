@@ -3,6 +3,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
+use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::game::world;
 use crate::game::npc;
@@ -202,7 +203,7 @@ pub(super) async fn user_attack_npc(
     max_hit: i32,
     skill_armas: i32,
     attacker_name: &str,
-    class: &str,
+    class: PlayerClass,
 ) {
     // VB6 PuedeAtacarNPC — full validation
     if !puede_atacar_npc(state, conn_id, npc_idx).await {
@@ -220,17 +221,17 @@ pub(super) async fn user_attack_npc(
     let weapon_info = get_weapon_info(state, conn_id);
     let (attack_power, attack_skill_idx) = if weapon_info.obj_index > 0 {
         if weapon_info.is_proyectil {
-            let mod_atk = state.game_data.balance.class_mod_ataque_proyectiles(class);
+            let mod_atk = state.game_data.balance.class_mod_ataque_proyectiles_e(class);
             (poder_ataque_proyectil(
                 state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0),
                 agility, level, mod_atk,
             ), 5usize)
         } else {
-            let mod_atk = state.game_data.balance.class_mod_ataque_armas(class);
+            let mod_atk = state.game_data.balance.class_mod_ataque_armas_e(class);
             (poder_ataque_arma(skill_armas, agility, level, mod_atk), 1usize)
         }
     } else {
-        let mod_atk = state.game_data.balance.class_mod_ataque_wrestling(class);
+        let mod_atk = state.game_data.balance.class_mod_ataque_wrestling_e(class);
         let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
         (poder_ataque_wrestling(wrestling_sk, agility, level, mod_atk), 20usize)
     };
@@ -256,12 +257,12 @@ pub(super) async fn user_attack_npc(
     // VB6: CalcularDaño(UserIndex, NpcIndex) — with proper weapon type class modifier
     let class_mod_damage = if weapon_info.obj_index > 0 {
         if weapon_info.is_proyectil {
-            state.game_data.balance.class_mod_dano_proyectiles(class) as f64
+            state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64
         } else {
-            state.game_data.balance.class_mod_dano_armas(class) as f64
+            state.game_data.balance.class_mod_dano_armas_e(class) as f64
         }
     } else {
-        state.game_data.balance.class_mod_dano_wrestling(class) as f64
+        state.game_data.balance.class_mod_dano_wrestling_e(class) as f64
     };
 
     let (ring_idx, ring_guante, ring_min, ring_max) = get_ring_info(state, conn_id);
@@ -385,7 +386,7 @@ pub(super) async fn user_attack_npc(
         // VB6: DoApuñalar — backstab (NPC target gets 2x damage)
         if puede_apunalar(class, user_heading, npc_heading) && apunalar_sk > 0 {
             // VB6: Assassin ignores NPC defense for backstab base damage
-            let stab_base = if class.eq_ignore_ascii_case("Asesino") {
+            let stab_base = if class == PlayerClass::Asesino {
                 damage_before_def as i64 // Ignore defense for Assassin
             } else {
                 damage as i64

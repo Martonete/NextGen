@@ -4,6 +4,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
+use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field, binary_packets};
@@ -231,8 +232,8 @@ pub(super) fn equipped_weapon_obj(user: &UserState) -> i32 {
 }
 
 /// Check if class is Worker/Trabajador (VB6: eClass.Worker = 11).
-pub(super) fn is_recolector(class: &str) -> bool {
-    class.eq_ignore_ascii_case("Trabajador")
+pub(super) fn is_recolector(class: PlayerClass) -> bool {
+    class.is_recolector()
 }
 
 /// WLC — Work Left Click (main skill dispatch).
@@ -339,7 +340,7 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
 /// Fishing (DoPescar).
 pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, class, skill) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class.clone(), u.skills[12]), // Pesca = index 12 (1-based 13)
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class, u.skills[12]), // Pesca = index 12 (1-based 13)
         None => return,
     };
 
@@ -359,7 +360,7 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     }
 
     // Stamina cost
-    let sta_cost = if is_recolector(&class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
+    let sta_cost = if is_recolector(class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "").await;
@@ -383,7 +384,7 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     if roll <= 6 {
         // VB6: Worker class gets MaxItemsExtraibles, others get 1
         let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
-        let amount = if is_recolector(&class) {
+        let amount = if is_recolector(class) {
             random_number(1, max_items_extraibles(level))
         } else {
             1
@@ -413,7 +414,7 @@ pub(super) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
 /// Woodcutting (DoTalar).
 pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, class, skill) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class.clone(), u.skills[9]), // Talar = index 9 (1-based 10)
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class, u.skills[9]), // Talar = index 9 (1-based 10)
         None => return,
     };
 
@@ -464,7 +465,7 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     }
 
     // Stamina cost
-    let sta_cost = if is_recolector(&class) { ESFUERZO_TALAR_RECOLECTOR } else { ESFUERZO_TALAR_GENERAL };
+    let sta_cost = if is_recolector(class) { ESFUERZO_TALAR_RECOLECTOR } else { ESFUERZO_TALAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "").await;
@@ -486,7 +487,7 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     if roll <= 6 {
         // VB6: Worker class gets MaxItemsExtraibles, others get 1
         let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
-        let amount = if is_recolector(&class) {
+        let amount = if is_recolector(class) {
             random_number(1, max_items_extraibles(level))
         } else {
             1
@@ -513,7 +514,7 @@ pub(super) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
 /// Mining (DoMineria).
 pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, class, skill) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class.clone(), u.skills[13]), // Mineria = index 13 (1-based 14)
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class, u.skills[13]), // Mineria = index 13 (1-based 14)
         None => return,
     };
 
@@ -566,7 +567,7 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     };
 
     // Stamina cost
-    let sta_cost = if is_recolector(&class) { ESFUERZO_EXCAVAR_RECOLECTOR } else { ESFUERZO_EXCAVAR_GENERAL };
+    let sta_cost = if is_recolector(class) { ESFUERZO_EXCAVAR_RECOLECTOR } else { ESFUERZO_EXCAVAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
             state.send_msg_id(conn_id, 17, "").await;
@@ -595,7 +596,7 @@ pub(super) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
 
         // VB6: Worker class gets MaxItemsExtraibles, others get 1
         let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
-        let amount = if is_recolector(&class) {
+        let amount = if is_recolector(class) {
             random_number(1, max_items_extraibles(level))
         } else {
             1
@@ -1206,7 +1207,7 @@ pub(super) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
 
     // Stamina cost
     let is_worker = state.users.get(&conn_id)
-        .map(|u| u.class.eq_ignore_ascii_case("Trabajador"))
+        .map(|u| u.class.is_recolector())
         .unwrap_or(false);
     let sta_cost = if is_worker { 2 } else { 6 };
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -1265,7 +1266,7 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
 /// 50% chance item theft (Thief only), 50% gold theft.
 pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, skill, class, level) = match state.users.get(&conn_id) {
-        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.skills[2], u.class.clone(), u.level),
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.skills[2], u.class, u.level),
         None => return,
     };
 
@@ -1305,7 +1306,7 @@ pub(super) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
     if roll < 3 {
         // VB6: 50% chance item theft (Thief class only), 50% gold theft
-        let is_ladron = class.eq_ignore_ascii_case("Ladron");
+        let is_ladron = class == PlayerClass::Ladron;
         let steal_item = is_ladron && random_number(1, 2) == 1;
 
         if steal_item {
@@ -1604,7 +1605,7 @@ async fn resolve_ranged_attack_npc(
         Some(u) if u.logged && !u.dead => {
             (u.pos_map, u.pos_x, u.pos_y, u.char_index,
              u.level, u.attributes[0], u.attributes[1],
-             u.min_hit, u.max_hit, u.skills[19], u.char_name.clone(), u.class.clone())
+             u.min_hit, u.max_hit, u.skills[19], u.char_name.clone(), u.class)
         }
         _ => return,
     };
@@ -1622,7 +1623,7 @@ async fn resolve_ranged_attack_npc(
          npc_exp, npc_number, _npc_name) = npc_data;
 
     // Hit check — VB6: PoderAtaqueProyectil uses Proyectiles skill + ModClase.AtaqueProyectiles
-    let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles(&class);
+    let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles_e(class);
     let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
     let hit_prob = ((50.0 + (attack_power - npc_evasion as f64) * 0.4) as i32).clamp(10, 90);
 
@@ -1649,7 +1650,7 @@ async fn resolve_ranged_attack_npc(
     let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
 
     // VB6: ModClase.DañoProyectiles (not DañoArmas)
-    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles(&class) as f64;
+    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64;
     let mut damage = (base_dmg as f64 * dmg_mod) as i32;
     damage = (damage - npc_def).max(1);
 
@@ -1695,7 +1696,7 @@ async fn resolve_ranged_attack_user(
         Some(u) if u.logged && !u.dead => {
             (u.pos_map, u.pos_x, u.pos_y, u.char_index,
              u.level, u.attributes[0], u.attributes[1],
-             u.min_hit, u.max_hit, u.skills[19], u.char_name.clone(), u.class.clone(),
+             u.min_hit, u.max_hit, u.skills[19], u.char_name.clone(), u.class,
              u.safe_toggle)
         }
         _ => return,
@@ -1719,7 +1720,7 @@ async fn resolve_ranged_attack_user(
     if v_privs > 0 { return; }
 
     // Hit check — VB6: PoderAtaqueProyectil + ModClase.AtaqueProyectiles
-    let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles(&class);
+    let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles_e(class);
     let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
     let defense_power = calc_defense_power(v_tacticas, v_agility, v_level);
     let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
@@ -1749,7 +1750,7 @@ async fn resolve_ranged_attack_user(
     let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
 
     // VB6: ModClase.DañoProyectiles
-    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles(&class) as f64;
+    let dmg_mod = state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64;
     let mut damage = (base_dmg as f64 * dmg_mod) as i32;
 
     // Body part hit (1=head, 2-6=body)
@@ -1809,7 +1810,7 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
         match state.users.get(&conn_id) {
             Some(u) if u.logged && !u.dead => {
                 (u.pos_map, u.pos_x, u.pos_y, u.skills.get(7).copied().unwrap_or(0),
-                 u.class.clone(), u.char_index, u.hidden, u.invisible && !u.admin_invisible,
+                 u.class, u.char_index, u.hidden, u.invisible && !u.admin_invisible,
                  u.navigating)
             }
             _ => return,
@@ -1826,7 +1827,7 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
     }
 
     // VB6: Can't hide while navigating (except pirate)
-    if navigating && !class.eq_ignore_ascii_case("Pirata") {
+    if navigating && class != PlayerClass::Pirata {
         state.send_console(conn_id, "No puedes ocultarte navegando.", font_index::INFO).await;
         return;
     }
@@ -1870,7 +1871,7 @@ pub(super) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
         duration *= state.config.intervalo_oculto as f64;
 
         // Bandits hide for half time
-        let is_bandit = class.eq_ignore_ascii_case("Bandido");
+        let is_bandit = class == PlayerClass::Bandido;
         let counter = if is_bandit { (duration / 2.0) as i32 } else { duration as i32 };
 
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1917,7 +1918,7 @@ pub(super) fn check_permanecer_oculto(user: &mut UserState) -> bool {
 
     // Hunter with skill>90 and specific armor stays hidden indefinitely
     let skill = user.skills.get(7).copied().unwrap_or(0);
-    if user.class.eq_ignore_ascii_case("Cazador") && skill > 90 {
+    if user.class == PlayerClass::Cazador && skill > 90 {
         let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
             user.inventory[user.equip.armor - 1].obj_index
         } else { 0 };

@@ -2,6 +2,7 @@
 //! Extracted from mod.rs to reduce file size.
 
 use crate::net::ConnectionId;
+use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::protocol::font_index;
 use crate::data::balance;
@@ -13,11 +14,11 @@ async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_c
     let (class, race, rango) = match state.users.get(&conn_id) {
         Some(u) => {
             let r = if is_caos { u.recompensas_caos } else { u.recompensas_real };
-            (u.class.clone(), u.race.clone(), r + 1) // VB6: Rango = RecompensasX + 1
+            (u.class, u.race, r + 1) // VB6: Rango = RecompensasX + 1
         }
         None => return,
     };
-    let armors = state.game_data.balance.get_faction_armor(&class, &race);
+    let armors = state.game_data.balance.get_faction_armor_e(class, race);
 
     for tier in 0..3 {
         let obj_index = if is_caos { armors.caos[tier] } else { armors.armada[tier] };
@@ -477,8 +478,8 @@ pub(super) async fn handle_slash_stats(state: &mut GameState, conn_id: Connectio
     };
 
     let char_name = u.char_name.clone();
-    let class = u.class.clone();
-    let race = u.race.clone();
+    let class = u.class;
+    let race = u.race;
     let level = u.level;
     let (min_hp, max_hp) = (u.min_hp, u.max_hp);
     let (min_mana, max_mana) = (u.min_mana, u.max_mana);

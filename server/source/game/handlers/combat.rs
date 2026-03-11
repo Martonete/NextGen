@@ -5,6 +5,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
+use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 use crate::protocol::{font_index, binary_packets};
@@ -179,35 +180,29 @@ pub(super) fn calcular_dano(
 /// Uses polynomial luck formula per class, then applies damage multiplier.
 pub(super) fn do_apunalar(
     skill: i32,
-    class: &str,
+    class: PlayerClass,
     base_damage: i64,
     is_npc_target: bool,
 ) -> Option<i64> {
     let s = skill as f64;
 
     // VB6 polynomial luck formula per class
-    let suerte = if class.eq_ignore_ascii_case("Asesino") {
-        ((0.00003 * s - 0.002) * s + 0.098) * s + 4.25
-    } else if class.eq_ignore_ascii_case("Clerigo")
-        || class.eq_ignore_ascii_case("Paladin")
-        || class.eq_ignore_ascii_case("Pirata")
-    {
-        ((0.000003 * s + 0.0006) * s + 0.0107) * s + 4.93
-    } else if class.eq_ignore_ascii_case("Bardo") {
-        ((0.000002 * s + 0.0002) * s + 0.032) * s + 4.81
-    } else {
-        0.0361 * s + 4.39
+    let suerte = match class {
+        PlayerClass::Asesino => ((0.00003 * s - 0.002) * s + 0.098) * s + 4.25,
+        PlayerClass::Clerigo | PlayerClass::Paladin | PlayerClass::Pirata => {
+            ((0.000003 * s + 0.0006) * s + 0.0107) * s + 4.93
+        }
+        PlayerClass::Bardo => ((0.000002 * s + 0.0002) * s + 0.032) * s + 4.81,
+        _ => 0.0361 * s + 4.39,
     };
 
     let suerte = suerte as i32;
 
     if rand_range(0, 100) < suerte {
         let dmg = if is_npc_target {
-            // VB6: NPC target = damage * 2
             base_damage * 2
         } else {
-            // VB6: User target — Assassin 1.4x, others 1.5x
-            if class.eq_ignore_ascii_case("Asesino") {
+            if class == PlayerClass::Asesino {
                 (base_damage as f64 * 1.4).round() as i64
             } else {
                 (base_damage as f64 * 1.5).round() as i64
@@ -221,7 +216,7 @@ pub(super) fn do_apunalar(
 
 /// VB6: PuedeApuñalar — check if user can backstab.
 /// Requirements: same heading as victim, Apuñalar skill > 0, behind the target.
-pub(super) fn puede_apunalar(class: &str, attacker_heading: i32, victim_heading: i32) -> bool {
+pub(super) fn puede_apunalar(_class: PlayerClass, attacker_heading: i32, victim_heading: i32) -> bool {
     // VB6: Must be facing the same direction (behind the target)
     attacker_heading == victim_heading
 }
@@ -233,13 +228,13 @@ pub(super) fn puede_apunalar(class: &str, attacker_heading: i32, victim_heading:
 /// VB6: DoGolpeCritico — critical hit, ONLY for Bandido class with Espada Vikinga.
 /// Returns additional damage dealt if critical succeeds.
 pub(super) fn do_golpe_critico(
-    class: &str,
+    class: PlayerClass,
     weapon_obj_index: i32,
     wrestling_skill: i32,
     base_damage: i64,
 ) -> Option<i64> {
     // VB6: Only Bandido with Espada Vikinga can do critical hits
-    if !class.eq_ignore_ascii_case("Bandido") {
+    if class != PlayerClass::Bandido {
         return None;
     }
     if weapon_obj_index != ESPADA_VIKINGA {
@@ -290,8 +285,8 @@ async fn do_desequipar(state: &mut GameState, victim_id: ConnectionId) -> bool {
 // =====================================================================
 
 /// VB6: PuedeAcuchillar — checks Pirate class + weapon Acuchilla flag.
-pub(super) fn puede_acuchillar(class: &str, weapon_acuchilla: bool) -> bool {
-    class.eq_ignore_ascii_case("Pirata") && weapon_acuchilla
+pub(super) fn puede_acuchillar(class: PlayerClass, weapon_acuchilla: bool) -> bool {
+    class == PlayerClass::Pirata && weapon_acuchilla
 }
 
 /// VB6: DoAcuchillar — Pirate throat cut attack.
@@ -418,7 +413,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             u.skills[20], // SK21 = Wrestling
             u.skills[8], // SK9 = Apuñalar
             u.char_name.clone(),
-            u.class.clone(),
+            u.class,
         ),
         _ => return,
     };
@@ -568,24 +563,24 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // VB6: UsuarioImpacto — calculate attack power based on weapon type
         let (attack_power, attack_skill_idx) = if weapon.obj_index > 0 {
             if weapon.is_proyectil {
-                let mod_atk = state.game_data.balance.class_mod_ataque_proyectiles(&class);
+                let mod_atk = state.game_data.balance.class_mod_ataque_proyectiles_e(class);
                 (poder_ataque_proyectil(skill_proyectiles, agility, level, mod_atk), 5usize) // eSkill.Proyectiles
             } else {
-                let mod_atk = state.game_data.balance.class_mod_ataque_armas(&class);
+                let mod_atk = state.game_data.balance.class_mod_ataque_armas_e(class);
                 (poder_ataque_arma(skill_armas, agility, level, mod_atk), 1usize) // eSkill.Armas
             }
         } else {
-            let mod_atk = state.game_data.balance.class_mod_ataque_wrestling(&class);
+            let mod_atk = state.game_data.balance.class_mod_ataque_wrestling_e(class);
             (poder_ataque_wrestling(skill_wrestling, agility, level, mod_atk), 20usize) // eSkill.Wrestling
         };
 
         // VB6: PoderEvasion for victim
-        let v_evasion_mod = state.game_data.balance.class_mod_evasion(&v_class);
+        let v_evasion_mod = state.game_data.balance.class_mod_evasion_e(v_class);
         let mut victim_evasion = poder_evasion(v_tacticas, v_agility, v_level, v_evasion_mod);
 
         // VB6: Add shield evasion if victim has shield
         let victim_shield_evasion = if v_has_shield {
-            let shield_mod = state.game_data.balance.class_mod_escudo(&v_class);
+            let shield_mod = state.game_data.balance.class_mod_escudo_e(v_class);
             poder_evasion_escudo(v_defensa, shield_mod)
         } else {
             0
@@ -698,7 +693,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // VB6: DoHandInmo — Thief only + gloves, paralyze for half duration
-            if has_gloves && class.eq_ignore_ascii_case("Ladron") {
+            if has_gloves && class == PlayerClass::Ladron {
                 let v_paralyzed = state.users.get(&victim_id).map(|u| u.paralyzed).unwrap_or(true);
                 if !v_paralyzed {
                     // VB6: prob = Wrestling / 4
@@ -733,12 +728,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // Calculate damage using VB6 CalcularDaño
         let class_mod_damage = if weapon.obj_index > 0 {
             if weapon.is_proyectil {
-                state.game_data.balance.class_mod_dano_proyectiles(&class) as f64
+                state.game_data.balance.class_mod_dano_proyectiles_e(class) as f64
             } else {
-                state.game_data.balance.class_mod_dano_armas(&class) as f64
+                state.game_data.balance.class_mod_dano_armas_e(class) as f64
             }
         } else {
-            state.game_data.balance.class_mod_dano_wrestling(&class) as f64
+            state.game_data.balance.class_mod_dano_wrestling_e(class) as f64
         };
 
         let (ring_idx, ring_guante, ring_min, ring_max) = get_ring_info(state, conn_id);
@@ -818,8 +813,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // VB6: DoApuñalar (backstab attempt)
-            if puede_apunalar(&class, heading, v_heading) && skill_apunalar > 0 {
-                if let Some(stab_dmg) = do_apunalar(skill_apunalar, &class, damage, false) {
+            if puede_apunalar(class, heading, v_heading) && skill_apunalar > 0 {
+                if let Some(stab_dmg) = do_apunalar(skill_apunalar, class, damage, false) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp -= stab_dmg as i32;
                     }
@@ -838,7 +833,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
             // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
             let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
-            if let Some(crit_dmg) = do_golpe_critico(&class, weapon.obj_index, wrestling_sk, damage) {
+            if let Some(crit_dmg) = do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage) {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
                     victim.min_hp -= crit_dmg as i32;
                 }
@@ -848,7 +843,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
             // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
             // In PvP: only on projectile attacks (VB6 SistemaCombate.bas:1272)
-            if weapon.is_proyectil && puede_acuchillar(&class, weapon.acuchilla) {
+            if weapon.is_proyectil && puede_acuchillar(class, weapon.acuchilla) {
                 if let Some(cut_dmg) = do_acuchillar(damage) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp -= cut_dmg as i32;
@@ -860,7 +855,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         }
 
         // VB6: Desarmar (Ladrón class — disarm)
-        if class.eq_ignore_ascii_case("Ladron") {
+        if class == PlayerClass::Ladron {
             let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
             if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
@@ -904,7 +899,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         if target_npc > 0 {
             user_attack_npc(state, conn_id, target_npc as usize, map, x, y,
                             strength, agility, level, min_hit, max_hit,
-                            skill_armas, &attacker_name, &class).await;
+                            skill_armas, &attacker_name, class).await;
         }
     }
 }
@@ -1079,26 +1074,25 @@ pub(super) fn calc_armor_absorption_with_penetration(state: &GameState, conn_id:
 }
 
 /// Class-based damage modifier from balance data.
-pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: &str) -> f64 {
-    state.game_data.balance.class_mod_dano_armas(class) as f64
+pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: PlayerClass) -> f64 {
+    state.game_data.balance.class_mod_dano_armas_e(class) as f64
 }
 
 /// Fallback class-based damage modifier (no longer used in PvP but kept for reference).
-pub(super) fn class_damage_modifier(class: &str) -> f64 {
-    match class.to_lowercase().as_str() {
-        "guerrero" => 1.1,
-        "cazador" => 0.9,
-        "paladin" => 1.0,
-        "asesino" => 1.0,
-        "ladron" => 0.8,
-        "bardo" => 0.8,
-        "clerigo" => 0.8,
-        "mago" => 0.5,
-        "druida" => 0.7,
-        "pirata" => 1.0,
-        "trabajador" => 0.8,
-        "bandido" => 0.9,
-        _ => 0.8,
+pub(super) fn class_damage_modifier(class: PlayerClass) -> f64 {
+    match class {
+        PlayerClass::Guerrero => 1.1,
+        PlayerClass::Cazador => 0.9,
+        PlayerClass::Paladin => 1.0,
+        PlayerClass::Asesino => 1.0,
+        PlayerClass::Ladron => 0.8,
+        PlayerClass::Bardo => 0.8,
+        PlayerClass::Clerigo => 0.8,
+        PlayerClass::Mago => 0.5,
+        PlayerClass::Druida => 0.7,
+        PlayerClass::Pirata => 1.0,
+        PlayerClass::Trabajador => 0.8,
+        PlayerClass::Bandido => 0.9,
     }
 }
 

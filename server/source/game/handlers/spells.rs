@@ -3,6 +3,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
+use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, MAX_SPELL_SLOTS};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field, binary_packets};
@@ -200,9 +201,9 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     // VB6: Staff power check for Mages (modHechizos.bas lines 449-460)
     if spell.need_staff > 0 {
         let (class, weapon_slot, inv) = state.users.get(&conn_id)
-            .map(|u| (u.class.clone(), u.equip.weapon, u.inventory.clone()))
+            .map(|u| (u.class, u.equip.weapon, u.inventory.clone()))
             .unwrap_or_default();
-        if class.eq_ignore_ascii_case("Mago") {
+        if class == PlayerClass::Mago {
             let staff_power = if weapon_slot > 0 && weapon_slot <= inv.len() {
                 let obj_idx = inv[weapon_slot - 1].obj_index;
                 state.game_data.objects.get(obj_idx as usize).map(|o| o.staff_power).unwrap_or(0)
@@ -316,7 +317,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         // VB6: Mimetiza on NPC — Druid only, copies NPC appearance onto caster
         if spell.mimetiza {
             let is_druid = state.users.get(&conn_id)
-                .map(|u| u.class.eq_ignore_ascii_case("Druida"))
+                .map(|u| u.class == PlayerClass::Druida)
                 .unwrap_or(false);
             if is_druid {
                 apply_mimetiza_npc(state, conn_id, npc_idx).await;
@@ -471,7 +472,7 @@ pub(super) async fn consume_spell_mana(state: &mut GameState, conn_id: Connectio
 
         // VB6: Druid mana bonuses with Flauta Élfica
         if let Some(user) = state.users.get(&conn_id) {
-            if user.class.eq_ignore_ascii_case("Druida") {
+            if user.class == PlayerClass::Druida {
                 let ring_slot = user.equip.ring;
                 let ring_obj = if ring_slot > 0 && ring_slot <= user.inventory.len() {
                     user.inventory[ring_slot - 1].obj_index
@@ -724,8 +725,8 @@ fn calc_spell_damage(state: &GameState, caster_id: ConnectionId, spell: &crate::
 
     // Staff damage bonus for Mages (VB6: StaffAffected check)
     if spell.staff_affected {
-        let class = state.users.get(&caster_id).map(|u| u.class.clone()).unwrap_or_default();
-        if class.eq_ignore_ascii_case("Mago") {
+        let class = state.users.get(&caster_id).map(|u| u.class).unwrap_or_default();
+        if class == PlayerClass::Mago {
             let weapon_slot = state.users.get(&caster_id).map(|u| u.equip.weapon).unwrap_or(0);
             let weapon_obj = get_equipped_obj_index(state, caster_id, weapon_slot);
             if weapon_obj > 0 {
@@ -1058,7 +1059,7 @@ pub(super) async fn apply_spell_status(
 
             // Check if caster is cleric (instant full HP rez)
             let caster_class = state.users.get(&caster_id)
-                .map(|u| u.class.to_uppercase())
+                .map(|u| u.class)
                 .unwrap_or_default();
             let caster_name = state.users.get(&caster_id)
                 .map(|u| u.char_name.clone())
@@ -1066,7 +1067,7 @@ pub(super) async fn apply_spell_status(
 
             let target_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(1);
 
-            if caster_class == "CLERIGO" {
+            if caster_class == PlayerClass::Clerigo {
                 // Cleric: instant resurrection at full HP
                 revive_user(state, target_id).await;
                 if let Some(target) = state.users.get_mut(&target_id) {

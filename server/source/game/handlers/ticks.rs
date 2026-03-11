@@ -5,6 +5,7 @@
 
 use tracing::{info, error};
 use crate::net::ConnectionId;
+use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
 use crate::data::npcs::NpcType;
 use crate::db::charfile;
@@ -1648,7 +1649,7 @@ pub async fn tick_intervals(state: &mut GameState) {
             let armor_obj = if user.equip.armor >= 1 && user.equip.armor <= user.inventory.len() {
                 user.inventory[user.equip.armor - 1].obj_index
             } else { 0 };
-            if user.class.eq_ignore_ascii_case("Cazador") && skill > 90 && (armor_obj == 648 || armor_obj == 360) {
+            if user.class == PlayerClass::Cazador && skill > 90 && (armor_obj == 648 || armor_obj == 360) {
                 continue;
             }
 

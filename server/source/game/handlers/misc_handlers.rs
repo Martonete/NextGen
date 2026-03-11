@@ -4,6 +4,7 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
+use crate::game::class_race::PlayerRace;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, privilege_level};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field, binary_packets};
@@ -1078,13 +1079,10 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
 
     // VB6: sends CIRUJA<raza>,<genero>
     let (raza, genero) = match state.users.get(&conn_id) {
-        Some(u) => (u.race.clone(), u.gender),
+        Some(u) => (u.race, u.gender),
         None => return,
     };
-    let raza_num = match raza.as_str() {
-        "Humano" => 1, "Elfo" => 2, "ElfoOscuro" => 3, "Enano" => 4, "Gnomo" => 5,
-        _ => 1,
-    };
+    let raza_num = raza.index() as i32 + 1; // 1-based: Humano=1, Elfo=2, ElfoOscuro=3, Enano=4, Gnomo=5
     let pkt = binary_packets::write_cosmetic_surgery(raza_num as u8, genero as u8);
     state.send_bytes(conn_id, &pkt).await;
 }

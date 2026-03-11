@@ -7,6 +7,7 @@
 
 use std::path::Path;
 use crate::config::IniFile;
+use crate::game::class_race::{PlayerClass, PlayerRace};
 
 /// Number of classes in the game (VB6 13.3: Mage..Pirat = 12).
 pub const NUM_CLASSES: usize = 12;
@@ -243,6 +244,42 @@ impl BalanceData {
         let ci = class_name_to_index(class).unwrap_or(0);
         let ri = race_name_to_index(race).unwrap_or(0);
         self.faction_armor[ci][ri]
+    }
+
+    // ── Enum-based overloads (type-safe, no string parsing) ─────────
+
+    pub fn class_mod_evasion_e(&self, class: PlayerClass) -> f32 {
+        self.mod_evasion[class.index()]
+    }
+    pub fn class_mod_ataque_armas_e(&self, class: PlayerClass) -> f32 {
+        self.mod_ataque_armas[class.index()]
+    }
+    pub fn class_mod_ataque_proyectiles_e(&self, class: PlayerClass) -> f32 {
+        self.mod_ataque_proyectiles[class.index()]
+    }
+    pub fn class_mod_ataque_wrestling_e(&self, class: PlayerClass) -> f32 {
+        self.mod_ataque_wrestling[class.index()]
+    }
+    pub fn class_mod_dano_armas_e(&self, class: PlayerClass) -> f32 {
+        self.mod_dano_armas[class.index()]
+    }
+    pub fn class_mod_dano_proyectiles_e(&self, class: PlayerClass) -> f32 {
+        self.mod_dano_proyectiles[class.index()]
+    }
+    pub fn class_mod_dano_wrestling_e(&self, class: PlayerClass) -> f32 {
+        self.mod_dano_wrestling[class.index()]
+    }
+    pub fn class_mod_escudo_e(&self, class: PlayerClass) -> f32 {
+        self.mod_escudo[class.index()]
+    }
+    pub fn class_mod_vida_e(&self, class: PlayerClass) -> f32 {
+        self.mod_vida[class.index()]
+    }
+    pub fn race_modifiers_e(&self, race: PlayerRace) -> RaceModifiers {
+        self.mod_raza[race.index()]
+    }
+    pub fn get_faction_armor_e(&self, class: PlayerClass, race: PlayerRace) -> FactionArmors {
+        self.faction_armor[class.index()][race.index()]
     }
 }
 

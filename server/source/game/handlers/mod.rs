@@ -72,6 +72,7 @@ use crate::db::{accounts, charfile, guilds};
 use crate::db::password;
 use crate::data::objects::ObjType;
 use crate::data::maps::Trigger;
+use super::class_race::{PlayerClass, PlayerRace};
 use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
 use super::world;
 use super::npc;
@@ -1282,12 +1283,12 @@ async fn connect_user(
         // Safety: if charfile has invalid body (0=invisible, 8=ghost) but dead=false,
         // restore naked body. body=0 can happen if a GM disconnects while invisible.
         // SKIP if navigating (boat has head=0) or montado (flying mount has head=0).
+        let parsed_race = PlayerRace::from_str_or_default(&char_data.race);
         if !user.dead && !char_data.navigating && !char_data.montado && (user.body <= 0 || user.body == DEAD_BODY_NEUTRAL || user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL) {
-            let gender_str = char_data.gender.to_string();
-            user.body = naked_body(&char_data.race, &gender_str);
+            user.body = naked_body(parsed_race, char_data.gender);
             // Head 500 is ghost head, head 0 is invisible — use a default for race/gender
             if user.head <= 0 || user.head == DEAD_HEAD_NEUTRAL {
-                user.head = default_head_for_race(&char_data.race, char_data.gender);
+                user.head = default_head_for_race(parsed_race, char_data.gender);
             }
         }
 
@@ -1295,7 +1296,7 @@ async fn connect_user(
         // If DB has dead head (500/501/511/512), use a default for the race/gender instead.
         let saved_head = char_data.head;
         user.orig_head = if saved_head == 500 || saved_head == 501 || saved_head == 511 || saved_head == 512 || saved_head <= 0 {
-            default_head_for_race(&char_data.race, char_data.gender)
+            default_head_for_race(parsed_race, char_data.gender)
         } else {
             saved_head
         };
@@ -1343,8 +1344,8 @@ async fn connect_user(
         };
 
         // Stats
-        user.class = char_data.class.clone();
-        user.race = char_data.race.clone();
+        user.class = PlayerClass::from_str_or_default(&char_data.class);
+        user.race = PlayerRace::from_str_or_default(&char_data.race);
         user.level = char_data.level;
         user.exp = char_data.exp;
         user.max_hp = char_data.max_hp;
@@ -1854,13 +1855,11 @@ async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     // VB6 HandleWalk: Moving while hidden (Oculto) reveals non-Thief/non-Bandit classes.
     // Spell invisibility is NOT broken by movement.
     let (was_hidden, class_for_hide, is_spell_invis, navigating_for_hide) = match state.users.get(&conn_id) {
-        Some(u) => (u.hidden && !u.admin_invisible, u.class.clone(), u.invisible && !u.admin_invisible, u.navigating),
-        None => (false, String::new(), false, false),
+        Some(u) => (u.hidden && !u.admin_invisible, u.class, u.invisible && !u.admin_invisible, u.navigating),
+        None => (false, PlayerClass::default(), false, false),
     };
     if was_hidden {
-        let is_thief_or_bandit = class_for_hide.eq_ignore_ascii_case("Ladron")
-            || class_for_hide.eq_ignore_ascii_case("Bandido");
-        if !is_thief_or_bandit {
+        if !class_for_hide.is_thief_or_bandit() {
             // Reveal hidden state
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.hidden = false;
@@ -2370,40 +2369,29 @@ const DEAD_BODY_NEUTRAL: i32 = 8;
 const DEAD_HEAD_NEUTRAL: i32 = 500;
 
 // Naked body IDs by race + gender (VB6 DarCuerpoDesnudo)
-fn naked_body(race: &str, gender: &str) -> i32 {
-    let race_up = race.to_uppercase();
-    let gender_up = gender.to_uppercase();
-    match (race_up.as_str(), gender_up.as_str()) {
-        ("HUMANO", "HOMBRE") | ("HUMANO", "1") => 21,
-        ("HUMANO", "MUJER") | ("HUMANO", "2") => 39,
-        ("ELFO", "HOMBRE") | ("ELFO", "1") => 21,
-        ("ELFO", "MUJER") | ("ELFO", "2") => 39,
-        ("ELFO OSCURO", "HOMBRE") | ("ELFO OSCURO", "1") => 32,
-        ("ELFO OSCURO", "MUJER") | ("ELFO OSCURO", "2") => 40,
-        ("ENANO", "HOMBRE") | ("ENANO", "1") => 53,
-        ("ENANO", "MUJER") | ("ENANO", "2") => 60,
-        ("GNOMO", "HOMBRE") | ("GNOMO", "1") => 53,
-        ("GNOMO", "MUJER") | ("GNOMO", "2") => 60,
-        _ => 21, // Default: male human naked
+fn naked_body(race: PlayerRace, gender: i32) -> i32 {
+    let is_female = gender == 2;
+    match (race, is_female) {
+        (PlayerRace::Humano, false) | (PlayerRace::Elfo, false) => 21,
+        (PlayerRace::Humano, true) | (PlayerRace::Elfo, true) => 39,
+        (PlayerRace::ElfoOscuro, false) => 32,
+        (PlayerRace::ElfoOscuro, true) => 40,
+        (PlayerRace::Enano, false) | (PlayerRace::Gnomo, false) => 53,
+        (PlayerRace::Enano, true) | (PlayerRace::Gnomo, true) => 60,
     }
 }
 
 // Default head GRH by race + gender (for recovery when head is corrupted to 500)
-fn default_head_for_race(race: &str, gender: i32) -> i32 {
-    let race_up = race.to_uppercase();
-    match (race_up.as_str(), gender) {
-        ("HUMANO", 2) => 70,   // Female human
-        ("HUMANO", _) => 1,    // Male human
-        ("ELFO", 2) => 70,     // Female elf
-        ("ELFO", _) => 101,    // Male elf
-        ("ELFO OSCURO", 2) => 480, // Female dark elf
-        ("ELFO OSCURO", _) => 401, // Male dark elf
-        ("ENANO", 2) => 270,   // Female dwarf
-        ("ENANO", _) => 201,   // Male dwarf
-        ("GNOMO", 2) => 270,   // Female gnome
-        ("GNOMO", _) => 201,   // Male gnome
-        (_, 2) => 70,          // Default female
-        _ => 1,                // Default male
+fn default_head_for_race(race: PlayerRace, gender: i32) -> i32 {
+    let is_female = gender == 2;
+    match (race, is_female) {
+        (PlayerRace::Humano, true) | (PlayerRace::Elfo, true) => 70,
+        (PlayerRace::Humano, false) => 1,
+        (PlayerRace::Elfo, false) => 101,
+        (PlayerRace::ElfoOscuro, true) => 480,
+        (PlayerRace::ElfoOscuro, false) => 401,
+        (PlayerRace::Enano, true) | (PlayerRace::Gnomo, true) => 270,
+        (PlayerRace::Enano, false) | (PlayerRace::Gnomo, false) => 201,
     }
 }
 
@@ -3042,13 +3030,12 @@ async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
 /// VB6: RevivirUsuario() — sets dead=false, HP=35, DarCuerpoDesnudo, ChangeUserChar(OrigChar.Head).
 async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
     let (race, gender, max_hp, orig_head) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.dead => (u.race.clone(), u.gender, u.max_hp, u.orig_head),
+        Some(u) if u.logged && u.dead => (u.race, u.gender, u.max_hp, u.orig_head),
         _ => return,
     };
 
     let revive_hp = 35.min(max_hp);
-    let gender_str = if gender == 2 { "MUJER" } else { "HOMBRE" };
-    let new_body = naked_body(&race, gender_str);
+    let new_body = naked_body(race, gender);
 
     // Update user state: revive + restore living appearance
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -3225,7 +3212,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
     loop {
         let (level, exp, class, race, intelligence, constitution) = match state.users.get(&conn_id) {
             Some(u) if u.logged => (
-                u.level, u.exp, u.class.clone(), u.race.clone(),
+                u.level, u.exp, u.class, u.race,
                 u.attributes[2], // Intelligence
                 u.attributes[4], // Constitution
             ),
@@ -3248,7 +3235,7 @@ pub async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
         // VB6: Level 1-49 path — full promedio HP + INT-based mana
         // ══════════════════════════════════════════════════════════════
         let (hp_gain, mana_gain, sta_gain, hit_gain) =
-            level_up_gains(&class, &race, level, constitution, intelligence, &state.game_data.balance);
+            level_up_gains(class, race, level, constitution, intelligence, &state.game_data.balance);
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.level += 1;
@@ -3364,53 +3351,51 @@ const STAT_MAXHIT_OVER36: i32 = 999;  // VB6: STAT_MAXHIT_OVER36
 /// STA: per-class constants.
 /// HIT: per-class with level>35 cutoffs.
 /// Returns (hp_gain, mana_gain, sta_gain, hit_gain).
-fn level_up_gains(class: &str, _race: &str, level: i32, constitution: i32, intelligence: i32,
+fn level_up_gains(class: PlayerClass, _race: PlayerRace, level: i32, constitution: i32, intelligence: i32,
                   balance: &crate::data::balance::BalanceData) -> (i32, i32, i32, i32) {
-    let cls = class.to_uppercase();
-    let c = cls.as_str();
+    use PlayerClass::*;
 
     // ── HP gain (VB6: MODVIDA + CON distribution) ──
-    let mod_vida = balance.class_mod_vida(class);
+    let mod_vida = balance.class_mod_vida_e(class);
     // VB6: Promedio = ModVida(clase) - (21 - Constitucion) * 0.5
     let promedio = mod_vida as f64 - (21.0 - constitution as f64) * 0.5;
     let hp_gain = hp_gain_from_distribution(promedio, &balance.hp_distribution);
 
     // ── Mana gain (VB6 exact multipliers) ──
-    let mana_gain = match c {
-        "MAGO"    => (2.8 * intelligence as f64) as i32,
-        "CLERIGO" => 2 * intelligence,
-        "DRUIDA"  => 2 * intelligence,
-        "BARDO"   => 2 * intelligence,
-        "ASESINO" => intelligence,
-        "PALADIN" => intelligence,
-        "BANDIDO" => intelligence / 3 * 2,
-        _ => 0, // Guerrero, Cazador, Ladron, Trabajador, Pirata
+    let mana_gain = match class {
+        Mago    => (2.8 * intelligence as f64) as i32,
+        Clerigo => 2 * intelligence,
+        Druida  => 2 * intelligence,
+        Bardo   => 2 * intelligence,
+        Asesino => intelligence,
+        Paladin => intelligence,
+        Bandido => intelligence / 3 * 2,
+        Guerrero | Cazador | Ladron | Trabajador | Pirata => 0,
     };
 
     // ── STA gain (VB6 exact constants) ──
-    let sta_gain = match c {
-        "MAGO"       => AUMENTO_ST_MAGO,
-        "LADRON"     => AUMENTO_ST_LADRON,
-        "BANDIDO"    => AUMENTO_ST_BANDIDO,
-        "TRABAJADOR" => AUMENTO_ST_TRABAJADOR,
+    let sta_gain = match class {
+        Mago       => AUMENTO_ST_MAGO,
+        Ladron     => AUMENTO_ST_LADRON,
+        Bandido    => AUMENTO_ST_BANDIDO,
+        Trabajador => AUMENTO_ST_TRABAJADOR,
         _ => AUMENTO_ST_DEF,
     };
 
     // ── HIT gain (VB6 exact with level>35 cutoffs) ──
-    let hit_gain = match c {
-        "GUERRERO" => if level > 35 { 2 } else { 3 },
-        "CAZADOR"  => if level > 35 { 2 } else { 3 },
-        "PIRATA"   => 3,
-        "PALADIN"  => if level > 35 { 1 } else { 3 },
-        "ASESINO"  => if level > 35 { 1 } else { 3 },
-        "BANDIDO"  => if level > 35 { 1 } else { 3 },
-        "LADRON"   => 2,
-        "MAGO"     => 1,
-        "CLERIGO"  => 2,
-        "DRUIDA"   => 2,
-        "BARDO"    => 2,
-        "TRABAJADOR" => 2,
-        _ => 2,
+    let hit_gain = match class {
+        Guerrero => if level > 35 { 2 } else { 3 },
+        Cazador  => if level > 35 { 2 } else { 3 },
+        Pirata   => 3,
+        Paladin  => if level > 35 { 1 } else { 3 },
+        Asesino  => if level > 35 { 1 } else { 3 },
+        Bandido  => if level > 35 { 1 } else { 3 },
+        Ladron   => 2,
+        Mago     => 1,
+        Clerigo  => 2,
+        Druida   => 2,
+        Bardo    => 2,
+        Trabajador => 2,
     };
 
     (hp_gain, mana_gain, sta_gain, hit_gain)
@@ -4499,8 +4484,8 @@ mod db_tests {
             assert_eq!(user.pos_x, 50);
             assert_eq!(user.pos_y, 50);
             assert_eq!(user.level, 1);
-            assert_eq!(user.class, "Guerrero");
-            assert_eq!(user.race, "Humano");
+            assert_eq!(user.class, PlayerClass::Guerrero);
+            assert_eq!(user.race, PlayerRace::Humano);
             assert!(user.char_index.0 > 0, "Should have a char index assigned");
         }
         assert_eq!(state.num_users, 1);

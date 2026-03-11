@@ -10,6 +10,7 @@ use crate::data::objects::ObjType;
 use sqlx::PgPool;
 use crate::net::ConnectionId;
 use crate::net::connection::ConnectionWriter;
+use super::class_race::{PlayerClass, PlayerRace};
 use super::world::{self, CharIndex, WorldState};
 use super::npc::{NpcState, NpcIndex};
 
@@ -95,8 +96,8 @@ pub struct UserState {
     pub aura_c: i32,     // Helmet aura
 
     // Stats
-    pub class: String,
-    pub race: String,
+    pub class: PlayerClass,
+    pub race: PlayerRace,
     pub level: i32,
     pub exp: i64,
     pub max_hp: i32,
@@ -339,8 +340,8 @@ impl UserState {
             aura_e: 0,
             aura_r: 0,
             aura_c: 0,
-            class: String::new(),
-            race: String::new(),
+            class: PlayerClass::default(),
+            race: PlayerRace::default(),
             level: 1,
             exp: 0,
             max_hp: 0,
