@@ -44,31 +44,7 @@ pub(super) mod skill_id {
     pub const FUNDIR_METAL: i32 = 88;
 }
 
-/// Tool object indices (VB6 constants).
-const HACHA_LENADOR: i32 = 127;
-const PIQUETE_MINERO: i32 = 187;
-const MARTILLO_HERRERO: i32 = 389;
-const SERRUCHO_CARPINTERO: i32 = 198;
-const CANA_PESCA: i32 = 543; // Fishing rod
-const RED_PESCA: i32 = 543;  // Fishing net (same category)
-
-/// Resource items.
-const LENA_OBJ: i32 = 58;
-const PESCADO_OBJ: i32 = 139;
-const HIERRO_CRUDO: i32 = 192;
-const PLATA_CRUDA: i32 = 193;
-const ORO_CRUDO: i32 = 194;
-const LINGOTE_HIERRO: i32 = 386;
-const LINGOTE_PLATA: i32 = 387;
-const LINGOTE_ORO: i32 = 388;
-const PIEDRA_OBJ: i32 = 1225;    // Magic stones (carpentry material)
-
-/// Sound IDs.
-const SND_TALAR: i32 = 13;
-const SND_PESCAR: i32 = 14;
-const SND_MINERO: i32 = 15;
-const SND_HERRERO: i32 = 41;
-const SND_CARPINTERO: i32 = 42;
+use crate::game::constants::*;
 
 /// Stamina costs.
 const ESFUERZO_TALAR_RECOLECTOR: i32 = 2;
@@ -2089,8 +2065,7 @@ pub(super) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 // =====================================================================
 
 /// Campfire object indices
-const FOGATA_OBJ: i32 = 63;      // Lit campfire (Fogata)
-const LENA_FOGATA: i32 = 58;     // Firewood (Leña)
+// FOGATA_OBJ and LENA_FOGATA imported from crate::game::constants
 
 /// /FOGATA or survival skill — Create a campfire using firewood from inventory.
 /// VB6: Requires 3+ Leña, success based on survival skill level.

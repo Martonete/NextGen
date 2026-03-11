@@ -2362,11 +2362,8 @@ async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str)
 
 // Inventory handlers — moved to inventory.rs
 
-// =====================================================================
-// Death model constants (VB6 Declares.bas)
-// =====================================================================
-const DEAD_BODY_NEUTRAL: i32 = 8;
-const DEAD_HEAD_NEUTRAL: i32 = 500;
+// Death model constants imported from crate::game::constants
+use crate::game::constants::{DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL};
 
 // Naked body IDs by race + gender (VB6 DarCuerpoDesnudo)
 fn naked_body(race: PlayerRace, gender: i32) -> i32 {

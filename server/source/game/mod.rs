@@ -6,6 +6,7 @@
 // - handlers: packet routing and login flow implementation
 
 pub mod class_race;
+pub mod constants;
 pub mod types;
 pub mod world;
 pub mod npc;

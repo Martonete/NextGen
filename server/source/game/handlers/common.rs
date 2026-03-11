@@ -9,11 +9,8 @@ use crate::protocol::{fields::read_field, binary_packets};
 use crate::game::types::{GameState, UserState, CleanWorldEntry, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 
-// =====================================================================
-// VB6 "empty" animation constants (Declares.bas: NingunArma/NingunEscudo/NingunCasco = 2)
-// =====================================================================
-pub(super) const NINGUN_ARMA: i32 = 2;
-pub(super) const NINGUN_ESCUDO: i32 = 2;
+// VB6 "empty" animation constants — re-exported from centralized constants module.
+pub(super) use crate::game::constants::{NINGUN_ARMA, NINGUN_ESCUDO};
 pub(super) const NINGUN_CASCO: i32 = 2;
 
 // =====================================================================

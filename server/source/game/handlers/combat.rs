@@ -11,11 +11,11 @@ use crate::game::world;
 use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use super::common::*;
+use crate::game::constants::*;
 use super::{
     user_attack_npc, check_user_level, warp_user, naked_body,
     send_inventory_slot, send_full_inventory,
     pretoriano_check_death,
-    DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL,
 };
 use super::npcs::fire_elemental_react;
 use super::skills::{
@@ -26,21 +26,7 @@ use super::skills::{
 // VB6 Combat Constants
 // =====================================================================
 
-/// VB6: PartesCuerpo.bCabeza = 1
-const BODY_PART_HEAD: i32 = 1;
-/// VB6: PartesCuerpo.bTorso = 6
-const BODY_PART_TORSO: i32 = 6;
-
-/// VB6: ESPADA_VIKINGA / EspadaMataDragonesIndex (Dragon Slayer + DoGolpeCritico)
-const ESPADA_VIKINGA: i32 = 402;
-
-/// VB6: GUANTE_HURTO = 873 (pickpocket gloves)
-const GUANTE_HURTO: i32 = 873;
-
-/// VB6: PROB_ACUCHILLAR = 20 (20% chance for Pirate throat cut)
-const PROB_ACUCHILLAR: i32 = 20;
-/// VB6: DAÑO_ACUCHILLAR = 0.2 (20% of base damage)
-const DANO_ACUCHILLAR: f64 = 0.2;
+// Combat constants imported from crate::game::constants
 
 // =====================================================================
 // VB6 Attack Power formulas (exact replicas)
