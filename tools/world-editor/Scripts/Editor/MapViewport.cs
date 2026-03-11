@@ -43,6 +43,12 @@ public partial class MapViewport : Control
 
     private readonly System.Collections.Generic.HashSet<long> _paintedThisStroke = new();
 
+    // Marching ants animation for selection
+    private float _marchingAntsOffset;
+    private const float MarchingAntsSpeed = 40f; // pixels per second
+    private const float MarchingAntsDash = 6f;
+    private const float MarchingAntsGap = 4f;
+
     // Mosaic handle drag (reposition multi-tile pattern)
     private bool _mosaicHandleDrag;
     private Vector2I _mosaicHandleDragStart;
@@ -65,6 +71,17 @@ public partial class MapViewport : Control
         _particleOverlay.ZIndex = 1;
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
+    }
+
+    public override void _Process(double delta)
+    {
+        // Animate marching ants for selection
+        if (State != null && (State.HasSelection || _isSelecting))
+        {
+            _marchingAntsOffset = (_marchingAntsOffset + (float)(MarchingAntsSpeed * delta))
+                % (MarchingAntsDash + MarchingAntsGap);
+            QueueRedraw();
+        }
     }
 
     public override void _Draw()
@@ -162,8 +179,8 @@ public partial class MapViewport : Control
             var moveRect = new Rect2(
                 (_moveSelX1 + delta.X) * TileSize, (_moveSelY1 + delta.Y) * TileSize,
                 _moveSelW * TileSize, _moveSelH * TileSize);
-            DrawRect(moveRect, new Color(0.2f, 1f, 0.5f, 0.15f));
-            DrawRect(moveRect, new Color(0.2f, 1f, 0.5f, 0.7f), false, 2f);
+            DrawRect(moveRect, new Color(0.2f, 1f, 0.5f, 0.08f));
+            DrawMarchingAnts(moveRect, new Color(0.3f, 1f, 0.6f, 0.85f));
         }
 
         // Pick tool: highlight source + ghost at drag position
@@ -348,56 +365,88 @@ public partial class MapViewport : Control
                 if (t.Layer4 > 0) DrawTileGrh(t.Layer4, tx, ty, center: true, modulate: new Color(1, 1, 1, 0.4f));
             }
 
-        // Outline around the placement area
+        // Outline around the placement area (marching ants)
         var placementRect = new Rect2(
             p.OriginX * TileSize, p.OriginY * TileSize,
             p.Width * TileSize, p.Height * TileSize);
-        DrawRect(placementRect, new Color(0.2f, 0.8f, 1f, 0.15f));
-        DrawRect(placementRect, new Color(0.2f, 0.8f, 1f, 0.8f), false, 2f);
+        DrawRect(placementRect, new Color(0.2f, 0.7f, 1f, 0.08f));
+        DrawMarchingAnts(placementRect, new Color(0.3f, 0.85f, 1f, 0.9f));
 
-        // Buttons at top of the placement area
-        float btnSize = TileSize * 0.55f;
-        float margin = 3f;
+        // Button dimensions
+        float btnW = TileSize * 0.7f;
+        float btnH = TileSize * 0.6f;
+        float margin = 4f;
+        float shadowOfs = 1.5f;
 
-        // ✓ Accept button (green, top-right)
+        // ── Accept button (green, top-right) ──
         _pendingAcceptRect = new Rect2(
-            (p.OriginX + p.Width) * TileSize - btnSize - margin,
-            p.OriginY * TileSize - btnSize - margin,
-            btnSize, btnSize);
-        DrawRect(_pendingAcceptRect, new Color(0.2f, 0.85f, 0.3f, 0.9f));
-        DrawRect(_pendingAcceptRect, new Color(0, 0, 0, 0.5f), false, 1f);
-        // Checkmark icon
-        float cx = _pendingAcceptRect.Position.X, cy = _pendingAcceptRect.Position.Y;
-        float s = btnSize;
-        DrawLine(new Vector2(cx + s * 0.2f, cy + s * 0.55f),
-                 new Vector2(cx + s * 0.4f, cy + s * 0.75f), Colors.White, 2f);
-        DrawLine(new Vector2(cx + s * 0.4f, cy + s * 0.75f),
-                 new Vector2(cx + s * 0.8f, cy + s * 0.25f), Colors.White, 2f);
+            (p.OriginX + p.Width) * TileSize - btnW - margin,
+            p.OriginY * TileSize - btnH - margin,
+            btnW, btnH);
+        // Shadow
+        DrawRect(new Rect2(_pendingAcceptRect.Position + new Vector2(shadowOfs, shadowOfs),
+            _pendingAcceptRect.Size), new Color(0, 0, 0, 0.35f));
+        // Background
+        DrawRect(_pendingAcceptRect, new Color(0.18f, 0.65f, 0.28f, 0.95f));
+        DrawRect(_pendingAcceptRect, new Color(0.3f, 0.9f, 0.4f, 0.4f), false, 1f);
+        // Checkmark icon (clean vector)
+        float acx = _pendingAcceptRect.Position.X + btnW * 0.5f;
+        float acy = _pendingAcceptRect.Position.Y + btnH * 0.5f;
+        float acs = btnH * 0.3f;
+        DrawLine(new Vector2(acx - acs * 0.8f, acy),
+                 new Vector2(acx - acs * 0.1f, acy + acs * 0.65f), Colors.White, 2.2f);
+        DrawLine(new Vector2(acx - acs * 0.1f, acy + acs * 0.65f),
+                 new Vector2(acx + acs, acy - acs * 0.5f), Colors.White, 2.2f);
 
-        // ✗ Cancel button (red, top-left)
+        // ── Cancel button (red, top-left) ──
         _pendingCancelRect = new Rect2(
             p.OriginX * TileSize + margin,
-            p.OriginY * TileSize - btnSize - margin,
-            btnSize, btnSize);
-        DrawRect(_pendingCancelRect, new Color(0.85f, 0.2f, 0.2f, 0.9f));
-        DrawRect(_pendingCancelRect, new Color(0, 0, 0, 0.5f), false, 1f);
-        // X icon
-        float cx2 = _pendingCancelRect.Position.X, cy2 = _pendingCancelRect.Position.Y;
-        float p2 = btnSize * 0.25f;
-        DrawLine(new Vector2(cx2 + p2, cy2 + p2), new Vector2(cx2 + s - p2, cy2 + s - p2), Colors.White, 2f);
-        DrawLine(new Vector2(cx2 + s - p2, cy2 + p2), new Vector2(cx2 + p2, cy2 + s - p2), Colors.White, 2f);
+            p.OriginY * TileSize - btnH - margin,
+            btnW, btnH);
+        // Shadow
+        DrawRect(new Rect2(_pendingCancelRect.Position + new Vector2(shadowOfs, shadowOfs),
+            _pendingCancelRect.Size), new Color(0, 0, 0, 0.35f));
+        // Background
+        DrawRect(_pendingCancelRect, new Color(0.7f, 0.18f, 0.18f, 0.95f));
+        DrawRect(_pendingCancelRect, new Color(1f, 0.35f, 0.35f, 0.4f), false, 1f);
+        // X icon (clean vector cross)
+        float ccx = _pendingCancelRect.Position.X + btnW * 0.5f;
+        float ccy = _pendingCancelRect.Position.Y + btnH * 0.5f;
+        float ccs = btnH * 0.22f;
+        DrawLine(new Vector2(ccx - ccs, ccy - ccs), new Vector2(ccx + ccs, ccy + ccs), Colors.White, 2.2f);
+        DrawLine(new Vector2(ccx + ccs, ccy - ccs), new Vector2(ccx - ccs, ccy + ccs), Colors.White, 2.2f);
 
-        // Drag handle hint (move arrows) at center-top
-        float hx = placementRect.Position.X + placementRect.Size.X / 2 - btnSize / 2;
-        float hy = p.OriginY * TileSize - btnSize - margin;
-        var handleRect = new Rect2(hx, hy, btnSize, btnSize);
-        DrawRect(handleRect, new Color(1f, 0.85f, 0.2f, 0.85f));
-        DrawRect(handleRect, new Color(0, 0, 0, 0.5f), false, 1f);
-        float hcx = hx + btnSize / 2, hcy = hy + btnSize / 2;
-        float ar = btnSize * 0.3f;
-        var arrCol = new Color(0, 0, 0, 0.7f);
+        // ── Drag handle (amber, center-top) with 4-way arrow ──
+        float dhx = placementRect.Position.X + placementRect.Size.X / 2 - btnW / 2;
+        float dhy = p.OriginY * TileSize - btnH - margin;
+        var handleRect = new Rect2(dhx, dhy, btnW, btnH);
+        // Shadow
+        DrawRect(new Rect2(handleRect.Position + new Vector2(shadowOfs, shadowOfs),
+            handleRect.Size), new Color(0, 0, 0, 0.35f));
+        // Background
+        DrawRect(handleRect, new Color(0.75f, 0.6f, 0.15f, 0.95f));
+        DrawRect(handleRect, new Color(1f, 0.9f, 0.4f, 0.4f), false, 1f);
+        // 4-way arrow icon
+        float hcx = dhx + btnW / 2, hcy = dhy + btnH / 2;
+        float ar = btnH * 0.28f;
+        float arrowHead = ar * 0.35f;
+        var arrCol = new Color(0, 0, 0, 0.8f);
+        // Horizontal axis
         DrawLine(new Vector2(hcx - ar, hcy), new Vector2(hcx + ar, hcy), arrCol, 1.5f);
+        // Left arrowhead
+        DrawLine(new Vector2(hcx - ar, hcy), new Vector2(hcx - ar + arrowHead, hcy - arrowHead), arrCol, 1.5f);
+        DrawLine(new Vector2(hcx - ar, hcy), new Vector2(hcx - ar + arrowHead, hcy + arrowHead), arrCol, 1.5f);
+        // Right arrowhead
+        DrawLine(new Vector2(hcx + ar, hcy), new Vector2(hcx + ar - arrowHead, hcy - arrowHead), arrCol, 1.5f);
+        DrawLine(new Vector2(hcx + ar, hcy), new Vector2(hcx + ar - arrowHead, hcy + arrowHead), arrCol, 1.5f);
+        // Vertical axis
         DrawLine(new Vector2(hcx, hcy - ar), new Vector2(hcx, hcy + ar), arrCol, 1.5f);
+        // Up arrowhead
+        DrawLine(new Vector2(hcx, hcy - ar), new Vector2(hcx - arrowHead, hcy - ar + arrowHead), arrCol, 1.5f);
+        DrawLine(new Vector2(hcx, hcy - ar), new Vector2(hcx + arrowHead, hcy - ar + arrowHead), arrCol, 1.5f);
+        // Down arrowhead
+        DrawLine(new Vector2(hcx, hcy + ar), new Vector2(hcx - arrowHead, hcy + ar - arrowHead), arrCol, 1.5f);
+        DrawLine(new Vector2(hcx, hcy + ar), new Vector2(hcx + arrowHead, hcy + ar - arrowHead), arrCol, 1.5f);
     }
 
     // Cached button rects for click detection (world-space coords set during _Draw)
@@ -455,43 +504,86 @@ public partial class MapViewport : Control
     {
         if (State == null || Map == null) return;
 
-        // Grid
+        // ── Grid (subtle minor + brighter major every 10th line) ──
         if (State.ShowGrid)
         {
-            var gridColor = EditorTheme.OVERLAY_GRID;
+            var minorColor = new Color(1f, 1f, 1f, 0.04f);
+            var majorColor = new Color(1f, 1f, 1f, 0.12f);
             for (int y = 1; y <= mapH + 1; y++)
+            {
+                bool isMajor = (y - 1) % 10 == 0;
                 DrawLine(new Vector2(1 * TileSize, y * TileSize),
-                         new Vector2((mapW + 1) * TileSize, y * TileSize), gridColor);
+                         new Vector2((mapW + 1) * TileSize, y * TileSize),
+                         isMajor ? majorColor : minorColor, isMajor ? 1f : 0.5f);
+            }
             for (int x = 1; x <= mapW + 1; x++)
+            {
+                bool isMajor = (x - 1) % 10 == 0;
                 DrawLine(new Vector2(x * TileSize, 1 * TileSize),
-                         new Vector2(x * TileSize, (mapH + 1) * TileSize), gridColor);
+                         new Vector2(x * TileSize, (mapH + 1) * TileSize),
+                         isMajor ? majorColor : minorColor, isMajor ? 1f : 0.5f);
+            }
         }
 
-        // Blocked tiles
+        // ── Blocked tiles (diagonal hatched pattern) ──
         if (State.ShowBlocked)
         {
-            var blockedColor = EditorTheme.OVERLAY_BLOCKED;
+            var hatchColor = new Color(1f, 0.15f, 0.15f, 0.4f);
+            var hatchBg = new Color(1f, 0f, 0f, 0.08f);
+            float hatchSpacing = 6f;
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].Blocked)
-                        DrawRect(new Rect2(x * TileSize, y * TileSize, TileSize, TileSize), blockedColor);
+                    {
+                        float bx = x * TileSize;
+                        float by = y * TileSize;
+                        // Subtle background tint
+                        DrawRect(new Rect2(bx, by, TileSize, TileSize), hatchBg);
+                        // Diagonal hatch lines (bottom-left to top-right)
+                        for (float d = -TileSize; d <= TileSize * 2; d += hatchSpacing)
+                        {
+                            float x1 = bx + d;
+                            float y1 = by + TileSize;
+                            float x2 = bx + d + TileSize;
+                            float y2 = by;
+                            // Clip to tile bounds
+                            if (x2 > bx + TileSize) { float t = (bx + TileSize - x1) / (x2 - x1); y2 = y1 + t * (y2 - y1); x2 = bx + TileSize; }
+                            if (x1 < bx) { float t = (bx - x1) / (x2 - x1); y1 = y1 + t * (y2 - y1); x1 = bx; }
+                            if (y1 > by + TileSize || y2 > by + TileSize || y1 < by || y2 < by) continue;
+                            if (x1 >= bx && x1 <= bx + TileSize && x2 >= bx && x2 <= bx + TileSize)
+                                DrawLine(new Vector2(x1, y1), new Vector2(x2, y2), hatchColor, 0.8f);
+                        }
+                        // Thin border
+                        DrawRect(new Rect2(bx + 0.5f, by + 0.5f, TileSize - 1, TileSize - 1),
+                            new Color(1f, 0.2f, 0.2f, 0.3f), false, 0.5f);
+                    }
         }
 
-        // Exits
+        // ── Exits (pill badge) ──
         if (State.ShowExits)
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].HasExit)
                     {
-                        DrawRect(new Rect2(x * TileSize, y * TileSize, TileSize, TileSize),
-                            EditorTheme.OVERLAY_EXIT);
-                        DrawString(ThemeDB.FallbackFont,
-                            new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
-                            $"M{Map.Tiles[x, y].ExitMap}", HorizontalAlignment.Left, -1, 7,
-                            new Color(0.5f, 1f, 0.5f, 0.8f));
+                        float ex = x * TileSize;
+                        float ey = y * TileSize;
+                        // Subtle fill
+                        DrawRect(new Rect2(ex + 1, ey + 1, TileSize - 2, TileSize - 2),
+                            new Color(0.1f, 0.8f, 0.3f, 0.1f));
+                        // Arrow icon (small upward arrow at center)
+                        var center = new Vector2(ex + TileSize * 0.5f, ey + TileSize * 0.35f);
+                        var arrowCol = new Color(0.4f, 1f, 0.5f, 0.7f);
+                        DrawLine(center, center + new Vector2(0, 6), arrowCol, 1.5f);
+                        DrawLine(center, center + new Vector2(-3, 3), arrowCol, 1.5f);
+                        DrawLine(center, center + new Vector2(3, 3), arrowCol, 1.5f);
+                        // Label pill
+                        string exitLabel = $"M{Map.Tiles[x, y].ExitMap}";
+                        DrawOverlayPill(ex + 1, ey + TileSize - 12,
+                            exitLabel, new Color(0.1f, 0.5f, 0.2f, 0.85f),
+                            new Color(0.5f, 1f, 0.5f, 0.95f), 7);
                     }
 
-        // Lights
+        // ── Lights ──
         if (State.ShowLights)
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
@@ -502,14 +594,16 @@ public partial class MapViewport : Control
                         float radius = tile.LightRange * TileSize * 0.5f;
                         var lightCol = new Color(tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f);
                         DrawCircle(center, Math.Max(radius, TileSize * 0.4f),
-                            new Color(lightCol.R, lightCol.G, lightCol.B, 0.15f));
-                        DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.8f));
+                            new Color(lightCol.R, lightCol.G, lightCol.B, 0.12f));
+                        // Glow dot
+                        DrawCircle(center, 5f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.6f));
+                        DrawCircle(center, 3f, new Color(1f, 1f, 1f, 0.8f));
                         if (radius > TileSize * 0.5f)
-                            DrawArc(center, radius, 0, MathF.Tau, 24,
-                                new Color(lightCol.R, lightCol.G, lightCol.B, 0.3f), 1f);
+                            DrawArc(center, radius, 0, MathF.Tau, 32,
+                                new Color(lightCol.R, lightCol.G, lightCol.B, 0.25f), 1f);
                     }
 
-        // Particle indicators
+        // ── Particle indicators (diamond + pill) ──
         if (State.ShowParticles)
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
@@ -517,49 +611,65 @@ public partial class MapViewport : Control
                     {
                         var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
                         var particleCol = EditorTheme.OVERLAY_PARTICLE;
-                        float s = TileSize * 0.25f;
-                        DrawLine(center + new Vector2(0, -s), center + new Vector2(s, 0), particleCol, 1.5f);
-                        DrawLine(center + new Vector2(s, 0), center + new Vector2(0, s), particleCol, 1.5f);
-                        DrawLine(center + new Vector2(0, s), center + new Vector2(-s, 0), particleCol, 1.5f);
-                        DrawLine(center + new Vector2(-s, 0), center + new Vector2(0, -s), particleCol, 1.5f);
-                        DrawString(ThemeDB.FallbackFont,
-                            new Vector2(x * TileSize + 2, y * TileSize + 10),
-                            $"P{Map.Tiles[x, y].ParticleGroup}", HorizontalAlignment.Left, -1, 7,
-                            new Color(0, 0.9f, 0.9f, 0.7f));
+                        float s = TileSize * 0.22f;
+                        // Filled diamond
+                        var diamond = new Vector2[] {
+                            center + new Vector2(0, -s), center + new Vector2(s, 0),
+                            center + new Vector2(0, s), center + new Vector2(-s, 0)
+                        };
+                        DrawColoredPolygon(diamond, particleCol with { A = 0.25f });
+                        DrawLine(diamond[0], diamond[1], particleCol, 1.2f);
+                        DrawLine(diamond[1], diamond[2], particleCol, 1.2f);
+                        DrawLine(diamond[2], diamond[3], particleCol, 1.2f);
+                        DrawLine(diamond[3], diamond[0], particleCol, 1.2f);
+                        // Label pill
+                        DrawOverlayPill(x * TileSize + 1, y * TileSize + 1,
+                            $"P{Map.Tiles[x, y].ParticleGroup}",
+                            new Color(0f, 0.35f, 0.35f, 0.85f),
+                            new Color(0.3f, 1f, 0.9f, 0.9f), 7);
                     }
 
-        // NPC indicators
+        // ── NPC indicators (badge with dot) ──
         if (State.ShowNpcs)
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].HasNpc)
                     {
                         int npcNum = Map.Tiles[x, y].NpcIndex;
-                        DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
-                            TileSize * 0.3f, EditorTheme.OVERLAY_NPC);
+                        var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
+                        // Small filled circle with ring
+                        DrawCircle(center, TileSize * 0.18f, EditorTheme.OVERLAY_NPC with { A = 0.5f });
+                        DrawArc(center, TileSize * 0.18f, 0, MathF.Tau, 16,
+                            new Color(1f, 0.7f, 0.3f, 0.7f), 1.2f);
+                        // Label pill at bottom
                         string npcLabel = NpcDb?.Get(npcNum)?.Name ?? $"N{npcNum}";
-                        DrawString(ThemeDB.FallbackFont,
-                            new Vector2(x * TileSize + 2, (y + 1) * TileSize - 4),
-                            npcLabel, HorizontalAlignment.Left, -1, 7,
-                            new Color(1f, 0.7f, 0.3f, 0.8f));
+                        DrawOverlayPill(x * TileSize, (y + 1) * TileSize - 11,
+                            npcLabel, new Color(0.5f, 0.3f, 0.1f, 0.85f),
+                            new Color(1f, 0.75f, 0.35f, 0.95f), 7);
                     }
 
-        // Object indicators
+        // ── Object indicators (small square badge) ──
         if (State.ShowObjects)
             for (int y = 1; y <= mapH; y++)
                 for (int x = 1; x <= mapW; x++)
                     if (Map.Tiles[x, y].HasObject)
                     {
-                        DrawCircle(new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize),
-                            TileSize * 0.2f, EditorTheme.OVERLAY_OBJECT);
+                        var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
+                        // Small rounded square indicator
+                        float hs = TileSize * 0.15f;
+                        DrawRect(new Rect2(center.X - hs, center.Y - hs, hs * 2, hs * 2),
+                            EditorTheme.OVERLAY_OBJECT with { A = 0.45f });
+                        DrawRect(new Rect2(center.X - hs, center.Y - hs, hs * 2, hs * 2),
+                            new Color(0.7f, 0.4f, 1f, 0.6f), false, 1f);
+                        // Label pill
                         var obj = Map.Tiles[x, y];
-                        DrawString(ThemeDB.FallbackFont,
-                            new Vector2(x * TileSize + 2, y * TileSize + 10),
-                            $"O{obj.ObjIndex}x{obj.ObjAmount}", HorizontalAlignment.Left, -1, 7,
-                            new Color(0.7f, 0.4f, 1f, 0.8f));
+                        DrawOverlayPill(x * TileSize, y * TileSize + 1,
+                            $"O{obj.ObjIndex}x{obj.ObjAmount}",
+                            new Color(0.3f, 0.15f, 0.5f, 0.85f),
+                            new Color(0.8f, 0.5f, 1f, 0.95f), 7);
                     }
 
-        // Triggers
+        // ── Triggers (subtle fill + pill label) ──
         for (int y = 1; y <= mapH; y++)
             for (int x = 1; x <= mapW; x++)
                 if (Map.Tiles[x, y].Trigger > 0)
@@ -576,33 +686,38 @@ public partial class MapViewport : Control
                     };
                     DrawRect(new Rect2(x * TileSize + 1, y * TileSize + 1,
                         TileSize - 2, TileSize - 2), trigColor);
-                    DrawString(ThemeDB.FallbackFont,
-                        new Vector2(x * TileSize + 2, y * TileSize + 10),
-                        trigName, HorizontalAlignment.Left, -1, 6,
-                        new Color(trigColor.R, trigColor.G, trigColor.B, 0.8f));
+                    DrawOverlayPill(x * TileSize + 1, y * TileSize + 1,
+                        trigName, trigColor with { A = 0.7f },
+                        new Color(trigColor.R, trigColor.G, trigColor.B, 0.9f), 6);
                 }
 
-        // Hover highlight
+        // ── Hover highlight (clean 2px border, no fill) ──
         if (State.HoverValid && Map.InBounds(State.HoverX, State.HoverY))
         {
-            DrawRect(new Rect2(State.HoverX * TileSize, State.HoverY * TileSize,
-                TileSize, TileSize), EditorTheme.OVERLAY_HOVER);
-            DrawRect(new Rect2(State.HoverX * TileSize, State.HoverY * TileSize,
-                TileSize, TileSize), EditorTheme.OVERLAY_HOVER with { A = 0.4f }, false, 1f);
+            float hx = State.HoverX * TileSize;
+            float hy = State.HoverY * TileSize;
+            // Very subtle inner glow
+            DrawRect(new Rect2(hx + 1, hy + 1, TileSize - 2, TileSize - 2),
+                new Color(1f, 1f, 1f, 0.06f));
+            // Crisp bright border
+            DrawRect(new Rect2(hx + 0.5f, hy + 0.5f, TileSize - 1, TileSize - 1),
+                new Color(1f, 1f, 1f, 0.5f), false, 1.5f);
         }
 
-        // Selection rectangle
+        // ── Selection rectangle (marching ants + blue fill) ──
         if (State.HasSelection)
         {
             var selRect = new Rect2(
                 State.SelX1 * TileSize, State.SelY1 * TileSize,
                 (State.SelX2 - State.SelX1 + 1) * TileSize,
                 (State.SelY2 - State.SelY1 + 1) * TileSize);
-            DrawRect(selRect, EditorTheme.OVERLAY_SELECTION);
-            DrawRect(selRect, EditorTheme.OVERLAY_SELECTION with { A = 0.7f }, false, 2f);
+            // Semi-transparent blue fill
+            DrawRect(selRect, new Color(0.2f, 0.5f, 1f, 0.12f));
+            // Marching ants: dark line underneath, then dashed white on top
+            DrawMarchingAnts(selRect);
         }
 
-        // Active selection being drawn
+        // ── Active selection being drawn (marching ants + yellow fill) ──
         if (_isSelecting)
         {
             int sx1 = Math.Min(_selectStart.X, _dragCurrent.X);
@@ -611,8 +726,81 @@ public partial class MapViewport : Control
             int sy2 = Math.Max(_selectStart.Y, _dragCurrent.Y);
             var selRect = new Rect2(sx1 * TileSize, sy1 * TileSize,
                 (sx2 - sx1 + 1) * TileSize, (sy2 - sy1 + 1) * TileSize);
-            DrawRect(selRect, new Color(1f, 1f, 0.2f, 0.2f));
-            DrawRect(selRect, new Color(1f, 1f, 0.2f, 0.8f), false, 2f);
+            DrawRect(selRect, new Color(1f, 1f, 0.3f, 0.1f));
+            DrawMarchingAnts(selRect, new Color(1f, 1f, 0.3f, 0.9f));
+        }
+    }
+
+    /// <summary>
+    /// Draw a text label with a rounded pill background for readability.
+    /// </summary>
+    private void DrawOverlayPill(float px, float py, string text,
+        Color bgColor, Color textColor, int fontSize)
+    {
+        // Estimate text width (approximate: fontSize * 0.6 per char)
+        float textW = text.Length * fontSize * 0.55f + 4;
+        float textH = fontSize + 3;
+        // Background pill
+        DrawRect(new Rect2(px, py, textW, textH), bgColor);
+        // Render text
+        DrawString(ThemeDB.FallbackFont,
+            new Vector2(px + 2, py + fontSize),
+            text, HorizontalAlignment.Left, -1, fontSize, textColor);
+    }
+
+    /// <summary>
+    /// Draw a marching ants rectangle (animated dashed border).
+    /// Uses a dark shadow line underneath and a bright dashed line on top.
+    /// </summary>
+    private void DrawMarchingAnts(Rect2 rect, Color? dashColor = null)
+    {
+        var dark = new Color(0f, 0f, 0f, 0.5f);
+        var bright = dashColor ?? new Color(1f, 1f, 1f, 0.9f);
+        float dashLen = MarchingAntsDash;
+        float gapLen = MarchingAntsGap;
+        float total = dashLen + gapLen;
+
+        // Draw solid dark line as shadow underneath
+        DrawRect(rect, dark, false, 1.5f);
+
+        // Draw dashed bright line on top (4 edges)
+        DrawDashedEdge(
+            new Vector2(rect.Position.X, rect.Position.Y),
+            new Vector2(rect.Position.X + rect.Size.X, rect.Position.Y),
+            bright, dashLen, gapLen, total);
+        DrawDashedEdge(
+            new Vector2(rect.Position.X + rect.Size.X, rect.Position.Y),
+            new Vector2(rect.Position.X + rect.Size.X, rect.Position.Y + rect.Size.Y),
+            bright, dashLen, gapLen, total);
+        DrawDashedEdge(
+            new Vector2(rect.Position.X + rect.Size.X, rect.Position.Y + rect.Size.Y),
+            new Vector2(rect.Position.X, rect.Position.Y + rect.Size.Y),
+            bright, dashLen, gapLen, total);
+        DrawDashedEdge(
+            new Vector2(rect.Position.X, rect.Position.Y + rect.Size.Y),
+            new Vector2(rect.Position.X, rect.Position.Y),
+            bright, dashLen, gapLen, total);
+    }
+
+    /// <summary>
+    /// Draw a single dashed edge with marching animation offset.
+    /// </summary>
+    private void DrawDashedEdge(Vector2 from, Vector2 to, Color color,
+        float dashLen, float gapLen, float total)
+    {
+        var dir = to - from;
+        float edgeLen = dir.Length();
+        if (edgeLen < 0.1f) return;
+        var norm = dir / edgeLen;
+
+        float pos = -_marchingAntsOffset;
+        while (pos < edgeLen)
+        {
+            float segStart = Math.Max(pos, 0f);
+            float segEnd = Math.Min(pos + dashLen, edgeLen);
+            if (segEnd > segStart)
+                DrawLine(from + norm * segStart, from + norm * segEnd, color, 1.5f);
+            pos += total;
         }
     }
 

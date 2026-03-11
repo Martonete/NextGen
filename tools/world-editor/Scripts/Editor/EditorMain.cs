@@ -53,11 +53,15 @@ public partial class EditorMain : Control
     private HeadAnimData[]? _walkHeads;
 
     // Status bar
+    private VBoxContainer? _statusOuter;
     private HBoxContainer? _statusBar;
     private Label? _statusLabel;
     private Label? _coordLabel;
     private Label? _layerLabel;
     private Label? _toolLabel;
+
+    // Sidebar border
+    private ColorRect? _sidebarBorder;
 
     // Map navigation bar
     private HBoxContainer? _mapNavBar;
@@ -92,11 +96,12 @@ public partial class EditorMain : Control
     private Panel? _preloadOverlay;
     private const int PreloadBatchSize = 8; // textures per frame
 
-    private const float PaletteWidth = 300;
-    private const float StatusHeight = 24;
+    private const float PaletteWidth = 280;
+    private const float StatusHeight = 28;
     private const float NavBarHeight = 28;
-    private const float ToolBarHeight = 44;
+    private const float ToolBarHeight = 40;
     private const float TileInfoHeight = 110;
+    private const float SidebarBorderWidth = 1;
 
     public override void _Ready()
     {
@@ -167,9 +172,36 @@ public partial class EditorMain : Control
 
         AddChild(_menuBar);
 
-        // --- Tool bar (themed, Excalidraw-style) ---
+        // --- Tool bar (professional grouped layout) ---
         _toolBar = new HBoxContainer();
-        _toolBar.AddThemeConstantOverride("separation", 2);
+        _toolBar.AddThemeConstantOverride("separation", 0);
+
+        // -- Group 1: File operations --
+        var fileGroup = EditorTheme.ToolBarGroup();
+        var fileGroupH = new HBoxContainer();
+        fileGroupH.AddThemeConstantOverride("separation", 4);
+        fileGroupH.AddChild(EditorTheme.ActionButtonCompact("\ud83d\udcc2", "Abrir Mapa (Ctrl+O)", () => RequestOpenMap()));
+        fileGroupH.AddChild(EditorTheme.ActionButtonCompact("\ud83d\udcbe", "Guardar (Ctrl+S)", () => OnSaveMap()));
+        fileGroup.AddChild(fileGroupH);
+        _toolBar.AddChild(fileGroup);
+
+        _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+
+        // -- Group 2: Undo / Redo --
+        var undoGroup = EditorTheme.ToolBarGroup();
+        var undoGroupH = new HBoxContainer();
+        undoGroupH.AddThemeConstantOverride("separation", 4);
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.QueueRedraw(); }));
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.QueueRedraw(); }));
+        undoGroup.AddChild(undoGroupH);
+        _toolBar.AddChild(undoGroup);
+
+        _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+
+        // -- Group 3: Drawing tools --
+        var drawGroup = EditorTheme.ToolBarGroup();
+        var drawGroupH = new HBoxContainer();
+        drawGroupH.AddThemeConstantOverride("separation", 4);
 
         var toolDefs = new (EditorTool tool, string icon, string label, string shortcut)[]
         {
@@ -187,15 +219,22 @@ public partial class EditorMain : Control
         for (int i = 0; i < toolDefs.Length; i++)
         {
             var (tool, icon, label, shortcut) = toolDefs[i];
-            var btn = EditorTheme.ToolToggle(icon, label, $"{label} ({shortcut})");
+            var btn = EditorTheme.ToolToggleCompact(icon, $"{label} ({shortcut})");
             var capturedTool = tool;
             btn.Pressed += () => SetActiveTool(capturedTool);
-            _toolBar.AddChild(btn);
+            drawGroupH.AddChild(btn);
             _toolBarButtons[i] = btn;
         }
+        drawGroup.AddChild(drawGroupH);
+        _toolBar.AddChild(drawGroup);
 
-        // Separator + property tools
-        _toolBar.AddChild(EditorTheme.MakeVSeparator());
+        _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+
+        // -- Group 4: Property tools --
+        var propGroup = EditorTheme.ToolBarGroup();
+        var propGroupH = new HBoxContainer();
+        propGroupH.AddThemeConstantOverride("separation", 4);
+
         var propToolDefs = new (EditorTool tool, string icon, string label)[]
         {
             (EditorTool.Light,   "\u2600", "Luz"),
@@ -208,82 +247,97 @@ public partial class EditorMain : Control
         for (int i = 0; i < propToolDefs.Length; i++)
         {
             var (tool, icon, label) = propToolDefs[i];
-            var btn = EditorTheme.ToolToggle(icon, label, label);
+            var btn = EditorTheme.ToolToggleCompact(icon, label);
             var capturedTool = tool;
             btn.Pressed += () => SetActiveTool(capturedTool);
-            _toolBar.AddChild(btn);
+            propGroupH.AddChild(btn);
             extButtons[i] = btn;
         }
+        propGroup.AddChild(propGroupH);
+        _toolBar.AddChild(propGroup);
+
         // Merge all tool buttons for sync
         var allBtns = new Button[_toolBarButtons.Length + extButtons.Length];
         Array.Copy(_toolBarButtons, allBtns, _toolBarButtons.Length);
         Array.Copy(extButtons, 0, allBtns, _toolBarButtons.Length, extButtons.Length);
         _toolBarButtons = allBtns;
 
-        // Separator + Layer tab buttons (labeled, color-coded)
-        _toolBar.AddChild(EditorTheme.MakeVSeparator());
+        _toolBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+
+        // -- Group 5: Layer tabs (compact) --
+        var layerGroup = EditorTheme.ToolBarGroup();
+        var layerGroupH = new HBoxContainer();
+        layerGroupH.AddThemeConstantOverride("separation", 4);
         for (int li = 1; li <= 4; li++)
         {
             int capturedLayer = li;
-            var layerBtn = EditorTheme.LayerTab(li, () =>
+            var layerBtn = EditorTheme.LayerTabCompact(li, () =>
             {
                 _state.ActiveLayer = capturedLayer;
                 SyncLayerTabs();
             });
-            _toolBar.AddChild(layerBtn);
+            layerGroupH.AddChild(layerBtn);
             _layerTabButtons[li - 1] = layerBtn;
         }
+        layerGroup.AddChild(layerGroupH);
+        _toolBar.AddChild(layerGroup);
 
         AddChild(_toolBar);
         SyncToolBar();
         SyncLayerTabs();
 
-        // --- Map navigation bar (below toolbar) ---
+        // --- Map navigation bar (below toolbar, compact) ---
         _mapNavBar = new HBoxContainer();
-        _mapNavBar.AddThemeConstantOverride("separation", 2);
+        _mapNavBar.AddThemeConstantOverride("separation", 4);
 
-        var navLabel = EditorTheme.MakeLabel("Mapa:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        var navLabel = EditorTheme.MakeLabel("Mapa", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
         _mapNavBar.AddChild(navLabel);
 
-        // Left arrow
-        var btnPrev = EditorTheme.MakeButton("\u25c0", () => NavigateMapOffset(-NavButtonCount));
-        btnPrev.CustomMinimumSize = new Vector2(28, 0);
-        btnPrev.TooltipText = "Retroceder";
+        // Left arrow (compact)
+        var btnPrev = new Button { Text = "\u25c0", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Retroceder" };
+        btnPrev.AddThemeFontSizeOverride("font_size", 9);
+        btnPrev.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
+        btnPrev.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
+        btnPrev.Pressed += () => NavigateMapOffset(-NavButtonCount);
         _mapNavBar.AddChild(btnPrev);
 
-        // Map number buttons
+        // Map number buttons (compact pills)
         _mapNavButtons = new Button[NavButtonCount];
         for (int i = 0; i < NavButtonCount; i++)
         {
             var btn = new Button
             {
-                CustomMinimumSize = new Vector2(48, 0),
+                CustomMinimumSize = new Vector2(36, 22),
                 SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
             };
-            btn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+            btn.AddThemeFontSizeOverride("font_size", 10);
             int capturedIdx = i;
             btn.Pressed += () => OnNavButtonPressed(capturedIdx);
             _mapNavBar.AddChild(btn);
             _mapNavButtons[i] = btn;
         }
 
-        // Right arrow
-        var btnNext = EditorTheme.MakeButton("\u25b6", () => NavigateMapOffset(NavButtonCount));
-        btnNext.CustomMinimumSize = new Vector2(28, 0);
-        btnNext.TooltipText = "Avanzar";
+        // Right arrow (compact)
+        var btnNext = new Button { Text = "\u25b6", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Avanzar" };
+        btnNext.AddThemeFontSizeOverride("font_size", 9);
+        btnNext.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
+        btnNext.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
+        btnNext.Pressed += () => NavigateMapOffset(NavButtonCount);
         _mapNavBar.AddChild(btnNext);
 
-        // Separator + Quick jump
-        _mapNavBar.AddChild(EditorTheme.MakeVSeparator());
-
-        var goLabel = EditorTheme.MakeLabel("Ir a:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
-        _mapNavBar.AddChild(goLabel);
+        // Separator + Quick jump (compact)
+        _mapNavBar.AddChild(EditorTheme.ToolBarGroupSeparator());
 
         _mapNumSpin = EditorTheme.MakeSpinBox(1, 999, 1, 1);
+        _mapNumSpin.CustomMinimumSize = new Vector2(60, 0);
         _mapNavBar.AddChild(_mapNumSpin);
 
-        var goBtn = EditorTheme.PrimaryButton("Ir", () => RequestLoadMap((int)_mapNumSpin!.Value));
-        goBtn.CustomMinimumSize = new Vector2(40, 0);
+        var goBtn = new Button { Text = "Ir", CustomMinimumSize = new Vector2(32, 22), TooltipText = "Ir al mapa" };
+        goBtn.AddThemeFontSizeOverride("font_size", 10);
+        goBtn.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY, 10, 4, 1));
+        goBtn.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY_H, 10, 4, 1));
+        goBtn.AddThemeColorOverride("font_color", Colors.White);
+        goBtn.Pressed += () => RequestLoadMap((int)_mapNumSpin!.Value);
         _mapNavBar.AddChild(goBtn);
 
         AddChild(_mapNavBar);
@@ -292,6 +346,16 @@ public partial class EditorMain : Control
         _sidebarTabs = new TabContainer();
         _sidebarTabs.TabAlignment = TabBar.AlignmentMode.Center;
         _sidebarTabs.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        // Style tab headers as pills
+        var tabNormal = EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 8, 8, 3);
+        var tabHover = EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 8, 8, 3);
+        var tabSelected = EditorTheme.FlatBox(EditorTheme.BG_TOOL_ACTIVE, 8, 8, 3, EditorTheme.ACCENT, 1);
+        _sidebarTabs.AddThemeStyleboxOverride("tab_unselected", tabNormal);
+        _sidebarTabs.AddThemeStyleboxOverride("tab_hovered", tabHover);
+        _sidebarTabs.AddThemeStyleboxOverride("tab_selected", tabSelected);
+        _sidebarTabs.AddThemeColorOverride("font_unselected_color", EditorTheme.TEXT_SECONDARY);
+        _sidebarTabs.AddThemeColorOverride("font_hovered_color", EditorTheme.TEXT_PRIMARY);
+        _sidebarTabs.AddThemeColorOverride("font_selected_color", Colors.White);
         AddChild(_sidebarTabs);
 
         _palette = new TilePalette { Name = "Tiles", State = _state };
@@ -304,9 +368,9 @@ public partial class EditorMain : Control
 
         // --- Tile info panel (bottom of left sidebar, themed) ---
         _tileInfoPanel = new VBoxContainer();
-        _tileInfoPanel.AddThemeConstantOverride("separation", 1);
+        _tileInfoPanel.AddThemeConstantOverride("separation", 2);
 
-        var infoHeader = EditorTheme.SectionLabel("Info del Tile");
+        var infoHeader = EditorTheme.SectionLabel("TILE INFO");
         _tileInfoPanel.AddChild(infoHeader);
 
         _tileInfoLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
@@ -328,16 +392,37 @@ public partial class EditorMain : Control
         _viewport.OnPendingCancel += CancelPendingPlacement;
         AddChild(_viewport);
 
-        // --- Status bar (themed, 3-section layout) ---
+        // Sidebar right border (1px separator between sidebar and viewport)
+        _sidebarBorder = new ColorRect { Color = EditorTheme.BORDER };
+        AddChild(_sidebarBorder);
+
+        // --- Status bar (professional, with top border and pill indicators) ---
+        _statusOuter = new VBoxContainer();
+        _statusOuter.AddThemeConstantOverride("separation", 0);
+        var statusOuter = _statusOuter;
+
+        // Top border line (1px separator)
+        var statusBorder = new ColorRect
+        {
+            Color = EditorTheme.BORDER,
+            CustomMinimumSize = new Vector2(0, 1),
+        };
+        statusOuter.AddChild(statusBorder);
+
         _statusBar = new HBoxContainer();
-        _statusBar.AddThemeConstantOverride("separation", 16);
+        _statusBar.AddThemeConstantOverride("separation", 8);
 
-        _toolLabel = EditorTheme.MakeLabel("Pintar", EditorTheme.TEXT_SUCCESS, EditorTheme.FONT_SM);
-        _statusBar.AddChild(_toolLabel);
+        // Tool indicator pill
+        _toolLabel = EditorTheme.MakeLabel("Pintar", Colors.White, EditorTheme.FONT_SM);
+        var toolPill = EditorTheme.StatusPill(_toolLabel, EditorTheme.BG_BTN_SUCCESS);
+        _statusBar.AddChild(toolPill);
 
-        _layerLabel = EditorTheme.MakeLabel("Capa 1", EditorTheme.TEXT_ACCENT, EditorTheme.FONT_SM);
-        _statusBar.AddChild(_layerLabel);
+        // Layer indicator pill
+        _layerLabel = EditorTheme.MakeLabel("L1", Colors.White, EditorTheme.FONT_SM);
+        var layerPill = EditorTheme.StatusPill(_layerLabel, new Color(0.15f, 0.15f, 0.20f));
+        _statusBar.AddChild(layerPill);
 
+        // Coordinates (monospace-style)
         _coordLabel = EditorTheme.MakeLabel("(0, 0)", EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_SM);
         _statusBar.AddChild(_coordLabel);
 
@@ -346,7 +431,8 @@ public partial class EditorMain : Control
         _statusLabel.HorizontalAlignment = HorizontalAlignment.Right;
         _statusBar.AddChild(_statusLabel);
 
-        AddChild(_statusBar);
+        statusOuter.AddChild(_statusBar);
+        AddChild(statusOuter);
 
         // --- Tile Properties floating Window ---
         _propsWindow = new Window
@@ -430,15 +516,15 @@ public partial class EditorMain : Control
         float tbTop = menuH;
         if (_toolBar != null)
         {
-            _toolBar.Position = new Vector2(0, tbTop);
-            _toolBar.Size = new Vector2(win.X, ToolBarHeight);
+            _toolBar.Position = new Vector2(4, tbTop);
+            _toolBar.Size = new Vector2(win.X - 8, ToolBarHeight);
         }
 
         float navTop = tbTop + ToolBarHeight;
         if (_mapNavBar != null)
         {
-            _mapNavBar.Position = new Vector2(0, navTop);
-            _mapNavBar.Size = new Vector2(win.X, NavBarHeight);
+            _mapNavBar.Position = new Vector2(4, navTop);
+            _mapNavBar.Size = new Vector2(win.X - 8, NavBarHeight);
         }
 
         float contentTop = navTop + NavBarHeight;
@@ -457,29 +543,36 @@ public partial class EditorMain : Control
 
         if (_tileInfoPanel != null)
         {
-            _tileInfoPanel.Position = new Vector2(4, contentTop + paletteH);
-            _tileInfoPanel.Size = new Vector2(PaletteWidth - 4, tileInfoH);
+            _tileInfoPanel.Position = new Vector2(8, contentTop + paletteH + 4);
+            _tileInfoPanel.Size = new Vector2(PaletteWidth - 12, tileInfoH - 4);
+        }
+
+        // Sidebar right border (1px line)
+        if (_sidebarBorder != null)
+        {
+            _sidebarBorder.Position = new Vector2(PaletteWidth, contentTop);
+            _sidebarBorder.Size = new Vector2(SidebarBorderWidth, contentH);
         }
 
         // Viewport
         if (_viewport != null)
         {
-            float vpX = PaletteWidth + 2;
+            float vpX = PaletteWidth + SidebarBorderWidth;
             _viewport.Position = new Vector2(vpX, contentTop);
             _viewport.Size = new Vector2(win.X - vpX, contentH);
         }
 
-        // Status bar
-        if (_statusBar != null)
+        // Status bar (outer container with border line + bar)
+        if (_statusOuter != null)
         {
-            _statusBar.Position = new Vector2(0, contentBottom);
-            _statusBar.Size = new Vector2(win.X, StatusHeight);
+            _statusOuter.Position = new Vector2(0, contentBottom);
+            _statusOuter.Size = new Vector2(win.X, StatusHeight);
         }
 
         // Preload overlay (centered in viewport area)
         if (_preloadOverlay != null && _viewport != null)
         {
-            float vpX = PaletteWidth + 2;
+            float vpX = PaletteWidth + SidebarBorderWidth;
             float vpW = win.X - vpX;
             float ovW = 340;
             float ovH = 80;
@@ -1390,7 +1483,7 @@ public partial class EditorMain : Control
             btn.Disabled = false;
             bool isCurrent = mapNum == _state.CurrentMapNumber;
             bool exists = _state.AvailableMaps.Contains(mapNum);
-            EditorTheme.StyleNavButton(btn, isCurrent, exists);
+            EditorTheme.StyleNavButtonCompact(btn, isCurrent, exists);
         }
     }
 
@@ -1651,13 +1744,24 @@ public partial class EditorMain : Control
         _particles?.Update((float)delta);
 
         // Update status bar
-        _coordLabel!.Text = _state.HoverValid ? $"({_state.HoverX}, {_state.HoverY})" : "";
+        _coordLabel!.Text = _state.HoverValid ? $"({_state.HoverX,3}, {_state.HoverY,3})" : "";
         int toolIdx = (int)_state.ActiveTool;
         _toolLabel!.Text = toolIdx < ToolNames.Length ? ToolNames[toolIdx] : "?";
         int layer = _state.ActiveLayer;
-        _layerLabel!.Text = $"Capa {layer}";
+        _layerLabel!.Text = $"L{layer}";
         if (layer >= 1 && layer <= 4)
-            _layerLabel.AddThemeColorOverride("font_color", EditorTheme.LAYER_COLORS[layer]);
+        {
+            var layerColor = EditorTheme.LAYER_COLORS[layer];
+            _layerLabel.AddThemeColorOverride("font_color", Colors.White);
+            // Update the pill background to match the layer color
+            var pillParent = _layerLabel.GetParent();
+            if (pillParent is PanelContainer pc)
+            {
+                var darkLayer = layerColor * 0.4f;
+                darkLayer.A = 1.0f;
+                pc.AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(darkLayer, 8, 6, 1, layerColor, 1));
+            }
+        }
 
         // Update tile info
         UpdateTileInfo();
