@@ -212,6 +212,11 @@ public partial class Main : Control
     // Track screen transitions
     private Screen _lastScreen = Screen.Login;
 
+    // Startup preload system
+    private LoadingScreen? _startupLoadingScreen;
+    private IEnumerator<int>? _texturePreloadIter;
+    private bool _startupPreloadDone;
+
     public override void _Ready()
     {
         GD.Print("=== Argentum Nextgen — Godot 4 Client ===");
@@ -539,10 +544,10 @@ public partial class Main : Control
         // Load remembered account (XOR-encrypted file)
         _loginController?.LoadRememberedAccount();
 
-        // If config was loaded from file, apply saved display preference and skip dialog
+        // Apply display preferences
         if (_state.Config.LoadedFromFile)
         {
-            GD.Print("[MAIN] Config loaded from file — applying saved display preference, skipping dialog");
+            GD.Print("[MAIN] Config loaded from file — applying saved display preference");
             if (_state.Config.Fullscreen)
             {
                 GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
@@ -554,16 +559,26 @@ public partial class Main : Control
                 DisplayServer.WindowSetSize(new Vector2I(800, 600));
                 GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
             }
-            if (_loginPanel != null)
-                _loginPanel.Visible = true;
-            CallDeferred(MethodName.FocusAccountInput);
         }
         else
         {
-            // First launch — show window mode dialog
+            // First launch — show window mode dialog (will be behind startup loading screen)
             _dialogManager?.ShowWindowModeDialog();
             CallDeferred(MethodName.CenterWindowModeDialog);
         }
+
+        // Create startup loading screen on UILayer (above everything, blocks all input)
+        _startupLoadingScreen = new LoadingScreen();
+        _startupLoadingScreen.Init(_state);
+        _startupLoadingScreen.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
+        GetNode("UILayer").AddChild(_startupLoadingScreen);
+        _startupLoadingScreen.Show("Tierras Sagradas");
+        _startupLoadingScreen.SetLabel("Cargando gráficos...");
+
+        // Start texture preload
+        _startupPreloadDone = false;
+        _texturePreloadIter = _gameData.Textures!.PreloadAll(_gameData.Grhs);
+        GD.Print($"[MAIN] Starting texture preload: {_gameData.Textures.PreloadTotal} textures");
     }
 
     private void CenterWindowModeDialog()
@@ -616,6 +631,38 @@ public partial class Main : Control
 
     public override void _Process(double delta)
     {
+        // Startup texture preload (blocks everything until done)
+        if (!_startupPreloadDone && _texturePreloadIter != null)
+        {
+            var texMgr = _gameData.Textures;
+            if (texMgr != null)
+            {
+                bool done = texMgr.TickPreload(_texturePreloadIter, 12.0);
+                float progress = texMgr.PreloadTotal > 0
+                    ? (float)texMgr.PreloadDone / texMgr.PreloadTotal
+                    : 1f;
+                _startupLoadingScreen?.SetProgress(progress);
+                _startupLoadingScreen?.SetLabel(
+                    $"Cargando gráficos... ({texMgr.PreloadDone}/{texMgr.PreloadTotal})");
+
+                if (done)
+                {
+                    _startupPreloadDone = true;
+                    _texturePreloadIter = null;
+                    _startupLoadingScreen?.Complete();
+                    GD.Print("[MAIN] Texture preload complete");
+
+                    // Now show login (or window mode dialog if first launch)
+                    if (_state.Config.LoadedFromFile)
+                    {
+                        if (_loginPanel != null) _loginPanel.Visible = true;
+                        CallDeferred(MethodName.FocusAccountInput);
+                    }
+                }
+            }
+            return; // Block all other processing
+        }
+
         if (_tcp == null || _packetHandler == null) return;
 
         // VB6: Socket1_Disconnect — detect lost connection and return to login
@@ -783,6 +830,9 @@ public partial class Main : Control
 
     public override void _Input(InputEvent @event)
     {
+        // Block all input during startup preload
+        if (!_startupPreloadDone) return;
+
         // Escape on login -> quit game
         if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo
             && escKey.Keycode == Key.Escape

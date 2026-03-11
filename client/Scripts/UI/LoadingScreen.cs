@@ -122,6 +122,14 @@ public partial class LoadingScreen : Control
     }
 
     /// <summary>
+    /// Update the loading label text (e.g., phase description).
+    /// </summary>
+    public void SetLabel(string text)
+    {
+        if (_loadingLabel != null) _loadingLabel.Text = text;
+    }
+
+    /// <summary>
     /// Set progress value (0.0 to 1.0). The bar animates smoothly toward this value.
     /// </summary>
     public void SetProgress(float value)
