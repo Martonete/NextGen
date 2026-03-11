@@ -36,7 +36,10 @@ public partial class PacketHandler
     };
 
     /// Receive buffer for accumulating partial binary packets across TCP reads.
-    private readonly List<byte> _recvBuffer = new();
+    /// Uses an offset-based approach to avoid O(n) RemoveRange and ToArray allocations.
+    private byte[] _recvBuf = new byte[65536];
+    private int _recvStart;
+    private int _recvLen;
 
     /// Saved self-character aura state across map changes.
     /// CharIndex changes between maps, so we save auras here in ChangeMap
@@ -49,46 +52,82 @@ public partial class PacketHandler
     }
 
     /// <summary>
+    /// Append incoming TCP data to the receive buffer, compacting if needed.
+    /// </summary>
+    private void RecvAppend(byte[] data)
+    {
+        int count = data.Length;
+        // Compact: move data to front if there isn't room at the end
+        if (_recvStart + _recvLen + count > _recvBuf.Length)
+        {
+            if (_recvLen + count > _recvBuf.Length)
+            {
+                // Buffer too small — grow it
+                int newSize = Math.Max(_recvBuf.Length * 2, _recvLen + count);
+                byte[] newBuf = new byte[newSize];
+                Buffer.BlockCopy(_recvBuf, _recvStart, newBuf, 0, _recvLen);
+                _recvBuf = newBuf;
+            }
+            else
+            {
+                Buffer.BlockCopy(_recvBuf, _recvStart, _recvBuf, 0, _recvLen);
+            }
+            _recvStart = 0;
+        }
+        Buffer.BlockCopy(data, 0, _recvBuf, _recvStart + _recvLen, count);
+        _recvLen += count;
+    }
+
+    /// <summary>
+    /// Consume N bytes from the front of the receive buffer (advance start pointer).
+    /// </summary>
+    private void RecvConsume(int n)
+    {
+        _recvStart += n;
+        _recvLen -= n;
+    }
+
+    /// <summary>
     /// Process raw binary data from the TCP client.
     /// Accumulates bytes across reads and extracts complete packets.
+    /// Uses an offset-based buffer to avoid O(n) copies on each packet.
     /// For GenericText packets (opcode 255), delegates to the text-based HandlePacket.
     /// </summary>
     public void HandleBinaryData(byte[] data)
     {
-        _recvBuffer.AddRange(data);
+        RecvAppend(data);
 
         // Process all complete packets in the buffer
         int safetyLimit = 500; // prevent infinite loop on corrupt data
-        while (_recvBuffer.Count > 0 && safetyLimit-- > 0)
+        while (_recvLen > 0 && safetyLimit-- > 0)
         {
-            byte opcode = _recvBuffer[0];
+            byte opcode = _recvBuf[_recvStart];
 
             if (opcode == ServerPacketId.GenericText)
             {
                 // GenericText: [255][len:u16 LE][text_bytes]
-                if (_recvBuffer.Count < 3) break; // Need at least opcode + 2-byte length
+                if (_recvLen < 3) break; // Need at least opcode + 2-byte length
 
-                int textLen = _recvBuffer[1] | (_recvBuffer[2] << 8);
+                int textLen = _recvBuf[_recvStart + 1] | (_recvBuf[_recvStart + 2] << 8);
                 int totalLen = 1 + 2 + textLen; // opcode + len + text
 
-                if (_recvBuffer.Count < totalLen) break; // Partial packet, wait for more data
+                if (_recvLen < totalLen) break; // Partial packet, wait for more data
 
-                // Extract the text content
+                // Extract the text content directly from the buffer
                 string text = System.Text.Encoding.Latin1.GetString(
-                    _recvBuffer.GetRange(3, textLen).ToArray());
+                    _recvBuf, _recvStart + 3, textLen);
 
-                _recvBuffer.RemoveRange(0, totalLen);
+                RecvConsume(totalLen);
 
                 // Delegate to existing text-based handler
                 HandlePacket(text);
             }
             else
             {
-                // Native binary packet — create ByteQueue and dispatch.
+                // Native binary packet — create ByteQueue from buffer segment and dispatch.
                 // ByteQueue.Read* throws InvalidOperationException on insufficient data,
                 // which we catch to wait for more TCP bytes (partial packet rollback).
-                byte[] bufArray = _recvBuffer.ToArray();
-                var bq = new ByteQueue(bufArray);
+                var bq = new ByteQueue(_recvBuf, _recvStart, _recvLen);
                 int startPos = bq.ReadPosition;
 
                 try
@@ -99,11 +138,11 @@ public partial class PacketHandler
                     {
                         // Handler didn't consume any bytes — skip this byte to avoid infinite loop
                         GD.PrintErr($"[PKT] Handler consumed 0 bytes for opcode={opcode}, skipping 1 byte");
-                        _recvBuffer.RemoveAt(0);
+                        RecvConsume(1);
                     }
                     else
                     {
-                        _recvBuffer.RemoveRange(0, consumed);
+                        RecvConsume(consumed);
                     }
                 }
                 catch (System.InvalidOperationException)
@@ -113,9 +152,9 @@ public partial class PacketHandler
                 }
             }
         }
-        if (safetyLimit <= 0 && _recvBuffer.Count > 0)
+        if (safetyLimit <= 0 && _recvLen > 0)
         {
-            GD.PrintErr($"[PKT] Safety limit reached, {_recvBuffer.Count} bytes remaining, first byte={_recvBuffer[0]}");
+            GD.PrintErr($"[PKT] Safety limit reached, {_recvLen} bytes remaining, first byte={_recvBuf[_recvStart]}");
         }
     }
 
