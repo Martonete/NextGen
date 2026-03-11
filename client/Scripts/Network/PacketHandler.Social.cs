@@ -737,20 +737,4 @@ public partial class PacketHandler
         HandlePacket(text);
     }
 
-    /// Wire: u16 LE length, then ASCII text bytes.
-    /// Dispatches through the legacy text handler.
-    /// </summary>
-    private void HandleGenericTextPacket(ByteQueue bq)
-    {
-        short len = bq.ReadInteger();
-        if (len <= 0) return;
-
-        var bytes = new byte[len];
-        for (int i = 0; i < len; i++)
-            bytes[i] = bq.ReadByte();
-
-        string text = System.Text.Encoding.ASCII.GetString(bytes);
-        HandlePacket(text);
-    }
-
 }
