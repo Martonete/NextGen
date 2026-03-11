@@ -11,7 +11,7 @@ namespace ArgentumNextgen.UI;
 /// </summary>
 public partial class TooltipPanel : PanelContainer
 {
-    private const int MaxWidth = 220;
+    private const int MaxWidth = 180;
     private const int Padding = 6;
     private const int OffsetX = 16; // offset from cursor
     private const int OffsetY = 16;
@@ -74,13 +74,15 @@ public partial class TooltipPanel : PanelContainer
         _label.BbcodeEnabled = true;
         _label.FitContent = true;
         _label.ScrollActive = false;
-        _label.CustomMinimumSize = new Vector2(120, 0);
+        _label.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _label.CustomMinimumSize = new Vector2(100, 0);
         _label.Size = new Vector2(MaxWidth, 0);
-        _label.AddThemeFontSizeOverride("normal_font_size", 11);
-        _label.AddThemeFontSizeOverride("bold_font_size", 11);
+        _label.AddThemeFontSizeOverride("normal_font_size", 10);
+        _label.AddThemeFontSizeOverride("bold_font_size", 10);
         _label.AddThemeColorOverride("default_color", Colors.White);
         AddChild(_label);
 
+        ClipContents = true;
         MouseFilter = MouseFilterEnum.Ignore;
         Visible = false;
         ZIndex = 100; // always on top

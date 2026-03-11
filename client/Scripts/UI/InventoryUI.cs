@@ -97,7 +97,7 @@ public class InventoryUI
         _showingSpells = false;
         _tooltipPanel?.Hide();
         _inventoryPanel!.Visible = true;
-        _itemNameLabel!.Visible = true;
+        _itemNameLabel?.Visible = true;
         _dydToggle!.Visible = true;
         // Sync DyD button texture with current state
         _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
@@ -118,7 +118,7 @@ public class InventoryUI
         _tooltipPanel?.Hide();
         _inventoryPanel!.CancelDrag();
         _inventoryPanel!.Visible = false;
-        _itemNameLabel!.Visible = false;
+        _itemNameLabel?.Visible = false;
         _dydToggle!.Visible = false;
         _spellPanel!.Visible = true;
         _lanzarButton!.Visible = true;

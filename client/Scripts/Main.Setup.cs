@@ -47,17 +47,7 @@ public partial class Main
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
 
-        // Item name tooltip -- VB6: ItemName at (584,337,161,25)
-        _itemNameLabel = new Label();
-        _itemNameLabel.Position = new Vector2(584, 339);
-        _itemNameLabel.Size = new Vector2(161, 25);
-        _itemNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _itemNameLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0f));
-        _itemNameLabel.AddThemeFontSizeOverride("font_size", 11);
-        ApplyFont(_itemNameLabel, "Palatino Linotype", 400);
-        _itemNameLabel.AutowrapMode = TextServer.AutowrapMode.Word;
-        _gameUI.AddChild(_itemNameLabel);
-        _inventoryPanel.TooltipLabel = _itemNameLabel;
+        // Old item name label removed — tooltip panel now shows item names directly
 
         // DyD toggle -- VB6: DyD at (541,338,21,21)
         _dydOffTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
@@ -416,7 +406,7 @@ public partial class Main
 
         // Inventory/spell tab UI manager
         _inventoryUI = new UI.InventoryUI(_state);
-        _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, _itemNameLabel!, _dydToggle!,
+        _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, null, _dydToggle!,
             _dydOffTex, _dydOnTex, _lanzarButton!, _infoButton!, _spellUpButton!, _spellDownButton!,
             _invEquImage, null, null, _tooltipPanel);
         _inventoryUI.SendPacket = (pkt) => _tcp?.SendPacket(pkt);
@@ -454,9 +444,11 @@ public partial class Main
         _gameUI.AddChild(_contextMenu);
 
         // Minimap panel
+        // Minimap — next to the console (console ends at X=447, minimap at X=450)
         _minimapPanel = new MinimapPanel();
         _minimapPanel.Init(_state);
-        _minimapPanel.Position = new Vector2(635, 300);
+        _minimapPanel.Position = new Vector2(450, 24);
+        _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
         _gameUI.AddChild(_minimapPanel);
 
