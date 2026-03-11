@@ -94,7 +94,7 @@ public partial class EditorMain : Control
     private Label? _preloadLabel;
     private ProgressBar? _preloadBar;
     private Panel? _preloadOverlay;
-    private const int PreloadBatchSize = 8; // textures per frame
+    private const int PreloadBatchSize = 3; // textures per frame (low to avoid freezing on 2048x2048 images)
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
@@ -830,22 +830,25 @@ public partial class EditorMain : Control
 
         _preloadIter = _textures.PreloadAll(_grhs);
 
-        // Create loading overlay
+        // Create full-screen loading overlay (blocks interaction, centered content)
         _preloadOverlay = new Panel();
-        _preloadOverlay.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _preloadOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _preloadOverlay.MouseFilter = MouseFilterEnum.Stop; // block clicks
         var overlayStyle = new StyleBoxFlat
         {
             BgColor = new Color(0.1f, 0.1f, 0.12f, 0.92f),
-            CornerRadiusBottomLeft = 6, CornerRadiusBottomRight = 6,
-            CornerRadiusTopLeft = 6, CornerRadiusTopRight = 6,
         };
         _preloadOverlay.AddThemeStyleboxOverride("panel", overlayStyle);
 
+        // Center container for content
+        var center = new CenterContainer();
+        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _preloadOverlay.AddChild(center);
+
         var vbox = new VBoxContainer();
         vbox.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
         vbox.CustomMinimumSize = new Vector2(320, 80);
-        _preloadOverlay.AddChild(vbox);
+        center.AddChild(vbox);
 
         _preloadLabel = new Label { Text = "Cargando texturas..." };
         _preloadLabel.HorizontalAlignment = HorizontalAlignment.Center;
@@ -1280,6 +1283,13 @@ public partial class EditorMain : Control
         _walkPanel.Textures = _textures;
         _walkPanel.Bodies = _walkBodies;
         _walkPanel.Heads = _walkHeads;
+        _walkPanel.ObjGrhs = _objGrhs;
+        _walkPanel.NpcBodies = _npcBodies;
+        _walkPanel.NpcHeads = _npcHeads;
+        _walkPanel.NpcBodyGrhs = _npcBodyGrhs;
+        _walkPanel.NpcHeadOfsX = _npcHeadOfsX;
+        _walkPanel.NpcHeadOfsY = _npcHeadOfsY;
+        _walkPanel.HeadGrhs = _headGrhs;
 
         // Start at current editor camera center tile
         int startX = Math.Clamp(_state.HoverX > 0 ? _state.HoverX : 50, 1, _map.Width);

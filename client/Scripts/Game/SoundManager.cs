@@ -12,8 +12,11 @@ public partial class SoundManager : Node
     private const int MaxConcurrentSounds = 8;
     private const float SfxHeadroomDb = -10.0f;     // headroom so stacked SFX don't clip
     private const float MusicHeadroomDb = -14.0f;   // music headroom (AO MP3s are hot)
-    private const float DefaultSfxVolume = SfxHeadroomDb;
     private const float DefaultMusicVolume = MusicHeadroomDb;
+
+    // VB6 spatial audio constants (clsAudio.cls)
+    private const float MaxDistanceToSource = 150f;  // VB6: MAX_DISTANCE_TO_SOURCE
+    private const float SilentDb = -80f;             // effectively silent in Godot
 
     // VB6 sound IDs — well-known event sounds
     public const int SND_CLICK = 1;       // UI click
@@ -38,6 +41,7 @@ public partial class SoundManager : Node
     private int _currentMusicId;
     private bool _soundEnabled = true;
     private bool _musicEnabled = true;
+    private float _sfxVolumeDb = SfxHeadroomDb; // current SFX base volume (user setting)
 
     public bool SoundEnabled
     {
@@ -72,8 +76,7 @@ public partial class SoundManager : Node
     /// </summary>
     public void SetSfxVolume(int percent)
     {
-        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f) + SfxHeadroomDb;
-        foreach (var p in _sfxPlayers) p.VolumeDb = db;
+        _sfxVolumeDb = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f) + SfxHeadroomDb;
     }
 
     public void Init(string dataPath)
@@ -85,7 +88,7 @@ public partial class SoundManager : Node
         {
             var player = new AudioStreamPlayer();
             player.Bus = "Master";
-            player.VolumeDb = DefaultSfxVolume;
+            player.VolumeDb = _sfxVolumeDb;
             AddChild(player);
             _sfxPlayers.Add(player);
         }
@@ -102,6 +105,40 @@ public partial class SoundManager : Node
     }
 
     public void PlaySound(int soundId)
+    {
+        PlaySoundInternal(soundId, _sfxVolumeDb);
+    }
+
+    /// <summary>
+    /// Play a sound with VB6-style spatial audio (distance attenuation).
+    /// VB6: clsAudio.PlayWave → Update3DSound with Euclidean distance.
+    /// srcX/srcY=0 means no spatial (UI/self sounds) — plays at full volume.
+    /// </summary>
+    public void PlaySoundAt(int soundId, int srcX, int srcY, int listenerX, int listenerY)
+    {
+        // No spatial info → play at full volume (matches VB6: srcX=0,srcY=0 skips 3D)
+        if (srcX == 0 && srcY == 0)
+        {
+            PlaySound(soundId);
+            return;
+        }
+
+        float dx = srcX - listenerX;
+        float dy = srcY - listenerY;
+        float distance = Mathf.Sqrt(dx * dx + dy * dy);
+
+        // Beyond max distance — don't play at all
+        if (distance > MaxDistanceToSource) return;
+
+        // VB6 formula: volume = SndVolume + (dist/MAX_DIST) * (SILENT - SndVolume)
+        // Linear interpolation in dB space from full volume to silent
+        float attenuation = distance / MaxDistanceToSource;
+        float volumeDb = _sfxVolumeDb + attenuation * (SilentDb - _sfxVolumeDb);
+
+        PlaySoundInternal(soundId, volumeDb);
+    }
+
+    private void PlaySoundInternal(int soundId, float volumeDb)
     {
         if (!_soundEnabled || soundId <= 0) return;
 
@@ -129,6 +166,7 @@ public partial class SoundManager : Node
         // If all busy, steal the first one (oldest sound)
         player ??= _sfxPlayers[0];
 
+        player.VolumeDb = volumeDb;
         player.Stream = stream;
         player.Play();
     }

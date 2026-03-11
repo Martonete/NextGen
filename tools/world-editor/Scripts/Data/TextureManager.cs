@@ -15,6 +15,7 @@ public class TextureManager
     private readonly string _graficosPath;
     private readonly Dictionary<int, Texture2D> _cache = new();
     private readonly LinkedList<int> _lruOrder = new();
+    private readonly Dictionary<int, LinkedListNode<int>> _lruNodes = new(); // O(1) LRU removal
     private const int MaxCacheSize = 4096; // Large cache — preloaded textures stay resident
     private const byte BlackThreshold = 3;
 
@@ -63,9 +64,13 @@ public class TextureManager
 
         if (_cache.TryGetValue(fileNum, out var cached))
         {
-            // Bump LRU
-            _lruOrder.Remove(fileNum);
-            _lruOrder.AddFirst(fileNum);
+            // Bump LRU — O(1) using node lookup
+            if (_lruNodes.TryGetValue(fileNum, out var node))
+            {
+                _lruOrder.Remove(node);
+                var newNode = _lruOrder.AddFirst(fileNum);
+                _lruNodes[fileNum] = newNode;
+            }
             return cached;
         }
 
@@ -98,11 +103,13 @@ public class TextureManager
         {
             int evict = _lruOrder.Last!.Value;
             _lruOrder.RemoveLast();
+            _lruNodes.Remove(evict);
             _cache.Remove(evict);
         }
 
         _cache[fileNum] = texture;
-        _lruOrder.AddFirst(fileNum);
+        var newNode = _lruOrder.AddFirst(fileNum);
+        _lruNodes[fileNum] = newNode;
         return texture;
     }
 

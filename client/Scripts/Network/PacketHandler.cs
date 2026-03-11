@@ -32,8 +32,12 @@ public partial class PacketHandler
     /// Callback to load the map immediately when CM is received.
     public Action? OnMapLoad;
 
-    /// Callback to play a sound effect (WAV/MP3).
+    /// Callback to play a sound effect (WAV/MP3) — no spatial positioning (UI sounds, self-actions).
     public Action<int>? OnPlaySound;
+
+    /// Callback to play a spatial sound effect at world coordinates.
+    /// Args: (soundId, srcX, srcY) — VB6: Audio.PlayWave(wav, srcX, srcY)
+    public Action<int, byte, byte>? OnPlaySoundAt;
 
     /// Callback to play music (MIDI/MP3).
     public Action<int>? OnPlayMusic;

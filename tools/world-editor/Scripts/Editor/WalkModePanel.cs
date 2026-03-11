@@ -8,7 +8,7 @@ namespace AOWorldEditor.Editor;
 /// <summary>
 /// Walk mode: simulates the in-game AO view. Renders 17x13 visible tiles,
 /// a centered character with walk animation, roof/tree transparency, and
-/// blocked tile collision.
+/// blocked tile collision. Shows NPCs, objects, exits on the map.
 /// </summary>
 public partial class WalkModePanel : Control
 {
@@ -19,6 +19,15 @@ public partial class WalkModePanel : Control
     public BodyAnimData[]? Bodies;
     public HeadAnimData[]? Heads;
 
+    // NPC/Object rendering data (same arrays as MapViewport)
+    public int[]? ObjGrhs;
+    public int[]? NpcBodies;
+    public int[]? NpcHeads;
+    public int[]? NpcBodyGrhs;
+    public int[]? NpcHeadOfsX;
+    public int[]? NpcHeadOfsY;
+    public int[]? HeadGrhs;
+
     // ── Constants (matching AO client) ──────────────────────────────────────
     private const int TileSize = 32;
     private const int HalfTileSize = TileSize / 2; // 16
@@ -28,10 +37,15 @@ public partial class WalkModePanel : Control
     private const int ViewTilesY = HalfTilesY * 2 + 1; // 13
     private const int ViewWidth = ViewTilesX * TileSize;  // 544
     private const int ViewHeight = ViewTilesY * TileSize; // 416
-    private const int ExtraTiles = 2; // extra tiles beyond viewport for scroll coverage
+    private const int ExtraTiles = 2;      // extra tiles beyond viewport for L1 scroll coverage
+    private const int ExtraTilesLarge = 10; // extra tiles for L2/L3/L4 (large multi-tile GRHs)
 
     // Movement: AO uses ScrollPixels=8 per 40ms tick → 200 pixels/sec
     private const float PixelsPerSecond = 200f;
+
+    // Walk animation: AO walk cycles have ~6 frames, one tile = 32px @ 200px/s = 0.16s
+    // 6 frames / 0.16s ≈ 37.5 fps
+    private const float WalkAnimFps = 37.5f;
 
     // ── Character state ─────────────────────────────────────────────────────
     public int CharX = 50, CharY = 50; // current tile position (1-indexed)
@@ -70,7 +84,6 @@ public partial class WalkModePanel : Control
             {
                 float sign = Math.Sign(_moveOffsetX);
                 _moveOffsetX -= sign * advance;
-                // Overshoot check: if sign changed, snap to 0
                 if (Math.Sign(_moveOffsetX) != sign)
                     _moveOffsetX = 0;
             }
@@ -82,10 +95,8 @@ public partial class WalkModePanel : Control
                     _moveOffsetY = 0;
             }
 
-            // Advance walk animation — cycle all frames during one tile move.
-            // One tile = 32px at 200px/s = 0.16s. AO walk anims have ~6 frames.
-            // We want all 6 frames in 0.16s → ~37.5 fps for walk cycle.
-            _walkFrame += (float)(delta * 37.5);
+            // Advance walk animation
+            _walkFrame += (float)(delta * WalkAnimFps);
 
             if (_moveOffsetX == 0 && _moveOffsetY == 0)
             {
@@ -125,20 +136,15 @@ public partial class WalkModePanel : Control
         CharX = nx;
         CharY = ny;
         _isMoving = true;
-        // Offset compensates the instant tile jump: CharX changed by dx,
-        // so tiles shifted by -dx*32 on screen. Start at +dx*32 to cancel,
-        // then animate toward 0 for smooth scroll.
         _moveOffsetX = dx * TileSize;
         _moveOffsetY = dy * TileSize;
         _walkFrame = 0;
 
-        // Update roof detection
         _underRoof = IsUnderRoof(CharX, CharY);
     }
 
     private bool IsUnderRoof(int cx, int cy)
     {
-        // Check character tile and immediate neighbors for L4 roof
         if (Map == null) return false;
         for (int dy = -1; dy <= 1; dy++)
             for (int dx = -1; dx <= 1; dx++)
@@ -173,7 +179,6 @@ public partial class WalkModePanel : Control
         {
             if (mb.ShiftPressed && Map != null)
             {
-                // Shift+click: teleport to clicked tile
                 float worldX = mb.Position.X - _moveOffsetX;
                 float worldY = mb.Position.Y - _moveOffsetY;
                 int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
@@ -201,18 +206,23 @@ public partial class WalkModePanel : Control
 
         DrawRect(new Rect2(Vector2.Zero, Size), Colors.Black);
 
-        // Pixel offsets for smooth scrolling — applied to ALL world tiles
         float ofsX = (float)Math.Round(_moveOffsetX);
         float ofsY = (float)Math.Round(_moveOffsetY);
 
-        int minDY = -HalfTilesY - ExtraTiles;
-        int maxDY = HalfTilesY + ExtraTiles;
-        int minDX = -HalfTilesX - ExtraTiles;
-        int maxDX = HalfTilesX + ExtraTiles;
+        // L1 uses small buffer; L2/L3/L4 need large buffer for multi-tile GRHs
+        int minDY_L1 = -HalfTilesY - ExtraTiles;
+        int maxDY_L1 = HalfTilesY + ExtraTiles;
+        int minDX_L1 = -HalfTilesX - ExtraTiles;
+        int maxDX_L1 = HalfTilesX + ExtraTiles;
 
-        // ── Pass 1: Ground (L1) ── no centering, top-left aligned
-        for (int dy = minDY; dy <= maxDY; dy++)
-            for (int dx = minDX; dx <= maxDX; dx++)
+        int minDY = -HalfTilesY - ExtraTilesLarge;
+        int maxDY = HalfTilesY + ExtraTilesLarge;
+        int minDX = -HalfTilesX - ExtraTilesLarge;
+        int maxDX = HalfTilesX + ExtraTilesLarge;
+
+        // ── Pass 1: Ground (L1) ── top-left aligned, small buffer
+        for (int dy = minDY_L1; dy <= maxDY_L1; dy++)
+            for (int dx = minDX_L1; dx <= maxDX_L1; dx++)
             {
                 int tx = CharX + dx, ty = CharY + dy;
                 if (!Map.InBounds(tx, ty)) continue;
@@ -221,7 +231,7 @@ public partial class WalkModePanel : Control
                 DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, Colors.White);
             }
 
-        // ── Pass 2: Mask/Alpha (L2) ── centered like game client
+        // ── Pass 2: Mask/Alpha (L2) ── centered, large buffer
         for (int dy = minDY; dy <= maxDY; dy++)
             for (int dx = minDX; dx <= maxDX; dx++)
             {
@@ -234,12 +244,12 @@ public partial class WalkModePanel : Control
                 DrawGrhCentered(l2, sx, sy, Colors.White);
             }
 
-        // ── Pass 3: Objects (L3) + Character — Y-sorted ──
+        // ── Pass 3: Objects (L3) + Character + NPCs + Objects — Y-sorted ──
         for (int dy = minDY; dy <= maxDY; dy++)
         {
             int ty = CharY + dy;
 
-            // Draw character at its Y row (before L3 on same row)
+            // Draw character at its Y row
             if (dy == 0)
                 DrawCharacter(ofsX, ofsY);
 
@@ -247,10 +257,19 @@ public partial class WalkModePanel : Control
             {
                 int tx = CharX + dx;
                 if (!Map.InBounds(tx, ty)) continue;
-                short l3 = Map.Tiles[tx, ty].Layer3;
-                if (l3 <= 0) continue;
+
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
+
+                // Ground objects from .inf data
+                DrawTileObject(tx, ty, sx, sy);
+
+                // NPCs from .inf data
+                DrawTileNpc(tx, ty, sx, sy);
+
+                // L3 graphic layer
+                short l3 = Map.Tiles[tx, ty].Layer3;
+                if (l3 <= 0) continue;
 
                 bool onCharTile = (tx == CharX && ty == CharY);
                 Color mod = onCharTile ? new Color(1, 1, 1, 0.5f) : Colors.White;
@@ -258,7 +277,7 @@ public partial class WalkModePanel : Control
             }
         }
 
-        // ── Pass 4: Roof (L4) — centered, with transparency when under roof ──
+        // ── Pass 4: Roof (L4) — centered, large buffer, transparency when under roof ──
         if (HasAnyRoofInView(minDX, maxDX, minDY, maxDY))
         {
             for (int dy = minDY; dy <= maxDY; dy++)
@@ -276,6 +295,9 @@ public partial class WalkModePanel : Control
                 }
         }
 
+        // ── Exit markers ──
+        DrawExitMarkers(minDX_L1, maxDX_L1, minDY_L1, maxDY_L1, ofsX, ofsY);
+
         // ── HUD ──
         var font = ThemeDB.Singleton.FallbackFont;
         string info = $"Mapa {Map.MapNumber}  ({CharX},{CharY})  [{HeadingName(_heading)}]";
@@ -284,6 +306,65 @@ public partial class WalkModePanel : Control
         DrawString(font, new Vector2(6, 16),
             "WASD/Flechas: caminar  |  Shift+Click: teleport  |  Esc: cerrar",
             HorizontalAlignment.Left, -1, 11, new Color(1, 1, 0.8f, 0.5f));
+    }
+
+    // ── NPC / Object / Exit rendering ───────────────────────────────────────
+
+    private void DrawTileObject(int tx, int ty, float sx, float sy)
+    {
+        if (ObjGrhs == null) return;
+        int objIdx = Map!.Tiles[tx, ty].ObjIndex;
+        if (objIdx <= 0 || objIdx >= ObjGrhs.Length) return;
+        int objGrh = ObjGrhs[objIdx];
+        if (objGrh <= 0) return;
+        DrawGrhCentered(objGrh, sx, sy, Colors.White);
+    }
+
+    private void DrawTileNpc(int tx, int ty, float sx, float sy)
+    {
+        if (NpcBodies == null || NpcBodyGrhs == null || Grhs == null) return;
+        int npcIdx = Map!.Tiles[tx, ty].NpcIndex;
+        if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) return;
+
+        int bodyIdx = NpcBodies[npcIdx];
+        if (bodyIdx <= 0 || bodyIdx >= NpcBodyGrhs.Length) return;
+
+        // Draw NPC body (use south-facing walk[3] first frame as static)
+        int bodyGrh = NpcBodyGrhs[bodyIdx];
+        if (bodyGrh > 0)
+            DrawAnimGrhCentered(bodyGrh, 0, sx, sy, Colors.White);
+
+        // Draw NPC head
+        if (NpcHeads == null || HeadGrhs == null) return;
+        if (npcIdx >= NpcHeads.Length) return;
+        int headIdx = NpcHeads[npcIdx];
+        if (headIdx <= 0 || headIdx >= HeadGrhs.Length) return;
+        int headGrh = HeadGrhs[headIdx];
+        if (headGrh <= 0) return;
+
+        int ofsX = (NpcHeadOfsX != null && bodyIdx < NpcHeadOfsX.Length) ? NpcHeadOfsX[bodyIdx] : 0;
+        int ofsY = (NpcHeadOfsY != null && bodyIdx < NpcHeadOfsY.Length) ? NpcHeadOfsY[bodyIdx] : 0;
+        DrawAnimGrhCentered(headGrh, 0, sx + ofsX, sy + ofsY, Colors.White);
+    }
+
+    private void DrawExitMarkers(int minDX, int maxDX, int minDY, int maxDY, float ofsX, float ofsY)
+    {
+        if (Map == null) return;
+        for (int dy = minDY; dy <= maxDY; dy++)
+            for (int dx = minDX; dx <= maxDX; dx++)
+            {
+                int tx = CharX + dx, ty = CharY + dy;
+                if (!Map.InBounds(tx, ty)) continue;
+                if (!Map.Tiles[tx, ty].HasExit) continue;
+
+                float sx = (dx + HalfTilesX) * TileSize + ofsX;
+                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                // Small green rectangle to mark exit tiles
+                DrawRect(new Rect2(sx + 2, sy + 2, TileSize - 4, TileSize - 4),
+                    new Color(0.2f, 1f, 0.2f, 0.25f));
+                DrawRect(new Rect2(sx + 2, sy + 2, TileSize - 4, TileSize - 4),
+                    new Color(0.2f, 1f, 0.2f, 0.5f), false, 1f);
+            }
     }
 
     private bool HasAnyRoofInView(int minDX, int maxDX, int minDY, int maxDY)
@@ -307,7 +388,7 @@ public partial class WalkModePanel : Control
         int bodyGrh = body.Walk[_heading];
         if (bodyGrh <= 0) return;
 
-        // Character is ALWAYS at viewport center — world scrolls, character stays fixed
+        // Character is ALWAYS at viewport center
         float cx = HalfTilesX * TileSize;
         float cy = HalfTilesY * TileSize;
 
@@ -350,8 +431,7 @@ public partial class WalkModePanel : Control
 
     /// <summary>
     /// Draw GRH centered on tile using AO's centering formula.
-    /// Matches the game client: multi-tile sprites offset by TileWidth/TileHeight.
-    /// Used for L2, L3, L4.
+    /// Multi-tile sprites offset by TileWidth/TileHeight. Used for L2, L3, L4, objects, NPCs.
     /// </summary>
     private void DrawGrhCentered(int grhIndex, float tileX, float tileY, Color mod)
     {
@@ -370,7 +450,7 @@ public partial class WalkModePanel : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        // AO centering formula (matches game client CharRenderer.DrawGrh center=true):
+        // AO centering formula:
         // X: offset left by (tileWidth * halfTile) - halfTile
         // Y: offset up by (tileHeight * tileSize) - tileSize (bottom-align)
         float drawX = tileX;
@@ -386,7 +466,7 @@ public partial class WalkModePanel : Control
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
-    /// <summary>Draw a specific animation frame, centered on tile. Used for character body/head.</summary>
+    /// <summary>Draw a specific animation frame, centered on tile. Used for character body/head, NPCs.</summary>
     private void DrawAnimGrhCentered(int grhIndex, int frame, float tileX, float tileY, Color mod)
     {
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
@@ -398,7 +478,6 @@ public partial class WalkModePanel : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        // Same AO centering as DrawGrhCentered
         float drawX = tileX;
         float drawY = tileY;
 

@@ -371,10 +371,10 @@ public partial class PacketHandler
     private void HandleBinPlayWave(ByteQueue bq)
     {
         byte waveIndex = bq.ReadByte();
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        byte srcX = bq.ReadByte();
+        byte srcY = bq.ReadByte();
         if (waveIndex > 0)
-            OnPlaySound?.Invoke(waveIndex);
+            OnPlaySoundAt?.Invoke(waveIndex, srcX, srcY);
     }
 
     // ── FX ────────────────────────────────────────────────────────
