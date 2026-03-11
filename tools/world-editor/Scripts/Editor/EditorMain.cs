@@ -66,6 +66,7 @@ public partial class EditorMain : Control
     private ColorRect? _headerBg; // opaque background behind toolbar+navbar to prevent viewport overflow
 
     // Map navigation bar
+    private PanelContainer? _mapNavPanel; // background panel for nav bar
     private HBoxContainer? _mapNavBar;
     private SpinBox? _mapNumSpin;
     private Button[] _mapNavButtons = Array.Empty<Button>();
@@ -289,6 +290,13 @@ public partial class EditorMain : Control
         SyncLayerTabs();
 
         // --- Map navigation bar (below toolbar, compact) ---
+        _mapNavPanel = new PanelContainer();
+        var navBg = EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 4, 2, EditorTheme.BORDER, 1);
+        navBg.BorderWidthTop = 0;
+        navBg.BorderWidthLeft = 0;
+        navBg.BorderWidthRight = 0;
+        _mapNavPanel.AddThemeStyleboxOverride("panel", navBg);
+
         _mapNavBar = new HBoxContainer();
         _mapNavBar.AddThemeConstantOverride("separation", 2);
         _mapNavBar.ClipContents = true;
@@ -352,7 +360,8 @@ public partial class EditorMain : Control
         var navSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _mapNavBar.AddChild(navSpacer);
 
-        AddChild(_mapNavBar);
+        _mapNavPanel.AddChild(_mapNavBar);
+        AddChild(_mapNavPanel);
 
         // --- Left sidebar: TabContainer with Tiles + NPCs ---
         _sidebarTabs = new TabContainer();
@@ -539,11 +548,11 @@ public partial class EditorMain : Control
         }
 
         float navTop = tbTop + ToolBarHeight;
-        if (_mapNavBar != null)
+        if (_mapNavPanel != null)
         {
-            _mapNavBar.Position = new Vector2(4, navTop);
-            _mapNavBar.Size = new Vector2(win.X - 8, NavBarHeight);
-            _mapNavBar.ZIndex = 2;
+            _mapNavPanel.Position = new Vector2(0, navTop);
+            _mapNavPanel.Size = new Vector2(win.X, NavBarHeight);
+            _mapNavPanel.ZIndex = 2;
         }
 
         float contentTop = navTop + NavBarHeight;

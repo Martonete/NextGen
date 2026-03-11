@@ -534,30 +534,37 @@ public partial class WalkModePanel : Control
         if (Map == null || DoorData == null || ObjGrhs == null) return;
         if (!Map.InBounds(tx, ty)) return;
 
-        // Check distance (max 3 tiles like server)
-        if (Math.Abs(tx - CharX) > 3 || Math.Abs(ty - CharY) > 3) return;
+        // VB6: distance check ≤ 2 tiles
+        if (Math.Abs(tx - CharX) > 2 || Math.Abs(ty - CharY) > 2) return;
 
-        // Find door object on this tile or adjacent tiles
+        // Find door object on this tile or adjacent tiles (VB6 checks X, X+1, X+1/Y+1, X/Y+1)
         int doorX = tx, doorY = ty;
-        int objIdx = FindDoorAt(tx, ty);
-        if (objIdx <= 0)
+        var door = FindDoorAt(tx, ty);
+        if (door == null)
         {
             // Check adjacent tiles for multi-tile doors
-            for (int dx = -2; dx <= 2; dx++)
+            int[][] offsets = { new[]{1,0}, new[]{-1,0}, new[]{1,1}, new[]{0,1}, new[]{-1,1}, new[]{0,-1} };
+            foreach (var off in offsets)
             {
-                int ax = tx + dx;
-                if (ax == tx || !Map.InBounds(ax, ty)) continue;
-                int adj = FindDoorAt(ax, ty);
-                if (adj > 0) { objIdx = adj; doorX = ax; doorY = ty; break; }
+                int ax = tx + off[0], ay = ty + off[1];
+                if (!Map.InBounds(ax, ay)) continue;
+                var adjDoor = FindDoorAt(ax, ay);
+                if (adjDoor != null) { door = adjDoor; doorX = ax; doorY = ay; break; }
             }
         }
-        if (objIdx <= 0) return;
+        if (door == null) return;
 
-        if (!DoorData.TryGetValue(objIdx, out var door)) return;
+        // VB6: Llave=1 means locked — can't toggle
+        if (door.Llave == 1)
+        {
+            GD.Print($"[WalkMode] Door at ({doorX},{doorY}) is locked");
+            return;
+        }
 
-        // Determine if currently open or closed
-        bool isClosed = (door.IndexAbierta > 0 && door.IndexCerrada > 0 && objIdx == door.IndexCerrada)
-                     || (door.IndexAbierta > 0 && objIdx != door.IndexAbierta);
+        // VB6 logic: Abierta=1 means closed (inverted naming!), Abierta=0 means open
+        // If current obj matches IndexCerrada or the door's Abierta=1, it's closed → open it
+        int curObjIdx = Map.Tiles[doorX, doorY].ObjIndex;
+        bool isClosed = (curObjIdx == door.IndexCerrada) || (door.Abierta == 1 && curObjIdx != door.IndexAbierta);
 
         int newObjIdx = isClosed ? door.IndexAbierta : door.IndexCerrada;
         if (newObjIdx <= 0) return;
@@ -566,25 +573,13 @@ public partial class WalkModePanel : Control
         Map.Tiles[doorX, doorY].ObjIndex = (short)newObjIdx;
         _toggledDoors[(Map.MapNumber, doorX, doorY)] = newObjIdx;
 
-        // Update blocked state for affected tiles
-        bool newBlocked = !isClosed; // closing = block, opening = unblock
-        Map.Tiles[doorX, doorY].Blocked = newBlocked;
+        // VB6: closed → block tiles, open → unblock. Affects (X, Y) and (X-1, Y)
+        bool closing = !isClosed;
+        Map.Tiles[doorX, doorY].Blocked = closing;
         if (Map.InBounds(doorX - 1, doorY))
-            Map.Tiles[doorX - 1, doorY].Blocked = newBlocked;
+            Map.Tiles[doorX - 1, doorY].Blocked = closing;
 
-        if (door.PuertaDoble == 1)
-        {
-            if (Map.InBounds(doorX + 1, doorY)) Map.Tiles[doorX + 1, doorY].Blocked = newBlocked;
-            if (Map.InBounds(doorX + 2, doorY)) Map.Tiles[doorX + 2, doorY].Blocked = newBlocked;
-        }
-        else if (door.Porton == 1)
-        {
-            for (int dx = -2; dx <= 2; dx++)
-                if (Map.InBounds(doorX + dx, doorY))
-                    Map.Tiles[doorX + dx, doorY].Blocked = newBlocked;
-        }
-
-        // Also register the alternate obj index in DoorData so toggling back works
+        // Ensure the alternate object index is also registered in DoorData for toggle-back
         if (!DoorData.ContainsKey(newObjIdx))
         {
             DoorData[newObjIdx] = new DoorInfo
@@ -592,30 +587,35 @@ public partial class WalkModePanel : Control
                 ObjType = door.ObjType,
                 IndexAbierta = door.IndexAbierta,
                 IndexCerrada = door.IndexCerrada,
+                IndexCerradaLlave = door.IndexCerradaLlave,
                 PuertaDoble = door.PuertaDoble,
                 Porton = door.Porton,
+                Abierta = isClosed ? 0 : 1, // opposite state
+                Llave = door.Llave,
                 GrhIndex = ObjGrhs.Length > newObjIdx ? ObjGrhs[newObjIdx] : 0,
             };
         }
 
-        GD.Print($"[WalkMode] Door toggle at ({doorX},{doorY}): obj {objIdx} -> {newObjIdx} (blocked={newBlocked})");
+        GD.Print($"[WalkMode] Door toggle at ({doorX},{doorY}): obj {curObjIdx} -> {newObjIdx} (closing={closing})");
     }
 
-    private int FindDoorAt(int x, int y)
+    private DoorInfo? FindDoorAt(int x, int y)
     {
-        if (Map == null || DoorData == null) return 0;
-        if (!Map.InBounds(x, y)) return 0;
+        if (Map == null || DoorData == null) return null;
+        if (!Map.InBounds(x, y)) return null;
         int objIdx = Map.Tiles[x, y].ObjIndex;
-        if (objIdx <= 0) return 0;
-        // Check if this object OR its open/closed counterpart is a door
-        if (DoorData.ContainsKey(objIdx)) return objIdx;
-        // Check if any door has this as IndexAbierta or IndexCerrada
+        if (objIdx <= 0) return null;
+
+        // Direct match: this object IS a door
+        if (DoorData.TryGetValue(objIdx, out var door)) return door;
+
+        // Indirect match: another door references this objIdx as its open/closed variant
         foreach (var kv in DoorData)
         {
-            if (kv.Value.IndexAbierta == objIdx || kv.Value.IndexCerrada == objIdx)
-                return objIdx;
+            if (kv.Value.IndexAbierta == objIdx || kv.Value.IndexCerrada == objIdx || kv.Value.IndexCerradaLlave == objIdx)
+                return kv.Value;
         }
-        return 0;
+        return null;
     }
 
     // ── GRH drawing helpers ─────────────────────────────────────────────────

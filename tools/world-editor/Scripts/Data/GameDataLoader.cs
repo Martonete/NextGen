@@ -12,11 +12,14 @@ namespace AOWorldEditor.Data;
 /// </summary>
 public class DoorInfo
 {
-    public int ObjType;         // 10=Door in VB6
+    public int ObjType;         // 6=Door (otPuertas) in VB6
     public int IndexAbierta;    // Object index when open
     public int IndexCerrada;    // Object index when closed
+    public int IndexCerradaLlave; // Object index when locked-closed
     public int PuertaDoble;     // 1=double door
     public int Porton;          // 1=grand gate
+    public int Abierta;         // VB6: 0=open, 1=closed (inverted logic)
+    public int Llave;           // 1=locked
     public int GrhIndex;        // Current visual GRH
 }
 
@@ -176,13 +179,16 @@ public static class GameDataLoader
             if (sec.TryGetValue("ObjType", out var ot))
                 int.TryParse(ot, out objType);
 
-            if (objType != 10) continue; // Only doors (ObjType 10)
+            if (objType != 6) continue; // Only doors (ObjType 6 = otPuertas in VB6)
 
             var door = new DoorInfo { ObjType = objType };
             if (sec.TryGetValue("IndexAbierta", out var ia)) int.TryParse(ia, out door.IndexAbierta);
             if (sec.TryGetValue("IndexCerrada", out var ic)) int.TryParse(ic, out door.IndexCerrada);
+            if (sec.TryGetValue("IndexCerradaLlave", out var icl)) int.TryParse(icl, out door.IndexCerradaLlave);
             if (sec.TryGetValue("PuertaDoble", out var pd)) int.TryParse(pd, out door.PuertaDoble);
             if (sec.TryGetValue("Porton", out var po)) int.TryParse(po, out door.Porton);
+            if (sec.TryGetValue("abierta", out var ab)) int.TryParse(ab, out door.Abierta);
+            if (sec.TryGetValue("Llave", out var ll)) int.TryParse(ll, out door.Llave);
             if (sec.TryGetValue("GrhIndex", out var gi)) int.TryParse(gi, out door.GrhIndex);
             doors[i] = door;
         }
