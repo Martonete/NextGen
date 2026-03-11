@@ -6,7 +6,9 @@
 use crate::net::ConnectionId;
 use crate::data::maps::Trigger;
 use crate::protocol::{fields::read_field, binary_packets};
-use crate::game::types::{GameState, UserState, CleanWorldEntry, MAX_INVENTORY_SLOTS};
+use crate::game::types::{GameState, UserState, SendTarget, CleanWorldEntry, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS};
+use crate::game::class_race::PlayerRace;
+use crate::data::npcs::NpcType;
 use crate::game::world;
 
 // VB6 "empty" animation constants — re-exported from centralized constants module.
@@ -698,4 +700,276 @@ pub(super) fn get_equipped_anims(state: &GameState, conn_id: ConnectionId) -> (i
     } else { 0 };
 
     (weapon, shield, helmet)
+}
+
+// =====================================================================
+// Character body/head helpers
+// =====================================================================
+
+/// Naked body IDs by race + gender (VB6 DarCuerpoDesnudo)
+pub(super) fn naked_body(race: PlayerRace, gender: i32) -> i32 {
+    let is_female = gender == 2;
+    match (race, is_female) {
+        (PlayerRace::Humano, false) | (PlayerRace::Elfo, false) => 21,
+        (PlayerRace::Humano, true) | (PlayerRace::Elfo, true) => 39,
+        (PlayerRace::ElfoOscuro, false) => 32,
+        (PlayerRace::ElfoOscuro, true) => 40,
+        (PlayerRace::Enano, false) | (PlayerRace::Gnomo, false) => 53,
+        (PlayerRace::Enano, true) | (PlayerRace::Gnomo, true) => 60,
+    }
+}
+
+/// Default head GRH by race + gender (for recovery when head is corrupted to 500)
+pub(super) fn default_head_for_race(race: PlayerRace, gender: i32) -> i32 {
+    let is_female = gender == 2;
+    match (race, is_female) {
+        (PlayerRace::Humano, true) | (PlayerRace::Elfo, true) => 70,
+        (PlayerRace::Humano, false) => 1,
+        (PlayerRace::Elfo, false) => 101,
+        (PlayerRace::ElfoOscuro, true) => 480,
+        (PlayerRace::ElfoOscuro, false) => 401,
+        (PlayerRace::Enano, true) | (PlayerRace::Gnomo, true) => 270,
+        (PlayerRace::Enano, false) | (PlayerRace::Gnomo, false) => 201,
+    }
+}
+
+// =====================================================================
+// Resurrection helpers
+// =====================================================================
+
+/// /RESUCITAR — Resurrect. VB6: requires Revividor NPC target, distance <= 10, must be dead.
+pub(super) async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionId) {
+    let (dead, target_npc) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.target_npc),
+        _ => return,
+    };
+
+    if target_npc == 0 {
+        state.send_msg_id(conn_id, 9, "").await;
+        return;
+    }
+
+    let npc_type = state.get_npc(target_npc).map(|n| n.npc_type);
+    if npc_type != Some(NpcType::Reviver) || !dead {
+        return;
+    }
+
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.map, npc.x, npc.y),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
+        state.send_msg_id(conn_id, 11, "").await;
+        return;
+    }
+
+    revive_user(state, conn_id).await;
+    state.send_msg_id(conn_id, 396, "").await;
+}
+
+/// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
+/// VB6: RevivirUsuario() — sets dead=false, HP=35, DarCuerpoDesnudo, ChangeUserChar(OrigChar.Head).
+pub(super) async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
+    let (race, gender, max_hp, orig_head) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.dead => (u.race, u.gender, u.max_hp, u.orig_head),
+        _ => return,
+    };
+
+    let revive_hp = 35.min(max_hp);
+    let new_body = naked_body(race, gender);
+
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.dead = false;
+        user.min_hp = revive_hp;
+        user.body = new_body;
+        user.head = orig_head;
+        user.traveling = false;
+        user.counter_go_home = 0;
+    }
+
+    let (map, x, y, char_index, heading, weapon_anim, shield_anim, casco_anim) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.heading, u.weapon_anim, u.shield_anim, u.casco_anim),
+        None => return,
+    };
+
+    state.send_data_bytes(
+        SendTarget::ToArea { map, x, y },
+        &binary_packets::write_char_particle_create(char_index.0 as i16, 65),
+    ).await;
+
+    state.send_data_bytes(
+        SendTarget::ToArea { map, x, y },
+        &binary_packets::write_character_change(
+            char_index.0 as i16, new_body as i16, orig_head as i16, heading as u8,
+            weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
+        ),
+    ).await;
+
+    send_stats_hp(state, conn_id).await;
+    send_stats_mana(state, conn_id).await;
+}
+
+// =====================================================================
+// Inventory/spell packet helpers
+// =====================================================================
+
+/// Build ANM packet (equipment hitbox stats — 20 comma-separated fields).
+pub(crate) fn build_anm_packet(state: &GameState, conn_id: ConnectionId) -> String {
+    let user = match state.users.get(&conn_id) {
+        Some(u) => u,
+        None => return "ANM0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0".into(),
+    };
+
+    let (min_arma, max_arma) = if user.equip.weapon > 0 && user.equip.weapon <= MAX_INVENTORY_SLOTS {
+        let obj_idx = user.inventory[user.equip.weapon - 1].obj_index;
+        if obj_idx > 0 {
+            state.game_data.objects.get(obj_idx as usize)
+                .map(|o| (o.min_hit, o.max_hit))
+                .unwrap_or((0, 0))
+        } else { (0, 0) }
+    } else { (0, 0) };
+
+    let (min_armor, max_armor) = if user.equip.armor > 0 && user.equip.armor <= MAX_INVENTORY_SLOTS {
+        let obj_idx = user.inventory[user.equip.armor - 1].obj_index;
+        if obj_idx > 0 {
+            state.game_data.objects.get(obj_idx as usize)
+                .map(|o| (o.min_def, o.max_def))
+                .unwrap_or((0, 0))
+        } else { (0, 0) }
+    } else { (0, 0) };
+
+    let (min_shield, max_shield) = if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
+        let obj_idx = user.inventory[user.equip.shield - 1].obj_index;
+        if obj_idx > 0 {
+            state.game_data.objects.get(obj_idx as usize)
+                .map(|o| (o.min_def, o.max_def))
+                .unwrap_or((0, 0))
+        } else { (0, 0) }
+    } else { (0, 0) };
+
+    let (min_helmet, max_helmet) = if user.equip.helmet > 0 && user.equip.helmet <= MAX_INVENTORY_SLOTS {
+        let obj_idx = user.inventory[user.equip.helmet - 1].obj_index;
+        if obj_idx > 0 {
+            state.game_data.objects.get(obj_idx as usize)
+                .map(|o| (o.min_def, o.max_def))
+                .unwrap_or((0, 0))
+        } else { (0, 0) }
+    } else { (0, 0) };
+
+    format!(
+        "ANM{},{},{},{},{},{},{},{},0,0,0,0,0,0,0,0,0,0,0,0",
+        min_arma, max_arma, min_armor, max_armor,
+        min_shield, max_shield, min_helmet, max_helmet,
+    )
+}
+
+/// Send a single inventory slot CSI packet.
+pub(super) async fn send_inventory_slot(state: &mut GameState, conn_id: ConnectionId, idx: usize) {
+    let slot = idx + 1;
+    let inv = match state.users.get(&conn_id) {
+        Some(u) => u.inventory[idx].clone(),
+        None => return,
+    };
+
+    if inv.obj_index == 0 {
+        state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
+            slot as u8, 0, "(None)", 0, false, 0, 0, 0, 0, 0, 0, 0.0,
+        )).await;
+    } else {
+        let obj = state.get_object(inv.obj_index).cloned();
+        let (name, grh, obj_type, max_hit, min_hit, max_def, min_def, valor) = match obj {
+            Some(o) => (
+                o.name.clone(),
+                o.grh_index,
+                o.obj_type as i32,
+                o.max_hit,
+                o.min_hit,
+                o.max_def,
+                o.min_def,
+                o.valor / 3,
+            ),
+            None => ("???".into(), 0, 0, 0, 0, 0, 0, 0),
+        };
+        state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
+            slot as u8, inv.obj_index as i16, &name, inv.amount as i16, inv.equipped,
+            grh as i16, obj_type as u8, max_hit as i16, min_hit as i16, max_def as i16, min_def as i16, valor as f32,
+        )).await;
+    }
+}
+
+/// Send all inventory slots.
+pub(super) async fn send_full_inventory(state: &mut GameState, conn_id: ConnectionId) {
+    for idx in 0..MAX_INVENTORY_SLOTS {
+        send_inventory_slot(state, conn_id, idx).await;
+    }
+}
+
+/// Send all spell slots.
+pub(super) async fn send_full_spells(state: &mut GameState, conn_id: ConnectionId) {
+    let spells = match state.users.get(&conn_id) {
+        Some(u) => u.spells,
+        None => return,
+    };
+
+    for (i, &spell_id) in spells.iter().enumerate() {
+        let slot = i + 1;
+        if spell_id > 0 {
+            let name = state.get_spell(spell_id)
+                .map(|s| s.nombre.clone())
+                .unwrap_or_else(|| "(Desconocido)".into());
+            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, spell_id as i16, &name)).await;
+        } else {
+            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, 0, "(Nada)")).await;
+        }
+    }
+}
+
+// =====================================================================
+// Auto-heal helper
+// =====================================================================
+
+/// VB6 AutoCuraUser — Automatic priest heal/revive/cure.
+/// Called when player moves into ZonaCura range of a Revividor NPC.
+pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId) {
+    let (dead, hp_low, poisoned) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.min_hp < u.max_hp, u.poisoned),
+        _ => return,
+    };
+
+    if dead {
+        revive_user(state, conn_id).await;
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_hp = user.max_hp;
+            user.min_sta = user.max_sta;
+        }
+        state.send_msg_id(conn_id, 693, "").await;
+        let (map, x, y) = match state.users.get(&conn_id) {
+            Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+            None => return,
+        };
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8)).await;
+        send_stats_hp(state, conn_id).await;
+        send_stats_sta(state, conn_id).await;
+    } else if hp_low {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_hp = user.max_hp;
+        }
+        state.send_msg_id(conn_id, 694, "").await;
+        let (map, x, y) = match state.users.get(&conn_id) {
+            Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+            None => return,
+        };
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8)).await;
+        send_stats_hp(state, conn_id).await;
+    }
+
+    if poisoned {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.poisoned = false;
+        }
+    }
 }

@@ -165,6 +165,7 @@ pub mod font_index {
     pub const SERVER: u8 = 28;     // Green (0,185,0) — server messages
     pub const GUILD_MSG: u8 = 31;  // Gold (228,199,27)
     pub const CONSEJO: u8 = 32;    // Dark blue (0,64,128)
+    pub const CONSEJO_CAOS: u8 = 33; // Dark red — chaos council
     pub const CENTINELA: u8 = 36;  // Green (0,170,0)
     pub const AMARILLO: u8 = 38;   // Yellow bold (255,255,0)
     pub const GRIS: u8 = 40;       // Gray bold (130,130,130)
