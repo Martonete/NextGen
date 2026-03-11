@@ -9,6 +9,7 @@ namespace AOWorldEditor.Editor;
 /// <summary>
 /// Sidebar panel showing texture references from indices.ini, organized by category.
 /// Categories displayed as a wrapped button grid (2 rows) instead of a scrolling TabBar.
+/// Uses AtlasTexture for zero-copy GPU-side previews (no GetImage() stalls).
 /// </summary>
 public partial class TilePalette : VBoxContainer
 {
@@ -30,6 +31,11 @@ public partial class TilePalette : VBoxContainer
     private readonly List<Button> _categoryButtons = new();
     private const int PreviewSize = 64; // px per preview cell
     private const int Columns = 4;
+
+    // Preview cache: GRH index → cached preview texture (AtlasTexture or composited)
+    private readonly Dictionary<int, Texture2D?> _previewCache = new();
+    // Grid buttons tracking for highlight updates without full rebuild
+    private readonly List<(TextureButton btn, TextureRef texRef)> _gridButtons = new();
 
     public override void _Ready()
     {
@@ -80,6 +86,7 @@ public partial class TilePalette : VBoxContainer
         foreach (var child in _categoryFlow.GetChildren())
             child.QueueFree();
         _categoryButtons.Clear();
+        _previewCache.Clear(); // invalidate cache on full rebuild
 
         foreach (var cat in Catalog.CategoryOrder)
         {
@@ -142,6 +149,7 @@ public partial class TilePalette : VBoxContainer
         // Clear existing children
         foreach (var child in _grid.GetChildren())
             child.QueueFree();
+        _gridButtons.Clear();
 
         // Get texture list: search across ALL categories, or filter current category
         List<TextureRef> refs;
@@ -170,8 +178,8 @@ public partial class TilePalette : VBoxContainer
             btn.IgnoreTextureSize = true;
             btn.TooltipText = $"{texRef.Name}\nGRH: {texRef.GrhIndex}\n{texRef.TileWidth}x{texRef.TileHeight}";
 
-            // Generate preview texture
-            var preview = GeneratePreview(texRef);
+            // Get cached preview (or generate + cache)
+            var preview = GetOrCreatePreview(texRef);
             if (preview != null)
                 btn.TextureNormal = preview;
 
@@ -184,6 +192,7 @@ public partial class TilePalette : VBoxContainer
             btn.Pressed += () => OnTextureSelected(capturedRef);
 
             _grid.AddChild(btn);
+            _gridButtons.Add((btn, texRef));
         }
     }
 
@@ -213,7 +222,36 @@ public partial class TilePalette : VBoxContainer
 
         _infoLabel!.Text = $"{texRef.Name} | GRH {texRef.GrhIndex} | L{Math.Max(texRef.Layer, 1)} | {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
 
-        PopulateGrid();
+        // Just update highlights — don't rebuild the entire grid
+        UpdateGridHighlights();
+    }
+
+    /// <summary>
+    /// Update button highlights without rebuilding the grid.
+    /// </summary>
+    private void UpdateGridHighlights()
+    {
+        foreach (var (btn, texRef) in _gridButtons)
+        {
+            btn.Modulate = (State?.SelectedTexture == texRef)
+                ? new Color(1, 1, 0.5f, 1)
+                : Colors.White;
+        }
+    }
+
+    /// <summary>
+    /// Get a cached preview or create one. Uses AtlasTexture for single-tile
+    /// (zero-copy, GPU-side) and composited+cached for multi-tile.
+    /// </summary>
+    private Texture2D? GetOrCreatePreview(TextureRef texRef)
+    {
+        int key = texRef.GrhIndex;
+        if (_previewCache.TryGetValue(key, out var cached))
+            return cached;
+
+        var preview = GeneratePreview(texRef);
+        _previewCache[key] = preview;
+        return preview;
     }
 
     private Texture2D? GeneratePreview(TextureRef texRef)
@@ -227,11 +265,11 @@ public partial class TilePalette : VBoxContainer
 
         if (tw == 1 && th == 1)
         {
-            // Single tile: crop from source texture (original behavior)
+            // Single tile: use AtlasTexture (GPU-side crop, zero-copy, instant)
             return GenerateSingleGrhPreview(grhIndex);
         }
 
-        // Multi-tile: compose NxM pattern into a single preview image
+        // Multi-tile: compose NxM pattern into a single preview image (cached after first call)
         int fullW = tw * 32;
         int fullH = th * 32;
         var composite = Image.CreateEmpty(fullW, fullH, false, Image.Format.Rgba8);
@@ -287,17 +325,12 @@ public partial class TilePalette : VBoxContainer
         var srcTex = Textures.GetTexture(grh.FileNum);
         if (srcTex == null) return null;
 
-        var srcImg = srcTex.GetImage();
-        if (srcImg == null) return null;
-
-        int cropW = Math.Min(grh.PixelWidth, srcImg.GetWidth() - grh.SX);
-        int cropH = Math.Min(grh.PixelHeight, srcImg.GetHeight() - grh.SY);
-        if (cropW <= 0 || cropH <= 0) return null;
-
-        var preview = srcImg.GetRegion(new Rect2I(grh.SX, grh.SY, cropW, cropH));
-        if (preview.GetWidth() > PreviewSize || preview.GetHeight() > PreviewSize)
-            preview.Resize(PreviewSize, PreviewSize, Image.Interpolation.Nearest);
-
-        return ImageTexture.CreateFromImage(preview);
+        // Use AtlasTexture: GPU-side crop, NO GetImage() call, instant
+        var atlas = new AtlasTexture();
+        atlas.Atlas = srcTex;
+        atlas.Region = new Rect2(grh.SX, grh.SY,
+            Math.Min(grh.PixelWidth, srcTex.GetWidth() - grh.SX),
+            Math.Min(grh.PixelHeight, srcTex.GetHeight() - grh.SY));
+        return atlas;
     }
 }
