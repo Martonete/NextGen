@@ -258,12 +258,59 @@ public partial class MapViewport : Control
     }
 
     /// <summary>
+    /// Auto-detect mosaic offset: if the hovered tile already has a GRH from the selected
+    /// multi-tile pattern, adjust MosaicOffset so the preview aligns with existing tiles.
+    /// </summary>
+    private void TryAutoAlignMosaic(int hoverX, int hoverY)
+    {
+        if (State?.SelectedTexture == null || Map == null) return;
+        var texRef = State.SelectedTexture;
+        int tw = Math.Max(texRef.TileWidth, 1);
+        int th = Math.Max(texRef.TileHeight, 1);
+        if (tw <= 1 && th <= 1) return; // only for multi-tile patterns
+
+        if (!Map.InBounds(hoverX, hoverY)) return;
+
+        int layer = State.ActiveLayer;
+        short tileGrh = layer switch
+        {
+            1 => Map.Tiles[hoverX, hoverY].Layer1,
+            2 => Map.Tiles[hoverX, hoverY].Layer2,
+            3 => Map.Tiles[hoverX, hoverY].Layer3,
+            4 => Map.Tiles[hoverX, hoverY].Layer4,
+            _ => 0
+        };
+        if (tileGrh <= 0) return;
+
+        // Check if the tile's GRH is part of this mosaic pattern
+        int baseGrh = texRef.GrhIndex;
+        int idx = tileGrh - baseGrh;
+        if (idx < 0 || idx >= tw * th) return; // not part of this pattern
+
+        // Found a match. idx = py * tw + px
+        int px = idx % tw;
+        int py = idx / tw;
+
+        // The tile at (hoverX, hoverY) should be at pattern position (px, py).
+        // Pattern base = (hoverX - px, hoverY - py).
+        // offX = (hoverX - 1 - px) mod tw, offY = (hoverY - 1 - py) mod th
+        int newOffX = ((hoverX - 1 - px) % tw + tw) % tw;
+        int newOffY = ((hoverY - 1 - py) % th + th) % th;
+
+        if (newOffX != State.MosaicOffsetX || newOffY != State.MosaicOffsetY)
+        {
+            State.MosaicOffsetX = newOffX;
+            State.MosaicOffsetY = newOffY;
+        }
+    }
+
+    /// <summary>
     /// Draw a semi-transparent preview of the selected texture at the cursor position.
     /// Like Sims construction mode — shows what will be placed before clicking.
     /// </summary>
     private void DrawPaintPreview()
     {
-        if (State == null || Map == null || _isPainting || _isDragging) return;
+        if (State == null || Map == null || _isDragging) return;
         if (State.Pending.Active) return; // Don't show paint preview during pending placement
         if (State.ActiveTool != EditorTool.Paint && !_mosaicHandleDrag) return;
         if (!State.HoverValid && !_mosaicHandleDrag) return;
@@ -1324,6 +1371,7 @@ public partial class MapViewport : Control
                 ApplyToolAt(tile.X, tile.Y);
             else
                 EraseAt(tile.X, tile.Y);
+            QueueRedraw(); // keep mosaic preview visible during painting
             return;
         }
 
@@ -1347,6 +1395,11 @@ public partial class MapViewport : Control
             State.Pick.DragY = hoverTile.Y;
             QueueRedraw();
         }
+
+        // Auto-detect mosaic offset: if hovered tile already has a GRH from the selected
+        // mosaic pattern, snap the offset so the preview aligns with existing painted tiles.
+        if (State.ActiveTool == EditorTool.Paint && !_isPainting && !_mosaicHandleDrag)
+            TryAutoAlignMosaic(hoverTile.X, hoverTile.Y);
 
         // Redraw on hover for paint preview and pending placement
         if (State.ActiveTool == EditorTool.Paint || State.Pending.Active)
