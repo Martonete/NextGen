@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Godot;
 using AOWorldEditor.Data;
@@ -83,6 +84,13 @@ public partial class EditorMain : Control
     // Unsaved changes dialog
     private ConfirmationDialog? _unsavedDialog;
     private Action? _pendingAfterSaveCheck;
+
+    // Texture preload
+    private IEnumerator<int>? _preloadIter;
+    private Label? _preloadLabel;
+    private ProgressBar? _preloadBar;
+    private Panel? _preloadOverlay;
+    private const int PreloadBatchSize = 8; // textures per frame
 
     private const float PaletteWidth = 300;
     private const float StatusHeight = 24;
@@ -467,6 +475,19 @@ public partial class EditorMain : Control
             _statusBar.Position = new Vector2(0, contentBottom);
             _statusBar.Size = new Vector2(win.X, StatusHeight);
         }
+
+        // Preload overlay (centered in viewport area)
+        if (_preloadOverlay != null && _viewport != null)
+        {
+            float vpX = PaletteWidth + 2;
+            float vpW = win.X - vpX;
+            float ovW = 340;
+            float ovH = 80;
+            _preloadOverlay.Position = new Vector2(
+                vpX + (vpW - ovW) / 2,
+                contentTop + (contentH - ovH) / 2);
+            _preloadOverlay.Size = new Vector2(ovW, ovH);
+        }
     }
 
     private void BuildMapPropsDialog()
@@ -705,6 +726,76 @@ public partial class EditorMain : Control
         GD.Print($"[Editor] {pathInfo}");
 
         CreateNewMap(1);
+
+        // Start background texture preload (non-blocking, N per frame)
+        StartTexturePreload();
+    }
+
+    private void StartTexturePreload()
+    {
+        if (_textures == null || _grhs == null) return;
+
+        _preloadIter = _textures.PreloadAll(_grhs);
+
+        // Create loading overlay
+        _preloadOverlay = new Panel();
+        _preloadOverlay.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        var overlayStyle = new StyleBoxFlat
+        {
+            BgColor = new Color(0.1f, 0.1f, 0.12f, 0.92f),
+            CornerRadiusBottomLeft = 6, CornerRadiusBottomRight = 6,
+            CornerRadiusTopLeft = 6, CornerRadiusTopRight = 6,
+        };
+        _preloadOverlay.AddThemeStyleboxOverride("panel", overlayStyle);
+
+        var vbox = new VBoxContainer();
+        vbox.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.SetAnchorsAndOffsetsPreset(LayoutPreset.Center);
+        vbox.CustomMinimumSize = new Vector2(320, 80);
+        _preloadOverlay.AddChild(vbox);
+
+        _preloadLabel = new Label { Text = "Cargando texturas..." };
+        _preloadLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _preloadLabel.AddThemeFontSizeOverride("font_size", 13);
+        _preloadLabel.AddThemeColorOverride("font_color", Colors.White);
+        vbox.AddChild(_preloadLabel);
+
+        _preloadBar = new ProgressBar();
+        _preloadBar.CustomMinimumSize = new Vector2(300, 18);
+        _preloadBar.ShowPercentage = true;
+        vbox.AddChild(_preloadBar);
+
+        AddChild(_preloadOverlay);
+    }
+
+    private void TickTexturePreload()
+    {
+        if (_preloadIter == null || _textures == null) return;
+
+        for (int i = 0; i < PreloadBatchSize; i++)
+        {
+            if (!_preloadIter.MoveNext())
+            {
+                // Done
+                _preloadIter.Dispose();
+                _preloadIter = null;
+                _preloadOverlay?.QueueFree();
+                _preloadOverlay = null;
+                _preloadLabel = null;
+                _preloadBar = null;
+                SetStatus("Texturas precargadas");
+                return;
+            }
+        }
+
+        // Update progress UI
+        if (_preloadBar != null && _textures.PreloadTotal > 0)
+        {
+            float pct = (float)_textures.PreloadDone / _textures.PreloadTotal * 100f;
+            _preloadBar.Value = pct;
+        }
+        if (_preloadLabel != null)
+            _preloadLabel.Text = $"Cargando texturas... {_textures.PreloadDone}/{_textures.PreloadTotal}";
     }
 
     private void SyncViewportData()
@@ -1540,6 +1631,9 @@ public partial class EditorMain : Control
     public override void _Process(double delta)
     {
         DoLayout();
+
+        // Tick texture preload (N images per frame, non-blocking)
+        TickTexturePreload();
 
         // Open tile properties when clicked with property tools
         if (_state.ShowTileProperties && _propsPanel != null && _map != null)

@@ -1,4 +1,5 @@
 #nullable enable
+using System;
 using System.Collections.Generic;
 using Godot;
 
@@ -7,18 +8,53 @@ namespace AOWorldEditor.Data;
 /// <summary>
 /// LRU cache of textures from Graficos/ folder.
 /// Black (0,0,0) color key → transparent.
+/// Supports bulk preload at startup to avoid runtime freezes.
 /// </summary>
 public class TextureManager
 {
     private readonly string _graficosPath;
     private readonly Dictionary<int, Texture2D> _cache = new();
     private readonly LinkedList<int> _lruOrder = new();
-    private const int MaxCacheSize = 512; // Larger cache for editor
+    private const int MaxCacheSize = 4096; // Large cache — preloaded textures stay resident
     private const byte BlackThreshold = 3;
+
+    // Preload progress (poll from UI)
+    public int PreloadTotal { get; private set; }
+    public int PreloadDone { get; private set; }
+    public bool PreloadFinished { get; private set; }
 
     public TextureManager(string graficosPath)
     {
         _graficosPath = graficosPath;
+    }
+
+    /// <summary>
+    /// Collect all unique FileNums from GrhData and preload them.
+    /// Call once after GrhLoader.Load(). Returns an enumerator that
+    /// loads one texture per iteration (call from _Process for non-blocking UI).
+    /// </summary>
+    public IEnumerator<int> PreloadAll(GrhData[] grhs)
+    {
+        var fileNums = new HashSet<int>();
+        for (int i = 1; i < grhs.Length; i++)
+        {
+            int fn = grhs[i].FileNum;
+            if (fn > 0) fileNums.Add(fn);
+        }
+
+        PreloadTotal = fileNums.Count;
+        PreloadDone = 0;
+        PreloadFinished = false;
+
+        foreach (int fn in fileNums)
+        {
+            LoadAndCache(fn);
+            PreloadDone++;
+            yield return fn;
+        }
+
+        PreloadFinished = true;
+        GD.Print($"[TextureManager] Preloaded {PreloadDone} textures ({_cache.Count} cached)");
     }
 
     public Texture2D? GetTexture(int fileNum)
@@ -27,10 +63,25 @@ public class TextureManager
 
         if (_cache.TryGetValue(fileNum, out var cached))
         {
+            // Bump LRU
             _lruOrder.Remove(fileNum);
             _lruOrder.AddFirst(fileNum);
             return cached;
         }
+
+        // Cache miss — load on demand (fallback for files not in GrhData)
+        return LoadAndCache(fileNum);
+    }
+
+    public Rect2 GetGrhRect(GrhData grh)
+    {
+        return new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+    }
+
+    private Texture2D? LoadAndCache(int fileNum)
+    {
+        if (_cache.TryGetValue(fileNum, out var existing))
+            return existing;
 
         string filePath = System.IO.Path.Combine(_graficosPath, $"{fileNum}.png");
         if (!System.IO.File.Exists(filePath))
@@ -39,9 +90,10 @@ public class TextureManager
         var image = Image.LoadFromFile(filePath);
         if (image == null) return null;
 
-        ApplyBlackColorKey(image);
+        ApplyBlackColorKeyFast(image);
         var texture = ImageTexture.CreateFromImage(image);
 
+        // Evict LRU if over capacity
         if (_cache.Count >= MaxCacheSize && _lruOrder.Count > 0)
         {
             int evict = _lruOrder.Last!.Value;
@@ -54,31 +106,31 @@ public class TextureManager
         return texture;
     }
 
-    public Rect2 GetGrhRect(GrhData grh)
-    {
-        return new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-    }
-
-    private static void ApplyBlackColorKey(Image image)
+    /// <summary>
+    /// Fast black color key using raw byte buffer instead of per-pixel Get/SetPixel.
+    /// ~20-50x faster on large images (2048x2048 = 4M pixels → 16MB buffer).
+    /// </summary>
+    private static void ApplyBlackColorKeyFast(Image image)
     {
         if (image.GetFormat() != Image.Format.Rgba8)
             image.Convert(Image.Format.Rgba8);
 
-        int width = image.GetWidth();
-        int height = image.GetHeight();
+        byte[] data = image.GetData();
+        int len = data.Length;
 
-        for (int y = 0; y < height; y++)
+        for (int i = 0; i < len; i += 4)
         {
-            for (int x = 0; x < width; x++)
+            if (data[i] <= BlackThreshold &&     // R
+                data[i + 1] <= BlackThreshold &&  // G
+                data[i + 2] <= BlackThreshold)    // B
             {
-                Color pixel = image.GetPixel(x, y);
-                byte r = (byte)(pixel.R * 255);
-                byte g = (byte)(pixel.G * 255);
-                byte b = (byte)(pixel.B * 255);
-
-                if (r <= BlackThreshold && g <= BlackThreshold && b <= BlackThreshold)
-                    image.SetPixel(x, y, new Color(0, 0, 0, 0));
+                data[i + 3] = 0; // A = transparent
             }
         }
+
+        var result = Image.CreateFromData(
+            image.GetWidth(), image.GetHeight(),
+            false, Image.Format.Rgba8, data);
+        image.CopyFrom(result);
     }
 }
