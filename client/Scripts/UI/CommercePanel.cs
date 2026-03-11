@@ -196,7 +196,7 @@ public partial class CommercePanel : Control
         for (int i = 0; i < maxNpcCells; i++)
         {
             int idx = npcStartIdx + i;
-            if (idx >= _state.NpcShopCount) break;
+            if (idx >= _state!.NpcShopCount) break;
 
             var item = _state.NpcShopItems[idx];
             if (string.IsNullOrEmpty(item.Name)) continue;
@@ -280,7 +280,7 @@ public partial class CommercePanel : Control
         int objType = 0;
         int minHit = 0, maxHit = 0, maxDef = 0;
 
-        if (_selectedNpcIdx >= 0 && _selectedNpcIdx < _state.NpcShopCount)
+        if (_selectedNpcIdx >= 0 && _selectedNpcIdx < _state!.NpcShopCount)
         {
             var item = _state.NpcShopItems[_selectedNpcIdx];
             name = item.Name; price = item.Price; amount = item.Amount;
@@ -358,10 +358,10 @@ public partial class CommercePanel : Control
             // Tooltip on hover over grid items
             if (RichTooltip != null && _state != null)
             {
-                int npcIdx = HitTestGrid(dragMm.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state.NpcShopCount);
+                int npcIdx = HitTestGrid(dragMm.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state!.NpcShopCount);
                 int userIdx = HitTestGrid(dragMm.Position, UserGridX, UserGridY, UserGridW, UserGridH, _userScrollRow, _userSlotCount);
 
-                if (npcIdx >= 0 && npcIdx < _state.NpcShopCount)
+                if (npcIdx >= 0 && npcIdx < _state!.NpcShopCount)
                     RichTooltip.ShowNpcShopItem(_state.NpcShopItems[npcIdx]);
                 else if (userIdx >= 0 && userIdx < _userSlotCount)
                     RichTooltip.ShowInventoryItem(_state.Inventory[_userSlots[userIdx]]);
@@ -373,7 +373,7 @@ public partial class CommercePanel : Control
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
             // Click in NPC grid
-            int npcIdx = HitTestGrid(mb.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state.NpcShopCount);
+            int npcIdx = HitTestGrid(mb.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state!.NpcShopCount);
             if (npcIdx >= 0)
             {
                 _selectedNpcIdx = npcIdx;
@@ -396,7 +396,7 @@ public partial class CommercePanel : Control
             if (mb.Position.X >= NpcGridX && mb.Position.X < NpcGridX + NpcGridW &&
                 mb.Position.Y >= NpcGridY && mb.Position.Y < NpcGridY + NpcGridH)
             {
-                HandleScroll(mb, ref _npcScrollRow, _state.NpcShopCount, NpcGridRows);
+                HandleScroll(mb, ref _npcScrollRow, _state!.NpcShopCount, NpcGridRows);
                 AcceptEvent();
                 return;
             }
@@ -425,7 +425,7 @@ public partial class CommercePanel : Control
             if (mbScroll.Position.X >= NpcGridX && mbScroll.Position.X < NpcGridX + NpcGridW &&
                 mbScroll.Position.Y >= NpcGridY && mbScroll.Position.Y < NpcGridY + NpcGridH)
             {
-                HandleScroll(mbScroll, ref _npcScrollRow, _state.NpcShopCount, NpcGridRows);
+                HandleScroll(mbScroll, ref _npcScrollRow, _state!.NpcShopCount, NpcGridRows);
                 AcceptEvent();
                 return;
             }
@@ -454,7 +454,7 @@ public partial class CommercePanel : Control
     private void OnBuyPressed()
     {
         if (_state == null || _tcp == null) return;
-        if (_selectedNpcIdx < 0 || _selectedNpcIdx >= _state.NpcShopCount) return;
+        if (_selectedNpcIdx < 0 || _selectedNpcIdx >= _state!.NpcShopCount) return;
 
         int qty = GetQuantity();
         if (qty <= 0) return;

@@ -412,7 +412,7 @@ public partial class VaultPanel : Control
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
             // Click in vault grid
-            int vaultIdx = HitTestGrid(mb.Position, VaultGridX, VaultGridY, VaultGridW, VaultGridH, _vaultScrollRow, _state.BankItemCount);
+            int vaultIdx = HitTestGrid(mb.Position, VaultGridX, VaultGridY, VaultGridW, VaultGridH, _vaultScrollRow, _state!.BankItemCount);
             if (vaultIdx >= 0)
             {
                 _selectedVaultIdx = vaultIdx;
@@ -439,7 +439,7 @@ public partial class VaultPanel : Control
             if (mbScroll.Position.X >= VaultGridX && mbScroll.Position.X < VaultGridX + VaultGridW &&
                 mbScroll.Position.Y >= VaultGridY && mbScroll.Position.Y < VaultGridY + VaultGridH)
             {
-                HandleScroll(mbScroll, ref _vaultScrollRow, _state.BankItemCount, VaultGridRows);
+                HandleScroll(mbScroll, ref _vaultScrollRow, _state!.BankItemCount, VaultGridRows);
                 AcceptEvent();
                 return;
             }

@@ -75,7 +75,6 @@ public partial class WeatherRenderer : Node2D
 
         // Look for rain sound file in Data/Sounds/WAV/
         string[] candidates = { "lluviaout.wav", "lluvia.wav", "rain.wav" };
-        string dataPath = "";
 
         // Walk up to find Data/ folder
         var parent = GetParent();

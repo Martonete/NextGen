@@ -476,6 +476,7 @@ public partial class Main : Control
         _charCreateScreen.CreateDeleteConfirmDialog(GetNode<CanvasLayer>("UILayer"));
 
         // "Desconectar" button on CharSelect screen
+        var charSelectVBox = _charList!.GetParent();
         var disconnectBtn = new Button();
         disconnectBtn.Text = "Desconectar";
         disconnectBtn.CustomMinimumSize = new Vector2(0, 32);
