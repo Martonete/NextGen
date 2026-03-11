@@ -21,6 +21,7 @@ public class DialogManager
     private PanelContainer? _escapeMenu;
 
     // Message dialog (VB6: Mensaje form)
+    private ColorRect? _mensajeOverlay; // full-screen modal backdrop
     private PanelContainer? _mensajeDialog;
     private Label? _mensajeLabel;
 
@@ -236,8 +237,16 @@ public class DialogManager
 
     public void CreateMensajeDialog(Node parent)
     {
+        // Full-screen dark overlay — blocks all input behind the dialog
+        _mensajeOverlay = new ColorRect();
+        _mensajeOverlay.Color = new Color(0f, 0f, 0f, 0.55f);
+        _mensajeOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        _mensajeOverlay.MouseFilter = Control.MouseFilterEnum.Stop; // block clicks behind
+        _mensajeOverlay.Visible = false;
+        _mensajeOverlay.ZIndex = 199;
+        parent.AddChild(_mensajeOverlay);
+
         _mensajeDialog = new PanelContainer();
-        _mensajeDialog.Size = new Vector2(340, 160);
         _mensajeDialog.Visible = false;
         _mensajeDialog.ZIndex = 200;
 
@@ -257,6 +266,7 @@ public class DialogManager
         _mensajeLabel.Text = "";
         _mensajeLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _mensajeLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _mensajeLabel.CustomMinimumSize = new Vector2(300, 0);
         _mensajeLabel.AddThemeColorOverride("font_color", Colors.White);
         _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_mensajeLabel);
@@ -285,23 +295,30 @@ public class DialogManager
         else
             _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
 
-        int height = text.Length > 120 ? 200 : (text.Length > 75 ? 180 : 160);
+        // Show the dark overlay first
+        if (_mensajeOverlay != null)
+            _mensajeOverlay.Visible = true;
+
+        // Reset and let PanelContainer auto-size from content, then center
         _mensajeDialog.ResetSize();
         _mensajeDialog.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        _mensajeDialog.Size = new Vector2(340, height);
-
-        _mensajeDialog.Position = new Vector2(
-            (screenSize.X - 340) / 2,
-            (screenSize.Y - height) / 2
-        );
-
+        // Force a reasonable width so autowrap works, height auto-fits
+        _mensajeDialog.CustomMinimumSize = new Vector2(340, 0);
         _mensajeDialog.Visible = true;
+
+        // Defer centering so Godot can compute the final size after layout
+        _mensajeDialog.CallDeferred("set_position", new Vector2(
+            (screenSize.X - 340) / 2,
+            (screenSize.Y - 140) / 2
+        ));
     }
 
     public void OnMensajeAccept()
     {
         if (_mensajeDialog != null)
             _mensajeDialog.Visible = false;
+        if (_mensajeOverlay != null)
+            _mensajeOverlay.Visible = false;
     }
 
     public bool IsMensajeVisible => _mensajeDialog != null && _mensajeDialog.Visible;

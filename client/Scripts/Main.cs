@@ -368,7 +368,6 @@ public partial class Main : Control
 
         _chatSystem = new ChatSystem(_state);
         _chatSystem.BindNodes(console, chatInput);
-        _chatSystem.CreateChatTabs(_gameUI);
         _chatSystem.SendPacket = (pkt) => _tcp?.SendPacket(pkt);
         _chatSystem.OnWorkMacroToggle = () => _inventoryUI?.HandleWorkMacroToggle();
         _chatSystem.OnSpellMacroToggle = () => _inventoryUI?.HandleSpellMacroToggle();
