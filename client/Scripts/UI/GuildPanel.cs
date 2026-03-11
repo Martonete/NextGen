@@ -56,6 +56,9 @@ public partial class GuildPanel : Control
     // Details view
     private Label? _detailsLabel;
 
+    // Applicant comment/rejection reason
+    private LineEdit? _rejectReasonEdit;
+
     // Parsed guild list entries
     private readonly List<(string name, string align, string level)> _guilds = new();
     // Parsed members
@@ -119,7 +122,9 @@ public partial class GuildPanel : Control
         _guildList = null;
         _memberList = null;
         _applicantList = null;
-        _applicantList = null;
+        _rejectReasonEdit = null;
+        _codexEdit = null;
+        _saveCodexBtn = null;
 
         switch (viewType)
         {
@@ -248,6 +253,17 @@ public partial class GuildPanel : Control
         foreach (var a in _applicants) _applicantList.AddItem(a);
         _contentBox.AddChild(_applicantList);
 
+        // Rejection reason input
+        var reasonLabel = new Label();
+        reasonLabel.Text = "Motivo de rechazo (opcional):";
+        reasonLabel.AddThemeFontSizeOverride("font_size", 10);
+        _contentBox.AddChild(reasonLabel);
+
+        _rejectReasonEdit = new LineEdit();
+        _rejectReasonEdit.PlaceholderText = "Motivo...";
+        _rejectReasonEdit.CustomMinimumSize = new Vector2(PanelW - 24, 0);
+        _contentBox.AddChild(_rejectReasonEdit);
+
         var btnRow = new HBoxContainer();
         _acceptBtn = new Button();
         _acceptBtn.Text = "Aceptar";
@@ -275,6 +291,26 @@ public partial class GuildPanel : Control
         _saveNewsBtn.Text = "Guardar noticias";
         _saveNewsBtn.Pressed += OnSaveNewsPressed;
         _contentBox.AddChild(_saveNewsBtn);
+
+        // Codex section (guild code of conduct — up to 8 lines)
+        var codexLabel = new Label();
+        codexLabel.Text = "Codex del clan:";
+        codexLabel.AddThemeFontSizeOverride("font_size", 12);
+        _contentBox.AddChild(codexLabel);
+
+        _codexEdit = new TextEdit();
+        _codexEdit.CustomMinimumSize = new Vector2(PanelW - 24, 80);
+        _codexEdit.AddThemeFontSizeOverride("font_size", 11);
+        _codexEdit.PlaceholderText = "Escriba las reglas del clan (una por linea)...";
+        // Pre-populate with existing codex
+        if (_state != null && !string.IsNullOrEmpty(_state.GuildCodexText))
+            _codexEdit.Text = _state.GuildCodexText;
+        _contentBox.AddChild(_codexEdit);
+
+        _saveCodexBtn = new Button();
+        _saveCodexBtn.Text = "Guardar codex";
+        _saveCodexBtn.Pressed += OnSaveCodexPressed;
+        _contentBox.AddChild(_saveCodexBtn);
     }
 
     // ── Member View ──────────────────────────────────────────────────
@@ -508,7 +544,9 @@ public partial class GuildPanel : Control
         if (selected.Length == 0) return;
         string appText = _applicantList.GetItemText(selected[0]);
         string name = appText.Contains(':') ? appText[..appText.IndexOf(':')].Trim() : appText.Trim();
-        _tcp.SendPacket(ClientPackets.WriteGuildReject($"{name},Rechazado"));
+        string reason = _rejectReasonEdit?.Text.Trim() ?? "";
+        if (string.IsNullOrEmpty(reason)) reason = "Rechazado";
+        _tcp.SendPacket(ClientPackets.WriteGuildReject($"{name},{reason}"));
         _tcp.SendPacket(ClientPackets.WriteGuildInfo());
     }
 
@@ -526,6 +564,15 @@ public partial class GuildPanel : Control
     {
         if (_newsEdit == null || _tcp == null) return;
         _tcp.SendPacket(ClientPackets.WriteGuildNews(_newsEdit.Text));
+    }
+
+    private void OnSaveCodexPressed()
+    {
+        if (_codexEdit == null || _tcp == null) return;
+        string codexText = _codexEdit.Text.Trim();
+        // Send codex update via guild update codex packet
+        // VB6 format: desc + BF + codex lines joined by BF
+        _tcp.SendPacket(ClientPackets.WriteGuildUpdateCodex(codexText));
     }
 
     // ── Drag ─────────────────────────────────────────────────────────

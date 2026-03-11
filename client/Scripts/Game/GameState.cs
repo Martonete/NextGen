@@ -376,6 +376,43 @@ public class GameState
     // Textos.ao message templates — loaded once, used by PacketHandler for console messages
     public TextMessage[] TextMessages = System.Array.Empty<TextMessage>();
 
+    // GM Panel
+    public bool GmPanelOpen;
+
+    // SOS / Help system
+    public bool ShowSosPanel;
+    public string SosPlayerName = "";
+    public string SosMessage = "";
+
+    // Peace proposal
+    public bool ShowPeaceProposal;
+    public string PeaceProposalGuild = "";
+    public string PeaceProposalType = ""; // "peace" or "alliance"
+
+    // Guild alignment picker (during foundation)
+    public bool ShowGuildAlignment;
+
+    // MOTD editor
+    public bool ShowMotdEditor;
+
+    // Guild member detail
+    public bool ShowGuildMember;
+    public string GuildMemberName = "";
+    public string GuildMemberPetition = "";
+    public bool GuildMemberIsApplicant;
+
+    // Day/Night cycle
+    public int GameHour = 12; // Server-sent in-game hour (0-23)
+    public bool GameHourDirty;
+
+    // Loading screen
+    public bool ShowLoadingScreen;
+    public string LoadingMapName = "";
+
+    // Tutorial
+    public bool ShowTutorial;
+    public bool TutorialCompleted;
+
     public GameState()
     {
         for (int i = 0; i < 25; i++)
