@@ -856,7 +856,11 @@ public partial class EditorMain : Control
             pathInfo += "⚠ Sin ruta cliente";
         GD.Print($"[Editor] {pathInfo}");
 
-        CreateNewMap(1);
+        // Auto-load map 1 if it exists, otherwise create empty map
+        if (_state.AvailableMaps.Contains(1))
+            LoadMapByNumber(1);
+        else
+            CreateNewMap(1);
 
         // Start background texture preload (non-blocking, N per frame)
         StartTexturePreload();
