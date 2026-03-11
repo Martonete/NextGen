@@ -347,7 +347,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         ObjType::Weapon => {
             // VB6: SND_SACARARMA (25) — draw weapon sound
             let pkt_wave = binary_packets::write_play_wave(25, x as u8, y as u8);
-            state.send_sound_to_area(map, x, y, &pkt_wave).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
             // Send CP (character change) to update weapon appearance
             let pkt_cp = binary_packets::write_character_change(
                 char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,

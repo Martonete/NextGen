@@ -353,7 +353,7 @@ pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
 
     // Impact sound
     let snd_pkt = binary_packets::write_play_wave(10, a_x as u8, a_y as u8);
-    state.send_sound_to_area(a_map, a_x, a_y, &snd_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt).await;
 
     if target_dead {
         // Target NPC dies — use pet owner as killer if available

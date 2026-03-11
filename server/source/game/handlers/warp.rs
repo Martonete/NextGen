@@ -619,7 +619,7 @@ pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if !invisible {
-        state.send_sound_to_area(map, x, y, &binary_packets::write_play_wave(3, x as u8, y as u8)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8)).await;
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0)).await;
     }
 }
