@@ -861,17 +861,29 @@ public partial class MapViewport : Control
             return;
         }
 
-        // Right click: eyedrop (capture GRH from tile)
+        // Right click: mosaic drag (if multi-tile pattern) or eyedrop
         if (mb.ButtonIndex == MouseButton.Right)
         {
             if (mb.Pressed && !_isPainting)
             {
-                var tile = ScreenToTile(mb.Position);
-                EyedropAt(tile.X, tile.Y);
+                // If a multi-tile pattern is selected, right-drag repositions the mosaic
+                if (State?.SelectedTexture != null &&
+                    Math.Max(State.SelectedTexture.TileWidth, 1) > 1)
+                {
+                    var tile = ScreenToTile(mb.Position);
+                    _mosaicHandleDrag = true;
+                    _mosaicHandleDragStart = tile;
+                }
+                else
+                {
+                    var tile = ScreenToTile(mb.Position);
+                    EyedropAt(tile.X, tile.Y);
+                }
             }
-            else if (!mb.Pressed && _isPanning)
+            else if (!mb.Pressed)
             {
-                _isPanning = false;
+                if (_mosaicHandleDrag) { _mosaicHandleDrag = false; QueueRedraw(); }
+                if (_isPanning) _isPanning = false;
             }
             return;
         }
