@@ -63,6 +63,7 @@ public partial class EditorMain : Control
 
     // Sidebar border
     private ColorRect? _sidebarBorder;
+    private ColorRect? _headerBg; // opaque background behind toolbar+navbar to prevent viewport overflow
 
     // Map navigation bar
     private HBoxContainer? _mapNavBar;
@@ -289,14 +290,16 @@ public partial class EditorMain : Control
 
         // --- Map navigation bar (below toolbar, compact) ---
         _mapNavBar = new HBoxContainer();
-        _mapNavBar.AddThemeConstantOverride("separation", 4);
+        _mapNavBar.AddThemeConstantOverride("separation", 2);
         _mapNavBar.ClipContents = true;
+        _mapNavBar.Alignment = BoxContainer.AlignmentMode.Begin;
 
         var navLabel = EditorTheme.MakeLabel("Mapa", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        navLabel.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
         _mapNavBar.AddChild(navLabel);
 
         // Left arrow (compact)
-        var btnPrev = new Button { Text = "\u25c0", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Retroceder" };
+        var btnPrev = new Button { Text = "\u25c0", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Retroceder", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
         btnPrev.AddThemeFontSizeOverride("font_size", 9);
         btnPrev.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
         btnPrev.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
@@ -320,7 +323,7 @@ public partial class EditorMain : Control
         }
 
         // Right arrow (compact)
-        var btnNext = new Button { Text = "\u25b6", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Avanzar" };
+        var btnNext = new Button { Text = "\u25b6", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Avanzar", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
         btnNext.AddThemeFontSizeOverride("font_size", 9);
         btnNext.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
         btnNext.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
@@ -328,13 +331,16 @@ public partial class EditorMain : Control
         _mapNavBar.AddChild(btnNext);
 
         // Separator + Quick jump (compact)
-        _mapNavBar.AddChild(EditorTheme.ToolBarGroupSeparator());
+        var navSep = EditorTheme.ToolBarGroupSeparator();
+        navSep.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
+        _mapNavBar.AddChild(navSep);
 
         _mapNumSpin = EditorTheme.MakeSpinBox(1, 999, 1, 1);
         _mapNumSpin.CustomMinimumSize = new Vector2(60, 0);
+        _mapNumSpin.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
         _mapNavBar.AddChild(_mapNumSpin);
 
-        var goBtn = new Button { Text = "Ir", CustomMinimumSize = new Vector2(32, 22), TooltipText = "Ir al mapa" };
+        var goBtn = new Button { Text = "Ir", CustomMinimumSize = new Vector2(32, 22), TooltipText = "Ir al mapa", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
         goBtn.AddThemeFontSizeOverride("font_size", 10);
         goBtn.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY, 10, 4, 1));
         goBtn.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY_H, 10, 4, 1));
@@ -342,7 +348,7 @@ public partial class EditorMain : Control
         goBtn.Pressed += () => RequestLoadMap((int)_mapNumSpin!.Value);
         _mapNavBar.AddChild(goBtn);
 
-        // Spacer absorbs remaining width so buttons stay left-aligned
+        // Spacer absorbs remaining width so buttons stay packed left
         var navSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
         _mapNavBar.AddChild(navSpacer);
 
@@ -397,6 +403,11 @@ public partial class EditorMain : Control
         _viewport.OnPendingAccept += CommitPendingPlacement;
         _viewport.OnPendingCancel += CancelPendingPlacement;
         AddChild(_viewport);
+
+        // Opaque header background — covers viewport overflow in toolbar/navbar area
+        _headerBg = new ColorRect { Color = EditorTheme.BG_PANEL, MouseFilter = MouseFilterEnum.Ignore };
+        _headerBg.ZIndex = 4; // above viewport (0) but below navbar (5)
+        AddChild(_headerBg);
 
         // Sidebar right border (1px separator between sidebar and viewport)
         _sidebarBorder = new ColorRect { Color = EditorTheme.BORDER };
@@ -517,6 +528,7 @@ public partial class EditorMain : Control
         {
             _menuBar.Position = Vector2.Zero;
             _menuBar.Size = new Vector2(win.X, menuH);
+            _menuBar.ZIndex = 5;
         }
 
         float tbTop = menuH;
@@ -524,6 +536,7 @@ public partial class EditorMain : Control
         {
             _toolBar.Position = new Vector2(4, tbTop);
             _toolBar.Size = new Vector2(win.X - 8, ToolBarHeight);
+            _toolBar.ZIndex = 5;
         }
 
         float navTop = tbTop + ToolBarHeight;
@@ -531,11 +544,19 @@ public partial class EditorMain : Control
         {
             _mapNavBar.Position = new Vector2(4, navTop);
             _mapNavBar.Size = new Vector2(win.X - 8, NavBarHeight);
+            _mapNavBar.ZIndex = 5; // draw above viewport to prevent overflow bleed
         }
 
         float contentTop = navTop + NavBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
+
+        // Header background covers menu+toolbar+navbar area to prevent viewport overflow bleed
+        if (_headerBg != null)
+        {
+            _headerBg.Position = Vector2.Zero;
+            _headerBg.Size = new Vector2(win.X, contentTop);
+        }
 
         // Left sidebar: palette + tile info
         float tileInfoH = Math.Min(TileInfoHeight, contentH * 0.2f);
