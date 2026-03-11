@@ -6,7 +6,6 @@ use std::path::PathBuf;
 use crate::config::ServerConfig;
 use crate::db::bans::BanList;
 use crate::data::GameData;
-use crate::data::objects::ObjType;
 use sqlx::PgPool;
 use crate::net::ConnectionId;
 use crate::net::connection::ConnectionWriter;
@@ -1312,7 +1311,7 @@ impl GameState {
 
     /// Respawn an NPC at its original position.
     pub fn respawn_npc(&mut self, npc_idx: NpcIndex) -> bool {
-        let (orig_map, orig_x, orig_y, max_hp, npc_number) = match self.get_npc(npc_idx) {
+        let (orig_map, orig_x, orig_y, max_hp, _npc_number) = match self.get_npc(npc_idx) {
             Some(npc) if !npc.active && npc.respawn => {
                 (npc.orig_map, npc.orig_x, npc.orig_y, npc.max_hp, npc.npc_number)
             }

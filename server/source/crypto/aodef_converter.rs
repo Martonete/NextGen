@@ -88,7 +88,7 @@ fn un_numero(str_num: &str, sexo1: &str, sexo2: &str) -> String {
 
     // Pad to 12 digits, split into groups of 3
     let padded = format!("{:012}", dbl_numero as u64);
-    let bytes = padded.as_bytes();
+    let _bytes = padded.as_bytes();
 
     // Groups: strN[0] = rightmost 3 digits, strN[3] = leftmost 3 digits
     let mut str_n: Vec<String> = Vec::new();
@@ -115,6 +115,7 @@ fn un_numero(str_num: &str, sexo1: &str, sexo2: &str) -> String {
     for vez in 0..max_vez {
         let s = &str_n[vez];
         let mut str_u = String::new();
+        #[allow(unused_assignments)]
         let mut str_d = String::new();
         let mut str_c = String::new();
 

@@ -3,9 +3,12 @@ pub mod aodef_base64;
 pub mod aodef_cipher;
 pub mod aodef_converter;
 
+#[allow(unused_imports)]
 pub use aodef_encrypt::{aodef_serv_encrypt, aodef_serv_decrypt};
 pub use aodef_base64::{aodef_encode, aodef_decode};
+#[allow(unused_imports)]
 pub use aodef_cipher::{semilla, codificar, decodificar};
+#[allow(unused_imports)]
 pub use aodef_converter::numero2letra;
 
 /// Full encryption pipeline for outbound data (server → client).

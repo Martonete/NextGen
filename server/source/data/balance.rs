@@ -301,7 +301,7 @@ pub fn load_balance(base: &Path) -> Result<BalanceData, String> {
         };
 
         // MODRAZA — race attribute modifiers
-        let attr_names = ["Fuerza", "Agilidad", "Inteligencia", "Carisma", "Constitucion"];
+        let _attr_names = ["Fuerza", "Agilidad", "Inteligencia", "Carisma", "Constitucion"];
         for (ri, race_prefix) in RACE_PREFIXES.iter().enumerate() {
             let f = get_i32("MODRAZA", &format!("{}Fuerza", race_prefix));
             let a = get_i32("MODRAZA", &format!("{}Agilidad", race_prefix));

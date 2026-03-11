@@ -435,7 +435,7 @@ pub fn write_fame(values: &[i32; 7]) -> Vec<u8> {
 }
 
 /// ID 62: Mini stats.
-pub fn write_mini_stats(gold: i32, exp: i32, level: u8, class: u8) -> Vec<u8> {
+pub fn write_mini_stats(gold: i32, exp: i32, _level: u8, _class: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::MiniStats.to_byte());
     pkt.write_long(gold);

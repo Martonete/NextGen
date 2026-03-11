@@ -1447,7 +1447,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         .unwrap_or(false);
 
     // Determine the projectile source: ammo slot (bow+arrow) or weapon slot (throwing weapon)
-    let (consume_slot, projectile_obj_idx, projectile_amount);
+    let (consume_slot, projectile_obj_idx, _projectile_amount);
 
     if weapon_needs_ammo {
         // Bow + arrows: consume from ammo slot
@@ -1473,7 +1473,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         }
         consume_slot = municion_slot;
         projectile_obj_idx = municion_obj_idx;
-        projectile_amount = municion_amount;
+        _projectile_amount = municion_amount;
     } else {
         // Throwing weapon: consume the weapon itself
         let wp_amount = if weapon_slot > 0 && weapon_slot <= MAX_INVENTORY_SLOTS {
@@ -1487,7 +1487,7 @@ pub(super) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         }
         consume_slot = weapon_slot;
         projectile_obj_idx = weapon_obj_idx;
-        projectile_amount = wp_amount;
+        _projectile_amount = wp_amount;
     }
 
     // Get projectile properties (damage + poison flag)

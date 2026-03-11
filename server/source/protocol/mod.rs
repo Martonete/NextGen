@@ -8,7 +8,9 @@ pub mod byte_queue;
 pub mod packets;
 pub mod binary_packets;
 
+#[allow(unused_imports)]
 pub use fields::ReadField;
+#[allow(unused_imports)]
 pub use byte_queue::ByteQueue;
 
 /// Client packet opcodes — the first 2-6 characters of each decrypted packet.

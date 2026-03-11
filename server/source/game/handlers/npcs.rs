@@ -575,6 +575,7 @@ pub(super) async fn npc_die(
 
 /// VB6: TirarOro — drop gold on the floor at the given position.
 /// Splits into 10,000-chunk piles (INTMAXGOLD). Stacks with existing gold on tile.
+#[allow(unused_assignments)]
 async fn drop_gold_on_floor(state: &mut GameState, map: i32, x: i32, y: i32, total: i32) {
     let grh_index = state.get_object(GOLD_OBJ_INDEX)
         .map(|o| o.grh_index)
