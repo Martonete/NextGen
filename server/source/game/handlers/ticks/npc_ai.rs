@@ -15,6 +15,9 @@ use crate::game::handlers::{
 use super::{
     send_npc_move, send_ghost_push, find_adjacent_player, find_nearest_player,
     find_player_by_name, chase_heading, restore_old_movement, npc_attack_npc,
+    find_target_npc_in_vision, find_nearest_hostile_npc,
+    is_pretoriano, find_wounded_pretoriano_ally, find_paralyzed_pretoriano_ally,
+    has_pretoriano_allies,
 };
 
 /// AI tick — called every 100ms from the main loop.
@@ -511,6 +514,493 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
                                 if moved { send_npc_move(state, npc_idx).await; }
                             }
+                        }
+                    }
+                }
+            }
+
+            npc::AI_NPC_ATACA_NPC => {
+                // VB6 AiNpcAtacaNpc — NPC that targets and attacks other NPCs.
+                // Used by elementals and pets assigned to fight specific NPCs.
+                // Behavior:
+                //   1) If has target_npc, scan vision for it → attack if adjacent, else chase
+                //   2) If target not found, follow owner (if pet) or restore old movement
+                let target_npc_idx = state.get_npc(npc_idx).map(|n| n.target_npc).unwrap_or(0);
+                let is_fire_elemental = state.get_npc(npc_idx)
+                    .map(|n| n.npc_number == npc::ELEMENTAL_FUEGO as usize)
+                    .unwrap_or(false);
+
+                if target_npc_idx > 0 {
+                    // Look for target NPC in vision range
+                    let found = find_target_npc_in_vision(state, map, x, y, target_npc_idx);
+
+                    if let Some((t_idx, tx, ty)) = found {
+                        let dist = (x - tx).abs() + (y - ty).abs();
+
+                        if is_fire_elemental {
+                            // Fire elemental attacks target NPC at range (VB6: NpcLanzaUnSpellSobreNpc)
+                            // We use npc_attack_npc as a simplified equivalent since spell-on-NPC
+                            // isn't separately implemented.
+                            if can_attack {
+                                npc_attack_npc(state, npc_idx, t_idx).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                            }
+                        } else if dist <= 1 {
+                            // Adjacent — melee attack
+                            npc_attack_npc(state, npc_idx, t_idx).await;
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = false;
+                            }
+                        }
+
+                        // Chase target if not adjacent (and not immobilized)
+                        if dist > 1 {
+                            let heading = chase_heading(x, y, tx, ty);
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
+                        }
+                    } else {
+                        // Target not found in vision — follow owner if pet, else restore
+                        let has_master = state.get_npc(npc_idx)
+                            .map(|n| n.maestro_user.is_some())
+                            .unwrap_or(false);
+
+                        if has_master {
+                            // Follow owner (same logic as AI_FOLLOW_OWNER but simplified)
+                            let master_id = state.get_npc(npc_idx).and_then(|n| n.maestro_user);
+                            if let Some(master_conn) = master_id {
+                                let master_pos = state.users.get(&master_conn)
+                                    .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                                    .map(|u| (u.pos_x, u.pos_y));
+                                if let Some((mx, my)) = master_pos {
+                                    let dist = (x - mx).abs() + (y - my).abs();
+                                    if dist > 3 {
+                                        let heading = chase_heading(x, y, mx, my);
+                                        let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                        if moved { send_npc_move(state, npc_idx).await; }
+                                    }
+                                }
+                            }
+                        } else {
+                            // No master, no target — restore original AI
+                            restore_old_movement(state, npc_idx);
+                        }
+                    }
+                } else {
+                    // No target assigned — follow owner or restore
+                    let has_master = state.get_npc(npc_idx)
+                        .map(|n| n.maestro_user.is_some())
+                        .unwrap_or(false);
+                    if has_master {
+                        let master_id = state.get_npc(npc_idx).and_then(|n| n.maestro_user);
+                        if let Some(master_conn) = master_id {
+                            let master_pos = state.users.get(&master_conn)
+                                .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                                .map(|u| (u.pos_x, u.pos_y));
+                            if let Some((mx, my)) = master_pos {
+                                let dist = (x - mx).abs() + (y - my).abs();
+                                if dist > 3 {
+                                    let heading = chase_heading(x, y, mx, my);
+                                    let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                    if moved { send_npc_move(state, npc_idx).await; }
+                                }
+                            }
+                        }
+                    } else {
+                        restore_old_movement(state, npc_idx);
+                    }
+                }
+            }
+
+            npc::AI_GUERRERO_PRETORIANO => {
+                // VB6 PRGUER_AI — Pretoriano warrior: chase nearest player, melee attack.
+                // Scans vision for closest player, chases and attacks.
+                // Returns to spawn area if too far from origin.
+
+                // Attack adjacent players first
+                if can_attack {
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                        npc_attack_user(state, npc_idx, target_conn).await;
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.can_attack = false;
+                        }
+                    }
+                }
+
+                // Chase nearest player
+                let chase_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                if let Some(target_conn) = chase_target {
+                    if let Some(n) = state.get_npc_mut(npc_idx) {
+                        n.target = Some(target_conn);
+                    }
+                    let target_pos = state.users.get(&target_conn)
+                        .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                        .map(|u| (u.pos_x, u.pos_y));
+                    if let Some((tx, ty)) = target_pos {
+                        let dist = (x - tx).abs() + (y - ty).abs();
+                        if dist > 1 {
+                            let heading = chase_heading(x, y, tx, ty);
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
+                        }
+                    } else {
+                        // Target gone
+                        if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                    }
+                } else {
+                    // No target — return toward spawn
+                    let (ox, oy) = state.get_npc(npc_idx)
+                        .map(|n| (n.orig_x, n.orig_y))
+                        .unwrap_or((x, y));
+                    let dist_to_origin = (x - ox).abs() + (y - oy).abs();
+                    if dist_to_origin > 3 {
+                        let heading = chase_heading(x, y, ox, oy);
+                        let (moved, ghost) = move_npc(state, npc_idx, heading);
+                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                        if moved { send_npc_move(state, npc_idx).await; }
+                    }
+                }
+            }
+
+            npc::AI_CAZADOR_PRETORIANO => {
+                // VB6 Cazador — ranged pretoriano: prefers spells at distance, melee if adjacent.
+                // Similar to guerrero but uses spells at range.
+
+                let mut attacked = false;
+
+                if can_attack {
+                    if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                        npc_attack_user(state, npc_idx, target_conn).await;
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.can_attack = false;
+                        }
+                        attacked = true;
+                    }
+                }
+
+                if !attacked {
+                    let chase_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                    if let Some(target_conn) = chase_target {
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.target = Some(target_conn);
+                        }
+                        let target_pos = state.users.get(&target_conn)
+                            .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                            .map(|u| (u.pos_x, u.pos_y));
+                        if let Some((tx, ty)) = target_pos {
+                            let dist = (x - tx).abs() + (y - ty).abs();
+
+                            // Cast spell at range
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                            }
+
+                            // Chase if not adjacent
+                            if dist > 1 {
+                                let heading = chase_heading(x, y, tx, ty);
+                                let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                if moved { send_npc_move(state, npc_idx).await; }
+                            }
+                        } else {
+                            if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                        }
+                    } else {
+                        // No target — return toward spawn
+                        let (ox, oy) = state.get_npc(npc_idx)
+                            .map(|n| (n.orig_x, n.orig_y))
+                            .unwrap_or((x, y));
+                        let dist_to_origin = (x - ox).abs() + (y - oy).abs();
+                        if dist_to_origin > 3 {
+                            let heading = chase_heading(x, y, ox, oy);
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
+                        }
+                    }
+                }
+            }
+
+            npc::AI_MAGO_PRETORIANO => {
+                // VB6 Mago Pretoriano — spell caster: prioritizes spells, paralyzes pets,
+                // attacks players with offensive spells at range.
+
+                let mut acted = false;
+
+                // First: try to paralyze adjacent pet NPCs
+                if can_attack && lanza_spells > 0 && !spells.is_empty() {
+                    if let Some((pet_idx, _, _)) = find_nearest_hostile_npc(state, map, x, y, npc_idx) {
+                        let pet_pos = state.get_npc(pet_idx).map(|n| (n.x, n.y));
+                        if let Some((px, py)) = pet_pos {
+                            let dist = (x - px).abs() + (y - py).abs();
+                            if dist <= 8 {
+                                // Attack pet NPC
+                                npc_attack_npc(state, npc_idx, pet_idx).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                                acted = true;
+                            }
+                        }
+                    }
+                }
+
+                // Then: cast offensive spells on players
+                if !acted && can_attack && lanza_spells > 0 && !spells.is_empty() {
+                    let spell_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                    if let Some(target_conn) = spell_target {
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.target = Some(target_conn);
+                        }
+                        let target_pos = state.users.get(&target_conn)
+                            .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                            .map(|u| (u.pos_x, u.pos_y));
+                        if let Some((tx, ty)) = target_pos {
+                            let dist = (x - tx).abs() + (y - ty).abs();
+                            if dist <= 8 {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                            }
+                        } else {
+                            if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                        }
+                    }
+                }
+
+                // Movement: stay near spawn, avoid melee range of players
+                let (ox, oy) = state.get_npc(npc_idx)
+                    .map(|n| (n.orig_x, n.orig_y))
+                    .unwrap_or((x, y));
+                let dist_to_origin = (x - ox).abs() + (y - oy).abs();
+                if dist_to_origin > 5 {
+                    let heading = chase_heading(x, y, ox, oy);
+                    let (moved, ghost) = move_npc(state, npc_idx, heading);
+                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                    if moved { send_npc_move(state, npc_idx).await; }
+                }
+            }
+
+            npc::AI_SACERDOTE_PRETORIANO => {
+                // VB6 PRCLER_AI — Sacerdote Pretoriano: healer/support.
+                // Priority: 1) unparalyze allies, 2) paralyze enemy pets, 3) attack players with spells,
+                //           4) heal wounded allies.
+
+                let mut acted = false;
+
+                if can_attack && lanza_spells > 0 && !spells.is_empty() {
+                    // Priority 1: unparalyze allied pretoriano
+                    if let Some((ally_idx, _ax, _ay)) = find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx) {
+                        // Remove paralysis from ally (20% effectiveness like VB6 king)
+                        if rand_range(1, 100) <= 20 {
+                            if let Some(ally) = state.get_npc_mut(ally_idx) {
+                                ally.paralyzed = false;
+                                ally.counter_paralisis = 0;
+                            }
+                        }
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.can_attack = false;
+                        }
+                        acted = true;
+                    }
+
+                    // Priority 2: paralyze enemy pets
+                    if !acted {
+                        if let Some((pet_idx, px, py)) = find_nearest_hostile_npc(state, map, x, y, npc_idx) {
+                            let dist = (x - px).abs() + (y - py).abs();
+                            if dist <= 8 {
+                                // Paralyze the pet
+                                if let Some(pet) = state.get_npc_mut(pet_idx) {
+                                    if !pet.paralyzed {
+                                        pet.paralyzed = true;
+                                        pet.counter_paralisis = 40; // ~4 seconds
+                                    }
+                                }
+                                if let Some(n) = state.get_npc_mut(npc_idx) {
+                                    n.can_attack = false;
+                                }
+                                acted = true;
+                            }
+                        }
+                    }
+
+                    // Priority 3: attack players with spells
+                    if !acted {
+                        let spell_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                        if let Some(target_conn) = spell_target {
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.target = Some(target_conn);
+                            }
+                            let target_pos = state.users.get(&target_conn)
+                                .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                                .map(|u| (u.pos_x, u.pos_y));
+                            if let Some((tx, ty)) = target_pos {
+                                let dist = (x - tx).abs() + (y - ty).abs();
+                                if dist <= 8 {
+                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                    let spell_id = spells[spell_idx];
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    if let Some(n) = state.get_npc_mut(npc_idx) {
+                                        n.can_attack = false;
+                                    }
+                                    acted = true;
+                                }
+                            } else {
+                                if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                            }
+                        }
+                    }
+
+                    // Priority 4: heal wounded allies
+                    if !acted {
+                        if let Some((ally_idx, _ax, _ay)) = find_wounded_pretoriano_ally(state, map, x, y, npc_idx) {
+                            // Heal: use existing npc_try_self_heal-style logic but on ally
+                            let heal_amount = 30; // VB6: NPCcuraNPC heals 30 HP
+                            if let Some(ally) = state.get_npc_mut(ally_idx) {
+                                ally.min_hp = (ally.min_hp + heal_amount).min(ally.max_hp);
+                            }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = false;
+                            }
+                        }
+                    }
+                }
+
+                // Movement: stay near spawn (close to king)
+                let (ox, oy) = state.get_npc(npc_idx)
+                    .map(|n| (n.orig_x, n.orig_y))
+                    .unwrap_or((x, y));
+                let dist_to_origin = (x - ox).abs() + (y - oy).abs();
+                if dist_to_origin > 4 {
+                    let heading = chase_heading(x, y, ox, oy);
+                    let (moved, ghost) = move_npc(state, npc_idx, heading);
+                    if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                    if moved { send_npc_move(state, npc_idx).await; }
+                }
+            }
+
+            npc::AI_REY_PRETORIANO => {
+                // VB6 PRREY_AI — Rey Pretoriano (King):
+                // While allies exist: heal self, unparalyze allies, cure poison, heal allies.
+                // When alone (no allies): chase + melee attack players directly (speed hack — can_attack reset).
+
+                let allies_exist = has_pretoriano_allies(state, map, x, y, npc_idx);
+
+                if allies_exist {
+                    // King heals self to full while allies are alive
+                    if let Some(n) = state.get_npc_mut(npc_idx) {
+                        n.min_hp = n.max_hp;
+                    }
+
+                    if can_attack && lanza_spells > 0 && !spells.is_empty() {
+                        // Priority 1: unparalyze allied pretoriano (20% chance)
+                        if let Some((ally_idx, _ax, _ay)) = find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx) {
+                            if rand_range(1, 100) <= 20 {
+                                if let Some(ally) = state.get_npc_mut(ally_idx) {
+                                    ally.paralyzed = false;
+                                    ally.counter_paralisis = 0;
+                                }
+                            }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = false;
+                            }
+                        } else if let Some((ally_idx, _ax, _ay)) = find_wounded_pretoriano_ally(state, map, x, y, npc_idx) {
+                            // Priority 2: heal wounded allies
+                            let heal_amount = 5; // VB6: king heals +5 (CuraLeves)
+                            if let Some(ally) = state.get_npc_mut(ally_idx) {
+                                ally.min_hp = (ally.min_hp + heal_amount).min(ally.max_hp);
+                            }
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = false;
+                            }
+                        }
+                    }
+
+                    // King doesn't move aggressively while allies exist — stays back
+                    let (ox, oy) = state.get_npc(npc_idx)
+                        .map(|n| (n.orig_x, n.orig_y))
+                        .unwrap_or((x, y));
+                    let dist_to_origin = (x - ox).abs() + (y - oy).abs();
+                    if dist_to_origin > 2 {
+                        let heading = chase_heading(x, y, ox, oy);
+                        let (moved, ghost) = move_npc(state, npc_idx, heading);
+                        if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                        if moved { send_npc_move(state, npc_idx).await; }
+                    }
+                } else {
+                    // King is alone — all allies dead. Enter berserker mode.
+                    // VB6: special speed ability — CanAttack reset to 1 after each attack.
+
+                    // Attack adjacent players (check all 4 directions)
+                    let mut did_attack = false;
+                    if can_attack {
+                        if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
+                            npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6: special speed ability — can attack again immediately
+                            if let Some(n) = state.get_npc_mut(npc_idx) {
+                                n.can_attack = true; // NOT a bug — VB6 comment says so!
+                            }
+                            did_attack = true;
+                        }
+                    }
+
+                    // Chase nearest player or cast spells if not adjacent
+                    let chase_target = target.or_else(|| find_nearest_player(state, map, x, y));
+                    if let Some(target_conn) = chase_target {
+                        if let Some(n) = state.get_npc_mut(npc_idx) {
+                            n.target = Some(target_conn);
+                        }
+                        let target_pos = state.users.get(&target_conn)
+                            .filter(|u| u.logged && !u.dead && u.pos_map == map)
+                            .map(|u| (u.pos_x, u.pos_y));
+                        if let Some((tx, ty)) = target_pos {
+                            let dist = (x - tx).abs() + (y - ty).abs();
+
+                            // Cast debuff spells at range if can't reach
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && !spells.is_empty() && !did_attack {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            }
+
+                            // Chase aggressively
+                            if dist > 1 {
+                                let heading = chase_heading(x, y, tx, ty);
+                                let (moved, ghost) = move_npc(state, npc_idx, heading);
+                                if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                                if moved { send_npc_move(state, npc_idx).await; }
+                            }
+                        } else {
+                            if let Some(n) = state.get_npc_mut(npc_idx) { n.target = None; }
+                        }
+                    } else {
+                        // No targets — heal self and return to spawn
+                        if cur_hp < max_hp {
+                            npc_try_self_heal(state, npc_idx, &spells).await;
+                        }
+                        let (ox, oy) = state.get_npc(npc_idx)
+                            .map(|n| (n.orig_x, n.orig_y))
+                            .unwrap_or((x, y));
+                        let dist_to_origin = (x - ox).abs() + (y - oy).abs();
+                        if dist_to_origin > 2 {
+                            let heading = chase_heading(x, y, ox, oy);
+                            let (moved, ghost) = move_npc(state, npc_idx, heading);
+                            if let Some(gp) = ghost { send_ghost_push(state, gp).await; }
+                            if moved { send_npc_move(state, npc_idx).await; }
                         }
                     }
                 }

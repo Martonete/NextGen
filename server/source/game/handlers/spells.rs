@@ -1103,8 +1103,8 @@ pub(super) async fn apply_spell_status(
     }
 }
 
-/// Apply attribute buff spells (SubeAgilidad, SubeFuerza).
-/// VB6: modHechizos.bas — SubeAgilidad=1 buffs, =2 debuffs. SubeFuerza same pattern.
+/// Apply attribute buff spells (SubeAgilidad, SubeFuerza, SubeCA).
+/// VB6: modHechizos.bas — SubeAgilidad=1 buffs, =2 debuffs. SubeFuerza/SubeCA same pattern.
 /// Buffs are temporary: DuracionEfecto ticks, then attributes restored from backup.
 pub(super) async fn apply_spell_buffs(
     state: &mut GameState,
@@ -1149,6 +1149,25 @@ pub(super) async fn apply_spell_buffs(
                 target.duracion_efecto = 1200;
             } else {
                 target.attributes[0] = (target.attributes[0] - amount).max(MIN_ATTR);
+                target.duracion_efecto = 700;
+            }
+            target.tomo_pocion = true;
+        }
+    }
+
+    // SubeCA (Charisma): 1=buff, 2=debuff
+    if spell.sube_carisma > 0 {
+        let amount = rand_range(spell.min_carisma, spell.max_carisma);
+        if let Some(target) = state.users.get_mut(&target_id) {
+            if !target.tomo_pocion {
+                target.attributes_backup = target.attributes;
+            }
+            if spell.sube_carisma == 1 {
+                let max_cap = (target.attributes_backup[3] * 2).min(50);
+                target.attributes[3] = (target.attributes[3] + amount).min(max_cap); // [3] = Cha
+                target.duracion_efecto = 1200;
+            } else {
+                target.attributes[3] = (target.attributes[3] - amount).max(MIN_ATTR);
                 target.duracion_efecto = 700;
             }
             target.tomo_pocion = true;

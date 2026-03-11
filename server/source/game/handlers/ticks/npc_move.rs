@@ -316,6 +316,170 @@ pub(super) fn find_player_by_name(state: &GameState, map: i32, x: i32, y: i32, n
     None
 }
 
+/// Find the target NPC within vision range for NpcAtacaNpc AI (type 9).
+/// Scans vision area for the NPC's assigned target_npc. Returns its index and position if found.
+pub(super) fn find_target_npc_in_vision(state: &GameState, map: i32, x: i32, y: i32, target_npc_idx: usize) -> Option<(usize, i32, i32)> {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if tile.npc_index > 0 && tile.npc_index as usize == target_npc_idx {
+                        if state.get_npc(target_npc_idx).map(|n| n.is_alive()).unwrap_or(false) {
+                            return Some((target_npc_idx, cx, cy));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Find any hostile NPC (non-pet) within vision range, for pretoriano warriors.
+/// Returns the closest NPC index and its position.
+pub(super) fn find_nearest_hostile_npc(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    let mut best: Option<(usize, i32, i32, i32)> = None; // (idx, x, y, dist)
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if tile.npc_index > 0 {
+                        let npc_idx = tile.npc_index as usize;
+                        if npc_idx == self_idx { continue; }
+                        if let Some(npc) = state.get_npc(npc_idx) {
+                            // Target: pet NPCs (owned by a player) that are alive and not paralyzed
+                            if npc.is_alive() && npc.maestro_user.is_some() && !npc.paralyzed {
+                                let dist = (x - cx).abs() + (y - cy).abs();
+                                if best.is_none() || dist < best.unwrap().3 {
+                                    best = Some((npc_idx, cx, cy, dist));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(idx, bx, by, _)| (idx, bx, by))
+}
+
+/// Check if an NPC is a pretoriano (AI type 20-24).
+pub(super) fn is_pretoriano(movement: i32) -> bool {
+    movement >= npc::AI_SACERDOTE_PRETORIANO && movement <= npc::AI_REY_PRETORIANO
+}
+
+/// Find the nearest pretoriano ally within vision range (for healer/king support).
+/// Returns (npc_idx, x, y) of the ally with lowest HP ratio, or None.
+pub(super) fn find_wounded_pretoriano_ally(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    let mut best: Option<(usize, i32, i32, f32)> = None; // (idx, x, y, hp_ratio)
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if tile.npc_index > 0 {
+                        let npc_idx = tile.npc_index as usize;
+                        if npc_idx == self_idx { continue; }
+                        if let Some(npc) = state.get_npc(npc_idx) {
+                            if npc.is_alive() && is_pretoriano(npc.movement) && npc.max_hp > 0
+                                && npc.min_hp < npc.max_hp
+                            {
+                                let ratio = npc.min_hp as f32 / npc.max_hp as f32;
+                                if best.is_none() || ratio < best.unwrap().3 {
+                                    best = Some((npc_idx, cx, cy, ratio));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(idx, bx, by, _)| (idx, bx, by))
+}
+
+/// Find a paralyzed pretoriano ally within vision range (for king/sacerdote to unparalyze).
+pub(super) fn find_paralyzed_pretoriano_ally(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if tile.npc_index > 0 {
+                        let npc_idx = tile.npc_index as usize;
+                        if npc_idx == self_idx { continue; }
+                        if let Some(npc) = state.get_npc(npc_idx) {
+                            if npc.is_alive() && is_pretoriano(npc.movement) && npc.paralyzed {
+                                return Some((npc_idx, cx, cy));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Check if any pretoriano allies exist nearby (for king AI — determines if king should fight directly).
+pub(super) fn has_pretoriano_allies(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> bool {
+    let half_x = npc::NPC_VISION_X / 2;
+    let half_y = npc::NPC_VISION_Y / 2;
+    let min_x = (x - half_x).max(1);
+    let max_x = (x + half_x).min(100);
+    let min_y = (y - half_y).max(1);
+    let max_y = (y + half_y).min(100);
+
+    if let Some(grid) = state.world.grid(map) {
+        for cy in min_y..=max_y {
+            for cx in min_x..=max_x {
+                if let Some(tile) = grid.tile(cx, cy) {
+                    if tile.npc_index > 0 {
+                        let npc_idx = tile.npc_index as usize;
+                        if npc_idx == self_idx { continue; }
+                        if let Some(npc) = state.get_npc(npc_idx) {
+                            if npc.is_alive() && is_pretoriano(npc.movement) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Restore NPC to its original movement AI (VB6: RestoreOldMovement).
 /// Called when defense-mode NPC loses its target.
 pub(super) fn restore_old_movement(state: &mut GameState, npc_idx: usize) {

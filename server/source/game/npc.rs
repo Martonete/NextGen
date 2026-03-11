@@ -9,8 +9,15 @@
 //   3 = Hostile chase (attack nearby players)
 //   4 = Defense (follow attacker)
 //   5 = Guard (attack criminals)
+//   6 = NPC Objeto (stationary turret)
 //   8 = Follow owner (pet)
+//   9 = NPC attacks NPCs (pet that targets other NPCs)
 //  10 = Pathfinding chase
+//  20 = Sacerdote Pretoriano (healer/support)
+//  21 = Guerrero Pretoriano (melee warrior)
+//  22 = Mago Pretoriano (spell caster)
+//  23 = Cazador Pretoriano (ranged hunter)
+//  24 = Rey Pretoriano (king — heals allies, fights when alone)
 
 use crate::data::npcs::{NpcData, NpcType};
 use super::world::CharIndex;
@@ -26,7 +33,15 @@ pub const AI_DEFENSE: i32 = 4;
 pub const AI_GUARD: i32 = 5;
 pub const AI_NPC_OBJETO: i32 = 6;
 pub const AI_FOLLOW_OWNER: i32 = 8;
+pub const AI_NPC_ATACA_NPC: i32 = 9;
 pub const AI_PATHFINDING: i32 = 10;
+
+// Pretoriano AI types (VB6: faction NPCs that cooperate as a clan)
+pub const AI_SACERDOTE_PRETORIANO: i32 = 20;
+pub const AI_GUERRERO_PRETORIANO: i32 = 21;
+pub const AI_MAGO_PRETORIANO: i32 = 22;
+pub const AI_CAZADOR_PRETORIANO: i32 = 23;
+pub const AI_REY_PRETORIANO: i32 = 24;
 
 // Elemental NPC numbers (VB6: ELEMENTALAGUA/FUEGO/TIERRA in Declares.bas)
 pub const ELEMENTAL_AGUA: i32 = 92;
