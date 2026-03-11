@@ -32,7 +32,7 @@ public partial class TutorialPanel : Control
     private static readonly (string title, string body)[] Steps = new[]
     {
         (
-            "Bienvenido a Tierras Sagradas!",
+            "Bienvenido a Argentum Nextgen!",
             "Este tutorial te guiara por los controles basicos del juego.\n\n" +
             "Puedes saltear este tutorial en cualquier momento presionando 'Saltar'."
         ),
@@ -84,7 +84,7 @@ public partial class TutorialPanel : Control
             "- Magia: mejora tus hechizos\n" +
             "- Pesca/Mineria/Talar: recursos\n" +
             "- Comerciar: mejores precios\n\n" +
-            "Ya estas listo para explorar Tierras Sagradas!"
+            "Ya estas listo para explorar Argentum Nextgen!"
         ),
     };
 

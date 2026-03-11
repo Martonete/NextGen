@@ -572,7 +572,7 @@ public partial class Main : Control
         _startupLoadingScreen.Init(_state);
         _startupLoadingScreen.TextureFilter = CanvasItem.TextureFilterEnum.Linear;
         GetNode("UILayer").AddChild(_startupLoadingScreen);
-        _startupLoadingScreen.Show("Tierras Sagradas");
+        _startupLoadingScreen.Show("Argentum Nextgen");
         _startupLoadingScreen.SetLabel("Cargando gráficos...");
 
         // Start texture preload

@@ -10,7 +10,7 @@ namespace ArgentumNextgen.UI;
 public static class UIHelpers
 {
     // Simple XOR key for account remember file (not security-critical, just obfuscation)
-    public const string RememberXorKey = "TierrasSagradas2024";
+    public const string RememberXorKey = "ArgentumNextgen2024";
     public const string RememberFileName = "remembered.dat";
 
     /// <summary>
