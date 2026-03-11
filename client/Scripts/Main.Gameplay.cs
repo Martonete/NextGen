@@ -469,10 +469,6 @@ public partial class Main
 
     private void LoadCurrentMap()
     {
-        // Show loading screen during map transition
-        _loadingScreen?.Show(_state.MapName);
-        _loadingScreen?.SetProgress(0.2f);
-
         string mapDir;
         if (OS.HasFeature("editor"))
             mapDir = ProjectSettings.GlobalizePath("res://Data/Maps");
@@ -484,20 +480,16 @@ public partial class Main
 
         try
         {
-            _loadingScreen?.SetProgress(0.5f);
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
 
             // Load particles and lights embedded in tile data (byFlags bits 5/6)
-            _loadingScreen?.SetProgress(0.8f);
             LoadTileParticlesAndLights(_state);
 
-            _loadingScreen?.Complete();
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
         catch (Exception ex)
         {
-            _loadingScreen?.ForceHide();
             GD.PrintErr($"[MAIN] Failed to load map {_state.CurrentMap}: {ex.Message}");
         }
     }
