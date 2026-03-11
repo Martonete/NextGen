@@ -25,7 +25,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     // Check equipped fishing tool
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon == 0 {
-        state.send_console(conn_id, "Necesitas una caña de pescar", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas una caña de pescar", font_index::INFO);
         return;
     }
 
@@ -33,7 +33,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     let has_water = state.hay_agua(map, tx, ty);
 
     if !has_water {
-        state.send_msg_id(conn_id, 250, "").await;
+        state.send_msg_id(conn_id, 250, "");
         return;
     }
 
@@ -41,7 +41,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     let sta_cost = if is_recolector(class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            state.send_msg_id(conn_id, 17, "").await;
+            state.send_msg_id(conn_id, 17, "");
             return;
         }
     }
@@ -53,7 +53,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
 
     // Play sound to area
     let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as u8, uy as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -71,7 +71,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
         let slot = find_or_add_inv_slot(state, conn_id, PESCADO_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            state.send_msg_id(conn_id, 813, "").await;
+            state.send_msg_id(conn_id, 813, "");
         }
 
         // VB6: SubirSkill on success
@@ -79,7 +79,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
             try_level_skill_with_hit(u, 12, true); // Pesca = index 12
         }
     } else {
-        state.send_msg_id(conn_id, 814, "").await;
+        state.send_msg_id(conn_id, 814, "");
 
         // VB6: SubirSkill on failure
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -99,7 +99,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     // Check equipped axe
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon != HACHA_LENADOR {
-        state.send_console(conn_id, "Necesitas un hacha de leñador", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas un hacha de leñador", font_index::INFO);
         return;
     }
 
@@ -138,7 +138,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
     let is_tree = tile_obj == Some(ObjType::Trees) || ground_obj_type == Some(ObjType::Trees);
     if !is_tree {
-        state.send_msg_id(conn_id, 255, "").await;
+        state.send_msg_id(conn_id, 255, "");
         return;
     }
 
@@ -146,7 +146,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let sta_cost = if is_recolector(class) { ESFUERZO_TALAR_RECOLECTOR } else { ESFUERZO_TALAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            state.send_msg_id(conn_id, 17, "").await;
+            state.send_msg_id(conn_id, 17, "");
             return;
         }
     }
@@ -156,7 +156,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
     // Play sound
     let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as u8, uy as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -173,14 +173,14 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
         let slot = find_or_add_inv_slot(state, conn_id, LENA_OBJ, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            state.send_msg_id(conn_id, 825, "").await;
+            state.send_msg_id(conn_id, 825, "");
         }
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 9, true); // Talar = index 9
         }
     } else {
-        state.send_msg_id(conn_id, 826, "").await;
+        state.send_msg_id(conn_id, 826, "");
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 9, false);
@@ -199,7 +199,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     // Check equipped pick
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon != PIQUETE_MINERO {
-        state.send_console(conn_id, "Necesitas un pico de minero", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas un pico de minero", font_index::INFO);
         return;
     }
 
@@ -239,7 +239,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     let mineral_data = match mineral_obj {
         Some(ref o) if o.obj_type == ObjType::Deposit => o.clone(),
         _ => {
-            state.send_msg_id(conn_id, 256, "").await;
+            state.send_msg_id(conn_id, 256, "");
             return;
         }
     };
@@ -248,7 +248,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     let sta_cost = if is_recolector(class) { ESFUERZO_EXCAVAR_RECOLECTOR } else { ESFUERZO_EXCAVAR_GENERAL };
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < sta_cost {
-            state.send_msg_id(conn_id, 17, "").await;
+            state.send_msg_id(conn_id, 17, "");
             return;
         }
     }
@@ -258,7 +258,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
 
     // Play sound
     let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as u8, uy as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -282,14 +282,14 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
         let slot = find_or_add_inv_slot(state, conn_id, mineral_item, amount);
         if let Some(idx) = slot {
             send_inventory_slot(state, conn_id, idx).await;
-            state.send_msg_id(conn_id, 827, "").await;
+            state.send_msg_id(conn_id, 827, "");
         }
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 13, true); // Mineria = index 13
         }
     } else {
-        state.send_msg_id(conn_id, 828, "").await;
+        state.send_msg_id(conn_id, 828, "");
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 13, false);

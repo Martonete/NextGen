@@ -107,35 +107,35 @@ pub(super) fn health_description(current: i32, max: i32, dead: bool) -> &'static
 pub(super) async fn send_stats_hp(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         let pkt = binary_packets::write_update_hp(u.max_hp as i16, u.min_hp as i16);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 
 pub(super) async fn send_stats_mana(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         let pkt = binary_packets::write_update_mana(u.max_mana as i16, u.min_mana as i16);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 
 pub(super) async fn send_stats_sta(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         let pkt = binary_packets::write_update_sta(u.max_sta as i16, u.min_sta as i16);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 
 pub(super) async fn send_stats_gold(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         let pkt = binary_packets::write_update_gold(u.gold as i32);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 
 pub(super) async fn send_stats_exp(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
         let pkt = binary_packets::write_update_exp(u.exp as i32);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 
@@ -145,7 +145,7 @@ pub(super) async fn send_hunger_thirst(state: &mut GameState, conn_id: Connectio
         None => return,
     };
     let pkt = binary_packets::write_update_hunger_thirst(max_agua, min_agua, max_ham, min_ham);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 // =====================================================================
@@ -745,7 +745,7 @@ pub(super) async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionI
     };
 
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -763,12 +763,12 @@ pub(super) async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionI
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
-        state.send_msg_id(conn_id, 11, "").await;
+        state.send_msg_id(conn_id, 11, "");
         return;
     }
 
     revive_user(state, conn_id).await;
-    state.send_msg_id(conn_id, 396, "").await;
+    state.send_msg_id(conn_id, 396, "");
 }
 
 /// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
@@ -799,7 +799,7 @@ pub(super) async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
     state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
         &binary_packets::write_char_particle_create(char_index.0 as i16, 65),
-    ).await;
+    );
 
     state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
@@ -807,7 +807,7 @@ pub(super) async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
             char_index.0 as i16, new_body as i16, orig_head as i16, heading as u8,
             weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
         ),
-    ).await;
+    );
 
     send_stats_hp(state, conn_id).await;
     send_stats_mana(state, conn_id).await;
@@ -878,7 +878,7 @@ pub(super) async fn send_inventory_slot(state: &mut GameState, conn_id: Connecti
     if inv.obj_index == 0 {
         state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
             slot as u8, 0, "(None)", 0, false, 0, 0, 0, 0, 0, 0, 0.0,
-        )).await;
+        ));
     } else {
         let obj = state.get_object(inv.obj_index).cloned();
         let (name, grh, obj_type, max_hit, min_hit, max_def, min_def, valor) = match obj {
@@ -897,7 +897,7 @@ pub(super) async fn send_inventory_slot(state: &mut GameState, conn_id: Connecti
         state.send_bytes(conn_id, &binary_packets::write_change_inventory_slot(
             slot as u8, inv.obj_index as i16, &name, inv.amount as i16, inv.equipped,
             grh as i16, obj_type as u8, max_hit as i16, min_hit as i16, max_def as i16, min_def as i16, valor as f32,
-        )).await;
+        ));
     }
 }
 
@@ -921,9 +921,9 @@ pub(super) async fn send_full_spells(state: &mut GameState, conn_id: ConnectionI
             let name = state.get_spell(spell_id)
                 .map(|s| s.nombre.clone())
                 .unwrap_or_else(|| "(Desconocido)".into());
-            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, spell_id as i16, &name)).await;
+            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, spell_id as i16, &name));
         } else {
-            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, 0, "(Nada)")).await;
+            state.send_bytes(conn_id, &binary_packets::write_change_spell_slot(slot as u8, 0, "(Nada)"));
         }
     }
 }
@@ -946,24 +946,24 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             user.min_hp = user.max_hp;
             user.min_sta = user.max_sta;
         }
-        state.send_msg_id(conn_id, 693, "").await;
+        state.send_msg_id(conn_id, 693, "");
         let (map, x, y) = match state.users.get(&conn_id) {
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
         send_stats_hp(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
     } else if hp_low {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.min_hp = user.max_hp;
         }
-        state.send_msg_id(conn_id, 694, "").await;
+        state.send_msg_id(conn_id, 694, "");
         let (map, x, y) = match state.users.get(&conn_id) {
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
         send_stats_hp(state, conn_id).await;
     }
 

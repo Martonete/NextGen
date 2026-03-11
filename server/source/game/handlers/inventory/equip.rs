@@ -54,19 +54,19 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                 CANA_PESCA | CANA_PESCA_NEWBIE => {
                     // Send WorkRequestTarget(Pesca) — client picks a target tile
                     let pkt = binary_packets::write_work_request_target(13); // Pesca=13
-                    state.send_bytes(conn_id, &pkt).await;
+                    state.send_bytes(conn_id, &pkt);
                 }
                 HACHA_LENADOR | HACHA_LENA_ELFICA | HACHA_LENADOR_NEWBIE => {
                     let pkt = binary_packets::write_work_request_target(10); // Talar=10
-                    state.send_bytes(conn_id, &pkt).await;
+                    state.send_bytes(conn_id, &pkt);
                 }
                 PIQUETE_MINERO | PIQUETE_MINERO_NEWBIE => {
                     let pkt = binary_packets::write_work_request_target(14); // Mineria=14
-                    state.send_bytes(conn_id, &pkt).await;
+                    state.send_bytes(conn_id, &pkt);
                 }
                 MARTILLO_HERRERO | MARTILLO_HERRERO_NEWBIE => {
                     let pkt = binary_packets::write_work_request_target(16); // Herreria=16
-                    state.send_bytes(conn_id, &pkt).await;
+                    state.send_bytes(conn_id, &pkt);
                 }
                 SERRUCHO_CARPINTERO | SERRUCHO_CARPINTERO_NEWBIE => {
                     // Carpenter opens directly (no target needed)
@@ -76,7 +76,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                     // Other tools: if SkHerreria > 0, trigger FundirMetal
                     if obj_data.sk_herreria > 0 {
                         let pkt = binary_packets::write_work_request_target(88); // FundirMetal=88
-                        state.send_bytes(conn_id, &pkt).await;
+                        state.send_bytes(conn_id, &pkt);
                     }
                 }
             }
@@ -88,7 +88,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if is_mounted {
             match obj_data.obj_type {
                 ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
-                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO).await;
+                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO);
                     return;
                 }
                 _ => {}
@@ -114,7 +114,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
 
         // Level requirement
         if obj_data.lvl > 0 && user_level < obj_data.lvl && !is_gm {
-            state.send_msg_id(conn_id, 112, &obj_data.lvl.to_string()).await;
+            state.send_msg_id(conn_id, 112, &obj_data.lvl.to_string());
             return;
         }
 
@@ -122,7 +122,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if !is_gm && !obj_data.class_prohibida.is_empty() {
             let uc = user_class.to_string().to_uppercase();
             if obj_data.class_prohibida.iter().any(|c| c.to_uppercase() == uc) {
-                state.send_msg_id(conn_id, 113, "").await; // TEXTO113: Tu clase, genero o raza no puede usar este objeto
+                state.send_msg_id(conn_id, 113, ""); // TEXTO113: Tu clase, genero o raza no puede usar este objeto
                 return;
             }
         }
@@ -131,13 +131,13 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if !is_gm {
             if obj_data.real {
                 if user_criminal || !user_armada {
-                    state.send_console(conn_id, "Solo miembros de la Armada Real pueden usar este item", font_index::INFO).await;
+                    state.send_console(conn_id, "Solo miembros de la Armada Real pueden usar este item", font_index::INFO);
                     return;
                 }
             }
             if obj_data.caos {
                 if !user_criminal || !user_caos {
-                    state.send_console(conn_id, "Solo miembros de las Fuerzas del Caos pueden usar este item", font_index::INFO).await;
+                    state.send_console(conn_id, "Solo miembros de las Fuerzas del Caos pueden usar este item", font_index::INFO);
                     return;
                 }
             }
@@ -169,7 +169,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         if is_mounted {
             match obj_data.obj_type {
                 ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
-                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO).await;
+                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO);
                     return;
                 }
                 _ => {}
@@ -236,7 +236,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                 user.current_inventory_slots = new_slots;
             }
             send_inventory_slot(state, conn_id, idx).await;
-            state.send_console(conn_id, &format!("Mochila equipada. Espacios de inventario: {}.", new_slots), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Mochila equipada. Espacios de inventario: {}.", new_slots), font_index::INFO);
             return;
         }
 
@@ -335,7 +335,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     {
         let anm_text = build_anm_packet(state, conn_id);
         let pkt_anm = binary_packets::write_anim_data(&anm_text);
-        state.send_bytes(conn_id, &pkt_anm).await;
+        state.send_bytes(conn_id, &pkt_anm);
     }
 
     // Send equipment change packets to area
@@ -347,13 +347,13 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
         ObjType::Weapon => {
             // VB6: SND_SACARARMA (25) — draw weapon sound
             let pkt_wave = binary_packets::write_play_wave(25, x as u8, y as u8);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
             // Send CP (character change) to update weapon appearance
             let pkt_cp = binary_packets::write_character_change(
                 char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,
                 weapon as i16, shield as i16, helmet as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp);
         }
         ObjType::Armor => {
             // VB6: ChangeUserBody sends CP packet with new body
@@ -362,21 +362,21 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
                 char_index.0 as i16, body as i16, head_now as i16, heading_now as u8,
                 weapon as i16, shield as i16, helmet as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp);
         }
         ObjType::Shield => {
             let pkt_cp = binary_packets::write_character_change(
                 char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,
                 weapon as i16, shield as i16, helmet as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp);
         }
         ObjType::Helmet => {
             let pkt_cp = binary_packets::write_character_change(
                 char_index.0 as i16, body_now as i16, head_now as i16, heading_now as u8,
                 weapon as i16, shield as i16, helmet as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp);
         }
         _ => {}
     }
@@ -385,7 +385,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
     if aura_changed {
         if let Some(user) = state.users.get(&conn_id) {
             let pkt_au = crate::game::handlers::common::build_aura_binary(user);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au);
         }
     }
 }

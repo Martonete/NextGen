@@ -19,7 +19,7 @@ async fn refresh_user_cc(state: &mut GameState, conn_id: ConnectionId) {
         Some(u) if u.logged => (u.build_cc_binary(), u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt);
 }
 
 /// Clear guild state from user and refresh CC.
@@ -55,7 +55,7 @@ pub(super) async fn handle_guild_info(state: &mut GameState, conn_id: Connection
             names.push_str(&format!("{}-{}-1", name, guilds::alignment_name(*align)));
         }
         let pkt = binary_packets::write_guild_list(&names);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
         return;
     }
 
@@ -114,7 +114,7 @@ pub(super) async fn handle_guild_info(state: &mut GameState, conn_id: Connection
             data.push_str(&format!("{}: {}", app.name, app.detail));
         }
         let binary = binary_packets::write_guild_info_leader(&data);
-        state.send_bytes(conn_id, &binary).await;
+        state.send_bytes(conn_id, &binary);
     } else {
         // Regular member view: IREDAEK
         let mut data = guild.puntos_clan.to_string();
@@ -143,7 +143,7 @@ pub(super) async fn handle_guild_info(state: &mut GameState, conn_id: Connection
         data.push(BF);
         data.push_str(&members.join(","));
         let binary = binary_packets::write_guild_info_member(&data);
-        state.send_bytes(conn_id, &binary).await;
+        state.send_bytes(conn_id, &binary);
     }
 }
 
@@ -154,7 +154,7 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
     let parts: Vec<&str> = payload.split(BF).collect();
 
     if parts.len() < 4 {
-        state.send_console(conn_id, "Datos invalidos para crear clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Datos invalidos para crear clan.", font_index::INFO);
         return;
     }
 
@@ -165,11 +165,11 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
 
     // Validate requirements
     if level < 50 {
-        state.send_console(conn_id, "Necesitas nivel 50 para fundar un clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas nivel 50 para fundar un clan.", font_index::INFO);
         return;
     }
     if skills_leadership < 100 {
-        state.send_console(conn_id, "Necesitas 100 en liderazgo.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas 100 en liderazgo.", font_index::INFO);
         return;
     }
 
@@ -179,13 +179,13 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
     let cant_codex: usize = parts[3].parse().unwrap_or(0);
 
     if !guilds::is_valid_guild_name(name) {
-        state.send_console(conn_id, "Nombre de clan invalido.", font_index::INFO).await;
+        state.send_console(conn_id, "Nombre de clan invalido.", font_index::INFO);
         return;
     }
 
     // Check name uniqueness
     if guilds::find_guild_by_name(&state.pool, name).await.is_some() {
-        state.send_console(conn_id, "Ya existe un clan con ese nombre.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya existe un clan con ese nombre.", font_index::INFO);
         return;
     }
 
@@ -204,7 +204,7 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
         .map(|u| u.inventory.iter().any(|s| s.obj_index == 939 && s.amount > 0))
         .unwrap_or(false);
     if !has_amulet {
-        state.send_console(conn_id, "Necesitas el Amuleto de Lider para fundar un clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas el Amuleto de Lider para fundar un clan.", font_index::INFO);
         return;
     }
 
@@ -235,7 +235,7 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
 
     // Broadcast creation
     let args = format!("{}@{}@{}", char_name, name, guilds::alignment_name(alignment));
-    state.send_msg_id_to(SendTarget::ToAll, 264, &args).await;
+    state.send_msg_id_to(SendTarget::ToAll, 264, &args);
 
     // Re-send CC with clan tag to nearby players
     refresh_user_cc(state, conn_id).await;
@@ -245,9 +245,9 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
 
     // Sound effect
     let sound = binary_packets::write_play_wave(44, 0, 0);
-    state.send_bytes(conn_id, &sound).await;
+    state.send_bytes(conn_id, &sound);
 
-    state.send_console(conn_id, &format!("Has fundado el clan {}!", name), font_index::GUILD_MSG).await;
+    state.send_console(conn_id, &format!("Has fundado el clan {}!", name), font_index::GUILD_MSG);
 }
 
 /// /FUNDARCLAN — Start guild creation flow. Auto-detect alignment from character status.
@@ -258,12 +258,12 @@ pub(super) async fn handle_slash_fundarclan(state: &mut GameState, conn_id: Conn
     };
 
     if guild_index > 0 {
-        state.send_console(conn_id, "Ya perteneces a un clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya perteneces a un clan.", font_index::INFO);
         return;
     }
 
     if level < 50 {
-        state.send_console(conn_id, "Necesitas nivel 50 para fundar un clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas nivel 50 para fundar un clan.", font_index::INFO);
         return;
     }
 
@@ -281,7 +281,7 @@ pub(super) async fn handle_slash_fundarclan(state: &mut GameState, conn_id: Conn
 
     // Tell client to show creation form
     let pkt = binary_packets::write_show_guild_fundation_form();
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// /CERRARCLAN — Dissolve guild (leader + sole member) or leave (sublider).
@@ -289,7 +289,7 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            state.send_msg_id(conn_id, 120, "").await;
+            state.send_msg_id(conn_id, 120, "");
             return;
         }
     };
@@ -311,14 +311,14 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     }
 
     if !is_leader {
-        state.send_msg_id(conn_id, 339, "").await;
+        state.send_msg_id(conn_id, 339, "");
         return;
     }
 
     // Leader must be sole member
     let members = guilds::load_members(&state.pool, &guild.name).await;
     if members.len() > 1 {
-        state.send_msg_id(conn_id, 340, "").await;
+        state.send_msg_id(conn_id, 340, "");
         return;
     }
 
@@ -332,7 +332,7 @@ pub(super) async fn handle_slash_cerrarclan(state: &mut GameState, conn_id: Conn
     crate::db::charfile::update_guild_index(&state.pool, &char_name, 0).await.ok();
 
     // Broadcast dissolution
-    state.send_msg_id_to(SendTarget::ToAll, 341, &guild.name).await;
+    state.send_msg_id_to(SendTarget::ToAll, 341, &guild.name);
 }
 
 /// /SALIRCLAN — Leave guild voluntarily.
@@ -340,7 +340,7 @@ pub(super) async fn handle_slash_salirclan(state: &mut GameState, conn_id: Conne
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            state.send_msg_id(conn_id, 120, "").await;
+            state.send_msg_id(conn_id, 120, "");
             return;
         }
     };
@@ -353,7 +353,7 @@ pub(super) async fn handle_slash_salirclan(state: &mut GameState, conn_id: Conne
 
     // Leader cannot leave — must dissolve or transfer
     if guild.leader.to_uppercase() == char_name.to_uppercase() {
-        state.send_console(conn_id, "Eres el lider, usa /CERRARCLAN o /HACLIDER.", font_index::INFO).await;
+        state.send_console(conn_id, "Eres el lider, usa /CERRARCLAN o /HACLIDER.", font_index::INFO);
         return;
     }
 
@@ -378,10 +378,10 @@ pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: Connecti
         guilds::save_guild(&state.pool, &updated).await;
 
         // Notify guild
-        state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 337, char_name).await;
+        state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 337, char_name);
     } else {
         // Notify guild
-        state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 354, char_name).await;
+        state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 354, char_name);
     }
 
     // Remove from members file
@@ -393,7 +393,7 @@ pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: Connecti
     // Update character guild in DB
     crate::db::charfile::update_guild_index(&state.pool, char_name, 0).await.ok();
 
-    state.send_msg_id(conn_id, 338, "").await;
+    state.send_msg_id(conn_id, 338, "");
 }
 
 /// /HACLIDER <name> — Transfer leadership.
@@ -410,7 +410,7 @@ pub(super) async fn handle_slash_haclider(state: &mut GameState, conn_id: Connec
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_msg_id(conn_id, 377, "").await;
+        state.send_msg_id(conn_id, 377, "");
         return;
     }
 
@@ -418,7 +418,7 @@ pub(super) async fn handle_slash_haclider(state: &mut GameState, conn_id: Connec
     let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
     let target_guild = target_conn.and_then(|c| state.users.get(&c).map(|u| u.guild_index));
     if target_guild != Some(guild_index) {
-        state.send_msg_id(conn_id, 511, "").await;
+        state.send_msg_id(conn_id, 511, "");
         return;
     }
 
@@ -428,7 +428,7 @@ pub(super) async fn handle_slash_haclider(state: &mut GameState, conn_id: Connec
     guilds::save_guild(&state.pool, &updated).await;
 
     // Notify
-    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 512, target_name).await;
+    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 512, target_name);
 }
 
 /// /SUBLIDER <name> — Promote member to sub-leader.
@@ -445,7 +445,7 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_msg_id(conn_id, 377, "").await;
+        state.send_msg_id(conn_id, 377, "");
         return;
     }
 
@@ -453,7 +453,7 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
     let target_guild = target_conn.and_then(|c| state.users.get(&c).map(|u| u.guild_index));
     if target_guild != Some(guild_index) {
-        state.send_msg_id(conn_id, 511, "").await;
+        state.send_msg_id(conn_id, 511, "");
         return;
     }
 
@@ -461,7 +461,7 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     if guild.sub_lider1.to_uppercase() == target_name.to_uppercase()
         || guild.sub_lider2.to_uppercase() == target_name.to_uppercase()
     {
-        state.send_msg_id(conn_id, 510, "").await;
+        state.send_msg_id(conn_id, 510, "");
         return;
     }
 
@@ -471,13 +471,13 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     } else if updated.sub_lider2 == "Fermin" || updated.sub_lider2.is_empty() {
         updated.sub_lider2 = target_name.to_string();
     } else {
-        state.send_msg_id(conn_id, 513, "").await;
+        state.send_msg_id(conn_id, 513, "");
         return;
     }
 
     guilds::save_guild(&state.pool, &updated).await;
 
-    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 514, target_name).await;
+    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 514, target_name);
 }
 
 /// /QSUBLIDR <name> — Demote sub-leader.
@@ -494,7 +494,7 @@ pub(super) async fn handle_slash_qsublidr(state: &mut GameState, conn_id: Connec
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_msg_id(conn_id, 377, "").await;
+        state.send_msg_id(conn_id, 377, "");
         return;
     }
 
@@ -504,13 +504,13 @@ pub(super) async fn handle_slash_qsublidr(state: &mut GameState, conn_id: Connec
     } else if updated.sub_lider2.to_uppercase() == target_name.to_uppercase() {
         updated.sub_lider2 = "Fermin".to_string();
     } else {
-        state.send_msg_id(conn_id, 516, "").await;
+        state.send_msg_id(conn_id, 516, "");
         return;
     }
 
     guilds::save_guild(&state.pool, &updated).await;
 
-    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 515, target_name).await;
+    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 515, target_name);
 }
 
 /// /CLAN — List online guild members.
@@ -518,7 +518,7 @@ pub(super) async fn handle_slash_clan_list(state: &mut GameState, conn_id: Conne
     let guild_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
         _ => {
-            state.send_msg_id(conn_id, 120, "").await;
+            state.send_msg_id(conn_id, 120, "");
             return;
         }
     };
@@ -530,7 +530,7 @@ pub(super) async fn handle_slash_clan_list(state: &mut GameState, conn_id: Conne
     };
 
     // List online members
-    state.send_console(conn_id, &format!("Miembros online del clan {}:", guild.name), font_index::GUILD_MSG).await;
+    state.send_console(conn_id, &format!("Miembros online del clan {}:", guild.name), font_index::GUILD_MSG);
 
     let online_members: Vec<String> = state.users.values()
         .filter(|u| u.logged && u.guild_index == guild_index)
@@ -549,7 +549,7 @@ pub(super) async fn handle_slash_clan_list(state: &mut GameState, conn_id: Conne
         .collect();
 
     for member in &online_members {
-        state.send_console(conn_id, member, font_index::INFO).await;
+        state.send_console(conn_id, member, font_index::INFO);
     }
 }
 
@@ -558,7 +558,7 @@ pub(super) async fn handle_slash_seguroclan(state: &mut GameState, conn_id: Conn
     let guild_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
         _ => {
-            state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);
             return;
         }
     };
@@ -571,9 +571,9 @@ pub(super) async fn handle_slash_seguroclan(state: &mut GameState, conn_id: Conn
     };
 
     if new_state {
-        state.send_console(conn_id, "Seguro de clan ACTIVADO. No podras atacar a miembros de tu clan.", font_index::GUILD_MSG).await;
+        state.send_console(conn_id, "Seguro de clan ACTIVADO. No podras atacar a miembros de tu clan.", font_index::GUILD_MSG);
     } else {
-        state.send_console(conn_id, "Seguro de clan DESACTIVADO. Ahora puedes atacar a miembros de tu clan.", font_index::GUILD_MSG).await;
+        state.send_console(conn_id, "Seguro de clan DESACTIVADO. Ahora puedes atacar a miembros de tu clan.", font_index::GUILD_MSG);
     }
 }
 
@@ -582,14 +582,14 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            state.send_msg_id(conn_id, 120, "").await;
+            state.send_msg_id(conn_id, 120, "");
             return;
         }
     };
 
     // No tilde allowed in clan chat
     if text.contains('~') {
-        state.send_msg_id(conn_id, 198, "").await;
+        state.send_msg_id(conn_id, 198, "");
         return;
     }
 
@@ -606,7 +606,7 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
     let prefix = if is_leader || is_sublider { "Lider " } else { "" };
 
     let msg = format!("{}{}: {}", prefix, char_name, text);
-    state.send_guild_chat_to(SendTarget::ToGuildMembers(guild_index), &msg).await;
+    state.send_guild_chat_to(SendTarget::ToGuildMembers(guild_index), &msg);
 }
 
 /// DESCOD — Update guild codex and description.
@@ -675,7 +675,7 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
     // Check member cap (fixed max 50)
     let members = guilds::load_members(&state.pool, &guild.name).await;
     if members.len() >= 50 {
-        state.send_msg_id(conn_id, 500, "").await;
+        state.send_msg_id(conn_id, 500, "");
         return;
     }
 
@@ -694,15 +694,15 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
             user.guild_index = guild_index;
             user.guild_name = guild.name.clone();
         }
-        state.send_msg_id(target_conn, 501, "").await;
+        state.send_msg_id(target_conn, 501, "");
         refresh_user_cc(state, target_conn).await;
 
         let sound = binary_packets::write_play_wave(43, 0, 0);
-        state.send_bytes(target_conn, &sound).await;
+        state.send_bytes(target_conn, &sound);
     }
 
     // Notify guild
-    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 503, &applicant_name).await;
+    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 503, &applicant_name);
 }
 
 /// RECHAZAR — Reject applicant.
@@ -732,7 +732,7 @@ pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: Connecti
 
     // If online, notify
     if let Some(&target_conn) = state.online_names.get(&name.to_uppercase()) {
-        state.send_console(target_conn, &format!("Tu solicitud fue rechazada: {}", reason), font_index::INFO).await;
+        state.send_console(target_conn, &format!("Tu solicitud fue rechazada: {}", reason), font_index::INFO);
     }
 }
 
@@ -753,7 +753,7 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
 
     // Only leader can expel
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_msg_id(conn_id, 377, "").await;
+        state.send_msg_id(conn_id, 377, "");
         return;
     }
 
@@ -781,11 +781,11 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
     // If online, update state and refresh CC
     if let Some(&target_conn) = state.online_names.get(&target_name.to_uppercase()) {
         clear_user_guild(state, target_conn).await;
-        state.send_console(target_conn, "Has sido expulsado del clan.", font_index::INFO).await;
+        state.send_console(target_conn, "Has sido expulsado del clan.", font_index::INFO);
     }
 
     // Notify guild
-    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 505, &target_name).await;
+    state.send_msg_id_to(SendTarget::ToGuildMembers(guild_index), 505, &target_name);
 }
 
 /// ACTGNEWS — Update guild news.
@@ -824,12 +824,12 @@ pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: Connectio
     };
 
     if guild_index > 0 {
-        state.send_console(conn_id, "Ya perteneces a un clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya perteneces a un clan.", font_index::INFO);
         return;
     }
 
     if level < 25 {
-        state.send_console(conn_id, "Necesitas nivel 25 para unirte a un clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas nivel 25 para unirte a un clan.", font_index::INFO);
         return;
     }
 
@@ -837,7 +837,7 @@ pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: Connectio
     let target_guild_num = match guilds::find_guild_by_name(&state.pool, &guild_name).await {
         Some(n) => n,
         None => {
-            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO);
             return;
         }
     };
@@ -848,11 +848,11 @@ pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: Connectio
     };
 
     if !guilds::add_applicant(&state.pool, &guild_name, &char_name, &petition).await {
-        state.send_console(conn_id, "El clan ya tiene el maximo de solicitudes pendientes.", font_index::INFO).await;
+        state.send_console(conn_id, "El clan ya tiene el maximo de solicitudes pendientes.", font_index::INFO);
         return;
     }
 
-    state.send_msg_id(conn_id, 507, "").await;
+    state.send_msg_id(conn_id, 507, "");
 }
 
 /// CLANDETAILS — Request details about a guild.
@@ -903,7 +903,7 @@ pub(super) async fn handle_guild_details(state: &mut GameState, conn_id: Connect
     data.push_str(&guild.name);
 
     let binary = binary_packets::write_guild_details(&data);
-    state.send_bytes(conn_id, &binary).await;
+    state.send_bytes(conn_id, &binary);
 }
 
 // =====================================================================
@@ -936,7 +936,7 @@ pub(super) async fn handle_slash_declararguerra(state: &mut GameState, conn_id: 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO);
             return;
         }
     };
@@ -947,26 +947,26 @@ pub(super) async fn handle_slash_declararguerra(state: &mut GameState, conn_id: 
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_console(conn_id, "Solo el lider puede declarar la guerra.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede declarar la guerra.", font_index::INFO);
         return;
     }
 
     let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
         Some(n) => n,
         None => {
-            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO);
             return;
         }
     };
 
     if target_num == guild_index {
-        state.send_console(conn_id, "No puedes declarar la guerra a tu propio clan.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes declarar la guerra a tu propio clan.", font_index::INFO);
         return;
     }
 
     let current = get_guild_relation(state, guild_index, target_num);
     if current == GUILD_REL_WAR {
-        state.send_console(conn_id, "Ya estan en guerra con ese clan.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya estan en guerra con ese clan.", font_index::INFO);
         return;
     }
 
@@ -980,8 +980,8 @@ pub(super) async fn handle_slash_declararguerra(state: &mut GameState, conn_id: 
     // Notify both guilds
     let msg_us = format!("Se ha declarado la guerra al clan {}!", target_guild_name);
     let msg_them = format!("El clan {} les ha declarado la guerra!", guild.name);
-    state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::FIGHT).await;
-    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::FIGHT).await;
+    state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::FIGHT);
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::FIGHT);
 }
 
 /// /PROPONERPAZ <clan> — Propose peace to a guild at war (leader only).
@@ -989,7 +989,7 @@ pub(super) async fn handle_slash_proponerpaz(state: &mut GameState, conn_id: Con
     let (guild_index, char_name, my_guild_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.guild_name.clone()),
         _ => {
-            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO);
             return;
         }
     };
@@ -1000,21 +1000,21 @@ pub(super) async fn handle_slash_proponerpaz(state: &mut GameState, conn_id: Con
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_console(conn_id, "Solo el lider puede proponer la paz.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede proponer la paz.", font_index::INFO);
         return;
     }
 
     let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
         Some(n) => n,
         None => {
-            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO);
             return;
         }
     };
 
     let current = get_guild_relation(state, guild_index, target_num);
     if current != GUILD_REL_WAR {
-        state.send_console(conn_id, "Solo puedes proponer paz a un clan en guerra.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo puedes proponer paz a un clan en guerra.", font_index::INFO);
         return;
     }
 
@@ -1026,8 +1026,8 @@ pub(super) async fn handle_slash_proponerpaz(state: &mut GameState, conn_id: Con
 
         let msg_us = format!("Se ha firmado la paz con el clan {}!", target_guild_name);
         let msg_them = format!("El clan {} ha aceptado la propuesta de paz!", my_guild_name);
-        state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::GUILD_MSG).await;
-        state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
+        state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::GUILD_MSG);
+        state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG);
         return;
     }
 
@@ -1035,8 +1035,8 @@ pub(super) async fn handle_slash_proponerpaz(state: &mut GameState, conn_id: Con
     state.guild_proposals.insert((guild_index, target_num), 0); // 0 = peace
 
     let msg_them = format!("El clan {} ha propuesto la paz. El lider puede usar /PROPONERPAZ {} para aceptar.", my_guild_name, my_guild_name);
-    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
-    state.send_console(conn_id, &format!("Has propuesto la paz al clan {}.", target_guild_name), font_index::INFO).await;
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG);
+    state.send_console(conn_id, &format!("Has propuesto la paz al clan {}.", target_guild_name), font_index::INFO);
 }
 
 /// /PROPONERALIAR <clan> — Propose alliance to a peaceful guild (leader only).
@@ -1044,7 +1044,7 @@ pub(super) async fn handle_slash_proponeraliar(state: &mut GameState, conn_id: C
     let (guild_index, char_name, my_guild_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.guild_name.clone()),
         _ => {
-            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO);
             return;
         }
     };
@@ -1055,21 +1055,21 @@ pub(super) async fn handle_slash_proponeraliar(state: &mut GameState, conn_id: C
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_console(conn_id, "Solo el lider puede proponer alianza.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede proponer alianza.", font_index::INFO);
         return;
     }
 
     let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
         Some(n) => n,
         None => {
-            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO);
             return;
         }
     };
 
     let current = get_guild_relation(state, guild_index, target_num);
     if current != GUILD_REL_PEACE {
-        state.send_console(conn_id, "Solo puedes proponer alianza a un clan en paz.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo puedes proponer alianza a un clan en paz.", font_index::INFO);
         return;
     }
 
@@ -1081,8 +1081,8 @@ pub(super) async fn handle_slash_proponeraliar(state: &mut GameState, conn_id: C
 
         let msg_us = format!("Se ha formado una alianza con el clan {}!", target_guild_name);
         let msg_them = format!("El clan {} ha aceptado la propuesta de alianza!", my_guild_name);
-        state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::GUILD_MSG).await;
-        state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
+        state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::GUILD_MSG);
+        state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG);
         return;
     }
 
@@ -1090,8 +1090,8 @@ pub(super) async fn handle_slash_proponeraliar(state: &mut GameState, conn_id: C
     state.guild_proposals.insert((guild_index, target_num), 1); // 1 = alliance
 
     let msg_them = format!("El clan {} ha propuesto una alianza. El lider puede usar /PROPONERALIAR {} para aceptar.", my_guild_name, my_guild_name);
-    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG).await;
-    state.send_console(conn_id, &format!("Has propuesto alianza al clan {}.", target_guild_name), font_index::INFO).await;
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::GUILD_MSG);
+    state.send_console(conn_id, &format!("Has propuesto alianza al clan {}.", target_guild_name), font_index::INFO);
 }
 
 /// /ROMPERALIANZA <clan> — Break alliance with a guild (leader only).
@@ -1099,7 +1099,7 @@ pub(super) async fn handle_slash_romperalianza(state: &mut GameState, conn_id: C
     let (guild_index, char_name, my_guild_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.guild_name.clone()),
         _ => {
-            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO);
             return;
         }
     };
@@ -1110,21 +1110,21 @@ pub(super) async fn handle_slash_romperalianza(state: &mut GameState, conn_id: C
     };
 
     if guild.leader.to_uppercase() != char_name.to_uppercase() {
-        state.send_console(conn_id, "Solo el lider puede romper alianzas.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede romper alianzas.", font_index::INFO);
         return;
     }
 
     let target_num = match guilds::find_guild_by_name(&state.pool, target_guild_name).await {
         Some(n) => n,
         None => {
-            state.send_console(conn_id, "El clan no existe.", font_index::INFO).await;
+            state.send_console(conn_id, "El clan no existe.", font_index::INFO);
             return;
         }
     };
 
     let current = get_guild_relation(state, guild_index, target_num);
     if current != GUILD_REL_ALLIANCE {
-        state.send_console(conn_id, "No estan aliados con ese clan.", font_index::INFO).await;
+        state.send_console(conn_id, "No estan aliados con ese clan.", font_index::INFO);
         return;
     }
 
@@ -1133,8 +1133,8 @@ pub(super) async fn handle_slash_romperalianza(state: &mut GameState, conn_id: C
 
     let msg_us = format!("Se ha roto la alianza con el clan {}.", target_guild_name);
     let msg_them = format!("El clan {} ha roto la alianza.", my_guild_name);
-    state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::INFO).await;
-    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::INFO).await;
+    state.send_console_to(SendTarget::ToGuildMembers(guild_index), &msg_us, font_index::INFO);
+    state.send_console_to(SendTarget::ToGuildMembers(target_num), &msg_them, font_index::INFO);
 }
 
 /// /RELACIONES — Show current guild diplomacy status (all relations).
@@ -1142,7 +1142,7 @@ pub(super) async fn handle_slash_relaciones(state: &mut GameState, conn_id: Conn
     let guild_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
         _ => {
-            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO);
             return;
         }
     };
@@ -1164,15 +1164,15 @@ pub(super) async fn handle_slash_relaciones(state: &mut GameState, conn_id: Conn
         }
     }
 
-    state.send_console(conn_id, "--- Relaciones del clan ---", font_index::GUILD_MSG).await;
+    state.send_console(conn_id, "--- Relaciones del clan ---", font_index::GUILD_MSG);
     if wars.is_empty() {
-        state.send_console(conn_id, "En guerra con: nadie", font_index::INFO).await;
+        state.send_console(conn_id, "En guerra con: nadie", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("En guerra con: {}", wars.join(", ")), font_index::FIGHT).await;
+        state.send_console(conn_id, &format!("En guerra con: {}", wars.join(", ")), font_index::FIGHT);
     }
     if allies.is_empty() {
-        state.send_console(conn_id, "Aliados con: nadie", font_index::INFO).await;
+        state.send_console(conn_id, "Aliados con: nadie", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Aliados con: {}", allies.join(", ")), font_index::GUILD_MSG).await;
+        state.send_console(conn_id, &format!("Aliados con: {}", allies.join(", ")), font_index::GUILD_MSG);
     }
 }

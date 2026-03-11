@@ -55,7 +55,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
         .unwrap_or(false);
 
     if !is_anvil {
-        state.send_msg_id(conn_id, 263, "").await;
+        state.send_msg_id(conn_id, 263, "");
         return;
     }
 
@@ -97,11 +97,11 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     }
 
     let pkt = binary_packets::write_smith_weapons(&weapons);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
     let pkt = binary_packets::write_smith_armors(&armors);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
     let pkt = binary_packets::write_show_blacksmith_form();
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// Carpenter (open UI — sends buildable items list + ShowCarpenterForm).
@@ -128,9 +128,9 @@ pub(crate) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId)
     }
 
     let pkt = binary_packets::write_carp_items(&items);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
     let pkt = binary_packets::write_show_carpenter_form();
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// Smelting (FundirMineral).
@@ -158,7 +158,7 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     let (slot_idx, mineral_obj, amount, lingote_idx) = match mineral_slot {
         Some(data) => data,
         None => {
-            state.send_msg_id(conn_id, 259, "").await;
+            state.send_msg_id(conn_id, 259, "");
             return;
         }
     };
@@ -172,7 +172,7 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     };
 
     if amount < minerals_needed {
-        state.send_console(conn_id, &format!("No tienes suficientes minerales (necesitas {})", minerals_needed), font_index::INFO).await;
+        state.send_console(conn_id, &format!("No tienes suficientes minerales (necesitas {})", minerals_needed), font_index::INFO);
         return;
     }
 
@@ -201,7 +201,7 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
         send_inventory_slot(state, conn_id, idx).await;
     }
 
-    state.send_console(conn_id, "Has fundido un lingote", font_index::INFO).await;
+    state.send_console(conn_id, "Has fundido un lingote", font_index::INFO);
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 14); // Mining skill
@@ -228,7 +228,7 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
         None => return,
     };
     if !has_hammer {
-        state.send_console(conn_id, "Necesitas equipar un martillo de herrero.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas equipar un martillo de herrero.", font_index::INFO);
         return;
     }
 
@@ -249,27 +249,27 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     let (obj_type, ling_h, ling_p, ling_o, sk_needed, is_equipped, item_name) = match item_data {
         Some(d) => d,
         None => {
-            state.send_console(conn_id, "No hay ningún objeto en ese slot.", font_index::INFO).await;
+            state.send_console(conn_id, "No hay ningún objeto en ese slot.", font_index::INFO);
             return;
         }
     };
 
     // Must be a weapon
     if obj_type != ObjType::Weapon {
-        state.send_console(conn_id, "Solo se pueden fundir armas.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo se pueden fundir armas.", font_index::INFO);
         return;
     }
 
     // Must have some crafting materials defined
     if ling_h == 0 && ling_p == 0 && ling_o == 0 {
-        state.send_console(conn_id, "Este arma no se puede fundir.", font_index::INFO).await;
+        state.send_console(conn_id, "Este arma no se puede fundir.", font_index::INFO);
         return;
     }
 
     // Check Herrería skill
     let user_skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // SK16 = Herreria
     if user_skill < sk_needed {
-        state.send_console(conn_id, &format!("Necesitas {} de herrería para fundir esto.", sk_needed), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Necesitas {} de herrería para fundir esto.", sk_needed), font_index::INFO);
         return;
     }
 
@@ -317,8 +317,8 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
 
     // Play sound + message
     let snd = binary_packets::write_play_wave(SND_HERRERO as u8, 0, 0);
-    state.send_bytes(conn_id, &snd).await;
-    state.send_console(conn_id, &format!("Has fundido {} y obtenido el {}% de los lingotes.", item_name, pct), font_index::INFO).await;
+    state.send_bytes(conn_id, &snd);
+    state.send_console(conn_id, &format!("Has fundido {} y obtenido el {}% de los lingotes.", item_name, pct), font_index::INFO);
 
     // Skill gain + reputation
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -354,13 +354,13 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
          cur_madera, _cur_piedras, item_name, is_equipped) = match item_data {
         Some(d) => d,
         None => {
-            state.send_console(conn_id, "No hay ningún objeto en ese slot.", font_index::INFO).await;
+            state.send_console(conn_id, "No hay ningún objeto en ese slot.", font_index::INFO);
             return;
         }
     };
 
     if upgrade_idx <= 0 {
-        state.send_console(conn_id, "Este objeto no se puede mejorar.", font_index::INFO).await;
+        state.send_console(conn_id, "Este objeto no se puede mejorar.", font_index::INFO);
         return;
     }
 
@@ -369,7 +369,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         Some(o) => (o.ling_h, o.ling_p, o.ling_o, o.madera, o.piedras,
                     o.sk_herreria, o.sk_carpinteria, o.name.clone()),
         None => {
-            state.send_console(conn_id, "Error: objeto mejorado no existe.", font_index::INFO).await;
+            state.send_console(conn_id, "Error: objeto mejorado no existe.", font_index::INFO);
             return;
         }
     };
@@ -389,7 +389,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     let is_carp = weapon_idx == SERRUCHO_CARPINTERO;
 
     if !is_smith && !is_carp {
-        state.send_console(conn_id, "Necesitas equipar un martillo de herrero o un serrucho.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas equipar un martillo de herrero o un serrucho.", font_index::INFO);
         return;
     }
 
@@ -400,7 +400,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         // Herrería path: weapons, shields, helmets, armor
         let user_skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0);
         if user_skill < up_sk_herreria {
-            state.send_console(conn_id, &format!("Necesitas {} de herrería.", up_sk_herreria), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Necesitas {} de herrería.", up_sk_herreria), font_index::INFO);
             return;
         }
 
@@ -412,7 +412,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         if !has_items(state, conn_id, LINGOTE_HIERRO, need_h)
             || !has_items(state, conn_id, LINGOTE_PLATA, need_p)
             || !has_items(state, conn_id, LINGOTE_ORO, need_o) {
-            state.send_console(conn_id, "No tienes suficientes lingotes para la mejora.", font_index::INFO).await;
+            state.send_console(conn_id, "No tienes suficientes lingotes para la mejora.", font_index::INFO);
             return;
         }
 
@@ -422,7 +422,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         remove_items(state, conn_id, LINGOTE_ORO, need_o).await;
 
         let snd = binary_packets::write_play_wave(SND_HERRERO as u8, 0, 0);
-        state.send_bytes(conn_id, &snd).await;
+        state.send_bytes(conn_id, &snd);
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, 15); // Herreria
@@ -431,7 +431,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         // Carpintería path: arrows, weapons (wood), boats
         let user_skill = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0);
         if user_skill < up_sk_carpinteria {
-            state.send_console(conn_id, &format!("Necesitas {} de carpintería.", up_sk_carpinteria), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Necesitas {} de carpintería.", up_sk_carpinteria), font_index::INFO);
             return;
         }
 
@@ -439,11 +439,11 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         let need_stones = (up_piedras as f64).max(0.0) as i32;
 
         if !has_items(state, conn_id, LENA_OBJ, need_wood) {
-            state.send_console(conn_id, "No tienes suficiente madera para la mejora.", font_index::INFO).await;
+            state.send_console(conn_id, "No tienes suficiente madera para la mejora.", font_index::INFO);
             return;
         }
         if need_stones > 0 && !has_items(state, conn_id, PIEDRA_OBJ, need_stones) {
-            state.send_console(conn_id, "No tienes suficientes piedras para la mejora.", font_index::INFO).await;
+            state.send_console(conn_id, "No tienes suficientes piedras para la mejora.", font_index::INFO);
             return;
         }
 
@@ -453,7 +453,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         }
 
         let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, 0, 0);
-        state.send_bytes(conn_id, &snd).await;
+        state.send_bytes(conn_id, &snd);
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, 14); // Carpinteria
@@ -491,7 +491,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         u.min_sta = (u.min_sta - sta_cost).max(0);
     }
 
-    state.send_console(conn_id, &format!("Has mejorado {} a {}.", item_name, upgrade_name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Has mejorado {} a {}.", item_name, upgrade_name), font_index::INFO);
     send_stats_sta(state, conn_id).await;
 
     // Crafting reputation
@@ -520,7 +520,7 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     // Check skill
     let skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // Herreria=15 (1-based 16)
     if skill < obj.sk_herreria {
-        state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO);
         return;
     }
 
@@ -532,7 +532,7 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     ]);
 
     if !has_materials {
-        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO);
         return;
     }
 
@@ -550,9 +550,9 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
     let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as u8, y as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
-    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 16);
@@ -581,14 +581,14 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     // Check equipped carpentry tool (VB6: SERRUCHO_CARPINTERO must be equipped)
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon != SERRUCHO_CARPINTERO {
-        state.send_console(conn_id, "Necesitas un serrucho de carpintero", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas un serrucho de carpintero", font_index::INFO);
         return;
     }
 
     // Check skill
     let skill = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0); // Carpinteria=14 (1-based 15)
     if skill < obj.sk_carpinteria {
-        state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO);
         return;
     }
 
@@ -599,7 +599,7 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     ]);
 
     if !has_materials {
-        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes los materiales necesarios", font_index::INFO);
         return;
     }
 
@@ -616,9 +616,9 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
     let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as u8, y as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
-    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
 
     if let Some(u) = state.users.get_mut(&conn_id) {
         try_level_skill(u, 15);
@@ -645,14 +645,14 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
     let (dead, map, x, y, skill_surv, _criminal) = user_data;
 
     if dead {
-        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO);
         return;
     }
 
     // Check tile trigger — no campfires in safe zones (trigger 1)
     let tile_trigger = get_map_tile_trigger(state, map, x, y);
     if tile_trigger == crate::data::maps::Trigger::SafeZone {
-        state.send_console(conn_id, "No puedes crear fogatas en zona segura.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes crear fogatas en zona segura.", font_index::INFO);
         return;
     }
 
@@ -662,7 +662,7 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
         .unwrap_or(0);
 
     if lena_count < 3 {
-        state.send_console(conn_id, "Necesitas al menos 3 leñas para crear una fogata.", font_index::INFO).await;
+        state.send_console(conn_id, "Necesitas al menos 3 leñas para crear una fogata.", font_index::INFO);
         return;
     }
 
@@ -713,20 +713,20 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
             // Get campfire GRH for visual
             let grh = state.get_object(FOGATA_OBJ).map(|o| o.grh_index).unwrap_or(0);
             let ho_pkt = binary_packets::write_object_create(x as u8, y as u8, grh as i16);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
 
             // Add to cleanup list (temporary — VB6 uses garbage collector)
             clean_world_add_item(state, map, x, y, 180, FOGATA_OBJ);
         }
 
-        state.send_console(conn_id, "Has creado una fogata.", font_index::INFO).await;
+        state.send_console(conn_id, "Has creado una fogata.", font_index::INFO);
 
         // XP gain on success
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, skill_id::SUPERVIVENCIA as usize);
         }
     } else {
-        state.send_console(conn_id, "No lograste encender la fogata.", font_index::INFO).await;
+        state.send_console(conn_id, "No lograste encender la fogata.", font_index::INFO);
 
         // XP on failure (half)
         if let Some(u) = state.users.get_mut(&conn_id) {

@@ -29,9 +29,9 @@ pub(super) async fn handle_slash_trabajando(state: &mut GameState, conn_id: Conn
     }
 
     if names.is_empty() {
-        state.send_console(conn_id, "Nadie esta trabajando.", font_index::INFO).await;
+        state.send_console(conn_id, "Nadie esta trabajando.", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Trabajando ({}): {}", names.len(), names.join(", ")), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Trabajando ({}): {}", names.len(), names.join(", ")), font_index::INFO);
     }
 }
 
@@ -50,9 +50,9 @@ pub(super) async fn handle_slash_ocultando(state: &mut GameState, conn_id: Conne
     }
 
     if names.is_empty() {
-        state.send_console(conn_id, "Nadie esta ocultandose.", font_index::INFO).await;
+        state.send_console(conn_id, "Nadie esta ocultandose.", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Ocultos ({}): {}", names.len(), names.join(", ")), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Ocultos ({}): {}", names.len(), names.join(", ")), font_index::INFO);
     }
 }
 
@@ -66,7 +66,7 @@ pub(super) async fn handle_slash_seguir(state: &mut GameState, conn_id: Connecti
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -78,7 +78,7 @@ pub(super) async fn handle_slash_seguir(state: &mut GameState, conn_id: Connecti
 
     warp_user(state, conn_id, map, x, y).await;
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("Siguiendo a {}.", target_name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Siguiendo a {}.", target_name), font_index::INFO);
 }
 
 /// /REALMSG <text> — Send message to all Royal Army members. Requires SEMIDIOS+.
@@ -94,7 +94,7 @@ pub(super) async fn handle_slash_realmsg(state: &mut GameState, conn_id: Connect
         .map(|u| u.conn_id)
         .collect();
     for t in targets {
-        state.send_console(t, &msg, font_index::SERVER).await;
+        state.send_console(t, &msg, font_index::SERVER);
     }
 }
 
@@ -111,7 +111,7 @@ pub(super) async fn handle_slash_caosmsg(state: &mut GameState, conn_id: Connect
         .map(|u| u.conn_id)
         .collect();
     for t in targets {
-        state.send_console(t, &msg, font_index::SERVER).await;
+        state.send_console(t, &msg, font_index::SERVER);
     }
 }
 
@@ -128,7 +128,7 @@ pub(super) async fn handle_slash_ciumsg(state: &mut GameState, conn_id: Connecti
         .map(|u| u.conn_id)
         .collect();
     for t in targets {
-        state.send_console(t, &msg, font_index::SERVER).await;
+        state.send_console(t, &msg, font_index::SERVER);
     }
 }
 
@@ -145,7 +145,7 @@ pub(super) async fn handle_slash_crimsg(state: &mut GameState, conn_id: Connecti
         .map(|u| u.conn_id)
         .collect();
     for t in targets {
-        state.send_console(t, &msg, font_index::SERVER).await;
+        state.send_console(t, &msg, font_index::SERVER);
     }
 }
 
@@ -159,7 +159,7 @@ pub(super) async fn handle_slash_aceptconse(state: &mut GameState, conn_id: Conn
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -167,7 +167,7 @@ pub(super) async fn handle_slash_aceptconse(state: &mut GameState, conn_id: Conn
     // Must be in Royal Army
     let is_armada = state.users.get(&target_conn).map(|u| u.armada_real).unwrap_or(false);
     if !is_armada {
-        state.send_console(conn_id, "El jugador no pertenece a la Armada Real.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador no pertenece a la Armada Real.", font_index::INFO);
         return;
     }
 
@@ -176,8 +176,8 @@ pub(super) async fn handle_slash_aceptconse(state: &mut GameState, conn_id: Conn
     }
 
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} ahora es consejero real.", target_name), font_index::INFO).await;
-    state.send_console(target_conn, "Has sido aceptado en el Consejo Real.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ahora es consejero real.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Has sido aceptado en el Consejo Real.", font_index::INFO);
 }
 
 /// /ACEPTCONSECAOS <name> — Accept player into Chaos council. Requires DIOS+.
@@ -190,14 +190,14 @@ pub(super) async fn handle_slash_aceptconsecaos(state: &mut GameState, conn_id: 
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
 
     let is_caos = state.users.get(&target_conn).map(|u| u.fuerzas_caos).unwrap_or(false);
     if !is_caos {
-        state.send_console(conn_id, "El jugador no pertenece a las Fuerzas del Caos.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador no pertenece a las Fuerzas del Caos.", font_index::INFO);
         return;
     }
 
@@ -206,8 +206,8 @@ pub(super) async fn handle_slash_aceptconsecaos(state: &mut GameState, conn_id: 
     }
 
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} ahora es consejero del caos.", target_name), font_index::INFO).await;
-    state.send_console(target_conn, "Has sido aceptado en el Consejo del Caos.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ahora es consejero del caos.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Has sido aceptado en el Consejo del Caos.", font_index::INFO);
 }
 
 /// /KICKCONSE <name> — Kick player from council. Requires DIOS+.
@@ -220,7 +220,7 @@ pub(super) async fn handle_slash_kickconse(state: &mut GameState, conn_id: Conne
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -231,7 +231,7 @@ pub(super) async fn handle_slash_kickconse(state: &mut GameState, conn_id: Conne
     };
 
     if !was_royal && !was_chaos {
-        state.send_console(conn_id, "El jugador no es consejero.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador no es consejero.", font_index::INFO);
         return;
     }
 
@@ -241,8 +241,8 @@ pub(super) async fn handle_slash_kickconse(state: &mut GameState, conn_id: Conne
     }
 
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} ha sido removido del consejo.", target_name), font_index::INFO).await;
-    state.send_console(target_conn, "Has sido removido del consejo.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ha sido removido del consejo.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Has sido removido del consejo.", font_index::INFO);
 }
 
 /// /ESTUPIDO <name> — Mute player (prevent speech). Requires SEMIDIOS+.
@@ -255,7 +255,7 @@ pub(super) async fn handle_slash_estupido(state: &mut GameState, conn_id: Connec
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -266,8 +266,8 @@ pub(super) async fn handle_slash_estupido(state: &mut GameState, conn_id: Connec
 
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} ha sido silenciado.", target_name), font_index::INFO).await;
-    state.send_console(target_conn, "Has sido silenciado por un GM.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ha sido silenciado.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Has sido silenciado por un GM.", font_index::INFO);
     info!("[GM] {} silenced {}", admin_name, target_name);
 }
 
@@ -281,7 +281,7 @@ pub(super) async fn handle_slash_noestupido(state: &mut GameState, conn_id: Conn
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -291,8 +291,8 @@ pub(super) async fn handle_slash_noestupido(state: &mut GameState, conn_id: Conn
     }
 
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} ya no esta silenciado.", target_name), font_index::INFO).await;
-    state.send_console(target_conn, "Tu silencio ha sido removido.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} ya no esta silenciado.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Tu silencio ha sido removido.", font_index::INFO);
 }
 
 /// /TRIGGER <value> — Set map trigger at current position. Requires DIOS+.
@@ -302,7 +302,7 @@ pub(super) async fn handle_slash_trigger(state: &mut GameState, conn_id: Connect
 
     let trigger_val: i32 = args.trim().parse().unwrap_or(-1);
     if trigger_val < 0 || trigger_val > 255 {
-        state.send_console(conn_id, "Valor de trigger invalido (0-255).", font_index::INFO).await;
+        state.send_console(conn_id, "Valor de trigger invalido (0-255).", font_index::INFO);
         return;
     }
 
@@ -330,7 +330,7 @@ pub(super) async fn handle_slash_trigger(state: &mut GameState, conn_id: Connect
         }
     }
 
-    state.send_console(conn_id, &format!("Trigger {} establecido en ({},{},{}).", trigger_val, map, x, y), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Trigger {} establecido en ({},{},{}).", trigger_val, map, x, y), font_index::INFO);
 }
 
 /// /SETDIALOG <npc_idx> <text> — Set NPC dialog. Requires DIOS+.
@@ -340,7 +340,7 @@ pub(super) async fn handle_slash_setdialog(state: &mut GameState, conn_id: Conne
 
     let parts: Vec<&str> = args.splitn(2, ' ').collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /SETDIALOG <npc_index> <texto>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /SETDIALOG <npc_index> <texto>", font_index::INFO);
         return;
     }
 
@@ -349,9 +349,9 @@ pub(super) async fn handle_slash_setdialog(state: &mut GameState, conn_id: Conne
 
     if let Some(Some(npc)) = state.npcs.get_mut(npc_idx) {
         npc.desc = dialog.to_string();
-        state.send_console(conn_id, &format!("Dialogo del NPC {} actualizado.", npc_idx), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Dialogo del NPC {} actualizado.", npc_idx), font_index::INFO);
     } else {
-        state.send_console(conn_id, "NPC no encontrado.", font_index::INFO).await;
+        state.send_console(conn_id, "NPC no encontrado.", font_index::INFO);
     }
 }
 
@@ -364,7 +364,7 @@ pub(super) async fn handle_slash_apagar(state: &mut GameState, conn_id: Connecti
 
     let seconds: i32 = args.trim().parse().unwrap_or(60);
     if seconds <= 0 {
-        state.send_console(conn_id, "Uso: /APAGAR <segundos>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /APAGAR <segundos>", font_index::INFO);
         return;
     }
 
@@ -373,7 +373,7 @@ pub(super) async fn handle_slash_apagar(state: &mut GameState, conn_id: Connecti
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     let msg = format!("ATENCION: El servidor se apagara en {} segundos.", seconds);
-    state.send_console_to(SendTarget::ToAll, &msg, font_index::WARNING).await;
+    state.send_console_to(SendTarget::ToAll, &msg, font_index::WARNING);
     info!("[GM] {} initiated shutdown in {}s", admin_name, seconds);
 }
 
@@ -386,7 +386,7 @@ pub(super) async fn handle_slash_reiniciar(state: &mut GameState, conn_id: Conne
 
     let seconds: i32 = args.trim().parse().unwrap_or(60);
     if seconds <= 0 {
-        state.send_console(conn_id, "Uso: /REINICIAR <segundos>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /REINICIAR <segundos>", font_index::INFO);
         return;
     }
 
@@ -395,7 +395,7 @@ pub(super) async fn handle_slash_reiniciar(state: &mut GameState, conn_id: Conne
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     let msg = format!("ATENCION: El servidor se reiniciara en {} segundos.", seconds);
-    state.send_console_to(SendTarget::ToAll, &msg, font_index::WARNING).await;
+    state.send_console_to(SendTarget::ToAll, &msg, font_index::WARNING);
     info!("[GM] {} initiated restart in {}s", admin_name, seconds);
 }
 
@@ -410,7 +410,7 @@ pub(super) async fn handle_slash_grabar(state: &mut GameState, conn_id: Connecti
     state.auto_save_counter = 0;
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, "Guardado forzado iniciado.", font_index::INFO).await;
+    state.send_console(conn_id, "Guardado forzado iniciado.", font_index::INFO);
     info!("[GM] {} forced save all users", admin_name);
 }
 
@@ -423,7 +423,7 @@ pub(super) async fn handle_slash_apass(state: &mut GameState, conn_id: Connectio
 
     let parts: Vec<&str> = args.splitn(2, '@').collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /APASS <nombre>@<nuevapassword>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /APASS <nombre>@<nuevapassword>", font_index::INFO);
         return;
     }
 
@@ -431,7 +431,7 @@ pub(super) async fn handle_slash_apass(state: &mut GameState, conn_id: Connectio
     let new_pass = parts[1].trim();
 
     if new_pass.len() < 3 {
-        state.send_console(conn_id, "La password debe tener al menos 3 caracteres.", font_index::INFO).await;
+        state.send_console(conn_id, "La password debe tener al menos 3 caracteres.", font_index::INFO);
         return;
     }
 
@@ -439,13 +439,13 @@ pub(super) async fn handle_slash_apass(state: &mut GameState, conn_id: Connectio
     let account_name = match state.find_user_by_name(target_name) {
         Some(c) => state.users.get(&c).map(|u| u.account_name.clone()).unwrap_or_default(),
         None => {
-            state.send_console(conn_id, "Jugador no encontrado online. Solo funciona con jugadores conectados.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado online. Solo funciona con jugadores conectados.", font_index::INFO);
             return;
         }
     };
 
     if account_name.is_empty() {
-        state.send_console(conn_id, "Cuenta no encontrada.", font_index::INFO).await;
+        state.send_console(conn_id, "Cuenta no encontrada.", font_index::INFO);
         return;
     }
 
@@ -453,17 +453,17 @@ pub(super) async fn handle_slash_apass(state: &mut GameState, conn_id: Connectio
     let new_hash = match crate::db::password::hash_password(new_pass) {
         Ok(h) => h,
         Err(_) => {
-            state.send_console(conn_id, "Error al generar hash.", font_index::INFO).await;
+            state.send_console(conn_id, "Error al generar hash.", font_index::INFO);
             return;
         }
     };
 
     if crate::db::accounts::update_password(&state.pool, &account_name, &new_hash).await.is_ok() {
         let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(conn_id, &format!("Password de {} cambiada.", target_name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Password de {} cambiada.", target_name), font_index::INFO);
         info!("[GM] {} changed password for {}", admin_name, target_name);
     } else {
-        state.send_console(conn_id, "Error al cambiar la password.", font_index::INFO).await;
+        state.send_console(conn_id, "Error al cambiar la password.", font_index::INFO);
     }
 }
 
@@ -478,7 +478,7 @@ pub(super) async fn handle_slash_banclan(state: &mut GameState, conn_id: Connect
     let guild_idx = match crate::db::guilds::find_guild_by_name(&state.pool, guild_name).await {
         Some(idx) => idx,
         None => {
-            state.send_console(conn_id, "Clan no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Clan no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -494,11 +494,11 @@ pub(super) async fn handle_slash_banclan(state: &mut GameState, conn_id: Connect
             u.guild_index = 0;
             u.guild_name.clear();
         }
-        state.send_console(*mc, "Tu clan ha sido baneado por un administrador.", font_index::FIGHT).await;
+        state.send_console(*mc, "Tu clan ha sido baneado por un administrador.", font_index::FIGHT);
     }
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("Clan '{}' baneado. {} miembros online afectados.", guild_name, member_conns.len()), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Clan '{}' baneado. {} miembros online afectados.", guild_name, member_conns.len()), font_index::INFO);
     info!("[GM] {} banned guild {} ({} members affected)", admin_name, guild_name, member_conns.len());
 }
 
@@ -512,7 +512,7 @@ pub(super) async fn handle_slash_miembrosclan(state: &mut GameState, conn_id: Co
     let guild_idx = match crate::db::guilds::find_guild_by_name(&state.pool, guild_name).await {
         Some(idx) => idx,
         None => {
-            state.send_console(conn_id, "Clan no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Clan no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -524,9 +524,9 @@ pub(super) async fn handle_slash_miembrosclan(state: &mut GameState, conn_id: Co
         .collect();
 
     if members.is_empty() {
-        state.send_console(conn_id, &format!("No hay miembros de '{}' online.", guild_name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("No hay miembros de '{}' online.", guild_name), font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Miembros de '{}' online ({}): {}", guild_name, members.len(), members.join(", ")), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Miembros de '{}' online ({}): {}", guild_name, members.len(), members.join(", ")), font_index::INFO);
     }
 }
 
@@ -540,14 +540,14 @@ pub(super) async fn handle_slash_rajarclan(state: &mut GameState, conn_id: Conne
     let target_conn = match state.find_user_by_name(target) {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
 
     let guild_name = state.users.get(&target_conn).map(|u| u.guild_name.clone()).unwrap_or_default();
     if guild_name.is_empty() {
-        state.send_console(conn_id, "El jugador no pertenece a ningun clan.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador no pertenece a ningun clan.", font_index::INFO);
         return;
     }
 
@@ -557,8 +557,8 @@ pub(super) async fn handle_slash_rajarclan(state: &mut GameState, conn_id: Conne
     }
 
     let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} ha sido removido del clan {}.", target_name, guild_name), font_index::INFO).await;
-    state.send_console(target_conn, "Has sido removido de tu clan por un administrador.", font_index::FIGHT).await;
+    state.send_console(conn_id, &format!("{} ha sido removido del clan {}.", target_name, guild_name), font_index::INFO);
+    state.send_console(target_conn, "Has sido removido de tu clan por un administrador.", font_index::FIGHT);
 }
 
 // =====================================================================
@@ -574,7 +574,7 @@ pub(super) async fn handle_slash_gm_request(state: &mut GameState, conn_id: Conn
 
     let request_pending = state.users.get(&conn_id).map(|u| u.gm_request_pending).unwrap_or(false);
     if request_pending {
-        state.send_console(conn_id, "Ya tienes una solicitud pendiente.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya tienes una solicitud pendiente.", font_index::INFO);
         return;
     }
 
@@ -597,10 +597,10 @@ pub(super) async fn handle_slash_gm_request(state: &mut GameState, conn_id: Conn
         .map(|u| u.conn_id)
         .collect();
     for gc in gm_conns {
-        state.send_console(gc, &msg, font_index::SERVER).await;
+        state.send_console(gc, &msg, font_index::SERVER);
     }
 
-    state.send_console(conn_id, "Tu solicitud ha sido enviada a los GMs online.", font_index::INFO).await;
+    state.send_console(conn_id, "Tu solicitud ha sido enviada a los GMs online.", font_index::INFO);
 }
 
 /// /ROL <text> — Send roleplay request to GMs.
@@ -623,10 +623,10 @@ pub(super) async fn handle_slash_rol(state: &mut GameState, conn_id: ConnectionI
         .map(|u| u.conn_id)
         .collect();
     for gc in gm_conns {
-        state.send_console(gc, &msg, font_index::SERVER).await;
+        state.send_console(gc, &msg, font_index::SERVER);
     }
 
-    state.send_console(conn_id, "Tu solicitud de rol ha sido enviada.", font_index::INFO).await;
+    state.send_console(conn_id, "Tu solicitud de rol ha sido enviada.", font_index::INFO);
 }
 
 /// /ELECCIONES — Open guild elections. Requires guild leader.
@@ -634,7 +634,7 @@ pub(super) async fn handle_slash_elecciones(state: &mut GameState, conn_id: Conn
     let (guild_idx, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
         _ => {
-            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un clan.", font_index::INFO);
             return;
         }
     };
@@ -646,7 +646,7 @@ pub(super) async fn handle_slash_elecciones(state: &mut GameState, conn_id: Conn
         .map(|g| g.leader.to_uppercase() == char_name.to_uppercase())
         .unwrap_or(false);
     if !is_leader {
-        state.send_console(conn_id, "Solo el lider puede abrir elecciones.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede abrir elecciones.", font_index::INFO);
         return;
     }
 
@@ -658,7 +658,7 @@ pub(super) async fn handle_slash_elecciones(state: &mut GameState, conn_id: Conn
         .map(|u| u.conn_id)
         .collect();
     for mc in member_conns {
-        state.send_console(mc, &msg, font_index::GUILD).await;
+        state.send_console(mc, &msg, font_index::GUILD);
     }
 }
 
@@ -673,7 +673,7 @@ pub(super) async fn handle_centinela_improved(state: &mut GameState, conn_id: Co
 
     if expected == 0 {
         // No active centinela check — just acknowledge
-        state.send_console(conn_id, "Centinela verificado.", font_index::INFO).await;
+        state.send_console(conn_id, "Centinela verificado.", font_index::INFO);
         return;
     }
 
@@ -686,7 +686,7 @@ pub(super) async fn handle_centinela_improved(state: &mut GameState, conn_id: Co
             u.centinela_timer = 0;
             u.centinela_fails = 0;
         }
-        state.send_console(conn_id, "Centinela verificado correctamente.", font_index::CENTINELA).await;
+        state.send_console(conn_id, "Centinela verificado correctamente.", font_index::CENTINELA);
     } else {
         // Wrong answer
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -697,10 +697,10 @@ pub(super) async fn handle_centinela_improved(state: &mut GameState, conn_id: Co
             // Too many fails — kick
             let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
             info!("[CENTINELA] {} kicked for 3 failed centinela attempts", name);
-            state.send_console(conn_id, "Has fallado la verificacion centinela. Desconectado.", font_index::FIGHT).await;
+            state.send_console(conn_id, "Has fallado la verificacion centinela. Desconectado.", font_index::FIGHT);
             close_connection(state, conn_id).await;
         } else {
-            state.send_console(conn_id, &format!("Respuesta incorrecta. Intentos restantes: {}.", 3 - fails), font_index::WARNING).await;
+            state.send_console(conn_id, &format!("Respuesta incorrecta. Intentos restantes: {}.", 3 - fails), font_index::WARNING);
         }
     }
 }
@@ -714,7 +714,7 @@ pub(super) async fn alertar_faccionarios(state: &mut GameState, conn_id: Connect
     };
 
     if !armada && !caos {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
         return;
     }
 
@@ -727,9 +727,9 @@ pub(super) async fn alertar_faccionarios(state: &mut GameState, conn_id: Connect
         .collect();
 
     for t in &targets {
-        state.send_console(*t, &msg, font_index::FIGHT).await;
+        state.send_console(*t, &msg, font_index::FIGHT);
         // Play horn sound (VB6 sound 45 = horn)
-        state.send_bytes(*t, &binary_packets::write_play_wave(45, 50, 50)).await;
+        state.send_bytes(*t, &binary_packets::write_play_wave(45, 50, 50));
     }
 }
 
@@ -754,15 +754,15 @@ pub(super) async fn handle_slash_panelgm(state: &mut GameState, conn_id: Connect
         online, record, exp_mult, gold_mult, drop_mult,
         if raining { "Si" } else { "No" },
         if night { "Si" } else { "No" }
-    ), font_index::SERVER).await;
+    ), font_index::SERVER);
 
     // Show pending SOS messages
     if !state.sos_messages.is_empty() {
-        state.send_console(conn_id, &format!("Solicitudes pendientes: {}", state.sos_messages.len()), font_index::SERVER).await;
+        state.send_console(conn_id, &format!("Solicitudes pendientes: {}", state.sos_messages.len()), font_index::SERVER);
         // Clone to avoid borrow conflict
         let sos_list: Vec<_> = state.sos_messages.iter().cloned().collect();
         for (i, sos) in sos_list.iter().enumerate() {
-            state.send_console(conn_id, &format!("  {}: [{}] {} - {}", i + 1, sos.tipo, sos.autor, sos.contenido), font_index::INFO).await;
+            state.send_console(conn_id, &format!("  {}: [{}] {} - {}", i + 1, sos.tipo, sos.autor, sos.contenido), font_index::INFO);
         }
     }
 }

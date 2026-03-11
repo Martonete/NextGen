@@ -225,7 +225,7 @@ async fn main() {
                     state.send_data_bytes(
                         game::types::SendTarget::ToArea { map, x, y },
                         &fx_clear_pkt,
-                    ).await;
+                    );
 
                     // VB6 CloseUser: QDL sent to entire map, BP sent to 27×27 area
                     // QDL removes dialog labels — must reach all players on the map (VB6: ToMapButIndex)
@@ -233,7 +233,7 @@ async fn main() {
                     state.send_data_bytes(
                         game::types::SendTarget::ToMapButIndex { conn_id, map },
                         &qdl_pkt,
-                    ).await;
+                    );
 
                     // BP (remove char) — VB6 EraseUserChar uses SendToUserArea (27×27 zone)
                     let bp_pkt = protocol::binary_packets::write_character_remove(char_index.0 as i16);
@@ -255,7 +255,7 @@ async fn main() {
                                 }
                             }
                             for c in &targets {
-                                state.send_bytes(*c, &bp_pkt).await;
+                                state.send_bytes(*c, &bp_pkt);
                             }
                         }
                     } else {
@@ -263,7 +263,7 @@ async fn main() {
                         state.send_data_bytes(
                             game::types::SendTarget::ToMapButIndex { conn_id, map },
                             &bp_pkt,
-                        ).await;
+                        );
                     }
 
                     // Save full character state to DB
@@ -359,7 +359,7 @@ async fn main() {
 
                 // VB6 MostrarNumUsers: broadcast updated online count to all remaining players
                 let on_pkt = protocol::binary_packets::write_online_count(state.num_users as i16);
-                state.send_data_bytes(game::types::SendTarget::ToAll, &on_pkt).await;
+                state.send_data_bytes(game::types::SendTarget::ToAll, &on_pkt);
             }
         }
             } // end tokio::select Some(event)
@@ -417,5 +417,10 @@ async fn main() {
                 }
             }
         } // end tokio::select!
+
+        // Flush all buffered writes to TCP sockets (write batching).
+        // This is the single point where bytes actually hit the wire,
+        // reducing syscalls from hundreds-per-tick to one-per-connection.
+        state.flush_all_writers().await;
     } // end loop
 }

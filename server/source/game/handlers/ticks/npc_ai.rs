@@ -1039,16 +1039,16 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spe
             // FX on NPC
             if spell.fx_grh > 0 {
                 let pkt = binary_packets::write_create_fx(npc_char.0 as i16, spell.fx_grh as i16, spell.loops as i16);
-                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
             if spell.wav > 0 {
                 let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
-                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
 
             // Magic words
             if !spell.palabras_magicas.is_empty() {
-                state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("{} dice: {}", npc_name, spell.palabras_magicas), npc_char.0 as i16, 255).await;
+                state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("{} dice: {}", npc_name, spell.palabras_magicas), npc_char.0 as i16, 255);
             }
             break; // Only cast one heal per tick
         }
@@ -1071,7 +1071,7 @@ pub async fn tick_npc_respawn(state: &mut GameState) {
                 None => continue,
             };
             let (cc_pkt, map, x, y) = cc;
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt);
         }
     }
 }

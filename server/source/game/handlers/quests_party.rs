@@ -17,7 +17,7 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
     };
 
     if party_index > 0 {
-        state.send_console(conn_id, "Ya perteneces a un grupo.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya perteneces a un grupo.", font_index::INFO);
         return;
     }
 
@@ -31,7 +31,7 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
     }
 
     if new_index == 0 {
-        state.send_console(conn_id, "No se pueden crear mas grupos.", font_index::INFO).await;
+        state.send_console(conn_id, "No se pueden crear mas grupos.", font_index::INFO);
         return;
     }
 
@@ -45,7 +45,7 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
         user.party_index = new_index;
     }
 
-    state.send_console(conn_id, "Has creado un grupo. Usa /PARTY <nombre> para invitar jugadores.", font_index::INFO).await;
+    state.send_console(conn_id, "Has creado un grupo. Usa /PARTY <nombre> para invitar jugadores.", font_index::INFO);
 }
 
 /// /PARTY <target> — Invite a player to party (leader only, max 2 tiles distance).
@@ -54,7 +54,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     let (party_index, map, x, y) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => (u.party_index, u.pos_map, u.pos_x, u.pos_y),
         Some(u) if u.logged => {
-            state.send_console(conn_id, "No perteneces a un grupo. Usa /NUEVAPARTY.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un grupo. Usa /NUEVAPARTY.", font_index::INFO);
             return;
         }
         _ => return,
@@ -66,7 +66,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
         .map(|p| p.leader == conn_id)
         .unwrap_or(false);
     if !is_leader {
-        state.send_console(conn_id, "Solo el lider puede invitar jugadores.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede invitar jugadores.", font_index::INFO);
         return;
     }
 
@@ -76,7 +76,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
         .map(|p| p.members.len())
         .unwrap_or(0);
     if member_count >= MAX_PARTY_MEMBERS {
-        state.send_console(conn_id, "El grupo esta lleno.", font_index::INFO).await;
+        state.send_console(conn_id, "El grupo esta lleno.", font_index::INFO);
         return;
     }
 
@@ -84,7 +84,7 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     let target_conn = match state.online_names.get(&target_name.to_uppercase()) {
         Some(&c) => c,
         None => {
-            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO);
             return;
         }
     };
@@ -96,18 +96,18 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     let (t_party, t_map, t_x, t_y, t_dead) = target_data;
 
     if t_dead {
-        state.send_console(conn_id, "No puedes invitar a un muerto.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes invitar a un muerto.", font_index::INFO);
         return;
     }
 
     if t_party > 0 {
-        state.send_console(conn_id, "El jugador ya esta en un grupo.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador ya esta en un grupo.", font_index::INFO);
         return;
     }
 
     // Check distance (VB6: MAXDISTANCIAINGRESOPARTY = 2)
     if t_map != map || (t_x - x).abs() > MAX_DISTANCE_INGRESO_PARTY || (t_y - y).abs() > MAX_DISTANCE_INGRESO_PARTY {
-        state.send_console(conn_id, "El jugador esta muy lejos.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador esta muy lejos.", font_index::INFO);
         return;
     }
 
@@ -117,9 +117,9 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
     }
 
     let inviter_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_conn, &format!("{} te ha invitado a un grupo. Usa /ACEPTAR o /CANCELAR.", inviter_name), font_index::INFO).await;
+    state.send_console(target_conn, &format!("{} te ha invitado a un grupo. Usa /ACEPTAR o /CANCELAR.", inviter_name), font_index::INFO);
 
-    state.send_console(conn_id, &format!("Has invitado a {} al grupo.", target_name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Has invitado a {} al grupo.", target_name), font_index::INFO);
 }
 
 /// /ACEPTAR — Accept party invite.
@@ -130,7 +130,7 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
     };
 
     if party_pending <= 0 {
-        state.send_console(conn_id, "No tienes ninguna invitacion pendiente.", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes ninguna invitacion pendiente.", font_index::INFO);
         return;
     }
 
@@ -141,7 +141,7 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
         .unwrap_or(false);
 
     if !party_ok {
-        state.send_console(conn_id, "El grupo ya no existe o esta lleno.", font_index::INFO).await;
+        state.send_console(conn_id, "El grupo ya no existe o esta lleno.", font_index::INFO);
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.party_pending = 0;
         }
@@ -160,7 +160,7 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
 
     // Notify all party members
     let notify = format!("{} se ha unido al grupo.", char_name);
-    send_console_to_party(state, party_pending, &notify, font_index::INFO).await;
+    send_console_to_party(state, party_pending, &notify, font_index::INFO);
 }
 
 /// /CANCELAR — Leave party or reject invite.
@@ -175,12 +175,12 @@ pub(super) async fn handle_slash_party_cancel(state: &mut GameState, conn_id: Co
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.party_pending = 0;
         }
-        state.send_console(conn_id, "Has rechazado la invitacion.", font_index::INFO).await;
+        state.send_console(conn_id, "Has rechazado la invitacion.", font_index::INFO);
         return;
     }
 
     if party_index <= 0 {
-        state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO);
         return;
     }
 
@@ -191,7 +191,7 @@ pub(super) async fn handle_slash_party_cancel(state: &mut GameState, conn_id: Co
         .unwrap_or(false);
 
     if is_leader {
-        state.send_console(conn_id, "Eres el lider. Usa /FINPARTY para disolver el grupo.", font_index::INFO).await;
+        state.send_console(conn_id, "Eres el lider. Usa /FINPARTY para disolver el grupo.", font_index::INFO);
         return;
     }
 
@@ -206,9 +206,9 @@ pub(super) async fn handle_slash_party_cancel(state: &mut GameState, conn_id: Co
 
     // Notify
     let notify = format!("{} ha abandonado el grupo.", char_name);
-    send_console_to_party(state, party_index, &notify, font_index::INFO).await;
+    send_console_to_party(state, party_index, &notify, font_index::INFO);
 
-    state.send_console(conn_id, "Has abandonado el grupo.", font_index::INFO).await;
+    state.send_console(conn_id, "Has abandonado el grupo.", font_index::INFO);
 }
 
 /// /FINPARTY — Disband party (leader only).
@@ -216,7 +216,7 @@ pub(super) async fn handle_slash_finparty(state: &mut GameState, conn_id: Connec
     let party_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => u.party_index,
         _ => {
-            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO);
             return;
         }
     };
@@ -227,12 +227,12 @@ pub(super) async fn handle_slash_finparty(state: &mut GameState, conn_id: Connec
         .unwrap_or(false);
 
     if !is_leader {
-        state.send_console(conn_id, "Solo el lider puede disolver el grupo.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede disolver el grupo.", font_index::INFO);
         return;
     }
 
     // Notify all members
-    send_console_to_party(state, party_index, "El grupo ha sido disuelto.", font_index::INFO).await;
+    send_console_to_party(state, party_index, "El grupo ha sido disuelto.", font_index::INFO);
 
     // Get member list before clearing
     let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
@@ -256,7 +256,7 @@ pub(super) async fn handle_slash_pinfo(state: &mut GameState, conn_id: Connectio
     let party_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => u.party_index,
         _ => {
-            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO);
             return;
         }
     };
@@ -271,12 +271,12 @@ pub(super) async fn handle_slash_pinfo(state: &mut GameState, conn_id: Connectio
         .map(|p| p.leader)
         .unwrap_or(0);
 
-    state.send_console(conn_id, "--- Miembros del grupo ---", font_index::GUILD_MSG).await;
+    state.send_console(conn_id, "--- Miembros del grupo ---", font_index::GUILD_MSG);
 
     for &member_conn in &members {
         if let Some(user) = state.users.get(&member_conn) {
             let role = if member_conn == leader_conn { " [Lider]" } else { "" };
-            state.send_console(conn_id, &format!("  {}{}", user.char_name, role), font_index::INFO).await;
+            state.send_console(conn_id, &format!("  {}{}", user.char_name, role), font_index::INFO);
         }
     }
 }
@@ -287,7 +287,7 @@ pub(super) async fn handle_slash_sacar(state: &mut GameState, conn_id: Connectio
     let party_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => u.party_index,
         _ => {
-            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO);
             return;
         }
     };
@@ -298,7 +298,7 @@ pub(super) async fn handle_slash_sacar(state: &mut GameState, conn_id: Connectio
         .map(|p| p.leader == conn_id)
         .unwrap_or(false);
     if !is_leader {
-        state.send_console(conn_id, "Solo el lider puede expulsar jugadores.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede expulsar jugadores.", font_index::INFO);
         return;
     }
 
@@ -306,14 +306,14 @@ pub(super) async fn handle_slash_sacar(state: &mut GameState, conn_id: Connectio
     let target_conn = match state.online_names.get(&target_name.to_uppercase()) {
         Some(&c) => c,
         None => {
-            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO);
             return;
         }
     };
 
     // Can't kick yourself (leader)
     if target_conn == conn_id {
-        state.send_console(conn_id, "No puedes expulsarte a ti mismo. Usa /FINPARTY.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes expulsarte a ti mismo. Usa /FINPARTY.", font_index::INFO);
         return;
     }
 
@@ -321,7 +321,7 @@ pub(super) async fn handle_slash_sacar(state: &mut GameState, conn_id: Connectio
     let target_party = state.users.get(&target_conn).map(|u| u.party_index).unwrap_or(0);
     if target_party != party_index {
         let target_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(conn_id, &format!("{} no pertenece a tu grupo.", target_display), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} no pertenece a tu grupo.", target_display), font_index::INFO);
         return;
     }
 
@@ -338,8 +338,8 @@ pub(super) async fn handle_slash_sacar(state: &mut GameState, conn_id: Connectio
 
     // Notify
     let notify = format!("{} ha sido expulsado del grupo.", target_name_display);
-    send_console_to_party(state, party_index, &notify, font_index::INFO).await;
-    state.send_console(target_conn, "Has sido expulsado del grupo.", font_index::INFO).await;
+    send_console_to_party(state, party_index, &notify, font_index::INFO);
+    state.send_console(target_conn, "Has sido expulsado del grupo.", font_index::INFO);
 }
 
 /// /DARPARTIDO <name> — Transfer party leadership (leader only).
@@ -348,7 +348,7 @@ pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: Conn
     let party_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.party_index > 0 => u.party_index,
         _ => {
-            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO).await;
+            state.send_console(conn_id, "No perteneces a un grupo.", font_index::INFO);
             return;
         }
     };
@@ -359,7 +359,7 @@ pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: Conn
         .map(|p| p.leader == conn_id)
         .unwrap_or(false);
     if !is_leader {
-        state.send_console(conn_id, "Solo el lider puede transferir el liderazgo.", font_index::INFO).await;
+        state.send_console(conn_id, "Solo el lider puede transferir el liderazgo.", font_index::INFO);
         return;
     }
 
@@ -367,13 +367,13 @@ pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: Conn
     let target_conn = match state.online_names.get(&target_name.to_uppercase()) {
         Some(&c) => c,
         None => {
-            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO);
             return;
         }
     };
 
     if target_conn == conn_id {
-        state.send_console(conn_id, "Ya eres el lider.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya eres el lider.", font_index::INFO);
         return;
     }
 
@@ -381,14 +381,14 @@ pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: Conn
     let target_party = state.users.get(&target_conn).map(|u| u.party_index).unwrap_or(0);
     if target_party != party_index {
         let target_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(conn_id, &format!("{} no pertenece a tu grupo.", target_display), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} no pertenece a tu grupo.", target_display), font_index::INFO);
         return;
     }
 
     // Check target not dead (VB6 check)
     let target_dead = state.users.get(&target_conn).map(|u| u.dead).unwrap_or(true);
     if target_dead {
-        state.send_console(conn_id, "Esta muerto!", font_index::INFO).await;
+        state.send_console(conn_id, "Esta muerto!", font_index::INFO);
         return;
     }
 
@@ -401,30 +401,30 @@ pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: Conn
     }
 
     let notify = format!("El nuevo lider del grupo es {}.", target_name_display);
-    send_console_to_party(state, party_index, &notify, font_index::INFO).await;
+    send_console_to_party(state, party_index, &notify, font_index::INFO);
 }
 
 /// Send binary packet to all party members.
-pub(super) async fn send_to_party(state: &mut GameState, party_index: i32, data: &[u8]) {
+pub(super) fn send_to_party(state: &mut GameState, party_index: i32, data: &[u8]) {
     let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
         .and_then(|p| p.as_ref())
         .map(|p| p.members.clone())
         .unwrap_or_default();
 
     for &member_conn in &members {
-        state.send_bytes(member_conn, data).await;
+        state.send_bytes(member_conn, data);
     }
 }
 
 /// Send a binary console message to all party members.
-pub(super) async fn send_console_to_party(state: &mut GameState, party_index: i32, msg: &str, font: u8) {
+pub(super) fn send_console_to_party(state: &mut GameState, party_index: i32, msg: &str, font: u8) {
     let members: Vec<ConnectionId> = state.parties.get(party_index as usize)
         .and_then(|p| p.as_ref())
         .map(|p| p.members.clone())
         .unwrap_or_default();
 
     for &member_conn in &members {
-        state.send_console(member_conn, msg, font).await;
+        state.send_console(member_conn, msg, font);
     }
 }
 

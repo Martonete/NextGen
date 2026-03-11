@@ -25,7 +25,7 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
     // VB6: 15 stamina cost
     if let Some(u) = state.users.get(&conn_id) {
         if u.min_sta < 15 {
-            state.send_msg_id(conn_id, 17, "").await;
+            state.send_msg_id(conn_id, 17, "");
             return;
         }
     }
@@ -42,7 +42,7 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let target_conn = match target_conn {
         Some(id) if id != conn_id => id,
         _ => {
-            state.send_msg_id(conn_id, 252, "").await;
+            state.send_msg_id(conn_id, 252, "");
             return;
         }
     };
@@ -97,12 +97,12 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
                     let obj_name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_default();
                     let victim_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-                    state.send_console(conn_id, &format!("Has robado {} {} a {}!", steal_amount, obj_name, victim_name), font_index::FIGHT).await;
+                    state.send_console(conn_id, &format!("Has robado {} {} a {}!", steal_amount, obj_name, victim_name), font_index::FIGHT);
                     stolen_something = true;
                 }
             }
             if !stolen_something {
-                state.send_msg_id(conn_id, 818, "").await;
+                state.send_msg_id(conn_id, 818, "");
             }
         } else {
             // VB6: Gold theft — amount based on level and class
@@ -136,18 +136,18 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
                 }
 
                 let victim_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-                state.send_msg_id(conn_id, 816, &format!("{}@{}", stolen, victim_name)).await;
+                state.send_msg_id(conn_id, 816, &format!("{}@{}", stolen, victim_name));
 
                 send_stats_gold(state, conn_id).await;
                 send_stats_gold(state, target_conn).await;
             } else {
-                state.send_msg_id(conn_id, 818, "").await;
+                state.send_msg_id(conn_id, 818, "");
             }
         }
 
         // VB6: Notify victim on success
         let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_msg_id(target_conn, 819, &thief_name).await;
+        state.send_msg_id(target_conn, 819, &thief_name);
 
         // VB6: SubirSkill on success
         if let Some(u) = state.users.get_mut(&conn_id) {
@@ -156,8 +156,8 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
     } else {
         // Fail — notify victim
         let thief_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_msg_id(conn_id, 818, "").await;
-        state.send_console(target_conn, &format!("{} ha intentado robarte!", thief_name), font_index::FIGHT).await;
+        state.send_msg_id(conn_id, 818, "");
+        state.send_console(target_conn, &format!("{} ha intentado robarte!", thief_name), font_index::FIGHT);
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 2, false);
@@ -182,13 +182,13 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
         .map(|m| m.info.ocultar_sin_efecto)
         .unwrap_or(false);
     if ocultar_blocked {
-        state.send_msg_id(conn_id, 838, "").await;
+        state.send_msg_id(conn_id, 838, "");
         return;
     }
 
     // VB6: Can't hide while navigating (except pirate)
     if navigating && class != PlayerClass::Pirata {
-        state.send_console(conn_id, "No puedes ocultarte navegando.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes ocultarte navegando.", font_index::INFO);
         return;
     }
 
@@ -203,16 +203,16 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
         }
         // Broadcast visibility restoration to area
         let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
         let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
-        state.send_data_bytes(SendTarget::ToMap(map), &nover).await;
-        state.send_bytes(conn_id, &nover).await;
+        state.send_data_bytes(SendTarget::ToMap(map), &nover);
+        state.send_bytes(conn_id, &nover);
         // Now fall through to the normal hide check below
     } else if already_hidden {
         // Already hidden (not from spell) — "Ya estás oculto."
-        state.send_console(conn_id, "Ya estás oculto.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya estás oculto.", font_index::INFO);
         return;
     }
 
@@ -248,22 +248,22 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             for other_id in area_users {
                 if same_clan(state, conn_id, other_id) {
                     // Clanmate: SetInvisible → they see character semi-transparent
-                    state.send_bytes(other_id, &nover).await;
+                    state.send_bytes(other_id, &nover);
                 } else {
                     // Non-clanmate: remove character entirely
-                    state.send_bytes(other_id, &bp_remove).await;
+                    state.send_bytes(other_id, &bp_remove);
                 }
             }
             // Tell self we're invisible
-            state.send_bytes(conn_id, &nover).await;
+            state.send_bytes(conn_id, &nover);
         }
-        state.send_msg_id(conn_id, 808, "").await; // "Te has ocultado."
+        state.send_msg_id(conn_id, 808, ""); // "Te has ocultado."
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 7, true); // Ocultarse = index 7
         }
     } else {
         // Failure
-        state.send_msg_id(conn_id, 809, "").await; // "No has logrado ocultarte."
+        state.send_msg_id(conn_id, 809, ""); // "No has logrado ocultarte."
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 7, false);
         }

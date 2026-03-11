@@ -973,20 +973,20 @@ impl GameState {
         None
     }
 
-    /// Send raw binary bytes to a specific connection (13.3 protocol, no encryption).
-    pub async fn send_bytes(&mut self, conn_id: ConnectionId, data: &[u8]) {
+    /// Buffer raw binary bytes for a specific connection (13.3 protocol, no encryption).
+    /// Data is not sent immediately — call flush_all_writers() at end of tick.
+    pub fn send_bytes(&mut self, conn_id: ConnectionId, data: &[u8]) {
         if let Some(writer) = self.writers.get_mut(&conn_id) {
-            if let Err(e) = writer.send_packet(data).await {
-                tracing::warn!("Failed to send to #{}: {}", conn_id, e);
-            }
+            writer.send_packet(data);
         }
     }
 
-    /// Send binary data using routing target (matches VB6 SendData).
-    pub async fn send_data_bytes(&mut self, target: SendTarget, data: &[u8]) {
+    /// Buffer binary data using routing target (matches VB6 SendData).
+    /// Data is not sent immediately — call flush_all_writers() at end of tick.
+    pub fn send_data_bytes(&mut self, target: SendTarget, data: &[u8]) {
         match target {
             SendTarget::ToIndex(conn_id) => {
-                self.send_bytes(conn_id, data).await;
+                self.send_bytes(conn_id, data);
             }
             SendTarget::ToAll => {
                 let ids: Vec<ConnectionId> = self.users.values()
@@ -994,7 +994,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_bytes(id, data).await;
+                    self.send_bytes(id, data);
                 }
             }
             SendTarget::ToMap(map) => {
@@ -1003,7 +1003,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_bytes(id, data).await;
+                    self.send_bytes(id, data);
                 }
             }
             SendTarget::ToArea { map, x, y } => {
@@ -1013,7 +1013,7 @@ impl GameState {
                     Vec::new()
                 };
                 for id in ids {
-                    self.send_bytes(id, data).await;
+                    self.send_bytes(id, data);
                 }
             }
             SendTarget::ToAreaButIndex { conn_id, map, x, y } => {
@@ -1024,7 +1024,7 @@ impl GameState {
                 };
                 for id in ids {
                     if id != conn_id {
-                        self.send_bytes(id, data).await;
+                        self.send_bytes(id, data);
                     }
                 }
             }
@@ -1034,7 +1034,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_bytes(id, data).await;
+                    self.send_bytes(id, data);
                 }
             }
             SendTarget::ToGuildMembers(guild_index) => {
@@ -1044,7 +1044,7 @@ impl GameState {
                         .map(|u| u.conn_id)
                         .collect();
                     for id in ids {
-                        self.send_bytes(id, data).await;
+                        self.send_bytes(id, data);
                     }
                 }
             }
@@ -1054,7 +1054,7 @@ impl GameState {
                     .map(|u| u.conn_id)
                     .collect();
                 for id in ids {
-                    self.send_bytes(id, data).await;
+                    self.send_bytes(id, data);
                 }
             }
         }
@@ -1072,68 +1072,85 @@ impl GameState {
         }
     }
 
-    /// Send binary bytes and then close the connection.
+    /// Buffer binary bytes, flush immediately, and then close the connection.
     pub async fn send_bytes_and_close(&mut self, conn_id: ConnectionId, data: &[u8]) {
-        self.send_bytes(conn_id, data).await;
+        self.send_bytes(conn_id, data);
         if let Some(mut writer) = self.writers.remove(&conn_id) {
-            writer.shutdown().await;
+            writer.shutdown().await; // shutdown() flushes buffer first
+        }
+    }
+
+    /// Flush all connection write buffers to TCP sockets.
+    /// Called once at the end of each game loop iteration to batch writes.
+    pub async fn flush_all_writers(&mut self) {
+        let mut failed: Vec<ConnectionId> = Vec::new();
+        for (id, writer) in self.writers.iter_mut() {
+            if let Err(e) = writer.flush().await {
+                tracing::warn!("Flush failed for #{}: {}", id, e);
+                failed.push(*id);
+            }
+        }
+        for id in failed {
+            if let Some(mut writer) = self.writers.remove(&id) {
+                writer.shutdown().await;
+            }
         }
     }
 
     // ── Binary packet send helpers ─────────────────────────────
 
     /// Send a console message by text ID (Textos.ao lookup).
-    pub async fn send_msg_id(&mut self, conn_id: ConnectionId, msg_id: i16, args: &str) {
+    pub fn send_msg_id(&mut self, conn_id: ConnectionId, msg_id: i16, args: &str) {
         let pkt = crate::protocol::binary_packets::write_console_msg_id(msg_id, args);
-        self.send_bytes(conn_id, &pkt).await;
+        self.send_bytes(conn_id, &pkt);
     }
 
     /// Send an inline console message with font index.
-    pub async fn send_console(&mut self, conn_id: ConnectionId, msg: &str, font: u8) {
+    pub fn send_console(&mut self, conn_id: ConnectionId, msg: &str, font: u8) {
         let pkt = crate::protocol::binary_packets::write_console_msg(msg, font);
-        self.send_bytes(conn_id, &pkt).await;
+        self.send_bytes(conn_id, &pkt);
     }
 
     /// Send a console message by text ID using routing target.
-    pub async fn send_msg_id_to(&mut self, target: SendTarget, msg_id: i16, args: &str) {
+    pub fn send_msg_id_to(&mut self, target: SendTarget, msg_id: i16, args: &str) {
         let pkt = crate::protocol::binary_packets::write_console_msg_id(msg_id, args);
-        self.send_data_bytes(target, &pkt).await;
+        self.send_data_bytes(target, &pkt);
     }
 
     /// Send an inline console message with font index using routing target.
-    pub async fn send_console_to(&mut self, target: SendTarget, msg: &str, font: u8) {
+    pub fn send_console_to(&mut self, target: SendTarget, msg: &str, font: u8) {
         let pkt = crate::protocol::binary_packets::write_console_msg(msg, font);
-        self.send_data_bytes(target, &pkt).await;
+        self.send_data_bytes(target, &pkt);
     }
 
     /// Send chat-over-head to a target group.
-    pub async fn send_chat_over_head_to(&mut self, target: SendTarget, msg: &str, char_index: i16, color: i32) {
+    pub fn send_chat_over_head_to(&mut self, target: SendTarget, msg: &str, char_index: i16, color: i32) {
         let pkt = crate::protocol::binary_packets::write_chat_over_head(msg, char_index, color);
-        self.send_data_bytes(target, &pkt).await;
+        self.send_data_bytes(target, &pkt);
     }
 
     /// Send area talk chat.
-    pub async fn send_chat_talk_to(&mut self, target: SendTarget, char_index: i16, msg: &str, color: i32) {
+    pub fn send_chat_talk_to(&mut self, target: SendTarget, char_index: i16, msg: &str, color: i32) {
         let pkt = crate::protocol::binary_packets::write_chat_talk(char_index, msg, color);
-        self.send_data_bytes(target, &pkt).await;
+        self.send_data_bytes(target, &pkt);
     }
 
     /// Send GM broadcast to target.
-    pub async fn send_gm_broadcast_to(&mut self, target: SendTarget, msg: &str) {
+    pub fn send_gm_broadcast_to(&mut self, target: SendTarget, msg: &str) {
         let pkt = crate::protocol::binary_packets::write_gm_broadcast(msg);
-        self.send_data_bytes(target, &pkt).await;
+        self.send_data_bytes(target, &pkt);
     }
 
     /// Send guild chat to target.
-    pub async fn send_guild_chat_to(&mut self, target: SendTarget, msg: &str) {
+    pub fn send_guild_chat_to(&mut self, target: SendTarget, msg: &str) {
         let pkt = crate::protocol::binary_packets::write_guild_chat(msg);
-        self.send_data_bytes(target, &pkt).await;
+        self.send_data_bytes(target, &pkt);
     }
 
     /// Send whisper to a specific connection.
-    pub async fn send_whisper(&mut self, conn_id: ConnectionId, msg: &str, font: u8) {
+    pub fn send_whisper(&mut self, conn_id: ConnectionId, msg: &str, font: u8) {
         let pkt = crate::protocol::binary_packets::write_chat_whisper(msg, font);
-        self.send_bytes(conn_id, &pkt).await;
+        self.send_bytes(conn_id, &pkt);
     }
 
     /// Check if a tile is blocked (from static map data).

@@ -82,28 +82,28 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
         // Level up sound + FX
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8));
         state.send_data_bytes(
             SendTarget::ToArea { map, x, y },
             &binary_packets::write_char_particle_create(char_index as i16, 58),
-        ).await;
+        );
 
         // VB6: ||67 = "Has subido de nivel!"
-        state.send_msg_id(conn_id, 67, "").await;
+        state.send_msg_id(conn_id, 67, "");
 
         // VB6: Stat gain notifications (||71=HP, ||72=STA, ||73=MANA, ||74/75=HIT)
         if hp_gain > 0 {
-            state.send_msg_id(conn_id, 71, &hp_gain.to_string()).await;
+            state.send_msg_id(conn_id, 71, &hp_gain.to_string());
         }
         if sta_gain > 0 {
-            state.send_msg_id(conn_id, 72, &sta_gain.to_string()).await;
+            state.send_msg_id(conn_id, 72, &sta_gain.to_string());
         }
         if mana_gain > 0 {
-            state.send_msg_id(conn_id, 73, &mana_gain.to_string()).await;
+            state.send_msg_id(conn_id, 73, &mana_gain.to_string());
         }
         if hit_gain > 0 {
-            state.send_msg_id(conn_id, 74, &hit_gain.to_string()).await;
-            state.send_msg_id(conn_id, 75, &hit_gain.to_string()).await;
+            state.send_msg_id(conn_id, 74, &hit_gain.to_string());
+            state.send_msg_id(conn_id, 75, &hit_gain.to_string());
         }
 
         // VB6: +5 skill points per level
@@ -112,7 +112,7 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         }
 
         // Send updated stats
-        state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8));
         send_stats_hp(state, conn_id).await;
         send_stats_mana(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
@@ -128,14 +128,14 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.gold += gold_bonus as i64;
             }
-            state.send_msg_id(conn_id, 63, &gold_bonus.to_string()).await;
+            state.send_msg_id(conn_id, 63, &gold_bonus.to_string());
             send_stats_gold(state, conn_id).await;
         }
 
         // 13.3: Level 50 — announcement + skill points (one-time)
         if new_level == 50 {
-            state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535).await;
-            state.send_msg_id(conn_id, 57, "50").await;
+            state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535);
+            state.send_msg_id(conn_id, 57, "50");
             // TODO: AgregarPuntos(50) — add 50 free skill points
         }
 

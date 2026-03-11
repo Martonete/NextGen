@@ -13,7 +13,7 @@ pub(super) async fn handle_slash_gmsg(state: &mut GameState, conn_id: Connection
         _ => return,
     };
     let _ = priv_level;
-    state.send_msg_id_to(SendTarget::ToAdmins, 429, &format!("{}@{}", name, text)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 429, &format!("{}@{}", name, text));
     info!("[GM] {} sent GMSG: {}", name, text);
 }
 
@@ -23,7 +23,7 @@ pub(super) async fn handle_slash_smsg(state: &mut GameState, conn_id: Connection
         Some(u) if u.logged && u.privileges > privilege_level::USER => u.char_name.clone(),
         _ => return,
     };
-    state.send_gm_broadcast_to(SendTarget::ToAll, text).await;
+    state.send_gm_broadcast_to(SendTarget::ToAll, text);
     info!("[GM] {} sent SMSG: {}", name, text);
 }
 
@@ -36,7 +36,7 @@ pub(super) async fn handle_slash_rmsg(state: &mut GameState, conn_id: Connection
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     // VB6: N|<admin>> <message> with green/server font
-    state.send_console_to(SendTarget::ToAll, &format!("{}>> {}", admin_name, text), font_index::SERVER).await;
+    state.send_console_to(SendTarget::ToAll, &format!("{}>> {}", admin_name, text), font_index::SERVER);
     info!("[GM] {} broadcast: {}", admin_name, text);
 }
 
@@ -53,7 +53,7 @@ pub(super) async fn handle_slash_lmsg(state: &mut GameState, conn_id: Connection
     if text.is_empty() {
         state.auto_msg_active = false;
         state.auto_msg_text.clear();
-        state.send_console(conn_id, "Mensaje automatico desactivado.", font_index::INFO).await;
+        state.send_console(conn_id, "Mensaje automatico desactivado.", font_index::INFO);
         return;
     }
 
@@ -63,7 +63,7 @@ pub(super) async fn handle_slash_lmsg(state: &mut GameState, conn_id: Connection
     state.auto_msg_interval = minutes;
     state.auto_msg_counter = 0;
 
-    state.send_console(conn_id, &format!("Mensaje automatico cada {}min: {}", minutes, text), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Mensaje automatico cada {}min: {}", minutes, text), font_index::INFO);
 }
 
 /// /EXP multiplier — Set experience multiplier.
@@ -75,12 +75,12 @@ pub(super) async fn handle_slash_exp_mult(state: &mut GameState, conn_id: Connec
 
     let mult: i32 = val.parse().unwrap_or(0);
     if mult < 1 {
-        state.send_console(conn_id, "Valor invalido.", font_index::INFO).await;
+        state.send_console(conn_id, "Valor invalido.", font_index::INFO);
         return;
     }
 
     state.multiplicador_exp = mult;
-    state.send_msg_id_to(SendTarget::ToAll, 774, &mult.to_string()).await;
+    state.send_msg_id_to(SendTarget::ToAll, 774, &mult.to_string());
     info!("[GM] EXP multiplier set to {}x", mult);
 }
 
@@ -93,12 +93,12 @@ pub(super) async fn handle_slash_gld_mult(state: &mut GameState, conn_id: Connec
 
     let mult: i32 = val.parse().unwrap_or(0);
     if mult < 1 {
-        state.send_console(conn_id, "Valor invalido.", font_index::INFO).await;
+        state.send_console(conn_id, "Valor invalido.", font_index::INFO);
         return;
     }
 
     state.multiplicador_oro = mult;
-    state.send_msg_id_to(SendTarget::ToAll, 775, &mult.to_string()).await;
+    state.send_msg_id_to(SendTarget::ToAll, 775, &mult.to_string());
     info!("[GM] Gold multiplier set to {}x", mult);
 }
 
@@ -111,12 +111,12 @@ pub(super) async fn handle_slash_drop_mult(state: &mut GameState, conn_id: Conne
 
     let mult: i32 = val.parse().unwrap_or(0);
     if mult < 1 {
-        state.send_console(conn_id, "Valor invalido.", font_index::INFO).await;
+        state.send_console(conn_id, "Valor invalido.", font_index::INFO);
         return;
     }
 
     state.multiplicador_drop = mult;
-    state.send_msg_id_to(SendTarget::ToAll, 776, &mult.to_string()).await;
+    state.send_msg_id_to(SendTarget::ToAll, 776, &mult.to_string());
     info!("[GM] Drop multiplier set to {}x", mult);
 }
 
@@ -131,7 +131,7 @@ pub(super) async fn handle_slash_off(state: &mut GameState, conn_id: ConnectionI
     info!("[GM] {} shutting down server", admin_name);
 
     // Send shutdown message to all
-    state.send_console_to(SendTarget::ToAll, &format!("Servidor apagado por {}.", admin_name), font_index::FIGHT).await;
+    state.send_console_to(SendTarget::ToAll, &format!("Servidor apagado por {}.", admin_name), font_index::FIGHT);
 
     // Exit process
     std::process::exit(0);
@@ -158,7 +158,7 @@ pub(super) async fn handle_slash_echartodospjs(state: &mut GameState, conn_id: C
     }
 
     let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("{} jugadores desconectados.", count), font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} jugadores desconectados.", count), font_index::INFO);
     info!("[GM] {} kicked all {} players", admin_name, count);
 }
 
@@ -168,9 +168,9 @@ pub(super) async fn handle_slash_noglobal(state: &mut GameState, conn_id: Connec
     if priv_level < 4 { return; } // Dios+
     state.chat_global = !state.chat_global;
     if state.chat_global {
-        state.send_msg_id_to(SendTarget::ToAll, 803, "").await;
+        state.send_msg_id_to(SendTarget::ToAll, 803, "");
     } else {
-        state.send_msg_id_to(SendTarget::ToAll, 804, "").await;
+        state.send_msg_id_to(SendTarget::ToAll, 804, "");
     }
 }
 
@@ -183,7 +183,7 @@ pub(super) async fn handle_slash_fps(state: &mut GameState, conn_id: ConnectionI
 
     let online = state.users.values().filter(|u| u.logged).count();
     let npc_count = state.active_npc_indices.len();
-    state.send_console(conn_id, &format!("Online: {} | NPCs: {} | Record: {}", online, npc_count, state.record_users), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Online: {} | NPCs: {} | Record: {}", online, npc_count, state.record_users), font_index::INFO);
 }
 
 /// /CT map x y — Create teleport at current position (requires map .inf modification).
@@ -194,7 +194,7 @@ pub(super) async fn handle_slash_ct(state: &mut GameState, conn_id: ConnectionId
     }
     // Teleport creation requires modifying map .inf files which is not yet supported.
     // In VB6 this modifies MapData().TileExit in memory.
-    state.send_console(conn_id, "Creacion de teleports no soportada aun (requiere edicion de .inf).", font_index::INFO).await;
+    state.send_console(conn_id, "Creacion de teleports no soportada aun (requiere edicion de .inf).", font_index::INFO);
 }
 
 /// /DT — Destroy teleport at current position.
@@ -203,7 +203,7 @@ pub(super) async fn handle_slash_dt(state: &mut GameState, conn_id: ConnectionId
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => return,
     }
-    state.send_console(conn_id, "Destruccion de teleports no soportada aun (requiere edicion de .inf).", font_index::INFO).await;
+    state.send_console(conn_id, "Destruccion de teleports no soportada aun (requiere edicion de .inf).", font_index::INFO);
 }
 
 /// /RESMAP — Respawn all NPCs on current map.
@@ -231,7 +231,7 @@ pub(super) async fn handle_slash_resmap(state: &mut GameState, conn_id: Connecti
         }
     }
 
-    state.send_console(conn_id, &format!("{} NPCs respawneados en mapa {}.", respawned, map), font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} NPCs respawneados en mapa {}.", respawned, map), font_index::INFO);
 }
 
 /// /TALKAS text — Send message as NPC/anonymous.
@@ -247,7 +247,7 @@ pub(super) async fn handle_slash_talkas(state: &mut GameState, conn_id: Connecti
     };
 
     // Yellow color = 16776960, char_index 0 = anonymous
-    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, 0, args, 16776960).await;
+    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, 0, args, 16776960);
 }
 
 /// /SETDESC nick description — Set NPC/user description.
@@ -257,7 +257,7 @@ pub(super) async fn handle_slash_setdesc(state: &mut GameState, conn_id: Connect
         _ => return,
     }
 
-    state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO).await;
+    state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO);
 }
 
 /// /CHEAT nick — Toggle god mode for user (full HP/MP/STA regen).
@@ -294,7 +294,7 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
             let particle_id: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             if particle_id == 0 { return; }
             let pkt = binary_packets::write_particle_create(particle_id as i16, x as u8, y as u8, 0);
-            state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt);
         }
         "LUZ" => {
             // VB6: /MODMAPINFO LUZ <range> <R> <G> <B>
@@ -304,7 +304,7 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
             let g: i32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
             let b: i32 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
             let pkt = binary_packets::write_light_create(x as u8, y as u8, range as u8, r as u8, g as u8, b as u8);
-            state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt);
         }
         "RGB" => {
             // VB6: /MODMAPINFO RGB <R> <G> <B> — Set map ambient light
@@ -317,7 +317,7 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
                 game_map.info.b = b;
             }
             let pkt = binary_packets::write_ambient_color(r as u8, g as u8, b as u8);
-            state.send_data_bytes(SendTarget::ToMap(map), &pkt).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt);
         }
         _ => {}
     }
@@ -332,7 +332,7 @@ pub(super) async fn handle_slash_nave(state: &mut GameState, conn_id: Connection
         user.navigating = !user.navigating;
         let status = if user.navigating { "activada" } else { "desactivada" };
         let conn = user.conn_id;
-        state.send_console(conn, &format!("Navegacion {}", status), font_index::SERVER).await;
+        state.send_console(conn, &format!("Navegacion {}", status), font_index::SERVER);
     }
 }
 
@@ -343,10 +343,10 @@ pub(super) async fn handle_slash_habilitar(state: &mut GameState, conn_id: Conne
         _ => return,
     }
     if state.server_solo_gms {
-        state.send_msg_id(conn_id, 563, "").await; // Server abierto
+        state.send_msg_id(conn_id, 563, ""); // Server abierto
         state.server_solo_gms = false;
     } else {
-        state.send_msg_id(conn_id, 564, "").await; // Server solo GMs
+        state.send_msg_id(conn_id, 564, ""); // Server solo GMs
         state.server_solo_gms = true;
     }
 }
@@ -377,7 +377,7 @@ pub(super) async fn handle_slash_col(state: &mut GameState, conn_id: ConnectionI
         _ => return,
     };
 
-    state.send_console_to(SendTarget::ToAll, &format!("{}> {}", name, msg_text), font_id).await;
+    state.send_console_to(SendTarget::ToAll, &format!("{}> {}", name, msg_text), font_id);
 }
 
 /// /RESETVALS <type> — Reset arena/duel/CvC state. Requires Semidios+.
@@ -391,10 +391,10 @@ pub(super) async fn handle_slash_resetvals(state: &mut GameState, conn_id: Conne
     let vt = val_type.to_uppercase();
     match vt.as_str() {
         "INVOCACIONES" => {
-            state.send_msg_id(conn_id, 590, "").await;
+            state.send_msg_id(conn_id, 590, "");
         }
         _ => {
-            state.send_msg_id(conn_id, 585, "").await;
+            state.send_msg_id(conn_id, 585, "");
         }
     }
     info!("[GM] Reset vals: {}", vt);
@@ -420,11 +420,11 @@ pub(super) async fn handle_reload_sini(state: &mut GameState, conn_id: Connectio
             // Reload role overrides from server.ini (VB6: /RELOADSINI also reloads role lists)
             state.role_overrides = crate::config::load_roles(&base);
 
-            state.send_console(conn_id, &format!("server.ini recargado ({} roles).", state.role_overrides.len()), font_index::INFO).await;
+            state.send_console(conn_id, &format!("server.ini recargado ({} roles).", state.role_overrides.len()), font_index::INFO);
             info!("[GM] {} reloaded server.ini ({} role overrides)", name, state.role_overrides.len());
         }
         Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando server.ini: {}", e), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Error recargando server.ini: {}", e), font_index::INFO);
         }
     }
 }
@@ -441,11 +441,11 @@ pub(super) async fn handle_reload_objects(state: &mut GameState, conn_id: Connec
         Ok(objects) => {
             let count = objects.len();
             state.game_data.objects = objects;
-            state.send_console(conn_id, &format!("Obj.dat recargado ({} objetos).", count), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Obj.dat recargado ({} objetos).", count), font_index::INFO);
             info!("[GM] {} reloaded Obj.dat ({} objects)", name, count);
         }
         Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando Obj.dat: {}", e), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Error recargando Obj.dat: {}", e), font_index::INFO);
         }
     }
 }
@@ -462,11 +462,11 @@ pub(super) async fn handle_reload_spells(state: &mut GameState, conn_id: Connect
         Ok(spells) => {
             let count = spells.len();
             state.game_data.spells = spells;
-            state.send_console(conn_id, &format!("Hechizos.dat recargado ({} hechizos).", count), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Hechizos.dat recargado ({} hechizos).", count), font_index::INFO);
             info!("[GM] {} reloaded Hechizos.dat ({} spells)", name, count);
         }
         Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando Hechizos.dat: {}", e), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Error recargando Hechizos.dat: {}", e), font_index::INFO);
         }
     }
 }
@@ -483,11 +483,11 @@ pub(super) async fn handle_reload_npcs(state: &mut GameState, conn_id: Connectio
         Ok(npc_db) => {
             let count = npc_db.count();
             state.game_data.npcs = npc_db;
-            state.send_console(conn_id, &format!("NPCs.dat recargado ({} NPCs).", count), font_index::INFO).await;
+            state.send_console(conn_id, &format!("NPCs.dat recargado ({} NPCs).", count), font_index::INFO);
             info!("[GM] {} reloaded NPCs.dat ({} NPCs)", name, count);
         }
         Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando NPCs.dat: {}", e), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Error recargando NPCs.dat: {}", e), font_index::INFO);
         }
     }
 }
@@ -503,11 +503,11 @@ pub(super) async fn handle_reload_balance(state: &mut GameState, conn_id: Connec
     match crate::data::balance::load_balance(&base) {
         Ok(balance) => {
             state.game_data.balance = balance;
-            state.send_console(conn_id, "Balance recargado.", font_index::INFO).await;
+            state.send_console(conn_id, "Balance recargado.", font_index::INFO);
             info!("[GM] {} reloaded Balance data", name);
         }
         Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando Balance: {}", e), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Error recargando Balance: {}", e), font_index::INFO);
         }
     }
 }
@@ -523,7 +523,7 @@ pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: Connection
     let map_num: usize = match map_str.trim().parse() {
         Ok(n) if n >= 1 => n,
         _ => {
-            state.send_console(conn_id, "Uso: /LOADMAP <numero>", font_index::INFO).await;
+            state.send_console(conn_id, "Uso: /LOADMAP <numero>", font_index::INFO);
             return;
         }
     };
@@ -540,11 +540,11 @@ pub(super) async fn handle_reload_map(state: &mut GameState, conn_id: Connection
             // Also update the world grid for this map
             state.world.reload_map(map_num, &state.game_data.maps);
 
-            state.send_console(conn_id, &format!("Mapa {} recargado.", map_num), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Mapa {} recargado.", map_num), font_index::INFO);
             info!("[GM] {} reloaded map {}", name, map_num);
         }
         Err(e) => {
-            state.send_console(conn_id, &format!("Error recargando mapa {}: {}", map_num, e), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Error recargando mapa {}: {}", map_num, e), font_index::INFO);
         }
     }
 }
@@ -562,18 +562,18 @@ pub(super) async fn handle_slash_cont(state: &mut GameState, conn_id: Connection
 
     let seconds: i32 = args.trim().parse().unwrap_or(-1);
     if seconds < 0 || seconds > 60 {
-        state.send_console(conn_id, "Uso: /CONT 0-60 (0 = cancelar)", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /CONT 0-60 (0 = cancelar)", font_index::INFO);
         return;
     }
 
     if seconds == 0 {
         state.countdown_seconds = 0;
-        state.send_console(conn_id, "Cuenta regresiva cancelada.", font_index::INFO).await;
+        state.send_console(conn_id, "Cuenta regresiva cancelada.", font_index::INFO);
     } else {
         state.countdown_seconds = seconds;
         // VB6: broadcasts ||739@seconds
-        state.send_msg_id_to(SendTarget::ToAll, 739, &seconds.to_string()).await;
-        state.send_console(conn_id, &format!("Cuenta regresiva iniciada: {} segundos.", seconds), font_index::INFO).await;
+        state.send_msg_id_to(SendTarget::ToAll, 739, &seconds.to_string());
+        state.send_console(conn_id, &format!("Cuenta regresiva iniciada: {} segundos.", seconds), font_index::INFO);
     }
 }
 
@@ -582,7 +582,7 @@ pub(super) async fn handle_slash_lluvia(state: &mut GameState, conn_id: Connecti
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -591,10 +591,10 @@ pub(super) async fn handle_slash_lluvia(state: &mut GameState, conn_id: Connecti
     state.rain_counter = 0;
 
     let status = if state.raining { "activada" } else { "desactivada" };
-    state.send_console(conn_id, &format!("Lluvia {}.", status), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Lluvia {}.", status), font_index::INFO);
 
     // Broadcast rain toggle to all connected users
-    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_rain_toggle()).await;
+    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_rain_toggle());
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} toggled rain: {}", gm_name, state.raining);
@@ -605,7 +605,7 @@ pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: Connectio
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -613,7 +613,7 @@ pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: Connectio
     state.forced_night = !state.forced_night;
 
     let status = if state.forced_night { "activada" } else { "desactivada" };
-    state.send_console(conn_id, &format!("Noche forzada {}.", status), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Noche forzada {}.", status), font_index::INFO);
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} toggled forced night: {}", gm_name, state.forced_night);
@@ -626,7 +626,7 @@ pub(super) async fn handle_slash_showname(state: &mut GameState, conn_id: Connec
             (u.pos_map, u.pos_x, u.pos_y)
         }
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     };
@@ -638,10 +638,10 @@ pub(super) async fn handle_slash_showname(state: &mut GameState, conn_id: Connec
 
     // Re-broadcast CC so clients see updated name visibility
     let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
 
     let status = if new_val { "visible" } else { "oculto" };
-    state.send_console(conn_id, &format!("Tu nombre ahora es {}.", status), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Tu nombre ahora es {}.", status), font_index::INFO);
 }
 
 /// /MAPMSG <text> — Send message to all users on current map. Requires DIOS+.
@@ -649,13 +649,13 @@ pub(super) async fn handle_slash_mapmsg(state: &mut GameState, conn_id: Connecti
     let map = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => u.pos_map,
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     };
 
     if text.is_empty() {
-        state.send_console(conn_id, "Uso: /MAPMSG mensaje", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /MAPMSG mensaje", font_index::INFO);
         return;
     }
 
@@ -669,10 +669,10 @@ pub(super) async fn handle_slash_mapmsg(state: &mut GameState, conn_id: Connecti
         .collect();
 
     for uid in &map_users {
-        state.send_console(*uid, &msg, font_index::SERVER).await;
+        state.send_console(*uid, &msg, font_index::SERVER);
     }
 
-    state.send_console(conn_id, &format!("Mensaje enviado a {} usuarios en mapa {}.", map_users.len(), map), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Mensaje enviado a {} usuarios en mapa {}.", map_users.len(), map), font_index::INFO);
     info!("[GM] {} sent MAPMSG on map {}: {}", gm_name, map, text);
 }
 

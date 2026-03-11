@@ -41,7 +41,7 @@ pub async fn tick_intervals(state: &mut GameState) {
     // Send PARADOK to users who just got unparalyzed
     for conn_id in unparalyze {
         let pkt = binary_packets::write_paralize_ok(0);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 
     // VB6: EfectoInvisibilidad — count up invisibility timer each tick.
@@ -64,16 +64,16 @@ pub async fn tick_intervals(state: &mut GameState) {
     }
     for (conn_id, ci, map, x, y, navigating, still_hidden) in uninvis {
         if !still_hidden {
-            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
             if !navigating {
                 // Re-broadcast CC so others see us again
                 let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
                 let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
                 // Tell self we're visible again
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
-                state.send_bytes(conn_id, &nover).await;
+                state.send_bytes(conn_id, &nover);
             }
         }
     }
@@ -102,14 +102,14 @@ pub async fn tick_intervals(state: &mut GameState) {
     }
     for (conn_id, ci, map, x, y, navigating, still_invisible) in unhide {
         if !still_invisible {
-            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+            state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
             if !navigating {
                 let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
                 let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
-                state.send_bytes(conn_id, &nover).await;
+                state.send_bytes(conn_id, &nover);
             }
         }
     }
@@ -131,13 +131,13 @@ pub async fn tick_intervals(state: &mut GameState) {
         }
     }
     for (conn_id, ci, map, x, y) in unmime {
-        state.send_console(conn_id, "Recuperas tu apariencia normal.", font_index::INFO).await;
+        state.send_console(conn_id, "Recuperas tu apariencia normal.", font_index::INFO);
         if let Some(u) = state.users.get(&conn_id) {
             let cp = binary_packets::write_character_change(
                 ci, u.body as i16, u.head as i16, u.heading as u8,
                 u.equip.weapon as i16, u.equip.shield as i16, u.equip.helmet as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
         }
     }
 
@@ -170,7 +170,7 @@ pub async fn tick_intervals(state: &mut GameState) {
         }
     }
     for conn_id in clear_atacable {
-        state.send_console(conn_id, "El estado de duelo ha expirado.", font_index::INFO).await;
+        state.send_console(conn_id, "El estado de duelo ha expirado.", font_index::INFO);
     }
 
     // --- GoHome traveling system (VB6: dead user /HOGAR teleport after 10s delay) ---
@@ -195,7 +195,7 @@ pub async fn tick_intervals(state: &mut GameState) {
         let (home_map, home_x, home_y) = resolve_home_city(&hogar);
         if home_map > 0 {
             warp_user(state, conn_id, home_map, home_x, home_y).await;
-            state.send_console(conn_id, "Has llegado a tu hogar.", font_index::INFO).await;
+            state.send_console(conn_id, "Has llegado a tu hogar.", font_index::INFO);
         }
     }
 
@@ -234,7 +234,7 @@ pub async fn tick_intervals(state: &mut GameState) {
                     None => continue,
                 };
                 let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt);
                 remove_pet_from_owner(state, owner_conn, npc_idx);
                 state.kill_npc(npc_idx);
             } else {
@@ -344,7 +344,7 @@ pub async fn tick_clean_world(state: &mut GameState) {
                 }
                 // Broadcast BO (remove object from ground) to area
                 let pkt = binary_packets::write_object_delete(x as u8, y as u8);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
             }
 
             // Clear the cleanup slot

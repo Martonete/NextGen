@@ -101,7 +101,7 @@ pub(super) async fn send_lookat_user_info(state: &mut GameState, conn_id: Connec
             font_index::CIUDADANO        // blue
         };
 
-        state.send_console(conn_id, &stat, fi).await;
+        state.send_console(conn_id, &stat, fi);
     }
 }
 
@@ -120,7 +120,7 @@ pub(super) async fn send_lookat_npc_info(state: &mut GameState, conn_id: Connect
         if is_gm {
             msg_text.push_str(&format!(" ({}/{})", min_hp, max_hp));
         }
-        state.send_console(conn_id, &msg_text, font_index::INFO).await;
+        state.send_console(conn_id, &msg_text, font_index::INFO);
     }
 }
 
@@ -175,26 +175,26 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         .map(|u| u.equip.weapon > 0)
         .unwrap_or(false);
     if !weapon_equipped {
-        state.send_msg_id(conn_id, 26, "").await; // "Necesitas un arma mágica para lanzar hechizos"
+        state.send_msg_id(conn_id, 26, ""); // "Necesitas un arma mágica para lanzar hechizos"
         return;
     }
 
     if min_mana < spell.mana_requerido {
-        state.send_msg_id(conn_id, 18, "").await; // Not enough mana
+        state.send_msg_id(conn_id, 18, ""); // Not enough mana
         return;
     }
     // VB6: Stamina check (modHechizos.bas lines 468-475)
     if spell.sta_requerido > 0 {
         let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
         if sta < spell.sta_requerido {
-            state.send_msg_id(conn_id, 18, "").await; // Not enough stamina
+            state.send_msg_id(conn_id, 18, ""); // Not enough stamina
             return;
         }
     }
     if spell.min_skill > 0 {
         let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0);
         if magic_skill < spell.min_skill {
-            state.send_msg_id(conn_id, 834, "").await; // Magic skill too low
+            state.send_msg_id(conn_id, 834, ""); // Magic skill too low
             return;
         }
     }
@@ -209,7 +209,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 state.game_data.objects.get(obj_idx as usize).map(|o| o.staff_power).unwrap_or(0)
             } else { 0 };
             if staff_power < spell.need_staff {
-                state.send_msg_id(conn_id, 835, "").await; // Staff too weak
+                state.send_msg_id(conn_id, 835, ""); // Staff too weak
                 return;
             }
         }
@@ -244,21 +244,21 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         TargetType::UserOnly => {
             // Needs a user target
             if !has_user_target {
-                state.send_msg_id(conn_id, 25, "").await; // No valid user target
+                state.send_msg_id(conn_id, 25, ""); // No valid user target
                 return;
             }
         }
         TargetType::NpcOnly => {
             // Needs an NPC target
             if !has_npc_target {
-                state.send_msg_id(conn_id, 29, "").await; // No valid NPC target
+                state.send_msg_id(conn_id, 29, ""); // No valid NPC target
                 return;
             }
         }
         TargetType::UserAndNpc => {
             // Needs either user or NPC
             if !has_user_target && !has_npc_target {
-                state.send_msg_id(conn_id, 25, "").await; // No valid target
+                state.send_msg_id(conn_id, 25, ""); // No valid target
                 return;
             }
         }
@@ -280,7 +280,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     if is_offensive {
         let attacker_trigger = get_map_tile_trigger(state, map, x, y);
         if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_msg_id(conn_id, 164, "").await; // Can't attack in safe zone
+            state.send_msg_id(conn_id, 164, ""); // Can't attack in safe zone
             return;
         }
     }
@@ -332,7 +332,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: Self-attack check (HechizoEstadoUsuario line 725, HechizoPropUsuario line 1425)
         if is_offensive && target_id == conn_id {
-            state.send_msg_id(conn_id, 31, "").await; // Can't attack yourself
+            state.send_msg_id(conn_id, 31, ""); // Can't attack yourself
             return; // NO mana consumed, NO FX
         }
 
@@ -341,7 +341,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             let victim_pos = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
             let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
             if victim_trigger == crate::data::maps::Trigger::SafeZone {
-                state.send_msg_id(conn_id, 164, "").await;
+                state.send_msg_id(conn_id, 164, "");
                 return;
             }
         }
@@ -355,13 +355,13 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 return;
             }
             if t_privs > 0 {
-                state.send_msg_id(conn_id, 155, "").await;
+                state.send_msg_id(conn_id, 155, "");
                 return;
             }
             // TSAO: Clan safe check — can't cast offensive spells on clanmates with seguro_clan on
             let caster_seguro = state.users.get(&conn_id).map(|u| u.seguro_clan).unwrap_or(false);
             if caster_seguro && same_clan(state, conn_id, target_id) {
-                state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO).await;
+                state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
                 return;
             }
         }
@@ -371,7 +371,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             let full_hp = state.users.get(&target_id)
                 .map(|u| u.min_hp >= u.max_hp).unwrap_or(false);
             if full_hp {
-                state.send_msg_id(conn_id, 145, "").await;
+                state.send_msg_id(conn_id, 145, "");
                 return;
             }
         }
@@ -512,7 +512,7 @@ pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: Conne
 
     // Magic words (overhead yellow text)
     if !spell.palabras_magicas.is_empty() {
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &spell.palabras_magicas, caster_ci.0 as i16, 16776960).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &spell.palabras_magicas, caster_ci.0 as i16, 16776960);
     }
 
     // Target char_index for FX
@@ -523,25 +523,25 @@ pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: Conne
     // FX + Sound
     if spell.fx_grh > 0 {
         let fx_pkt = binary_packets::write_create_fx(target_ci as i16, spell.fx_grh as i16, spell.loops as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
     }
 
     // Console messages (red font)
     if target_id != caster_id {
         let target_name = state.users.get(&target_id).map(|u| u.char_name.clone()).unwrap_or_default();
         if !spell.hechizero_msg.is_empty() {
-            state.send_console(caster_id, &format!("{} {}", spell.hechizero_msg, target_name), font_index::FIGHT).await;
+            state.send_console(caster_id, &format!("{} {}", spell.hechizero_msg, target_name), font_index::FIGHT);
         }
         if !spell.target_msg.is_empty() {
-            state.send_console(target_id, &format!("{} {}", caster_name, spell.target_msg), font_index::FIGHT).await;
+            state.send_console(target_id, &format!("{} {}", caster_name, spell.target_msg), font_index::FIGHT);
         }
     } else {
         if !spell.propio_msg.is_empty() {
-            state.send_console(caster_id, &spell.propio_msg, font_index::FIGHT).await;
+            state.send_console(caster_id, &spell.propio_msg, font_index::FIGHT);
         }
     }
 }
@@ -556,7 +556,7 @@ pub(super) async fn send_spell_info_npc(state: &mut GameState, caster_id: Connec
 
     // Magic words (overhead yellow text)
     if !spell.palabras_magicas.is_empty() {
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &spell.palabras_magicas, caster_ci.0 as i16, 16776960).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &spell.palabras_magicas, caster_ci.0 as i16, 16776960);
     }
 
     // NPC char_index for FX
@@ -566,16 +566,16 @@ pub(super) async fn send_spell_info_npc(state: &mut GameState, caster_id: Connec
 
     if spell.fx_grh > 0 {
         let fx_pkt = binary_packets::write_create_fx(npc_ci as i16, spell.fx_grh as i16, spell.loops as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
     }
 
     // Console message (red font)
     if !spell.hechizero_msg.is_empty() {
-        state.send_console(caster_id, &format!("{} la criatura.", spell.hechizero_msg), font_index::FIGHT).await;
+        state.send_console(caster_id, &format!("{} la criatura.", spell.hechizero_msg), font_index::FIGHT);
     }
 }
 
@@ -616,10 +616,10 @@ pub(super) async fn apply_spell_properties_npc(
 
     // Send damage number over NPC head (VB6: N| vbYellow°-<damage>°<npc_charindex>)
     let caster_map = state.users.get(&caster_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((npc_map, npc_x, npc_y));
-    state.send_chat_over_head_to(SendTarget::ToArea { map: caster_map.0, x: caster_map.1, y: caster_map.2 }, &format!("-{}", damage), npc_ci as i16, 65535).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map: caster_map.0, x: caster_map.1, y: caster_map.2 }, &format!("-{}", damage), npc_ci as i16, 65535);
 
     // Send damage console message to caster: ||850@<damage>
-    state.send_msg_id(caster_id, 850, &format!("{}", damage)).await;
+    state.send_msg_id(caster_id, 850, &format!("{}", damage));
 
     // Apply damage to NPC
     if let Some(npc) = state.get_npc_mut(npc_idx) {
@@ -640,7 +640,7 @@ pub(super) async fn apply_spell_properties_npc(
             if let Some(user) = state.users.get_mut(&caster_id) {
                 user.exp += exp_award;
             }
-            state.send_msg_id(caster_id, 170, &format!("{}", exp_award)).await;
+            state.send_msg_id(caster_id, 170, &format!("{}", exp_award));
             send_stats_exp(state, caster_id).await;
             check_user_level(state, caster_id).await;
         }
@@ -672,7 +672,7 @@ pub(super) async fn apply_spell_status_npc(
     if spell.paraliza {
         let npc_num = state.get_npc(npc_idx).map(|n| n.npc_number as i32).unwrap_or(0);
         if npc_num == ELEMENTAL_AGUA || npc_num == ELEMENTAL_FUEGO || npc_num == ELEMENTAL_TIERRA {
-            state.send_msg_id(caster_id, 846, "").await; // Immune
+            state.send_msg_id(caster_id, 846, ""); // Immune
             return;
         }
     }
@@ -861,7 +861,7 @@ pub(super) async fn apply_spell_properties(
     // VB6: floating yellow damage number above target for damage spells
     if damage_dealt > 0 {
         if let Some((ci, map, tx, ty)) = target_info {
-            state.send_chat_over_head_to(SendTarget::ToArea { map, x: tx, y: ty }, &format!("-{}", damage_dealt), ci as i16, 65535).await;
+            state.send_chat_over_head_to(SendTarget::ToArea { map, x: tx, y: ty }, &format!("-{}", damage_dealt), ci as i16, 65535);
         }
     }
 
@@ -891,7 +891,7 @@ pub(super) async fn apply_spell_status(
 ) {
     // VB6: Can't paralyze/immobilize yourself (||31)
     if (spell.paraliza || spell.inmoviliza) && caster_id == target_id {
-        state.send_msg_id(caster_id, 31, "").await;
+        state.send_msg_id(caster_id, 31, "");
         return;
     }
     // VB6: Can't poison yourself
@@ -906,7 +906,7 @@ pub(super) async fn apply_spell_status(
         let ring_slot = state.users.get(&target_id).map(|u| u.equip.ring).unwrap_or(0);
         let ring_obj = get_equipped_obj_index(state, target_id, ring_slot);
         if ring_obj == SUPERANILLO {
-            state.send_console(caster_id, "El Super Anillo rechaza el hechizo.", font_index::INFO).await;
+            state.send_console(caster_id, "El Super Anillo rechaza el hechizo.", font_index::INFO);
             return;
         }
     }
@@ -918,7 +918,7 @@ pub(super) async fn apply_spell_status(
 
     // VB6: Cure poison — can't cure dead users
     if spell.cura_veneno && target_dead {
-        state.send_console(caster_id, "¡El usuario está muerto!", font_index::INFO).await;
+        state.send_console(caster_id, "¡El usuario está muerto!", font_index::INFO);
         return;
     }
 
@@ -933,7 +933,7 @@ pub(super) async fn apply_spell_status(
             .map(|m| m.info.invi_sin_efecto)
             .unwrap_or(false);
         if invi_blocked {
-            state.send_console(caster_id, "La invisibilidad no funciona en este mapa.", font_index::INFO).await;
+            state.send_console(caster_id, "La invisibilidad no funciona en este mapa.", font_index::INFO);
             return;
         }
     }
@@ -1001,16 +1001,16 @@ pub(super) async fn apply_spell_status(
     if send_paradok_on {
         let para_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
         let pkt = binary_packets::write_paralize_ok(para_secs);
-        state.send_bytes(target_id, &pkt).await;
+        state.send_bytes(target_id, &pkt);
         // PU forces client position to server-known position (prevents ghost movement)
         if let Some(u) = state.users.get(&target_id) {
             let pu = binary_packets::write_pos_update(u.pos_x as u8, u.pos_y as u8);
-            state.send_bytes(target_id, &pu).await;
+            state.send_bytes(target_id, &pu);
         }
     }
     if send_paradok_off {
         let pkt = binary_packets::write_paralize_ok(0);
-        state.send_bytes(target_id, &pkt).await;
+        state.send_bytes(target_id, &pkt);
     }
 
     // Invisibility spell — remove from others' screens, tell self
@@ -1028,14 +1028,14 @@ pub(super) async fn apply_spell_status(
             for other_id in area_users {
                 if same_clan(state, target_id, other_id) {
                     // Clanmate: send SetInvisible so they see transparency, but don't remove
-                    state.send_bytes(other_id, &nover_pkt).await;
+                    state.send_bytes(other_id, &nover_pkt);
                 } else {
                     // Non-clanmate: remove character from their screen
-                    state.send_bytes(other_id, &bp_remove).await;
+                    state.send_bytes(other_id, &bp_remove);
                 }
             }
             // Tell self about invisibility status
-            state.send_bytes(target_id, &nover_pkt).await;
+            state.send_bytes(target_id, &nover_pkt);
         }
     }
 
@@ -1048,12 +1048,12 @@ pub(super) async fn apply_spell_status(
         if target_dead {
             // Check resurrection safety (target opted out)
             if target_seguro_resu {
-                state.send_msg_id(caster_id, 841, "").await;
+                state.send_msg_id(caster_id, 841, "");
                 return;
             }
             // Check resurrection cooldown
             if target_time_revivir > 0 {
-                state.send_msg_id(caster_id, 843, &format!("{}", target_time_revivir)).await;
+                state.send_msg_id(caster_id, 843, &format!("{}", target_time_revivir));
                 return;
             }
 
@@ -1079,7 +1079,7 @@ pub(super) async fn apply_spell_status(
                     target.min_sta = 0;
                 }
                 send_stats_hp(state, target_id).await;
-                state.send_msg_id(target_id, 749, &caster_name).await;
+                state.send_msg_id(target_id, 749, &caster_name);
             } else {
                 // Non-cleric: 10 second delayed resurrection
                 if let Some(target) = state.users.get_mut(&target_id) {
@@ -1090,7 +1090,7 @@ pub(super) async fn apply_spell_status(
                     target.min_mana = 0;
                     target.min_sta = 0;
                 }
-                state.send_msg_id(target_id, 845, "").await;
+                state.send_msg_id(target_id, 845, "");
             }
 
             // Caster pays HP cost — VB6 13.3: hp * (1 - target_level * 0.015)
@@ -1195,12 +1195,12 @@ pub(super) async fn apply_spell_invocation(
         .map(|m| m.info.invocar_sin_efecto)
         .unwrap_or(false);
     if invocar_blocked {
-        state.send_console(caster_id, "No puedes invocar criaturas en este mapa.", font_index::INFO).await;
+        state.send_console(caster_id, "No puedes invocar criaturas en este mapa.", font_index::INFO);
         return;
     }
 
     if nro_mascotas >= MAX_MASCOTAS {
-        state.send_console(caster_id, "No puedes invocar mas criaturas.", font_index::INFO).await;
+        state.send_console(caster_id, "No puedes invocar mas criaturas.", font_index::INFO);
         return;
     }
 
@@ -1216,15 +1216,15 @@ pub(super) async fn apply_spell_invocation(
         if let Some(user) = state.users.get(&caster_id) {
             match npc_num {
                 ELEMENTAL_AGUA if user.ele_de_agua => {
-                    state.send_msg_id(caster_id, 23, "").await; // Ya tienes un Elemental de Agua
+                    state.send_msg_id(caster_id, 23, ""); // Ya tienes un Elemental de Agua
                     return;
                 }
                 ELEMENTAL_FUEGO if user.ele_de_fuego => {
-                    state.send_msg_id(caster_id, 24, "").await; // Ya tienes un Elemental de Fuego
+                    state.send_msg_id(caster_id, 24, ""); // Ya tienes un Elemental de Fuego
                     return;
                 }
                 ELEMENTAL_TIERRA if user.ele_de_tierra => {
-                    state.send_msg_id(caster_id, 22, "").await; // Ya tienes un Elemental de Tierra
+                    state.send_msg_id(caster_id, 22, ""); // Ya tienes un Elemental de Tierra
                     return;
                 }
                 _ => {}
@@ -1269,7 +1269,7 @@ pub(super) async fn apply_spell_invocation(
             // Broadcast NPC creation using its CC packet
             let cc_pkt = state.get_npc(npc_idx).map(|n| n.build_cc_binary());
             if let Some(pkt) = cc_pkt {
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
             }
         }
     }
@@ -1336,9 +1336,9 @@ pub(super) async fn apply_spell_teleport(
 
     // VB6: QDL + BP sent to full area to prevent ghost characters
     let qdl_pkt = binary_packets::write_character_remove(char_index.0 as i16);
-    state.send_data_bytes(SendTarget::ToMapButIndex { conn_id: caster_id, map: cur_map }, &qdl_pkt).await;
+    state.send_data_bytes(SendTarget::ToMapButIndex { conn_id: caster_id, map: cur_map }, &qdl_pkt);
     let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
-    state.send_data_bytes(SendTarget::ToMapButIndex { conn_id: caster_id, map: cur_map }, &bp_pkt).await;
+    state.send_data_bytes(SendTarget::ToMapButIndex { conn_id: caster_id, map: cur_map }, &bp_pkt);
 
     // Update position
     if let Some(user) = state.users.get_mut(&caster_id) {
@@ -1360,19 +1360,19 @@ pub(super) async fn apply_spell_teleport(
 
     // Send map change packets
     let cm_pkt = binary_packets::write_change_map(dest_map as i16, 0, r as u8, g as u8, b as u8);
-    state.send_bytes(caster_id, &cm_pkt).await;
+    state.send_bytes(caster_id, &cm_pkt);
     let pu_pkt = binary_packets::write_pos_update(dest_x as u8, dest_y as u8);
-    state.send_bytes(caster_id, &pu_pkt).await;
+    state.send_bytes(caster_id, &pu_pkt);
     let midi_pkt = binary_packets::write_play_midi(music as u8);
-    state.send_bytes(caster_id, &midi_pkt).await;
+    state.send_bytes(caster_id, &midi_pkt);
     // Map name
     let mn_pkt = binary_packets::write_map_name(&map_name);
-    state.send_bytes(caster_id, &mn_pkt).await;
+    state.send_bytes(caster_id, &mn_pkt);
 
     // Send CC to new area
     let cc_pkt = state.users.get(&caster_id).map(|u| u.build_cc_binary());
     if let Some(pkt) = cc_pkt {
-        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id: caster_id, map: dest_map, x: dest_x, y: dest_y }, &pkt).await;
+        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id: caster_id, map: dest_map, x: dest_x, y: dest_y }, &pkt);
     }
 
     // Drain all mana (VB6 sets mana to 0 on teleport)
@@ -1419,7 +1419,7 @@ async fn apply_mimetiza_user(state: &mut GameState, caster_id: ConnectionId, tar
             u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
         );
         let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
     }
 }
 
@@ -1457,6 +1457,6 @@ async fn apply_mimetiza_npc(state: &mut GameState, caster_id: ConnectionId, npc_
             0, 0, 0, 0, 0,
         );
         let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
     }
 }

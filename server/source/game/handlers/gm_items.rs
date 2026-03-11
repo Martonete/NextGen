@@ -12,14 +12,14 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.is_empty() {
-        state.send_console(conn_id, "Uso: /ITEM objid [cantidad]", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /ITEM objid [cantidad]", font_index::INFO);
         return;
     }
 
@@ -27,7 +27,7 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     let amount: i32 = if parts.len() > 1 { parts[1].parse().unwrap_or(1) } else { 1 };
 
     if obj_idx < 1 || amount < 1 {
-        state.send_console(conn_id, "Parametros invalidos.", font_index::INFO).await;
+        state.send_console(conn_id, "Parametros invalidos.", font_index::INFO);
         return;
     }
 
@@ -35,7 +35,7 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     let obj_name = match state.get_object(obj_idx) {
         Some(obj) => obj.name.clone(),
         None => {
-            state.send_console(conn_id, &format!("Objeto {} no existe.", obj_idx), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Objeto {} no existe.", obj_idx), font_index::INFO);
             return;
         }
     };
@@ -57,10 +57,10 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
             }
             // Send CSI to update client inventory
             send_inventory_slot(state, conn_id, slot_idx).await;
-            state.send_console(conn_id, &format!("Creado: {} x{}.", obj_name, amount), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Creado: {} x{}.", obj_name, amount), font_index::INFO);
         }
         None => {
-            state.send_console(conn_id, "Inventario lleno.", font_index::INFO).await;
+            state.send_console(conn_id, "Inventario lleno.", font_index::INFO);
         }
     }
 }
@@ -91,13 +91,13 @@ pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: Connection
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
 
     if search.is_empty() {
-        state.send_console(conn_id, "Uso: /SOBJ <nombre>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /SOBJ <nombre>", font_index::INFO);
         return;
     }
 
@@ -109,13 +109,13 @@ pub(super) async fn handle_slash_sobj(state: &mut GameState, conn_id: Connection
         if name_norm.contains(&search_norm) {
             let name = state.game_data.objects[i].name.clone();
             let idx = state.game_data.objects[i].index;
-            state.send_msg_id(conn_id, 748, &format!("{}@{}", name, idx)).await;
+            state.send_msg_id(conn_id, 748, &format!("{}@{}", name, idx));
             found += 1;
         }
     }
 
     if found == 0 {
-        state.send_console(conn_id, &format!("No se encontraron objetos con '{}'.", search), font_index::INFO).await;
+        state.send_console(conn_id, &format!("No se encontraron objetos con '{}'.", search), font_index::INFO);
     }
 }
 
@@ -148,12 +148,12 @@ pub(super) async fn handle_slash_dametodo(state: &mut GameState, conn_id: Connec
             send_full_inventory(state, tc).await;
 
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_msg_id(tc, 754, &admin_name.to_string()).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 755, &format!("{}@{}", admin_name, target)).await;
+            state.send_msg_id(tc, 754, &admin_name.to_string());
+            state.send_msg_id_to(SendTarget::ToAdmins, 755, &format!("{}@{}", admin_name, target));
             info!("[GM] {} stripped inventory of {}", admin_name, target);
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -179,16 +179,16 @@ pub(super) async fn handle_slash_mata(state: &mut GameState, conn_id: Connection
                     }
                 }
                 let bp = binary_packets::write_character_remove(ci.0 as i16);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp);
                 state.npcs[npc_idx] = None;
                 state.active_npc_indices.remove(&npc_idx);
-                state.send_console(conn_id, &format!("NPC #{} eliminado.", npc_idx), font_index::INFO).await;
+                state.send_console(conn_id, &format!("NPC #{} eliminado.", npc_idx), font_index::INFO);
                 return;
             }
         }
     }
 
-    state.send_console(conn_id, "NPC no encontrado. Usa /MATA <npc_runtime_index>", font_index::INFO).await;
+    state.send_console(conn_id, "NPC no encontrado. Usa /MATA <npc_runtime_index>", font_index::INFO);
 }
 
 /// /MASSKILL — Kill all NPCs on current map.
@@ -214,14 +214,14 @@ pub(super) async fn handle_slash_masskill(state: &mut GameState, conn_id: Connec
                 }
             }
             let bp = binary_packets::write_character_remove(ci.0 as i16);
-            state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &bp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &bp);
             killed += 1;
         }
         state.npcs[idx] = None;
         state.active_npc_indices.remove(&idx);
     }
 
-    state.send_console(conn_id, &format!("{} NPCs eliminados en mapa {}.", killed, map), font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} NPCs eliminados en mapa {}.", killed, map), font_index::INFO);
 }
 
 /// Check if an object is a map fixture (not player-droppable).
@@ -273,7 +273,7 @@ pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: Connect
                 }
                 // Send BO (object delete) to everyone on that map
                 let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
-                state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+                state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt);
                 cleaned += 1;
             }
         }
@@ -286,7 +286,7 @@ pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: Connect
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /LIMPIAR — cleaned {} tracked items", gm_name, cleaned);
-    state.send_console(conn_id, &format!("{} items limpiados del TrashCollector.", cleaned), font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} items limpiados del TrashCollector.", cleaned), font_index::INFO);
 }
 
 /// /ACC <npc_id> or /RACC <npc_id> — Spawn NPC at GM's position. Requires GranDios+.
@@ -312,7 +312,7 @@ pub(super) async fn handle_slash_acc(state: &mut GameState, conn_id: ConnectionI
     // The GM's tile is occupied by the GM, so search nearby tiles
     let (spawn_x, spawn_y) = find_closest_legal_pos(state, map, x, y);
     if spawn_x == 0 && spawn_y == 0 {
-        state.send_console(conn_id, "No hay posicion valida para spawnear.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay posicion valida para spawnear.", font_index::INFO);
         return;
     }
 
@@ -323,7 +323,7 @@ pub(super) async fn handle_slash_acc(state: &mut GameState, conn_id: ConnectionI
             .and_then(|n| n.as_ref())
             .map(|n| n.build_cc_binary());
         if let Some(cc) = cc_pkt {
-            state.send_data_bytes(SendTarget::ToArea { map, x: spawn_x, y: spawn_y }, &cc).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: spawn_x, y: spawn_y }, &cc);
         }
         let prefix = if with_respawn { "con respawn" } else { "sin respawn" };
         info!("[GM] {} spawned {} ({}) at map {} ({},{}) {}", name, npc_name, npc_num, map, spawn_x, spawn_y, prefix);
@@ -372,7 +372,7 @@ pub(super) async fn handle_slash_hechizo(state: &mut GameState, conn_id: Connect
             .map(|s| s.nombre.clone())
             .unwrap_or_else(|| format!("Hechizo {}", spell_id));
         let pkt = binary_packets::write_change_spell_slot((slot + 1) as u8, spell_id as i16, &spell_name);
-        state.send_bytes(target_conn, &pkt).await;
+        state.send_bytes(target_conn, &pkt);
     }
 }
 
@@ -405,10 +405,10 @@ pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: Connection
 
         // Broadcast BQ packet to everyone on the map
         let bq_pkt = binary_packets::write_block_position(x as u8, y as u8, is_blocked);
-        state.send_data_bytes(SendTarget::ToMap(map), &bq_pkt).await;
+        state.send_data_bytes(SendTarget::ToMap(map), &bq_pkt);
 
         let status = if is_blocked { "bloqueado" } else { "desbloqueado" };
-        state.send_console(conn_id, &format!("Tile ({},{}) {}.", x, y, status), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Tile ({},{}) {}.", x, y, status), font_index::INFO);
     }
 }
 
@@ -423,7 +423,7 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
             return;
         }
     };
@@ -435,7 +435,7 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
     };
 
     if bank_items.is_empty() {
-        state.send_console(conn_id, "El banco del jugador esta vacio.", font_index::INFO).await;
+        state.send_console(conn_id, "El banco del jugador esta vacio.", font_index::INFO);
         return;
     }
 
@@ -460,7 +460,7 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
     }
 
     send_full_inventory(state, conn_id).await;
-    state.send_console(conn_id, &format!("Transferidos {} items del banco de '{}'.", added, target), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Transferidos {} items del banco de '{}'.", added, target), font_index::INFO);
 }
 
 /// /PREMIAR <name> <item_id> — Give prize item to player. VB6 TCP.bas:4237
@@ -473,14 +473,14 @@ pub(super) async fn handle_slash_premiar(state: &mut GameState, conn_id: Connect
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /PREMIAR nombre item_id", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /PREMIAR nombre item_id", font_index::INFO);
         return;
     }
 
     let target_name = parts[0];
     let item_id: i32 = parts[1].parse().unwrap_or(0);
     if item_id < 1 {
-        state.send_console(conn_id, "Item invalido.", font_index::INFO).await;
+        state.send_console(conn_id, "Item invalido.", font_index::INFO);
         return;
     }
 
@@ -497,7 +497,7 @@ pub(super) async fn handle_slash_premiarts(state: &mut GameState, conn_id: Conne
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /PREMIARTS nombre item_id", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /PREMIARTS nombre item_id", font_index::INFO);
         return;
     }
 
@@ -513,14 +513,14 @@ async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_console(gm_id, &format!("Jugador '{}' no encontrado.", target_name), font_index::INFO).await;
+            state.send_console(gm_id, &format!("Jugador '{}' no encontrado.", target_name), font_index::INFO);
             return;
         }
     };
 
     // Verify object exists
     if state.get_object(item_id).is_none() {
-        state.send_console(gm_id, &format!("Objeto {} no existe.", item_id), font_index::INFO).await;
+        state.send_console(gm_id, &format!("Objeto {} no existe.", item_id), font_index::INFO);
         return;
     }
 
@@ -532,10 +532,10 @@ async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_
             user.inventory[slot_idx] = InventorySlot { obj_index: item_id, amount, equipped: false };
         }
         send_inventory_slot(state, target_id, slot_idx + 1).await;
-        state.send_console(gm_id, &format!("Item {} dado a '{}'.", item_id, target_name), font_index::INFO).await;
-        state.send_console(target_id, "Has recibido un premio!", font_index::INFO).await;
+        state.send_console(gm_id, &format!("Item {} dado a '{}'.", item_id, target_name), font_index::INFO);
+        state.send_console(target_id, "Has recibido un premio!", font_index::INFO);
     } else {
-        state.send_console(gm_id, "El jugador no tiene espacio en el inventario.", font_index::INFO).await;
+        state.send_console(gm_id, "El jugador no tiene espacio en el inventario.", font_index::INFO);
     }
 }
 
@@ -546,21 +546,21 @@ pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: Connect
     if !is_gm { return; }
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /NPCAURA <npc_index> <aura_id>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /NPCAURA <npc_index> <aura_id>", font_index::INFO);
         return;
     }
 
     let npc_idx: usize = match parts[0].parse() {
         Ok(v) => v,
         Err(_) => {
-            state.send_console(conn_id, "NPC index inválido.", font_index::INFO).await;
+            state.send_console(conn_id, "NPC index inválido.", font_index::INFO);
             return;
         }
     };
     let aura_id: i32 = match parts[1].parse() {
         Ok(v) => v,
         Err(_) => {
-            state.send_console(conn_id, "Aura ID inválido.", font_index::INFO).await;
+            state.send_console(conn_id, "Aura ID inválido.", font_index::INFO);
             return;
         }
     };
@@ -568,7 +568,7 @@ pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: Connect
     let (npc_name, map) = match state.get_npc(npc_idx) {
         Some(npc) if npc.active => (npc.name.clone(), npc.map),
         _ => {
-            state.send_console(conn_id, &format!("NPC {} no encontrado o inactivo.", npc_idx), font_index::INFO).await;
+            state.send_console(conn_id, &format!("NPC {} no encontrado o inactivo.", npc_idx), font_index::INFO);
             return;
         }
     };
@@ -576,12 +576,12 @@ pub(super) async fn handle_slash_npcaura(state: &mut GameState, conn_id: Connect
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         npc.aura = aura_id;
         let cc = npc.build_cc_binary();
-        state.send_data_bytes(SendTarget::ToMap(map), &cc).await;
+        state.send_data_bytes(SendTarget::ToMap(map), &cc);
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} set NPC {} ({}) aura to {}", gm_name, npc_idx, npc_name, aura_id);
-    state.send_console(conn_id, &format!("NPC {} ({}) aura = {}", npc_idx, npc_name, aura_id), font_index::INFO).await;
+    state.send_console(conn_id, &format!("NPC {} ({}) aura = {}", npc_idx, npc_name, aura_id), font_index::INFO);
 }
 
 /// /DEST — Destroy floor object at GM's current tile.
@@ -598,7 +598,7 @@ pub(super) async fn handle_slash_dest(state: &mut GameState, conn_id: Connection
         .unwrap_or(0);
 
     if obj_idx <= 0 {
-        state.send_console(conn_id, "No hay objeto en esta posición.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay objeto en esta posición.", font_index::INFO);
         return;
     }
 
@@ -611,11 +611,11 @@ pub(super) async fn handle_slash_dest(state: &mut GameState, conn_id: Connection
 
     // Send BO packet to notify clients
     let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
-    state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+    state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt);
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /DEST at ({},{},{}) — destroyed {}", gm_name, map, x, y, obj_name);
-    state.send_console(conn_id, &format!("Destruido: {} en ({},{}).", obj_name, x, y), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Destruido: {} en ({},{}).", obj_name, x, y), font_index::INFO);
 }
 
 /// /MASSDEST — Destroy all non-map floor objects in GM's visible area.
@@ -651,12 +651,12 @@ pub(super) async fn handle_slash_massdest(state: &mut GameState, conn_id: Connec
             tile.ground_item = world::GroundItem::default();
         }
         let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt).await;
+        state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt);
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /MASSDEST at ({},{},{}) — cleaned {} items", gm_name, map, cx, cy, to_clean.len());
-    state.send_console(conn_id, &format!("{} objetos destruidos en el área.", to_clean.len()), font_index::INFO).await;
+    state.send_console(conn_id, &format!("{} objetos destruidos en el área.", to_clean.len()), font_index::INFO);
 }
 
 /// /HACERITEM <objID>@<amount> — Create item on floor at GM position.
@@ -677,7 +677,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
     };
 
     if obj_id < 1 {
-        state.send_console(conn_id, "Uso: /HACERITEM <objID>@<cantidad>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /HACERITEM <objID>@<cantidad>", font_index::INFO);
         return;
     }
 
@@ -685,7 +685,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
     let (obj_name, grh) = match state.get_object(obj_id) {
         Some(obj) => (obj.name.clone(), obj.grh_index),
         None => {
-            state.send_console(conn_id, &format!("Objeto {} no existe.", obj_id), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Objeto {} no existe.", obj_id), font_index::INFO);
             return;
         }
     };
@@ -697,7 +697,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
         .unwrap_or(true);
 
     if tile_occupied {
-        state.send_console(conn_id, "Ya hay un objeto en esta posición.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya hay un objeto en esta posición.", font_index::INFO);
         return;
     }
 
@@ -711,15 +711,15 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
     // Send HO packet to show item visually
     if grh > 0 {
         let ho_pkt = binary_packets::write_object_create(x as u8, y as u8, grh as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
     }
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /HACERITEM {} x{} ({}) at ({},{},{})", gm_name, obj_id, amount, obj_name, map, x, y);
     // Notify GM
-    state.send_console(conn_id, &format!("Creado: {} x{} ({}) en ({},{}).", obj_name, amount, obj_id, x, y), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Creado: {} x{} ({}) en ({},{}).", obj_name, amount, obj_id, x, y), font_index::INFO);
     // Notify admins (VB6: ||802)
-    state.send_msg_id_to(SendTarget::ToAdmins, 802, &format!("{}@{}@{}@{}", gm_name, obj_id, obj_name, amount)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 802, &format!("{}@{}@{}@{}", gm_name, obj_id, obj_name, amount));
 }
 
 /// /MASSDEST — already handled above.
@@ -732,7 +732,7 @@ pub(super) async fn handle_slash_nene(state: &mut GameState, conn_id: Connection
 
     let target_map: i32 = args.trim().parse().unwrap_or(0);
     if target_map < 1 {
-        state.send_console(conn_id, "Uso: /NENE <mapa>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /NENE <mapa>", font_index::INFO);
         return;
     }
 
@@ -753,7 +753,7 @@ pub(super) async fn handle_slash_nene(state: &mut GameState, conn_id: Connection
         names.join(", ")
     };
 
-    state.send_console(conn_id, &format!("NPCs hostiles en mapa {}: {}", target_map, list), font_index::INFO).await;
+    state.send_console(conn_id, &format!("NPCs hostiles en mapa {}: {}", target_map, list), font_index::INFO);
 }
 
 /// /RESETINV — Reset targeted NPC's inventory to its NpcData defaults.
@@ -766,7 +766,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     if !is_gm { return; }
 
     if target_npc_idx == 0 {
-        state.send_console(conn_id, "No tenés un NPC seleccionado.", font_index::INFO).await;
+        state.send_console(conn_id, "No tenés un NPC seleccionado.", font_index::INFO);
         return;
     }
 
@@ -774,7 +774,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     let npc_number = match state.get_npc(target_npc_idx) {
         Some(npc) if npc.active => npc.npc_number,
         _ => {
-            state.send_console(conn_id, "NPC no encontrado o inactivo.", font_index::INFO).await;
+            state.send_console(conn_id, "NPC no encontrado o inactivo.", font_index::INFO);
             return;
         }
     };
@@ -783,7 +783,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     let original_items = match state.game_data.npcs.get(npc_number) {
         Some(data) => data.items.clone(),
         None => {
-            state.send_console(conn_id, &format!("NPC data {} no encontrado.", npc_number), font_index::INFO).await;
+            state.send_console(conn_id, &format!("NPC data {} no encontrado.", npc_number), font_index::INFO);
             return;
         }
     };
@@ -806,7 +806,7 @@ pub(super) async fn handle_slash_resetinv(state: &mut GameState, conn_id: Connec
     let npc_name = state.get_npc(target_npc_idx).map(|n| n.name.clone()).unwrap_or_default();
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} used /RESETINV on NPC {} ({})", gm_name, target_npc_idx, npc_name);
-    state.send_console(conn_id, &format!("Inventario de {} reseteado.", npc_name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Inventario de {} reseteado.", npc_name), font_index::INFO);
 }
 
 // =============================================================================
@@ -817,14 +817,14 @@ pub(super) async fn handle_slash_slot(state: &mut GameState, conn_id: Connection
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /SLOT nombre slot_num", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /SLOT nombre slot_num", font_index::INFO);
         return;
     }
 
@@ -832,14 +832,14 @@ pub(super) async fn handle_slash_slot(state: &mut GameState, conn_id: Connection
     let slot_num: usize = parts[1].parse().unwrap_or(0);
 
     if slot_num < 1 || slot_num > 36 {
-        state.send_console(conn_id, "Slot debe ser entre 1 y 36.", font_index::INFO).await;
+        state.send_console(conn_id, "Slot debe ser entre 1 y 36.", font_index::INFO);
         return;
     }
 
     let target_id = match state.find_user_by_name(name) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", name), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", name), font_index::INFO);
             return;
         }
     };
@@ -856,11 +856,11 @@ pub(super) async fn handle_slash_slot(state: &mut GameState, conn_id: Connection
 
     let (obj_idx, amount, equipped) = slot_info;
     if obj_idx == 0 {
-        state.send_console(conn_id, &format!("{} - Slot {}: (vacio)", name, slot_num), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} - Slot {}: (vacio)", name, slot_num), font_index::INFO);
     } else {
         let obj_name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_else(|| format!("OBJ#{}", obj_idx));
         let eq_str = if equipped { " [equipado]" } else { "" };
-        state.send_console(conn_id, &format!("{} - Slot {}: {} x{}{}", name, slot_num, obj_name, amount, eq_str), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} - Slot {}: {} x{}{}", name, slot_num, obj_name, amount, eq_str), font_index::INFO);
     }
 }
 
@@ -871,7 +871,7 @@ pub(super) async fn handle_slash_piso(state: &mut GameState, conn_id: Connection
             (u.pos_map, u.pos_x, u.pos_y)
         }
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     };
@@ -880,7 +880,7 @@ pub(super) async fn handle_slash_piso(state: &mut GameState, conn_id: Connection
     let grid = match state.world.grid(map) {
         Some(g) => g,
         None => {
-            state.send_console(conn_id, "Mapa no cargado.", font_index::INFO).await;
+            state.send_console(conn_id, "Mapa no cargado.", font_index::INFO);
             return;
         }
     };
@@ -903,11 +903,11 @@ pub(super) async fn handle_slash_piso(state: &mut GameState, conn_id: Connection
     }
 
     if items_found.is_empty() {
-        state.send_console(conn_id, "No hay items en el piso cercano.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay items en el piso cercano.", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Items en el piso ({}):", items_found.len()), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Items en el piso ({}):", items_found.len()), font_index::INFO);
         for item_str in &items_found {
-            state.send_console(conn_id, item_str, font_index::INFO).await;
+            state.send_console(conn_id, item_str, font_index::INFO);
         }
     }
 }

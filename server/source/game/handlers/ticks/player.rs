@@ -68,14 +68,14 @@ pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        state.send_msg_id(conn_id, 205, "").await; // Dejas de meditar
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+        state.send_msg_id(conn_id, 205, ""); // Dejas de meditar
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
         let fx_clear = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear);
     } else {
         // Check if mana is already full
         if user.min_mana >= user.max_mana {
-            state.send_msg_id(conn_id, 393, "").await; // Mana restaurado
+            state.send_msg_id(conn_id, 393, ""); // Mana restaurado
             return;
         }
 
@@ -86,9 +86,9 @@ pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
         // VB6: meditation FX scales by level (5 tiers), 999 loops = forever
         let med_fx = meditation_fx_for_level(level);
         let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, med_fx, 999);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt);
 
-        state.send_msg_id(conn_id, 394, "").await; // Comenzas a meditar
+        state.send_msg_id(conn_id, 394, ""); // Comenzas a meditar
     }
 }
 
@@ -194,7 +194,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.min_hp = new_hp;
                 }
                 // VB6: "Estás envenenado, si no te curas morirás." (FONTTYPE_VENENO)
-                state.send_console(conn_id, "Estás envenenado, si no te curas morirás.", font_index::VENENO).await;
+                state.send_console(conn_id, "Estás envenenado, si no te curas morirás.", font_index::VENENO);
                 send_stats_hp(state, conn_id).await;
 
                 // VB6: FXSANGRE (blood FX 14) on poison tick if not meditating/navigating
@@ -207,7 +207,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                             state.send_data_bytes(
                                 SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
                                 &fx_pkt,
-                            ).await;
+                            );
                         }
                     }
                 }
@@ -238,13 +238,13 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 if is_snow {
                     let dmg = ((max_hp as f64 * 5.0) / 100.0) as i32;
                     let new_hp = min_hp - dmg;
-                    state.send_console(conn_id, "¡¡Estás muriendo de frío, abrigate o morirás!!", font_index::INFO).await;
+                    state.send_console(conn_id, "¡¡Estás muriendo de frío, abrigate o morirás!!", font_index::INFO);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.min_hp = new_hp;
                     }
                     send_stats_hp(state, conn_id).await;
                     if new_hp <= 0 {
-                        state.send_console(conn_id, "¡¡Has muerto de frío!!", font_index::INFO).await;
+                        state.send_console(conn_id, "¡¡Has muerto de frío!!", font_index::INFO);
                         user_die(state, conn_id, None).await;
                     }
                 } else {
@@ -279,14 +279,14 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 if cnt_lava >= COLD_LAVA_INTERVAL {
                     let dmg = ((max_hp as f64 * 5.0) / 100.0) as i32;
                     let new_hp = min_hp - dmg;
-                    state.send_console(conn_id, "¡¡Quitate de la lava, te estás quemando!!", font_index::INFO).await;
+                    state.send_console(conn_id, "¡¡Quitate de la lava, te estás quemando!!", font_index::INFO);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         u.counter_lava = 0;
                         u.min_hp = new_hp;
                     }
                     send_stats_hp(state, conn_id).await;
                     if new_hp <= 0 {
-                        state.send_console(conn_id, "¡¡Has muerto quemado!!", font_index::INFO).await;
+                        state.send_console(conn_id, "¡¡Has muerto quemado!!", font_index::INFO);
                         user_die(state, conn_id, None).await;
                     }
                 } else {
@@ -313,7 +313,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.counter_hp_regen = 0;
                     u.min_hp = (u.min_hp + regen).min(u.max_hp);
                 }
-                state.send_console(conn_id, "Has sanado.", font_index::INFO).await;
+                state.send_console(conn_id, "Has sanado.", font_index::INFO);
                 send_stats_hp(state, conn_id).await;
             } else {
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -334,7 +334,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.blind = false;
                     u.counter_blind = 0;
                 }
-                state.send_console(conn_id, "Ya puedes ver.", font_index::INFO).await;
+                state.send_console(conn_id, "Ya puedes ver.", font_index::INFO);
             }
         }
 
@@ -350,7 +350,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
                     u.stunned = false;
                     u.counter_stun = 0;
                 }
-                state.send_console(conn_id, "Has recuperado la lucidez.", font_index::INFO).await;
+                state.send_console(conn_id, "Has recuperado la lucidez.", font_index::INFO);
             }
         }
 
@@ -387,7 +387,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
             }
             let unmuted = state.users.get(&conn_id).map(|u| !u.silenced).unwrap_or(false);
             if unmuted {
-                state.send_msg_id(conn_id, 946, "").await;
+                state.send_msg_id(conn_id, 946, "");
             }
         }
 
@@ -400,7 +400,7 @@ pub async fn tick_player_passive(state: &mut GameState) {
             let released = state.users.get(&conn_id).map(|u| u.jail_timer <= 0).unwrap_or(false);
             if released {
                 // Release from jail — warp to Libertad (map 28, 50, 50)
-                state.send_msg_id(conn_id, 444, "").await;
+                state.send_msg_id(conn_id, 444, "");
                 warp_user(state, conn_id, 28, 50, 50).await;
             }
         }
@@ -460,15 +460,15 @@ pub async fn tick_player_passive(state: &mut GameState) {
                 // Stop meditation when full — clear FX + notify
                 let stopped = state.users.get(&conn_id).map(|u| !u.meditating).unwrap_or(false);
                 if stopped {
-                    state.send_msg_id(conn_id, 829, "").await; // Has terminado de meditar
-                    state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+                    state.send_msg_id(conn_id, 829, ""); // Has terminado de meditar
+                    state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
                     // Clear FX for area
                     if let Some(u) = state.users.get(&conn_id) {
                         let fx_clear = binary_packets::write_create_fx(u.char_index.0 as i16, 0, 0);
                         state.send_data_bytes(
                             SendTarget::ToArea { map: u.pos_map, x: u.pos_x, y: u.pos_y },
                             &fx_clear,
-                        ).await;
+                        );
                     }
                 }
             }

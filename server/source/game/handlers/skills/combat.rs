@@ -36,7 +36,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let npc_idx = match npc_idx {
         Some(idx) => idx,
         None => {
-            state.send_msg_id(conn_id, 258, "").await;
+            state.send_msg_id(conn_id, 258, "");
             return;
         }
     };
@@ -51,7 +51,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         .unwrap_or(0);
 
     if domable <= 0 {
-        state.send_msg_id(conn_id, 257, "").await;
+        state.send_msg_id(conn_id, 257, "");
         return;
     }
 
@@ -95,7 +95,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         // VB6: Check max pets (MAXMASCOTAS = 3)
         let num_pets = state.users.get(&conn_id).map(|u| u.nro_mascotas).unwrap_or(0);
         if num_pets >= 3 {
-            state.send_console(conn_id, "No puedes tener más mascotas!", font_index::INFO).await;
+            state.send_console(conn_id, "No puedes tener más mascotas!", font_index::INFO);
         } else {
             // Assign pet to user
             if let Some(npc) = state.get_npc_mut(npc_idx) {
@@ -114,7 +114,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
                     }
                 }
             }
-            state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO).await;
+            state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO);
 
             // VB6: SubirSkill on success
             if let Some(u) = state.users.get_mut(&conn_id) {
@@ -122,7 +122,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
             }
         }
     } else {
-        state.send_console(conn_id, "No has podido domar a la criatura.", font_index::INFO).await;
+        state.send_console(conn_id, "No has podido domar a la criatura.", font_index::INFO);
 
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, 17, false);
@@ -154,7 +154,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
     // VB6: MAXDISTANCIAARCO range check
     let dist = ((ux - tx).abs()).max((uy - ty).abs());
     if dist > MAXDISTANCIAARCO {
-        state.send_console(conn_id, "Estás demasiado lejos para disparar.", font_index::INFO).await;
+        state.send_console(conn_id, "Estás demasiado lejos para disparar.", font_index::INFO);
         return;
     }
 
@@ -198,7 +198,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
             .map(|o| o.obj_type == crate::data::objects::ObjType::Arrow)
             .unwrap_or(false);
         if !is_arrow || municion_amount < 1 {
-            state.send_console(conn_id, "No tienes municiones equipadas.", font_index::INFO).await;
+            state.send_console(conn_id, "No tienes municiones equipadas.", font_index::INFO);
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.equip.municion = 0;
             }
@@ -215,7 +215,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
             0
         };
         if wp_amount < 1 {
-            state.send_console(conn_id, "No tienes municiones.", font_index::INFO).await;
+            state.send_console(conn_id, "No tienes municiones.", font_index::INFO);
             return;
         }
         consume_slot = weapon_slot;
@@ -230,7 +230,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
 
     // Stamina cost (VB6: min 10 required, 1-10 consumed)
     if sta < 10 {
-        state.send_msg_id(conn_id, 17, "").await;
+        state.send_msg_id(conn_id, 17, "");
         return;
     }
     let sta_cost = random_number(1, 10);
@@ -277,7 +277,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         if let Some((npc_char, true)) = npc_data {
             // Send arrow visual
             let flechi = binary_packets::write_arrow(char_index.0 as i16, npc_char as i16, arrow_grh as i16);
-            state.send_data_bytes(SendTarget::ToMap(map), &flechi).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &flechi);
 
             // Store target for combat resolution
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -292,7 +292,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
 
             // Send arrow visual
             let flechi = binary_packets::write_arrow(char_index.0 as i16, target_char as i16, arrow_grh as i16);
-            state.send_data_bytes(SendTarget::ToMap(map), &flechi).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &flechi);
 
             // Store target and resolve
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -338,8 +338,8 @@ async fn resolve_ranged_attack_npc(
 
     if rand_range(1, 100) > hit_prob {
         let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
-        state.send_bytes(conn_id, &pkt).await;
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char.0 as i16, 255).await;
+        state.send_bytes(conn_id, &pkt);
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char.0 as i16, 255);
         // VB6: Level Proyectiles skill even on miss
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, 19);
@@ -372,8 +372,8 @@ async fn resolve_ranged_attack_npc(
     };
 
     let u2_pkt = binary_packets::write_multi_user_hit_npc(damage as i32);
-    state.send_bytes(conn_id, &u2_pkt).await;
-    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), npc_char.0 as i16, 65535).await;
+    state.send_bytes(conn_id, &u2_pkt);
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), npc_char.0 as i16, 65535);
 
     // Level Proyectiles skill on hit
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -389,7 +389,7 @@ async fn resolve_ranged_attack_npc(
 
         let npc_ci = state.get_npc(npc_idx).map(|n| n.char_index.0).unwrap_or(0);
         let bp_pkt = binary_packets::write_character_remove(npc_ci as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt);
 
         state.kill_npc(npc_idx);
     }
@@ -414,7 +414,7 @@ async fn resolve_ranged_attack_user(
          min_hit, max_hit, skill_proyectiles, attacker_name, class, safe_on) = att_data;
 
     if safe_on {
-        state.send_msg_id(conn_id, 207, "").await;
+        state.send_msg_id(conn_id, 207, "");
         return;
     }
 
@@ -436,10 +436,10 @@ async fn resolve_ranged_attack_user(
 
     if rand_range(1, 100) > hit_prob {
         let pkt = binary_packets::write_multi_user_attacked_swing(_char_index.0 as i16);
-        state.send_bytes(victim_id, &pkt).await;
+        state.send_bytes(victim_id, &pkt);
         let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
-        state.send_bytes(conn_id, &pkt).await;
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255).await;
+        state.send_bytes(conn_id, &pkt);
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255);
         // VB6: Level Proyectiles skill even on miss
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, 19);
@@ -477,11 +477,11 @@ async fn resolve_ranged_attack_user(
         victim.min_hp -= damage;
     }
     let n4_pkt = binary_packets::write_multi_user_hitted_by_user(_char_index.0 as i16, body_part as u8, damage as i16);
-    state.send_bytes(victim_id, &n4_pkt).await;
+    state.send_bytes(victim_id, &n4_pkt);
     let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, body_part as u8, damage as i16);
-    state.send_bytes(conn_id, &n5_pkt).await;
+    state.send_bytes(conn_id, &n5_pkt);
 
-    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535);
 
     // VB6: Arrow poison (60% chance if ammo has Envenena=1) — SistemaCombate.bas UserEnvenena
     if arrow_envenena && rand_range(1, 100) <= 60 {
@@ -491,8 +491,8 @@ async fn resolve_ranged_attack_user(
                 victim.poisoned = true;
                 victim.counter_poison = 0;
             }
-            state.send_msg_id(victim_id, 171, &attacker_name).await;
-            state.send_msg_id(conn_id, 172, &victim_name).await;
+            state.send_msg_id(victim_id, 171, &attacker_name);
+            state.send_msg_id(conn_id, 172, &victim_name);
         }
     }
 

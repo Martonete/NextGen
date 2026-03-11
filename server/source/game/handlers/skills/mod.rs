@@ -276,7 +276,7 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
     };
 
     if dead {
-        state.send_msg_id(conn_id, 3, "").await;
+        state.send_msg_id(conn_id, 3, "");
         return;
     }
     if meditating { return; }
@@ -333,7 +333,7 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
                 send_stats_mana(state, conn_id).await;
                 send_stats_hp(state, conn_id).await;
             } else {
-                state.send_msg_id(conn_id, 288, "").await;
+                state.send_msg_id(conn_id, 288, "");
             }
         }
         skill_id::OCULTARSE => {

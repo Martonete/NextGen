@@ -66,7 +66,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/ONLINE" {
         handle_slash_online(state, conn_id).await;
     } else if cmd_upper == "/PING" {
-        state.send_bytes(conn_id, &binary_packets::write_pong_response()).await;
+        state.send_bytes(conn_id, &binary_packets::write_pong_response());
     } else if cmd_upper == "/BALANCE" {
         handle_slash_balance(state, conn_id).await;
     } else if cmd_upper.starts_with("/GLOBAL ") {
@@ -191,12 +191,12 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             _ => { return; }
         };
         crear_clan_pretoriano(state, map, x, y, faccion).await;
-        state.send_console(conn_id, "Clan pretoriano creado.", font_index::INFO).await;
+        state.send_console(conn_id, "Clan pretoriano creado.", font_index::INFO);
     } else if cmd_upper == "/LIMPRETORIANO" {
         let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
         if priv_level >= privilege_level::DIOS {
             limpiar_clan_pretoriano(state).await;
-            state.send_console(conn_id, "Clan pretoriano eliminado.", font_index::INFO).await;
+            state.send_console(conn_id, "Clan pretoriano eliminado.", font_index::INFO);
         }
     } else if cmd_upper == "/REGRESAR" {
         handle_slash_regresar(state, conn_id).await;
@@ -213,9 +213,9 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             user.safe_toggle = !is_safe;
         }
         if !is_safe {
-            state.send_bytes(conn_id, &binary_packets::write_safe_on()).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_on());
         } else {
-            state.send_bytes(conn_id, &binary_packets::write_safe_off()).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_off());
         }
     } else if cmd_upper == "/SEGR" {
         // Toggle resurrection safety — prevents others from rezzing you (VB6: /SEGR)
@@ -224,9 +224,9 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
             user.seguro_resu = !is_safe;
         }
         if !is_safe {
-            state.send_bytes(conn_id, &binary_packets::write_safe_resu_on()).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_resu_on());
         } else {
-            state.send_bytes(conn_id, &binary_packets::write_safe_resu_off()).await;
+            state.send_bytes(conn_id, &binary_packets::write_safe_resu_off());
         }
     } else if cmd_upper.starts_with("/DESC ") {
         let desc = cmd[6..].trim();
@@ -258,7 +258,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let text = &cmd[6..];
         let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
         info!("[BUG] {} reports: {}", name, text);
-        state.send_console(conn_id, "Bug reportado. Gracias!", font_index::INFO).await;
+        state.send_console(conn_id, "Bug reportado. Gracias!", font_index::INFO);
     } else if cmd_upper == "/ADVERTENCIAS" {
         handle_slash_advertencias(state, conn_id).await;
     } else if cmd_upper == "/CURAR" {
@@ -496,7 +496,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
         if !is_admin { return; }
         // Map saving not implemented (maps are loaded read-only from binary files)
-        state.send_console(conn_id, "Mapa guardado.", font_index::INFO).await;
+        state.send_console(conn_id, "Mapa guardado.", font_index::INFO);
     } else if cmd_upper.starts_with("/SETDESC ") {
         let args = &cmd[9..];
         handle_slash_setdesc(state, conn_id, args).await;
@@ -699,6 +699,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_cerrar_encuesta(state, conn_id).await;
     } else {
         // Unknown command — send feedback
-        state.send_msg_id(conn_id, 714, "").await; // TEXTO714: Comando no reconocido
+        state.send_msg_id(conn_id, 714, ""); // TEXTO714: Comando no reconocido
     }
 }

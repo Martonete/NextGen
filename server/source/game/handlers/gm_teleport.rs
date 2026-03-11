@@ -29,7 +29,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     // Parse: name map x y (space-delimited)
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.len() < 4 {
-        state.send_console(conn_id, "Uso: /TELEP nombre mapa x y", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /TELEP nombre mapa x y", font_index::INFO);
         return;
     }
 
@@ -58,7 +58,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
         match state.find_user_by_name(name) {
             Some(id) => id,
             None => {
-                state.send_msg_id(conn_id, 196, "").await; // User not found
+                state.send_msg_id(conn_id, 196, ""); // User not found
                 return;
             }
         }
@@ -70,11 +70,11 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
 
     // Notify
     if target_id == conn_id {
-        state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
+        state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
     } else {
         let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_msg_id(target_id, 778, &gm_name.to_string()).await; // TEXTO778: %1 te ha transportado
-        state.send_msg_id(conn_id, 651, &gm_name.to_string()).await; // TEXTO651: %1 transportado
+        state.send_msg_id(target_id, 778, &gm_name.to_string()); // TEXTO778: %1 te ha transportado
+        state.send_msg_id(conn_id, 651, &gm_name.to_string()); // TEXTO651: %1 transportado
     }
 }
 
@@ -95,19 +95,19 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
     };
 
     if tx == 0 && ty == 0 {
-        state.send_console(conn_id, "Primero haz click en el destino.", font_index::INFO).await;
+        state.send_console(conn_id, "Primero haz click en el destino.", font_index::INFO);
         return;
     }
 
     if !crate::game::world::in_map_bounds(tx, ty) {
-        state.send_console(conn_id, "Coordenadas fuera de los limites del mapa.", font_index::INFO).await;
+        state.send_console(conn_id, "Coordenadas fuera de los limites del mapa.", font_index::INFO);
         return;
     }
 
     warp_user_exact(state, conn_id, map, tx, ty).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
-    state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
+    state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
 }
 
 /// /GO map — Teleport self to map at position 50,50 (VB6 behavior, requires SEMIDIOS+).
@@ -115,14 +115,14 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     };
 
     let parts: Vec<&str> = args.split_whitespace().collect();
     if parts.is_empty() {
-        state.send_console(conn_id, "Uso: /GO mapa", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /GO mapa", font_index::INFO);
         return;
     }
 
@@ -132,21 +132,21 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     let y: i32 = if parts.len() >= 3 { parts[2].parse().unwrap_or(50) } else { 50 };
 
     if map < 1 || !crate::game::world::in_map_bounds(x, y) {
-        state.send_console(conn_id, "Mapa o coordenadas invalidas.", font_index::INFO).await;
+        state.send_console(conn_id, "Mapa o coordenadas invalidas.", font_index::INFO);
         return;
     }
 
     // Check map exists
     let map_idx = map as usize;
     if map_idx >= state.game_data.maps.len() || state.game_data.maps.get(map_idx).and_then(|m| m.as_ref()).is_none() {
-        state.send_console(conn_id, &format!("Mapa {} no existe.", map), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Mapa {} no existe.", map), font_index::INFO);
         return;
     }
 
     warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
-    state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
+    state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
 }
 
 /// /IRA name — Teleport to a player's position (requires SEMIDIOS+).
@@ -154,7 +154,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -162,7 +162,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
             return;
         }
     };
@@ -170,7 +170,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     let (map, x, y) = match state.users.get(&target_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y),
         _ => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
             return;
         }
     };
@@ -178,7 +178,7 @@ pub(super) async fn handle_slash_ira(state: &mut GameState, conn_id: ConnectionI
     warp_user_exact(state, conn_id, map, x, y).await;
     send_warp_fx(state, conn_id).await;
     follow_tile_exit_after_warp(state, conn_id).await;
-    state.send_msg_id(conn_id, 773, "").await; // TEXTO773: Has sido transportado
+    state.send_msg_id(conn_id, 773, ""); // TEXTO773: Has sido transportado
 }
 
 /// /SUM name — Summon a player to your position (requires SEMIDIOS+).
@@ -186,7 +186,7 @@ pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionI
     let (my_map, my_x, my_y) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => (u.pos_map, u.pos_x, u.pos_y),
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     };
@@ -194,15 +194,15 @@ pub(super) async fn handle_slash_sum(state: &mut GameState, conn_id: ConnectionI
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
             return;
         }
     };
 
     warp_user(state, target_id, my_map, my_x, my_y).await;
     send_warp_fx(state, target_id).await;
-    state.send_console(conn_id, &format!("Invocaste a '{}'.", target), font_index::INFO).await;
-    state.send_console(target_id, "Has sido invocado por un GM.", font_index::INFO).await;
+    state.send_console(conn_id, &format!("Invocaste a '{}'.", target), font_index::INFO);
+    state.send_console(target_id, "Has sido invocado por un GM.", font_index::INFO);
 }
 
 /// /HOME nick — Teleport user to their home city.
@@ -224,11 +224,11 @@ pub(super) async fn handle_slash_home(state: &mut GameState, conn_id: Connection
             let _ = (armada, caos, hogar);
 
             warp_user(state, tc, map, x, y).await;
-            state.send_msg_id(conn_id, 772, "").await;
-            state.send_msg_id(tc, 773, "").await;
+            state.send_msg_id(conn_id, 772, "");
+            state.send_msg_id(tc, 773, "");
         }
         None => {
-            state.send_msg_id(conn_id, 198, "").await;
+            state.send_msg_id(conn_id, 198, "");
         }
     }
 }
@@ -244,7 +244,7 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_msg_id(conn_id, 196, "").await; // User not found
+            state.send_msg_id(conn_id, 196, ""); // User not found
             return;
         }
     };
@@ -281,6 +281,6 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
         }
     }
 
-    state.send_console(conn_id, "No se encontró posición libre cerca del jugador.", font_index::INFO).await;
+    state.send_console(conn_id, "No se encontró posición libre cerca del jugador.", font_index::INFO);
 }
 

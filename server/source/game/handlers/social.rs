@@ -68,7 +68,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -86,7 +86,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 4 || (u_y - npc_y).abs() > 4 {
-        state.send_msg_id(conn_id, 158, "").await;
+        state.send_msg_id(conn_id, 158, "");
         return;
     }
 
@@ -102,19 +102,19 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
     let (armada, caos, criminal, crim_killed, ciud_killed, reenlistadas, char_name, guild_index) = user_data;
 
     if armada || caos {
-        state.send_console(conn_id, "Ya perteneces a una faccion.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya perteneces a una faccion.", font_index::INFO);
         return;
     }
 
     if reenlistadas {
-        state.send_console(conn_id, "Ya no puedes enlistarte nuevamente.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya no puedes enlistarte nuevamente.", font_index::INFO);
         return;
     }
 
     if !criminal {
         // Try to join Royal Army
         if crim_killed < 50 {
-            state.send_console(conn_id, "Necesitas haber matado al menos 50 criminales.", font_index::INFO).await;
+            state.send_console(conn_id, "Necesitas haber matado al menos 50 criminales.", font_index::INFO);
             return;
         }
 
@@ -131,14 +131,14 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         // VB6: GiveFactionArmours on enlistment
         give_faction_armours(state, conn_id, false).await;
 
-        state.send_console(conn_id, "Te has enlistado en la Armada Real!", font_index::GUILD_MSG).await;
+        state.send_console(conn_id, "Te has enlistado en la Armada Real!", font_index::GUILD_MSG);
 
         // Broadcast
-        state.send_msg_id_to(SendTarget::ToAll, 851, &char_name).await;
+        state.send_msg_id_to(SendTarget::ToAll, 851, &char_name);
     } else {
         // Try to join Chaos Forces
         if ciud_killed < 50 {
-            state.send_console(conn_id, "Necesitas haber matado al menos 50 ciudadanos.", font_index::INFO).await;
+            state.send_console(conn_id, "Necesitas haber matado al menos 50 ciudadanos.", font_index::INFO);
             return;
         }
 
@@ -155,10 +155,10 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         // VB6: GiveFactionArmours on enlistment
         give_faction_armours(state, conn_id, true).await;
 
-        state.send_console(conn_id, "Te has enlistado en las Fuerzas del Caos!", font_index::GUILD_MSG).await;
+        state.send_console(conn_id, "Te has enlistado en las Fuerzas del Caos!", font_index::GUILD_MSG);
 
         // Broadcast
-        state.send_msg_id_to(SendTarget::ToAll, 852, &char_name).await;
+        state.send_msg_id_to(SendTarget::ToAll, 852, &char_name);
     }
 }
 
@@ -175,17 +175,17 @@ pub(super) async fn handle_slash_faction_info(state: &mut GameState, conn_id: Co
     let (armada, caos, crim_killed, ciud_killed, rec_real, rec_caos) = user_data;
 
     if armada {
-        state.send_console(conn_id, "--- Armada Real ---", font_index::GUILD_MSG).await;
-        state.send_console(conn_id, &format!("Criminales matados: {}", crim_killed), font_index::INFO).await;
-        state.send_console(conn_id, &format!("Rango: {}", faction_rank_name(rec_real, true)), font_index::INFO).await;
+        state.send_console(conn_id, "--- Armada Real ---", font_index::GUILD_MSG);
+        state.send_console(conn_id, &format!("Criminales matados: {}", crim_killed), font_index::INFO);
+        state.send_console(conn_id, &format!("Rango: {}", faction_rank_name(rec_real, true)), font_index::INFO);
     } else if caos {
-        state.send_console(conn_id, "--- Fuerzas del Caos ---", font_index::GUILD_MSG).await;
-        state.send_console(conn_id, &format!("Ciudadanos matados: {}", ciud_killed), font_index::INFO).await;
-        state.send_console(conn_id, &format!("Rango: {}", faction_rank_name(rec_caos, false)), font_index::INFO).await;
+        state.send_console(conn_id, "--- Fuerzas del Caos ---", font_index::GUILD_MSG);
+        state.send_console(conn_id, &format!("Ciudadanos matados: {}", ciud_killed), font_index::INFO);
+        state.send_console(conn_id, &format!("Rango: {}", faction_rank_name(rec_caos, false)), font_index::INFO);
     } else {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
-        state.send_console(conn_id, &format!("Criminales matados: {}", crim_killed), font_index::INFO).await;
-        state.send_console(conn_id, &format!("Ciudadanos matados: {}", ciud_killed), font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
+        state.send_console(conn_id, &format!("Criminales matados: {}", crim_killed), font_index::INFO);
+        state.send_console(conn_id, &format!("Ciudadanos matados: {}", ciud_killed), font_index::INFO);
     }
 }
 
@@ -221,7 +221,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -239,7 +239,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 4 || (u_y - npc_y).abs() > 4 {
-        state.send_msg_id(conn_id, 12, "").await;
+        state.send_msg_id(conn_id, 12, "");
         return;
     }
 
@@ -255,20 +255,20 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
     let (armada, caos, crim_killed, ciud_killed, rec_real, rec_caos, char_name) = user_data;
 
     if !armada && !caos {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
         return;
     }
 
     if armada {
         let current_tier = rec_real;
         if current_tier >= 4 {
-            state.send_console(conn_id, "Ya has alcanzado el rango maximo.", font_index::INFO).await;
+            state.send_console(conn_id, "Ya has alcanzado el rango maximo.", font_index::INFO);
             return;
         }
 
         let needed = FACTION_TIER_THRESHOLDS[current_tier as usize];
         if crim_killed < needed {
-            state.send_console(conn_id, &format!("Necesitas {} criminales matados para el siguiente rango (tienes {}).", needed, crim_killed), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Necesitas {} criminales matados para el siguiente rango (tienes {}).", needed, crim_killed), font_index::INFO);
             return;
         }
 
@@ -281,17 +281,17 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         // VB6: GiveFactionArmours + GiveExpReward on rank-up
         give_faction_armours(state, conn_id, false).await;
 
-        state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, true)), font_index::GUILD_MSG).await;
+        state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, true)), font_index::GUILD_MSG);
     } else {
         let current_tier = rec_caos;
         if current_tier >= 4 {
-            state.send_console(conn_id, "Ya has alcanzado el rango maximo.", font_index::INFO).await;
+            state.send_console(conn_id, "Ya has alcanzado el rango maximo.", font_index::INFO);
             return;
         }
 
         let needed = FACTION_TIER_THRESHOLDS[current_tier as usize];
         if ciud_killed < needed {
-            state.send_console(conn_id, &format!("Necesitas {} ciudadanos matados para el siguiente rango (tienes {}).", needed, ciud_killed), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Necesitas {} ciudadanos matados para el siguiente rango (tienes {}).", needed, ciud_killed), font_index::INFO);
             return;
         }
 
@@ -303,7 +303,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         // VB6: GiveFactionArmours + GiveExpReward on rank-up
         give_faction_armours(state, conn_id, true).await;
 
-        state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, false)), font_index::GUILD_MSG).await;
+        state.send_console(conn_id, &format!("Has ascendido al rango: {}!", faction_rank_name(new_tier, false)), font_index::GUILD_MSG);
     }
 }
 
@@ -319,13 +319,13 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
     let (armada, caos, char_name, guild_index) = user_data;
 
     if !armada && !caos {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
         return;
     }
 
     // Cannot leave faction while in a guild
     if guild_index > 0 {
-        state.send_msg_id(conn_id, 302, "").await;
+        state.send_msg_id(conn_id, 302, "");
         return;
     }
 
@@ -335,7 +335,7 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
         user.reenlistadas = true; // Can never re-enlist
     }
 
-    state.send_console(conn_id, "Has renunciado a tu faccion.", font_index::INFO).await;
+    state.send_console(conn_id, "Has renunciado a tu faccion.", font_index::INFO);
 }
 
 /// /DESERTAR — Desert from faction. VB6: ExpulsarFaccionReal/ExpulsarFaccionCaos.
@@ -347,7 +347,7 @@ pub(super) async fn handle_slash_desertar(state: &mut GameState, conn_id: Connec
     };
 
     if !armada && !caos {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
         return;
     }
 
@@ -426,9 +426,9 @@ pub(super) async fn handle_slash_desertar(state: &mut GameState, conn_id: Connec
     }
 
     if is_real {
-        state.send_console(conn_id, "Has desertado de la Armada Real.", font_index::FIGHT).await;
+        state.send_console(conn_id, "Has desertado de la Armada Real.", font_index::FIGHT);
     } else {
-        state.send_console(conn_id, "Has desertado de las Fuerzas del Caos.", font_index::FIGHT).await;
+        state.send_console(conn_id, "Has desertado de las Fuerzas del Caos.", font_index::FIGHT);
     }
 }
 
@@ -440,7 +440,7 @@ pub(super) async fn handle_slash_desertar(state: &mut GameState, conn_id: Connec
 pub(super) async fn handle_slash_online(state: &mut GameState, conn_id: ConnectionId) {
     let count = state.num_users;
     let record = state.record_users;
-    state.send_console(conn_id, &format!("Jugadores online: {}. Record: {}.", count, record), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Jugadores online: {}. Record: {}.", count, record), font_index::INFO);
 }
 
 /// /BALANCE — Show gold and bank gold.
@@ -449,7 +449,7 @@ pub(super) async fn handle_slash_balance(state: &mut GameState, conn_id: Connect
         Some(u) if u.logged => (u.gold, u.bank_gold),
         _ => return,
     };
-    state.send_console(conn_id, &format!("Oro: {}. En banco: {}. Total: {}.", gold, bank_gold, gold + bank_gold), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Oro: {}. En banco: {}. Total: {}.", gold, bank_gold, gold + bank_gold), font_index::INFO);
 }
 
 /// /GLOBAL <text> — Send global chat message.
@@ -461,13 +461,13 @@ pub(super) async fn handle_slash_global(state: &mut GameState, conn_id: Connecti
 
     // VB6: If ChatGlobal == False and user is not staff → blocked
     if !state.chat_global && priv_level == 0 {
-        state.send_msg_id(conn_id, 549, "").await;
+        state.send_msg_id(conn_id, 549, "");
         return;
     }
 
     if text.contains('~') { return; }
 
-    state.send_guild_chat_to(SendTarget::ToAll, &format!("{}> {}", char_name, text)).await;
+    state.send_guild_chat_to(SendTarget::ToAll, &format!("{}> {}", char_name, text));
 }
 
 /// /STATS or /EST — Show character stats summary.
@@ -488,12 +488,12 @@ pub(super) async fn handle_slash_stats(state: &mut GameState, conn_id: Connectio
     let gold = u.gold;
     let exp = u.exp;
 
-    state.send_console(conn_id, &format!("--- Estadisticas de {} ---", char_name), font_index::GUILD_MSG).await;
-    state.send_console(conn_id, &format!("Clase: {} | Raza: {} | Nivel: {}", class, race, level), font_index::INFO).await;
-    state.send_console(conn_id, &format!("HP: {}/{} | Mana: {}/{} | STA: {}/{}", min_hp, max_hp, min_mana, max_mana, min_sta, max_sta), font_index::INFO).await;
-    state.send_console(conn_id, &format!("Fuerza: {} | Agilidad: {} | Inteligencia: {}", attrs[0], attrs[1], attrs[2]), font_index::INFO).await;
-    state.send_console(conn_id, &format!("Carisma: {} | Constitucion: {}", attrs[3], attrs[4]), font_index::INFO).await;
-    state.send_console(conn_id, &format!("Oro: {} | EXP: {}", gold, exp), font_index::INFO).await;
+    state.send_console(conn_id, &format!("--- Estadisticas de {} ---", char_name), font_index::GUILD_MSG);
+    state.send_console(conn_id, &format!("Clase: {} | Raza: {} | Nivel: {}", class, race, level), font_index::INFO);
+    state.send_console(conn_id, &format!("HP: {}/{} | Mana: {}/{} | STA: {}/{}", min_hp, max_hp, min_mana, max_mana, min_sta, max_sta), font_index::INFO);
+    state.send_console(conn_id, &format!("Fuerza: {} | Agilidad: {} | Inteligencia: {}", attrs[0], attrs[1], attrs[2]), font_index::INFO);
+    state.send_console(conn_id, &format!("Carisma: {} | Constitucion: {}", attrs[3], attrs[4]), font_index::INFO);
+    state.send_console(conn_id, &format!("Oro: {} | EXP: {}", gold, exp), font_index::INFO);
 }
 
 // =====================================================================
@@ -522,7 +522,7 @@ pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, da
 
     // Silenced users can't chat
     if silenced {
-        state.send_msg_id(conn_id, 191, "").await; // TEXTO191: Has sido silenciado
+        state.send_msg_id(conn_id, 191, ""); // TEXTO191: Has sido silenciado
         return;
     }
 
@@ -536,7 +536,7 @@ pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, da
     };
 
     // Send binary talk packet to area
-    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, &message, color).await;
+    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, &message, color);
 }
 
 /// - — Yell message (larger area, red text).
@@ -558,7 +558,7 @@ pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, da
     }
 
     // Yell uses red color and goes to the whole map (binary overhead chat)
-    state.send_chat_over_head_to(SendTarget::ToMap(map), &message, char_index.0 as i16, 255).await;
+    state.send_chat_over_head_to(SendTarget::ToMap(map), &message, char_index.0 as i16, 255);
 }
 
 /// \ — Whisper (private message).
@@ -589,7 +589,7 @@ pub(super) async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId,
 
     if target_id.is_none() {
         // User not found — send console message
-        state.send_msg_id(conn_id, 196, "").await;
+        state.send_msg_id(conn_id, 196, "");
         return;
     }
     let target_id = target_id.unwrap();
@@ -600,9 +600,9 @@ pub(super) async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId,
         .unwrap_or_else(|| target_name.clone());
 
     // Send to sender: "Le dijiste a <target>: <message>" (binary whisper)
-    state.send_whisper(conn_id, &format!("Le dijiste a {}: {}", target_display, message), font_index::WHISPER_SENT).await;
+    state.send_whisper(conn_id, &format!("Le dijiste a {}: {}", target_display, message), font_index::WHISPER_SENT);
 
     // Send to receiver (binary whisper)
     let prefix = if privileges > 0 { "(GM) " } else { "" };
-    state.send_whisper(target_id, &format!("{}{} te dijo: {}", prefix, sender_name, message), font_index::WHISPER_RECV).await;
+    state.send_whisper(target_id, &format!("{}{} te dijo: {}", prefix, sender_name, message), font_index::WHISPER_RECV);
 }

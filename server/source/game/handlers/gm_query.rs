@@ -27,11 +27,11 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
         }
         // Re-broadcast appearance (body/head never changed — still intact)
         let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
         // NOVER packet (visible)
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover).await;
-        state.send_console(conn_id, "Sos visible.", font_index::INFO).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover);
+        state.send_console(conn_id, "Sos visible.", font_index::INFO);
     } else {
         // Go invisible — keep body/head intact for self-rendering with pulsing alpha
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -40,11 +40,11 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
         }
         // BP — remove character from other players' screens
         let bp = binary_packets::write_character_remove(char_index.0 as i16);
-        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &bp).await;
+        state.send_data_bytes(SendTarget::ToAreaButIndex { conn_id, map, x, y }, &bp);
         // NOVER packet — tell self we're invisible (permanent GM, duration=0)
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, true, 0);
-        state.send_bytes(conn_id, &nover).await;
-        state.send_console(conn_id, "Sos invisible.", font_index::INFO).await;
+        state.send_bytes(conn_id, &nover);
+        state.send_console(conn_id, "Sos invisible.", font_index::INFO);
     }
 }
 
@@ -66,14 +66,14 @@ pub(super) async fn handle_slash_donde(state: &mut GameState, conn_id: Connectio
             if target_priv >= privilege_level::DIOS {
                 let my_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
                 if my_priv < target_priv {
-                    state.send_console(conn_id, "No podes localizar a ese usuario.", font_index::INFO).await;
+                    state.send_console(conn_id, "No podes localizar a ese usuario.", font_index::INFO);
                     return;
                 }
             }
-            state.send_msg_id(conn_id, 735, &format!("{}@{}@{}@{}", name, map, x, y)).await;
+            state.send_msg_id(conn_id, 735, &format!("{}@{}@{}@{}", name, map, x, y));
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -98,7 +98,7 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
         Some(tc) => {
             let is_dead = state.users.get(&tc).map(|u| u.dead).unwrap_or(false);
             if !is_dead {
-                state.send_console(conn_id, "Ese usuario no esta muerto.", font_index::INFO).await;
+                state.send_console(conn_id, "Ese usuario no esta muerto.", font_index::INFO);
                 return;
             }
 
@@ -134,20 +134,20 @@ pub(super) async fn handle_slash_revivir(state: &mut GameState, conn_id: Connect
                 char_index.0 as i16, new_body as i16, orig_head as i16, heading as u8,
                 weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt);
 
             // Send HP update (VB6: SendUserHP)
             send_stats_hp(state, tc).await;
 
             // VB6: ||749@GMname — notify target who revived them
             let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_msg_id(tc, 749, &admin_name.to_string()).await;
+            state.send_msg_id(tc, 749, &admin_name.to_string());
 
-            state.send_console(conn_id, &format!("{} revivido.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("{} revivido.", target), font_index::INFO);
             info!("[GM] {} revived {}", admin_name, target);
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -177,10 +177,10 @@ pub(super) async fn handle_slash_espiar(state: &mut GameState, conn_id: Connecti
             let warp_y = (y - 2).max(1);
             warp_user(state, conn_id, map, warp_x, warp_y).await;
 
-            state.send_console(conn_id, &format!("Espiando a {}.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Espiando a {}.", target), font_index::INFO);
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -208,21 +208,21 @@ pub(super) async fn handle_slash_inv(state: &mut GameState, conn_id: ConnectionI
                 .unwrap_or_default();
 
             let target_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
-            state.send_console(conn_id, &format!("Inventario de {}:", target_name), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Inventario de {}:", target_name), font_index::INFO);
 
             let is_empty = inv_data.is_empty();
             for (slot, obj_idx, amount, equipped) in inv_data {
                 let name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_else(|| format!("Obj#{}", obj_idx));
                 let eq = if equipped { " [E]" } else { "" };
-                state.send_console(conn_id, &format!("  Slot {}: {} x{}{}", slot, name, amount, eq), font_index::INFO).await;
+                state.send_console(conn_id, &format!("  Slot {}: {} x{}{}", slot, name, amount, eq), font_index::INFO);
             }
 
             if is_empty {
-                state.send_console(conn_id, "  (vacio)", font_index::INFO).await;
+                state.send_console(conn_id, "  (vacio)", font_index::INFO);
             }
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -250,20 +250,20 @@ pub(super) async fn handle_slash_bov(state: &mut GameState, conn_id: ConnectionI
 
             let target_name = state.users.get(&tc).map(|u| u.char_name.clone()).unwrap_or_default();
             let bank_gold = state.users.get(&tc).map(|u| u.bank_gold).unwrap_or(0);
-            state.send_console(conn_id, &format!("Boveda de {} (Oro: {}):", target_name, bank_gold), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Boveda de {} (Oro: {}):", target_name, bank_gold), font_index::INFO);
 
             let bank_empty = bank_data.is_empty();
             for (slot, obj_idx, amount) in bank_data {
                 let name = state.get_object(obj_idx).map(|o| o.name.clone()).unwrap_or_else(|| format!("Obj#{}", obj_idx));
-                state.send_console(conn_id, &format!("  Slot {}: {} x{}", slot, name, amount), font_index::INFO).await;
+                state.send_console(conn_id, &format!("  Slot {}: {} x{}", slot, name, amount), font_index::INFO);
             }
 
             if bank_empty {
-                state.send_console(conn_id, "  (vacia)", font_index::INFO).await;
+                state.send_console(conn_id, "  (vacia)", font_index::INFO);
             }
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -282,10 +282,10 @@ pub(super) async fn handle_slash_nick2ip(state: &mut GameState, conn_id: Connect
 
     match found {
         Some((name, ip)) => {
-            state.send_console(conn_id, &format!("IP de {}: {}", name, ip), font_index::INFO).await;
+            state.send_console(conn_id, &format!("IP de {}: {}", name, ip), font_index::INFO);
         }
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
         }
     }
 }
@@ -303,9 +303,9 @@ pub(super) async fn handle_slash_ip2nick(state: &mut GameState, conn_id: Connect
         .collect();
 
     if matches.is_empty() {
-        state.send_console(conn_id, &format!("Nadie con IP {}", ip), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Nadie con IP {}", ip), font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("IP {}: {}", ip, matches.join(", ")), font_index::INFO).await;
+        state.send_console(conn_id, &format!("IP {}: {}", ip, matches.join(", ")), font_index::INFO);
     }
 }
 
@@ -351,7 +351,7 @@ pub(super) async fn handle_slash_smod(state: &mut GameState, conn_id: Connection
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
             return;
         }
     };
@@ -372,7 +372,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
         "PART" => {
             if value <= 0 { return; }
             let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 0);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
         "AURA" => {
             // VB6: UserList(tIndex).Char.AuraA = val(Arg2); SendUserAura
@@ -385,12 +385,12 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                     user.aura_a as i16, user.aura_w as i16,
                     user.aura_e as i16, user.aura_r as i16, user.aura_c as i16,
                 );
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt);
             }
         }
         "FX" => {
             let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 20);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
         "ATRI" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -398,14 +398,14 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                     user.attributes[i] = value as i32;
                 }
             }
-            state.send_msg_id(conn_id, 571, &value.to_string()).await;
+            state.send_msg_id(conn_id, 571, &value.to_string());
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.gold = value;
             }
             send_stats_gold(state, target).await;
-            state.send_msg_id(conn_id, 572, &value.to_string()).await;
+            state.send_msg_id(conn_id, 572, &value.to_string());
         }
         "EXP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -413,70 +413,70 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
             }
             check_user_level(state, target).await;
             send_stats_exp(state, target).await;
-            state.send_msg_id(conn_id, 572, &value.to_string()).await;
+            state.send_msg_id(conn_id, 572, &value.to_string());
         }
         "BODY" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.body = value as i32;
             }
-            state.send_msg_id(conn_id, 573, &value.to_string()).await;
+            state.send_msg_id(conn_id, 573, &value.to_string());
             // VB6: ChangeUserChar → CP to map
             let u = state.users.get(&target).unwrap();
             let cp = binary_packets::write_character_change(
                 char_index as i16, value as i16, u.head as i16, u.heading as u8,
                 u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
         }
         "HEAD" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.head = value as i32;
             }
-            state.send_msg_id(conn_id, 574, &value.to_string()).await;
+            state.send_msg_id(conn_id, 574, &value.to_string());
             let u = state.users.get(&target).unwrap();
             let cp = binary_packets::write_character_change(
                 char_index as i16, u.body as i16, value as i16, u.heading as u8,
                 u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
         }
         "CRI" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.criminales_matados = value as i32;
             }
-            state.send_msg_id(conn_id, 575, &value.to_string()).await;
+            state.send_msg_id(conn_id, 575, &value.to_string());
         }
         "CIU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.ciudadanos_matados = value as i32;
             }
-            state.send_msg_id(conn_id, 576, &value.to_string()).await;
+            state.send_msg_id(conn_id, 576, &value.to_string());
         }
         "LEVEL" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.level = value as i32;
             }
-            state.send_msg_id(conn_id, 577, &value.to_string()).await;
+            state.send_msg_id(conn_id, 577, &value.to_string());
         }
         "CLASE" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.class = PlayerClass::from_str_or_default(value_str);
             }
-            state.send_msg_id(conn_id, 578, &value_str.to_string()).await;
+            state.send_msg_id(conn_id, 578, &value_str.to_string());
         }
         "HAM" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.min_ham = value as i32;
                 user.max_ham = value as i32;
             }
-            state.send_msg_id(conn_id, 579, &value.to_string()).await;
+            state.send_msg_id(conn_id, 579, &value.to_string());
         }
         "AGU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.min_agua = value as i32;
                 user.max_agua = value as i32;
             }
-            state.send_msg_id(conn_id, 580, &value.to_string()).await;
+            state.send_msg_id(conn_id, 580, &value.to_string());
         }
         "STA" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -484,7 +484,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.max_sta = value as i32;
             }
             send_stats_sta(state, target).await;
-            state.send_msg_id(conn_id, 581, &value.to_string()).await;
+            state.send_msg_id(conn_id, 581, &value.to_string());
         }
         "MP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -492,7 +492,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.max_mana = value as i32;
             }
             send_stats_mana(state, target).await;
-            state.send_msg_id(conn_id, 582, &value.to_string()).await;
+            state.send_msg_id(conn_id, 582, &value.to_string());
         }
         "HP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -500,7 +500,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 user.max_hp = value as i32;
             }
             send_stats_hp(state, target).await;
-            state.send_msg_id(conn_id, 583, &value.to_string()).await;
+            state.send_msg_id(conn_id, 583, &value.to_string());
         }
         "ESCU" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -511,7 +511,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
                 u.weapon_anim as i16, value as i16, u.casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
         }
         "CASCO" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -522,7 +522,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
                 u.weapon_anim as i16, u.shield_anim as i16, value as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
         }
         "ARMA" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -533,10 +533,10 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
                 char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
                 value as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
         }
         _ => {
-            state.send_msg_id(conn_id, 584, "").await;
+            state.send_msg_id(conn_id, 584, "");
         }
     }
 }
@@ -556,14 +556,14 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
         "PART" => {
             if value <= 0 { return; }
             let pkt = binary_packets::write_create_fx(char_index as i16, value as i16, 0);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.gold = value;
             }
             send_stats_gold(state, target).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@oro@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@oro@{}@{}", gm_name, target_name, value));
         }
         "EXP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -571,7 +571,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
             }
             check_user_level(state, target).await;
             send_stats_exp(state, target).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@experiencia@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@experiencia@{}@{}", gm_name, target_name, value));
         }
         "BODY" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -582,8 +582,8 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 char_index as i16, value as i16, u.head as i16, u.heading as u8,
                 u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@body@{}@{}", gm_name, target_name, value)).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@body@{}@{}", gm_name, target_name, value));
         }
         "HEAD" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -594,32 +594,32 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 char_index as i16, u.body as i16, value as i16, u.heading as u8,
                 u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
             );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@head@{}@{}", gm_name, target_name, value)).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@head@{}@{}", gm_name, target_name, value));
         }
         "CRI" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.criminales_matados = value as i32;
             }
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@criminales@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@criminales@{}@{}", gm_name, target_name, value));
         }
         "CIU" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.ciudadanos_matados = value as i32;
             }
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@ciudadanos@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@ciudadanos@{}@{}", gm_name, target_name, value));
         }
         "LEVEL" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.level = value as i32;
             }
             let pkt_level = binary_packets::write_level_update(value as u8);
-            state.send_bytes(target, &pkt_level).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@nivel@{}@{}", gm_name, target_name, value)).await;
+            state.send_bytes(target, &pkt_level);
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@nivel@{}@{}", gm_name, target_name, value));
         }
         "CLASE" => {
             // VB6: class is a string, but we receive it as numeric here
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@clase@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@clase@{}@{}", gm_name, target_name, value));
         }
         "STA" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -627,7 +627,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 user.max_sta = value as i32;
             }
             send_stats_sta(state, target).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@energia@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@energia@{}@{}", gm_name, target_name, value));
         }
         "MP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -635,7 +635,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 user.max_mana = value as i32;
             }
             send_stats_mana(state, target).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@mana@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@mana@{}@{}", gm_name, target_name, value));
         }
         "HP" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -643,10 +643,10 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
                 user.max_hp = value as i32;
             }
             send_stats_hp(state, target).await;
-            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@vida@{}@{}", gm_name, target_name, value)).await;
+            state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@vida@{}@{}", gm_name, target_name, value));
         }
         _ => {
-            state.send_msg_id(gm_conn, 584, "").await;
+            state.send_msg_id(gm_conn, 584, "");
         }
     }
 }
@@ -666,7 +666,7 @@ pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
             return;
         }
     };
@@ -678,8 +678,8 @@ pub(super) async fn handle_slash_dv(state: &mut GameState, conn_id: ConnectionId
     // Warp to Ullathorpe (default home)
     warp_user(state, target_id, 1, 58, 45).await;
     send_warp_fx(state, target_id).await;
-    state.send_console(target_id, "Un GM te ha devuelto a tu posicion anterior.", font_index::INFO).await;
-    state.send_console(conn_id, &format!("Jugador '{}' devuelto.", target), font_index::INFO).await;
+    state.send_console(target_id, "Un GM te ha devuelto a tu posicion anterior.", font_index::INFO);
+    state.send_console(conn_id, &format!("Jugador '{}' devuelto.", target), font_index::INFO);
 }
 
 /// /INFO <name> — View detailed player info. VB6 TCP.bas:3716
@@ -693,7 +693,7 @@ pub(super) async fn handle_slash_info(state: &mut GameState, conn_id: Connection
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no esta online.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no esta online.", target), font_index::INFO);
             return;
         }
     };
@@ -716,7 +716,7 @@ pub(super) async fn handle_slash_info(state: &mut GameState, conn_id: Connection
     };
 
     for line in info_lines {
-        state.send_console(conn_id, &format!("{}", line), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{}", line), font_index::INFO);
     }
 }
 
@@ -730,21 +730,21 @@ pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: Connection
 
     let parts: Vec<&str> = args.splitn(2, '@').collect();
     if parts.len() < 2 {
-        state.send_console(conn_id, "Uso: /EDIT nombre@niveles", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /EDIT nombre@niveles", font_index::INFO);
         return;
     }
 
     let target_name = parts[0].trim();
     let levels: i32 = parts[1].trim().parse().unwrap_or(0);
     if levels < 1 || levels > 50 {
-        state.send_console(conn_id, "Niveles debe ser entre 1 y 50.", font_index::INFO).await;
+        state.send_console(conn_id, "Niveles debe ser entre 1 y 50.", font_index::INFO);
         return;
     }
 
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target_name), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target_name), font_index::INFO);
             return;
         }
     };
@@ -768,8 +768,8 @@ pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: Connection
 
     send_stats_exp(state, target_id).await;
     let final_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(0);
-    state.send_console(conn_id, &format!("Jugador '{}' ahora es nivel {}.", target_name, final_level), font_index::INFO).await;
-    state.send_console(target_id, "Un GM te ha subido de nivel!", font_index::INFO).await;
+    state.send_console(conn_id, &format!("Jugador '{}' ahora es nivel {}.", target_name, final_level), font_index::INFO);
+    state.send_console(target_id, "Un GM te ha subido de nivel!", font_index::INFO);
 }
 
 /// /LASTIP <name> — Show last IP of a user. Requires ADMIN+.
@@ -777,7 +777,7 @@ pub(super) async fn handle_slash_lastip(state: &mut GameState, conn_id: Connecti
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -789,10 +789,10 @@ pub(super) async fn handle_slash_lastip(state: &mut GameState, conn_id: Connecti
 
     match found {
         Some((name, ip)) => {
-            state.send_console(conn_id, &format!("Ultima IP de {}: {}", name, ip), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Ultima IP de {}: {}", name, ip), font_index::INFO);
         }
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
         }
     }
 }
@@ -803,7 +803,7 @@ pub(super) async fn handle_slash_consulta(state: &mut GameState, conn_id: Connec
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -811,7 +811,7 @@ pub(super) async fn handle_slash_consulta(state: &mut GameState, conn_id: Connec
     let target_id = match state.find_user_by_name(target) {
         Some(id) => id,
         None => {
-            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Jugador '{}' no encontrado.", target), font_index::INFO);
             return;
         }
     };
@@ -823,8 +823,8 @@ pub(super) async fn handle_slash_consulta(state: &mut GameState, conn_id: Connec
 
     let status = if new_val { "en consulta" } else { "fuera de consulta" };
     let target_name = state.users.get(&target_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_id, &format!("Estas {}.", status), font_index::INFO).await;
-    state.send_console(conn_id, &format!("{} ahora esta {}.", target_name, status), font_index::INFO).await;
+    state.send_console(target_id, &format!("Estas {}.", status), font_index::INFO);
+    state.send_console(conn_id, &format!("{} ahora esta {}.", target_name, status), font_index::INFO);
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} set {} to {}", gm_name, target_name, status);
@@ -835,7 +835,7 @@ pub(super) async fn handle_slash_onlinereal(state: &mut GameState, conn_id: Conn
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -846,10 +846,10 @@ pub(super) async fn handle_slash_onlinereal(state: &mut GameState, conn_id: Conn
         .collect();
 
     if members.is_empty() {
-        state.send_console(conn_id, "No hay miembros de la Armada Real online.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay miembros de la Armada Real online.", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Armada Real online ({}):", members.len()), font_index::INFO).await;
-        state.send_console(conn_id, &members.join(", "), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Armada Real online ({}):", members.len()), font_index::INFO);
+        state.send_console(conn_id, &members.join(", "), font_index::INFO);
     }
 }
 
@@ -858,7 +858,7 @@ pub(super) async fn handle_slash_onlinecaos(state: &mut GameState, conn_id: Conn
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => {}
         _ => {
-            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO).await;
+            state.send_console(conn_id, "No tenes permisos para usar este comando.", font_index::INFO);
             return;
         }
     }
@@ -869,9 +869,9 @@ pub(super) async fn handle_slash_onlinecaos(state: &mut GameState, conn_id: Conn
         .collect();
 
     if members.is_empty() {
-        state.send_console(conn_id, "No hay miembros de la Legion del Caos online.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay miembros de la Legion del Caos online.", font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Legion del Caos online ({}):", members.len()), font_index::INFO).await;
-        state.send_console(conn_id, &members.join(", "), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Legion del Caos online ({}):", members.len()), font_index::INFO);
+        state.send_console(conn_id, &members.join(", "), font_index::INFO);
     }
 }

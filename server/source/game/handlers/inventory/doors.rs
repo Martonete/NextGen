@@ -17,7 +17,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
 
     // Distance check: must be within 3 tiles (VB6: Distance > 3)
     if (x - user_x).abs() > 3 || (y - user_y).abs() > 3 {
-        state.send_msg_id(conn_id, 10, "").await;
+        state.send_msg_id(conn_id, 10, "");
         return;
     }
 
@@ -39,7 +39,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         }).unwrap_or(false);
 
         if !has_key {
-            state.send_msg_id(conn_id, 652, "").await;
+            state.send_msg_id(conn_id, 652, "");
             return;
         }
     }
@@ -63,7 +63,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Send HO packet with the NEW object's graphic (VB6: after changing ObjIndex)
         let new_grh = state.get_object(new_obj_idx).map(|o| o.grh_index).unwrap_or(0);
         let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, new_grh as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
 
         // Read door type from the NEW object (VB6 reads after ObjIndex change)
         let new_obj = state.get_object(new_obj_idx).cloned();
@@ -83,12 +83,12 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, false);
             let pkt_bq = binary_packets::write_block_position(*tx as u8, y as u8, false);
-            state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq);
         }
 
         // Play door sound (VB6: SND_PUERTA = 5)
         let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
     } else {
         // Door is OPEN → close it
 
@@ -109,7 +109,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         let closed_obj = state.get_object(new_obj_idx).cloned();
         let new_grh = closed_obj.as_ref().map(|o| o.grh_index).unwrap_or(0);
         let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, new_grh as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
 
         // Read door type from the NEW (closed) object
         let is_puerta_doble = closed_obj.as_ref().map(|o| o.puerta_doble == 1).unwrap_or(false);
@@ -128,12 +128,12 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, true);
             let pkt_bq = binary_packets::write_block_position(*tx as u8, y as u8, true);
-            state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq).await;
+            state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq);
         }
 
         // Play door sound (VB6: SND_PUERTA = 5)
         let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
     }
 
     // VB6: Set TargetObj position (after toggle)
@@ -160,10 +160,10 @@ pub(crate) async fn handle_safe_toggle(state: &mut GameState, conn_id: Connectio
 
     if safe {
         let pkt = binary_packets::write_safe_off();
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     } else {
         let pkt = binary_packets::write_safe_on();
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 
@@ -228,7 +228,7 @@ pub(crate) async fn accion_para_foro(state: &mut GameState, conn_id: ConnectionI
 
     // 4. Show the forum form
     let pkt = binary_packets::write_show_forum_form(visibility, can_make_sticky);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// Send all posts (regular + sticky) from a specific forum board to a user.
@@ -246,11 +246,11 @@ async fn send_forum_posts(
 
     for post in &forum.posts {
         let pkt = binary_packets::write_add_forum_msg(regular_type, &post.title, &post.author, &post.body);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
     for post in &forum.stickies {
         let pkt = binary_packets::write_add_forum_msg(sticky_type, &post.title, &post.author, &post.body);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 }
 

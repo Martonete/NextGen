@@ -55,18 +55,18 @@ pub(crate) async fn handle_use_item_click(state: &mut GameState, conn_id: Connec
     if is_projectile {
         let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
         if is_dead {
-            state.send_msg_id(conn_id, 5, "").await;
+            state.send_msg_id(conn_id, 5, "");
             return;
         }
         let is_equipped = state.users.get(&conn_id)
             .map(|u| u.inventory[idx].equipped).unwrap_or(false);
         if !is_equipped {
-            state.send_console(conn_id, "Antes de usar la herramienta deberías equipártela.", font_index::INFO).await;
+            state.send_console(conn_id, "Antes de usar la herramienta deberías equipártela.", font_index::INFO);
             return;
         }
         // VB6: WriteMultiMessage(UserIndex, eMessages.WorkRequestTarget, eSkill.Proyectiles)
         let pkt = binary_packets::write_work_request_target(skill_id::PROYECTILES as u8);
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
         return;
     }
 
@@ -117,7 +117,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
     };
 
     if is_dead && obj_data.obj_type != ObjType::ResurrectPotion && obj_data.obj_type != ObjType::Boat {
-        state.send_msg_id(conn_id, 5, "").await; // VB6 TEXTO5: muerto, no puede usar items
+        state.send_msg_id(conn_id, 5, ""); // VB6 TEXTO5: muerto, no puede usar items
         return;
     }
 
@@ -134,7 +134,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if obj_data.tipo_pocion == 6 {
                 let is_gm = state.users.get(&conn_id).map(|u| u.privileges > 0).unwrap_or(false);
                 if !is_gm {
-                    state.send_console(conn_id, "Sientes un gran mareo y pierdes el conocimiento.", font_index::FIGHT).await;
+                    state.send_console(conn_id, "Sientes un gran mareo y pierdes el conocimiento.", font_index::FIGHT);
                     // Consume item first
                     if let Some(user) = state.users.get_mut(&conn_id) {
                         user.inventory[idx].amount -= 1;
@@ -159,7 +159,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
             let pkt_wave = binary_packets::write_play_wave(snd_id as u8, snd_x as u8, snd_y as u8);
-            state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave).await;
+            state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave);
 
             // Consume one
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -189,14 +189,14 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
             let pkt_wave = binary_packets::write_play_wave(46, snd_x as u8, snd_y as u8);
-            state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave).await;
+            state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave);
             send_inventory_slot(state, conn_id, idx).await;
             send_hunger_thirst(state, conn_id).await;
         }
         ObjType::Key => {
             // Keys are used on doors — they're not "used" from inventory directly
             // The door interaction happens via LC/RC on a door tile
-            state.send_console(conn_id, "Esta llave sirve para abrir una puerta", font_index::INFO).await;
+            state.send_console(conn_id, "Esta llave sirve para abrir una puerta", font_index::INFO);
         }
         ObjType::Boat => {
             // VB6: InvUsuario.bas Case eOBJType.otBarcos + Trabajo.bas DoNavega
@@ -220,7 +220,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                             .map(|g| g.is_tile_free(nx, ny)).unwrap_or(false)
                 });
                 if !has_water_nearby {
-                    state.send_msg_id(conn_id, 106, "").await; // TEXTO106
+                    state.send_msg_id(conn_id, 106, ""); // TEXTO106
                     return;
                 }
             }
@@ -262,15 +262,15 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 // Notify: mount off
                 let mnt_ci = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
                 let pkt_usm_off = binary_packets::write_user_mount(mnt_ci as i16, false);
-                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_usm_off).await;
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_usm_off);
                 let pkt_mvol_off = binary_packets::write_levitate(mnt_ci as i16, false);
-                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_mvol_off).await;
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_mvol_off);
                 let (pkt_cd, pkt_au) = {
                     let u = state.users.get(&conn_id).unwrap();
                     (crate::game::handlers::common::build_cd_binary(u), crate::game::handlers::common::build_aura_binary(u))
                 };
-                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_cd).await;
-                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_au).await;
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_cd);
+                state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_au);
             }
 
             // VB6 DoNavega: If hidden (Oculto), clear hiding. Only send SetInvisible(false)
@@ -287,8 +287,8 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 // Only send SetInvisible(false) if spell invisibility is NOT active
                 if !is_invisible {
                     let pkt_invis = binary_packets::write_set_invisible(char_index_val as i16, false, 0);
-                    state.send_data_bytes(SendTarget::ToMap(map_for_nover), &pkt_invis).await;
-                    state.send_console(conn_id, "¡Has vuelto a ser visible!", font_index::INFO).await;
+                    state.send_data_bytes(SendTarget::ToMap(map_for_nover), &pkt_invis);
+                    state.send_console(conn_id, "¡Has vuelto a ser visible!", font_index::INFO);
                 }
             }
 
@@ -368,13 +368,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 None => return,
             };
             // CP to area (VB6 SendToUserArea = includes self)
-            state.send_data_bytes(SendTarget::ToArea { map, x: bx, y: by }, &cp_bytes).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: bx, y: by }, &cp_bytes);
             // NAVEG to self (toggle client navigation state)
             let pkt_nav = binary_packets::write_navigate_toggle();
-            state.send_bytes(conn_id, &pkt_nav).await;
+            state.send_bytes(conn_id, &pkt_nav);
             // NVG broadcast to all players
             let pkt_nvg = binary_packets::write_navigate_broadcast(nav_ci as i16, nav_flag);
-            state.send_data_bytes(SendTarget::ToAll, &pkt_nvg).await;
+            state.send_data_bytes(SendTarget::ToAll, &pkt_nvg);
         }
         ObjType::Instrument => {
             // VB6: Play music instrument — broadcast TW<Snd1> to area
@@ -385,9 +385,9 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             };
             if wav > 0 {
                 let pkt_wave = binary_packets::write_play_wave(wav as u8, x as u8, y as u8);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
             }
-            state.send_console(conn_id, "Tocas una melodia", font_index::INFO).await;
+            state.send_console(conn_id, "Tocas una melodia", font_index::INFO);
         }
         ObjType::Scroll => {
             // Learn spell from scroll
@@ -399,7 +399,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 .map(|u| u.spells.iter().any(|&s| s == spell_id))
                 .unwrap_or(false);
             if already_known {
-                state.send_msg_id(conn_id, 182, "").await; // TEXTO182: Ya tenes ese hechizo
+                state.send_msg_id(conn_id, 182, ""); // TEXTO182: Ya tenes ese hechizo
                 return;
             }
 
@@ -424,15 +424,15 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 // Send SHS to update the spell slot on client
                 let shs_slot = slot_idx + 1; // 1-based
                 let pkt_shs = binary_packets::write_change_spell_slot(shs_slot as u8, spell_id as i16, &spell_name);
-                state.send_bytes(conn_id, &pkt_shs).await;
-                state.send_msg_id(conn_id, 832, &spell_name).await; // TEXTO832
+                state.send_bytes(conn_id, &pkt_shs);
+                state.send_msg_id(conn_id, 832, &spell_name); // TEXTO832
             } else {
-                state.send_msg_id(conn_id, 181, "").await; // TEXTO181
+                state.send_msg_id(conn_id, 181, ""); // TEXTO181
             }
         }
         ObjType::EmptyBottle => {
             // Fill at water source — simplified, just inform
-            state.send_msg_id(conn_id, 103, "").await; // TEXTO103: No hay agua allí
+            state.send_msg_id(conn_id, 103, ""); // TEXTO103: No hay agua allí
         }
         ObjType::FullBottle => {
             // Drink from bottle → restore thirst, swap to empty bottle variant
@@ -466,7 +466,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
         ObjType::ResurrectPotion => {
             // Resurrection potion — can only use while dead
             if !is_dead {
-                state.send_msg_id(conn_id, 117, "").await; // TEXTO117: Debes estar muerto para utilizar esta poción
+                state.send_msg_id(conn_id, 117, ""); // TEXTO117: Debes estar muerto para utilizar esta poción
                 return;
             }
             // Consume the item first
@@ -479,7 +479,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             send_inventory_slot(state, conn_id, idx).await;
             // Use shared revive logic (restores body, head, sends CFF + CP)
             revive_user(state, conn_id).await;
-            state.send_msg_id(conn_id, 119, "").await; // TEXTO119: Te has resucitado
+            state.send_msg_id(conn_id, 119, ""); // TEXTO119: Te has resucitado
         }
         ObjType::Mount => {
             // Mount/dismount — land mounts use montado (NOT navigating, which is for boats)
@@ -535,11 +535,11 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                         u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
                     )
                 };
-                state.send_data_bytes(SendTarget::ToArea { map: nav_map, x: nav_x, y: nav_y }, &cp_nav).await;
+                state.send_data_bytes(SendTarget::ToArea { map: nav_map, x: nav_x, y: nav_y }, &cp_nav);
                 let pkt_nav = binary_packets::write_navigate_toggle();
-                state.send_bytes(conn_id, &pkt_nav).await;
+                state.send_bytes(conn_id, &pkt_nav);
                 let pkt_nvg_off = binary_packets::write_navigate_broadcast(nav_ci as i16, false);
-                state.send_data_bytes(SendTarget::ToAll, &pkt_nvg_off).await;
+                state.send_data_bytes(SendTarget::ToAll, &pkt_nvg_off);
             }
 
             let (map, x, y, char_index) = match state.users.get(&conn_id) {
@@ -550,7 +550,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if is_mounted {
                 // Dismount — check tile is not water (can't dismount in water)
                 if state.hay_agua(map, x, y) {
-                    state.send_console(conn_id, "No puedes desmontar aqui.", font_index::INFO).await;
+                    state.send_console(conn_id, "No puedes desmontar aqui.", font_index::INFO);
                     return;
                 }
 
@@ -623,18 +623,18 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.weapon_anim as i16, user.shield_anim as i16, user.casco_anim as i16, 0, 0,
                 )
             };
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
 
             // Send mount state (USM)
             let mounted_now = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
             let pkt_usm = binary_packets::write_user_mount(char_index.0 as i16, mounted_now);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm);
 
             // Send flying state (MVOL) if flying mount
             if is_flying {
                 let lev = state.users.get(&conn_id).map(|u| u.levitando).unwrap_or(false);
                 let pkt_mvol = binary_packets::write_levitate(char_index.0 as i16, lev);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_mvol).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_mvol);
             }
 
             // Send [CD (levitando + auras) and AU| (aura update)
@@ -642,8 +642,8 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 let user = match state.users.get(&conn_id) { Some(u) => u, None => return };
                 (crate::game::handlers::common::build_cd_binary(user), crate::game::handlers::common::build_aura_binary(user))
             };
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cd).await;
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cd);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au);
         }
         ObjType::ScrollItem => {
             // Scroll system removed — no-op
@@ -654,14 +654,14 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // VB6: Renounce Chaos faction
             let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
             if guild_idx > 0 {
-                state.send_msg_id(conn_id, 302, "").await; // Must leave guild first
+                state.send_msg_id(conn_id, 302, ""); // Must leave guild first
                 return;
             }
             let is_caos = state.users.get(&conn_id)
                 .map(|u| u.criminal || u.fuerzas_caos)
                 .unwrap_or(false);
             if !is_caos {
-                state.send_msg_id(conn_id, 239, "").await; // Not in chaos faction
+                state.send_msg_id(conn_id, 239, ""); // Not in chaos faction
                 return;
             }
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -672,27 +672,27 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
-            state.send_msg_id(conn_id, 355, "").await; // Faction changed
+            state.send_msg_id(conn_id, 355, ""); // Faction changed
             send_inventory_slot(state, conn_id, idx).await;
             // Send updated status via CharacterCreate (includes clan tag)
             if let Some(u) = state.users.get(&conn_id) {
                 let pkt_cc = u.build_cc_binary();
                 let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc);
             }
         }
         ObjType::RenounceRoyal => {
             // VB6: Renounce Royal faction
             let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
             if guild_idx > 0 {
-                state.send_msg_id(conn_id, 302, "").await;
+                state.send_msg_id(conn_id, 302, "");
                 return;
             }
             let is_armada = state.users.get(&conn_id)
                 .map(|u| !u.criminal || u.armada_real)
                 .unwrap_or(false);
             if !is_armada {
-                state.send_msg_id(conn_id, 239, "").await;
+                state.send_msg_id(conn_id, 239, "");
                 return;
             }
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -703,13 +703,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     user.inventory[idx] = InventorySlot::default();
                 }
             }
-            state.send_msg_id(conn_id, 355, "").await;
+            state.send_msg_id(conn_id, 355, "");
             send_inventory_slot(state, conn_id, idx).await;
             // Send updated status via CharacterCreate (includes clan tag)
             if let Some(u) = state.users.get(&conn_id) {
                 let pkt_cc = u.build_cc_binary();
                 let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cc);
             }
         }
         ObjType::Weapon => {
@@ -718,17 +718,17 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 let is_equipped = state.users.get(&conn_id)
                     .map(|u| u.inventory[idx].equipped).unwrap_or(false);
                 if !is_equipped {
-                    state.send_console(conn_id, "Antes de usar la herramienta deberías equipártela.", font_index::INFO).await;
+                    state.send_console(conn_id, "Antes de usar la herramienta deberías equipártela.", font_index::INFO);
                     return;
                 }
                 let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
                 if sta <= 0 {
-                    state.send_msg_id(conn_id, 17, "").await; // Too tired
+                    state.send_msg_id(conn_id, 17, ""); // Too tired
                     return;
                 }
                 // VB6: WriteMultiMessage(UserIndex, eMessages.WorkRequestTarget, eSkill.Proyectiles)
                 let pkt = binary_packets::write_work_request_target(skill_id::PROYECTILES as u8);
-                state.send_bytes(conn_id, &pkt).await;
+                state.send_bytes(conn_id, &pkt);
             }
             // Non-projectile weapons: no action on "use" (VB6 handles fogata etc. but that's separate)
         }

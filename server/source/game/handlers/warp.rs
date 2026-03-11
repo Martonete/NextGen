@@ -90,7 +90,7 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Send AreaChanged packet — tells client to erase out-of-range entities
-    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as u8, pos_y as u8)).await;
+    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as u8, pos_y as u8));
 
     // Build our CC (binary) for sending to newly visible users
     let my_cc = match state.users.get(&conn_id) {
@@ -198,26 +198,26 @@ pub(crate) async fn check_update_needed_user(
                 let other_invisible = other.admin_invisible || other.invisible || other.hidden;
                 let other_cd = build_cd_binary(other);
                 let are_clanmates = same_clan(state, conn_id, other_id);
-                state.send_bytes(conn_id, &other_cc).await;
-                state.send_bytes(conn_id, &other_cd).await;
+                state.send_bytes(conn_id, &other_cc);
+                state.send_bytes(conn_id, &other_cd);
                 // If the other player is invisible, tell us not to render them (unless clanmates)
                 if other_invisible && !are_clanmates {
-                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true, 0)).await;
+                    state.send_bytes(conn_id, &binary_packets::write_set_invisible(other_char_idx as i16, true, 0));
                 }
                 // Send our CC + [CD to them
-                state.send_bytes(other_id, &my_cc).await;
+                state.send_bytes(other_id, &my_cc);
                 let my_cd = match state.users.get(&conn_id) {
                     Some(u) => build_cd_binary(u),
                     None => continue,
                 };
-                state.send_bytes(other_id, &my_cd).await;
+                state.send_bytes(other_id, &my_cd);
                 // If we are invisible, tell them not to render us (unless clanmates)
                 if my_invisible && !are_clanmates {
-                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true, 0)).await;
+                    state.send_bytes(other_id, &binary_packets::write_set_invisible(my_char_idx as i16, true, 0));
                 }
             }
         } else {
-            state.send_bytes(other_id, &my_cc).await;
+            state.send_bytes(other_id, &my_cc);
         }
     }
 
@@ -227,27 +227,27 @@ pub(crate) async fn check_update_needed_user(
             Some(npc) if npc.active => npc.build_cc_binary(),
             _ => continue,
         };
-        state.send_bytes(conn_id, &npc_cc).await;
+        state.send_bytes(conn_id, &npc_cc);
     }
 
     // Send ground items (HO = ObjectCreate packet) — VB6 ModAreas.bas line 264
     for (grh, ix, iy) in new_items {
-        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as u8, iy as u8, grh as i16)).await;
+        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as u8, iy as u8, grh as i16));
     }
 
     // Send door BQ packets (BlockPosition) — VB6 ModAreas.bas lines 273-300
     for (bx, by, blocked) in new_door_bqs {
-        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as u8, by as u8, blocked)).await;
+        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as u8, by as u8, blocked));
     }
 
     // Send particle effects (PCF) — VB6 ModAreas.bas line 255
     for (pg, px, py) in new_particles {
-        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as u8, py as u8, 0)).await;
+        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as u8, py as u8, 0));
     }
 
     // Send lighting effects (PCL) — VB6 ModAreas.bas line 259
     for (lx, ly, range, r, g, b) in new_lights {
-        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as u8, ly as u8, range as u8, r as u8, g as u8, b as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as u8, ly as u8, range as u8, r as u8, g as u8, b as u8));
     }
 }
 
@@ -283,7 +283,7 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
                 state.send_data_bytes(
                     SendTarget::ToArea { map: omap, x: ox, y: oy },
                     &binary_packets::write_character_remove(ci.0 as i16),
-                ).await;
+                );
             }
             state.kill_npc(idx);
 
@@ -323,7 +323,7 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
             // Broadcast new NPC to area
             let cc_pkt = state.get_npc(new_idx).map(|n| n.build_cc_binary());
             if let Some(pkt) = cc_pkt {
-                state.send_data_bytes(SendTarget::ToArea { map: new_map, x: new_x, y: new_y }, &pkt).await;
+                state.send_data_bytes(SendTarget::ToArea { map: new_map, x: new_x, y: new_y }, &pkt);
             }
         }
     }
@@ -390,11 +390,11 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
     }
 
     // Send position update to ghost (PU) and movement broadcast to area
-    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as u8, push_y as u8)).await;
+    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as u8, push_y as u8));
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: ghost_conn, map, x: push_x, y: push_y },
         &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as u8, push_y as u8),
-    ).await;
+    );
 }
 
 /// Warp variant that skips find_free_pos — places the user exactly at (x,y)
@@ -415,7 +415,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     let (old_map, old_x, old_y, char_index, area_min_x, area_min_y) = old_data;
 
     // 1. BKW — fade to black (VB6 line 2262)
-    state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
+    state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
 
     // 2. QDL + BP — remove dialog and character from the full 27×27 area.
     // VB6 ToPCArea uses the 27×27 zone group, not just the viewport (±8x, ±6y).
@@ -423,7 +423,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     // reach the same players — otherwise ghosts remain visible at the teleport tile.
     let qdl_pkt = binary_packets::write_remove_char_dialog(char_index.0 as i16);
     let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
-    state.send_bytes(conn_id, &binary_packets::write_remove_dialogs()).await;
+    state.send_bytes(conn_id, &binary_packets::write_remove_dialogs());
 
     if area_min_x > 0 || area_min_y > 0 {
         let amx = area_min_x.max(1);
@@ -442,10 +442,10 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
                 }
             }
             for c in &targets {
-                state.send_bytes(*c, &qdl_pkt).await;
+                state.send_bytes(*c, &qdl_pkt);
             }
             for c in &targets {
-                state.send_bytes(*c, &bp_pkt).await;
+                state.send_bytes(*c, &bp_pkt);
             }
         }
     } else {
@@ -453,11 +453,11 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
         state.send_data_bytes(
             SendTarget::ToMapButIndex { conn_id, map: old_map },
             &qdl_pkt,
-        ).await;
+        );
         state.send_data_bytes(
             SendTarget::ToMapButIndex { conn_id, map: old_map },
             &bp_pkt,
-        ).await;
+        );
     }
     state.world.remove_user(old_map, old_x, old_y);
 
@@ -532,23 +532,23 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
         (200, 200, 200, 0, format!("Mapa {}", new_map))
     };
 
-    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8)).await;
-    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
-    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
+    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8));
+    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
+    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
 
     // 8. Send IP (self char index) + own CC + [CD so client renders self at new position
     let (ci, own_cc, own_cd) = match state.users.get(&conn_id) {
         Some(u) => (u.char_index, u.build_cc_binary(), build_cd_binary(u)),
         None => return,
     };
-    state.send_bytes(conn_id, &binary_packets::write_user_char_index(ci.0 as i16)).await;
-    state.send_bytes(conn_id, &own_cc).await;
-    state.send_bytes(conn_id, &own_cd).await;
+    state.send_bytes(conn_id, &binary_packets::write_user_char_index(ci.0 as i16));
+    state.send_bytes(conn_id, &own_cc);
+    state.send_bytes(conn_id, &own_cd);
 
     // 8b. Re-send mount state — CC creates a fresh Character with Mounted=false,
     // so the client loses the mount flag. Send USM to restore it.
     if state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false) {
-        state.send_bytes(conn_id, &binary_packets::write_user_mount(ci.0 as i16, true)).await;
+        state.send_bytes(conn_id, &binary_packets::write_user_mount(ci.0 as i16, true));
     }
 
     // 8c. Re-send invisible state — CC creates a fresh Character with Invisible=false,
@@ -559,12 +559,12 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
             let remaining = if u.admin_invisible { 0 } else {
                 ((state.config.intervalo_invisible - u.counter_invisible) as f32 * 0.04) as i16
             };
-            state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining)).await;
+            state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining));
         }
     }
 
     // 9. PU (position update — tells client where to center camera)
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8)).await;
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8));
 
     // 10. Send area visibility (CA + strip CCs/NPCs/items)
     make_user_visible(state, conn_id).await;
@@ -576,24 +576,24 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
         state.send_data_bytes(
             SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
             &own_cc,
-        ).await;
+        );
         state.send_data_bytes(
             SendTarget::ToAreaButIndex { conn_id, map: new_map, x: final_x, y: final_y },
             &own_cd,
-        ).await;
+        );
     } else {
         // Invisible but clanmates should still see us
         let area_users = state.get_area_users(new_map, final_x, final_y, conn_id);
         for other_id in area_users {
             if same_clan(state, conn_id, other_id) {
-                state.send_bytes(other_id, &own_cc).await;
+                state.send_bytes(other_id, &own_cc);
                 let cd = match state.users.get(&conn_id) {
                     Some(u) => build_cd_binary(u),
                     None => continue,
                 };
-                state.send_bytes(other_id, &cd).await;
+                state.send_bytes(other_id, &cd);
                 // Tell clanmate we're invisible (semi-transparent rendering)
-                state.send_bytes(other_id, &binary_packets::write_set_invisible(ci.0 as i16, true, 0)).await;
+                state.send_bytes(other_id, &binary_packets::write_set_invisible(ci.0 as i16, true, 0));
             }
         }
     }
@@ -604,7 +604,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
     // 13. BKW — fade back in (VB6 end of WarpUserChar)
-    state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
+    state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
 
     // 14. Warp pets to new map (VB6: WarpMascotas)
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
@@ -619,8 +619,8 @@ pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if !invisible {
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8)).await;
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0)).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0));
     }
 }
 

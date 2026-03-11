@@ -22,13 +22,13 @@ use super::{
 pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: ConnectionId) {
     let has_mount = state.users.get(&conn_id).map(|u| u.nro_mascotas > 0).unwrap_or(false);
     if !has_mount {
-        state.send_console(conn_id, "No tienes una montura.", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes una montura.", font_index::INFO);
         return;
     }
 
     let already_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
     if already_mounted {
-        state.send_console(conn_id, "Ya estas montado.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya estas montado.", font_index::INFO);
         return;
     }
 
@@ -67,21 +67,21 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
             super::common::NINGUN_CASCO as i16, 0, 0,
         )
     };
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
 
     // Send mount state packet
     let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
     let usm_pkt = binary_packets::write_user_mount(char_index as i16, true);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &usm_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &usm_pkt);
 
-    state.send_console(conn_id, "Te has montado.", font_index::INFO).await;
+    state.send_console(conn_id, "Te has montado.", font_index::INFO);
 }
 
 /// /DESMONTAR — Dismount.
 pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: ConnectionId) {
     let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
     if !is_mounted {
-        state.send_console(conn_id, "No estas montado.", font_index::INFO).await;
+        state.send_console(conn_id, "No estas montado.", font_index::INFO);
         return;
     }
 
@@ -112,14 +112,14 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
             user.weapon_anim as i16, user.shield_anim as i16, user.casco_anim as i16, 0, 0,
         )
     };
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
 
     // Send mount state packet
     let char_index = state.users.get(&conn_id).map(|u| u.char_index.0).unwrap_or(0);
     let usm_pkt = binary_packets::write_user_mount(char_index as i16, false);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &usm_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &usm_pkt);
 
-    state.send_console(conn_id, "Te has desmontado.", font_index::INFO).await;
+    state.send_console(conn_id, "Te has desmontado.", font_index::INFO);
 }
 
 // get_equipped_anims — moved to common.rs
@@ -128,7 +128,7 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
 pub(super) async fn handle_slash_quitarmascota(state: &mut GameState, conn_id: ConnectionId) {
     let nro = state.users.get(&conn_id).map(|u| u.nro_mascotas).unwrap_or(0);
     if nro == 0 {
-        state.send_console(conn_id, "No tienes mascotas.", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes mascotas.", font_index::INFO);
         return;
     }
 
@@ -148,7 +148,7 @@ pub(super) async fn handle_slash_quitarmascota(state: &mut GameState, conn_id: C
         user.nro_mascotas = 0;
     }
 
-    state.send_console(conn_id, "Mascota removida.", font_index::INFO).await;
+    state.send_console(conn_id, "Mascota removida.", font_index::INFO);
 }
 
 /// /MSJ — Toggle private messages.
@@ -161,9 +161,9 @@ pub(super) async fn handle_slash_msj(state: &mut GameState, conn_id: ConnectionI
     };
 
     if new_state {
-        state.send_console(conn_id, "Mensajes privados activados.", font_index::INFO).await;
+        state.send_console(conn_id, "Mensajes privados activados.", font_index::INFO);
     } else {
-        state.send_console(conn_id, "Mensajes privados desactivados.", font_index::INFO).await;
+        state.send_console(conn_id, "Mensajes privados desactivados.", font_index::INFO);
     }
 }
 
@@ -177,7 +177,7 @@ pub(super) async fn handle_slash_ciudadania(state: &mut GameState, conn_id: Conn
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -191,7 +191,7 @@ pub(super) async fn handle_slash_ciudadania(state: &mut GameState, conn_id: Conn
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 3 || (u_y - npc_y).abs() > 3 {
-        state.send_msg_id(conn_id, 10, "").await;
+        state.send_msg_id(conn_id, 10, "");
         return;
     }
 
@@ -203,7 +203,7 @@ pub(super) async fn handle_slash_ciudadania(state: &mut GameState, conn_id: Conn
         130 => "Inthak",
         25 => "Thir",
         _ => {
-            state.send_console(conn_id, "No estas en una ciudad valida.", font_index::INFO).await;
+            state.send_console(conn_id, "No estas en una ciudad valida.", font_index::INFO);
             return;
         }
     };
@@ -216,7 +216,7 @@ pub(super) async fn handle_slash_ciudadania(state: &mut GameState, conn_id: Conn
     }
 
     // VB6: ||318@<home>
-    state.send_msg_id(conn_id, 318, &format!("{}", city)).await;
+    state.send_msg_id(conn_id, 318, &format!("{}", city));
 }
 
 /// /VIAJAR — Travel to city via Traveler NPC.
@@ -227,7 +227,7 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
     // Validate city name (VB6 line 763)
     let valid = ["TANARIS", "ANVILMAR", "KAHLIMDOR", "THIR", "INTHAK", "JHUMBEL", "RUVENDEL", "HELKA"];
     if !valid.contains(&city_upper.as_str()) {
-        state.send_console(conn_id, "Ciudad desconocida. Ciudades: Tanaris, Anvilmar, Kahlimdor, Thir, Inthak, Jhumbel, Ruvendel, Helka", font_index::INFO).await;
+        state.send_console(conn_id, "Ciudad desconocida. Ciudades: Tanaris, Anvilmar, Kahlimdor, Thir, Inthak, Jhumbel, Ruvendel, Helka", font_index::INFO);
         return;
     }
 
@@ -239,12 +239,12 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
     let (dead, level, gold, target_npc, _map, _ux, _uy) = user_data;
 
     if dead {
-        state.send_msg_id(conn_id, 3, "").await;
+        state.send_msg_id(conn_id, 3, "");
         return;
     }
 
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -256,13 +256,13 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
     let cost = if level < 30 { 1000i64 } else { 5000 };
     if gold < cost {
         let cost_str = if level < 30 { "1.000" } else { "5.000" };
-        state.send_msg_id(conn_id, 215, &format!("{}", cost_str)).await;
+        state.send_msg_id(conn_id, 215, &format!("{}", cost_str));
         return;
     }
 
     // Inthak requires level 30+ (VB6 line 812)
     if city_upper == "INTHAK" && level < 30 {
-        state.send_msg_id(conn_id, 542, "").await;
+        state.send_msg_id(conn_id, 542, "");
         return;
     }
 
@@ -306,11 +306,11 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
             let snd_pkt = binary_packets::write_play_wave(3, x as u8, y as u8); // SND_WARP = 3
             let fx_pkt = binary_packets::write_create_fx(char_idx as i16, 1, 0); // FXWARP = 1
             // Send to area (others see it) AND directly to self (ensure self always gets it)
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt);
             // Also send directly to ensure self receives it (area detection may miss self right after warp)
-            state.send_bytes(conn_id, &snd_pkt).await;
-            state.send_bytes(conn_id, &fx_pkt).await;
+            state.send_bytes(conn_id, &snd_pkt);
+            state.send_bytes(conn_id, &fx_pkt);
         }
     }
 }
@@ -325,13 +325,13 @@ pub(super) async fn handle_slash_entrenar(state: &mut GameState, conn_id: Connec
 
     // VB6: If Muerto Then ||3
     if dead {
-        state.send_msg_id(conn_id, 3, "").await;
+        state.send_msg_id(conn_id, 3, "");
         return;
     }
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -345,7 +345,7 @@ pub(super) async fn handle_slash_entrenar(state: &mut GameState, conn_id: Connec
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
-        state.send_msg_id(conn_id, 10, "").await;
+        state.send_msg_id(conn_id, 10, "");
         return;
     }
 
@@ -367,7 +367,7 @@ pub(super) async fn handle_slash_entrenar(state: &mut GameState, conn_id: Connec
         creatures.push(',');
     }
     let pkt = binary_packets::write_trainer_creature_list(&creatures);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// /CENTINELA — Anti-AFK response (delegates to improved centinela handler).
@@ -385,7 +385,7 @@ pub(super) async fn handle_slash_ir(state: &mut GameState, conn_id: ConnectionId
         "THIR" => (6, 50, 50),
         "RUVENDEL" => (11, 50, 50),
         _ => {
-            state.send_console(conn_id, "Destino desconocido.", font_index::INFO).await;
+            state.send_console(conn_id, "Destino desconocido.", font_index::INFO);
             return;
         }
     };
@@ -396,7 +396,7 @@ pub(super) async fn handle_slash_ir(state: &mut GameState, conn_id: ConnectionId
 /// /VOTAR — Vote in poll.
 pub(super) async fn handle_slash_votar(state: &mut GameState, conn_id: ConnectionId) {
     if !state.poll_active {
-        state.send_console(conn_id, "No hay votacion activa.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay votacion activa.", font_index::INFO);
         return;
     }
     // Send poll options
@@ -406,7 +406,7 @@ pub(super) async fn handle_slash_votar(state: &mut GameState, conn_id: Connectio
         msg.push(',');
     }
     let pkt = binary_packets::write_select_data(&msg);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// /RESULTADOS — Poll results.
@@ -419,7 +419,7 @@ pub(super) async fn handle_slash_resultados(state: &mut GameState, conn_id: Conn
             msg.push_str(&format!(" {}: {} ({}%)", state.poll_options[i], state.poll_votes[i], pct));
         }
     }
-    state.send_console(conn_id, &msg, font_index::INFO).await;
+    state.send_console(conn_id, &msg, font_index::INFO);
 }
 
 
@@ -431,7 +431,7 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
     };
 
     if dead {
-        state.send_msg_id(conn_id, 3, "").await;
+        state.send_msg_id(conn_id, 3, "");
         return;
     }
 
@@ -447,7 +447,7 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 3 || (u_y - npc_y).abs() > 3 {
-        state.send_msg_id(conn_id, 158, "").await;
+        state.send_msg_id(conn_id, 158, "");
         return;
     }
 
@@ -461,7 +461,7 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
     };
     let raza_num = raza.index() as i32 + 1; // 1-based: Humano=1, Elfo=2, ElfoOscuro=3, Enano=4, Gnomo=5
     let pkt = binary_packets::write_cosmetic_surgery(raza_num as u8, genero as u8);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 
@@ -485,7 +485,7 @@ pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, dat
 
     let data = format!("{},{},{}", dueno, precio, fecha);
     let pkt = binary_packets::write_auction_bid(&data);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// CUC — Buy a house.
@@ -501,7 +501,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
     if dueno.is_empty() { dueno = "N/A".to_string(); }
 
     if dueno != "N/A" {
-        state.send_msg_id(conn_id, 243, "").await;
+        state.send_msg_id(conn_id, 243, "");
         return;
     }
 
@@ -509,7 +509,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
 
     let gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
     if gold < precio {
-        state.send_msg_id(conn_id, 215, &format!("{}", precio)).await;
+        state.send_msg_id(conn_id, 215, &format!("{}", precio));
         return;
     }
 
@@ -520,7 +520,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
     // Key obj_index = 1093 + num_casa
     let key_index = 1093 + num_casa;
     if !add_item_to_user_inventory(state, conn_id, key_index, 1) {
-        state.send_msg_id(conn_id, 108, "").await;
+        state.send_msg_id(conn_id, 108, "");
         return;
     }
 
@@ -530,7 +530,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
     ini_write(&casas_path, &section, "Fecha", &chrono_like_date());
 
     // Broadcast to all
-    state.send_msg_id_to(SendTarget::ToAll, 244, &format!("{}@{}", char_name, num_casa)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 244, &format!("{}@{}", char_name, num_casa));
 
     // Deduct gold
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -552,10 +552,10 @@ pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, dat
     if pet_idx > 0 {
         if let Some(Some(npc)) = state.npcs.get_mut(pet_idx) {
             npc.name = nick.clone();
-            state.send_console(conn_id, &format!("Mascota renombrada a: {}", nick), font_index::INFO).await;
+            state.send_console(conn_id, &format!("Mascota renombrada a: {}", nick), font_index::INFO);
         }
     } else {
-        state.send_console(conn_id, "No tienes mascotas.", font_index::INFO).await;
+        state.send_console(conn_id, "No tienes mascotas.", font_index::INFO);
     }
 }
 
@@ -563,13 +563,13 @@ pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, dat
 /// NANVAME — Clan name validated (notify admins).
 pub(super) async fn handle_nanvame(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
     let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_msg_id_to(SendTarget::ToAdmins, 498, &format!("{}", name)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 498, &format!("{}", name));
 }
 
 /// NANVAMX — Clan name invalid (notify admins).
 pub(super) async fn handle_nanvamx(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
     let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_msg_id_to(SendTarget::ToAdmins, 499, &format!("{}", name)).await;
+    state.send_msg_id_to(SendTarget::ToAdmins, 499, &format!("{}", name));
 }
 
 /// PCGF — Forward party/clan GUI data to target user.
@@ -583,7 +583,7 @@ pub(super) async fn handle_pcgf(state: &mut GameState, conn_id: ConnectionId, da
     if target_idx > 0 && state.users.contains_key(&target_idx) {
         let data = format!("{},{},{}", proceso, peso, sender_name);
         let pkt = binary_packets::write_cosmetic_pcgn(&data);
-        state.send_bytes(target_idx, &pkt).await;
+        state.send_bytes(target_idx, &pkt);
     }
 }
 
@@ -597,7 +597,7 @@ pub(super) async fn handle_pcwc(state: &mut GameState, conn_id: ConnectionId, da
     if target_idx > 0 && state.users.contains_key(&target_idx) {
         let data = format!("{},{}", proceso, sender_name);
         let pkt = binary_packets::write_cosmetic_pcss(&data);
-        state.send_bytes(target_idx, &pkt).await;
+        state.send_bytes(target_idx, &pkt);
     }
 }
 
@@ -611,7 +611,7 @@ pub(super) async fn handle_pccc(state: &mut GameState, conn_id: ConnectionId, da
     if target_idx > 0 && state.users.contains_key(&target_idx) {
         let data = format!("{},{}", caption, sender_name);
         let pkt = binary_packets::write_cosmetic_pccc(&data);
-        state.send_bytes(target_idx, &pkt).await;
+        state.send_bytes(target_idx, &pkt);
     }
 }
 
@@ -619,12 +619,12 @@ pub(super) async fn handle_pccc(state: &mut GameState, conn_id: ConnectionId, da
 pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, candidate: &str) {
     let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
     if guild_idx <= 0 {
-        state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);
         return;
     }
 
     // Simplified: just acknowledge the vote (full guild elections not implemented yet)
-    state.send_msg_id(conn_id, 439, "").await;
+    state.send_msg_id(conn_id, 439, "");
 }
 
 
@@ -641,49 +641,49 @@ pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: Connectio
     };
 
     if my_dead {
-        state.send_msg_id(conn_id, 3, "").await; // Can't do this while dead
+        state.send_msg_id(conn_id, 3, ""); // Can't do this while dead
         return;
     }
 
     if !my_pareja.is_empty() {
-        state.send_console(conn_id, &format!("Ya estas casado/a con {}.", my_pareja), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Ya estas casado/a con {}.", my_pareja), font_index::INFO);
         return;
     }
 
     let target_id = match state.find_user_by_name(target_name) {
         Some(id) => id,
         None => {
-            state.send_msg_id(conn_id, 196, "").await; // User not found
+            state.send_msg_id(conn_id, 196, ""); // User not found
             return;
         }
     };
 
     if target_id == conn_id {
-        state.send_console(conn_id, "No podes casarte con vos mismo.", font_index::INFO).await;
+        state.send_console(conn_id, "No podes casarte con vos mismo.", font_index::INFO);
         return;
     }
 
     let (t_pareja, t_map, t_x, t_y, t_dead, t_name) = match state.users.get(&target_id) {
         Some(u) if u.logged => (u.pareja.clone(), u.pos_map, u.pos_x, u.pos_y, u.dead, u.char_name.clone()),
         _ => {
-            state.send_msg_id(conn_id, 196, "").await;
+            state.send_msg_id(conn_id, 196, "");
             return;
         }
     };
 
     if t_dead {
-        state.send_console(conn_id, "El jugador esta muerto.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador esta muerto.", font_index::INFO);
         return;
     }
 
     if !t_pareja.is_empty() {
-        state.send_console(conn_id, &format!("{} ya esta casado/a.", t_name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} ya esta casado/a.", t_name), font_index::INFO);
         return;
     }
 
     // VB6: Distance check <= 3
     if my_map != t_map || (my_x - t_x).abs() > 3 || (my_y - t_y).abs() > 3 {
-        state.send_console(conn_id, "Debes estar cerca del jugador (3 tiles).", font_index::INFO).await;
+        state.send_console(conn_id, "Debes estar cerca del jugador (3 tiles).", font_index::INFO);
         return;
     }
 
@@ -696,10 +696,10 @@ pub(super) async fn handle_slash_casar(state: &mut GameState, conn_id: Connectio
     }
 
     // Broadcast marriage announcement
-    state.send_msg_id_to(SendTarget::ToAll, 526, &format!("{}@{}", my_name, t_name)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 526, &format!("{}@{}", my_name, t_name));
 
-    state.send_console(conn_id, &format!("Te has casado con {}!", t_name), font_index::INFO).await;
-    state.send_console(target_id, &format!("Te has casado con {}!", my_name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Te has casado con {}!", t_name), font_index::INFO);
+    state.send_console(target_id, &format!("Te has casado con {}!", my_name), font_index::INFO);
 }
 
 /// /DIVORCIARSE — Divorce from spouse. VB6 TCP_HandleData3.bas:1262
@@ -710,7 +710,7 @@ pub(super) async fn handle_slash_divorciarse(state: &mut GameState, conn_id: Con
     };
 
     if my_pareja.is_empty() {
-        state.send_console(conn_id, "No estas casado/a.", font_index::INFO).await;
+        state.send_console(conn_id, "No estas casado/a.", font_index::INFO);
         return;
     }
 
@@ -724,13 +724,13 @@ pub(super) async fn handle_slash_divorciarse(state: &mut GameState, conn_id: Con
         if let Some(u) = state.users.get_mut(&spouse_id) {
             u.pareja.clear();
         }
-        state.send_console(spouse_id, &format!("{} se ha divorciado de ti.", my_name), font_index::INFO).await;
+        state.send_console(spouse_id, &format!("{} se ha divorciado de ti.", my_name), font_index::INFO);
     }
 
     // Broadcast divorce
-    state.send_msg_id_to(SendTarget::ToAll, 527, &format!("{}@{}", my_name, my_pareja)).await;
+    state.send_msg_id_to(SendTarget::ToAll, 527, &format!("{}@{}", my_name, my_pareja));
 
-    state.send_console(conn_id, &format!("Te has divorciado de {}.", my_pareja), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Te has divorciado de {}.", my_pareja), font_index::INFO);
 }
 
 // =====================================================================

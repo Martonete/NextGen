@@ -30,7 +30,7 @@ pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: Connection
     };
 
     if desc.len() > 128 {
-        state.send_console(conn_id, "Descripcion muy larga (max 128 caracteres).", font_index::INFO).await;
+        state.send_console(conn_id, "Descripcion muy larga (max 128 caracteres).", font_index::INFO);
         return;
     }
 
@@ -38,7 +38,7 @@ pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: Connection
         user.desc = desc.to_string();
     }
 
-    state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO).await;
+    state.send_console(conn_id, "Descripcion actualizada.", font_index::INFO);
 }
 
 /// /VERASPEC — View target user's character description.
@@ -50,22 +50,22 @@ pub(super) async fn handle_slash_veraspec(state: &mut GameState, conn_id: Connec
     };
 
     if target_conn == 0 {
-        state.send_console(conn_id, "Primero selecciona un jugador.", font_index::INFO).await;
+        state.send_console(conn_id, "Primero selecciona un jugador.", font_index::INFO);
         return;
     }
 
     let (target_name, target_desc) = match state.users.get(&target_conn) {
         Some(u) if u.logged => (u.char_name.clone(), u.desc.clone()),
         _ => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
 
     if target_desc.is_empty() {
-        state.send_console(conn_id, &format!("{} no tiene descripcion.", target_name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} no tiene descripcion.", target_name), font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("[{}] {}", target_name, target_desc), font_index::INFO).await;
+        state.send_console(conn_id, &format!("[{}] {}", target_name, target_desc), font_index::INFO);
     }
 }
 
@@ -77,26 +77,26 @@ pub(super) async fn handle_slash_comerciar(state: &mut GameState, conn_id: Conne
     };
 
     if dead {
-        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO);
         return;
     }
     if trading {
-        state.send_console(conn_id, "Ya estas comerciando.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya estas comerciando.", font_index::INFO);
         return;
     }
     if target_user == 0 {
-        state.send_console(conn_id, "Primero selecciona un jugador.", font_index::INFO).await;
+        state.send_console(conn_id, "Primero selecciona un jugador.", font_index::INFO);
         return;
     }
     if target_user == conn_id {
-        state.send_console(conn_id, "No puedes comerciar contigo mismo.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes comerciar contigo mismo.", font_index::INFO);
         return;
     }
 
     // Check target is valid
     let target_ok = state.users.get(&target_user).map(|u| u.logged && !u.dead && !u.trading).unwrap_or(false);
     if !target_ok {
-        state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO);
         return;
     }
 
@@ -114,8 +114,8 @@ pub(super) async fn handle_slash_comerciar(state: &mut GameState, conn_id: Conne
             u.trade_partner = Some(target_user);
         }
         let target_name = state.users.get(&target_user).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(target_user, &format!("{} quiere comerciar contigo. Usa /COMERCIAR para aceptar.", char_name), font_index::INFO).await;
-        state.send_console(conn_id, &format!("Le has propuesto comerciar a {}.", target_name), font_index::INFO).await;
+        state.send_console(target_user, &format!("{} quiere comerciar contigo. Usa /COMERCIAR para aceptar.", char_name), font_index::INFO);
+        state.send_console(conn_id, &format!("Le has propuesto comerciar a {}.", target_name), font_index::INFO);
     }
 }
 
@@ -128,27 +128,27 @@ pub(super) async fn handle_slash_boveda(state: &mut GameState, conn_id: Connecti
 
     // VB6: If Muerto = 1 Then ||3
     if dead {
-        state.send_msg_id(conn_id, 3, "").await;
+        state.send_msg_id(conn_id, 3, "");
         return;
     }
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
     // VB6: distance > 5 → ||13
     let (npc_map, npc_x, npc_y, npc_type) = match state.get_npc(target_npc) {
         Some(npc) => (npc.map, npc.x, npc.y, npc.npc_type),
-        None => { state.send_msg_id(conn_id, 9, "").await; return; }
+        None => { state.send_msg_id(conn_id, 9, ""); return; }
     };
     let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y),
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 5 || (u_y - npc_y).abs() > 5 {
-        state.send_msg_id(conn_id, 13, "").await;
+        state.send_msg_id(conn_id, 13, "");
         return;
     }
 
@@ -167,7 +167,7 @@ pub(super) async fn handle_slash_boveda(state: &mut GameState, conn_id: Connecti
 
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     let pkt = binary_packets::write_bank_init(bank_gold as i32);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
 }
 
 /// /DARORO <name>@<amount> — Give gold to another player. Min 10000.
@@ -177,7 +177,7 @@ pub(super) async fn handle_slash_daroro(state: &mut GameState, conn_id: Connecti
     let amount: i64 = amount_str.parse().unwrap_or(0);
 
     if amount < 10000 {
-        state.send_console(conn_id, "Minimo 10.000 de oro.", font_index::INFO).await;
+        state.send_console(conn_id, "Minimo 10.000 de oro.", font_index::INFO);
         return;
     }
 
@@ -187,7 +187,7 @@ pub(super) async fn handle_slash_daroro(state: &mut GameState, conn_id: Connecti
     };
 
     if my_gold < amount {
-        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO).await;
+        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO);
         return;
     }
 
@@ -195,7 +195,7 @@ pub(super) async fn handle_slash_daroro(state: &mut GameState, conn_id: Connecti
     let target_conn = match state.online_names.get(&target_upper).copied() {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO).await;
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
             return;
         }
     };
@@ -212,8 +212,8 @@ pub(super) async fn handle_slash_daroro(state: &mut GameState, conn_id: Connecti
     send_stats_gold(state, target_conn).await;
 
     let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(conn_id, &format!("Le diste {} de oro a {}.", amount, target_real), font_index::INFO).await;
-    state.send_console(target_conn, &format!("{} te dio {} de oro.", my_name, amount), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Le diste {} de oro a {}.", amount, target_real), font_index::INFO);
+    state.send_console(target_conn, &format!("{} te dio {} de oro.", my_name, amount), font_index::INFO);
 
     info!("[GOLD] {} gave {} gold to {}", my_name, amount, target_real);
 }
@@ -224,7 +224,7 @@ pub(super) async fn handle_slash_depositar(state: &mut GameState, conn_id: Conne
 
     let gold = state.users.get(&conn_id).map(|u| u.gold).unwrap_or(0);
     if gold < amount {
-        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO).await;
+        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO);
         return;
     }
 
@@ -236,8 +236,8 @@ pub(super) async fn handle_slash_depositar(state: &mut GameState, conn_id: Conne
 
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     let bg_pkt = binary_packets::write_update_bank_gold(bank_gold as i32);
-    state.send_bytes(conn_id, &bg_pkt).await;
-    state.send_console(conn_id, &format!("Depositaste {} de oro.", amount), font_index::INFO).await;
+    state.send_bytes(conn_id, &bg_pkt);
+    state.send_console(conn_id, &format!("Depositaste {} de oro.", amount), font_index::INFO);
 }
 
 /// /RETIRAR <amount> — Withdraw gold from bank (slash command shortcut).
@@ -246,7 +246,7 @@ pub(super) async fn handle_slash_retirar_oro(state: &mut GameState, conn_id: Con
 
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     if bank_gold < amount {
-        state.send_console(conn_id, "No tenes suficiente oro en la boveda.", font_index::INFO).await;
+        state.send_console(conn_id, "No tenes suficiente oro en la boveda.", font_index::INFO);
         return;
     }
 
@@ -258,8 +258,8 @@ pub(super) async fn handle_slash_retirar_oro(state: &mut GameState, conn_id: Con
 
     let bank_gold = state.users.get(&conn_id).map(|u| u.bank_gold).unwrap_or(0);
     let bg_pkt = binary_packets::write_update_bank_gold(bank_gold as i32);
-    state.send_bytes(conn_id, &bg_pkt).await;
-    state.send_console(conn_id, &format!("Retiraste {} de oro.", amount), font_index::INFO).await;
+    state.send_bytes(conn_id, &bg_pkt);
+    state.send_console(conn_id, &format!("Retiraste {} de oro.", amount), font_index::INFO);
 }
 
 /// /FMSG <msg> — Faction message (to all same-faction members).
@@ -270,7 +270,7 @@ pub(super) async fn handle_slash_fmsg(state: &mut GameState, conn_id: Connection
     };
 
     if !armada && !caos {
-        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO).await;
+        state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
         return;
     }
 
@@ -282,7 +282,7 @@ pub(super) async fn handle_slash_fmsg(state: &mut GameState, conn_id: Connection
         .map(|u| u.conn_id)
         .collect();
     for t in targets {
-        state.send_console(t, &msg, font_index::GUILD).await;
+        state.send_console(t, &msg, font_index::GUILD);
     }
 }
 
@@ -301,9 +301,9 @@ pub(super) async fn handle_slash_hora(state: &mut GameState, conn_id: Connection
 
     if privileges > privilege_level::USER {
         // GMs broadcast to all
-        state.send_console_to(SendTarget::ToAll, &format!("Hora del servidor: {}", time_str), font_index::INFO).await;
+        state.send_console_to(SendTarget::ToAll, &format!("Hora del servidor: {}", time_str), font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("Hora del servidor: {}", time_str), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Hora del servidor: {}", time_str), font_index::INFO);
     }
 }
 
@@ -312,11 +312,11 @@ pub(super) async fn handle_slash_nick_check(state: &mut GameState, conn_id: Conn
     let target_upper = name.to_uppercase();
 
     if let Some(&_t_conn) = state.online_names.get(&target_upper) {
-        state.send_console(conn_id, &format!("{} esta ONLINE.", name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} esta ONLINE.", name), font_index::INFO);
     } else if charfile::character_exists(&state.pool, name).await {
-        state.send_console(conn_id, &format!("{} existe pero esta OFFLINE.", name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} existe pero esta OFFLINE.", name), font_index::INFO);
     } else {
-        state.send_console(conn_id, &format!("{} no existe.", name), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{} no existe.", name), font_index::INFO);
     }
 }
 
@@ -330,13 +330,13 @@ pub(super) async fn handle_slash_advertencias(state: &mut GameState, conn_id: Co
     let pool = state.pool.clone();
     let penalties = charfile::load_penalties(&pool, &name).await;
     if penalties.is_empty() {
-        state.send_console(conn_id, "No tenes advertencias.", font_index::INFO).await;
+        state.send_console(conn_id, "No tenes advertencias.", font_index::INFO);
         return;
     }
 
-    state.send_console(conn_id, &format!("Tenes {} advertencias:", penalties.len()), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Tenes {} advertencias:", penalties.len()), font_index::INFO);
     for (i, p) in penalties.iter().enumerate() {
-        state.send_console(conn_id, &format!("{}: {}", i + 1, p), font_index::INFO).await;
+        state.send_console(conn_id, &format!("{}: {}", i + 1, p), font_index::INFO);
     }
 }
 
@@ -350,7 +350,7 @@ pub(super) async fn handle_slash_curar(state: &mut GameState, conn_id: Connectio
 
     // VB6: If TargetNPC = 0 Then ||9
     if target_npc == 0 {
-        state.send_msg_id(conn_id, 9, "").await;
+        state.send_msg_id(conn_id, 9, "");
         return;
     }
 
@@ -370,7 +370,7 @@ pub(super) async fn handle_slash_curar(state: &mut GameState, conn_id: Connectio
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
-        state.send_msg_id(conn_id, 12, "").await;
+        state.send_msg_id(conn_id, 12, "");
         return;
     }
 
@@ -380,7 +380,7 @@ pub(super) async fn handle_slash_curar(state: &mut GameState, conn_id: Connectio
         user.min_hp = user.max_hp;
     }
     send_stats_hp(state, conn_id).await;
-    state.send_msg_id(conn_id, 398, "").await;
+    state.send_msg_id(conn_id, 398, "");
 }
 
 
@@ -399,7 +399,7 @@ pub(super) async fn handle_slash_pmsg(state: &mut GameState, conn_id: Connection
         .map(|p| p.members.clone())
         .unwrap_or_default();
     for &member_conn in &members {
-        state.send_guild_chat_to(SendTarget::ToIndex(member_conn), &msg).await;
+        state.send_guild_chat_to(SendTarget::ToIndex(member_conn), &msg);
     }
 }
 
@@ -426,10 +426,10 @@ pub(super) async fn handle_slash_onlinegm(state: &mut GameState, conn_id: Connec
     }
 
     if names.is_empty() {
-        state.send_console(conn_id, "No hay GMs online.", font_index::INFO).await;
+        state.send_console(conn_id, "No hay GMs online.", font_index::INFO);
     } else {
         // VB6 sends via N| packet (green text, one name per line)
-        state.send_console(conn_id, &format!("GMs online: {}", names.join(", ")), font_index::SERVER).await;
+        state.send_console(conn_id, &format!("GMs online: {}", names.join(", ")), font_index::SERVER);
     }
 }
 
@@ -452,7 +452,7 @@ pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: Conne
     }
 
     let list = names.join(", ");
-    state.send_msg_id(conn_id, 750, &list).await;
+    state.send_msg_id(conn_id, 750, &list);
 }
 
 // =====================================================================
@@ -469,27 +469,27 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
     };
 
     if dead {
-        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO);
         return;
     }
 
     let target_conn = match state.online_names.get(&target_name.to_uppercase()).copied() {
         Some(c) => c,
         None => {
-            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO).await;
+            state.send_console(conn_id, "El jugador no esta conectado.", font_index::INFO);
             return;
         }
     };
 
     if target_conn == conn_id {
-        state.send_console(conn_id, "No puedes desafiarte a ti mismo.", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes desafiarte a ti mismo.", font_index::INFO);
         return;
     }
 
     let target_data = match state.users.get(&target_conn) {
         Some(u) if u.logged && !u.dead => (u.pos_map, u.pos_x, u.pos_y, u.atacable_por, u.duel_pending),
         _ => {
-            state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO).await;
+            state.send_console(conn_id, "El jugador no esta disponible.", font_index::INFO);
             return;
         }
     };
@@ -497,18 +497,18 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
 
     // Must be on same map
     if t_map != my_map {
-        state.send_console(conn_id, "El jugador no esta en el mismo mapa.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador no esta en el mismo mapa.", font_index::INFO);
         return;
     }
 
     // Check if already dueling
     let my_atacable = state.users.get(&conn_id).map(|u| u.atacable_por).unwrap_or(0);
     if my_atacable > 0 {
-        state.send_console(conn_id, "Ya estas en un duelo.", font_index::INFO).await;
+        state.send_console(conn_id, "Ya estas en un duelo.", font_index::INFO);
         return;
     }
     if t_atacable > 0 {
-        state.send_console(conn_id, "El jugador ya esta en un duelo.", font_index::INFO).await;
+        state.send_console(conn_id, "El jugador ya esta en un duelo.", font_index::INFO);
         return;
     }
 
@@ -525,8 +525,8 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
         }
 
         let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-        state.send_console(conn_id, &format!("Has aceptado el duelo con {}!", target_real), font_index::FIGHT).await;
-        state.send_console(target_conn, &format!("{} ha aceptado tu desafio!", my_name), font_index::FIGHT).await;
+        state.send_console(conn_id, &format!("Has aceptado el duelo con {}!", target_real), font_index::FIGHT);
+        state.send_console(target_conn, &format!("{} ha aceptado tu desafio!", my_name), font_index::FIGHT);
         return;
     }
 
@@ -536,8 +536,8 @@ pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: Connect
     }
 
     let target_real = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_console(target_conn, &format!("{} te ha desafiado a un duelo. Usa /DESAFIO {} para aceptar.", my_name, my_name), font_index::FIGHT).await;
-    state.send_console(conn_id, &format!("Has desafiado a {} a un duelo.", target_real), font_index::INFO).await;
+    state.send_console(target_conn, &format!("{} te ha desafiado a un duelo. Usa /DESAFIO {} para aceptar.", my_name, my_name), font_index::FIGHT);
+    state.send_console(conn_id, &format!("Has desafiado a {} a un duelo.", target_real), font_index::INFO);
 }
 
 /// /FINDESAFIO — End current duel.
@@ -552,7 +552,7 @@ pub(super) async fn handle_slash_findesafio(state: &mut GameState, conn_id: Conn
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.duel_pending = 0;
         }
-        state.send_console(conn_id, "No estas en un duelo.", font_index::INFO).await;
+        state.send_console(conn_id, "No estas en un duelo.", font_index::INFO);
         return;
     }
 
@@ -568,8 +568,8 @@ pub(super) async fn handle_slash_findesafio(state: &mut GameState, conn_id: Conn
         u.duel_pending = 0;
     }
 
-    state.send_console(conn_id, "Has terminado el duelo.", font_index::INFO).await;
-    state.send_console(partner, &format!("{} ha terminado el duelo.", my_name), font_index::INFO).await;
+    state.send_console(conn_id, "Has terminado el duelo.", font_index::INFO);
+    state.send_console(partner, &format!("{} ha terminado el duelo.", my_name), font_index::INFO);
 }
 
 // =====================================================================
@@ -585,29 +585,29 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
     };
 
     if dead {
-        state.send_console(conn_id, "Estas muerto.", font_index::INFO).await;
+        state.send_console(conn_id, "Estas muerto.", font_index::INFO);
         return;
     }
 
     if amount < 1 || amount > 5000 {
-        state.send_console(conn_id, "La apuesta debe ser entre 1 y 5000 monedas de oro.", font_index::INFO).await;
+        state.send_console(conn_id, "La apuesta debe ser entre 1 y 5000 monedas de oro.", font_index::INFO);
         return;
     }
 
     if gold < amount {
-        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO).await;
+        state.send_console(conn_id, "No tenes suficiente oro.", font_index::INFO);
         return;
     }
 
     // Must target a Timbero NPC (type 7)
     if target_npc == 0 {
-        state.send_console(conn_id, "Primero selecciona un Timbero.", font_index::INFO).await;
+        state.send_console(conn_id, "Primero selecciona un Timbero.", font_index::INFO);
         return;
     }
 
     let npc_type = state.get_npc(target_npc).map(|n| n.npc_type);
     if npc_type != Some(crate::data::npcs::NpcType::Gambler) {
-        state.send_console(conn_id, "Debes seleccionar un Timbero para apostar.", font_index::INFO).await;
+        state.send_console(conn_id, "Debes seleccionar un Timbero para apostar.", font_index::INFO);
         return;
     }
 
@@ -617,7 +617,7 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
         None => return,
     };
     if map != npc_map || (x - npc_x).abs() > 10 || (y - npc_y).abs() > 10 {
-        state.send_console(conn_id, "Estas muy lejos del Timbero.", font_index::INFO).await;
+        state.send_console(conn_id, "Estas muy lejos del Timbero.", font_index::INFO);
         return;
     }
 
@@ -632,13 +632,13 @@ pub(super) async fn handle_slash_apostar(state: &mut GameState, conn_id: Connect
             u.gold += amount;
         }
         state.timbero_perdidas += amount;
-        state.send_console(conn_id, &format!("Ganaste {} monedas de oro!", amount), font_index::FIGHT).await;
+        state.send_console(conn_id, &format!("Ganaste {} monedas de oro!", amount), font_index::FIGHT);
     } else {
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.gold -= amount;
         }
         state.timbero_ganancias += amount;
-        state.send_console(conn_id, &format!("Perdiste {} monedas de oro.", amount), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Perdiste {} monedas de oro.", amount), font_index::INFO);
     }
 
     send_stats_gold(state, conn_id).await;
@@ -659,30 +659,30 @@ pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: Connectio
     // Dead user: start traveling home (VB6 GoHome mechanic)
     if dead {
         if hogar.is_empty() {
-            state.send_console(conn_id, "No tienes un hogar establecido.", font_index::INFO).await;
+            state.send_console(conn_id, "No tienes un hogar establecido.", font_index::INFO);
             return;
         }
         if traveling {
-            state.send_console(conn_id, "Ya estas viajando a tu hogar.", font_index::INFO).await;
+            state.send_console(conn_id, "Ya estas viajando a tu hogar.", font_index::INFO);
             return;
         }
         if let Some(u) = state.users.get_mut(&conn_id) {
             u.traveling = true;
             u.counter_go_home = 0;
         }
-        state.send_console(conn_id, "Viajando a tu hogar, espera...", font_index::INFO).await;
+        state.send_console(conn_id, "Viajando a tu hogar, espera...", font_index::INFO);
         return;
     }
 
     if target_npc == 0 {
-        state.send_console(conn_id, "Primero selecciona un Gobernador.", font_index::INFO).await;
+        state.send_console(conn_id, "Primero selecciona un Gobernador.", font_index::INFO);
         return;
     }
 
     // VB6: NpcType = 11 (Gobernador) — our enum uses Quest=11 for this
     let npc_type_num = state.get_npc(target_npc).map(|n| n.npc_type as i32).unwrap_or(0);
     if npc_type_num != 11 {
-        state.send_console(conn_id, "Debes seleccionar un Gobernador.", font_index::INFO).await;
+        state.send_console(conn_id, "Debes seleccionar un Gobernador.", font_index::INFO);
         return;
     }
 
@@ -696,7 +696,7 @@ pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: Connectio
         None => return,
     };
     if u_map != npc_map || (u_x - npc_x).abs() > 5 || (u_y - npc_y).abs() > 5 {
-        state.send_console(conn_id, "Estas muy lejos del Gobernador.", font_index::INFO).await;
+        state.send_console(conn_id, "Estas muy lejos del Gobernador.", font_index::INFO);
         return;
     }
 
@@ -711,7 +711,7 @@ pub(super) async fn handle_slash_hogar(state: &mut GameState, conn_id: Connectio
         u.hogar = city_name.clone();
     }
 
-    state.send_console(conn_id, &format!("Tu hogar ha sido establecido en {}.", city_name), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Tu hogar ha sido establecido en {}.", city_name), font_index::INFO);
 }
 
 // =====================================================================
@@ -724,12 +724,12 @@ pub(super) async fn handle_slash_passwd(state: &mut GameState, conn_id: Connecti
     let new_pass = read_field(2, args, '@');
 
     if old_pass.is_empty() || new_pass.is_empty() {
-        state.send_console(conn_id, "Uso: /PASSWD <vieja>@<nueva>", font_index::INFO).await;
+        state.send_console(conn_id, "Uso: /PASSWD <vieja>@<nueva>", font_index::INFO);
         return;
     }
 
     if new_pass.len() < 3 {
-        state.send_console(conn_id, "La nueva password debe tener al menos 3 caracteres.", font_index::INFO).await;
+        state.send_console(conn_id, "La nueva password debe tener al menos 3 caracteres.", font_index::INFO);
         return;
     }
 
@@ -742,13 +742,13 @@ pub(super) async fn handle_slash_passwd(state: &mut GameState, conn_id: Connecti
     let account = match crate::db::accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
-            state.send_console(conn_id, "Error al verificar la cuenta.", font_index::INFO).await;
+            state.send_console(conn_id, "Error al verificar la cuenta.", font_index::INFO);
             return;
         }
     };
 
     if !crate::db::password::verify_password(&old_pass, &account.password_hash) {
-        state.send_console(conn_id, "Password actual incorrecta.", font_index::INFO).await;
+        state.send_console(conn_id, "Password actual incorrecta.", font_index::INFO);
         return;
     }
 
@@ -756,16 +756,16 @@ pub(super) async fn handle_slash_passwd(state: &mut GameState, conn_id: Connecti
     let new_hash = match crate::db::password::hash_password(&new_pass) {
         Ok(h) => h,
         Err(_) => {
-            state.send_console(conn_id, "Error al cambiar la password.", font_index::INFO).await;
+            state.send_console(conn_id, "Error al cambiar la password.", font_index::INFO);
             return;
         }
     };
 
     // Update in DB
     if crate::db::accounts::update_password(&state.pool, &account_name, &new_hash).await.is_ok() {
-        state.send_console(conn_id, "Password cambiada exitosamente.", font_index::INFO).await;
+        state.send_console(conn_id, "Password cambiada exitosamente.", font_index::INFO);
     } else {
-        state.send_console(conn_id, "Error al guardar la nueva password.", font_index::INFO).await;
+        state.send_console(conn_id, "Error al guardar la nueva password.", font_index::INFO);
     }
 }
 

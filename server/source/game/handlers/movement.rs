@@ -29,7 +29,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
         // Force client back to server position (prevents ghost movement on client)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8));
         return;
     }
 
@@ -50,13 +50,13 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
-        state.send_msg_id(conn_id, 205, "").await; // TEXTO205: Dejas de meditar
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
+        state.send_msg_id(conn_id, 205, ""); // TEXTO205: Dejas de meditar
         // Remove meditation FX from area
         state.send_data_bytes(
             SendTarget::ToArea { map, x: old_x, y: old_y },
             &binary_packets::write_create_fx(char_index.0 as i16, 0, 0),
-        ).await;
+        );
     }
 
     // Cancel resting on movement (VB6: HandleWalk line 2037-2040)
@@ -64,8 +64,8 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.resting = false;
         }
-        state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
-        state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
+        state.send_bytes(conn_id, &binary_packets::write_rest_ok());
+        state.send_console(conn_id, "Te levantás.", font_index::INFO);
     }
 
     // Cancel GoHome traveling on movement (VB6: movement interrupts /HOGAR travel)
@@ -74,7 +74,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
             user.traveling = false;
             user.counter_go_home = 0;
         }
-        state.send_console(conn_id, "Has cancelado el viaje a tu hogar.", font_index::INFO).await;
+        state.send_console(conn_id, "Has cancelado el viaje a tu hogar.", font_index::INFO);
     }
 
     let (dx, dy) = world::heading_to_offset(heading);
@@ -123,7 +123,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
 
         // Reject movement — send position correction
         // Walk rejected — don't log (too frequent)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8));
         return;
     }
 
@@ -147,17 +147,17 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
             }
             // Only send SetInvisible(false) if spell invisibility is NOT active
             if !is_spell_invis && !navigating_for_hide {
-                state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+                state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
                 // Re-broadcast CC+CD so non-clanmates (who had CharacterRemove) see us again
                 if let Some(u) = state.users.get(&conn_id) {
                     let cc = u.build_cc_binary();
                     let cd = build_cd_binary(u);
                     let (px, py) = (u.pos_x, u.pos_y);
-                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc).await;
-                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd).await;
+                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc);
+                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd);
                 }
                 let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
-                state.send_bytes(conn_id, &nover).await;
+                state.send_bytes(conn_id, &nover);
             }
         }
     }
@@ -205,14 +205,14 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
                 }
             }
             for c in targets {
-                state.send_bytes(c, &move_pkt).await;
+                state.send_bytes(c, &move_pkt);
             }
         } else if !is_invisible {
             // Fallback: use standard area broadcast (no clan filter in fallback)
             state.send_data_bytes(
                 SendTarget::ToAreaButIndex { conn_id, map, x: new_x, y: new_y },
                 &move_pkt,
-            ).await;
+            );
         }
     }
 
@@ -262,14 +262,14 @@ pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: Connec
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id, map, x, y },
         &binary_packets::write_heading_change(char_index.0 as i16, heading as u8),
-    ).await;
+    );
 }
 
 /// RPU — Request position update.
 pub(super) async fn handle_request_pos(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.logged {
-            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as u8, user.pos_y as u8)).await;
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as u8, user.pos_y as u8));
         }
     }
 }

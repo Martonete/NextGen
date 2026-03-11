@@ -39,7 +39,7 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
         }
     }
     for conn in targets {
-        state.send_bytes(conn, &pkt).await;
+        state.send_bytes(conn, &pkt);
     }
 
     // Check if NPC crossed a 9x9 area boundary — if so, send CC to newly visible players
@@ -49,12 +49,12 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
 /// Send packets for a ghost push (position update to ghost + movement broadcast to area).
 pub(crate) async fn send_ghost_push(state: &mut GameState, push: crate::game::handlers::npcs::GhostPush) {
     let pu_pkt = binary_packets::write_pos_update(push.new_x as u8, push.new_y as u8);
-    state.send_bytes(push.ghost_conn, &pu_pkt).await;
+    state.send_bytes(push.ghost_conn, &pu_pkt);
     let move_pkt = binary_packets::write_character_move(push.ghost_char_index as i16, push.new_x as u8, push.new_y as u8);
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: push.ghost_conn, map: push.map, x: push.new_x, y: push.new_y },
         &move_pkt,
-    ).await;
+    );
 }
 
 /// CheckUpdateNeededNpc — VB6 ModAreas.bas line 320-406.
@@ -138,7 +138,7 @@ pub(crate) async fn check_update_needed_npc(state: &mut GameState, npc_idx: usiz
 
     for conn_id in users_in_strip {
         if state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false) {
-            state.send_bytes(conn_id, &npc_cc).await;
+            state.send_bytes(conn_id, &npc_cc);
         }
     }
 }
@@ -517,7 +517,7 @@ pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
 
     // Impact sound
     let snd_pkt = binary_packets::write_play_wave(10, a_x as u8, a_y as u8);
-    state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt);
 
     if target_dead {
         // Target NPC dies — use pet owner as killer if available
@@ -533,7 +533,7 @@ pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
                 None => return,
             };
             let bp_pkt = binary_packets::write_character_remove(char_index.0 as i16);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt);
             state.kill_npc(target_idx);
         }
     }
@@ -547,7 +547,7 @@ pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
             None => return,
         };
         let bp = binary_packets::write_character_remove(p_ci.0 as i16);
-        state.send_data_bytes(SendTarget::ToArea { map: p_map, x: p_x, y: p_y }, &bp).await;
+        state.send_data_bytes(SendTarget::ToArea { map: p_map, x: p_x, y: p_y }, &bp);
         // Remove pet from owner
         if let Some(owner_conn) = a_master {
             remove_pet_from_owner(state, owner_conn, attacker_idx);

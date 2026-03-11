@@ -427,12 +427,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             let cc = u.build_cc_binary();
             let cd = build_cd_binary(u);
             let (px, py) = (u.pos_x, u.pos_y);
-            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc).await;
-            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc);
+            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd);
         }
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
-        state.send_bytes(conn_id, &nover).await;
-        state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO).await;
+        state.send_bytes(conn_id, &nover);
+        state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
     }
 
     // VB6: If equipped weapon is ranged, block melee attack — "No puedes usar así este arma."
@@ -443,7 +443,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 .map(|u| u.inventory[weapon_slot - 1].obj_index).unwrap_or(0);
             if weapon_obj > 0 {
                 if state.get_object(weapon_obj).map(|o| o.proyectil).unwrap_or(false) {
-                    state.send_console(conn_id, "No puedes usar así este arma.", font_index::INFO).await;
+                    state.send_console(conn_id, "No puedes usar así este arma.", font_index::INFO);
                     return;
                 }
             }
@@ -470,7 +470,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
     state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
         &swing_pkt,
-    ).await;
+    );
 
     if let Some(victim_id) = target_conn {
         // PvP attack — check guild war bypass before safety toggle
@@ -484,13 +484,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             && super::guilds_handler::get_guild_relation(state, attacker_guild, victim_guild) == super::guilds_handler::GUILD_REL_WAR;
 
         if safe_on && !guilds_at_war {
-            state.send_msg_id(conn_id, 207, "").await;
+            state.send_msg_id(conn_id, 207, "");
             return;
         }
 
         // Clan safe check
         if attacker_guild > 0 && attacker_guild == victim_guild && attacker_seguro {
-            state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO).await;
+            state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
             return;
         }
 
@@ -501,13 +501,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         if !in_duel {
             let attacker_trigger = get_map_tile_trigger(state, map, x, y);
             if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-                state.send_msg_id(conn_id, 163, "").await;
+                state.send_msg_id(conn_id, 163, "");
                 return;
             }
             let victim_pos = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
             let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
             if victim_trigger == crate::data::maps::Trigger::SafeZone {
-                state.send_msg_id(conn_id, 163, "").await;
+                state.send_msg_id(conn_id, 163, "");
                 return;
             }
         }
@@ -530,11 +530,11 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
              v_max_hp, v_min_hp, v_class, v_heading, v_char_index, v_meditating) = victim_data;
 
         if v_dead {
-            state.send_msg_id(conn_id, 154, "").await;
+            state.send_msg_id(conn_id, 154, "");
             return;
         }
         if v_privs > 0 {
-            state.send_msg_id(conn_id, 155, "").await;
+            state.send_msg_id(conn_id, 155, "");
             return;
         }
 
@@ -596,12 +596,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     // Shield block — VB6: SND_ESCUDO + messages
                     let (vx, vy) = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
                     let snd = binary_packets::write_play_wave(37, vx as u8, vy as u8); // SND_ESCUDO
-                    state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd).await;
+                    state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd);
 
                     let pkt_atk = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldOther);
-                    state.send_bytes(conn_id, &pkt_atk).await;
+                    state.send_bytes(conn_id, &pkt_atk);
                     let pkt_vic = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldUser);
-                    state.send_bytes(victim_id, &pkt_vic).await;
+                    state.send_bytes(victim_id, &pkt_vic);
 
                     // VB6: SubirSkill Defensa on block success
                     if let Some(victim) = state.users.get_mut(&victim_id) {
@@ -617,12 +617,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
             // Miss
             let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
             let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
-            state.send_bytes(victim_id, &pkt).await;
+            state.send_bytes(victim_id, &pkt);
             let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
-            state.send_bytes(conn_id, &pkt).await;
-            state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255).await;
+            state.send_bytes(conn_id, &pkt);
+            state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", v_char_index.0 as i16, 255);
 
             // VB6: SubirSkill (attacker skill on miss)
             if let Some(u) = state.users.get_mut(&conn_id) {
@@ -639,7 +639,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: SND_IMPACTO to area
         let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
         // VB6: Blood FX on victim (if not navigating)
         // (client handles this via MultiMessage)
@@ -670,10 +670,10 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                                 v.char_index.0 as i16, v.body as i16, v.head as i16, v.heading as u8,
                                 v.weapon_anim as i16, v.shield_anim as i16, v.casco_anim as i16, 0, 0,
                             );
-                            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp).await;
+                            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
                         }
-                        state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT).await;
-                        state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT).await;
+                        state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                        state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
                     }
                 }
             }
@@ -692,13 +692,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         }
                         let para_secs = (half_para as f32 * 0.04) as i16;
                         let pkt = binary_packets::write_paralize_ok(para_secs);
-                        state.send_bytes(victim_id, &pkt).await;
+                        state.send_bytes(victim_id, &pkt);
                         if let Some(u) = state.users.get(&victim_id) {
                             let pu = binary_packets::write_pos_update(u.pos_x as u8, u.pos_y as u8);
-                            state.send_bytes(victim_id, &pu).await;
+                            state.send_bytes(victim_id, &pu);
                         }
-                        state.send_console(conn_id, &format!("Has paralizado a {}!", victim_name), font_index::FIGHT).await;
-                        state.send_console(victim_id, "Has sido paralizado!", font_index::FIGHT).await;
+                        state.send_console(conn_id, &format!("Has paralizado a {}!", victim_name), font_index::FIGHT);
+                        state.send_console(victim_id, "Has sido paralizado!", font_index::FIGHT);
                     }
                 }
             }
@@ -754,12 +754,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // Send hit messages
         let n4_pkt = binary_packets::write_multi_user_hitted_by_user(char_index.0 as i16, lugar as u8, damage as i16);
-        state.send_bytes(victim_id, &n4_pkt).await;
+        state.send_bytes(victim_id, &n4_pkt);
         let n5_pkt = binary_packets::write_multi_user_hitted_user(v_char_index.0 as i16, lugar as u8, damage as i16);
-        state.send_bytes(conn_id, &n5_pkt).await;
+        state.send_bytes(conn_id, &n5_pkt);
 
         // VB6: floating yellow damage number
-        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535).await;
+        state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, &format!("-{}", damage), v_char_index.0 as i16, 65535);
 
         // Apply damage to victim
         if let Some(victim) = state.users.get_mut(&victim_id) {
@@ -774,8 +774,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     victim.poisoned = true;
                     victim.counter_poison = 0;
                 }
-                state.send_msg_id(victim_id, 171, &attacker_name).await;
-                state.send_msg_id(conn_id, 172, &victim_name).await;
+                state.send_msg_id(victim_id, 171, &attacker_name);
+                state.send_msg_id(conn_id, 172, &victim_name);
             }
         }
 
@@ -804,13 +804,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp -= stab_dmg as i32;
                     }
-                    state.send_console(conn_id, &format!("Has apuñalado a {} por {}", victim_name, stab_dmg), font_index::FIGHT).await;
-                    state.send_console(victim_id, &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg), font_index::FIGHT).await;
+                    state.send_console(conn_id, &format!("Has apuñalado a {} por {}", victim_name, stab_dmg), font_index::FIGHT);
+                    state.send_console(victim_id, &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg), font_index::FIGHT);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         try_level_skill_with_hit(u, 8, true); // Apuñalar
                     }
                 } else {
-                    state.send_console(conn_id, "\u{00A1}No has logrado apuñalar a tu enemigo!", font_index::FIGHT).await;
+                    state.send_console(conn_id, "\u{00A1}No has logrado apuñalar a tu enemigo!", font_index::FIGHT);
                     if let Some(u) = state.users.get_mut(&conn_id) {
                         try_level_skill_with_hit(u, 8, false);
                     }
@@ -823,8 +823,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 if let Some(victim) = state.users.get_mut(&victim_id) {
                     victim.min_hp -= crit_dmg as i32;
                 }
-                state.send_console(conn_id, &format!("Has golpeado críticamente a {} por {}.", victim_name, crit_dmg), font_index::FIGHT).await;
-                state.send_console(victim_id, &format!("{} te ha golpeado críticamente por {}.", attacker_name, crit_dmg), font_index::FIGHT).await;
+                state.send_console(conn_id, &format!("Has golpeado críticamente a {} por {}.", victim_name, crit_dmg), font_index::FIGHT);
+                state.send_console(victim_id, &format!("{} te ha golpeado críticamente por {}.", attacker_name, crit_dmg), font_index::FIGHT);
             }
 
             // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
@@ -834,8 +834,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp -= cut_dmg as i32;
                     }
-                    state.send_console(conn_id, &format!("Has acuchillado a {} por {}", victim_name, cut_dmg), font_index::FIGHT).await;
-                    state.send_console(victim_id, &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg), font_index::FIGHT).await;
+                    state.send_console(conn_id, &format!("Has acuchillado a {} por {}", victim_name, cut_dmg), font_index::FIGHT);
+                    state.send_console(victim_id, &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg), font_index::FIGHT);
                 }
             }
         }
@@ -849,8 +849,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         victim.equip.weapon = 0;
                     }
                 }
-                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT).await;
-                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT).await;
+                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
+                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     try_level_skill(u, 20);
                 }
@@ -872,7 +872,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // Safe zone check for NPC attacks too
         let attacker_trigger = get_map_tile_trigger(state, map, x, y);
         if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_msg_id(conn_id, 164, "").await;
+            state.send_msg_id(conn_id, 164, "");
             return;
         }
 
@@ -1108,7 +1108,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     }
 
     // VB6: "¡Aaaahhhh!" floating text in red (vbRed=255) above dying character
-    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Aaaahhhh!", char_index.0 as i16, 255).await;
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Aaaahhhh!", char_index.0 as i16, 255);
 
     // Mark as dead, change body to dead model
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1229,7 +1229,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                             }
                         }
                         let ho_pkt = binary_packets::write_object_create(tx as u8, ty as u8, grh as i16);
-                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt).await;
+                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
                         off_idx = (idx + 1) % offsets.len();
                         placed = true;
                         break;
@@ -1243,7 +1243,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
     send_full_inventory(state, conn_id).await;
 
     let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCKillUser);
-    state.send_bytes(conn_id, &pkt).await;
+    state.send_bytes(conn_id, &pkt);
     send_stats_hp(state, conn_id).await;
 
     let map_is_pk = state.game_data.maps.get(map as usize)
@@ -1252,18 +1252,18 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         .unwrap_or(false);
     if map_is_pk {
         let pkt = binary_packets::write_dead();
-        state.send_bytes(conn_id, &pkt).await;
+        state.send_bytes(conn_id, &pkt);
     }
 
     let fx_clear_pkt = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear_pkt);
 
     let heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(2);
     let cp_pkt = binary_packets::write_character_change(
         char_index.0 as i16, DEAD_BODY_NEUTRAL as i16, DEAD_HEAD_NEUTRAL as i16,
         heading as u8, 0, 0, 0, 0, 0,
     );
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_pkt);
 
     if let Some(user) = state.users.get(&conn_id) {
         let au_pkt = binary_packets::write_aura_update(
@@ -1271,7 +1271,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
             user.aura_a as i16, user.aura_w as i16,
             user.aura_e as i16, user.aura_r as i16, user.aura_c as i16,
         );
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &au_pkt);
     }
 
     // Award experience to killer
@@ -1322,13 +1322,13 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                         k.heading as u8, k.weapon_anim as i16, k.shield_anim as i16,
                         k.casco_anim as i16, 0, 0,
                     );
-                    state.send_data_bytes(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp).await;
+                    state.send_data_bytes(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp);
                 }
             }
         }
 
-        state.send_msg_id(killer, 60, &format!("{}@{}", victim_name, exp_gain)).await;
-        state.send_msg_id(killer, 170, &format!("{}", exp_gain)).await;
+        state.send_msg_id(killer, 60, &format!("{}@{}", victim_name, exp_gain));
+        state.send_msg_id(killer, 170, &format!("{}", exp_gain));
         send_stats_exp(state, killer).await;
         check_user_level(state, killer).await;
 

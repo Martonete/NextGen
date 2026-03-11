@@ -39,7 +39,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         .unwrap_or(false);
 
     if is_fixed {
-        state.send_console(conn_id, "No puedes agarrar ese objeto", font_index::INFO).await;
+        state.send_console(conn_id, "No puedes agarrar ese objeto", font_index::INFO);
         return;
     }
 
@@ -61,14 +61,14 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         }
         // Broadcast BO (erase object) to area
         let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo);
 
         // Add directly to gold counter (VB6: Stats.GLD += Amount)
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.gold += amount as i64;
         }
         send_stats_gold(state, conn_id).await;
-        state.send_console(conn_id, &format!("Has recogido {} monedas de oro.", amount), font_index::INFO).await;
+        state.send_console(conn_id, &format!("Has recogido {} monedas de oro.", amount), font_index::INFO);
         return;
     }
 
@@ -97,7 +97,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     let slot = match free_slot {
         Some(s) => s,
         None => {
-            state.send_msg_id(conn_id, 108, "").await; // TEXTO108: No podes cargar mas objetos
+            state.send_msg_id(conn_id, 108, ""); // TEXTO108: No podes cargar mas objetos
             return;
         }
     };
@@ -112,7 +112,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
 
     // Broadcast BO (erase object) to area
     let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo).await;
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo);
 
     // Add to inventory
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -135,7 +135,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
         .map(|o| o.name.clone())
         .unwrap_or_else(|| format!("Item #{}", obj_idx));
 
-    state.send_msg_id(conn_id, 115, &format!("{}@{}", amount, item_name)).await; // TEXTO115: Recibiste %1 - %2
+    state.send_msg_id(conn_id, 115, &format!("{}@{}", amount, item_name)); // TEXTO115: Recibiste %1 - %2
 }
 
 /// TI<slot>,<amount> — Drop item from inventory to ground.
@@ -169,7 +169,7 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     // GM anti-abuse: GMs (Consejero through Gran_Dios) cannot drop items.
     // Only regular users (0) and Director+ (>=9) are allowed.
     if user.privileges > 0 && user.privileges < 9 {
-        state.send_console(conn_id, "Los GMs no pueden tirar items", font_index::INFO).await;
+        state.send_console(conn_id, "Los GMs no pueden tirar items", font_index::INFO);
         return;
     }
 
@@ -196,7 +196,7 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     };
 
     if !can_place {
-        state.send_msg_id(conn_id, 107, "").await; // TEXTO107: No hay espacio en el piso
+        state.send_msg_id(conn_id, 107, ""); // TEXTO107: No hay espacio en el piso
         return;
     }
 
@@ -235,19 +235,19 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                     ci as i16, body as i16, head as i16, heading as u8,
                     weapon_anim as i16, shield_anim as i16, casco_anim as i16, 0, 0,
                 );
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cp);
             }
 
             // Send aura update if item had an aura
             if let Some(pkt_au) = au_pkt_bin {
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au).await;
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_au);
             }
 
             // Send updated ANM (equipment stats) to the user
             {
                 let anm_text = build_anm_packet(state, conn_id);
                 let pkt_anm = binary_packets::write_anim_data(&anm_text);
-                state.send_bytes(conn_id, &pkt_anm).await;
+                state.send_bytes(conn_id, &pkt_anm);
             }
         }
     }
@@ -295,10 +295,10 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                     crate::game::handlers::common::build_cd_binary(u),
                 )
             };
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_bytes).await;
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm).await;
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_mvol).await;
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cd).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_bytes);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_usm);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_mvol);
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_cd);
         }
     }
 
@@ -336,12 +336,12 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
                     u.char_index.0,
                 )
             };
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_bytes).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp_bytes);
             let pkt_naveg = binary_packets::write_navigate_broadcast(naveg_ci as i16, false);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_naveg).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_naveg);
             // Navigate toggle to self (client-side navigation state off)
             let pkt_nav_self = binary_packets::write_navigate_toggle();
-            state.send_bytes(conn_id, &pkt_nav_self).await;
+            state.send_bytes(conn_id, &pkt_nav_self);
         }
     }
 
@@ -384,7 +384,7 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
     // Broadcast HO (show object) to area if new item on tile
     if is_new && grh_index > 0 {
         let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
     }
 
     // Track for world cleanup (auto-remove after 10 ticks)
@@ -456,7 +456,7 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
 
         if is_new && grh_index > 0 {
             let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
         }
 
         clean_world_add_item(state, map, x, y, 10, GOLD_OBJ_INDEX);
@@ -464,5 +464,5 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
         break;
     }
 
-    state.send_console(conn_id, &format!("Tiraste {} monedas de oro.", drop_total), font_index::INFO).await;
+    state.send_console(conn_id, &format!("Tiraste {} monedas de oro.", drop_total), font_index::INFO);
 }

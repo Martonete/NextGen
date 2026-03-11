@@ -23,7 +23,7 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
         return;
     }
     if level < 10 {
-        state.send_console(conn_id, "Debes ser nivel 10 o superior para usar /REGRESAR.", font_index::INFO).await;
+        state.send_console(conn_id, "Debes ser nivel 10 o superior para usar /REGRESAR.", font_index::INFO);
         return;
     }
 
@@ -38,12 +38,12 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
             user.min_sta = 0;
         }
         let dead_pkt = binary_packets::write_dead();
-        state.send_bytes(conn_id, &dead_pkt).await;
+        state.send_bytes(conn_id, &dead_pkt);
         send_stats_hp(state, conn_id).await;
         if let Some(user) = state.users.get(&conn_id) {
             let cc = user.build_cc_binary();
             let (m, ux, uy) = (user.pos_map, user.pos_x, user.pos_y);
-            state.send_data_bytes(SendTarget::ToArea { map: m, x: ux, y: uy }, &cc).await;
+            state.send_data_bytes(SendTarget::ToArea { map: m, x: ux, y: uy }, &cc);
         }
     }
 
@@ -51,7 +51,7 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
     let (dest_map, dest_x, dest_y) = (1, 58, 45);
 
     warp_user(state, conn_id, dest_map, dest_x, dest_y).await;
-    state.send_console(conn_id, "Has regresado a tu hogar.", font_index::INFO).await;
+    state.send_console(conn_id, "Has regresado a tu hogar.", font_index::INFO);
 }
 
 /// /SALIR — Disconnect/logout.
@@ -69,12 +69,12 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
     };
 
     if dead {
-        state.send_msg_id(conn_id, 3, "").await;
+        state.send_msg_id(conn_id, 3, "");
         return;
     }
 
     if max_mana == 0 {
-        state.send_msg_id(conn_id, 4, "").await;
+        state.send_msg_id(conn_id, 4, "");
         return;
     }
 
@@ -82,9 +82,9 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.min_mana = user.max_mana;
         }
-        state.send_msg_id(conn_id, 393, "").await;
+        state.send_msg_id(conn_id, 393, "");
         send_stats_mana(state, conn_id).await;
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
         return;
     }
 
@@ -94,8 +94,8 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
     }
 
     if !was_meditating {
-        state.send_msg_id(conn_id, 394, "").await;
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+        state.send_msg_id(conn_id, 394, "");
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
 
         let min_mana = state.users.get(&conn_id).map(|u| u.min_mana).unwrap_or(0);
         if min_mana >= max_mana { return; }
@@ -108,17 +108,17 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
         let fx_id = super::ticks::meditation_fx_for_level(level);
 
         let pkt = binary_packets::write_create_fx(ci as i16, fx_id, 999);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
     } else {
-        state.send_msg_id(conn_id, 205, "").await;
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle()).await;
+        state.send_msg_id(conn_id, 205, "");
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
 
         let (ci, map, x, y) = match state.users.get(&conn_id) {
             Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
         let pkt = binary_packets::write_create_fx(ci as i16, 0, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt).await;
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
     }
 }
 
@@ -133,7 +133,7 @@ pub(super) async fn handle_slash_descansar(state: &mut GameState, conn_id: Conne
     };
 
     if dead {
-        state.send_console(conn_id, "¡¡Estás muerto!!", font_index::INFO).await;
+        state.send_console(conn_id, "¡¡Estás muerto!!", font_index::INFO);
         return;
     }
 
@@ -141,12 +141,12 @@ pub(super) async fn handle_slash_descansar(state: &mut GameState, conn_id: Conne
     let has_fogata = hay_obj_area(state, pos_map, pos_x, pos_y, FOGATA);
 
     if has_fogata {
-        state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
+        state.send_bytes(conn_id, &binary_packets::write_rest_ok());
 
         if !resting {
-            state.send_console(conn_id, "Te acomodás junto a la fogata y comienzas a descansar.", font_index::INFO).await;
+            state.send_console(conn_id, "Te acomodás junto a la fogata y comienzas a descansar.", font_index::INFO);
         } else {
-            state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
+            state.send_console(conn_id, "Te levantás.", font_index::INFO);
         }
 
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -155,13 +155,13 @@ pub(super) async fn handle_slash_descansar(state: &mut GameState, conn_id: Conne
     } else {
         if resting {
             // Was resting but moved away — stop resting
-            state.send_bytes(conn_id, &binary_packets::write_rest_ok()).await;
-            state.send_console(conn_id, "Te levantás.", font_index::INFO).await;
+            state.send_bytes(conn_id, &binary_packets::write_rest_ok());
+            state.send_console(conn_id, "Te levantás.", font_index::INFO);
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.resting = false;
             }
         } else {
-            state.send_console(conn_id, "No hay ninguna fogata junto a la cual descansar.", font_index::INFO).await;
+            state.send_console(conn_id, "No hay ninguna fogata junto a la cual descansar.", font_index::INFO);
         }
     }
 }
@@ -375,7 +375,7 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
 
                 if let Some(npc) = state.get_npc(npc_idx) {
                     let cc_pkt = npc.build_cc_binary();
-                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc_pkt).await;
+                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc_pkt);
                 }
             }
         }
@@ -391,7 +391,7 @@ pub(super) async fn limpiar_clan_pretoriano(state: &mut GameState) {
         if let Some(npc) = state.get_npc(npc_idx) {
             let bp_pkt = binary_packets::write_character_remove(npc.char_index.0 as i16);
             let (map, x, y) = (npc.map, npc.x, npc.y);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt).await;
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &bp_pkt);
         }
         state.kill_npc(npc_idx);
     }

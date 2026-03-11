@@ -81,23 +81,41 @@ impl ConnectionReader {
 }
 
 /// Write half of a client connection — held by the game loop.
+///
+/// Uses application-level write batching: packets are accumulated in a buffer
+/// during the game tick and flushed once at the end. This reduces syscalls
+/// and TCP overhead (fewer small packets) while keeping the same latency
+/// since flush happens every tick (~40ms at most).
 pub struct ConnectionWriter {
     pub id: ConnectionId,
     pub addr: SocketAddr,
     writer: OwnedWriteHalf,
+    /// Application-level write buffer. Packets accumulate here during a tick
+    /// and are flushed to the socket in one write_all() call.
+    buf: Vec<u8>,
 }
 
 impl ConnectionWriter {
-    /// Send raw binary bytes to the client.
-    ///
-    /// 13.3 protocol: no encryption, no framing. Raw bytes on the wire.
-    /// The ByteQueue on the client side knows field sizes from the opcode.
-    pub async fn send_packet(&mut self, data: &[u8]) -> Result<(), std::io::Error> {
-        self.writer.write_all(data).await
+    /// Buffer raw binary bytes for sending. Data is not written to the socket
+    /// until flush() is called (once per game tick).
+    pub fn send_packet(&mut self, data: &[u8]) {
+        self.buf.extend_from_slice(data);
     }
 
-    /// Shutdown the write half.
+    /// Flush the write buffer to the TCP socket. Called once per game tick.
+    /// Returns Ok(()) if buffer was empty or write succeeded.
+    pub async fn flush(&mut self) -> Result<(), std::io::Error> {
+        if self.buf.is_empty() {
+            return Ok(());
+        }
+        let result = self.writer.write_all(&self.buf).await;
+        self.buf.clear();
+        result
+    }
+
+    /// Flush buffer and then shutdown the write half.
     pub async fn shutdown(&mut self) {
+        let _ = self.flush().await;
         let _ = self.writer.shutdown().await;
     }
 
@@ -135,6 +153,7 @@ pub fn split_connection(
         id,
         addr,
         writer: write_half,
+        buf: Vec::with_capacity(1024),
     };
 
     (reader, writer)

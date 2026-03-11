@@ -90,7 +90,7 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                     name.to_string()
                 }
             };
-            state.send_console(conn_id, &msg, font_index::INFO).await;
+            state.send_console(conn_id, &msg, font_index::INFO);
         }
     }
 
@@ -240,7 +240,7 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                 font_index::CIUDADANO
             };
 
-            state.send_console(conn_id, &stat, fi).await;
+            state.send_console(conn_id, &stat, fi);
 
             found_something = true;
             if let Some(user) = state.users.get_mut(&conn_id) {
@@ -268,7 +268,7 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                 if my_privileges > 0 {
                     state.send_console(conn_id,
                         &format!("Nombre : {} /  Vida : {}/{} Numero de NPC : {}", npc_name, npc_min_hp, npc_max_hp, npc_num),
-                        font_index::NPCSX).await;
+                        font_index::NPCSX);
                 }
 
                 // VB6: Health status based on Survival skill (lines 993-1036)
@@ -284,13 +284,13 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
                     if is_gm {
                         state.send_console(conn_id,
                             &format!("Nombre: {} Vida: {}/{} Numero de NPC: {} Indice: {}", npc_name, npc_min_hp, npc_max_hp, npc_num, npc_idx),
-                            font_index::NPCSX).await;
+                            font_index::NPCSX);
                     }
                     // Speech bubble with desc (overhead white text)
-                    state.send_chat_over_head_to(SendTarget::ToIndex(conn_id), &npc_desc, npc_char_index.0 as i16, 16777215).await;
+                    state.send_chat_over_head_to(SendTarget::ToIndex(conn_id), &npc_desc, npc_char_index.0 as i16, 16777215);
                 } else {
                     // No desc → show name + health status
-                    state.send_msg_id(conn_id, 674, &format!("{}@{}", npc_name, estatus)).await;
+                    state.send_msg_id(conn_id, 674, &format!("{}@{}", npc_name, estatus));
                 }
 
                 found_something = true;
@@ -532,7 +532,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                     user.target_user = target_conn;
                 }
                 let pkt_menu = binary_packets::write_menu_data(&target_name, privileges as u8);
-                state.send_bytes(conn_id, &pkt_menu).await;
+                state.send_bytes(conn_id, &pkt_menu);
                 return;
             }
         }
@@ -561,41 +561,41 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                 // VB6 Accion(): First check Comercia, then check NPCtype
                 // Commerce takes priority over type (VB6 line 135)
                 if comercia {
-                    if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                    if dead { state.send_msg_id(conn_id, 3, ""); return; }
                     if dist > 6 {
-                        state.send_msg_id(conn_id, 13, "").await; return;
+                        state.send_msg_id(conn_id, 13, ""); return;
                     }
                     iniciar_comercio_npc(state, conn_id, npc_idx).await;
                 } else {
                     match npc_type {
                         NpcType::Banker => {
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
                             iniciar_boveda_clan(state, conn_id).await;
                         }
                         NpcType::Traveler => {
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
                             let pkt_travels = binary_packets::write_travels();
-                            state.send_bytes(conn_id, &pkt_travels).await;
+                            state.send_bytes(conn_id, &pkt_travels);
                         }
                         NpcType::Quest | NpcType::QuestNoble => { }
                         NpcType::Reviver => {
                             // VB6 Acciones.bas:408-422 — Revividor NPC
                             // Distance check: <= 10 tiles
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 12, "").await; return;
+                                state.send_msg_id(conn_id, 12, ""); return;
                             }
 
                             // If dead: revive first
@@ -611,86 +611,86 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             send_stats_hp(state, conn_id).await;
                         }
                         NpcType::Trainer => {
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
-                            state.send_console(conn_id, "Habla con el entrenador usando el chat.", font_index::INFO).await;
+                            state.send_console(conn_id, "Habla con el entrenador usando el chat.", font_index::INFO);
                         }
                         NpcType::Surgeon => {
                             if dist > 10 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
                             if let Some(user) = state.users.get_mut(&conn_id) {
                                 if user.poisoned {
                                     user.poisoned = false;
-                                    state.send_console(conn_id, "El cirujano te ha curado el veneno.", font_index::INFO).await;
+                                    state.send_console(conn_id, "El cirujano te ha curado el veneno.", font_index::INFO);
                                 } else {
-                                    state.send_console(conn_id, "No necesitas curacion.", font_index::INFO).await;
+                                    state.send_console(conn_id, "No necesitas curacion.", font_index::INFO);
                                 }
                             }
                         }
                         NpcType::Mail => {
                             // VB6: Correos (type 23) — opens mail form
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
                             let pkt_correo = binary_packets::write_mail_open();
-                            state.send_bytes(conn_id, &pkt_correo).await;
+                            state.send_bytes(conn_id, &pkt_correo);
                         }
                         NpcType::Citizenship => {
                             // VB6: Ciudadania (type 13)
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
-                            state.send_console(conn_id, "Habla conmigo para cambiar tu ciudadania. Escribe /CIUDADANO para convertirte en ciudadano o /CRIMINAL para renunciar.", font_index::INFO).await;
+                            state.send_console(conn_id, "Habla conmigo para cambiar tu ciudadania. Escribe /CIUDADANO para convertirte en ciudadano o /CRIMINAL para renunciar.", font_index::INFO);
                         }
                         NpcType::HouseSeller => {
                             // VB6: ShowCasas (type 15) — MFC packet
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             let pkt_mfc = binary_packets::write_friend_dialog();
-                            state.send_bytes(conn_id, &pkt_mfc).await;
+                            state.send_bytes(conn_id, &pkt_mfc);
                         }
                         NpcType::Arena => { }
                         NpcType::GodNpc => {
                             // VB6: NpcDioses (type 18)
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 3 {
-                                state.send_msg_id(conn_id, 14, "").await; return;
+                                state.send_msg_id(conn_id, 14, ""); return;
                             }
-                            state.send_console(conn_id, "Acercate mas para hablar con los dioses.", font_index::INFO).await;
+                            state.send_console(conn_id, "Acercate mas para hablar con los dioses.", font_index::INFO);
                         }
                         NpcType::Bargomaud => {
                             // VB6: NpcBargomaud (type 20) — check level >= 55, warp to 161,50,53
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 14, "").await; return;
+                                state.send_msg_id(conn_id, 14, ""); return;
                             }
                             let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(0);
                             if level < 55 {
-                                state.send_msg_id(conn_id, 643, "").await; return;
+                                state.send_msg_id(conn_id, 643, ""); return;
                             }
                             warp_user(state, conn_id, 161, 50, 53).await;
                             let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                            state.send_msg_id(conn_id, 651, &name).await;
+                            state.send_msg_id(conn_id, 651, &name);
                         }
                         NpcType::QuintaJera => {
                             // VB6: QuintaJera (type 21) — faction rewards
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
-                            state.send_console(conn_id, "Usa los comandos /RECOMPENSA y /ENLISTAR para interactuar.", font_index::INFO).await;
+                            state.send_console(conn_id, "Usa los comandos /RECOMPENSA y /ENLISTAR para interactuar.", font_index::INFO);
                         }
                         NpcType::BoxDelivery => {
                             // VB6: EntregaCajas (type 24)
-                            if dead { state.send_msg_id(conn_id, 3, "").await; return; }
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
                             if dist > 5 {
-                                state.send_msg_id(conn_id, 13, "").await; return;
+                                state.send_msg_id(conn_id, 13, ""); return;
                             }
-                            state.send_console(conn_id, "Trae las cajas de quest para recibir tu recompensa.", font_index::INFO).await;
+                            state.send_console(conn_id, "Trae las cajas de quest para recibir tu recompensa.", font_index::INFO);
                         }
                         _ => {
                             // Non-interactive NPC — description already shown above
@@ -707,7 +707,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
         if let Some(obj) = state.get_object(tile_obj_idx) {
             let sele_data = format!("{},{},OBJ", obj.obj_type as i32, obj.name);
             let pkt_sele = binary_packets::write_select_data(&sele_data);
-            state.send_bytes(conn_id, &pkt_sele).await;
+            state.send_bytes(conn_id, &pkt_sele);
         }
     }
 }

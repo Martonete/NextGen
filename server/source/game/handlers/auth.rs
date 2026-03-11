@@ -51,19 +51,19 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if !is_valid_name(&account_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if !accounts::account_exists(&state.pool, &account_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -72,14 +72,14 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
         Ok(acc) => acc,
         Err(e) => {
             warn!("[AUTH] Failed to load account '{}': {}", account_name, e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer la cuenta.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer la cuenta."));
             close_connection(state, conn_id).await;
             return;
         }
     };
 
     if !password::verify_password(&password, &account.password_hash) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -90,7 +90,7 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
         let ban_reason = read_field(1, motivo, ',');
         state.send_bytes(conn_id, &binary_packets::write_error_msg(
             &format!("Tu cuenta se encuentra actualmente baneada por: {} con motivo: {}.", ban_by, ban_reason)
-        )).await;
+        ));
         close_connection(state, conn_id).await;
         return;
     }
@@ -101,7 +101,7 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
         user.account_id = account.id;
     }
 
-    state.send_bytes(conn_id, &binary_packets::write_init_account(account.num_pjs as u8, &state.notice)).await;
+    state.send_bytes(conn_id, &binary_packets::write_init_account(account.num_pjs as u8, &state.notice));
 
     for i in 0..account.num_pjs {
         let pj_name = &account.characters[i];
@@ -115,7 +115,7 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
                     preview.head as i16, preview.body as i16,
                     preview.weapon as i16, preview.shield as i16, preview.helmet as i16,
                     preview.level as u8, &preview.class, preview.dead, &preview.race,
-                )).await;
+                ));
             }
             Err(e) => {
                 warn!("[AUTH] Failed to load preview for '{}': {}", pj_name, e);
@@ -123,7 +123,7 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
         }
     }
 
-    state.send_bytes(conn_id, &binary_packets::write_security_code(&account.security_code)).await;
+    state.send_bytes(conn_id, &binary_packets::write_security_code(&account.security_code));
 
     info!("[AUTH] Account '{}' authenticated, {} characters", account_name, account.num_pjs);
 }
@@ -138,19 +138,19 @@ pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, 
     info!("[AUTH] New account request: '{}' from #{}", account_name, conn_id);
 
     if !is_valid_name(&account_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if account_name.len() < 3 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre de la cuenta debe tener al menos 3 caracteres.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre de la cuenta debe tener al menos 3 caracteres."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if password.len() < 3 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("La password debe tener al menos 3 caracteres.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La password debe tener al menos 3 caracteres."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -159,7 +159,7 @@ pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, 
         Ok(h) => h,
         Err(e) => {
             warn!("[AUTH] Failed to hash password: {}", e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error interno del servidor.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error interno del servidor."));
             close_connection(state, conn_id).await;
             return;
         }
@@ -174,11 +174,11 @@ pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, 
     ).await {
         Ok(_account_id) => {
             info!("[AUTH] Account '{}' created successfully", account_name);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Cuenta creada con exito!")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Cuenta creada con exito!"));
             close_connection(state, conn_id).await;
         }
         Err(e) => {
-            state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string())).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string()));
             close_connection(state, conn_id).await;
         }
     }
@@ -195,19 +195,19 @@ pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, 
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if !is_valid_name(&char_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -215,7 +215,7 @@ pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, 
     if is_char_banned(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg(
             "Se te ha prohibido la entrada a Argentum Nextgen debido a tu mal comportamiento. Consulta a un administrador para saber el motivo de la prohibicion."
-        )).await;
+        ));
         close_connection(state, conn_id).await;
         return;
     }
@@ -224,7 +224,7 @@ pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, 
         .map(|u| u.account_name.clone())
         .unwrap_or_default();
     if !expected_account.is_empty() && account.to_uppercase() != expected_account.to_uppercase() {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al conectar, intente de nuevo.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al conectar, intente de nuevo."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -242,7 +242,7 @@ pub(super) async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, 
     info!("[AUTH] Character login (OOLOGI): '{}' from #{}", char_name, conn_id);
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -250,7 +250,7 @@ pub(super) async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, 
     if is_char_banned(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg(
             "Se te ha prohibido la entrada a Argentum Nextgen debido a tu mal comportamiento."
-        )).await;
+        ));
         close_connection(state, conn_id).await;
         return;
     }
@@ -270,7 +270,7 @@ pub(crate) async fn connect_user(
     if state.num_users >= state.config.max_users {
         state.send_bytes(conn_id, &binary_packets::write_error_msg(
             "El servidor ha alcanzado el maximo de usuarios soportado. Intente mas tarde."
-        )).await;
+        ));
         close_connection(state, conn_id).await;
         return;
     }
@@ -279,10 +279,10 @@ pub(crate) async fn connect_user(
     if !state.config.allow_multi_logins {
         let user_ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
         if is_same_ip_online(state, conn_id, &user_ip) {
-            state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
+            state.send_bytes(conn_id, &binary_packets::write_finish_ok());
             state.send_bytes(conn_id, &binary_packets::write_error_show(
                 "No es posible usar mas de un personaje al mismo tiempo."
-            )).await;
+            ));
             close_connection(state, conn_id).await;
             return;
         }
@@ -293,7 +293,7 @@ pub(crate) async fn connect_user(
         Ok(data) => data,
         Err(e) => {
             warn!("[AUTH] Failed to load character '{}': {}", char_name, e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error en el personaje.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error en el personaje."));
             close_connection(state, conn_id).await;
             return;
         }
@@ -301,8 +301,8 @@ pub(crate) async fn connect_user(
 
     // Verify password (CodeX)
     if !codex.is_empty() && char_data.password.to_uppercase() != codex.to_uppercase() {
-        state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
-        state.send_bytes(conn_id, &binary_packets::write_error_show("Password incorrecto.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_finish_ok());
+        state.send_bytes(conn_id, &binary_packets::write_error_show("Password incorrecto."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -326,12 +326,12 @@ pub(crate) async fn connect_user(
                 state.send_data_bytes(
                     SendTarget::ToMapButIndex { conn_id: old_id, map },
                     &qdl_pkt,
-                ).await;
+                );
                 let bp_pkt = binary_packets::write_character_remove(ci as i16);
                 state.send_data_bytes(
                     SendTarget::ToMapButIndex { conn_id: old_id, map },
                     &bp_pkt,
-                ).await;
+                );
             }
             // remove_connection cleans up users, writers, online_names, world grid
             state.remove_connection(old_id);
@@ -349,7 +349,7 @@ pub(crate) async fn connect_user(
     if let Some(other) = state.is_account_char_online(&account_chars, char_name) {
         state.send_bytes(conn_id, &binary_packets::write_error_show(
             &format!("Perdon, un usuario de la misma cuenta esta conectado ({}), intente de nuevo en 5 minutos.", other)
-        )).await;
+        ));
         close_connection(state, conn_id).await;
         return;
     }
@@ -653,19 +653,19 @@ pub(crate) async fn connect_user(
     // =========================================================
 
     // --- PHASE 1: Map setup (VB6 lines 1552-1555) ---
-    state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8)).await;
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8)).await;
-    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
-    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
+    state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8));
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8));
+    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
+    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
 
     // --- PHASE 2: Privilege level (VB6 lines 1558-1596) ---
-    state.send_bytes(conn_id, &binary_packets::write_privilege_level(char_data.privileges as u8)).await;
+    state.send_bytes(conn_id, &binary_packets::write_privilege_level(char_data.privileges as u8));
 
     // --- PHASE 3: Hunger/Thirst (VB6 line 1608) ---
     state.send_bytes(conn_id, &binary_packets::write_update_hunger_thirst(
         char_data.max_agua as u8, char_data.min_agua as u8,
         char_data.max_ham as u8, char_data.min_ham as u8,
-    )).await;
+    ));
 
     // --- PHASE 4: Broadcast status to area (VB6 line 1609) ---
     let status_mith = if char_data.criminal { 2u8 } else { 1u8 };
@@ -673,19 +673,19 @@ pub(crate) async fn connect_user(
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id, map, x, y },
         &px_pkt,
-    ).await;
+    );
 
     // --- PHASE 5: Reputation (VB6 line 1666) ---
-    state.send_bytes(conn_id, &binary_packets::write_reputation(char_data.reputation as i32)).await;
+    state.send_bytes(conn_id, &binary_packets::write_reputation(char_data.reputation as i32));
 
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
-    state.send_bytes(conn_id, &binary_packets::write_logged(0)).await;
+    state.send_bytes(conn_id, &binary_packets::write_logged(0));
 
     // --- PHASE 8: Equipment hitbox stats (VB6 line 1701) ---
     let anm = build_anm_packet(state, conn_id);
     // build_anm_packet returns "ANM<csv>" — strip the 3-char "ANM" prefix for the binary builder
-    state.send_bytes(conn_id, &binary_packets::write_anim_data(&anm[3..])).await;
+    state.send_bytes(conn_id, &binary_packets::write_anim_data(&anm[3..]));
 
     // --- PHASE 9: Bulk stats [ES (VB6 line 1720) ---
     let exp_next = state.exp_for_level(char_data.level);
@@ -697,17 +697,17 @@ pub(crate) async fn connect_user(
         char_data.level as u8,
         exp_next as i32,
         char_data.exp as i32,
-    )).await;
+    ));
 
     // --- PHASE 10: Stop state (VB6 line 1730) ---
-    state.send_bytes(conn_id, &binary_packets::write_stop_dancing(false)).await;
+    state.send_bytes(conn_id, &binary_packets::write_stop_dancing(false));
 
     // --- PHASE 10b: PARADOK if paralyzed (VB6 line 1732) ---
     // PARADOK is a toggle — client starts with UserParalizado=False,
     // so we send one PARADOK to set it to True if the char is paralyzed.
     if char_data.paralyzed {
         let para_secs = (state.users.get(&conn_id).map(|u| u.counter_paralisis).unwrap_or(0) as f32 * 0.04) as i16;
-        state.send_bytes(conn_id, &binary_packets::write_paralize_ok(para_secs)).await;
+        state.send_bytes(conn_id, &binary_packets::write_paralize_ok(para_secs));
     }
 
     // --- PHASE 10c: NAVEG if navigating (VB6 TCP.bas lines 1515-1521, 1654) ---
@@ -737,7 +737,7 @@ pub(crate) async fn connect_user(
                     user.body = boat_ropaje;
                 }
             }
-            state.send_bytes(conn_id, &binary_packets::write_navigate_toggle()).await;
+            state.send_bytes(conn_id, &binary_packets::write_navigate_toggle());
         }
     }
 
@@ -750,9 +750,9 @@ pub(crate) async fn connect_user(
             let (m, x, y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y))
                 .unwrap_or((0, 0, 0));
-            state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_user_mount(char_idx as i16, true)).await;
+            state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_user_mount(char_idx as i16, true));
             if levitando {
-                state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_levitate(char_idx as i16, true)).await;
+                state.send_data_bytes(SendTarget::ToArea { map: m, x, y }, &binary_packets::write_levitate(char_idx as i16, true));
             }
         }
     }
@@ -774,24 +774,24 @@ pub(crate) async fn connect_user(
         };
 
         // BKW (fade to black)
-        state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
+        state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
         // CM (change map — client loads the map file)
-        state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8));
         // XM (music)
-        state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
         // N~ (map name display)
-        state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name)).await;
+        state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
         // IP (self char index — tells client which CC is "me")
-        state.send_bytes(conn_id, &binary_packets::write_user_char_index(char_index.0 as i16)).await;
+        state.send_bytes(conn_id, &binary_packets::write_user_char_index(char_index.0 as i16));
         // Own CC packet (client renders self) + [CD (char data)
         if let Some(user) = state.users.get(&conn_id) {
             let own_cc = user.build_cc_binary();
             let own_cd = build_cd_binary(user);
-            state.send_bytes(conn_id, &own_cc).await;
-            state.send_bytes(conn_id, &own_cd).await;
+            state.send_bytes(conn_id, &own_cc);
+            state.send_bytes(conn_id, &own_cd);
         }
         // PU (position update — tells client where to center camera)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8)).await;
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8));
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
 
@@ -800,30 +800,30 @@ pub(crate) async fn connect_user(
         // BKW again to toggle pausa back to False (VB6 WarpUserChar line 2404)
         // BKW toggles pausa — first one pauses, second one un-pauses.
         // Without this, client stays paused and CheckKeys never runs (no movement!)
-        state.send_bytes(conn_id, &binary_packets::write_pause_toggle()).await;
+        state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
 
         // VB6: WarpUserChar(..., True) on login — send warp FX to area
         send_warp_fx(state, conn_id).await;
     }
 
     // --- PHASE 12: Console messages (VB6 lines 1738-1747) ---
-    state.send_msg_id(conn_id, 705, "").await;
-    state.send_msg_id(conn_id, 706, "0").await; // 0 penalties
-    state.send_msg_id(conn_id, 707, "").await;
-    state.send_msg_id(conn_id, 709, char_name).await;
-    state.send_msg_id(conn_id, 710, "").await; // Messages activated
+    state.send_msg_id(conn_id, 705, "");
+    state.send_msg_id(conn_id, 706, "0"); // 0 penalties
+    state.send_msg_id(conn_id, 707, "");
+    state.send_msg_id(conn_id, 709, char_name);
+    state.send_msg_id(conn_id, 710, ""); // Messages activated
 
     // --- PHASE 12b: Online count (ON opcode → frmMain.ONLINES.Caption) ---
     // VB6 MostrarNumUsers: broadcast online count to ALL players (General.bas:628)
-    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_online_count(state.num_users as i16)).await;
+    state.send_data_bytes(SendTarget::ToAll, &binary_packets::write_online_count(state.num_users as i16));
 
     // --- PHASE 13: Scroll timers (VB6 lines 1781-1783) ---
     for i in 1u8..=4 {
-        state.send_bytes(conn_id, &binary_packets::write_timer_info(i, 0, 0)).await;
+        state.send_bytes(conn_id, &binary_packets::write_timer_info(i, 0, 0));
     }
 
     // --- PHASE 14: Inventory (VB6 lines 1785-1786) ---
-    state.send_bytes(conn_id, &binary_packets::write_inv_init()).await;
+    state.send_bytes(conn_id, &binary_packets::write_inv_init());
     send_full_inventory(state, conn_id).await;
 
     // --- PHASE 15: Spells (VB6 line 1787) ---
@@ -831,7 +831,7 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 16: Rain state (VB6: send rain toggle if currently raining) ---
     if state.raining {
-        state.send_bytes(conn_id, &binary_packets::write_rain_toggle()).await;
+        state.send_bytes(conn_id, &binary_packets::write_rain_toggle());
     }
 
     info!(
@@ -850,19 +850,19 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if !state.config.can_create_characters {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("La creacion de personajes en este servidor se ha deshabilitado.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La creacion de personajes en este servidor se ha deshabilitado."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if state.config.server_only_gms {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Servidor restringido a administradores. La creacion de personajes se encuentra deshabilitada.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Servidor restringido a administradores. La creacion de personajes se encuentra deshabilitada."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -880,13 +880,13 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
     info!("[AUTH] New character request: '{}' race='{}' class='{}' from #{}", char_name, race, class, conn_id);
 
     if !is_valid_name(&char_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido."));
         close_connection(state, conn_id).await;
         return;
     }
 
     if char_name.len() < 3 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre del personaje debe tener al menos 3 caracteres.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El nombre del personaje debe tener al menos 3 caracteres."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -900,7 +900,7 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
         .unwrap_or(0);
 
     if account_id == 0 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes iniciar sesion primero.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes iniciar sesion primero."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -926,7 +926,7 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
             connect_user(state, conn_id, &char_name, &account, "").await;
         }
         Err(e) => {
-            state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string())).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string()));
             close_connection(state, conn_id).await;
         }
     }
@@ -944,7 +944,7 @@ pub(super) async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) 
 
     state.send_bytes(conn_id, &binary_packets::write_dice_roll(
         attrs[0] as u8, attrs[1] as u8, attrs[2] as u8, attrs[3] as u8, attrs[4] as u8,
-    )).await;
+    ));
 }
 
 /// TBRP — Delete character.
@@ -957,7 +957,7 @@ pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, da
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
 
     if !charfile::character_exists(&state.pool, &char_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -965,7 +965,7 @@ pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, da
     let char_data = match charfile::load_charfile(&state.pool, &char_name).await {
         Ok(data) => data,
         Err(_) => {
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer el personaje.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer el personaje."));
             close_connection(state, conn_id).await;
             return;
         }
@@ -973,25 +973,25 @@ pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, da
 
     // Verify password (security_code from account)
     if char_data.password.to_uppercase() != password.to_uppercase() {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto.")).await;
-        state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto."));
+        state.send_bytes(conn_id, &binary_packets::write_finish_ok());
         close_connection(state, conn_id).await;
         return;
     }
 
     // Block deletion of GMs/privileged characters (VB6 checks privilege level)
     if char_data.privileges > 0 {
-        state.send_bytes(conn_id, &binary_packets::write_error_show("No podes borrar gms.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("No podes borrar gms."));
         return;
     }
 
     if char_data.level >= 50 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("No podes borrar usuarios nivel 50 o superior.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("No podes borrar usuarios nivel 50 o superior."));
         return;
     }
 
     if char_data.guild_index > 0 {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("No podes borrar usuarios que esten dentro de un clan. Primero abandona el clan.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("No podes borrar usuarios que esten dentro de un clan. Primero abandona el clan."));
         return;
     }
 
@@ -1000,8 +1000,8 @@ pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, da
     }
 
     info!("[AUTH] Character '{}' deleted", char_name);
-    state.send_bytes(conn_id, &binary_packets::write_finish_ok()).await;
-    state.send_bytes(conn_id, &binary_packets::write_error_show("Personaje Borrado con exito.")).await;
+    state.send_bytes(conn_id, &binary_packets::write_finish_ok());
+    state.send_bytes(conn_id, &binary_packets::write_error_show("Personaje Borrado con exito."));
     close_connection(state, conn_id).await;
 }
 
@@ -1016,37 +1016,37 @@ pub(super) async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, 
     info!("[AUTH] Password change request for '{}' from #{}", account_name, conn_id);
 
     if new_password == old_password {
-        state.send_bytes(conn_id, &binary_packets::write_error_show("No puedes volver a utilizar la misma contrasena.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("No puedes volver a utilizar la misma contrasena."));
         return;
     }
 
     if new_password.len() < 3 {
-        state.send_bytes(conn_id, &binary_packets::write_error_show("La contrasena debe tener un minimo de 3 caracteres.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("La contrasena debe tener un minimo de 3 caracteres."));
         return;
     }
 
     if new_password != confirm_password {
-        state.send_bytes(conn_id, &binary_packets::write_error_show("Las contrasenas no coinciden.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("Las contrasenas no coinciden."));
         return;
     }
 
     let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
-            state.send_bytes(conn_id, &binary_packets::write_error_show("La cuenta no existe.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("La cuenta no existe."));
             return;
         }
     };
 
     if !password::verify_password(&old_password, &account.password_hash) {
-        state.send_bytes(conn_id, &binary_packets::write_error_show("La Password actual que nos proporciono, no coincide con la del registro.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_show("La Password actual que nos proporciono, no coincide con la del registro."));
         return;
     }
 
     let new_hash = match password::hash_password(&new_password) {
         Ok(h) => h,
         Err(_) => {
-            state.send_bytes(conn_id, &binary_packets::write_error_show("Error interno.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("Error interno."));
             return;
         }
     };
@@ -1054,11 +1054,11 @@ pub(super) async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, 
     match accounts::update_password(&state.pool, &account_name, &new_hash).await {
         Ok(()) => {
             info!("[AUTH] Password changed for account '{}'", account_name);
-            state.send_bytes(conn_id, &binary_packets::write_error_show("La password de su cuenta fue cambiada con exito. Ahora para logear debera de utilizar la nueva.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("La password de su cuenta fue cambiada con exito. Ahora para logear debera de utilizar la nueva."));
         }
         Err(e) => {
             warn!("[AUTH] Failed to update password: {}", e);
-            state.send_bytes(conn_id, &binary_packets::write_error_show("Error al cambiar la password.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_show("Error al cambiar la password."));
         }
     }
 }
@@ -1074,14 +1074,14 @@ pub(super) async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, 
     let account = match accounts::load_account(&state.pool, &account_name).await {
         Ok(acc) => acc,
         Err(_) => {
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe.")).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe."));
             close_connection(state, conn_id).await;
             return;
         }
     };
 
     if pin.to_uppercase() != account.pin.to_uppercase() {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("El pin ingresado no es correcto.")).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El pin ingresado no es correcto."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -1094,7 +1094,7 @@ pub(super) async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, 
 
     state.send_bytes(conn_id, &binary_packets::write_error_show(
         &format!("Has recuperado la cuenta, utiliza la contrasena {} para poder logearte.", new_pass)
-    )).await;
+    ));
 
     info!("[AUTH] Account '{}' recovered, new password generated", account_name);
 }
