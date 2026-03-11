@@ -1264,11 +1264,12 @@ public partial class EditorMain : Control
             _walkWindow = new Window
             {
                 Title = "Modo Caminata",
-                Size = new Vector2I(560, 440),
+                Size = new Vector2I(544, 416),
                 Visible = false,
                 Exclusive = false,
                 AlwaysOnTop = true,
-                Unresizable = false,
+                Unresizable = true, // fixed to match AO viewport exactly
+                ContentScaleMode = Window.ContentScaleModeEnum.Disabled,
             };
             _walkWindow.CloseRequested += () => _walkWindow.Visible = false;
             AddChild(_walkWindow);

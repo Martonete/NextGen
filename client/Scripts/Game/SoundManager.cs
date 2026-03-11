@@ -104,6 +104,15 @@ public partial class SoundManager : Node
         GD.Print($"[SND] Init done. Test load sound 2: {(test != null ? "OK" : "FAIL")}");
     }
 
+    /// <summary>
+    /// Stop all currently playing SFX. Called on map change to prevent stale sounds.
+    /// </summary>
+    public void StopAllSfx()
+    {
+        foreach (var p in _sfxPlayers)
+            if (p.Playing) p.Stop();
+    }
+
     public void PlaySound(int soundId)
     {
         PlaySoundInternal(soundId, _sfxVolumeDb);

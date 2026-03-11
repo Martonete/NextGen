@@ -733,7 +733,7 @@ public partial class Main
 
             _tcp = new AoTcpClient();
             _packetHandler = new PacketHandler(_state);
-            _packetHandler.OnMapLoad = LoadCurrentMap;
+            _packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
             _connecting = true;
 
             GD.Print($"[MAIN] Connecting for account creation...");

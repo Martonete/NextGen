@@ -266,7 +266,7 @@ public partial class Main : Control
 
         // Setup packet handler
         _packetHandler = new PacketHandler(_state);
-        _packetHandler.OnMapLoad = LoadCurrentMap;
+        _packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
 
         // Setup sound manager
         _soundManager = new SoundManager();
@@ -315,7 +315,7 @@ public partial class Main : Control
         {
             _tcp = new AoTcpClient();
             _packetHandler = new PacketHandler(_state);
-            _packetHandler.OnMapLoad = LoadCurrentMap;
+            _packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
             if (_soundManager != null)
             {
                 _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);

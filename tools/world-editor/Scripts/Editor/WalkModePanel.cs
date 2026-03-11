@@ -47,9 +47,7 @@ public partial class WalkModePanel : Control
 
     // Movement: AO uses ScrollPixels=8 per 40ms tick → 200 pixels/sec
     private const float PixelsPerSecond = 200f;
-
-    // Walk animation: AO walk cycles have ~6 frames, one tile = 32px @ 200px/s = 0.16s
-    private const float WalkAnimFps = 37.5f;
+    private const float ScrollPixels = 8f; // VB6: each scroll step is 8px
 
     // ── Character state ─────────────────────────────────────────────────────
     public int CharX = 50, CharY = 50; // current tile position (1-indexed)
@@ -59,7 +57,6 @@ public partial class WalkModePanel : Control
     private int _heading = 3; // 1=N 2=E 3=S 4=W
     private bool _isMoving;
     private float _moveOffsetX, _moveOffsetY; // pixel offset during smooth scroll
-    private float _walkFrame;
     private double _globalTime; // ms, for tile animations
 
     // ── Input state ─────────────────────────────────────────────────────────
@@ -101,12 +98,10 @@ public partial class WalkModePanel : Control
                     _moveOffsetY = 0;
             }
 
-            _walkFrame += (float)(delta * WalkAnimFps);
-
             if (_moveOffsetX == 0 && _moveOffsetY == 0)
             {
                 _isMoving = false;
-                _walkFrame = 0;
+
 
                 // Check for map exit AFTER arriving at new tile
                 CheckExitTile();
@@ -147,7 +142,7 @@ public partial class WalkModePanel : Control
         _isMoving = true;
         _moveOffsetX = dx * TileSize;
         _moveOffsetY = dy * TileSize;
-        _walkFrame = 0;
+
 
         _underRoof = IsUnderRoof(CharX, CharY);
     }
@@ -193,7 +188,7 @@ public partial class WalkModePanel : Control
         _isMoving = false;
         _moveOffsetX = 0;
         _moveOffsetY = 0;
-        _walkFrame = 0;
+
         _underRoof = IsUnderRoof(CharX, CharY);
         _diagPrinted = false; // print diagnostics for new map
 
@@ -250,7 +245,7 @@ public partial class WalkModePanel : Control
                     _isMoving = false;
                     _moveOffsetX = 0;
                     _moveOffsetY = 0;
-                    _walkFrame = 0;
+    
                     _underRoof = IsUnderRoof(CharX, CharY);
                     CheckExitTile();
                 }
@@ -486,9 +481,16 @@ public partial class WalkModePanel : Control
         float cx = HalfTilesX * TileSize;
         float cy = HalfTilesY * TileSize;
 
-        // Resolve walk animation frame
+        // VB6-style walk animation: frame synced to pixel displacement, one frame per 8px step
         int frameCount = GetGrhFrameCount(bodyGrh);
-        int bodyFrame = _isMoving ? ((int)_walkFrame % Math.Max(frameCount, 1)) : 0;
+        int bodyFrame = 0;
+        if (_isMoving && frameCount > 1)
+        {
+            // How many pixels we've traveled so far (TileSize - remaining offset)
+            float pixelsTraveled = TileSize - Math.Abs(_moveOffsetX) - Math.Abs(_moveOffsetY);
+            int steps = (int)(pixelsTraveled / ScrollPixels);
+            bodyFrame = steps % frameCount;
+        }
         DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, Colors.White);
 
         // Head
