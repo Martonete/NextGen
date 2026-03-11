@@ -1290,6 +1290,7 @@ public partial class EditorMain : Control
         _walkPanel.NpcHeadOfsX = _npcHeadOfsX;
         _walkPanel.NpcHeadOfsY = _npcHeadOfsY;
         _walkPanel.HeadGrhs = _headGrhs;
+        _walkPanel.MapDir = _state.MapDir;
 
         // Start at current editor camera center tile
         int startX = Math.Clamp(_state.HoverX > 0 ? _state.HoverX : 50, 1, _map.Width);
