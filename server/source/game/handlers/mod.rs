@@ -1,5 +1,9 @@
 mod common;
-mod gm_commands;
+mod gm_teleport;
+mod gm_moderation;
+mod gm_items;
+mod gm_server;
+mod gm_query;
 mod ticks;
 mod events;
 mod commerce;
@@ -14,7 +18,11 @@ mod player_commands;
 mod misc_handlers;
 mod inventory;
 use common::*;
-use gm_commands::*;
+use gm_teleport::*;
+use gm_moderation::*;
+use gm_items::*;
+use gm_server::*;
+use gm_query::*;
 use ticks::*;
 use events::*;
 use commerce::*;
@@ -2895,18 +2903,18 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let args = &cmd[9..];
         handle_slash_setdesc(state, conn_id, args).await;
     } else if cmd_upper == "/RELOADSINI" {
-        gm_commands::handle_reload_sini(state, conn_id).await;
+        gm_server::handle_reload_sini(state, conn_id).await;
     } else if cmd_upper == "/LOADOBJ" {
-        gm_commands::handle_reload_objects(state, conn_id).await;
+        gm_server::handle_reload_objects(state, conn_id).await;
     } else if cmd_upper == "/LOADHECHIZOS" {
-        gm_commands::handle_reload_spells(state, conn_id).await;
+        gm_server::handle_reload_spells(state, conn_id).await;
     } else if cmd_upper == "/LOADNPCS" {
-        gm_commands::handle_reload_npcs(state, conn_id).await;
+        gm_server::handle_reload_npcs(state, conn_id).await;
     } else if cmd_upper == "/LOADBALANCE" {
-        gm_commands::handle_reload_balance(state, conn_id).await;
+        gm_server::handle_reload_balance(state, conn_id).await;
     } else if cmd_upper.starts_with("/LOADMAP ") {
         let map_str = &cmd[9..];
-        gm_commands::handle_reload_map(state, conn_id, map_str).await;
+        gm_server::handle_reload_map(state, conn_id, map_str).await;
     } else if cmd_upper.starts_with("/STOP ") {
         let target = cmd[6..].trim();
         handle_slash_stop(state, conn_id, target, true).await;
@@ -2924,22 +2932,22 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_cheat(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/NPCAURA ") {
         let args = cmd[9..].trim();
-        gm_commands::handle_slash_npcaura(state, conn_id, args).await;
+        gm_items::handle_slash_npcaura(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/DEST") && (cmd_upper.len() == 5 || cmd_upper.as_bytes().get(5) == Some(&b' ')) {
-        gm_commands::handle_slash_dest(state, conn_id).await;
+        gm_items::handle_slash_dest(state, conn_id).await;
     } else if cmd_upper == "/MASSDEST" {
-        gm_commands::handle_slash_massdest(state, conn_id).await;
+        gm_items::handle_slash_massdest(state, conn_id).await;
     } else if cmd_upper.starts_with("/IRCERCA ") {
         let target = cmd[9..].trim();
-        gm_commands::handle_slash_ircerca(state, conn_id, target).await;
+        gm_teleport::handle_slash_ircerca(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/HACERITEM ") {
         let args = &cmd[11..];
-        gm_commands::handle_slash_haceritem(state, conn_id, args).await;
+        gm_items::handle_slash_haceritem(state, conn_id, args).await;
     } else if cmd_upper.starts_with("/NENE ") {
         let args = cmd[6..].trim();
-        gm_commands::handle_slash_nene(state, conn_id, args).await;
+        gm_items::handle_slash_nene(state, conn_id, args).await;
     } else if cmd_upper == "/RESETINV" {
-        gm_commands::handle_slash_resetinv(state, conn_id).await;
+        gm_items::handle_slash_resetinv(state, conn_id).await;
     // =====================================================================
     // NEW GM Commands (HIGH priority batch)
     // =====================================================================
