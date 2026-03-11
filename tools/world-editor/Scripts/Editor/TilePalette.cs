@@ -18,6 +18,7 @@ public partial class TilePalette : VBoxContainer
     private GridContainer? _grid;
     private Label? _infoLabel;
     private FlowContainer? _categoryFlow;
+    private LineEdit? _searchBox;
 
     public TextureCatalog? Catalog;
     public GrhData[]? Grhs;
@@ -25,6 +26,7 @@ public partial class TilePalette : VBoxContainer
     public EditorState? State;
 
     private string _activeCategory = "";
+    private string _searchFilter = "";
     private readonly List<Button> _categoryButtons = new();
     private const int PreviewSize = 64; // px per preview cell
     private const int Columns = 4;
@@ -33,6 +35,15 @@ public partial class TilePalette : VBoxContainer
     {
         CustomMinimumSize = new Vector2(300, 0);
         AddThemeConstantOverride("separation", 3);
+
+        // Search box
+        _searchBox = new LineEdit();
+        _searchBox.PlaceholderText = "Buscar textura...";
+        _searchBox.ClearButtonEnabled = true;
+        _searchBox.CustomMinimumSize = new Vector2(290, 28);
+        _searchBox.AddThemeFontSizeOverride("font_size", 11);
+        _searchBox.TextChanged += OnSearchChanged;
+        AddChild(_searchBox);
 
         // Category buttons (wrapped flow — always fully visible, no scrollbar)
         _categoryFlow = new FlowContainer();
@@ -102,9 +113,17 @@ public partial class TilePalette : VBoxContainer
         }
     }
 
+    private void OnSearchChanged(string text)
+    {
+        _searchFilter = text.Trim().ToLowerInvariant();
+        PopulateGrid();
+    }
+
     private void OnCategorySelected(string category)
     {
         _activeCategory = category;
+        _searchFilter = "";
+        if (_searchBox != null) _searchBox.Text = "";
         SyncCategoryButtons();
         PopulateGrid();
     }
@@ -124,7 +143,24 @@ public partial class TilePalette : VBoxContainer
         foreach (var child in _grid.GetChildren())
             child.QueueFree();
 
-        if (!Catalog.Categories.TryGetValue(_activeCategory, out var refs)) return;
+        // Get texture list: search across ALL categories, or filter current category
+        List<TextureRef> refs;
+        if (_searchFilter.Length > 0)
+        {
+            refs = new List<TextureRef>();
+            foreach (var texRef in Catalog.AllRefs)
+            {
+                if (texRef.Name.ToLowerInvariant().Contains(_searchFilter) ||
+                    texRef.Category.ToLowerInvariant().Contains(_searchFilter))
+                    refs.Add(texRef);
+            }
+            _infoLabel!.Text = $"Búsqueda: {refs.Count} resultados";
+        }
+        else
+        {
+            if (!Catalog.Categories.TryGetValue(_activeCategory, out var catRefs)) return;
+            refs = catRefs;
+        }
 
         foreach (var texRef in refs)
         {
