@@ -1,5 +1,6 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using Godot;
 using AOWorldEditor.Data;
@@ -29,6 +30,11 @@ public partial class WalkModePanel : Control
     public int[]? NpcHeadOfsX;
     public int[]? NpcHeadOfsY;
     public int[]? HeadGrhs;
+
+    // Door data for interactive doors
+    public Dictionary<int, DoorInfo>? DoorData; // obj_index → DoorInfo
+    // Track toggled doors: maps (mapNum, x, y) → toggled ObjIndex (so we don't persist changes)
+    private readonly Dictionary<(int map, int x, int y), int> _toggledDoors = new();
 
     // Map loading — for exit tile transitions
     public string MapDir = "";  // directory where Mapa{N}.map/.inf/.dat live
@@ -62,8 +68,9 @@ public partial class WalkModePanel : Control
     // ── Input state ─────────────────────────────────────────────────────────
     private bool _keyUp, _keyDown, _keyLeft, _keyRight;
 
-    // ── Roof detection cache (updated per tile move) ────────────────────────
-    private bool _underRoof;
+    // ── Roof fade (smooth alpha, matching client WorldRenderer.UpdateRoofFade) ──
+    private float _roofAlpha = 255f; // 0=fully transparent, 255=fully opaque
+    private const float RoofFadeRate = 8f; // alpha change per frame
     private bool _diagPrinted;
 
     public override void _Ready()
@@ -114,6 +121,19 @@ public partial class WalkModePanel : Control
             TryMoveFromInput();
         }
 
+        // Smooth roof fade (matching client WorldRenderer.UpdateRoofFade)
+        bool underRoof = IsUnderRoof(CharX, CharY);
+        if (underRoof)
+        {
+            _roofAlpha -= RoofFadeRate;
+            if (_roofAlpha < 0) _roofAlpha = 0;
+        }
+        else
+        {
+            _roofAlpha += RoofFadeRate;
+            if (_roofAlpha > 255) _roofAlpha = 255;
+        }
+
         QueueRedraw();
     }
 
@@ -142,9 +162,6 @@ public partial class WalkModePanel : Control
         _isMoving = true;
         _moveOffsetX = dx * TileSize;
         _moveOffsetY = dy * TileSize;
-
-
-        _underRoof = IsUnderRoof(CharX, CharY);
     }
 
     // ── Map exit / transition ────────────────────────────────────────────────
@@ -189,7 +206,6 @@ public partial class WalkModePanel : Control
         _moveOffsetX = 0;
         _moveOffsetY = 0;
 
-        _underRoof = IsUnderRoof(CharX, CharY);
         _diagPrinted = false; // print diagnostics for new map
 
         // Update window title
@@ -200,15 +216,9 @@ public partial class WalkModePanel : Control
 
     private bool IsUnderRoof(int cx, int cy)
     {
-        if (Map == null) return false;
-        for (int dy = -1; dy <= 1; dy++)
-            for (int dx = -1; dx <= 1; dx++)
-            {
-                int tx = cx + dx, ty = cy + dy;
-                if (Map.InBounds(tx, ty) && Map.Tiles[tx, ty].Layer4 > 0)
-                    return true;
-            }
-        return false;
+        if (Map == null || !Map.InBounds(cx, cy)) return false;
+        short trigger = Map.Tiles[cx, cy].Trigger;
+        return trigger == 1 || trigger == 2 || trigger == 4;
     }
 
     // ── Input handling ──────────────────────────────────────────────────────
@@ -232,6 +242,17 @@ public partial class WalkModePanel : Control
         }
         else if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
+            if (mb.DoubleClick && Map != null)
+            {
+                // Double-click: try to toggle a door
+                float worldX = mb.Position.X - _moveOffsetX;
+                float worldY = mb.Position.Y - _moveOffsetY;
+                int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
+                int ty = (int)Math.Floor(worldY / TileSize) - HalfTilesY + CharY;
+                TryToggleDoor(tx, ty);
+                AcceptEvent();
+                return;
+            }
             if (mb.ShiftPressed && Map != null)
             {
                 float worldX = mb.Position.X - _moveOffsetX;
@@ -245,8 +266,6 @@ public partial class WalkModePanel : Control
                     _isMoving = false;
                     _moveOffsetX = 0;
                     _moveOffsetY = 0;
-    
-                    _underRoof = IsUnderRoof(CharX, CharY);
                     CheckExitTile();
                 }
             }
@@ -380,20 +399,22 @@ public partial class WalkModePanel : Control
             }
         }
 
-        // ── Pass 4: Roof (L4) — centered, large buffer, transparency when under roof ──
-        for (int dy = minDY; dy <= maxDY; dy++)
-            for (int dx = minDX; dx <= maxDX; dx++)
-            {
-                int tx = CharX + dx, ty = CharY + dy;
-                if (!Map.InBounds(tx, ty)) continue;
-                short l4 = Map.Tiles[tx, ty].Layer4;
-                if (l4 <= 0) continue;
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
-
-                Color mod = _underRoof ? new Color(1, 1, 1, 0.35f) : Colors.White;
-                DrawGrhCentered(l4, sx, sy, mod);
-            }
+        // ── Pass 4: Roof (L4) — centered, large buffer, smooth alpha fade ──
+        if (_roofAlpha > 0)
+        {
+            float roofA = _roofAlpha / 255f;
+            for (int dy = minDY; dy <= maxDY; dy++)
+                for (int dx = minDX; dx <= maxDX; dx++)
+                {
+                    int tx = CharX + dx, ty = CharY + dy;
+                    if (!Map.InBounds(tx, ty)) continue;
+                    short l4 = Map.Tiles[tx, ty].Layer4;
+                    if (l4 <= 0) continue;
+                    float sx = (dx + HalfTilesX) * TileSize + ofsX;
+                    float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                    DrawGrhCentered(l4, sx, sy, new Color(1, 1, 1, roofA));
+                }
+        }
 
         // ── Exit markers ──
         DrawExitMarkers(minDX_L1, maxDX_L1, minDY_L1, maxDY_L1, ofsX, ofsY);
@@ -405,7 +426,7 @@ public partial class WalkModePanel : Control
         DrawString(font, new Vector2(6, Size.Y - 6), info,
             HorizontalAlignment.Left, -1, 12, new Color(1, 1, 1, 0.7f));
         DrawString(font, new Vector2(6, 16),
-            "WASD/Flechas: caminar  |  Shift+Click: teleport  |  Esc: cerrar",
+            "WASD/Flechas: caminar  |  Shift+Click: teleport  |  DblClick: puerta  |  Esc: cerrar",
             HorizontalAlignment.Left, -1, 11, new Color(1, 1, 0.8f, 0.5f));
     }
 
@@ -504,6 +525,97 @@ public partial class WalkModePanel : Control
                 DrawAnimGrhCentered(headGrh, 0, hx, hy, Colors.White);
             }
         }
+    }
+
+    // ── Door toggle ─────────────────────────────────────────────────────────
+
+    private void TryToggleDoor(int tx, int ty)
+    {
+        if (Map == null || DoorData == null || ObjGrhs == null) return;
+        if (!Map.InBounds(tx, ty)) return;
+
+        // Check distance (max 3 tiles like server)
+        if (Math.Abs(tx - CharX) > 3 || Math.Abs(ty - CharY) > 3) return;
+
+        // Find door object on this tile or adjacent tiles
+        int doorX = tx, doorY = ty;
+        int objIdx = FindDoorAt(tx, ty);
+        if (objIdx <= 0)
+        {
+            // Check adjacent tiles for multi-tile doors
+            for (int dx = -2; dx <= 2; dx++)
+            {
+                int ax = tx + dx;
+                if (ax == tx || !Map.InBounds(ax, ty)) continue;
+                int adj = FindDoorAt(ax, ty);
+                if (adj > 0) { objIdx = adj; doorX = ax; doorY = ty; break; }
+            }
+        }
+        if (objIdx <= 0) return;
+
+        if (!DoorData.TryGetValue(objIdx, out var door)) return;
+
+        // Determine if currently open or closed
+        bool isClosed = (door.IndexAbierta > 0 && door.IndexCerrada > 0 && objIdx == door.IndexCerrada)
+                     || (door.IndexAbierta > 0 && objIdx != door.IndexAbierta);
+
+        int newObjIdx = isClosed ? door.IndexAbierta : door.IndexCerrada;
+        if (newObjIdx <= 0) return;
+
+        // Update tile object index
+        Map.Tiles[doorX, doorY].ObjIndex = (short)newObjIdx;
+        _toggledDoors[(Map.MapNumber, doorX, doorY)] = newObjIdx;
+
+        // Update blocked state for affected tiles
+        bool newBlocked = !isClosed; // closing = block, opening = unblock
+        Map.Tiles[doorX, doorY].Blocked = newBlocked;
+        if (Map.InBounds(doorX - 1, doorY))
+            Map.Tiles[doorX - 1, doorY].Blocked = newBlocked;
+
+        if (door.PuertaDoble == 1)
+        {
+            if (Map.InBounds(doorX + 1, doorY)) Map.Tiles[doorX + 1, doorY].Blocked = newBlocked;
+            if (Map.InBounds(doorX + 2, doorY)) Map.Tiles[doorX + 2, doorY].Blocked = newBlocked;
+        }
+        else if (door.Porton == 1)
+        {
+            for (int dx = -2; dx <= 2; dx++)
+                if (Map.InBounds(doorX + dx, doorY))
+                    Map.Tiles[doorX + dx, doorY].Blocked = newBlocked;
+        }
+
+        // Also register the alternate obj index in DoorData so toggling back works
+        if (!DoorData.ContainsKey(newObjIdx))
+        {
+            DoorData[newObjIdx] = new DoorInfo
+            {
+                ObjType = door.ObjType,
+                IndexAbierta = door.IndexAbierta,
+                IndexCerrada = door.IndexCerrada,
+                PuertaDoble = door.PuertaDoble,
+                Porton = door.Porton,
+                GrhIndex = ObjGrhs.Length > newObjIdx ? ObjGrhs[newObjIdx] : 0,
+            };
+        }
+
+        GD.Print($"[WalkMode] Door toggle at ({doorX},{doorY}): obj {objIdx} -> {newObjIdx} (blocked={newBlocked})");
+    }
+
+    private int FindDoorAt(int x, int y)
+    {
+        if (Map == null || DoorData == null) return 0;
+        if (!Map.InBounds(x, y)) return 0;
+        int objIdx = Map.Tiles[x, y].ObjIndex;
+        if (objIdx <= 0) return 0;
+        // Check if this object OR its open/closed counterpart is a door
+        if (DoorData.ContainsKey(objIdx)) return objIdx;
+        // Check if any door has this as IndexAbierta or IndexCerrada
+        foreach (var kv in DoorData)
+        {
+            if (kv.Value.IndexAbierta == objIdx || kv.Value.IndexCerrada == objIdx)
+                return objIdx;
+        }
+        return 0;
     }
 
     // ── GRH drawing helpers ─────────────────────────────────────────────────

@@ -51,6 +51,7 @@ public partial class EditorMain : Control
     private WalkModePanel? _walkPanel;
     private BodyAnimData[]? _walkBodies;
     private HeadAnimData[]? _walkHeads;
+    private Dictionary<int, DoorInfo>? _doorData;
 
     // Status bar
     private VBoxContainer? _statusOuter;
@@ -289,6 +290,7 @@ public partial class EditorMain : Control
         // --- Map navigation bar (below toolbar, compact) ---
         _mapNavBar = new HBoxContainer();
         _mapNavBar.AddThemeConstantOverride("separation", 4);
+        _mapNavBar.ClipContents = true;
 
         var navLabel = EditorTheme.MakeLabel("Mapa", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
         _mapNavBar.AddChild(navLabel);
@@ -308,7 +310,7 @@ public partial class EditorMain : Control
             var btn = new Button
             {
                 CustomMinimumSize = new Vector2(36, 22),
-                SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
+                SizeFlagsHorizontal = SizeFlags.ShrinkBegin,
             };
             btn.AddThemeFontSizeOverride("font_size", 10);
             int capturedIdx = i;
@@ -339,6 +341,10 @@ public partial class EditorMain : Control
         goBtn.AddThemeColorOverride("font_color", Colors.White);
         goBtn.Pressed += () => RequestLoadMap((int)_mapNumSpin!.Value);
         _mapNavBar.AddChild(goBtn);
+
+        // Spacer absorbs remaining width so buttons stay left-aligned
+        var navSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _mapNavBar.AddChild(navSpacer);
 
         AddChild(_mapNavBar);
 
@@ -782,6 +788,7 @@ public partial class EditorMain : Control
         {
             string objDat = Path.Combine(_serverDatDir, "Obj.dat");
             _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
+            _doorData = GameDataLoader.LoadDoorData(objDat);
             string npcDat = Path.Combine(_serverDatDir, "NPCs.dat");
             (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
             _npcDb = NpcDatabase.Load(_serverDatDir);
@@ -1166,6 +1173,7 @@ public partial class EditorMain : Control
         // Load NPC + object data from the new server path
         string objDat = Path.Combine(datDir, "Obj.dat");
         _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
+        _doorData = GameDataLoader.LoadDoorData(objDat);
         string npcDat = Path.Combine(datDir, "NPCs.dat");
         (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
         _npcDb = NpcDatabase.Load(datDir);
@@ -1291,6 +1299,7 @@ public partial class EditorMain : Control
         _walkPanel.NpcHeadOfsX = _npcHeadOfsX;
         _walkPanel.NpcHeadOfsY = _npcHeadOfsY;
         _walkPanel.HeadGrhs = _headGrhs;
+        _walkPanel.DoorData = _doorData;
         _walkPanel.MapDir = _state.MapDir;
 
         // Start at current editor camera center tile

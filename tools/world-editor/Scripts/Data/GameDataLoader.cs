@@ -8,6 +8,19 @@ using Godot;
 namespace AOWorldEditor.Data;
 
 /// <summary>
+/// Door object data for walk mode preview.
+/// </summary>
+public class DoorInfo
+{
+    public int ObjType;         // 10=Door in VB6
+    public int IndexAbierta;    // Object index when open
+    public int IndexCerrada;    // Object index when closed
+    public int PuertaDoble;     // 1=double door
+    public int Porton;          // 1=grand gate
+    public int GrhIndex;        // Current visual GRH
+}
+
+/// <summary>
 /// Loads minimal game data (object GRH indices, NPC body indices) for map preview.
 /// Handles both UTF-8 and UTF-16LE encoded INI files (VB6 legacy).
 /// </summary>
@@ -137,6 +150,45 @@ public static class GameDataLoader
 
         GD.Print($"[GameData] Loaded {count} head south-facing GRHs");
         return heads;
+    }
+
+    /// <summary>
+    /// Load door-relevant data from Obj.dat. Returns dictionary of obj_index -> DoorInfo
+    /// for objects with ObjType=10 (Door).
+    /// </summary>
+    public static Dictionary<int, DoorInfo> LoadDoorData(string objDatPath)
+    {
+        var doors = new Dictionary<int, DoorInfo>();
+        if (!File.Exists(objDatPath)) return doors;
+
+        var sections = ParseIniFile(objDatPath);
+
+        int numObjs = 0;
+        if (sections.TryGetValue("INIT", out var init))
+            if (init.TryGetValue("NumOBJs", out var n))
+                int.TryParse(n, out numObjs);
+
+        for (int i = 1; i <= numObjs; i++)
+        {
+            if (!sections.TryGetValue($"OBJ{i}", out var sec)) continue;
+
+            int objType = 0;
+            if (sec.TryGetValue("ObjType", out var ot))
+                int.TryParse(ot, out objType);
+
+            if (objType != 10) continue; // Only doors (ObjType 10)
+
+            var door = new DoorInfo { ObjType = objType };
+            if (sec.TryGetValue("IndexAbierta", out var ia)) int.TryParse(ia, out door.IndexAbierta);
+            if (sec.TryGetValue("IndexCerrada", out var ic)) int.TryParse(ic, out door.IndexCerrada);
+            if (sec.TryGetValue("PuertaDoble", out var pd)) int.TryParse(pd, out door.PuertaDoble);
+            if (sec.TryGetValue("Porton", out var po)) int.TryParse(po, out door.Porton);
+            if (sec.TryGetValue("GrhIndex", out var gi)) int.TryParse(gi, out door.GrhIndex);
+            doors[i] = door;
+        }
+
+        GD.Print($"[GameData] Loaded {doors.Count} door definitions");
+        return doors;
     }
 
     private static Dictionary<string, Dictionary<string, string>> ParseIniFile(string path)
