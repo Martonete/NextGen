@@ -77,9 +77,14 @@ func load_folder(path: String) -> void:
 	_apply_filter()
 
 
-func process_thumbnails(count: int = 5) -> void:
+func process_thumbnails(_count: int = 5) -> void:
+	# Time-budgeted: load thumbnails until 8ms spent (avoids stalls on large 2048x2048 PNGs)
+	var budget_us := 8000  # 8ms in microseconds
+	var start := Time.get_ticks_usec()
 	var processed := 0
-	while not _thumb_queue.is_empty() and processed < count:
+	while not _thumb_queue.is_empty():
+		if processed > 0 and (Time.get_ticks_usec() - start) >= budget_us:
+			break
 		var file_idx: int = _thumb_queue.pop_front()
 		_load_thumb(file_idx)
 		processed += 1
