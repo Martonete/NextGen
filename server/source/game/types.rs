@@ -1060,6 +1060,22 @@ impl GameState {
         }
     }
 
+    /// Send a sound packet to the area, but skip users with warp immunity
+    /// (prevents phantom sounds on map entry — NPC combat, potion, equip sounds).
+    pub async fn send_sound_to_area(&mut self, map: i32, x: i32, y: i32, data: &[u8]) {
+        let ids = if let Some(grid) = self.world.grid(map) {
+            world::get_users_in_area(grid, x, y)
+        } else {
+            Vec::new()
+        };
+        for id in ids {
+            let skip = self.users.get(&id).map_or(false, |u| u.warp_immunity_ticks > 0);
+            if !skip {
+                self.send_bytes(id, data).await;
+            }
+        }
+    }
+
     /// Get all user connection IDs in the area around (x,y) on a map, excluding `exclude_id`.
     pub fn get_area_users(&self, map: i32, x: i32, y: i32, exclude_id: ConnectionId) -> Vec<ConnectionId> {
         if let Some(grid) = self.world.grid(map) {

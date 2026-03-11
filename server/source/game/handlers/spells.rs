@@ -527,7 +527,7 @@ pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: Conne
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
+        state.send_sound_to_area(fx_map, fx_x, fx_y, &snd_pkt).await;
     }
 
     // Console messages (red font)
@@ -570,7 +570,7 @@ pub(super) async fn send_spell_info_npc(state: &mut GameState, caster_id: Connec
     }
     if spell.wav > 0 {
         let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt).await;
+        state.send_sound_to_area(fx_map, fx_x, fx_y, &snd_pkt).await;
     }
 
     // Console message (red font)

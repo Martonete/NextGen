@@ -53,7 +53,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
 
     // Play sound to area
     let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as u8, uy as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    state.send_sound_to_area(map, ux, uy, &snd).await;
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -156,7 +156,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
     // Play sound
     let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as u8, uy as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    state.send_sound_to_area(map, ux, uy, &snd).await;
 
     // Luck roll
     let suerte = luck_denominator(skill);
@@ -258,7 +258,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
 
     // Play sound
     let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as u8, uy as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd).await;
+    state.send_sound_to_area(map, ux, uy, &snd).await;
 
     // Luck roll
     let suerte = luck_denominator(skill);

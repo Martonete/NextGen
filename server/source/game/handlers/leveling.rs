@@ -82,7 +82,7 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
         // Level up sound + FX
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
+        state.send_sound_to_area(map, x, y, &binary_packets::write_play_wave(6, x as u8, y as u8)).await;
         state.send_data_bytes(
             SendTarget::ToArea { map, x, y },
             &binary_packets::write_char_particle_create(char_index as i16, 58),

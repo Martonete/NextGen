@@ -88,7 +88,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
 
         // Play door sound (VB6: SND_PUERTA = 5)
         let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+        state.send_sound_to_area(map, x, y, &pkt_wave).await;
     } else {
         // Door is OPEN → close it
 
@@ -133,7 +133,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
 
         // Play door sound (VB6: SND_PUERTA = 5)
         let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave).await;
+        state.send_sound_to_area(map, x, y, &pkt_wave).await;
     }
 
     // VB6: Set TargetObj position (after toggle)

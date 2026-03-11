@@ -15,7 +15,7 @@ pub const MAX_RECV_BUFFER: usize = 65_536;
 /// Read timeout: if no data arrives within this duration, the connection
 /// is considered dead and dropped. Prevents slowloris attacks where
 /// connections are opened and held idle to exhaust the connection pool.
-const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+const READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20 * 60); // 20 minutes AFK timeout
 
 /// Read half of a client connection — runs in a spawned task.
 ///

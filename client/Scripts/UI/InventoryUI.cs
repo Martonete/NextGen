@@ -19,7 +19,6 @@ public class InventoryUI
     // Panel references (set via BindPanels)
     private InventoryPanel? _inventoryPanel;
     private SpellPanel? _spellPanel;
-    private Label? _itemNameLabel;
     private TextureButton? _dydToggle;
     private Texture2D? _dydOffTex;
     private Texture2D? _dydOnTex;
@@ -58,7 +57,7 @@ public class InventoryUI
     /// <summary>Bind references to inventory/spell UI nodes.</summary>
     public void BindPanels(
         InventoryPanel inventoryPanel, SpellPanel spellPanel,
-        Label itemNameLabel, TextureButton dydToggle,
+        Label? itemNameLabel, TextureButton dydToggle,
         Texture2D? dydOffTex, Texture2D? dydOnTex,
         Button lanzarButton, Button infoButton,
         Button spellUpButton, Button spellDownButton,
@@ -67,7 +66,7 @@ public class InventoryUI
     {
         _inventoryPanel = inventoryPanel;
         _spellPanel = spellPanel;
-        _itemNameLabel = itemNameLabel;
+        // itemNameLabel is unused — tooltip replaces the old label
         _dydToggle = dydToggle;
         _dydOffTex = dydOffTex;
         _dydOnTex = dydOnTex;
@@ -97,7 +96,6 @@ public class InventoryUI
         _showingSpells = false;
         _tooltipPanel?.Hide();
         _inventoryPanel!.Visible = true;
-        _itemNameLabel?.Visible = true;
         _dydToggle!.Visible = true;
         // Sync DyD button texture with current state
         _dydToggle.TextureNormal = _inventoryPanel.DyDEnabled ? _dydOnTex : _dydOffTex;
@@ -118,7 +116,6 @@ public class InventoryUI
         _tooltipPanel?.Hide();
         _inventoryPanel!.CancelDrag();
         _inventoryPanel!.Visible = false;
-        _itemNameLabel?.Visible = false;
         _dydToggle!.Visible = false;
         _spellPanel!.Visible = true;
         _lanzarButton!.Visible = true;

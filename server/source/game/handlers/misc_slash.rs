@@ -306,7 +306,7 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
             let snd_pkt = binary_packets::write_play_wave(3, x as u8, y as u8); // SND_WARP = 3
             let fx_pkt = binary_packets::write_create_fx(char_idx as i16, 1, 0); // FXWARP = 1
             // Send to area (others see it) AND directly to self (ensure self always gets it)
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+            state.send_sound_to_area(map, x, y, &snd_pkt).await;
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt).await;
             // Also send directly to ensure self receives it (area detection may miss self right after warp)
             state.send_bytes(conn_id, &snd_pkt).await;

@@ -90,7 +90,6 @@ public partial class Main : Control
     private SpellPanel? _spellPanel;
     private Button? _invTabButton;
     private Button? _spellTabButton;
-    private Label? _itemNameLabel;
     private TextureButton? _dydToggle;
     private Texture2D? _dydOffTex;
     private Texture2D? _dydOnTex;

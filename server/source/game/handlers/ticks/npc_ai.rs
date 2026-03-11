@@ -553,7 +553,7 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spe
             }
             if spell.wav > 0 {
                 let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
-                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt).await;
+                state.send_sound_to_area(map, nx, ny, &pkt).await;
             }
 
             // Magic words

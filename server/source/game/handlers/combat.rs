@@ -596,7 +596,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     // Shield block — VB6: SND_ESCUDO + messages
                     let (vx, vy) = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
                     let snd = binary_packets::write_play_wave(37, vx as u8, vy as u8); // SND_ESCUDO
-                    state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd).await;
+                    state.send_sound_to_area(map, vx, vy, &snd).await;
 
                     let pkt_atk = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldOther);
                     state.send_bytes(conn_id, &pkt_atk).await;
@@ -617,7 +617,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
             // Miss
             let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+            state.send_sound_to_area(map, x, y, &snd).await;
             let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
             state.send_bytes(victim_id, &pkt).await;
             let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
@@ -639,7 +639,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // VB6: SND_IMPACTO to area
         let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        state.send_sound_to_area(map, x, y, &snd).await;
 
         // VB6: Blood FX on victim (if not navigating)
         // (client handles this via MultiMessage)

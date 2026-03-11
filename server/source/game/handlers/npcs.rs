@@ -247,7 +247,7 @@ pub(super) async fn user_attack_npc(
 
     if !hit {
         let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        state.send_sound_to_area(map, x, y, &snd).await;
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
         state.send_bytes(conn_id, &pkt).await;
         state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, "\u{00A1}Fallo!", npc_char_index.0 as i16, 255).await;
@@ -360,16 +360,16 @@ pub(super) async fn user_attack_npc(
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
         let snd = binary_packets::write_play_wave(npc_snd1 as u8, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        state.send_sound_to_area(map, x, y, &snd).await;
     }
     let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+    state.send_sound_to_area(map, x, y, &snd).await;
     if npc_snd2 > 0 {
         let snd = binary_packets::write_play_wave(npc_snd2 as u8, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        state.send_sound_to_area(map, x, y, &snd).await;
     } else {
         let snd = binary_packets::write_play_wave(12, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd).await;
+        state.send_sound_to_area(map, x, y, &snd).await;
     }
 
     // Blood FX on NPC
@@ -505,7 +505,7 @@ pub(super) async fn npc_die(
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
         let snd_pkt = binary_packets::write_play_wave(snd3 as u8, x as u8, y as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt).await;
+        state.send_sound_to_area(map, x, y, &snd_pkt).await;
     }
 
     // 2) Send msg 50 to killer (NPC death notification — client plays sound/animation)
@@ -758,7 +758,7 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     if rand_range(1, 100) > hit_prob {
         // Miss — VB6: SND_SWING to area + N1
         let snd = binary_packets::write_play_wave(2, nx as u8, ny as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        state.send_sound_to_area(map, nx, ny, &snd).await;
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCSwing);
         state.send_bytes(target_conn, &pkt).await;
         // VB6: floating red "¡Fallo!" above user (N| vbRed°¡Fallo!°charIndex)
@@ -792,18 +792,18 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
         let snd = binary_packets::write_play_wave(npc_snd1 as u8, nx as u8, ny as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        state.send_sound_to_area(map, nx, ny, &snd).await;
     }
     // SND_IMPACTO to area on hit
     let snd = binary_packets::write_play_wave(10, nx as u8, ny as u8);
-    state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+    state.send_sound_to_area(map, nx, ny, &snd).await;
     // Victim sound: Snd2 if defined, else SND_IMPACTO2 (12)
     if npc_snd2 > 0 {
         let snd = binary_packets::write_play_wave(npc_snd2 as u8, nx as u8, ny as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        state.send_sound_to_area(map, nx, ny, &snd).await;
     } else {
         let snd = binary_packets::write_play_wave(12, nx as u8, ny as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        state.send_sound_to_area(map, nx, ny, &snd).await;
     }
 
     // NPC poison on hit (VB6: If Npclist(NpcIndex).Veneno = 1 Then NpcEnvenenarUser)
@@ -864,7 +864,7 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
     }
     if spell.wav > 0 {
         let snd = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
-        state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd).await;
+        state.send_sound_to_area(map, nx, ny, &snd).await;
     }
 
     // Spell effect

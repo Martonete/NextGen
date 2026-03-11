@@ -512,7 +512,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
         user.pos_y = final_y;
         // Brief NPC targeting immunity after warp — prevents phantom combat sounds
         // on arrival (NPCs in range would otherwise attack on the very next AI tick)
-        user.warp_immunity_ticks = 5; // ~200ms at 40ms/tick
+        user.warp_immunity_ticks = 25; // ~1 second at 40ms/tick — prevents phantom sounds on arrival
     }
 
     // 6. Place on new grid
@@ -619,7 +619,7 @@ pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if !invisible {
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8)).await;
+        state.send_sound_to_area(map, x, y, &binary_packets::write_play_wave(3, x as u8, y as u8)).await;
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0)).await;
     }
 }
