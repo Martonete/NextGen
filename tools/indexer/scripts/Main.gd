@@ -62,8 +62,7 @@ var _menu_ver: PopupMenu
 var _ctx_menu: PopupMenu
 var _ctx_frame_idx: int = -1
 var _tex_index_dialog: TextureIndexDialog
-var _tex_ctx_menu: PopupMenu
-var _tex_ctx_data: Dictionary = {}
+var _ctx_tex_data: Dictionary = {}
 var _tex_edit_ref_index: int = -1
 var _dlg_save_confirm: Window = null
 var _index_preview_label_save: RichTextLabel = null
@@ -386,7 +385,6 @@ func _connect_signals() -> void:
 	_canvas.frame_resized.connect(_on_canvas_frame_resized)
 	_canvas.frame_delete_pressed.connect(func(idx): _delete_frame(idx))
 	_canvas.frame_context_menu.connect(_on_canvas_context_menu)
-	_canvas.texture_context_menu.connect(_on_canvas_texture_context_menu)
 
 	# Inspector
 	_inspector.frame_selected.connect(_on_inspector_frame_selected)
@@ -2198,13 +2196,59 @@ func _on_canvas_context_menu(idx: int, screen_pos: Vector2) -> void:
 	if idx < 0 or idx >= _current_frames.size():
 		return
 	_ctx_frame_idx = idx
+
+	# Check if this frame's GRH belongs to a texture in indices.ini
+	var frame: Dictionary = _current_frames[idx]
+	var grh_idx: int = frame.get("grh_index", 0)
+	var tex := _find_texture_for_grh(grh_idx)
+
+	_ctx_menu.clear()
+	if tex.is_empty():
+		_ctx_menu.add_item("Indexar como textura", 0)
+	else:
+		var lbl := "Editar textura: %s (%dx%d)" % [tex.get("name", "?"), tex.get("ancho", 1), tex.get("alto", 1)]
+		_ctx_menu.add_item(lbl, 1)
+		_ctx_tex_data = tex
+
 	_ctx_menu.position = Vector2i(screen_pos)
 	_ctx_menu.popup()
 
 
 func _on_ctx_menu_item(id: int) -> void:
-	if id == 0 and _ctx_frame_idx >= 0 and _ctx_frame_idx < _current_frames.size():
+	if _ctx_frame_idx < 0 or _ctx_frame_idx >= _current_frames.size():
+		return
+	if id == 0:
 		_open_texture_index_dialog(_ctx_frame_idx)
+	elif id == 1 and not _ctx_tex_data.is_empty():
+		_tex_edit_ref_index = _ctx_tex_data.get("ref_index", -1)
+		if not _tex_index_dialog.is_inside_tree():
+			add_child(_tex_index_dialog)
+		_tex_index_dialog.open_for_edit(_ctx_tex_data, _current_texture, _indices_categories)
+
+
+func _find_texture_for_grh(grh_idx: int) -> Dictionary:
+	## Find the indices.ini texture entry that contains this GRH index.
+	## Returns enriched dict with sx, sy, w, h from the first GRH's position.
+	if grh_idx <= 0:
+		return {}
+	var entries: Dictionary = _grh_data["entries"]
+	var tex_entries := _parse_indices_ini_textures()
+	for tex in tex_entries:
+		var tex_grh: int = tex.get("grh_index", 0)
+		var ancho: int = tex.get("ancho", 1)
+		var alto: int = tex.get("alto", 1)
+		var total := ancho * alto
+		# Texture uses consecutive GRH indices: tex_grh .. tex_grh + total - 1
+		if grh_idx >= tex_grh and grh_idx < tex_grh + total:
+			# Enrich with pixel coordinates from the first GRH
+			if entries.has(tex_grh):
+				var grh: Dictionary = entries[tex_grh]
+				tex["sx"] = grh.get("sx", 0)
+				tex["sy"] = grh.get("sy", 0)
+				tex["w"] = ancho * 32
+				tex["h"] = alto * 32
+			return tex
+	return {}
 
 
 func _on_textures_toggled(on: bool) -> void:
@@ -2290,38 +2334,6 @@ func _parse_indices_ini_textures() -> Array:
 		else:
 			i += 1
 	return result
-
-
-func _on_canvas_texture_context_menu(tex_idx: int, screen_pos: Vector2) -> void:
-	var overlays: Array = _canvas._texture_overlays
-	if tex_idx < 0 or tex_idx >= overlays.size():
-		return
-	var tex: Dictionary = overlays[tex_idx]
-
-	# Build a context menu for texture editing
-	if not is_instance_valid(_tex_ctx_menu):
-		_tex_ctx_menu = PopupMenu.new()
-		_tex_ctx_menu.add_theme_font_size_override("font_size", 12)
-		_tex_ctx_menu.id_pressed.connect(_on_tex_ctx_item)
-		add_child(_tex_ctx_menu)
-
-	_tex_ctx_menu.clear()
-	_tex_ctx_menu.add_item("Editar propiedades de textura", 0)
-	_tex_ctx_data = tex
-	_tex_ctx_menu.position = Vector2i(screen_pos)
-	_tex_ctx_menu.popup()
-
-
-func _on_tex_ctx_item(id: int) -> void:
-	if id == 0 and not _tex_ctx_data.is_empty():
-		_open_texture_edit_dialog(_tex_ctx_data)
-
-
-func _open_texture_edit_dialog(tex: Dictionary) -> void:
-	_tex_edit_ref_index = tex.get("ref_index", -1)
-	if not _tex_index_dialog.is_inside_tree():
-		add_child(_tex_index_dialog)
-	_tex_index_dialog.open_for_edit(tex, _current_texture, _indices_categories)
 
 
 func _on_texture_edit_confirmed(name: String, category: String, capa: int) -> void:

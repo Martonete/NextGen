@@ -10,7 +10,6 @@ signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para 
 signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
 signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
 signal frame_context_menu(index: int, screen_pos: Vector2)  # Right-click on frame
-signal texture_context_menu(tex_idx: int, screen_pos: Vector2)  # Right-click on texture overlay
 
 # ── Imagen ───────────────────────────────────────────────────────────────────
 
@@ -612,13 +611,6 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					frame_context_menu.emit(hit, mb.global_position)
 					accept_event()
 					return
-				# Check texture overlay hit
-				if show_textures:
-					var tex_hit := _hit_test_texture(ip)
-					if tex_hit >= 0:
-						texture_context_menu.emit(tex_hit, mb.global_position)
-						accept_event()
-						return
 			_panning = mb.pressed
 			if mb.pressed:
 				_pan_start = mb.position
@@ -841,13 +833,6 @@ func _hit_test_frame(img_pos: Vector2) -> int:
 	return -1
 
 
-func _hit_test_texture(img_pos: Vector2) -> int:
-	for i in range(_texture_overlays.size() - 1, -1, -1):
-		var tex: Dictionary = _texture_overlays[i]
-		if img_pos.x >= tex.sx and img_pos.x < tex.sx + tex.w \
-		and img_pos.y >= tex.sy and img_pos.y < tex.sy + tex.h:
-			return i
-	return -1
 
 
 
