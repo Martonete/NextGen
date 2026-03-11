@@ -3,9 +3,11 @@ class_name TextureIndexDialog
 extends Window
 
 signal confirmed(name: String, category: String, capa: int)
+signal edit_confirmed(name: String, category: String, capa: int)
 signal split_requested(frame: Dictionary, tiles_w: int, tiles_h: int)
 
 var _split_done: bool = false
+var _edit_mode: bool = false
 var _chk_split: CheckBox
 var _spin_w: SpinBox
 var _spin_h: SpinBox
@@ -185,6 +187,9 @@ func _ready() -> void:
 
 
 func open_with_frame(frame: Dictionary, texture: ImageTexture, categories: PackedStringArray) -> void:
+	_edit_mode = false
+	title = "Indexar Textura"
+	_chk_split.disabled = false
 	_source_frame = frame.duplicate()
 	_source_texture = texture
 
@@ -364,8 +369,58 @@ func _on_save() -> void:
 		name_text = "Textura %dx%d" % [_tiles_w, _tiles_h]
 
 	_last_category = category
-	confirmed.emit(name_text, category, capa)
+	if _edit_mode:
+		edit_confirmed.emit(name_text, category, capa)
+	else:
+		confirmed.emit(name_text, category, capa)
 	hide()
+
+
+func open_for_edit(tex: Dictionary, texture: ImageTexture, categories: PackedStringArray) -> void:
+	_edit_mode = true
+	_source_texture = texture
+	_source_frame = {
+		"sx": tex.get("sx", 0), "sy": tex.get("sy", 0),
+		"w": tex.get("w", 0), "h": tex.get("h", 0),
+	}
+
+	title = "Editar Textura"
+
+	# Populate categories
+	_opt_type.clear()
+	for cat in categories:
+		_opt_type.add_item(cat)
+	var target_cat: String = tex.get("category", "Terreno")
+	for i in range(_opt_type.item_count):
+		if _opt_type.get_item_text(i) == target_cat:
+			_opt_type.select(i)
+			break
+
+	# Fill in existing values
+	_input_name.text = tex.get("name", "")
+	_spin_capa.value = tex.get("capa", 1)
+
+	var ancho: int = tex.get("ancho", 1)
+	var alto: int = tex.get("alto", 1)
+
+	# Tile split state — already split, not editable in edit mode
+	_chk_split.set_pressed_no_signal(ancho > 1 or alto > 1)
+	_chk_split.disabled = true
+	_spin_w.value = ancho
+	_spin_h.value = alto
+	_spin_w.editable = false
+	_spin_h.editable = false
+	_tiles_w = ancho
+	_tiles_h = alto
+	_split_done = true
+	_btn_split.visible = false
+
+	_spin_w.max_value = maxi(ancho, 1)
+	_spin_h.max_value = maxi(alto, 1)
+
+	_validate_and_preview()
+	_update_save_state()
+	popup_centered()
 
 
 func get_tiles() -> Vector2i:

@@ -14,6 +14,7 @@ signal grid_toggled(visible: bool)
 signal grid_config_changed(cell_w: int, cell_h: int, line_w: float, col: Color)
 signal frames_toggled(visible: bool)
 signal frames_config_changed(bg_color: Color, bg_alpha: float, border_color: Color, border_width: float)
+signal textures_toggled(visible: bool)
 
 var _tool_buttons: Array[Button] = []
 var _current_tool: int = 0
@@ -41,6 +42,7 @@ var _frames_bg_alpha: float = 0.15
 var _frames_border_color: Color = Color(0.3, 0.6, 1.0)
 var _frames_border_width: float = 1.0
 var _frames_detect: bool = false
+var _textures_visible: bool = false
 var _frames_bg_picker_window: Window
 var _frames_bg_picker: ColorPicker
 var _frames_border_picker_window: Window
@@ -115,6 +117,14 @@ func set_tool(mode: int) -> void:
 	for i in range(_tool_buttons.size()):
 		_tool_buttons[i].button_pressed = (i == mode)
 	tool_changed.emit(mode)
+
+
+func set_textures_visible(visible: bool) -> void:
+	_textures_visible = visible
+	if _frames_popup != null:
+		var idx := _frames_popup.get_item_index(400)
+		if idx >= 0:
+			_frames_popup.set_item_checked(idx, visible)
 
 
 func set_detect(enabled: bool) -> void:
@@ -312,6 +322,10 @@ func _build_frames_config_menu() -> void:
 	_frames_popup.add_check_item("Smart frame detection", 300)
 	_frames_popup.set_item_checked(_frames_popup.get_item_index(300), _frames_detect)
 
+	# Texture overlay detection
+	_frames_popup.add_check_item("Detectar texturas (indices)", 400)
+	_frames_popup.set_item_checked(_frames_popup.get_item_index(400), _textures_visible)
+
 	_frames_popup.id_pressed.connect(_on_frames_config_item)
 
 	# Color pickers (lazy add_child)
@@ -355,6 +369,11 @@ func _on_frames_config_item(id: int) -> void:
 		var idx := _frames_popup.get_item_index(300)
 		_frames_popup.set_item_checked(idx, _frames_detect)
 		detect_toggled.emit(_frames_detect)
+	elif id == 400:
+		_textures_visible = not _textures_visible
+		var idx := _frames_popup.get_item_index(400)
+		_frames_popup.set_item_checked(idx, _textures_visible)
+		textures_toggled.emit(_textures_visible)
 
 
 func _on_frames_bg_item(id: int) -> void:

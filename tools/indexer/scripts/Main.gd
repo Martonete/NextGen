@@ -62,6 +62,9 @@ var _menu_ver: PopupMenu
 var _ctx_menu: PopupMenu
 var _ctx_frame_idx: int = -1
 var _tex_index_dialog: TextureIndexDialog
+var _tex_ctx_menu: PopupMenu
+var _tex_ctx_data: Dictionary = {}
+var _tex_edit_ref_index: int = -1
 var _dlg_save_confirm: Window = null
 var _index_preview_label_save: RichTextLabel = null
 
@@ -236,6 +239,7 @@ func _build_ui() -> void:
 	# Texture indexing dialog (not added as child yet — lazy add on popup)
 	_tex_index_dialog = TextureIndexDialog.new()
 	_tex_index_dialog.confirmed.connect(_on_texture_index_confirmed)
+	_tex_index_dialog.edit_confirmed.connect(_on_texture_edit_confirmed)
 	_tex_index_dialog.split_requested.connect(_on_texture_split_requested)
 
 	# Confirmation dialog — created lazily in _ensure_confirm_dialog()
@@ -372,6 +376,7 @@ func _connect_signals() -> void:
 	_toolbar.zoom_reset_pressed.connect(func(): _canvas.zoom_reset())
 	_toolbar.save_pressed.connect(_on_save_ind)
 	_toolbar.revert_pressed.connect(_on_revert_all)
+	_toolbar.textures_toggled.connect(_on_textures_toggled)
 
 	# Canvas
 	_canvas.frame_drawn.connect(_on_canvas_frame_drawn)
@@ -381,6 +386,7 @@ func _connect_signals() -> void:
 	_canvas.frame_resized.connect(_on_canvas_frame_resized)
 	_canvas.frame_delete_pressed.connect(func(idx): _delete_frame(idx))
 	_canvas.frame_context_menu.connect(_on_canvas_context_menu)
+	_canvas.texture_context_menu.connect(_on_canvas_texture_context_menu)
 
 	# Inspector
 	_inspector.frame_selected.connect(_on_inspector_frame_selected)
@@ -624,6 +630,10 @@ func _on_file_selected(path: String, file_num: int) -> void:
 			})
 
 	_refresh_all()
+
+	# Rebuild texture overlays if enabled
+	if _canvas.show_textures:
+		_rebuild_texture_overlays()
 
 	# Update GRH viewer (fast)
 	var grh_entries := _get_grh_entries_for_file_num(file_num)
@@ -2197,6 +2207,160 @@ func _on_ctx_menu_item(id: int) -> void:
 		_open_texture_index_dialog(_ctx_frame_idx)
 
 
+func _on_textures_toggled(on: bool) -> void:
+	_canvas.set_show_textures(on)
+	if on:
+		_rebuild_texture_overlays()
+	else:
+		_canvas.set_texture_overlays([])
+	_save_prefs()
+
+
+func _rebuild_texture_overlays() -> void:
+	## Parse indices.ini to find texture entries whose GRH belongs to the current image.
+	if _current_file_num <= 0 or _grh_data["entries"].size() == 0:
+		_canvas.set_texture_overlays([])
+		return
+
+	var entries: Dictionary = _grh_data["entries"]
+	var tex_entries := _parse_indices_ini_textures()
+	var overlays: Array = []
+
+	for tex in tex_entries:
+		var grh_idx: int = tex.get("grh_index", 0)
+		if grh_idx <= 0 or not entries.has(grh_idx):
+			continue
+		var grh: Dictionary = entries[grh_idx]
+		var fnum: int = grh.get("file_num", 0)
+		if fnum != _current_file_num:
+			continue
+
+		# Found a texture entry on this image — compute bounding rect
+		var ancho: int = tex.get("ancho", 1)
+		var alto: int = tex.get("alto", 1)
+		var sx: int = grh.get("sx", 0)
+		var sy: int = grh.get("sy", 0)
+		var pw: int = ancho * 32
+		var ph: int = alto * 32
+
+		overlays.append({
+			"sx": sx, "sy": sy, "w": pw, "h": ph,
+			"name": tex.get("name", ""),
+			"category": tex.get("category", ""),
+			"capa": tex.get("capa", 1),
+			"ancho": ancho, "alto": alto,
+			"grh_index": grh_idx,
+			"ref_index": tex.get("ref_index", -1),
+		})
+
+	_canvas.set_texture_overlays(overlays)
+
+
+func _parse_indices_ini_textures() -> Array:
+	## Parse all [REFERENCIAN] sections from indices.ini into structured dicts.
+	var result: Array = []
+	var lines: PackedStringArray = _indices_ini_ref["lines"]
+	var i := 0
+	while i < lines.size():
+		var line: String = lines[i].strip_edges()
+		if line.begins_with("[REFERENCIA") and line.ends_with("]"):
+			var ref_num_str := line.substr(11, line.length() - 12)
+			var ref_index := int(ref_num_str) if ref_num_str.is_valid_int() else -1
+			var entry := {"ref_index": ref_index}
+			i += 1
+			# Read key=value pairs until next section or EOF
+			while i < lines.size():
+				var kv: String = lines[i].strip_edges()
+				if kv.begins_with("["):
+					break
+				var eq := kv.find("=")
+				if eq > 0:
+					var key := kv.substr(0, eq).strip_edges()
+					var val := kv.substr(eq + 1).strip_edges()
+					match key:
+						"Nombre": entry["name"] = val
+						"GrhIndice": entry["grh_index"] = int(val)
+						"Ancho": entry["ancho"] = int(val)
+						"Alto": entry["alto"] = int(val)
+						"Capa": entry["capa"] = int(val)
+						"Type": entry["category"] = val
+				i += 1
+			if entry.has("grh_index"):
+				result.append(entry)
+		else:
+			i += 1
+	return result
+
+
+func _on_canvas_texture_context_menu(tex_idx: int, screen_pos: Vector2) -> void:
+	var overlays: Array = _canvas._texture_overlays
+	if tex_idx < 0 or tex_idx >= overlays.size():
+		return
+	var tex: Dictionary = overlays[tex_idx]
+
+	# Build a context menu for texture editing
+	if not is_instance_valid(_tex_ctx_menu):
+		_tex_ctx_menu = PopupMenu.new()
+		_tex_ctx_menu.add_theme_font_size_override("font_size", 12)
+		_tex_ctx_menu.id_pressed.connect(_on_tex_ctx_item)
+		add_child(_tex_ctx_menu)
+
+	_tex_ctx_menu.clear()
+	_tex_ctx_menu.add_item("Editar propiedades de textura", 0)
+	_tex_ctx_data = tex
+	_tex_ctx_menu.position = Vector2i(screen_pos)
+	_tex_ctx_menu.popup()
+
+
+func _on_tex_ctx_item(id: int) -> void:
+	if id == 0 and not _tex_ctx_data.is_empty():
+		_open_texture_edit_dialog(_tex_ctx_data)
+
+
+func _open_texture_edit_dialog(tex: Dictionary) -> void:
+	_tex_edit_ref_index = tex.get("ref_index", -1)
+	if not _tex_index_dialog.is_inside_tree():
+		add_child(_tex_index_dialog)
+	_tex_index_dialog.open_for_edit(tex, _current_texture, _indices_categories)
+
+
+func _on_texture_edit_confirmed(name: String, category: String, capa: int) -> void:
+	# Update the indices.ini entry in memory
+	var ref_index: int = _tex_edit_ref_index
+	if ref_index < 0:
+		return
+
+	var lines: PackedStringArray = _indices_ini_ref["lines"]
+	var section_header := "[REFERENCIA%d]" % ref_index
+	var in_section := false
+	for i in range(lines.size()):
+		var line: String = lines[i].strip_edges()
+		if line == section_header:
+			in_section = true
+			continue
+		if in_section:
+			if line.begins_with("["):
+				break
+			var eq := line.find("=")
+			if eq > 0:
+				var key := line.substr(0, eq).strip_edges()
+				match key:
+					"Nombre": lines[i] = "Nombre=%s" % name
+					"Type": lines[i] = "Type=%s" % category
+					"Capa": lines[i] = "Capa=%d" % capa
+
+	_indices_ini_ref["lines"] = lines
+	_dirty = true
+
+	# Update category list
+	if not _indices_categories.has(category):
+		_indices_categories.append(category)
+
+	# Refresh overlays
+	_rebuild_texture_overlays()
+	_update_status("Textura actualizada: %s (capa %d, %s)" % [name, capa, category])
+
+
 func _on_texture_split_requested(frame: Dictionary, tiles_w: int, tiles_h: int) -> void:
 	# Split a large frame into NxM 32x32 tiles with GRH indices
 	var sx: int = frame.get("sx", 0)
@@ -2395,6 +2559,8 @@ func _on_texture_index_final() -> void:
 	_update_status("Textura '%s' indexada en memoria: %d GRHs (G%d–G%d). Presiona GUARDAR para escribir a disco." % [_pending_tex_name, total, first_grh, first_grh + total - 1])
 	_selected_frame_idx = -1
 	_refresh_all()
+	if _canvas.show_textures:
+		_rebuild_texture_overlays()
 
 
 func _append_indices_ini_entry(tex_name: String, grh_index: int, ancho: int, alto: int, capa: int, category: String) -> void:

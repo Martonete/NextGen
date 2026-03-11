@@ -10,6 +10,7 @@ signal blob_clicked(rect: Rect2i)                   # Blob hover clickeado para 
 signal frame_resized(index: int, new_rect: Rect2)   # Frame redimensionado via handles
 signal frame_delete_pressed(index: int)             # Tecla Delete sobre frame seleccionado
 signal frame_context_menu(index: int, screen_pos: Vector2)  # Right-click on frame
+signal texture_context_menu(tex_idx: int, screen_pos: Vector2)  # Right-click on texture overlay
 
 # ── Imagen ───────────────────────────────────────────────────────────────────
 
@@ -88,12 +89,29 @@ const GRID_TILE: int = 32     # minor grid subdivision (always 32px)
 
 var show_frames: bool = true
 
+# ── Texture overlays (indices.ini entries matching current image) ────────────
+# Each entry: { "sx": int, "sy": int, "w": int, "h": int, "name": String,
+#               "category": String, "capa": int, "ancho": int, "alto": int,
+#               "grh_index": int, "ref_index": int }
+var _texture_overlays: Array = []
+var show_textures: bool = false
+
 # ── Frame appearance config ──────────────────────────────────────────────────
 
 var frame_bg_color: Color = Color(0.2, 0.5, 0.9)
 var frame_bg_alpha: float = 0.15
 var frame_border_color: Color = Color(0.3, 0.6, 1.0)
 var frame_border_width: float = 1.0
+
+func set_texture_overlays(overlays: Array) -> void:
+	_texture_overlays = overlays
+	queue_redraw()
+
+
+func set_show_textures(enabled: bool) -> void:
+	show_textures = enabled
+	queue_redraw()
+
 
 func set_detect(enabled: bool) -> void:
 	detect_enabled = enabled
@@ -394,6 +412,31 @@ func _draw() -> void:
 				draw_string(ThemeDB.fallback_font, sr.position + Vector2(3, 14),
 					lbl, HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(1, 1, 1, 0.85))
 
+	# Texture overlays (indices.ini entries)
+	if show_textures and not _texture_overlays.is_empty():
+		for tex in _texture_overlays:
+			var tr := Rect2(float(tex.sx), float(tex.sy), float(tex.w), float(tex.h))
+			var sr := _irect2srect(tr)
+			# Distinct style: orange fill, dashed-like double border
+			draw_rect(sr, Color(0.9, 0.6, 0.1, 0.10))
+			draw_rect(sr, Color(0.95, 0.65, 0.15, 0.85), false, 2.0)
+			# Inner border for "dashed" effect
+			var inner := Rect2(sr.position + Vector2(3, 3), sr.size - Vector2(6, 6))
+			if inner.size.x > 4 and inner.size.y > 4:
+				draw_rect(inner, Color(0.95, 0.65, 0.15, 0.35), false, 1.0)
+			# Label with texture name + tile size
+			if sr.size.x > 40:
+				var tlbl: String = tex.get("name", "")
+				if tlbl.is_empty():
+					tlbl = "%dx%d" % [tex.get("ancho", 1), tex.get("alto", 1)]
+				else:
+					tlbl = "%s (%dx%d)" % [tlbl, tex.get("ancho", 1), tex.get("alto", 1)]
+				# Draw label at bottom of rect to not overlap frame labels
+				var ly := sr.position.y + sr.size.y - 6
+				draw_string(ThemeDB.fallback_font, Vector2(sr.position.x + 3, ly),
+					tlbl, HORIZONTAL_ALIGNMENT_LEFT, int(sr.size.x) - 6, 10,
+					Color(1.0, 0.85, 0.4, 0.9))
+
 	# Handles del frame seleccionado (dibujados encima)
 	if show_frames and _selected_frame >= 0 and _selected_frame < _frames.size():
 		var fr: Dictionary = _frames[_selected_frame]
@@ -569,6 +612,13 @@ func _on_mouse_button(mb: InputEventMouseButton) -> void:
 					frame_context_menu.emit(hit, mb.global_position)
 					accept_event()
 					return
+				# Check texture overlay hit
+				if show_textures:
+					var tex_hit := _hit_test_texture(ip)
+					if tex_hit >= 0:
+						texture_context_menu.emit(tex_hit, mb.global_position)
+						accept_event()
+						return
 			_panning = mb.pressed
 			if mb.pressed:
 				_pan_start = mb.position
@@ -787,6 +837,15 @@ func _hit_test_frame(img_pos: Vector2) -> int:
 		var fr: Dictionary = _frames[i]
 		if img_pos.x >= fr.sx and img_pos.x < fr.sx + fr.w \
 		and img_pos.y >= fr.sy and img_pos.y < fr.sy + fr.h:
+			return i
+	return -1
+
+
+func _hit_test_texture(img_pos: Vector2) -> int:
+	for i in range(_texture_overlays.size() - 1, -1, -1):
+		var tex: Dictionary = _texture_overlays[i]
+		if img_pos.x >= tex.sx and img_pos.x < tex.sx + tex.w \
+		and img_pos.y >= tex.sy and img_pos.y < tex.sy + tex.h:
 			return i
 	return -1
 
