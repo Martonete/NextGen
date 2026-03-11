@@ -595,6 +595,13 @@ pub(crate) async fn connect_user(
     // Place on world grid
     state.world.place_user(map, x, y, conn_id);
 
+    // Grant warp immunity on login — suppresses area sounds (potions, food, NPC hits)
+    // that other players/NPCs are generating nearby. Without this, freshly logged users
+    // hear phantom sounds from ongoing activity in the area.
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.warp_immunity_ticks = 25; // ~1 second at 40ms/tick
+    }
+
     // Respawn saved pets near the player
     if char_data.pet_count > 0 && !char_data.pet_types.is_empty() {
         for (slot, &npc_type) in char_data.pet_types.iter().enumerate() {

@@ -47,7 +47,6 @@ public partial class SpellPanel : Control
         if (what == (int)NotificationMouseExit)
         {
             _hoveredSlot = -1;
-            RichTooltip?.Hide();
             // Don't cancel drag on mouse exit — let it continue scrolling
         }
     }
@@ -166,12 +165,6 @@ public partial class SpellPanel : Control
         {
             int slot = HitTestSlot(motion.Position);
             _hoveredSlot = slot;
-
-            // Update tooltip for hovered spell
-            if (_state != null && slot >= 0 && slot < MaxSpells)
-                RichTooltip?.ShowSpell(_state.Spells[slot]);
-            else
-                RichTooltip?.Hide();
 
             // VB6 ListBox behavior: drag with left button held changes selection
             if (_dragging && slot >= 0 && slot < MaxSpells)

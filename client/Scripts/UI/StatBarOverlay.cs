@@ -71,7 +71,6 @@ public partial class StatBarOverlay : Control
     {
         if (!System.IO.File.Exists(filePath))
         {
-            GD.Print($"[UI] Bar image not found: {filePath} — using color fallback");
             return null;
         }
 

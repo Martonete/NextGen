@@ -6,7 +6,7 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.UI;
 
 /// <summary>
-/// Minimap overlay showing the player, other players, and NPCs as colored dots.
+/// Minimap overlay showing terrain, player, other players, and NPCs as colored dots.
 /// Draws on a 100x100 tile grid mapped to a compact panel.
 /// Toggle with the Mapa sidebar button. Respects GameConfig.ShowMinimap.
 /// </summary>
@@ -35,7 +35,15 @@ public partial class MinimapPanel : Control
     private static readonly Color NpcHostileColor = new(1f, 0.2f, 0.2f);   // Red
     private static readonly Color CoordColor = new(0.7f, 0.7f, 0.7f);
 
+    // Terrain colors
+    private static readonly Color WalkableColor = new(0.15f, 0.22f, 0.12f, 0.9f);  // Dark green
+    private static readonly Color BlockedColor = new(0.25f, 0.18f, 0.12f, 0.9f);    // Dark brown
+    private static readonly Color WaterColor = new(0.1f, 0.15f, 0.35f, 0.9f);       // Dark blue
+    private static readonly Color ExitColor = new(0.35f, 0.35f, 0.15f, 0.9f);       // Dark yellow
+
     private GameState? _state;
+    private ImageTexture? _terrainTexture;
+    private int _lastRenderedMap = -1;
 
     /// <summary>
     /// Set of character names currently in the party.
@@ -58,6 +66,7 @@ public partial class MinimapPanel : Control
     {
         CustomMinimumSize = new Vector2(PanelW, PanelH);
         Size = new Vector2(PanelW, PanelH);
+        ClipContents = true; // prevent any rendering outside the panel bounds
         MouseFilter = MouseFilterEnum.Ignore; // click-through
     }
 
@@ -65,6 +74,52 @@ public partial class MinimapPanel : Control
     {
         if (Visible)
             QueueRedraw();
+    }
+
+    /// <summary>
+    /// Regenerate the terrain texture from MapData tiles.
+    /// Called when the map changes or on first render.
+    /// </summary>
+    private void RebuildTerrainTexture()
+    {
+        if (_state?.MapData == null) return;
+
+        _lastRenderedMap = _state.CurrentMap;
+
+        // Create a 100x100 image, one pixel per tile
+        var img = Image.CreateEmpty(TileGrid, TileGrid, false, Image.Format.Rgba8);
+
+        for (int y = 1; y <= TileGrid; y++)
+        {
+            for (int x = 1; x <= TileGrid; x++)
+            {
+                var tile = _state.MapData.Tiles[x, y];
+                Color c;
+                if (tile.ExitMap > 0)
+                    c = ExitColor;
+                else if (tile.Blocked)
+                    c = BlockedColor;
+                else if (IsWaterTile(tile.Layer1))
+                    c = WaterColor;
+                else
+                    c = WalkableColor;
+
+                img.SetPixel(x - 1, y - 1, c);
+            }
+        }
+
+        _terrainTexture = ImageTexture.CreateFromImage(img);
+    }
+
+    /// <summary>
+    /// Heuristic: common water GRH indices in AO 13.3.
+    /// Layer1 values 1505-1520 and 5765-5788 are typical water tiles.
+    /// </summary>
+    private static bool IsWaterTile(short layer1)
+    {
+        return (layer1 >= 1505 && layer1 <= 1520) ||
+               (layer1 >= 5765 && layer1 <= 5788) ||
+               (layer1 >= 13834 && layer1 <= 13873);
     }
 
     public override void _Draw()
@@ -78,6 +133,17 @@ public partial class MinimapPanel : Control
         // Map area
         float mapX = Padding;
         float mapY = Padding;
+
+        // Rebuild terrain texture when map changes
+        if (_state.CurrentMap != _lastRenderedMap || _terrainTexture == null)
+            RebuildTerrainTexture();
+
+        // Draw terrain texture scaled to MapPixels
+        if (_terrainTexture != null)
+        {
+            DrawTextureRect(_terrainTexture,
+                new Rect2(mapX, mapY, MapPixels, MapPixels), false);
+        }
 
         // Draw map area border
         DrawRect(new Rect2(mapX - 1, mapY - 1, MapPixels + 2, MapPixels + 2),
