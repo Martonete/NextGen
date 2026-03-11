@@ -141,6 +141,12 @@ public class GameState
     public string[] Macros = new string[10];
     public bool MacroPanelOpen;
 
+    // Work macro (auto-repeat gathering: fishing, mining, woodcutting, smelting)
+    public WorkMacro WorkMacro = new();
+
+    // Spell training macro (auto-repeat spell casting)
+    public SpellMacro SpellMacro = new();
+
     // Camera scroll state (VB6 client-side prediction)
     public bool UserMoving;        // True while camera is scrolling between tiles
     public int AddToUserPosX;      // Camera scroll direction: -1, 0, or +1

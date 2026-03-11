@@ -309,6 +309,10 @@ public class InputHandler
 
         if (LegalPos(newX, newY))
         {
+            // Stop work/spell macros on movement (VB6: tmrTrabajo stops on move)
+            _state.WorkMacro.Stop();
+            _state.SpellMacro.Stop();
+
             // Clear meditation FX on self when moving
             for (int i = 0; i < 3; i++)
             {

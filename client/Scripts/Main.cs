@@ -63,6 +63,7 @@ public partial class Main : Control
     private Label? _agilidadLabel;
     private Label? _repLabel;
     private Label? _fpsLabel;
+    private Label? _macroStatusLabel; // Shows "MACRO" when work/spell macro is active
 
     private string _dataPath = ""; // cached for macro file I/O
 
@@ -556,6 +557,17 @@ public partial class Main : Control
         // FPS: VB6 13.3 lblFPS at (444, 4, 37, 12), Tahoma Bold
         _fpsLabel = CreateStatLabel(444, 4, 37, 12, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
+
+        // Macro status indicator — small green label next to FPS
+        _macroStatusLabel = new Label();
+        _macroStatusLabel.Position = new Vector2(484, 4);
+        _macroStatusLabel.Size = new Vector2(60, 12);
+        _macroStatusLabel.AddThemeColorOverride("font_color", new Color(0.3f, 1f, 0.3f));
+        _macroStatusLabel.AddThemeFontSizeOverride("font_size", 7);
+        ApplyFont(_macroStatusLabel, "Tahoma", 700);
+        _macroStatusLabel.Visible = false;
+        _macroStatusLabel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _gameUI.AddChild(_macroStatusLabel);
 
 
         // VB6 13.3 sidebar buttons (no minimap)
@@ -1070,6 +1082,96 @@ public partial class Main : Control
         _vaultPanel?.OpenVault();
     }
 
+    /// <summary>
+    /// Toggle work macro — auto-repeats UseItem on the currently selected inventory slot.
+    /// VB6: tmrTrabajo timer for fishing/mining/woodcutting/smelting auto-repeat.
+    /// </summary>
+    private void HandleWorkMacroToggle()
+    {
+        if (_state.WorkMacro.Active)
+        {
+            _state.WorkMacro.Stop();
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = ">>MACRO DE TRABAJO DESACTIVADO<<",
+                Color = "FF0000"
+            });
+        }
+        else
+        {
+            int slot = _state.SelectedInvSlot;
+            if (slot < 0 || slot >= 25 || _state.Inventory[slot].ObjIndex <= 0)
+            {
+                _state.ChatMessages.Enqueue(new ChatMessage
+                {
+                    Text = "Selecciona un objeto de trabajo primero.",
+                    Color = "FF0000"
+                });
+                return;
+            }
+            byte serverSlot = (byte)(slot + 1);
+            _state.WorkMacro.Start(() =>
+            {
+                _tcp?.SendPacket(ClientPackets.WriteUseItem(serverSlot));
+            });
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $">>MACRO DE TRABAJO ACTIVADO<< ({_state.Inventory[slot].Name})",
+                Color = "00FF00"
+            });
+        }
+    }
+
+    /// <summary>
+    /// Toggle spell training macro — auto-repeats CastSpell for the selected spell slot.
+    /// </summary>
+    private void HandleSpellMacroToggle()
+    {
+        if (_state.SpellMacro.Active)
+        {
+            _state.SpellMacro.Stop();
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = ">>MACRO DE HECHIZOS DESACTIVADO<<",
+                Color = "FF0000"
+            });
+        }
+        else
+        {
+            // SpellPanel stores selected spell — find it
+            int spellSlot = -1;
+            for (int i = 0; i < 20; i++)
+            {
+                if (_state.Spells[i].SpellId > 0)
+                {
+                    spellSlot = i;
+                    break;
+                }
+            }
+            // Use first available spell if no specific one selected
+            if (spellSlot < 0)
+            {
+                _state.ChatMessages.Enqueue(new ChatMessage
+                {
+                    Text = "No tienes hechizos disponibles.",
+                    Color = "FF0000"
+                });
+                return;
+            }
+            byte slot = (byte)(spellSlot + 1);
+            string spellName = _state.Spells[spellSlot].Name;
+            _state.SpellMacro.Start(() =>
+            {
+                _tcp?.SendPacket(ClientPackets.WriteCastSpell(slot));
+            });
+            _state.ChatMessages.Enqueue(new ChatMessage
+            {
+                Text = $">>MACRO DE HECHIZOS ACTIVADO<< ({spellName})",
+                Color = "00FF00"
+            });
+        }
+    }
+
     private void OnInventoryTabPressed()
     {
         _showingSpells = false;
@@ -1346,6 +1448,37 @@ public partial class Main : Control
                 if (text.Equals("/PING", System.StringComparison.OrdinalIgnoreCase))
                 {
                     _state.PingSentMs = Time.GetTicksMsec();
+                }
+                // /MACRO: toggle work macro (auto-repeat UseItem on selected slot)
+                else if (text.Equals("/MACRO", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    HandleWorkMacroToggle();
+                    // Don't send to server — client-only command
+                    _chatInput!.Text = "";
+                    _chatInput.Visible = false;
+                    _chatInput.ReleaseFocus();
+                    _state.ChatActive = false;
+                    return;
+                }
+                // /MACROSP: toggle spell training macro
+                else if (text.Equals("/MACROSP", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    HandleSpellMacroToggle();
+                    _chatInput!.Text = "";
+                    _chatInput.Visible = false;
+                    _chatInput.ReleaseFocus();
+                    _state.ChatActive = false;
+                    return;
+                }
+                // /PASSWD: open change password panel
+                else if (text.Equals("/PASSWD", System.StringComparison.OrdinalIgnoreCase))
+                {
+                    _state.ShowChangePassword = true;
+                    _chatInput!.Text = "";
+                    _chatInput.Visible = false;
+                    _chatInput.ReleaseFocus();
+                    _state.ChatActive = false;
+                    return;
                 }
                 // Slash commands: send as Talk with the /command
                 _tcp.SendPacket(ClientPackets.WriteTalk(text));
@@ -2764,6 +2897,11 @@ public partial class Main : Control
             // Input runs first so there's a 1-frame gap between scroll completion
             // and the next move — matching VB6's timer tick behavior.
             _inputHandler?.Process(delta);
+
+            // Update work/spell macros (auto-repeat timers)
+            _state.WorkMacro.Update(delta);
+            _state.SpellMacro.Update(delta);
+
             UpdateGameUI();
             UpdateConsoleMessages();
 
@@ -3386,6 +3524,22 @@ public partial class Main : Control
 
         // FPS
         _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
+
+        // Macro status indicator
+        if (_macroStatusLabel != null)
+        {
+            bool workActive = _state.WorkMacro.Active;
+            bool spellActive = _state.SpellMacro.Active;
+            if (workActive || spellActive)
+            {
+                _macroStatusLabel.Text = workActive ? "MACRO" : "MACROSP";
+                _macroStatusLabel.Visible = true;
+            }
+            else
+            {
+                _macroStatusLabel.Visible = false;
+            }
+        }
 
         // Update minimap party member names from PartyPanel
         if (_minimapPanel != null && _partyPanel != null)
