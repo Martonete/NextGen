@@ -21,6 +21,7 @@ public partial class WalkModePanel : Control
 
     // ── Constants (matching AO client) ──────────────────────────────────────
     private const int TileSize = 32;
+    private const int HalfTileSize = TileSize / 2; // 16
     private const int HalfTilesX = 8;
     private const int HalfTilesY = 6;
     private const int ViewTilesX = HalfTilesX * 2 + 1; // 17
@@ -81,8 +82,10 @@ public partial class WalkModePanel : Control
                     _moveOffsetY = 0;
             }
 
-            // Advance walk animation (~6 fps for walk cycle)
-            _walkFrame += (float)(delta * 6.0);
+            // Advance walk animation — cycle all frames during one tile move.
+            // One tile = 32px at 200px/s = 0.16s. AO walk anims have ~6 frames.
+            // We want all 6 frames in 0.16s → ~37.5 fps for walk cycle.
+            _walkFrame += (float)(delta * 37.5);
 
             if (_moveOffsetX == 0 && _moveOffsetY == 0)
             {
@@ -207,7 +210,7 @@ public partial class WalkModePanel : Control
         int minDX = -HalfTilesX - ExtraTiles;
         int maxDX = HalfTilesX + ExtraTiles;
 
-        // ── Pass 1: Ground (L1) ──
+        // ── Pass 1: Ground (L1) ── no centering, top-left aligned
         for (int dy = minDY; dy <= maxDY; dy++)
             for (int dx = minDX; dx <= maxDX; dx++)
             {
@@ -218,7 +221,7 @@ public partial class WalkModePanel : Control
                 DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, Colors.White);
             }
 
-        // ── Pass 2: Mask/Alpha (L2) ──
+        // ── Pass 2: Mask/Alpha (L2) ── centered like game client
         for (int dy = minDY; dy <= maxDY; dy++)
             for (int dx = minDX; dx <= maxDX; dx++)
             {
@@ -228,12 +231,10 @@ public partial class WalkModePanel : Control
                 if (l2 <= 0) continue;
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
-                DrawGrh(l2, sx, sy, Colors.White);
+                DrawGrhCentered(l2, sx, sy, Colors.White);
             }
 
         // ── Pass 3: Objects (L3) + Character — Y-sorted ──
-        // Draw row by row. Character is drawn AT its row, BEFORE L3 objects
-        // on the same row (so objects on same Y or below render on top = in front).
         for (int dy = minDY; dy <= maxDY; dy++)
         {
             int ty = CharY + dy;
@@ -251,15 +252,13 @@ public partial class WalkModePanel : Control
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
 
-                // L3 objects on the character's tile become semi-transparent
-                // so the character is visible underneath them
                 bool onCharTile = (tx == CharX && ty == CharY);
                 Color mod = onCharTile ? new Color(1, 1, 1, 0.5f) : Colors.White;
                 DrawGrhCentered(l3, sx, sy, mod);
             }
         }
 
-        // ── Pass 4: Roof (L4) — only when tile actually has roof ──
+        // ── Pass 4: Roof (L4) — centered, with transparency when under roof ──
         if (HasAnyRoofInView(minDX, maxDX, minDY, maxDY))
         {
             for (int dy = minDY; dy <= maxDY; dy++)
@@ -272,9 +271,8 @@ public partial class WalkModePanel : Control
                     float sx = (dx + HalfTilesX) * TileSize + ofsX;
                     float sy = (dy + HalfTilesY) * TileSize + ofsY;
 
-                    // Transparent when character is under a roof
                     Color mod = _underRoof ? new Color(1, 1, 1, 0.35f) : Colors.White;
-                    DrawGrh(l4, sx, sy, mod);
+                    DrawGrhCentered(l4, sx, sy, mod);
                 }
         }
 
@@ -315,7 +313,7 @@ public partial class WalkModePanel : Control
 
         // Resolve walk animation frame
         int frameCount = GetGrhFrameCount(bodyGrh);
-        int bodyFrame = _isMoving ? ((int)_walkFrame % frameCount) : 0;
+        int bodyFrame = _isMoving ? ((int)_walkFrame % Math.Max(frameCount, 1)) : 0;
         DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, Colors.White);
 
         // Head
@@ -333,6 +331,7 @@ public partial class WalkModePanel : Control
 
     // ── GRH drawing helpers ─────────────────────────────────────────────────
 
+    /// <summary>Draw GRH at exact position (top-left aligned). Used for L1 ground tiles.</summary>
     private void DrawGrh(int grhIndex, float x, float y, Color mod)
     {
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
@@ -349,6 +348,11 @@ public partial class WalkModePanel : Control
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
+    /// <summary>
+    /// Draw GRH centered on tile using AO's centering formula.
+    /// Matches the game client: multi-tile sprites offset by TileWidth/TileHeight.
+    /// Used for L2, L3, L4.
+    /// </summary>
     private void DrawGrhCentered(int grhIndex, float tileX, float tileY, Color mod)
     {
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
@@ -366,13 +370,23 @@ public partial class WalkModePanel : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        float drawX = tileX + (TileSize - grh.PixelWidth) / 2f;
-        float drawY = tileY + (TileSize - grh.PixelHeight);
+        // AO centering formula (matches game client CharRenderer.DrawGrh center=true):
+        // X: offset left by (tileWidth * halfTile) - halfTile
+        // Y: offset up by (tileHeight * tileSize) - tileSize (bottom-align)
+        float drawX = tileX;
+        float drawY = tileY;
+
+        if (grh.TileWidth != 1f && grh.TileWidth > 0)
+            drawX -= (int)(grh.TileWidth * HalfTileSize) - HalfTileSize;
+        if (grh.TileHeight != 1f && grh.TileHeight > 0)
+            drawY -= (int)(grh.TileHeight * TileSize) - TileSize;
+
         var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-        var dst = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+        var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
+    /// <summary>Draw a specific animation frame, centered on tile. Used for character body/head.</summary>
     private void DrawAnimGrhCentered(int grhIndex, int frame, float tileX, float tileY, Color mod)
     {
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
@@ -384,14 +398,21 @@ public partial class WalkModePanel : Control
         var texture = Textures.GetTexture(grh.FileNum);
         if (texture == null) return;
 
-        float drawX = tileX + (TileSize - grh.PixelWidth) / 2f;
-        float drawY = tileY + (TileSize - grh.PixelHeight);
+        // Same AO centering as DrawGrhCentered
+        float drawX = tileX;
+        float drawY = tileY;
+
+        if (grh.TileWidth != 1f && grh.TileWidth > 0)
+            drawX -= (int)(grh.TileWidth * HalfTileSize) - HalfTileSize;
+        if (grh.TileHeight != 1f && grh.TileHeight > 0)
+            drawY -= (int)(grh.TileHeight * TileSize) - TileSize;
+
         var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-        var dst = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+        var dst = new Rect2((float)Math.Round(drawX), (float)Math.Round(drawY), grh.PixelWidth, grh.PixelHeight);
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
-    /// <summary>Resolve animated GRH to its first frame (for static tiles like L1/L2/L4).</summary>
+    /// <summary>Resolve animated GRH to its first frame (for static tiles like L1).</summary>
     private GrhData ResolveStaticFrame(int grhIndex)
     {
         var grh = Grhs![grhIndex];
