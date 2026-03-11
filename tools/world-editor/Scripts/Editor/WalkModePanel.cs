@@ -27,7 +27,10 @@ public partial class WalkModePanel : Control
     private const int ViewTilesY = HalfTilesY * 2 + 1; // 13
     private const int ViewWidth = ViewTilesX * TileSize;  // 544
     private const int ViewHeight = ViewTilesY * TileSize; // 416
-    private const float MoveSpeed = 4.0f; // pixels per frame at 60fps (~8px per 40ms tick)
+    private const int ExtraTiles = 2; // extra tiles beyond viewport for scroll coverage
+
+    // Movement: AO uses ScrollPixels=8 per 40ms tick → 200 pixels/sec
+    private const float PixelsPerSecond = 200f;
 
     // ── Character state ─────────────────────────────────────────────────────
     public int CharX = 50, CharY = 50; // current tile position (1-indexed)
@@ -36,12 +39,15 @@ public partial class WalkModePanel : Control
 
     private int _heading = 3; // 1=N 2=E 3=S 4=W
     private bool _isMoving;
-    private float _moveOffsetX, _moveOffsetY; // pixel offset during movement
+    private float _moveOffsetX, _moveOffsetY; // pixel offset during smooth scroll
     private float _walkFrame;
-    private double _globalTime; // for tile animations
+    private double _globalTime; // ms, for tile animations
 
     // ── Input state ─────────────────────────────────────────────────────────
     private bool _keyUp, _keyDown, _keyLeft, _keyRight;
+
+    // ── Roof detection cache (updated per tile move) ────────────────────────
+    private bool _underRoof;
 
     public override void _Ready()
     {
@@ -52,32 +58,37 @@ public partial class WalkModePanel : Control
 
     public override void _Process(double delta)
     {
-        _globalTime += delta * 1000.0; // ms
+        _globalTime += delta * 1000.0;
 
         if (_isMoving)
         {
-            // Converge offset toward zero
-            float speed = MoveSpeed * (float)(delta * 60.0); // normalize to ~60fps
-            if (Math.Abs(_moveOffsetX) > 0.1f)
-                _moveOffsetX -= Math.Sign(_moveOffsetX) * Math.Min(speed, Math.Abs(_moveOffsetX));
-            else
-                _moveOffsetX = 0;
+            // Fixed pixel advance per second (AO: 8px per 40ms = 200px/s)
+            float advance = PixelsPerSecond * (float)delta;
 
-            if (Math.Abs(_moveOffsetY) > 0.1f)
-                _moveOffsetY -= Math.Sign(_moveOffsetY) * Math.Min(speed, Math.Abs(_moveOffsetY));
-            else
-                _moveOffsetY = 0;
+            if (_moveOffsetX != 0)
+            {
+                float sign = Math.Sign(_moveOffsetX);
+                _moveOffsetX -= sign * advance;
+                // Overshoot check: if sign changed, snap to 0
+                if (Math.Sign(_moveOffsetX) != sign)
+                    _moveOffsetX = 0;
+            }
+            if (_moveOffsetY != 0)
+            {
+                float sign = Math.Sign(_moveOffsetY);
+                _moveOffsetY -= sign * advance;
+                if (Math.Sign(_moveOffsetY) != sign)
+                    _moveOffsetY = 0;
+            }
 
-            // Advance walk animation
-            _walkFrame += (float)(delta * 8.0); // ~8 frames per second
+            // Advance walk animation (~6 fps for walk cycle)
+            _walkFrame += (float)(delta * 6.0);
 
             if (_moveOffsetX == 0 && _moveOffsetY == 0)
             {
                 _isMoving = false;
                 _walkFrame = 0;
-
-                // Continue walking if key still held
-                TryMoveFromInput();
+                TryMoveFromInput(); // chain movement if key held
             }
         }
         else
@@ -114,6 +125,23 @@ public partial class WalkModePanel : Control
         _moveOffsetX = -(dx * TileSize);
         _moveOffsetY = -(dy * TileSize);
         _walkFrame = 0;
+
+        // Update roof detection
+        _underRoof = IsUnderRoof(CharX, CharY);
+    }
+
+    private bool IsUnderRoof(int cx, int cy)
+    {
+        // Check character tile and immediate neighbors for L4 roof
+        if (Map == null) return false;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                int tx = cx + dx, ty = cy + dy;
+                if (Map.InBounds(tx, ty) && Map.Tiles[tx, ty].Layer4 > 0)
+                    return true;
+            }
+        return false;
     }
 
     // ── Input handling ──────────────────────────────────────────────────────
@@ -137,11 +165,13 @@ public partial class WalkModePanel : Control
         }
         else if (@event is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
         {
-            // Shift+click: teleport
             if (mb.ShiftPressed && Map != null)
             {
-                int tx = (int)((mb.Position.X - _moveOffsetX) / TileSize) - HalfTilesX + CharX;
-                int ty = (int)((mb.Position.Y - _moveOffsetY) / TileSize) - HalfTilesY + CharY;
+                // Shift+click: teleport to clicked tile
+                float worldX = mb.Position.X - _moveOffsetX;
+                float worldY = mb.Position.Y - _moveOffsetY;
+                int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
+                int ty = (int)Math.Floor(worldY / TileSize) - HalfTilesY + CharY;
                 if (Map.InBounds(tx, ty))
                 {
                     CharX = tx;
@@ -150,6 +180,7 @@ public partial class WalkModePanel : Control
                     _moveOffsetX = 0;
                     _moveOffsetY = 0;
                     _walkFrame = 0;
+                    _underRoof = IsUnderRoof(CharX, CharY);
                 }
             }
             AcceptEvent();
@@ -162,90 +193,86 @@ public partial class WalkModePanel : Control
     {
         if (Map == null || Grhs == null || Textures == null) return;
 
-        // Background
         DrawRect(new Rect2(Vector2.Zero, Size), Colors.Black);
 
-        float ofsX = _moveOffsetX;
-        float ofsY = _moveOffsetY;
+        // Pixel offsets for smooth scrolling — applied to ALL world tiles
+        float ofsX = (float)Math.Round(_moveOffsetX);
+        float ofsY = (float)Math.Round(_moveOffsetY);
 
-        // Determine if character is under a roof
-        bool underRoof = Map.InBounds(CharX, CharY) && Map.Tiles[CharX, CharY].Layer4 > 0;
+        int minDY = -HalfTilesY - ExtraTiles;
+        int maxDY = HalfTilesY + ExtraTiles;
+        int minDX = -HalfTilesX - ExtraTiles;
+        int maxDX = HalfTilesX + ExtraTiles;
 
         // ── Pass 1: Ground (L1) ──
-        for (int dy = -HalfTilesY - 1; dy <= HalfTilesY + 1; dy++)
-        {
-            for (int dx = -HalfTilesX - 1; dx <= HalfTilesX + 1; dx++)
+        for (int dy = minDY; dy <= maxDY; dy++)
+            for (int dx = minDX; dx <= maxDX; dx++)
             {
-                int tx = CharX + dx;
-                int ty = CharY + dy;
+                int tx = CharX + dx, ty = CharY + dy;
                 if (!Map.InBounds(tx, ty)) continue;
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
-                DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy);
+                DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, Colors.White);
             }
-        }
 
         // ── Pass 2: Mask/Alpha (L2) ──
-        for (int dy = -HalfTilesY - 1; dy <= HalfTilesY + 1; dy++)
-        {
-            for (int dx = -HalfTilesX - 1; dx <= HalfTilesX + 1; dx++)
+        for (int dy = minDY; dy <= maxDY; dy++)
+            for (int dx = minDX; dx <= maxDX; dx++)
             {
-                int tx = CharX + dx;
-                int ty = CharY + dy;
+                int tx = CharX + dx, ty = CharY + dy;
                 if (!Map.InBounds(tx, ty)) continue;
-                ref var tile = ref Map.Tiles[tx, ty];
-                if (tile.Layer2 <= 0) continue;
+                short l2 = Map.Tiles[tx, ty].Layer2;
+                if (l2 <= 0) continue;
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
-                DrawGrh(tile.Layer2, sx, sy);
+                DrawGrh(l2, sx, sy, Colors.White);
             }
-        }
 
-        // ── Pass 3: Objects (L3) + Character, Y-sorted ──
-        for (int dy = -HalfTilesY - 1; dy <= HalfTilesY + 1; dy++)
+        // ── Pass 3: Objects (L3) + Character — Y-sorted ──
+        // Draw row by row. Character is drawn AT its row, BEFORE L3 objects
+        // on the same row (so objects on same Y or below render on top = in front).
+        for (int dy = minDY; dy <= maxDY; dy++)
         {
             int ty = CharY + dy;
 
-            // Draw character at its row
+            // Draw character at its Y row (before L3 on same row)
             if (dy == 0)
-            {
-                DrawCharacter();
-            }
+                DrawCharacter(ofsX, ofsY);
 
-            for (int dx = -HalfTilesX - 1; dx <= HalfTilesX + 1; dx++)
+            for (int dx = minDX; dx <= maxDX; dx++)
             {
                 int tx = CharX + dx;
                 if (!Map.InBounds(tx, ty)) continue;
-                ref var tile = ref Map.Tiles[tx, ty];
-                if (tile.Layer3 <= 0) continue;
+                short l3 = Map.Tiles[tx, ty].Layer3;
+                if (l3 <= 0) continue;
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
 
-                // Semi-transparent if this L3 sprite is on or below the character
-                // (character walks "behind" objects on same or lower Y)
-                Color mod = (ty >= CharY && tx >= CharX - 1 && tx <= CharX + 1)
-                    ? new Color(1, 1, 1, 0.45f)
-                    : Colors.White;
-                DrawGrhCentered(tile.Layer3, sx, sy, mod);
+                // L3 objects on the character's tile become semi-transparent
+                // so the character is visible underneath them
+                bool onCharTile = (tx == CharX && ty == CharY);
+                Color mod = onCharTile ? new Color(1, 1, 1, 0.5f) : Colors.White;
+                DrawGrhCentered(l3, sx, sy, mod);
             }
         }
 
-        // ── Pass 4: Roof (L4) ──
-        for (int dy = -HalfTilesY - 1; dy <= HalfTilesY + 1; dy++)
+        // ── Pass 4: Roof (L4) — only when tile actually has roof ──
+        if (HasAnyRoofInView(minDX, maxDX, minDY, maxDY))
         {
-            for (int dx = -HalfTilesX - 1; dx <= HalfTilesX + 1; dx++)
-            {
-                int tx = CharX + dx;
-                int ty = CharY + dy;
-                if (!Map.InBounds(tx, ty)) continue;
-                ref var tile = ref Map.Tiles[tx, ty];
-                if (tile.Layer4 <= 0) continue;
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+            for (int dy = minDY; dy <= maxDY; dy++)
+                for (int dx = minDX; dx <= maxDX; dx++)
+                {
+                    int tx = CharX + dx, ty = CharY + dy;
+                    if (!Map.InBounds(tx, ty)) continue;
+                    short l4 = Map.Tiles[tx, ty].Layer4;
+                    if (l4 <= 0) continue;
+                    float sx = (dx + HalfTilesX) * TileSize + ofsX;
+                    float sy = (dy + HalfTilesY) * TileSize + ofsY;
 
-                Color mod = underRoof ? new Color(1, 1, 1, 0.35f) : Colors.White;
-                DrawGrh(tile.Layer4, sx, sy, mod);
-            }
+                    // Transparent when character is under a roof
+                    Color mod = _underRoof ? new Color(1, 1, 1, 0.35f) : Colors.White;
+                    DrawGrh(l4, sx, sy, mod);
+                }
         }
 
         // ── HUD ──
@@ -258,7 +285,19 @@ public partial class WalkModePanel : Control
             HorizontalAlignment.Left, -1, 11, new Color(1, 1, 0.8f, 0.5f));
     }
 
-    private void DrawCharacter()
+    private bool HasAnyRoofInView(int minDX, int maxDX, int minDY, int maxDY)
+    {
+        for (int dy = minDY; dy <= maxDY; dy++)
+            for (int dx = minDX; dx <= maxDX; dx++)
+            {
+                int tx = CharX + dx, ty = CharY + dy;
+                if (Map!.InBounds(tx, ty) && Map.Tiles[tx, ty].Layer4 > 0)
+                    return true;
+            }
+        return false;
+    }
+
+    private void DrawCharacter(float ofsX, float ofsY)
     {
         if (Bodies == null || Heads == null) return;
         if (BodyIndex <= 0 || BodyIndex >= Bodies.Length) return;
@@ -267,12 +306,13 @@ public partial class WalkModePanel : Control
         int bodyGrh = body.Walk[_heading];
         if (bodyGrh <= 0) return;
 
-        // Screen center for character
-        float cx = HalfTilesX * TileSize + _moveOffsetX;
-        float cy = HalfTilesY * TileSize + _moveOffsetY;
+        // Character is always at center of viewport, offset by scroll
+        float cx = HalfTilesX * TileSize + ofsX;
+        float cy = HalfTilesY * TileSize + ofsY;
 
         // Resolve walk animation frame
-        int bodyFrame = _isMoving ? ((int)_walkFrame % GetGrhFrameCount(bodyGrh)) : 0;
+        int frameCount = GetGrhFrameCount(bodyGrh);
+        int bodyFrame = _isMoving ? ((int)_walkFrame % frameCount) : 0;
         DrawAnimGrhCentered(bodyGrh, bodyFrame, cx, cy, Colors.White);
 
         // Head
@@ -290,12 +330,12 @@ public partial class WalkModePanel : Control
 
     // ── GRH drawing helpers ─────────────────────────────────────────────────
 
-    private void DrawGrh(int grhIndex, float x, float y, Color? modulate = null)
+    private void DrawGrh(int grhIndex, float x, float y, Color mod)
     {
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
         if (grhIndex >= Grhs.Length) return;
 
-        var grh = ResolveFrame(grhIndex, 0);
+        var grh = ResolveStaticFrame(grhIndex);
         if (grh.FileNum <= 0 || grh.PixelWidth <= 0) return;
 
         var texture = Textures.GetTexture(grh.FileNum);
@@ -303,7 +343,7 @@ public partial class WalkModePanel : Control
 
         var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
         var dst = new Rect2(x, y, grh.PixelWidth, grh.PixelHeight);
-        DrawTextureRectRegion(texture, dst, src, modulate ?? Colors.White);
+        DrawTextureRectRegion(texture, dst, src, mod);
     }
 
     private void DrawGrhCentered(int grhIndex, float tileX, float tileY, Color mod)
@@ -311,9 +351,9 @@ public partial class WalkModePanel : Control
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
         if (grhIndex >= Grhs.Length) return;
 
-        // Resolve animated tile GRH using global time
-        int frameIdx = 0;
+        // Tile animations use global time for seamless looping
         var baseGrh = Grhs[grhIndex];
+        int frameIdx = 0;
         if (baseGrh.NumFrames > 1 && baseGrh.Speed > 0)
             frameIdx = (int)(_globalTime * baseGrh.NumFrames / baseGrh.Speed) % baseGrh.NumFrames;
 
@@ -348,10 +388,24 @@ public partial class WalkModePanel : Control
         DrawTextureRectRegion(texture, dst, src, mod);
     }
 
+    /// <summary>Resolve animated GRH to its first frame (for static tiles like L1/L2/L4).</summary>
+    private GrhData ResolveStaticFrame(int grhIndex)
+    {
+        var grh = Grhs![grhIndex];
+        if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
+        {
+            int resolved = grh.Frames[0];
+            if (resolved > 0 && resolved < Grhs.Length)
+                return Grhs[resolved];
+        }
+        return grh;
+    }
+
+    /// <summary>Resolve animated GRH to a specific frame index.</summary>
     private GrhData ResolveFrame(int grhIndex, int frame)
     {
         var grh = Grhs![grhIndex];
-        if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+        if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
         {
             int fi = frame % grh.Frames.Length;
             int resolved = grh.Frames[fi];
