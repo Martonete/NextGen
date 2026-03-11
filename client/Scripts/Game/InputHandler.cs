@@ -231,6 +231,20 @@ public class InputHandler
             }
             _keyCooldown = KeyCooldownMs;
         }
+        // Screenshot
+        else if (_keys.IsActionPressed(GameAction.Screenshot))
+        {
+            string? path = ScreenshotManager.CaptureScreenshot();
+            if (path != null)
+            {
+                _state.ChatMessages.Enqueue(new ChatMessage
+                {
+                    Text = "Captura de pantalla guardada.",
+                    Color = "00FF00"
+                });
+            }
+            _keyCooldown = KeyCooldownMs;
+        }
         // Meditate (VB6: /MEDITAR)
         else if (_keys.IsActionPressed(GameAction.Meditate))
         {
