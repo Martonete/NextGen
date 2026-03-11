@@ -306,9 +306,9 @@ public partial class WalkModePanel : Control
         int bodyGrh = body.Walk[_heading];
         if (bodyGrh <= 0) return;
 
-        // Character is always at center of viewport, offset by scroll
-        float cx = HalfTilesX * TileSize + ofsX;
-        float cy = HalfTilesY * TileSize + ofsY;
+        // Character is ALWAYS at viewport center — world scrolls, character stays fixed
+        float cx = HalfTilesX * TileSize;
+        float cy = HalfTilesY * TileSize;
 
         // Resolve walk animation frame
         int frameCount = GetGrhFrameCount(bodyGrh);
