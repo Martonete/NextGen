@@ -15,8 +15,9 @@ use crate::game::types::MAX_INVENTORY_SLOTS;
 use crate::protocol::font_index;
 use super::{
     user_die, check_user_level, send_inventory_slot, send_full_inventory,
-    calc_attack_power, calc_defense_power, calc_armor_absorption,
+    calc_attack_power, calc_defense_power, calc_armor_absorption, calc_armor_absorption_with_penetration,
     class_damage_modifier,
+    poder_evasion, poder_evasion_escudo,
     poder_ataque_arma, poder_ataque_proyectil, poder_ataque_wrestling,
     calcular_dano, get_weapon_info, get_ring_info,
     do_apunalar, do_golpe_critico, puede_apunalar,
@@ -728,18 +729,54 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         Some(u) if u.logged && !u.dead && u.privileges == 0 && !u.admin_invisible => {
             (u.attributes[1], // Agility
              u.skills[3],     // SK4 = Tacticas
-             u.level, u.char_index)
+             u.skills[4],     // SK5 = Defensa
+             u.level, u.char_index, u.class,
+             u.equip.shield > 0 && u.equip.shield <= crate::game::types::MAX_INVENTORY_SLOTS)
         }
         _ => return,
     };
-    let (u_agility, u_tacticas, u_level, u_char_index) = user_data;
+    let (u_agility, u_tacticas, u_defensa, u_level, u_char_index, u_class, u_has_shield) = user_data;
+
+    // VB6: PoderEvasion with class modifier
+    let evasion_mod = state.game_data.balance.class_mod_evasion_e(u_class);
+    let mut user_evasion = poder_evasion(u_tacticas, u_agility, u_level, evasion_mod) as f64;
+
+    // VB6: Add shield evasion if victim has shield
+    if u_has_shield {
+        let shield_mod = state.game_data.balance.class_mod_escudo_e(u_class);
+        user_evasion += poder_evasion_escudo(u_defensa, shield_mod) as f64;
+    }
 
     // Hit/miss calculation
     let npc_power = npc_ataque as f64;
-    let user_evasion = calc_defense_power(u_tacticas, u_agility, u_level);
     let hit_prob = ((50.0 + (npc_power - user_evasion) * 0.4) as i32).clamp(10, 90);
 
     if rand_range(1, 100) > hit_prob {
+        // VB6: Shield block check on miss (NpcImpacto lines 235-255)
+        if u_has_shield {
+            let suma_skills = (u_defensa + u_tacticas).max(1);
+            let prob_rechazo = ((100 * u_defensa / suma_skills) as i32).clamp(10, 90);
+            let rechazo = rand_range(1, 100) <= prob_rechazo;
+
+            if rechazo {
+                // Shield blocks — VB6: SND_ESCUDO + messages + skill up
+                let snd = binary_packets::write_play_wave(37, nx as u8, ny as u8);
+                state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
+                let pkt = binary_packets::write_multi_msg_simple(
+                    crate::protocol::packets::MultiMessageID::BlockedWithShieldUser);
+                state.send_bytes(target_conn, &pkt);
+                // VB6: SubirSkill Defensa on shield block success
+                if let Some(victim) = state.users.get_mut(&target_conn) {
+                    try_level_skill_with_hit(victim, 4, true);
+                }
+            } else {
+                // Failed block — still skill gain attempt
+                if let Some(victim) = state.users.get_mut(&target_conn) {
+                    try_level_skill_with_hit(victim, 4, false);
+                }
+            }
+        }
+
         // Miss — VB6: SND_SWING to area + N1
         let snd = binary_packets::write_play_wave(2, nx as u8, ny as u8);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
@@ -747,13 +784,23 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         state.send_bytes(target_conn, &pkt);
         // VB6: floating red "¡Fallo!" above user (N| vbRed°¡Fallo!°charIndex)
         state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, "\u{00A1}Fallo!", u_char_index.0 as i16, 255);
+
+        // VB6: SubirSkill Tacticas (victim on miss)
+        if let Some(victim) = state.users.get_mut(&target_conn) {
+            try_level_skill_with_hit(victim, 3, true);
+        }
         return;
     }
 
-    // Damage + armor absorption (VB6: NpcDaño)
+    // VB6: SubirSkill Tacticas (victim on hit — failure)
+    if let Some(victim) = state.users.get_mut(&target_conn) {
+        try_level_skill_with_hit(victim, 3, false);
+    }
+
+    // Damage + armor absorption (VB6: NpcDaño — body hits use armor+shield)
     let body_part = rand_range(1, 6);
     let raw_damage = rand_range(npc_min_hit.max(1), npc_max_hit.max(1));
-    let absorption = calc_armor_absorption(state, target_conn, body_part);
+    let absorption = calc_armor_absorption_with_penetration(state, target_conn, body_part, 0);
     let damage = (raw_damage - absorption).max(1);
 
     // Apply damage

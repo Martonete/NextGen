@@ -444,9 +444,15 @@ pub fn puede_pegar(state: &mut GameState, conn_id: ConnectionId) -> bool {
     }
     let golpe = state.intervals.golpe;
     let flechas = state.intervals.flechas;
+    let poteo = state.intervals.poteo_u;
+    let golpe_magia = state.intervals.golpe_magia;
     if let Some(u) = state.users.get_mut(&conn_id) {
         u.interval_golpe = golpe;
         u.interval_flechas = flechas;
+        // VB6: IntervaloPermiteAtacar also resets potion timer (TimerGolpeUsar = TActual)
+        u.interval_poteo = poteo;
+        // VB6: IntervaloGolpeMagia — melee sets spell cross-cooldown
+        u.interval_casteo = u.interval_casteo.max(golpe_magia);
     }
     true
 }
@@ -461,9 +467,14 @@ pub fn puede_flechear(state: &mut GameState, conn_id: ConnectionId) -> bool {
     }
     let flechas = state.intervals.flechas;
     let golpe = state.intervals.golpe;
+    let poteo = state.intervals.poteo_u;
+    let golpe_magia = state.intervals.golpe_magia;
     if let Some(u) = state.users.get_mut(&conn_id) {
         u.interval_flechas = flechas;
         u.interval_golpe = golpe;
+        // VB6: Also resets potion timer and spell cross-cooldown
+        u.interval_poteo = poteo;
+        u.interval_casteo = u.interval_casteo.max(golpe_magia);
     }
     true
 }
@@ -477,8 +488,14 @@ pub fn puede_castear(state: &mut GameState, conn_id: ConnectionId) -> bool {
         return false;
     }
     let hechizo = state.intervals.lanzar_hechizo;
+    let magia_golpe = state.intervals.magia_golpe;
     if let Some(u) = state.users.get_mut(&conn_id) {
         u.interval_casteo = hechizo;
+        // VB6: IntervaloMagiaGolpe — spell sets melee cross-cooldown
+        u.interval_golpe = u.interval_golpe.max(magia_golpe);
+        u.interval_flechas = u.interval_flechas.max(magia_golpe);
+        // VB6: Also resets potion timer
+        u.interval_poteo = u.interval_poteo.max(0);
     }
     true
 }

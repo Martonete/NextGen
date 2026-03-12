@@ -581,6 +581,8 @@ pub struct IntervalSettings {
     pub golpe: i32,           // Melee attack interval (VB6: 1500ms → 38 ticks)
     pub flechas: i32,         // Arrow shot interval (VB6: 1400ms → 35 ticks)
     pub lanzar_hechizo: i32,  // Spell cast interval (VB6: 1400ms → 35 ticks)
+    pub magia_golpe: i32,     // VB6: IntervaloMagiaGolpe — delay after spell before melee
+    pub golpe_magia: i32,     // VB6: IntervaloGolpeMagia — delay after melee before spell
     pub poteo_u: i32,         // Potion use interval (VB6: 1200ms → 30 ticks)
     pub poteo_click: i32,     // Click action interval (default 6)
     pub work: i32,            // Work/skill interval (VB6: 700ms → 18 ticks)
@@ -592,6 +594,8 @@ impl Default for IntervalSettings {
             golpe: 38,           // VB6: IntervaloUserPuedeAtacar = 1500ms / 40ms
             flechas: 35,         // VB6: IntervaloUserPuedeFlechas = 1400ms / 40ms
             lanzar_hechizo: 35,  // VB6: IntervaloUserPuedeLanzarHechizo = 1400ms / 40ms
+            magia_golpe: 50,     // VB6: IntervaloMagiaGolpe = 2000ms / 40ms
+            golpe_magia: 50,     // VB6: IntervaloGolpeMagia = 2000ms / 40ms
             poteo_u: 30,         // VB6: IntervaloUserPuedePotear = 1200ms / 40ms
             poteo_click: 6,
             work: 18,            // VB6: IntervaloUserPuedeTrabajar = 700ms / 40ms
@@ -1440,6 +1444,8 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
                 poteo_u: get("PoteoU", 30),        // VB6: 1200ms / 40ms
                 poteo_click: get("PoteoClick", 6),
                 work: get("Work", 18),             // VB6: 700ms / 40ms
+                magia_golpe: get("MagiaGolpe", 50), // VB6: IntervaloMagiaGolpe cross-cooldown
+                golpe_magia: get("GolpeMagia", 50), // VB6: IntervaloGolpeMagia cross-cooldown
             };
             tracing::info!(
                 "Intervals loaded: golpe={}, flechas={}, hechizo={}, poteo={}, click={}, work={}",
