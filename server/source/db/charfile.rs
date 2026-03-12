@@ -1,6 +1,4 @@
 // Character persistence — PostgreSQL.
-//
-// Replaces data/charfile.rs (INI file I/O).
 
 use sqlx::PgPool;
 
@@ -904,8 +902,8 @@ pub async fn set_logged_flag(pool: &PgPool, char_name: &str, logged: bool) -> Re
     Ok(())
 }
 
-/// Get character ID by name.
-pub async fn get_char_id(pool: &PgPool, char_name: &str) -> Result<i32, String> {
+/// Get character ID by name (internal helper).
+async fn get_char_id(pool: &PgPool, char_name: &str) -> Result<i32, String> {
     sqlx::query_scalar("SELECT id FROM characters WHERE UPPER(name) = UPPER($1)")
         .bind(char_name)
         .fetch_optional(pool)
@@ -959,27 +957,6 @@ pub async fn clear_penalties(pool: &PgPool, char_name: &str) -> Result<(), Strin
         .await
         .map_err(|e| format!("DB error: {}", e))?;
     Ok(())
-}
-
-/// Count penalties for a character.
-pub async fn count_penalties(pool: &PgPool, char_name: &str) -> i32 {
-    let char_id = match get_char_id(pool, char_name).await {
-        Ok(id) => id,
-        Err(_) => return 0,
-    };
-    sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM character_penalties WHERE character_id = $1"
-    )
-    .bind(char_id)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0) as i32
-}
-
-/// Remove a character from its account (for /BORRAR command).
-/// This deletes the character record entirely.
-pub async fn remove_char_from_account(pool: &PgPool, char_name: &str) -> Result<(), String> {
-    delete_charfile(pool, char_name).await
 }
 
 /// Load penalties for a character.

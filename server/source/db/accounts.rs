@@ -1,10 +1,6 @@
 // Account persistence — PostgreSQL.
-//
-// Replaces data/accounts.rs (INI file I/O).
 
 use sqlx::PgPool;
-
-const MAX_PJS: usize = 10;
 
 /// Account data loaded from the database.
 #[derive(Debug, Clone)]
@@ -131,16 +127,3 @@ pub async fn set_account_banned(pool: &PgPool, account_name: &str, banned: bool,
     Ok(())
 }
 
-/// Get account ID by name.
-pub async fn get_account_id(pool: &PgPool, account_name: &str) -> Result<i32, String> {
-    let row: (i32,) = sqlx::query_as(
-        "SELECT id FROM accounts WHERE UPPER(name) = UPPER($1)"
-    )
-    .bind(account_name)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| format!("DB error: {}", e))?
-    .ok_or_else(|| "Account not found".to_string())?;
-
-    Ok(row.0)
-}
