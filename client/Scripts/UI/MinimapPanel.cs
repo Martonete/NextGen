@@ -60,7 +60,6 @@ public partial class MinimapPanel : Control
         Size = new Vector2(MapSize, MapSize);
         ClipContents = true;
         MouseFilter = MouseFilterEnum.Ignore;
-        ZIndex = -1; // Draw below game panels (commerce, bank, etc.)
     }
 
     public override void _Process(double delta)

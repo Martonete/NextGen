@@ -939,6 +939,15 @@ func _on_split_frame(cell_w: int, cell_h: int) -> void:
 	if orig_grh > 0:
 		_grh_data["entries"].erase(orig_grh)
 	_current_frames.remove_at(_selected_frame_idx)
+	# If the original frame was the last GRH, reuse its index to avoid gaps
+	if orig_grh > 0 and orig_grh >= _next_grh_index - 1:
+		var has_higher := false
+		for key in _grh_data["entries"]:
+			if int(key) > orig_grh:
+				has_higher = true
+				break
+		if not has_higher:
+			_next_grh_index = orig_grh
 	for row in range(rows):
 		for col in range(cols):
 			var grh_idx := _next_grh_index
