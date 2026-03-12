@@ -1562,41 +1562,53 @@ func _show_save_confirm_dialog() -> void:
 func _on_save_confirmed() -> void:
 	_dlg_save_confirm.hide()
 	var saved: PackedStringArray = []
+	var errors: PackedStringArray = []
 
 	# Save Graficos.ind
 	if not _ind_path.is_empty():
-		if GrhIO.save_ind(_ind_path, _grh_data):
+		var err := _safe_save("Graficos.ind", func():
+			return GrhIO.save_ind(_ind_path, _grh_data))
+		if err.is_empty():
 			saved.append("Graficos.ind")
+		else:
+			errors.append("Graficos.ind: " + err)
 
 	# Save indices.ini
 	var ini_path := _get_init_path("indices.ini")
 	if not ini_path.is_empty() and _indices_ini_ref["lines"].size() > 0:
-		var f := FileAccess.open(ini_path, FileAccess.WRITE)
-		if f != null:
+		var err := _safe_save("indices.ini", func():
+			var f := FileAccess.open(ini_path, FileAccess.WRITE)
+			if f == null:
+				return false
 			f.store_string("\n".join(_indices_ini_ref["lines"]))
 			f.close()
+			return true)
+		if err.is_empty():
 			saved.append("indices.ini")
+		else:
+			errors.append("indices.ini: " + err)
 
 	# Save asset files (bodies, heads, helmets, weapons, shields, fxs)
 	if not _init_folder.is_empty():
-		if _bodies_data.size() > 0:
-			_save_personajes_ind()
-			saved.append("Personajes.ind")
-		if _heads_data.size() > 0:
-			_save_cabezas_ind("Cabezas.ind", _heads_data)
-			saved.append("Cabezas.ind")
-		if _helmets_data.size() > 0:
-			_save_cabezas_ind("Cascos.ind", _helmets_data)
-			saved.append("Cascos.ind")
-		if _weapons_data.size() > 0:
-			_save_armas_dat()
-			saved.append("Armas.dat")
-		if _shields_data.size() > 0:
-			_save_escudos_dat()
-			saved.append("Escudos.dat")
-		if _fxs_data.size() > 0:
-			_save_fxs_ind()
-			saved.append("Fxs.ind")
+		for file_info in [
+			["Personajes.ind", _bodies_data.size() > 0, _save_personajes_ind],
+			["Cabezas.ind", _heads_data.size() > 0, func(): _save_cabezas_ind("Cabezas.ind", _heads_data)],
+			["Cascos.ind", _helmets_data.size() > 0, func(): _save_cabezas_ind("Cascos.ind", _helmets_data)],
+			["Armas.dat", _weapons_data.size() > 0, _save_armas_dat],
+			["Escudos.dat", _shields_data.size() > 0, _save_escudos_dat],
+			["Fxs.ind", _fxs_data.size() > 0, _save_fxs_ind],
+		]:
+			var fname: String = file_info[0]
+			var has_data: bool = file_info[1]
+			var save_fn: Callable = file_info[2]
+			if has_data:
+				var err := _safe_save(fname, func():
+					save_fn.call()
+					return true)
+				if err.is_empty():
+					saved.append(fname)
+				else:
+					errors.append(fname + ": " + err)
 
 	# Update snapshots to reflect new disk state
 	if saved.has("Graficos.ind"):
@@ -1608,10 +1620,40 @@ func _on_save_confirmed() -> void:
 
 	_dirty = false
 	_refresh_all()
-	if saved.size() > 0:
+	if errors.size() > 0:
+		var msg := "ERRORES al guardar:\n" + "\n".join(errors)
+		if saved.size() > 0:
+			msg += "\n\nGuardados OK: " + ", ".join(saved)
+		_show_error_popup(msg)
+		_update_status("Error al guardar — ver popup de errores")
+	elif saved.size() > 0:
 		_update_status("Guardado: %s" % ", ".join(saved))
 	else:
 		_update_status("No se guardó ningún archivo.")
+
+
+## Try to execute a save callable, catching any runtime error.
+## Returns empty string on success, or error message on failure.
+func _safe_save(label: String, save_callable: Callable) -> String:
+	# GDScript has no try/catch — we validate before calling and let
+	# Godot's error handler catch the rest. If the callable returns false
+	# (or non-true), treat it as an error.
+	var result = save_callable.call()
+	if result is bool and result == false:
+		return "fallo al escribir archivo"
+	return ""
+
+
+## Show a modal error popup with a message.
+func _show_error_popup(msg: String) -> void:
+	var dlg := AcceptDialog.new()
+	dlg.title = "Error al guardar"
+	dlg.dialog_text = msg
+	dlg.min_size = Vector2i(500, 200)
+	add_child(dlg)
+	dlg.popup_centered()
+	dlg.confirmed.connect(func(): dlg.queue_free())
+	dlg.canceled.connect(func(): dlg.queue_free())
 
 
 func _save_ind_to_path(path: String) -> void:
@@ -1636,6 +1678,13 @@ func _save_personajes_ind() -> void:
 		return
 	var header: PackedByteArray = orig.get_buffer(263)
 	orig.close()
+	# Validate all entries have required fields before writing
+	for i in range(_bodies_data.size()):
+		var b = _bodies_data[i]
+		if not (b is Dictionary or b is Object) or not ("walk_n" in b and "walk_e" in b and "walk_s" in b and "walk_w" in b and "head_x" in b and "head_y" in b):
+			push_error("Personajes.ind: entrada %d tiene campos faltantes" % (i + 1))
+			_update_status("Error: Personajes.ind entrada %d corrupta (campos faltantes)" % (i + 1))
+			return
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		_update_status("No se pudo escribir Personajes.ind")
@@ -1643,12 +1692,12 @@ func _save_personajes_ind() -> void:
 	f.store_buffer(header)
 	f.store_16(_bodies_data.size())
 	for b in _bodies_data:
-		f.store_16(b.walk_n & 0xFFFF)
-		f.store_16(b.walk_e & 0xFFFF)
-		f.store_16(b.walk_s & 0xFFFF)
-		f.store_16(b.walk_w & 0xFFFF)
-		f.store_16(b.head_x & 0xFFFF)
-		f.store_16(b.head_y & 0xFFFF)
+		f.store_16(int(b.walk_n) & 0xFFFF)
+		f.store_16(int(b.walk_e) & 0xFFFF)
+		f.store_16(int(b.walk_s) & 0xFFFF)
+		f.store_16(int(b.walk_w) & 0xFFFF)
+		f.store_16(int(b.head_x) & 0xFFFF)
+		f.store_16(int(b.head_y) & 0xFFFF)
 	f.close()
 	_update_status("Personajes.ind guardado (%d cuerpos)" % _bodies_data.size())
 
@@ -1666,6 +1715,13 @@ func _save_fxs_ind() -> void:
 		if orig != null:
 			_mi_cabecera_fxs = orig.get_buffer(263)
 			orig.close()
+	# Validate entries
+	for i in range(_fxs_data.size()):
+		var e = _fxs_data[i]
+		if not (e is Dictionary or e is Object) or not ("animacion" in e and "offset_x" in e and "offset_y" in e):
+			push_error("Fxs.ind: entrada %d tiene campos faltantes" % (i + 1))
+			_update_status("Error: Fxs.ind entrada %d corrupta (campos faltantes)" % (i + 1))
+			return
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		_update_status("No se pudo escribir Fxs.ind")
@@ -1673,9 +1729,9 @@ func _save_fxs_ind() -> void:
 	f.store_buffer(_mi_cabecera_fxs)
 	f.store_16(_fxs_data.size())
 	for e in _fxs_data:
-		f.store_16(e.animacion & 0xFFFF)
-		f.store_16(e.offset_x & 0xFFFF)
-		f.store_16(e.offset_y & 0xFFFF)
+		f.store_16(int(e.animacion) & 0xFFFF)
+		f.store_16(int(e.offset_x) & 0xFFFF)
+		f.store_16(int(e.offset_y) & 0xFFFF)
 	f.close()
 	_update_status("Fxs.ind guardado (%d efectos)" % _fxs_data.size())
 
@@ -2814,6 +2870,13 @@ func _save_cabezas_ind(filename: String, data: Array) -> void:
 		return
 	var header: PackedByteArray = orig.get_buffer(263)
 	orig.close()
+	# Validate entries
+	for i in range(data.size()):
+		var e = data[i]
+		if not (e is Dictionary or e is Object) or not ("head_n" in e and "head_e" in e and "head_s" in e and "head_w" in e):
+			push_error("%s: entrada %d tiene campos faltantes" % [filename, i + 1])
+			_update_status("Error: %s entrada %d corrupta (campos faltantes)" % [filename, i + 1])
+			return
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		_update_status("No se pudo escribir %s" % filename)
@@ -2821,10 +2884,10 @@ func _save_cabezas_ind(filename: String, data: Array) -> void:
 	f.store_buffer(header)
 	f.store_16(data.size())
 	for e in data:
-		f.store_16(e.head_n & 0xFFFF)
-		f.store_16(e.head_e & 0xFFFF)
-		f.store_16(e.head_s & 0xFFFF)
-		f.store_16(e.head_w & 0xFFFF)
+		f.store_16(int(e.head_n) & 0xFFFF)
+		f.store_16(int(e.head_e) & 0xFFFF)
+		f.store_16(int(e.head_s) & 0xFFFF)
+		f.store_16(int(e.head_w) & 0xFFFF)
 	f.close()
 	_update_status("%s guardado (%d entradas)" % [filename, data.size()])
 
@@ -2835,7 +2898,10 @@ func _save_armas_dat() -> void:
 		return
 	var path := _init_folder.path_join("Armas.dat")
 	_save_ini_dat(path, "Arma", "NumArmas", _weapons_data, ["Dir1", "Dir2", "Dir3", "Dir4"],
-		func(e): return [str(e.dir_n), str(e.dir_e), str(e.dir_s), str(e.dir_w)])
+		func(e):
+			if e is Dictionary:
+				return [str(e.get("dir_n", 0)), str(e.get("dir_e", 0)), str(e.get("dir_s", 0)), str(e.get("dir_w", 0))]
+			return [str(e.dir_n if "dir_n" in e else 0), str(e.dir_e if "dir_e" in e else 0), str(e.dir_s if "dir_s" in e else 0), str(e.dir_w if "dir_w" in e else 0)])
 
 
 func _save_escudos_dat() -> void:
@@ -2844,7 +2910,10 @@ func _save_escudos_dat() -> void:
 		return
 	var path := _init_folder.path_join("Escudos.dat")
 	_save_ini_dat(path, "ESC", "NumEscudos", _shields_data, ["Dir1", "Dir2", "Dir3", "Dir4"],
-		func(e): return [str(e.dir_n), str(e.dir_e), str(e.dir_s), str(e.dir_w)])
+		func(e):
+			if e is Dictionary:
+				return [str(e.get("dir_n", 0)), str(e.get("dir_e", 0)), str(e.get("dir_s", 0)), str(e.get("dir_w", 0))]
+			return [str(e.dir_n if "dir_n" in e else 0), str(e.dir_e if "dir_e" in e else 0), str(e.dir_s if "dir_s" in e else 0), str(e.dir_w if "dir_w" in e else 0)])
 
 
 func _save_ini_dat(path: String, sec_prefix: String, count_key: String,

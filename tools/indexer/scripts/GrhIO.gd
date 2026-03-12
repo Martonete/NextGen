@@ -97,20 +97,33 @@ static func save_ind(path: String, data: Dictionary) -> bool:
 
 	for key in sorted_keys:
 		var entry: Dictionary = entries[key]
-		_write_int32(f, entry["grh_index"])
+		var grh_idx: int = entry.get("grh_index", key)
+		_write_int32(f, grh_idx)
 
-		if entry.get("num_frames", 1) > 1:
-			_write_int16(f, entry["num_frames"])
-			for fi in entry["frame_indices"]:
+		var nf: int = entry.get("num_frames", 1)
+		if nf > 1:
+			var frames: Array = entry.get("frame_indices", [])
+			var spd: float = entry.get("speed", 100.0)
+			if frames.is_empty():
+				push_error("GrhIO: animated GRH %d has no frame_indices — skipping" % grh_idx)
+				_write_int16(f, 1)
+				_write_int32(f, 0)
+				_write_int16(f, 0)
+				_write_int16(f, 0)
+				_write_int16(f, 0)
+				_write_int16(f, 0)
+				continue
+			_write_int16(f, nf)
+			for fi in frames:
 				_write_int32(f, fi)
-			f.store_float(entry["speed"])
+			f.store_float(spd)
 		else:
 			_write_int16(f, 1)
-			_write_int32(f, entry["file_num"])
-			_write_int16(f, entry["sx"])
-			_write_int16(f, entry["sy"])
-			_write_int16(f, entry["width"])
-			_write_int16(f, entry["height"])
+			_write_int32(f, entry.get("file_num", 0))
+			_write_int16(f, entry.get("sx", 0))
+			_write_int16(f, entry.get("sy", 0))
+			_write_int16(f, entry.get("width", 0))
+			_write_int16(f, entry.get("height", 0))
 
 	f.close()
 	print("GrhIO: guardadas %d entradas en %s" % [sorted_keys.size(), path])
