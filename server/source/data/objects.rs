@@ -45,7 +45,6 @@ pub enum ObjType {
     FishingSpot = 38,    // otYacimientoPez — fishing spot (VB6 13.3)
     GemEarth = 39,
     GemWind = 40,
-    Crystal = 41,
     StorageBox = 42,
     GodBox = 43,
     Fragment = 45,
@@ -99,7 +98,6 @@ impl ObjType {
             38 => Self::FishingSpot,
             39 => Self::GemEarth,
             40 => Self::GemWind,
-            41 => Self::Crystal,
             42 => Self::StorageBox,
             43 => Self::GodBox,
             45 => Self::Fragment,

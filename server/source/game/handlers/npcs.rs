@@ -491,17 +491,11 @@ pub(super) async fn npc_die(
 ) {
     let npc_info = match state.get_npc(npc_idx) {
         Some(n) => (n.map, n.x, n.y, n.char_index, n.name.clone(), n.npc_number,
-                    n.snd3, n.give_pts, n.cristales,
-                    n.crystal_min1, n.crystal_max1, n.crystal_min2, n.crystal_max2,
-                    n.crystal_min3, n.crystal_max3, n.crystal_min4, n.crystal_max4,
-                    n.maestro_user),
+                    n.snd3, n.maestro_user),
         None => return,
     };
     let (map, x, y, char_index, npc_name, npc_number,
-         snd3, give_pts, has_crystals,
-         cr_min1, cr_max1, cr_min2, cr_max2,
-         cr_min3, cr_max3, cr_min4, cr_max4,
-         is_pet_owner) = npc_info;
+         snd3, is_pet_owner) = npc_info;
 
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
@@ -546,18 +540,7 @@ pub(super) async fn npc_die(
         drop_gold_on_floor(state, map, x, y, gold_award as i32).await;
     }
 
-    // 7) Faction points (VB6: GivePTS)
-    if give_pts > 0 {
-        if let Some(user) = state.users.get_mut(&killer_id) {
-            if user.armada_real {
-                user.recompensas_real = (user.recompensas_real + give_pts).min(999);
-            } else if user.fuerzas_caos {
-                user.recompensas_caos = (user.recompensas_caos + give_pts).min(999);
-            }
-        }
-    }
-
-    // 8) Pet cleanup — if NPC was someone's pet, remove from owner
+    // 7) Pet cleanup — if NPC was someone's pet, remove from owner
     if let Some(owner_conn) = is_pet_owner {
         remove_pet_from_owner(state, owner_conn, npc_idx);
     }

@@ -163,19 +163,7 @@ pub struct NpcState {
     pub old_hostile: bool,          // Original hostile flag to restore
     pub attacked_by: String,        // Name of player who triggered defense mode
 
-    // Crystal drops (copied from NpcData on spawn)
-    pub cristales: bool,
-    pub crystal_min1: i32,
-    pub crystal_max1: i32,
-    pub crystal_min2: i32,
-    pub crystal_max2: i32,
-    pub crystal_min3: i32,
-    pub crystal_max3: i32,
-    pub crystal_min4: i32,
-    pub crystal_max4: i32,
-
-    // Points/sounds (copied from NpcData on spawn)
-    pub give_pts: i32,              // Faction points on kill
+    // Sounds (copied from NpcData on spawn)
     pub snd1: i32,                  // Attack sound
     pub snd2: i32,                  // Hit/hurt sound
     pub snd3: i32,                  // Death sound
@@ -275,16 +263,6 @@ impl NpcState {
             old_movement: data.movement,
             old_hostile: data.hostile,
             attacked_by: String::new(),
-            cristales: data.cristales,
-            crystal_min1: data.crystal_min1,
-            crystal_max1: data.crystal_max1,
-            crystal_min2: data.crystal_min2,
-            crystal_max2: data.crystal_max2,
-            crystal_min3: data.crystal_min3,
-            crystal_max3: data.crystal_max3,
-            crystal_min4: data.crystal_min4,
-            crystal_max4: data.crystal_max4,
-            give_pts: data.give_pts,
             snd1: data.snd1,
             snd2: data.snd2,
             snd3: data.snd3,
