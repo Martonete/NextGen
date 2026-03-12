@@ -241,8 +241,7 @@ public static partial class CharRenderer
                 var cascoRes = data.ResolveGrh(casco.Head[heading], 0);
                 if (cascoRes != null && cascoRes.FileNum > 0)
                 {
-                    float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
-                    float cascoDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX + xAdj;
+                    float cascoDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX;
                     float cascoDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + OFFSET_HEAD;
                     if (cascoRes.TileWidth != 1f && cascoRes.TileWidth > 0)
                         cascoDrawX -= (int)(cascoRes.TileWidth * (TileSize / 2)) - TileSize / 2;
@@ -429,9 +428,8 @@ public static partial class CharRenderer
         var head = data.Heads[ch.Head];
         if (head.Head[heading] == 0) return;
 
-        // VB6: heading 1 gets X-1 adjustment; mounted gets X+1
-        float xAdj = heading == 1 ? -1f : 0f;
-        if (ch.Mounted) xAdj += 1f;
+        // VB6: no per-heading X adjustment; mounted gets X+1
+        float xAdj = ch.Mounted ? 1f : 0f;
         Vector2 headPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + 1);
 
         if (colorOverride.HasValue)
@@ -476,8 +474,8 @@ public static partial class CharRenderer
             Godot.GD.Print($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} heading={heading} grh={grhIdx} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
         }
 
-        float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
-        if (ch.Mounted) xAdj += 1f;
+        // VB6: no per-heading X adjustment; mounted gets X+1
+        float xAdj = ch.Mounted ? 1f : 0f;
         Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + OFFSET_HEAD);
 
         DrawGrh(canvas, data, grhIdx, 0, helmetPos, true, colorOverride);

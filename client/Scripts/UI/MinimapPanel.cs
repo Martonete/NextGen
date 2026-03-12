@@ -50,6 +50,8 @@ public partial class MinimapPanel : Control
     public void Toggle()
     {
         Visible = !Visible;
+        if (_state != null)
+            _state.Config.ShowMinimap = Visible;
     }
 
     public override void _Ready()
