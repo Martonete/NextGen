@@ -437,6 +437,14 @@ pub(crate) async fn connect_user(
         user.recompensas_real = char_data.recompensas_real;
         user.recompensas_caos = char_data.recompensas_caos;
         user.reenlistadas = char_data.reenlistadas;
+        user.recibio_armadura_real = char_data.recibio_armadura_real;
+        user.recibio_armadura_caos = char_data.recibio_armadura_caos;
+        user.recibio_exp_real = char_data.recibio_exp_real;
+        user.recibio_exp_caos = char_data.recibio_exp_caos;
+        user.nivel_ingreso = char_data.nivel_ingreso;
+        user.fecha_ingreso = char_data.fecha_ingreso.clone();
+        user.matados_ingreso = char_data.matados_ingreso;
+        user.next_recompensa = char_data.next_recompensa;
         user.hogar = match char_data.hogar {
             1 => "Thir".to_string(),
             2 => "Inthak".to_string(),
@@ -467,9 +475,18 @@ pub(crate) async fn connect_user(
         user.min_ham = char_data.min_ham;
         user.attributes = char_data.attributes;
         user.skills = char_data.skills;
+        user.exp_skills = char_data.exp_skills;
         // Initialize skill ELU values for progression
         super::skills::init_elu_skills(user);
+        user.skill_pts_libres = char_data.skill_pts_libres;
+        user.skills_asignados = char_data.skills_asignados;
         user.reputation = char_data.reputation;
+        user.rep_asesino = char_data.rep_asesino;
+        user.rep_bandido = char_data.rep_bandido;
+        user.rep_burgues = char_data.rep_burgues;
+        user.rep_ladrones = char_data.rep_ladrones;
+        user.rep_noble = char_data.rep_noble;
+        user.rep_plebe = char_data.rep_plebe;
 
         // Inventory
         for (i, &(obj_idx, amount, equipped)) in char_data.inventory.iter().enumerate() {
@@ -525,6 +542,16 @@ pub(crate) async fn connect_user(
 
         // Spells
         user.spells = char_data.spells;
+
+        // Kill counters and misc
+        user.usuarios_matados = char_data.usuarios_matados;
+        user.npcs_muertos = char_data.npcs_muertos;
+        user.email = char_data.email.clone();
+        user.counter_pena = char_data.counter_pena;
+        user.last_map = char_data.last_map;
+        user.uptime = char_data.uptime;
+        user.pareja = char_data.pareja.clone();
+        user.desc = char_data.description.clone();
 
         // Resolve equipment animation IDs from equipped items (VB6: TCP.bas lines 1511-1530)
         // Pre-extract obj indices to avoid borrow conflict with state.get_object()

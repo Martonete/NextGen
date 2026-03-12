@@ -572,6 +572,32 @@ pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
         pet_types: (0..3).filter_map(|i| {
             if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
         }).collect(),
+        // VB6 13.3 fields
+        exp_skills: user.exp_skills,
+        usuarios_matados: user.usuarios_matados,
+        npcs_muertos: user.npcs_muertos,
+        rep_asesino: user.rep_asesino,
+        rep_bandido: user.rep_bandido,
+        rep_burgues: user.rep_burgues,
+        rep_ladrones: user.rep_ladrones,
+        rep_noble: user.rep_noble,
+        rep_plebe: user.rep_plebe,
+        recibio_armadura_real: user.recibio_armadura_real,
+        recibio_armadura_caos: user.recibio_armadura_caos,
+        recibio_exp_real: user.recibio_exp_real,
+        recibio_exp_caos: user.recibio_exp_caos,
+        nivel_ingreso: user.nivel_ingreso,
+        fecha_ingreso: user.fecha_ingreso.clone(),
+        matados_ingreso: user.matados_ingreso,
+        next_recompensa: user.next_recompensa,
+        email: user.email.clone(),
+        counter_pena: user.counter_pena,
+        skills_asignados: user.skills_asignados,
+        last_map: user.last_map,
+        uptime: user.uptime,
+        mochila_eqp_slot: user.backpack_slot,
+        anillo_eqp_slot: user.equip.ring,
+        pareja: user.pareja.clone(),
     }
 }
 

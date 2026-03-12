@@ -102,6 +102,33 @@ pub struct CharData {
     pub password: String,
     pub pet_count: i32,
     pub pet_types: Vec<i32>,
+    pub description: String,
+    // VB6 13.3 fields added for full parity
+    pub exp_skills: [i32; 22],
+    pub usuarios_matados: i32,
+    pub npcs_muertos: i32,
+    pub rep_asesino: i32,
+    pub rep_bandido: i32,
+    pub rep_burgues: i32,
+    pub rep_ladrones: i32,
+    pub rep_noble: i32,
+    pub rep_plebe: i32,
+    pub recibio_armadura_real: bool,
+    pub recibio_armadura_caos: bool,
+    pub recibio_exp_real: bool,
+    pub recibio_exp_caos: bool,
+    pub nivel_ingreso: i32,
+    pub fecha_ingreso: String,
+    pub matados_ingreso: i32,
+    pub next_recompensa: i32,
+    pub email: String,
+    pub counter_pena: i32,
+    pub skills_asignados: i32,
+    pub last_map: i32,
+    pub uptime: i64,
+    pub mochila_eqp_slot: usize,
+    pub anillo_eqp_slot: usize,
+    pub pareja: String,
 }
 
 /// Check if a character exists.
@@ -178,7 +205,16 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
                 guild_index, reputation,
                 armada_real, fuerzas_caos, criminales_matados, ciudadanos_matados,
                 recompensas_real, recompensas_caos, reenlistadas,
-                pet_count, pet_types
+                pet_count, pet_types,
+                exp_skills,
+                usuarios_matados, npcs_muertos,
+                rep_asesino, rep_bandido, rep_burgues, rep_ladrones, rep_noble, rep_plebe,
+                recibio_armadura_real, recibio_armadura_caos,
+                recibio_exp_real, recibio_exp_caos,
+                nivel_ingreso, fecha_ingreso, matados_ingreso, next_recompensa,
+                email, counter_pena, skills_asignados, last_map, uptime,
+                mochila_eqp_slot, anillo_eqp_slot, pareja,
+                description
          FROM characters WHERE UPPER(name) = UPPER($1)"
     )
     .bind(char_name)
@@ -257,6 +293,34 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         pet_types_str.split(',').filter_map(|s| s.trim().parse::<i32>().ok()).collect()
     };
 
+    // New VB6 13.3 fields
+    let exp_skills_vec: Vec<i32> = row.try_get("exp_skills").unwrap_or_default();
+    let usuarios_matados: i32 = row.try_get("usuarios_matados").unwrap_or(0);
+    let npcs_muertos: i32 = row.try_get("npcs_muertos").unwrap_or(0);
+    let rep_asesino: i32 = row.try_get("rep_asesino").unwrap_or(0);
+    let rep_bandido: i32 = row.try_get("rep_bandido").unwrap_or(0);
+    let rep_burgues: i32 = row.try_get("rep_burgues").unwrap_or(0);
+    let rep_ladrones: i32 = row.try_get("rep_ladrones").unwrap_or(0);
+    let rep_noble: i32 = row.try_get("rep_noble").unwrap_or(0);
+    let rep_plebe: i32 = row.try_get("rep_plebe").unwrap_or(0);
+    let recibio_armadura_real: bool = row.try_get("recibio_armadura_real").unwrap_or(false);
+    let recibio_armadura_caos: bool = row.try_get("recibio_armadura_caos").unwrap_or(false);
+    let recibio_exp_real: bool = row.try_get("recibio_exp_real").unwrap_or(false);
+    let recibio_exp_caos: bool = row.try_get("recibio_exp_caos").unwrap_or(false);
+    let nivel_ingreso: i32 = row.try_get("nivel_ingreso").unwrap_or(0);
+    let fecha_ingreso: String = row.try_get("fecha_ingreso").unwrap_or_default();
+    let matados_ingreso: i32 = row.try_get("matados_ingreso").unwrap_or(0);
+    let next_recompensa: i32 = row.try_get("next_recompensa").unwrap_or(0);
+    let email: String = row.try_get("email").unwrap_or_default();
+    let counter_pena: i32 = row.try_get("counter_pena").unwrap_or(0);
+    let skills_asignados: i32 = row.try_get("skills_asignados").unwrap_or(0);
+    let last_map: i32 = row.try_get("last_map").unwrap_or(0);
+    let uptime: i64 = row.try_get("uptime").unwrap_or(0);
+    let mochila_eqp_slot: i32 = row.try_get("mochila_eqp_slot").unwrap_or(0);
+    let anillo_eqp_slot: i32 = row.try_get("anillo_eqp_slot").unwrap_or(0);
+    let pareja: String = row.try_get("pareja").unwrap_or_default();
+    let description: String = row.try_get("description").unwrap_or_default();
+
     // Load inventory
     let inv_rows: Vec<(i16, i32, i32, bool)> = sqlx::query_as(
         "SELECT slot, obj_index, amount, equipped FROM character_inventory
@@ -329,6 +393,18 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         password,
         pet_count,
         pet_types,
+        exp_skills: sql_array_to_22(&exp_skills_vec),
+        usuarios_matados,
+        npcs_muertos,
+        rep_asesino, rep_bandido, rep_burgues, rep_ladrones, rep_noble, rep_plebe,
+        recibio_armadura_real, recibio_armadura_caos,
+        recibio_exp_real, recibio_exp_caos,
+        nivel_ingreso, fecha_ingreso, matados_ingreso, next_recompensa,
+        email, counter_pena, skills_asignados, last_map, uptime,
+        mochila_eqp_slot: mochila_eqp_slot as usize,
+        anillo_eqp_slot: anillo_eqp_slot as usize,
+        pareja,
+        description,
     })
 }
 
@@ -613,6 +689,32 @@ pub struct CharSaveData {
     pub description: String,
     pub pet_count: i32,
     pub pet_types: Vec<i32>,
+    // VB6 13.3 fields
+    pub exp_skills: [i32; 22],
+    pub usuarios_matados: i32,
+    pub npcs_muertos: i32,
+    pub rep_asesino: i32,
+    pub rep_bandido: i32,
+    pub rep_burgues: i32,
+    pub rep_ladrones: i32,
+    pub rep_noble: i32,
+    pub rep_plebe: i32,
+    pub recibio_armadura_real: bool,
+    pub recibio_armadura_caos: bool,
+    pub recibio_exp_real: bool,
+    pub recibio_exp_caos: bool,
+    pub nivel_ingreso: i32,
+    pub fecha_ingreso: String,
+    pub matados_ingreso: i32,
+    pub next_recompensa: i32,
+    pub email: String,
+    pub counter_pena: i32,
+    pub skills_asignados: i32,
+    pub last_map: i32,
+    pub uptime: i64,
+    pub mochila_eqp_slot: usize,
+    pub anillo_eqp_slot: usize,
+    pub pareja: String,
 }
 
 /// Save full character state back to DB (called on disconnect / auto-save).
@@ -656,6 +758,18 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             recompensas_real = $53, recompensas_caos = $54, reenlistadas = $55,
             description = $56,
             pet_count = $57, pet_types = $58,
+            exp_skills = $59,
+            usuarios_matados = $60, npcs_muertos = $61,
+            rep_asesino = $62, rep_bandido = $63, rep_burgues = $64,
+            rep_ladrones = $65, rep_noble = $66, rep_plebe = $67,
+            recibio_armadura_real = $68, recibio_armadura_caos = $69,
+            recibio_exp_real = $70, recibio_exp_caos = $71,
+            nivel_ingreso = $72, fecha_ingreso = $73,
+            matados_ingreso = $74, next_recompensa = $75,
+            email = $76, counter_pena = $77, skills_asignados = $78,
+            last_map = $79, uptime = $80,
+            mochila_eqp_slot = $81, anillo_eqp_slot = $82,
+            pareja = $83,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -683,6 +797,18 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(&data.description)
     .bind(data.pet_count)
     .bind(&data.pet_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(","))
+    .bind(&data.exp_skills[..])
+    .bind(data.usuarios_matados).bind(data.npcs_muertos)
+    .bind(data.rep_asesino).bind(data.rep_bandido).bind(data.rep_burgues)
+    .bind(data.rep_ladrones).bind(data.rep_noble).bind(data.rep_plebe)
+    .bind(data.recibio_armadura_real).bind(data.recibio_armadura_caos)
+    .bind(data.recibio_exp_real).bind(data.recibio_exp_caos)
+    .bind(data.nivel_ingreso).bind(&data.fecha_ingreso)
+    .bind(data.matados_ingreso).bind(data.next_recompensa)
+    .bind(&data.email).bind(data.counter_pena).bind(data.skills_asignados)
+    .bind(data.last_map).bind(data.uptime)
+    .bind(data.mochila_eqp_slot as i32).bind(data.anillo_eqp_slot as i32)
+    .bind(&data.pareja)
     .execute(&mut *tx)
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;

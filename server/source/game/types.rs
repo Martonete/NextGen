@@ -117,7 +117,15 @@ pub struct UserState {
     pub exp_skills: [i32; 22],  // VB6: ExpSkills — current XP per skill
     pub elu_skills: [i32; 22],  // VB6: EluSkills — XP needed to level each skill
     pub skill_pts_libres: i32,  // Free skill points to distribute
+    pub skills_asignados: i32,  // VB6: Counters.AsignedSkills — total skill points assigned
     pub reputation: i32,
+    // VB6 13.3: Individual reputations (6 fields, reputation = average)
+    pub rep_asesino: i32,
+    pub rep_bandido: i32,
+    pub rep_burgues: i32,
+    pub rep_ladrones: i32,
+    pub rep_noble: i32,
+    pub rep_plebe: i32,
 
     // Inventory (30 max slots, 1-indexed in VB6 but 0-indexed here)
     pub inventory: Vec<InventorySlot>,
@@ -182,6 +190,15 @@ pub struct UserState {
     pub reenlistadas: bool,      // Can only enlist once per character
     pub last_crim_matado: String, // Kill dedup: last criminal killed by name
     pub last_ciud_matado: String, // Kill dedup: last citizen killed by name
+    // VB6 13.3: Extended faction fields
+    pub recibio_armadura_real: bool,
+    pub recibio_armadura_caos: bool,
+    pub recibio_exp_real: bool,
+    pub recibio_exp_caos: bool,
+    pub nivel_ingreso: i32,
+    pub fecha_ingreso: String,
+    pub matados_ingreso: i32,
+    pub next_recompensa: i32,
 
     // Party
     pub party_index: i32,        // 0 = no party
@@ -321,6 +338,15 @@ pub struct UserState {
     // SOS help request (/GM)
     pub gm_request_pending: bool,    // Has pending /GM request
 
+    // VB6 13.3: Kill counters (MUERTES section)
+    pub usuarios_matados: i32,       // Total users killed
+    pub npcs_muertos: i32,           // Total NPCs killed
+
+    // VB6 13.3: Misc persisted fields
+    pub email: String,               // CONTACTO.Email
+    pub counter_pena: i32,           // COUNTERS.Pena (jail/penalty ticks)
+    pub last_map: i32,               // FLAGS.LastMap
+    pub uptime: i64,                 // INIT.UpTime (seconds played)
 }
 
 impl UserState {
@@ -377,7 +403,14 @@ impl UserState {
             exp_skills: [0; 22],
             elu_skills: [0; 22],
             skill_pts_libres: 0,
+            skills_asignados: 0,
             reputation: 0,
+            rep_asesino: 0,
+            rep_bandido: 0,
+            rep_burgues: 0,
+            rep_ladrones: 0,
+            rep_noble: 0,
+            rep_plebe: 0,
             inventory: (0..MAX_INVENTORY_SLOTS).map(|_| InventorySlot::default()).collect(),
             equip: EquipSlots::default(),
             current_inventory_slots: MAX_NORMAL_INVENTORY_SLOTS,
@@ -426,6 +459,14 @@ impl UserState {
             reenlistadas: false,
             last_crim_matado: String::new(),
             last_ciud_matado: String::new(),
+            recibio_armadura_real: false,
+            recibio_armadura_caos: false,
+            recibio_exp_real: false,
+            recibio_exp_caos: false,
+            nivel_ingreso: 0,
+            fecha_ingreso: String::new(),
+            matados_ingreso: 0,
+            next_recompensa: 0,
             party_index: 0,
             party_pending: 0,
             nro_mascotas: 0,
@@ -516,6 +557,12 @@ impl UserState {
             centinela_timer: 0,
             centinela_fails: 0,
             gm_request_pending: false,
+            usuarios_matados: 0,
+            npcs_muertos: 0,
+            email: String::new(),
+            counter_pena: 0,
+            last_map: 0,
+            uptime: 0,
         }
     }
 
