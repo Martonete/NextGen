@@ -42,7 +42,7 @@ public partial class Main
         // Inventory panel -- VB6: picInv at (600,160) 160x128 pixels
         _inventoryPanel = new InventoryPanel();
         _inventoryPanel.Position = new Vector2(600, 160);
-        _inventoryPanel.Size = new Vector2(160, 128);
+        _inventoryPanel.Size = new Vector2(175, 174);
         _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
