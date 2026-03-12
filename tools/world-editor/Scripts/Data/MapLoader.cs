@@ -32,15 +32,25 @@ public static class MapLoader
         return mapData;
     }
 
+    /// Save all map files (.map, .inf, .dat) to the given directory.
     public static void Save(string mapDir, MapData mapData)
     {
-        string mapFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.map");
-        string infFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.inf");
-        string datFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.dat");
+        Save(mapDir, mapData, mapOnly: false);
+    }
 
+    /// Save map files. If mapOnly=true, only writes .map (client-side graphics).
+    public static void Save(string mapDir, MapData mapData, bool mapOnly)
+    {
+        string mapFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.map");
         SaveMapFile(mapFile, mapData);
-        SaveInfFile(infFile, mapData);
-        SaveDatFile(datFile, mapData);
+
+        if (!mapOnly)
+        {
+            string infFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.inf");
+            string datFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.dat");
+            SaveInfFile(infFile, mapData);
+            SaveDatFile(datFile, mapData);
+        }
     }
 
     #region Load
