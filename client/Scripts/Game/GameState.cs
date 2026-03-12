@@ -362,8 +362,9 @@ public class GameState
     public Color[,,]? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
     public bool LightsDirty;
 
-    // Chat message queue — drained by Main.cs each frame
+    // Chat message queue — drained by Main.cs each frame (capped to prevent unbounded growth)
     public Queue<ChatMessage> ChatMessages = new();
+    public const int MaxChatQueueSize = 500;
 
     // Chat tab filter: -1 = All, otherwise index into ChatType enum (0-5)
     public int ActiveChatFilter = -1;

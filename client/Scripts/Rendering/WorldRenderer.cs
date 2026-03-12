@@ -64,8 +64,9 @@ public partial class WorldRenderer : Node2D
     // Delta time in ms for current frame (set in _Process, used in _Draw)
     private float _deltaMs;
 
-    // Per-frame character position index
+    // Per-frame character position index (lists are pooled — cleared, not removed)
     private readonly Dictionary<(int, int), List<int>> _charPosIndex = new();
+    private readonly List<List<int>> _listPool = new();
     private readonly List<int> _emptyCharList = new();
 
     // Pending particle draws for the additive blend layer
@@ -304,14 +305,30 @@ void fragment() {
 
     private void BuildCharPositionIndex()
     {
+        // Return all lists to pool instead of discarding them
+        foreach (var kvp in _charPosIndex)
+        {
+            kvp.Value.Clear();
+            _listPool.Add(kvp.Value);
+        }
         _charPosIndex.Clear();
+
         foreach (var kvp in _state!.Characters)
         {
             var ch = kvp.Value;
             var key = (ch.PosX, ch.PosY);
             if (!_charPosIndex.TryGetValue(key, out var list))
             {
-                list = new List<int>(2);
+                // Reuse pooled list or allocate new one
+                if (_listPool.Count > 0)
+                {
+                    list = _listPool[_listPool.Count - 1];
+                    _listPool.RemoveAt(_listPool.Count - 1);
+                }
+                else
+                {
+                    list = new List<int>(2);
+                }
                 _charPosIndex[key] = list;
             }
             list.Add(kvp.Key);

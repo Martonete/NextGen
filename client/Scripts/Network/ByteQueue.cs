@@ -48,6 +48,17 @@ public class ByteQueue
         _readPos = 0;
     }
 
+    /// <summary>
+    /// Reset to wrap an external buffer without copying.
+    /// The caller must not mutate the buffer while the ByteQueue is in use.
+    /// </summary>
+    public void Wrap(byte[] data, int offset, int length)
+    {
+        _data = data;
+        _readPos = offset;
+        _writePos = offset + length;
+    }
+
     /// <summary>Number of bytes available to read.</summary>
     public int Available => _writePos - _readPos;
 

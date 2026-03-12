@@ -57,6 +57,9 @@ public partial class PacketHandler
     private int _recvStart;
     private int _recvLen;
 
+    /// Reusable ByteQueue for binary packet parsing (avoids per-packet allocation).
+    private readonly ByteQueue _reusableBq = new();
+
     /// Saved self-character aura state across map changes.
     private Character? _savedSelfAuras;
 
@@ -129,13 +132,13 @@ public partial class PacketHandler
             }
             else
             {
-                var bq = new ByteQueue(_recvBuf, _recvStart, _recvLen);
-                int startPos = bq.ReadPosition;
+                _reusableBq.Wrap(_recvBuf, _recvStart, _recvLen);
+                int startPos = _reusableBq.ReadPosition;
 
                 try
                 {
-                    HandleBinaryPacket(bq);
-                    int consumed = bq.ReadPosition - startPos;
+                    HandleBinaryPacket(_reusableBq);
+                    int consumed = _reusableBq.ReadPosition - startPos;
                     if (consumed <= 0)
                     {
                         GD.PrintErr($"[PKT] Handler consumed 0 bytes for opcode={opcode}, skipping 1 byte");

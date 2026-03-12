@@ -26,7 +26,7 @@ public partial class Main : Control
     private SoundManager? _soundManager;
 
     private bool _connecting;
-    private int _packetCount;
+
 
     // Login controller (extracted to LoginController.cs)
     private UI.LoginController? _loginController;
@@ -687,14 +687,6 @@ public partial class Main : Control
         var dataChunks = _tcp.PollPackets();
         foreach (byte[] chunk in dataChunks)
         {
-            _packetCount++;
-            if (_packetCount <= 20)
-            {
-                string hex = "";
-                for (int i = 0; i < Math.Min(20, chunk.Length); i++)
-                    hex += chunk[i].ToString("X2") + " ";
-                GD.Print($"[PKT #{_packetCount}] len={chunk.Length} hex=[{hex.Trim()}]");
-            }
             _packetHandler.HandleBinaryData(chunk);
         }
 

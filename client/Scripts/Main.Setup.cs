@@ -201,115 +201,52 @@ public partial class Main
         };
     }
 
+    /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned).</summary>
+    private T AddPanel<T>(Vector2? position = null) where T : Control, new()
+    {
+        var panel = new T();
+        if (position.HasValue) panel.Position = position.Value;
+        panel.Visible = false;
+        _gameUI!.AddChild(panel);
+        return panel;
+    }
+
     private void CreateGamePanels()
     {
-        _commercePanel = new CommercePanel();
-        _commercePanel.Position = new Vector2(57, 109);
-        _commercePanel.Visible = false;
-        _gameUI!.AddChild(_commercePanel);
+        _commercePanel = AddPanel<CommercePanel>(new Vector2(57, 109));
+        _tradePanel = AddPanel<TradePanel>(new Vector2(70, 142));
 
-        _tradePanel = new TradePanel();
-        _tradePanel.Position = new Vector2(70, 142);
-        _tradePanel.Visible = false;
-        _gameUI.AddChild(_tradePanel);
-
-        _bankPanel = new BankPanel();
-        _bankPanel.Position = new Vector2(197, 254);
-        _bankPanel.Visible = false;
+        _bankPanel = AddPanel<BankPanel>(new Vector2(197, 254));
         _bankPanel.OnOpenVault += OnBankOpenVault;
-        _gameUI.AddChild(_bankPanel);
 
-        _vaultPanel = new VaultPanel();
-        _vaultPanel.Position = new Vector2(55, 88);
-        _vaultPanel.Visible = false;
-        _gameUI.AddChild(_vaultPanel);
+        _vaultPanel = AddPanel<VaultPanel>(new Vector2(55, 88));
+        _guildBankPanel = AddPanel<GuildBankPanel>(new Vector2(55, 88));
+        _craftPanel = AddPanel<CraftPanel>();
+        _guildPanel = AddPanel<GuildPanel>(new Vector2(60, 100));
+        _guildFoundationPanel = AddPanel<GuildFoundationPanel>(new Vector2(80, 80));
+        _forumPanel = AddPanel<ForumPanel>(new Vector2(20, 80));
+        _friendListPanel = AddPanel<FriendListPanel>(new Vector2(240, 60));
+        _mailPanel = AddPanel<MailPanel>(new Vector2(30, 50));
+        _partyPanel = AddPanel<PartyPanel>(new Vector2(480, 150));
+        _travelPanel = AddPanel<TravelPanel>(new Vector2(55, 177));
+        _deathPanel = AddPanel<DeathPanel>(new Vector2(148, 302));
+        _charInfoPopup = AddPanel<CharInfoPopup>();
+        _changePasswordPanel = AddPanel<ChangePasswordPanel>();
 
-        _guildBankPanel = new GuildBankPanel();
-        _guildBankPanel.Position = new Vector2(55, 88);
-        _guildBankPanel.Visible = false;
-        _gameUI.AddChild(_guildBankPanel);
-
-        _craftPanel = new CraftPanel();
-        _craftPanel.Visible = false;
-        _gameUI.AddChild(_craftPanel);
-
-        _guildPanel = new GuildPanel();
-        _guildPanel.Position = new Vector2(60, 100);
-        _guildPanel.Visible = false;
-        _gameUI.AddChild(_guildPanel);
-
-        _guildFoundationPanel = new GuildFoundationPanel();
-        _guildFoundationPanel.Position = new Vector2(80, 80);
-        _guildFoundationPanel.Visible = false;
-        _gameUI.AddChild(_guildFoundationPanel);
-
-        _forumPanel = new ForumPanel();
-        _forumPanel.Position = new Vector2(20, 80);
-        _forumPanel.Visible = false;
-        _gameUI.AddChild(_forumPanel);
-
-        _friendListPanel = new FriendListPanel();
-        _friendListPanel.Position = new Vector2(240, 60);
-        _friendListPanel.Visible = false;
-        _gameUI.AddChild(_friendListPanel);
-
-        _mailPanel = new MailPanel();
-        _mailPanel.Position = new Vector2(30, 50);
-        _mailPanel.Visible = false;
-        _gameUI.AddChild(_mailPanel);
-
-        _partyPanel = new PartyPanel();
-        _partyPanel.Position = new Vector2(480, 150);
-        _partyPanel.Visible = false;
-        _gameUI.AddChild(_partyPanel);
-
-        _travelPanel = new TravelPanel();
-        _travelPanel.Position = new Vector2(55, 177);
-        _travelPanel.Visible = false;
-        _gameUI.AddChild(_travelPanel);
-
-        _deathPanel = new DeathPanel();
-        _deathPanel.Position = new Vector2(148, 302);
-        _deathPanel.Visible = false;
-        _gameUI.AddChild(_deathPanel);
-
-        _macroPanel = new MacroPanel();
-        _macroPanel.Position = new Vector2(8 + (544 - 280) / 2, 144 + (416 - 380) / 2);
-        _macroPanel.Visible = false;
-        _gameUI.AddChild(_macroPanel);
+        _macroPanel = AddPanel<MacroPanel>(new Vector2(8 + (544 - 280) / 2, 144 + (416 - 380) / 2));
         _macroPanel.Init(_state, _dataPath);
 
-        _statsPanel = new StatsPanel();
-        _statsPanel.Position = new Vector2(8 + (544 - 380) / 2, 20);
-        _statsPanel.Visible = false;
-        _gameUI.AddChild(_statsPanel);
+        _statsPanel = AddPanel<StatsPanel>(new Vector2(8 + (544 - 380) / 2, 20));
         _statsPanel.Init(_state);
 
-        _npcDialogPanel = new NpcDialogPanel();
-        _npcDialogPanel.Position = new Vector2(8 + (544 - 300) / 2, 144 + 416 - 120 - 10);
-        _npcDialogPanel.Visible = false;
-        _gameUI.AddChild(_npcDialogPanel);
+        _npcDialogPanel = AddPanel<NpcDialogPanel>(new Vector2(8 + (544 - 300) / 2, 144 + 416 - 120 - 10));
         _npcDialogPanel.Init(_state);
 
-        _charInfoPopup = new CharInfoPopup();
-        _charInfoPopup.Visible = false;
-        _gameUI.AddChild(_charInfoPopup);
-
-        _changePasswordPanel = new ChangePasswordPanel();
-        _changePasswordPanel.Visible = false;
-        _gameUI.AddChild(_changePasswordPanel);
-
-        _optionsPanel = new OptionsPanel();
-        _optionsPanel.Position = new Vector2(8 + (544 - 420) / 2, 20);
-        _optionsPanel.Visible = false;
-        _gameUI.AddChild(_optionsPanel);
+        _optionsPanel = AddPanel<OptionsPanel>(new Vector2(8 + (544 - 420) / 2, 20));
         _optionsPanel.Init(_state, _state.Config, _dataPath);
         _optionsPanel.OnConfigApplied += ApplyConfigToSystems;
 
-        _keyBindPanel = new KeyBindPanel();
-        _keyBindPanel.Position = new Vector2(8 + (544 - 420) / 2, 144 + (416 - 500) / 2);
-        _keyBindPanel.Visible = false;
-        _gameUI.AddChild(_keyBindPanel);
+        _keyBindPanel = AddPanel<KeyBindPanel>(new Vector2(8 + (544 - 420) / 2, 144 + (416 - 500) / 2));
         _keyBindPanel.Init(_state, _state.Keys, _dataPath);
 
         _optionsPanel.OnOpenKeyBinds += () =>
@@ -322,54 +259,26 @@ public partial class Main
             }
         };
 
-        // GM Panel
-        _gmPanel = new GmPanel();
-        _gmPanel.Position = new Vector2(8 + (544 - 500) / 2, 30);
-        _gmPanel.Visible = false;
-        _gameUI.AddChild(_gmPanel);
-        _gmPanel.Init(_state, null); // TCP wired later on connect
+        _gmPanel = AddPanel<GmPanel>(new Vector2(8 + (544 - 500) / 2, 30));
+        _gmPanel.Init(_state, null);
 
-        // Spawn List Panel
-        _spawnListPanel = new SpawnListPanel();
-        _spawnListPanel.Position = new Vector2(8 + (544 - 320) / 2, 80);
-        _spawnListPanel.Visible = false;
-        _gameUI.AddChild(_spawnListPanel);
+        _spawnListPanel = AddPanel<SpawnListPanel>(new Vector2(8 + (544 - 320) / 2, 80));
         _spawnListPanel.Init(_state, null);
         _gmPanel.OnOpenSpawnListRequested += () => _spawnListPanel?.Open();
 
-        // SOS/Help Panel
-        _sosPanel = new SosPanel();
-        _sosPanel.Position = new Vector2(8 + (544 - 360) / 2, 60);
-        _sosPanel.Visible = false;
-        _gameUI.AddChild(_sosPanel);
+        _sosPanel = AddPanel<SosPanel>(new Vector2(8 + (544 - 360) / 2, 60));
         _sosPanel.Init(_state, null);
 
-        // MOTD Editor Panel
-        _motdEditorPanel = new MotdEditorPanel();
-        _motdEditorPanel.Position = new Vector2(8 + (544 - 380) / 2, 100);
-        _motdEditorPanel.Visible = false;
-        _gameUI.AddChild(_motdEditorPanel);
+        _motdEditorPanel = AddPanel<MotdEditorPanel>(new Vector2(8 + (544 - 380) / 2, 100));
         _motdEditorPanel.Init(_state, null);
 
-        // Guild Alignment Panel
-        _guildAlignmentPanel = new GuildAlignmentPanel();
-        _guildAlignmentPanel.Position = new Vector2(8 + (544 - 300) / 2, 144 + (416 - 220) / 2);
-        _guildAlignmentPanel.Visible = false;
-        _gameUI.AddChild(_guildAlignmentPanel);
+        _guildAlignmentPanel = AddPanel<GuildAlignmentPanel>(new Vector2(8 + (544 - 300) / 2, 144 + (416 - 220) / 2));
         _guildAlignmentPanel.Init(_state, null);
 
-        // Peace Proposal Panel
-        _peaceProposalPanel = new PeaceProposalPanel();
-        _peaceProposalPanel.Position = new Vector2(8 + (544 - 340) / 2, 144 + (416 - 200) / 2);
-        _peaceProposalPanel.Visible = false;
-        _gameUI.AddChild(_peaceProposalPanel);
+        _peaceProposalPanel = AddPanel<PeaceProposalPanel>(new Vector2(8 + (544 - 340) / 2, 144 + (416 - 200) / 2));
         _peaceProposalPanel.Init(_state, null);
 
-        // Guild Member Detail Panel
-        _guildMemberPanel = new GuildMemberPanel();
-        _guildMemberPanel.Position = new Vector2(8 + (544 - 320) / 2, 100);
-        _guildMemberPanel.Visible = false;
-        _gameUI.AddChild(_guildMemberPanel);
+        _guildMemberPanel = AddPanel<GuildMemberPanel>(new Vector2(8 + (544 - 320) / 2, 100));
         _guildMemberPanel.Init(_state, null);
 
         // Day/Night Cycle
