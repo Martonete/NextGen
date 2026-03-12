@@ -133,14 +133,13 @@ public partial class Main
     }
 
     /// <summary>
-    /// Enter fullscreen with pixel-perfect integer scaling (2x, 3x, etc.).
-    /// Falls back to largest integer multiple that fits the screen, with black bars.
+    /// Enter fullscreen — stretches 800×600 to fill the screen (aspect-ratio preserved).
     /// </summary>
     private void EnterFullscreen()
     {
         var root = GetTree().Root;
         root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-        root.ContentScaleStretch = Window.ContentScaleStretchEnum.Integer;
+        root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
     }
 
