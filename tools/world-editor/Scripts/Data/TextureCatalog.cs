@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Text;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -124,6 +125,61 @@ public class TextureCatalog
 
         GD.Print($"[Catalog] Loaded {catalog.AllRefs.Count} refs in {catalog.Categories.Count} categories");
         return catalog;
+    }
+
+    /// <summary>
+    /// Adds a new category if it doesn't already exist.
+    /// </summary>
+    public void AddCategory(string name)
+    {
+        if (Categories.ContainsKey(name)) return;
+        Categories[name] = new List<TextureRef>();
+        CategoryOrder.Add(name);
+    }
+
+    /// <summary>
+    /// Rebuilds AllRefs from CategoryOrder + per-category lists.
+    /// Renumbers TextureRef.Index sequentially starting from 0.
+    /// </summary>
+    public void RebuildAllRefsFromCategories()
+    {
+        AllRefs.Clear();
+        int idx = 0;
+        foreach (var cat in CategoryOrder)
+        {
+            if (!Categories.TryGetValue(cat, out var refs)) continue;
+            foreach (var r in refs)
+            {
+                r.Index = idx++;
+                AllRefs.Add(r);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes the catalog back to an indices.ini file in the original format.
+    /// </summary>
+    public void SaveToFile(string path)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("[INIT]");
+        sb.AppendLine($"Referencias={AllRefs.Count}");
+        sb.AppendLine();
+
+        foreach (var texRef in AllRefs)
+        {
+            sb.AppendLine($"[REFERENCIA{texRef.Index}]");
+            sb.AppendLine($"Nombre={texRef.Name}");
+            sb.AppendLine($"GrhIndice={texRef.GrhIndex}");
+            sb.AppendLine($"Ancho={texRef.TileWidth}");
+            sb.AppendLine($"Alto={texRef.TileHeight}");
+            sb.AppendLine($"Capa={texRef.Layer}");
+            sb.AppendLine($"Type={texRef.Category}");
+            sb.AppendLine();
+        }
+
+        File.WriteAllText(path, sb.ToString());
+        GD.Print($"[Catalog] Saved {AllRefs.Count} refs to {path}");
     }
 
     private static Dictionary<string, Dictionary<string, string>> ParseIni(string[] lines)

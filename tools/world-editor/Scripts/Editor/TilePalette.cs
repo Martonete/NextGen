@@ -25,6 +25,7 @@ public partial class TilePalette : VBoxContainer
     public GrhData[]? Grhs;
     public TextureManager? Textures;
     public EditorState? State;
+    public string IndicesPath = "";
 
     private string _activeCategory = "";
     private string _searchFilter = "";
@@ -35,7 +36,7 @@ public partial class TilePalette : VBoxContainer
     // Preview cache: GRH index → cached preview texture (AtlasTexture or composited)
     private readonly Dictionary<int, Texture2D?> _previewCache = new();
     // Grid buttons tracking for highlight updates without full rebuild
-    private readonly List<(TextureButton btn, TextureRef texRef)> _gridButtons = new();
+    private readonly List<(DraggableTextureButton btn, TextureRef texRef)> _gridButtons = new();
 
     public override void _Ready()
     {
@@ -112,6 +113,20 @@ public partial class TilePalette : VBoxContainer
             _categoryButtons.Add(btn);
         }
 
+        // "+" button for adding categories
+        var addCatBtn = new Button
+        {
+            Text = "+",
+            CustomMinimumSize = new Vector2(24, 24),
+        };
+        addCatBtn.AddThemeFontSizeOverride("font_size", 10);
+        addCatBtn.AddThemeStyleboxOverride("normal",
+            EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 3, 4, 2));
+        addCatBtn.AddThemeStyleboxOverride("hover",
+            EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 3, 4, 2));
+        addCatBtn.Pressed += OnAddCategoryPressed;
+        _categoryFlow.AddChild(addCatBtn);
+
         if (Catalog.CategoryOrder.Count > 0)
         {
             _activeCategory = Catalog.CategoryOrder[0];
@@ -170,13 +185,18 @@ public partial class TilePalette : VBoxContainer
             refs = catRefs;
         }
 
+        bool isSearch = _searchFilter.Length > 0;
+        int gridIdx = 0;
         foreach (var texRef in refs)
         {
-            var btn = new TextureButton();
+            var btn = new DraggableTextureButton();
             btn.CustomMinimumSize = new Vector2(PreviewSize, PreviewSize);
             btn.StretchMode = TextureButton.StretchModeEnum.KeepAspectCentered;
             btn.IgnoreTextureSize = true;
             btn.TooltipText = $"{texRef.Name}\nGRH: {texRef.GrhIndex}\n{texRef.TileWidth}x{texRef.TileHeight}";
+            btn.TexRef = texRef;
+            btn.GridIndex = gridIdx;
+            btn.SearchMode = isSearch;
 
             // Get cached preview (or generate + cache)
             var preview = GetOrCreatePreview(texRef);
@@ -190,9 +210,12 @@ public partial class TilePalette : VBoxContainer
 
             var capturedRef = texRef;
             btn.Pressed += () => OnTextureSelected(capturedRef);
+            btn.Reordered += OnTextureReordered;
+            btn.ContextMenuRequested += OnContextMenuRequested;
 
             _grid.AddChild(btn);
             _gridButtons.Add((btn, texRef));
+            gridIdx++;
         }
     }
 
@@ -237,6 +260,86 @@ public partial class TilePalette : VBoxContainer
                 ? new Color(1, 1, 0.5f, 1)
                 : Colors.White;
         }
+    }
+
+    private void OnTextureReordered(int fromIdx, int toIdx)
+    {
+        if (Catalog == null || _searchFilter.Length > 0) return;
+        if (!Catalog.Categories.TryGetValue(_activeCategory, out var catRefs)) return;
+        if (fromIdx < 0 || fromIdx >= catRefs.Count || toIdx < 0 || toIdx >= catRefs.Count) return;
+
+        // Snapshot BEFORE the move for rollback
+        var snapshot = new List<TextureRef>(catRefs);
+
+        // Perform the reorder
+        var item = catRefs[fromIdx];
+        catRefs.RemoveAt(fromIdx);
+        catRefs.Insert(toIdx, item);
+        PopulateGrid();
+
+        // Show confirmation dialog
+        var dialog = new ConfirmationDialog
+        {
+            DialogText = "¿Deseas guardar este ordenamiento?",
+            Size = new Vector2I(300, 100),
+            OkButtonText = "Guardar",
+            CancelButtonText = "Cancelar",
+        };
+        dialog.Confirmed += () =>
+        {
+            Catalog.RebuildAllRefsFromCategories();
+            if (IndicesPath.Length > 0)
+                Catalog.SaveToFile(IndicesPath);
+        };
+        dialog.Canceled += () =>
+        {
+            // Restore original order
+            catRefs.Clear();
+            catRefs.AddRange(snapshot);
+            PopulateGrid();
+        };
+        AddChild(dialog);
+        dialog.PopupCentered();
+    }
+
+    private void OnContextMenuRequested(int gridIdx)
+    {
+        if (gridIdx < 0 || gridIdx >= _gridButtons.Count) return;
+        var (_, texRef) = _gridButtons[gridIdx];
+
+        var popup = new TextureEditPopup
+        {
+            TargetRef = texRef,
+            Catalog = Catalog,
+            IndicesPath = IndicesPath,
+        };
+        popup.Saved += () =>
+        {
+            _previewCache.Clear();
+            Rebuild();
+        };
+        AddChild(popup);
+        popup.PopupCentered();
+    }
+
+    private void OnAddCategoryPressed()
+    {
+        if (Catalog == null) return;
+        var dialog = new AcceptDialog { Title = "Nueva Categoría", Size = new Vector2I(260, 120) };
+        var edit = new LineEdit { PlaceholderText = "Nombre de categoría" };
+        edit.CustomMinimumSize = new Vector2(220, 28);
+        dialog.AddChild(edit);
+        dialog.Confirmed += () =>
+        {
+            string name = edit.Text.Trim();
+            if (name.Length > 0)
+            {
+                Catalog.AddCategory(name);
+                Rebuild();
+            }
+        };
+        AddChild(dialog);
+        dialog.PopupCentered();
     }
 
     /// <summary>
