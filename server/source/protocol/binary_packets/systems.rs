@@ -63,89 +63,7 @@ pub fn write_multi_user_hitted_user(victim_index: i16, body_part: u8, damage: i1
     pkt.into_bytes()
 }
 
-/// ID 104, sub 18: Have killed user.
-pub fn write_multi_have_killed_user(killed_index: i16, exp_gained: i32) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::MultiMessage.to_byte());
-    pkt.write_byte(MultiMessageID::HaveKilledUser.to_byte());
-    pkt.write_integer(killed_index);
-    pkt.write_long(exp_gained);
-    pkt.into_bytes()
-}
-
-/// ID 104, sub 19: User kill (killed by other user).
-pub fn write_multi_user_kill(killer_index: i16) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::MultiMessage.to_byte());
-    pkt.write_byte(MultiMessageID::UserKill.to_byte());
-    pkt.write_integer(killer_index);
-    pkt.into_bytes()
-}
-
-/// ID 104, sub 21: Go home.
-pub fn write_multi_go_home(distance: u8, time: i16, home_city: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::MultiMessage.to_byte());
-    pkt.write_byte(MultiMessageID::GoHome.to_byte());
-    pkt.write_byte(distance);
-    pkt.write_integer(time);
-    pkt.write_ascii_string(home_city);
-    pkt.into_bytes()
-}
-
 // ── GM Panel ───────────────────────────────────────────────
-
-/// ID 91: Show SOS form.
-pub fn write_show_sos_form(sos_list: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowSOSForm.to_byte());
-    pkt.write_ascii_string(sos_list);
-    pkt.into_bytes()
-}
-
-/// ID 92: Show MOTD edition form.
-pub fn write_show_motd_edition_form(motd: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowMOTDEditionForm.to_byte());
-    pkt.write_ascii_string(motd);
-    pkt.into_bytes()
-}
-
-/// ID 93: Show GM panel form.
-pub fn write_show_gm_panel_form() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowGMPanelForm.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 94: User name list.
-pub fn write_user_name_list(names: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::UserNameList.to_byte());
-    pkt.write_ascii_string(names);
-    pkt.into_bytes()
-}
-
-/// ID 77: Character info.
-pub fn write_character_info(
-    name: &str, race: u8, class: u8, gender: u8, level: u8,
-    gold: i32, bank_gold: i32, reputation: i32,
-    description: &str, guild_name: &str,
-) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::CharacterInfo.to_byte());
-    pkt.write_ascii_string(name);
-    pkt.write_byte(race);
-    pkt.write_byte(class);
-    pkt.write_byte(gender);
-    pkt.write_byte(level);
-    pkt.write_long(gold);
-    pkt.write_long(bank_gold);
-    pkt.write_long(reputation);
-    pkt.write_ascii_string(description);
-    pkt.write_ascii_string(guild_name);
-    pkt.into_bytes()
-}
 
 // ── Safe Toggle ───────────────────────────────────────────
 
@@ -182,20 +100,6 @@ pub fn write_trans_ok(slot: u8, trade_type: u8) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 175: Commerce window close confirmation.
-pub fn write_commerce_close_ok() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::CommerceCloseOK.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 168: Bank window close confirmation.
-pub fn write_bank_close_ok() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::BankCloseOK.to_byte());
-    pkt.into_bytes()
-}
-
 /// ID 181: Trade offer received (gold amount from partner).
 pub fn write_trade_offer_recv(gold: i32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -211,13 +115,6 @@ pub fn write_trade_items(obj_index: i16, amount: i16, name: &str) -> Vec<u8> {
     pkt.write_integer(obj_index);
     pkt.write_integer(amount);
     pkt.write_ascii_string(name);
-    pkt.into_bytes()
-}
-
-/// ID 185: Trade cancel confirmation.
-pub fn write_trade_cancel_ok() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::TradeCancelOK.to_byte());
     pkt.into_bytes()
 }
 
@@ -317,14 +214,6 @@ pub fn write_privilege_level(level: u8) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 96: Map music.
-pub fn write_map_music(music_id: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::MapMusic.to_byte());
-    pkt.write_byte(music_id);
-    pkt.into_bytes()
-}
-
 /// ID 97: Map name display.
 pub fn write_map_name(name: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -358,28 +247,6 @@ pub fn write_pong_response() -> Vec<u8> {
 pub fn write_dead() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::Dead.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 81: Navigate toggle.
-pub fn write_navigate() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::NavigateToggle.to_byte());
-    pkt.into_bytes()
-}
-
-// ── Blacksmith / Carpenter lists ───────────────────────────
-
-/// ID 51/52/53: Buildable items list (weapons/armors/carpentry).
-/// Format: count, then per item: name(string), grhIndex(int16), ...
-pub fn write_craft_list(packet_id: ServerPacketID, items: &[(String, i16)]) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(packet_id.to_byte());
-    pkt.write_integer(items.len() as i16);
-    for (name, grh) in items {
-        pkt.write_ascii_string(name);
-        pkt.write_integer(*grh);
-    }
     pkt.into_bytes()
 }
 
@@ -487,12 +354,4 @@ pub fn write_levitate(ci: i16, flag: bool) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 144: Class options (99).
-pub fn write_class_options(opt1: u8, opt2: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ClassOptions.to_byte());
-    pkt.write_byte(opt1);
-    pkt.write_byte(opt2);
-    pkt.into_bytes()
-}
 

@@ -487,11 +487,12 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
     match target_conn {
         Some(tc) => {
             if let Some(user) = state.users.get_mut(&tc) {
-                user.min_hp = user.max_hp;
-                user.min_mana = user.max_mana;
-                user.min_sta = user.max_sta;
-                user.min_agua = user.max_agua;
-                user.min_ham = user.max_ham;
+                let (mhp, mmana, msta, magua, mham) = (user.max_hp, user.max_mana, user.max_sta, user.max_agua, user.max_ham);
+                user.min_hp = mhp;
+                user.min_mana = mmana;
+                user.min_sta = msta;
+                user.min_agua = magua;
+                user.min_ham = mham;
             }
             // Send stat updates
             let u = state.users.get(&tc).unwrap();

@@ -236,11 +236,14 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
             for i in 0..u.inventory.len() {
                 if u.inventory[i].obj_index == obj_index && amount > 0 {
                     let take = amount.min(u.inventory[i].amount);
-                    u.inventory[i].amount -= take;
                     amount -= take;
-                    if u.inventory[i].amount <= 0 {
+                    let new_amt = u.inventory[i].amount - take;
+                    if new_amt <= 0 {
                         u.inventory[i].obj_index = 0;
-                        u.inventory[i].amount = 0;
+        u.inventory[i].amount = 0;
+        u.inventory[i].equipped = false;
+                    } else {
+                        u.inventory[i].amount = new_amt;
                     }
                     slots.push(i);
                 }

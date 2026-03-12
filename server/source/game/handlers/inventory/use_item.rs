@@ -4,7 +4,7 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::class_race::{PlayerClass, PlayerRace};
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, privilege_level};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field};
 use crate::protocol::binary_packets;
@@ -14,7 +14,7 @@ use crate::game::constants::*;
 use crate::game::handlers::{
     send_inventory_slot, send_full_inventory, build_anm_packet,
     warp_user, revive_user, naked_body, user_die,
-    iniciar_comercio_npc, iniciar_banco, iniciar_boveda_clan,
+    iniciar_comercio_npc, iniciar_banco,
 };
 use crate::game::handlers::skills::skill_id;
 use super::equip::unequip_slot;
@@ -137,9 +137,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     state.send_console(conn_id, "Sientes un gran mareo y pierdes el conocimiento.", font_index::FIGHT);
                     // Consume item first
                     if let Some(user) = state.users.get_mut(&conn_id) {
-                        user.inventory[idx].amount -= 1;
-                        if user.inventory[idx].amount <= 0 {
-                            user.inventory[idx] = InventorySlot::default();
+                        let new_amt = user.inventory[idx].amount - 1;
+                        if new_amt <= 0 {
+                            user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                        } else {
+                            user.inventory[idx].amount = new_amt;
                         }
                     }
                     send_inventory_slot(state, conn_id, idx).await;
@@ -163,9 +167,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
 
             // Consume one
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
+                let new_amt = user.inventory[idx].amount - 1;
+                if new_amt <= 0 {
+                    user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                } else {
+                    user.inventory[idx].amount = new_amt;
                 }
             }
 
@@ -179,10 +187,15 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
         ObjType::Drink => {
             // Drinks restore thirst (min_agua), not stamina
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.min_agua = (user.min_agua + obj_data.min_agua).min(user.max_agua);
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
+                let new_agua = (user.min_agua + obj_data.min_agua).min(user.max_agua);
+                user.min_agua = new_agua;
+                let new_amt = user.inventory[idx].amount - 1;
+                if new_amt <= 0 {
+                    user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                } else {
+                    user.inventory[idx].amount = new_amt;
                 }
             }
             // VB6: SND_BEBER (46)
@@ -230,10 +243,12 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if is_mounted_for_boat && !is_navigating {
                 // Dismount mount — restore body, clear mount state
                 if let Some(u) = state.users.get_mut(&conn_id) {
+                    let saved_body = u.montado_body;
+                    let saved_head = u.orig_head;
                     u.montado = false;
                     u.levitando = false;
-                    u.body = u.montado_body;
-                    u.head = u.orig_head;
+                    u.body = saved_body;
+                    u.head = saved_head;
                 }
                 let (weap_a, shield_a, casco_a) = get_equipped_anims(state, conn_id);
                 if let Some(u) = state.users.get_mut(&conn_id) {
@@ -412,9 +427,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if let Some(slot_idx) = slot {
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.spells[slot_idx] = spell_id;
-                    u.inventory[idx].amount -= 1;
-                    if u.inventory[idx].amount <= 0 {
-                        u.inventory[idx] = InventorySlot::default();
+                    let new_amt = u.inventory[idx].amount - 1;
+                    if new_amt <= 0 {
+                        u.inventory[idx].obj_index = 0;
+        u.inventory[idx].amount = 0;
+        u.inventory[idx].equipped = false;
+                    } else {
+                        u.inventory[idx].amount = new_amt;
                     }
                 }
                 send_inventory_slot(state, conn_id, idx).await;
@@ -437,7 +456,8 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
         ObjType::FullBottle => {
             // Drink from bottle → restore thirst, swap to empty bottle variant
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.min_agua = (user.min_agua + obj_data.min_agua).min(user.max_agua);
+                let new_agua = (user.min_agua + obj_data.min_agua).min(user.max_agua);
+                user.min_agua = new_agua;
                 // Swap to empty variant (IndexAbierta stores the empty bottle obj index)
                 let empty_index = obj_data.index_abierta;
                 if empty_index > 0 {
@@ -445,9 +465,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     // Amount stays the same (1 full bottle → 1 empty bottle)
                 } else {
                     // No empty variant, just consume
-                    user.inventory[idx].amount -= 1;
-                    if user.inventory[idx].amount <= 0 {
-                        user.inventory[idx] = InventorySlot::default();
+                    let new_amt = user.inventory[idx].amount - 1;
+                    if new_amt <= 0 {
+                        user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                    } else {
+                        user.inventory[idx].amount = new_amt;
                     }
                 }
             }
@@ -458,7 +482,9 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // Gold pile: add to gold, remove from inventory
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.gold += amount as i64;
-                user.inventory[idx] = InventorySlot::default();
+                user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
             }
             send_inventory_slot(state, conn_id, idx).await;
             send_stats_gold(state, conn_id).await;
@@ -471,9 +497,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             }
             // Consume the item first
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
+                let new_amt = user.inventory[idx].amount - 1;
+                if new_amt <= 0 {
+                    user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                } else {
+                    user.inventory[idx].amount = new_amt;
                 }
             }
             send_inventory_slot(state, conn_id, idx).await;
@@ -555,10 +585,12 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 }
 
                 if let Some(u) = state.users.get_mut(&conn_id) {
+                    let saved_body = u.montado_body;
+                    let saved_head = u.orig_head;
                     u.montado = false;
                     u.levitando = false;
-                    u.body = u.montado_body;
-                    u.head = u.orig_head; // Restore head (flying mounts hide it)
+                    u.body = saved_body;
+                    u.head = saved_head; // Restore head (flying mounts hide it)
                 }
 
                 // Restore equipped weapon/shield/helmet appearance + auras
@@ -667,9 +699,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.criminal = false;
                 user.fuerzas_caos = false;
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
+                let new_amt = user.inventory[idx].amount - 1;
+                if new_amt <= 0 {
+                    user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                } else {
+                    user.inventory[idx].amount = new_amt;
                 }
             }
             state.send_msg_id(conn_id, 355, ""); // Faction changed
@@ -698,9 +734,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             if let Some(user) = state.users.get_mut(&conn_id) {
                 user.criminal = true;
                 user.armada_real = false;
-                user.inventory[idx].amount -= 1;
-                if user.inventory[idx].amount <= 0 {
-                    user.inventory[idx] = InventorySlot::default();
+                let new_amt = user.inventory[idx].amount - 1;
+                if new_amt <= 0 {
+                    user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
+                } else {
+                    user.inventory[idx].amount = new_amt;
                 }
             }
             state.send_msg_id(conn_id, 355, "");
@@ -754,7 +794,8 @@ pub(crate) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 if !user.tomo_pocion {
                     user.attributes_backup = user.attributes;
                 }
-                user.attributes[1] = (user.attributes[1] + amount).min(40).min(2 * user.attributes_backup[1]);
+                let new_agi = (user.attributes[1] + amount).min(40).min(2 * user.attributes_backup[1]);
+                user.attributes[1] = new_agi;
                 user.tomo_pocion = true;
                 user.duracion_efecto = obj.duracion_efecto / 40; // ms → ticks (40ms each)
             }
@@ -763,14 +804,16 @@ pub(crate) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 if !user.tomo_pocion {
                     user.attributes_backup = user.attributes;
                 }
-                user.attributes[0] = (user.attributes[0] + amount).min(40).min(2 * user.attributes_backup[0]);
+                let new_str = (user.attributes[0] + amount).min(40).min(2 * user.attributes_backup[0]);
+                user.attributes[0] = new_str;
                 user.tomo_pocion = true;
                 user.duracion_efecto = obj.duracion_efecto / 40;
             }
             3 => {
                 // Red potion — HP restoration
                 if amount > 0 {
-                    user.min_hp = (user.min_hp + amount).min(user.max_hp);
+                    let new_hp = (user.min_hp + amount).min(user.max_hp);
+                    user.min_hp = new_hp;
                 }
             }
             4 => {
@@ -781,7 +824,8 @@ pub(crate) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                     + (level / 2.0_f64).floor()
                     + (40.0_f64 / level).floor();
                 let mana_restore = (mana_restore as i32).max(1);
-                user.min_mana = (user.min_mana + mana_restore).min(user.max_mana);
+                let new_mana = (user.min_mana + mana_restore).min(user.max_mana);
+                user.min_mana = new_mana;
             }
             5 => {
                 // Purple potion — Cure poison
@@ -794,19 +838,22 @@ pub(crate) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 // Generic consumable (ObjType::UseOnce food items, etc.)
                 // HP restoration
                 if amount > 0 {
-                    user.min_hp = (user.min_hp + amount).min(user.max_hp);
+                    let new_hp = (user.min_hp + amount).min(user.max_hp);
+                    user.min_hp = new_hp;
                 }
             }
         }
 
         // Food/hunger restoration (applies to all subtypes)
         if obj.min_ham > 0 {
-            user.min_ham = (user.min_ham + obj.min_ham).min(user.max_ham);
+            let new_ham = (user.min_ham + obj.min_ham).min(user.max_ham);
+            user.min_ham = new_ham;
         }
 
         // Thirst restoration (applies to all subtypes)
         if obj.min_agua > 0 {
-            user.min_agua = (user.min_agua + obj.min_agua).min(user.max_agua);
+            let new_agua = (user.min_agua + obj.min_agua).min(user.max_agua);
+            user.min_agua = new_agua;
         }
 
         // Cure poison flag (for UseOnce items that have CuraVeneno=1 but no TipoPocion)

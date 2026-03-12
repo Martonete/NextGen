@@ -30,7 +30,7 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
         }
     }
     if let Some(u) = state.users.get_mut(&conn_id) {
-        u.min_sta -= 15;
+        u.min_sta = u.min_sta - 15;
     }
     send_stats_sta(state, conn_id).await;
 
@@ -82,9 +82,13 @@ pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i
 
                     // Take from victim
                     if let Some(v) = state.users.get_mut(&target_conn) {
-                        v.inventory[idx].amount -= steal_amount;
-                        if v.inventory[idx].amount <= 0 {
-                            v.inventory[idx] = InventorySlot::default();
+                        let new_amt = v.inventory[idx].amount - steal_amount;
+                        if new_amt <= 0 {
+                            v.inventory[idx].obj_index = 0;
+        v.inventory[idx].amount = 0;
+        v.inventory[idx].equipped = false;
+                        } else {
+                            v.inventory[idx].amount = new_amt;
                         }
                     }
                     send_inventory_slot(state, target_conn, idx).await;

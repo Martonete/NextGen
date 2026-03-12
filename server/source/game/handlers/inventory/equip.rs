@@ -414,7 +414,8 @@ pub(crate) fn unequip_slot(state: &mut GameState, conn_id: ConnectionId, idx: us
             }
             ObjType::Armor => {
                 user.equip.armor = 0;
-                user.body = naked_body(user.race, user.gender);
+                let nb = naked_body(user.race, user.gender);
+                user.body = nb;
                 if item_aura > 0 && user.aura_a == item_aura {
                     user.aura_a = 0;
                 }

@@ -394,9 +394,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
         }
         "ATRI" => {
             if let Some(user) = state.users.get_mut(&target) {
-                for i in 0..5 {
-                    user.attributes[i] = value as i32;
-                }
+                user.attributes = [value as i32; 5];
             }
             state.send_msg_id(conn_id, 571, &value.to_string());
         }

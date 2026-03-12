@@ -57,14 +57,6 @@ impl BanList {
         self.banned_ips.remove(ip)
     }
 
-    /// Save the full IP ban list to disk (rewrites file).
-    pub fn save_ips(&self, base: &Path) {
-        let path = base.join("dat").join("BanIps.dat");
-        let content: String = self.banned_ips.iter()
-            .map(|ip| format!("{}\n", ip))
-            .collect();
-        let _ = std::fs::write(path, content);
-    }
 }
 
 /// Load non-empty, trimmed lines from a file into a HashSet.

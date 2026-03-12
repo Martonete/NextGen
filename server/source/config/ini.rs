@@ -127,11 +127,6 @@ impl IniFile {
             .unwrap_or_default()
     }
 
-    /// Check if a section exists.
-    pub fn has_section(&self, section: &str) -> bool {
-        self.sections.contains_key(&section.to_lowercase())
-    }
-
     /// Get all section names.
     pub fn section_names(&self) -> Vec<String> {
         self.sections.keys().cloned().collect()

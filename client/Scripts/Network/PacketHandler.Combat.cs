@@ -114,12 +114,8 @@ public partial class PacketHandler
     {
         int gold = bq.ReadLong();
         int exp = bq.ReadLong();
-        int oldGold = _state.Gold;
         _state.Gold = gold;
         _state.Exp = exp;
-        // Play gold sound when gold increases (pickup, receive)
-        if (gold > oldGold)
-            OnPlaySound?.Invoke(SoundManager.SND_GOLD);
     }
 
 

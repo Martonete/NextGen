@@ -59,7 +59,7 @@ pub use quests_party::party_share_exp;
 pub use ticks::{
     tick_npc_ai, tick_npc_respawn, tick_player_passive,
     tick_intervals, tick_clean_world, tick_security,
-    auto_save_all_users,
+    auto_save_all_users, build_char_save_data,
 };
 pub(crate) use ticks::remove_pet_from_owner;
 // Re-export event functions called from main.rs and other modules
@@ -580,59 +580,6 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let text = format!("CLANDETAILS{}", name);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::GuildBankPermsQuery => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("VLKG{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::GuildBankPermsSet => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("BOVC{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::GuildBankOpen => {
-            handle_packet(state, conn_id, "INIBOV").await;
-        }
-        ClientPacketID::GuildBankSave => {
-            handle_packet(state, conn_id, "CCBG").await;
-        }
-        ClientPacketID::GuildBankDeposit => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CCDO{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::GuildBankWithdraw => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CCRO{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::ClanBankWithdrawItem => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("RETB{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::ClanBankDepositItem => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("DEPB{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::CloseGuildBank => {
-            handle_packet(state, conn_id, "FINCBN").await;
-        }
-        ClientPacketID::GuildDonatePts => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ADDPTS{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::ClanValidName => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("NANVAME{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-
-        ClientPacketID::QuestList => { }
-        ClientPacketID::QuestInfo => { let _ = bq.read_ascii_string(); }
-        ClientPacketID::QuestAccept => { let _ = bq.read_ascii_string(); }
 
         // Forum
         ClientPacketID::ForumPost => {
@@ -642,41 +589,6 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             inventory::handle_forum_post(state, conn_id, msg_type, title, body).await;
         }
 
-        // Mail
-        ClientPacketID::MailSend => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CZM{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::MailOpen => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CZC{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::MailExtract => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CZR{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::MailDelete => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CZB{}", data_str);
-            handle_packet(state, conn_id, &text).await;
-        }
-
-        // Friends
-        ClientPacketID::FriendAdd => {
-            let name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ADDCON{}", name);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::FriendRemove => {
-            let name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("BORRAC{}", name);
-            handle_packet(state, conn_id, &text).await;
-        }
-        ClientPacketID::InitChat => { }
-        ClientPacketID::ChatMsg => { }
 
         // Player info
         ClientPacketID::PlayerInfo => {
@@ -697,47 +609,17 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let text = format!("RANKIN{}", data_str);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::SendPoints => {
-            handle_packet(state, conn_id, "ACTPT").await;
-        }
-        ClientPacketID::DuelArenaInfo => { }
-        ClientPacketID::ToInfo => { }
 
         // Misc — all use the generic string bridge
         ClientPacketID::HouseQuery => { bridge_string(bq, state, conn_id, "FWO").await; }
         ClientPacketID::HouseBuy => { bridge_string(bq, state, conn_id, "CUC").await; }
         ClientPacketID::PetRename => { bridge_string(bq, state, conn_id, "CNM").await; }
-        ClientPacketID::GemExchange => { }
-        ClientPacketID::MedalExchange => { }
-        ClientPacketID::DivineOffer => { }
-        ClientPacketID::TsShop => { }
-        ClientPacketID::UpgradeQuery => {
-            // VB6: SPH — query upgrade info (not yet implemented)
-            let _slot = bq.read_integer().unwrap_or(0);
-        }
-        ClientPacketID::UpgradeDo => {
-            // VB6: SPÉ — perform item upgrade
-            let slot = bq.read_integer().unwrap_or(0);
-            skills::do_upgrade(state, conn_id, slot as usize).await;
-        }
-        ClientPacketID::ArenaSpectate => { }
         ClientPacketID::DragDrop => { bridge_string(bq, state, conn_id, "DYDTRA").await; }
         ClientPacketID::Vote => { bridge_string(bq, state, conn_id, "NVOT").await; }
         ClientPacketID::Report => { bridge_string(bq, state, conn_id, "NEWD").await; }
         ClientPacketID::SosView => { handle_packet(state, conn_id, "CONSUL").await; }
         ClientPacketID::SosSend => { bridge_string(bq, state, conn_id, "#").await; }
         ClientPacketID::SosRespond => { bridge_string(bq, state, conn_id, "X").await; }
-        ClientPacketID::DonationMenu => { handle_packet(state, conn_id, "DCANJE").await; }
-        ClientPacketID::DonationPreview => { bridge_string(bq, state, conn_id, "DPX").await; }
-        ClientPacketID::DonationRedeem => { bridge_string(bq, state, conn_id, "DRX").await; }
-        ClientPacketID::TournamentMenu => { handle_packet(state, conn_id, "CCANJE").await; }
-        ClientPacketID::PrizeInfo => { bridge_string(bq, state, conn_id, "IPX").await; }
-        ClientPacketID::PrizeBuy => { bridge_string(bq, state, conn_id, "SPX").await; }
-        ClientPacketID::FpzReport => { bridge_string(bq, state, conn_id, "ENVFPZ").await; }
-        ClientPacketID::ClanInvalidName => { bridge_string(bq, state, conn_id, "NANVAMX").await; }
-        ClientPacketID::PCGF => { bridge_string(bq, state, conn_id, "PCGF").await; }
-        ClientPacketID::PCWC => { bridge_string(bq, state, conn_id, "PCWC").await; }
-        ClientPacketID::PCCC => { bridge_string(bq, state, conn_id, "PCCC").await; }
     }
 
     PacketResult::Ok
@@ -821,18 +703,6 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_guild_apply(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::GUILD_DETAILS) {
         handle_guild_details(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_OPEN) {
-        iniciar_boveda_clan(state, conn_id).await;
-    } else if data.starts_with(client_opcodes::CLAN_BANK_DEPOSIT_ITEM) {
-        handle_guild_bank_deposit_item(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CLAN_BANK_WITHDRAW_ITEM) {
-        handle_guild_bank_withdraw_item(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_DEPOSIT) {
-        handle_guild_bank_deposit_gold(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::GUILD_BANK_WITHDRAW) {
-        handle_guild_bank_withdraw_gold(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CLOSE_GUILD_BANK) {
-        handle_guild_bank_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_SMITH) {
         handle_construct_smith(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_CARP) {
@@ -849,24 +719,12 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
         handle_cuc(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::PET_RENAME) {
         handle_cnm(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CLAN_VALID_NAME) {
-        handle_nanvame(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::CLAN_INVALID_NAME) {
-        handle_nanvamx(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::PCGF) {
-        handle_pcgf(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::PCWC) {
-        handle_pcwc(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::PCCC) {
-        handle_pccc(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::CAST_BY_NAME) {
         handle_downsi(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::MOVE_SPELL) {
         handle_desphe(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::PLAYER_INFO) {
         handle_daminf(state, conn_id, data).await;
-    } else if data.starts_with(client_opcodes::FPZ_REPORT) {
-        handle_envfpz(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::MINI_STATS) {
         handle_fest(state, conn_id).await;
     } else if data.starts_with(client_opcodes::HEAD_CHANGE) {

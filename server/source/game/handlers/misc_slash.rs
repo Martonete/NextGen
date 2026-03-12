@@ -1,13 +1,9 @@
 //! Miscellaneous slash command handlers: mount, dismount, pet, messaging,
 //! citizenship, travel, training, centinela, navigation, voting, marriage.
 
-use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::game::world;
+use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
-use crate::data::objects::ObjType;
-use crate::db::guilds;
 use super::common::*;
 use super::{
     warp_user, send_full_inventory,
@@ -52,7 +48,8 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.montado = true;
-        user.montado_body = user.body;
+        let cur_body = user.body;
+        user.montado_body = cur_body;
         user.body = mount_body;
         user.weapon_anim = super::common::NINGUN_ARMA;
         user.shield_anim = super::common::NINGUN_ESCUDO;
@@ -93,8 +90,10 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.montado = false;
         user.levitando = false;
-        user.body = user.montado_body;
-        user.head = user.orig_head; // Restore head (flying mounts hide it)
+        let saved_body = user.montado_body;
+        let orig_head = user.orig_head;
+        user.body = saved_body;
+        user.head = orig_head; // Restore head (flying mounts hide it)
     }
 
     // Restore equipped weapon/shield/helmet appearance
@@ -560,60 +559,6 @@ pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, dat
 }
 
 
-/// NANVAME — Clan name validated (notify admins).
-pub(super) async fn handle_nanvame(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
-    let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_msg_id_to(SendTarget::ToAdmins, 498, &format!("{}", name));
-}
-
-/// NANVAMX — Clan name invalid (notify admins).
-pub(super) async fn handle_nanvamx(state: &mut GameState, conn_id: ConnectionId, _data: &str) {
-    let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_msg_id_to(SendTarget::ToAdmins, 499, &format!("{}", name));
-}
-
-/// PCGF — Forward party/clan GUI data to target user.
-pub(super) async fn handle_pcgf(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let proceso = read_field(1, payload, ',');
-    let peso = read_field(2, payload, ',');
-    let target_idx: ConnectionId = read_field(3, payload, ',').parse().unwrap_or(0);
-
-    let sender_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    if target_idx > 0 && state.users.contains_key(&target_idx) {
-        let data = format!("{},{},{}", proceso, peso, sender_name);
-        let pkt = binary_packets::write_cosmetic_pcgn(&data);
-        state.send_bytes(target_idx, &pkt);
-    }
-}
-
-/// PCWC — Forward party/clan window command to target user.
-pub(super) async fn handle_pcwc(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let proceso = read_field(1, payload, ',');
-    let target_idx: ConnectionId = read_field(2, payload, ',').parse().unwrap_or(0);
-
-    let sender_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    if target_idx > 0 && state.users.contains_key(&target_idx) {
-        let data = format!("{},{}", proceso, sender_name);
-        let pkt = binary_packets::write_cosmetic_pcss(&data);
-        state.send_bytes(target_idx, &pkt);
-    }
-}
-
-/// PCCC — Forward party/clan caption to target user.
-pub(super) async fn handle_pccc(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let caption = read_field(1, payload, ',');
-    let target_idx: ConnectionId = read_field(2, payload, ',').parse().unwrap_or(0);
-
-    let sender_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    if target_idx > 0 && state.users.contains_key(&target_idx) {
-        let data = format!("{},{}", caption, sender_name);
-        let pkt = binary_packets::write_cosmetic_pccc(&data);
-        state.send_bytes(target_idx, &pkt);
-    }
-}
 
 /// /VOTO — Vote for guild leader candidate.
 pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, candidate: &str) {

@@ -149,13 +149,6 @@ pub fn write_user_commerce_end() -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 11: User offer confirm.
-pub fn write_user_offer_confirm() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::UserOfferConfirm.to_byte());
-    pkt.into_bytes()
-}
-
 /// ID 12: Commerce chat message.
 pub fn write_commerce_chat(chat: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -175,28 +168,6 @@ pub fn write_trade_ok() -> Vec<u8> {
 pub fn write_bank_ok() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::BankOK.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 86: Change user trade slot.
-pub fn write_change_user_trade_slot(
-    offer_slot: u8, obj_index: i16, amount: i32, grh_index: i16,
-    obj_type: u8, max_hit: i16, min_hit: i16, max_def: i16, min_def: i16,
-    value: i32, name: &str,
-) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ChangeUserTradeSlot.to_byte());
-    pkt.write_byte(offer_slot);
-    pkt.write_integer(obj_index);
-    pkt.write_long(amount);
-    pkt.write_integer(grh_index);
-    pkt.write_byte(obj_type);
-    pkt.write_integer(max_hit);
-    pkt.write_integer(min_hit);
-    pkt.write_integer(max_def);
-    pkt.write_integer(min_def);
-    pkt.write_long(value);
-    pkt.write_ascii_string(name);
     pkt.into_bytes()
 }
 
@@ -221,13 +192,6 @@ pub fn write_work_request_target(skill_type: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::WorkRequestTarget.to_byte());
     pkt.write_byte(skill_type);
-    pkt.into_bytes()
-}
-
-/// ID 105: Stop working.
-pub fn write_stop_working() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::StopWorking.to_byte());
     pkt.into_bytes()
 }
 
@@ -276,38 +240,10 @@ pub fn write_rest_ok() -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 56: Blind.
-pub fn write_blind() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::Blind.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 57: Dumb.
-pub fn write_dumb() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::Dumb.to_byte());
-    pkt.into_bytes()
-}
-
 /// ID 68: Meditate toggle.
 pub fn write_meditate_toggle() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::MeditateToggle.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 69: Blind no more.
-pub fn write_blind_no_more() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::BlindNoMore.to_byte());
-    pkt.into_bytes()
-}
-
-/// ID 70: Dumb no more.
-pub fn write_dumb_no_more() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::DumbNoMore.to_byte());
     pkt.into_bytes()
 }
 
@@ -316,14 +252,6 @@ pub fn write_paralize_ok(duration_secs: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ParalizeOK.to_byte());
     pkt.write_integer(duration_secs); // 0 = toggle off, >0 = paralysis countdown in seconds
-    pkt.into_bytes()
-}
-
-/// ID 87: Send night.
-pub fn write_send_night(is_night: bool) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::SendNight.to_byte());
-    pkt.write_boolean(is_night);
     pkt.into_bytes()
 }
 
@@ -344,22 +272,6 @@ pub fn write_update_tag_and_status(char_index: i16, nick_color: u8, tag: &str) -
     pkt.into_bytes()
 }
 
-/// ID 103: Add slots (inventory expansion).
-pub fn write_add_slots(max_slots: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::AddSlots.to_byte());
-    pkt.write_byte(max_slots);
-    pkt.into_bytes()
-}
-
-/// ID 106: Cancel offer item.
-pub fn write_cancel_offer_item(slot: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::CancelOfferItem.to_byte());
-    pkt.write_byte(slot);
-    pkt.into_bytes()
-}
-
 // ── Guild ──────────────────────────────────────────────────
 
 /// ID 40: Guild list.
@@ -370,16 +282,6 @@ pub fn write_guild_list(guild_names: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 73: Guild news.
-pub fn write_guild_news(news: &str, motd: &str, codex: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::GuildNews.to_byte());
-    pkt.write_ascii_string(news);
-    pkt.write_ascii_string(motd);
-    pkt.write_ascii_string(codex);
-    pkt.into_bytes()
-}
-
 /// ID 81: Show guild fundation form.
 pub fn write_show_guild_fundation_form() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -387,23 +289,7 @@ pub fn write_show_guild_fundation_form() -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 98: Show guild align form.
-pub fn write_show_guild_align() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowGuildAlign.to_byte());
-    pkt.into_bytes()
-}
-
 // ── Signals / Forum / NPC lists ────────────────────────────
-
-/// ID 58: Show signal.
-pub fn write_show_signal(text: &str, grh_index: i16) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowSignal.to_byte());
-    pkt.write_ascii_string(text);
-    pkt.write_integer(grh_index);
-    pkt.into_bytes()
-}
 
 /// ID 117: AddForumMsg — send a forum post to the client.
 /// VB6: WriteByte(ForumType) + WriteASCIIString(Title) + WriteASCIIString(Author) + WriteASCIIString(Message)
@@ -435,19 +321,4 @@ pub fn write_trainer_creature_list(creatures: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 90: Spawn list.
-pub fn write_spawn_list(creatures: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::SpawnList.to_byte());
-    pkt.write_ascii_string(creatures);
-    pkt.into_bytes()
-}
-
-/// ID 99: Show party form.
-pub fn write_show_party_form(party_type: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowPartyForm.to_byte());
-    pkt.write_byte(party_type);
-    pkt.into_bytes()
-}
 

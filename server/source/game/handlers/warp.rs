@@ -290,6 +290,7 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
             // Clear old slot
             if let Some(user) = state.users.get_mut(&owner_conn) {
                 user.mascotas_index[i] = 0;
+
                 user.mascotas_type[i] = 0;
                 user.nro_mascotas = (user.nro_mascotas - 1).max(0);
             }
@@ -308,8 +309,9 @@ pub(crate) async fn warp_mascotas(state: &mut GameState, owner_conn: ConnectionI
             // Update user tracking
             if let Some(user) = state.users.get_mut(&owner_conn) {
                 user.mascotas_index[slot] = new_idx;
+
                 user.mascotas_type[slot] = npc_type;
-                user.nro_mascotas += 1;
+                user.nro_mascotas = user.nro_mascotas + 1;
 
                 // Restore elemental flags
                 match npc_type {
@@ -492,8 +494,10 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     let was_mimetizado = state.users.get(&conn_id).map(|u| u.mimetizado).unwrap_or(false);
     if was_mimetizado {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.body = user.char_mimetizado_body;
-            user.head = user.char_mimetizado_head;
+            let b = user.char_mimetizado_body;
+            let h = user.char_mimetizado_head;
+            user.body = b;
+            user.head = h;
             user.weapon_anim = user.char_mimetizado_weapon;
             user.shield_anim = user.char_mimetizado_shield;
             user.casco_anim = user.char_mimetizado_helmet;

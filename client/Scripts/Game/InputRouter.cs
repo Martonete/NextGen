@@ -304,9 +304,11 @@ public class InputRouter
 
     private void HandleMouseClick(InputEventMouseButton mb, Viewport viewport)
     {
-        // Translate click position relative to the game viewport (8,144) with 544x416 size
-        float clickX = mb.Position.X - 8;
-        float clickY = mb.Position.Y - 144;
+        // Translate click position relative to the game viewport.
+        // VB6: MainViewLeft=13, MainViewTop=149 (MainViewPic position on frmMain).
+        // Scene: SubViewportContainer offset_left=13, offset_top=149.
+        float clickX = mb.Position.X - 13;
+        float clickY = mb.Position.Y - 149;
 
         // Only handle clicks within the game viewport area
         if (clickX < 0 || clickX >= 544 || clickY < 0 || clickY >= 416) return;

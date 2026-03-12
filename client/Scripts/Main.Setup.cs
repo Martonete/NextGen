@@ -503,7 +503,6 @@ public partial class Main
             _travelPanel, _questPanel, _trainerPanel, _npcDialogPanel,
             _changePasswordPanel, _charInfoPopup, _deathPanel, _optionsPanel,
             _tooltipPanel, _blindOverlay);
-        _panelSync.PlaySound = (id) => _soundManager?.PlaySound(id);
         _panelSync.UpdateDropDialogVisibility = () => _dialogManager?.UpdateDropDialogVisibility();
         _panelSync.BindNewPanels(_gmPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
             _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel);

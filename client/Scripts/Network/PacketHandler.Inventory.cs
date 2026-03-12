@@ -30,9 +30,6 @@ public partial class PacketHandler
 
         if (slot < 1 || slot > 25) return;
 
-        // Track equip state change for sound feedback
-        bool wasEquipped = _state.Inventory[slot - 1].Equipped;
-
         if (objIndex <= 0)
         {
             _state.Inventory[slot - 1] = new InventorySlot();
@@ -53,12 +50,6 @@ public partial class PacketHandler
                 MinDef = minDef,
                 Value = (int)value,
             };
-
-            // Play equip/unequip sound on state change
-            if (equipped && !wasEquipped)
-                OnPlaySound?.Invoke(SoundManager.SND_EQUIP);
-            else if (!equipped && wasEquipped)
-                OnPlaySound?.Invoke(SoundManager.SND_UNEQUIP);
         }
 
         // VB6: Update per-equipment bottom bar labels

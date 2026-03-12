@@ -4,7 +4,7 @@
 use tracing::{info, error};
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget};
+use crate::game::types::{GameState, SendTarget, UserState};
 use crate::db::charfile;
 use crate::protocol::{binary_packets, font_index};
 use crate::game::handlers::common::*;
@@ -490,84 +490,88 @@ pub async fn auto_save_all_users(state: &GameState) {
     let mut saved = 0;
     for (_conn_id, user) in state.users.iter() {
         if !user.logged || user.char_name.is_empty() { continue; }
-        // Convert inventory to save format
-        let inv: Vec<(i32, i32, bool)> = user.inventory.iter()
-            .map(|s| (s.obj_index, s.amount, s.equipped))
-            .collect();
-        let bank: Vec<(i32, i32)> = user.bank.iter()
-            .map(|s| (s.obj_index, s.amount))
-            .collect();
-        let data = charfile::CharSaveData {
-            // VB6: When navigating, save the REAL head (old_head), not 0.
-            // The boat body is transient — on login we reconstruct it from BarcoSlot.
-            head: if user.navigating { user.old_head } else { user.head },
-            body: user.body,
-            heading: user.heading,
-            weapon: user.equip.weapon as i32,
-            shield: user.equip.shield as i32,
-            helmet: user.equip.helmet as i32,
-            gold: user.gold,
-            bank_gold: user.bank_gold,
-            exp: user.exp,
-            level: user.level,
-            map: user.pos_map,
-            x: user.pos_x,
-            y: user.pos_y,
-            min_hp: user.min_hp,
-            max_hp: user.max_hp,
-            min_mana: user.min_mana,
-            max_mana: user.max_mana,
-            min_sta: user.min_sta,
-            max_sta: user.max_sta,
-            max_hit: user.max_hit,
-            min_hit: user.min_hit,
-            max_agua: user.max_agua,
-            min_agua: user.min_agua,
-            max_ham: user.max_ham,
-            min_ham: user.min_ham,
-            dead: user.dead,
-            poisoned: user.poisoned,
-            criminal: user.criminal,
-            paralyzed: user.paralyzed,
-            hidden: user.hidden,
-            navigating: user.navigating,
-            barco_slot: user.barco_slot,
-            montado: user.montado,
-            levitando: user.levitando,
-            montado_body: user.montado_body,
-            privileges: user.saved_privileges,
-            attributes: user.attributes,
-            skills: user.skills,
-            spells: user.spells,
-            inventory: inv,
-            bank,
-            weapon_eqp_slot: user.equip.weapon,
-            armour_eqp_slot: user.equip.armor,
-            shield_eqp_slot: user.equip.shield,
-            helmet_eqp_slot: user.equip.helmet,
-            municion_eqp_slot: user.equip.municion,
-            reputation: user.reputation,
-            guild_index: user.guild_index,
-            criminales_matados: user.criminales_matados,
-            ciudadanos_matados: user.ciudadanos_matados,
-            ejercito_real: user.armada_real,
-            ejercito_caos: user.fuerzas_caos,
-            skill_pts_libres: user.skill_pts_libres,
-            recompensas_real: user.recompensas_real,
-            recompensas_caos: user.recompensas_caos,
-            reenlistadas: user.reenlistadas,
-            description: user.desc.clone(),
-            pet_count: user.nro_mascotas,
-            pet_types: (0..3).filter_map(|i| {
-                if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
-            }).collect(),
-        };
+        let data = build_char_save_data(user);
         if charfile::save_charfile(&pool, &user.char_name, &data).await.is_ok() {
             saved += 1;
         }
     }
     if saved > 0 {
         tracing::debug!("[SAVE] Auto-saved {} characters", saved);
+    }
+}
+
+/// Build CharSaveData from a UserState (used by auto-save and disconnect save).
+pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
+    let inv: Vec<(i32, i32, bool)> = user.inventory.iter()
+        .map(|s| (s.obj_index, s.amount, s.equipped))
+        .collect();
+    let bank: Vec<(i32, i32)> = user.bank.iter()
+        .map(|s| (s.obj_index, s.amount))
+        .collect();
+    charfile::CharSaveData {
+        // VB6: When navigating, save the REAL head (old_head), not 0.
+        // The boat body is transient — on login we reconstruct it from BarcoSlot.
+        head: if user.navigating { user.old_head } else { user.head },
+        body: user.body,
+        heading: user.heading,
+        weapon: user.equip.weapon as i32,
+        shield: user.equip.shield as i32,
+        helmet: user.equip.helmet as i32,
+        gold: user.gold,
+        bank_gold: user.bank_gold,
+        exp: user.exp,
+        level: user.level,
+        map: user.pos_map,
+        x: user.pos_x,
+        y: user.pos_y,
+        min_hp: user.min_hp,
+        max_hp: user.max_hp,
+        min_mana: user.min_mana,
+        max_mana: user.max_mana,
+        min_sta: user.min_sta,
+        max_sta: user.max_sta,
+        max_hit: user.max_hit,
+        min_hit: user.min_hit,
+        max_agua: user.max_agua,
+        min_agua: user.min_agua,
+        max_ham: user.max_ham,
+        min_ham: user.min_ham,
+        dead: user.dead,
+        poisoned: user.poisoned,
+        criminal: user.criminal,
+        paralyzed: user.paralyzed,
+        hidden: user.hidden,
+        navigating: user.navigating,
+        barco_slot: user.barco_slot,
+        montado: user.montado,
+        levitando: user.levitando,
+        montado_body: user.montado_body,
+        privileges: user.saved_privileges,
+        attributes: user.attributes,
+        skills: user.skills,
+        spells: user.spells,
+        inventory: inv,
+        bank,
+        weapon_eqp_slot: user.equip.weapon,
+        armour_eqp_slot: user.equip.armor,
+        shield_eqp_slot: user.equip.shield,
+        helmet_eqp_slot: user.equip.helmet,
+        municion_eqp_slot: user.equip.municion,
+        reputation: user.reputation,
+        guild_index: user.guild_index,
+        criminales_matados: user.criminales_matados,
+        ciudadanos_matados: user.ciudadanos_matados,
+        ejercito_real: user.armada_real,
+        ejercito_caos: user.fuerzas_caos,
+        skill_pts_libres: user.skill_pts_libres,
+        recompensas_real: user.recompensas_real,
+        recompensas_caos: user.recompensas_caos,
+        reenlistadas: user.reenlistadas,
+        description: user.desc.clone(),
+        pet_count: user.nro_mascotas,
+        pet_types: (0..3).filter_map(|i| {
+            if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
+        }).collect(),
     }
 }
 

@@ -66,10 +66,7 @@ public partial class PacketHandler
 
     private void HandleGold(string data)
     {
-        int oldGold = _state.Gold;
         _state.Gold = ParseInt(data);
-        if (_state.Gold > oldGold)
-            OnPlaySound?.Invoke(SoundManager.SND_GOLD);
     }
 
     private void HandleExp(string data)

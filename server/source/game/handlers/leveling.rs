@@ -47,7 +47,8 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             level_up_gains(class, race, level, constitution, intelligence, &state.game_data.balance);
 
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.level += 1;
+            let new_level = level + 1;
+            user.level = new_level;
             user.exp = 0;
 
             // HP: add gain
@@ -70,9 +71,12 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             if user.min_hit > hit_cap { user.min_hit = hit_cap; }
 
             // VB6 parity: full heal on level up (MinHP = MaxHP)
-            user.min_hp = user.max_hp;
-            user.min_mana = user.max_mana;
-            user.min_sta = user.max_sta;
+            let final_max_hp = user.max_hp;
+            let final_max_mana = user.max_mana;
+            let final_max_sta = user.max_sta;
+            user.min_hp = final_max_hp;
+            user.min_mana = final_max_mana;
+            user.min_sta = final_max_sta;
         }
 
         let new_level = level + 1;

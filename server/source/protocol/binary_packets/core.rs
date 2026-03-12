@@ -13,34 +13,11 @@ pub fn write_logged(class: u8) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 4: Disconnect client.
-pub fn write_disconnect() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::Disconnect.to_byte());
-    pkt.into_bytes()
-}
-
 /// ID 55: Error message (disconnects after showing).
 pub fn write_error_msg(msg: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ErrorMsg.to_byte());
     pkt.write_ascii_string(msg);
-    pkt.into_bytes()
-}
-
-/// ID 26: Show message box.
-pub fn write_message_box(msg: &str) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowMessageBox.to_byte());
-    pkt.write_ascii_string(msg);
-    pkt.into_bytes()
-}
-
-/// ID 27: User index in server.
-pub fn write_user_index_in_server(index: i16) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::UserIndexInServer.to_byte());
-    pkt.write_integer(index);
     pkt.into_bytes()
 }
 
@@ -139,14 +116,6 @@ pub fn write_character_move(char_index: i16, x: u8, y: u8) -> Vec<u8> {
     pkt.write_integer(char_index);
     pkt.write_byte(x);
     pkt.write_byte(y);
-    pkt.into_bytes()
-}
-
-/// ID 33: Force character move (forced direction).
-pub fn write_force_char_move(direction: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ForceCharMove.to_byte());
-    pkt.write_byte(direction);
     pkt.into_bytes()
 }
 
@@ -252,29 +221,10 @@ pub fn write_chat_talk(char_index: i16, msg: &str, color: i32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 111: Chat yell (larger area with color).
-pub fn write_chat_yell(char_index: i16, msg: &str, color: i32) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ChatYell.to_byte());
-    pkt.write_integer(char_index);
-    pkt.write_ascii_string(msg);
-    pkt.write_long(color);
-    pkt.into_bytes()
-}
-
 /// ID 112: Chat whisper (private message).
 pub fn write_chat_whisper(msg: &str, font_index: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChatWhisper.to_byte());
-    pkt.write_ascii_string(msg);
-    pkt.write_byte(font_index);
-    pkt.into_bytes()
-}
-
-/// ID 114: Clan/party chat.
-pub fn write_chat_clan(msg: &str, font_index: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ChatClan.to_byte());
     pkt.write_ascii_string(msg);
     pkt.write_byte(font_index);
     pkt.into_bytes()
@@ -388,28 +338,6 @@ pub fn write_update_user_stats(
     pkt.into_bytes()
 }
 
-/// ID 50: Attributes.
-pub fn write_atributes(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::Atributes.to_byte());
-    pkt.write_byte(str_);
-    pkt.write_byte(agi);
-    pkt.write_byte(int);
-    pkt.write_byte(con);
-    pkt.write_byte(cha);
-    pkt.into_bytes()
-}
-
-/// ID 71: Send skills (20 values).
-pub fn write_send_skills(skills: &[u8; 20]) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::SendSkills.to_byte());
-    for &s in skills {
-        pkt.write_byte(s);
-    }
-    pkt.into_bytes()
-}
-
 /// ID 60: Update hunger and thirst.
 pub fn write_update_hunger_thirst(max_agua: u8, min_agua: u8, max_ham: u8, min_ham: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -421,26 +349,6 @@ pub fn write_update_hunger_thirst(max_agua: u8, min_agua: u8, max_ham: u8, min_h
     pkt.into_bytes()
 }
 
-/// ID 61: Fame values.
-pub fn write_fame(values: &[i32; 7]) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::Fame.to_byte());
-    for &v in values {
-        pkt.write_long(v);
-    }
-    pkt.into_bytes()
-}
-
-/// ID 62: Mini stats.
-pub fn write_mini_stats(gold: i32, exp: i32, _level: u8, _class: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::MiniStats.to_byte());
-    pkt.write_long(gold);
-    pkt.write_long(exp);
-    // Additional fields vary per implementation
-    pkt.into_bytes()
-}
-
 /// ID 63: Level up notification.
 pub fn write_level_up(skill_points: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -449,12 +357,4 @@ pub fn write_level_up(skill_points: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 100: Update strength and dexterity.
-pub fn write_update_str_dex(str_: u8, agi: u8) -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::UpdateStrengthAndDexterity.to_byte());
-    pkt.write_byte(str_);
-    pkt.write_byte(agi);
-    pkt.into_bytes()
-}
 

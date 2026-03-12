@@ -54,9 +54,6 @@ public class PanelStateSync
     private bool _lastBanqueando;
     private float _blindAlpha;
 
-    /// <summary>Callback for playing sounds.</summary>
-    public Action<int>? PlaySound;
-
     /// <summary>Callback to update drop dialog visibility.</summary>
     public Action? UpdateDropDialogVisibility;
 
@@ -143,15 +140,9 @@ public class PanelStateSync
         {
             _lastComerciando = _state.Comerciando;
             if (_state.Comerciando)
-            {
                 _commercePanel?.OpenShop();
-                PlaySound?.Invoke(SoundManager.SND_PANELOPEN);
-            }
             else
-            {
                 _commercePanel?.CloseShop();
-                PlaySound?.Invoke(SoundManager.SND_PANELCLOSE);
-            }
         }
 
         // Trade panel state tracking (player-to-player)
@@ -159,22 +150,15 @@ public class PanelStateSync
         {
             _lastTrading = _state.Trading;
             if (_state.Trading)
-            {
                 _tradePanel?.OpenTrade();
-                PlaySound?.Invoke(SoundManager.SND_PANELOPEN);
-            }
             else
-            {
                 _tradePanel?.CloseTrade();
-                PlaySound?.Invoke(SoundManager.SND_PANELCLOSE);
-            }
         }
         // Consume TradeJustOpened flag (set by PacketHandler on trade init)
         if (_state.TradeJustOpened)
         {
             _state.TradeJustOpened = false;
             _tradePanel?.OpenTrade();
-            PlaySound?.Invoke(SoundManager.SND_PANELOPEN);
         }
 
         // Bank panel state tracking
@@ -185,17 +169,13 @@ public class PanelStateSync
             {
                 // Only open BankPanel if vault isn't already open
                 if (!_state.BovedaAbierta)
-                {
                     _bankPanel?.OpenBank();
-                    PlaySound?.Invoke(SoundManager.SND_PANELOPEN);
-                }
             }
             else
             {
                 _bankPanel?.CloseBank();
                 _vaultPanel?.CloseVault();
                 _state.BovedaAbierta = false;
-                PlaySound?.Invoke(SoundManager.SND_PANELCLOSE);
             }
         }
 

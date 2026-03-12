@@ -92,11 +92,7 @@ public partial class PacketHandler
                 HandleBinUpdateHp(bq);
                 break;
             case ServerPacketId.UpdateGold: // 19
-                {
-                    int oldGold19 = _state.Gold;
-                    _state.Gold = bq.ReadLong();
-                    if (_state.Gold > oldGold19) OnPlaySound?.Invoke(SoundManager.SND_GOLD);
-                }
+                _state.Gold = bq.ReadLong();
                 break;
             case ServerPacketId.UpdateExp: // 20
                 HandleBinUpdateExp(bq);
@@ -455,11 +451,7 @@ public partial class PacketHandler
                 _state.MinSta = bq.ReadInteger();
                 break;
             case ServerPacketId.StatGold: // 123
-                {
-                    int oldGold123 = _state.Gold;
-                    _state.Gold = bq.ReadLong();
-                    if (_state.Gold > oldGold123) OnPlaySound?.Invoke(SoundManager.SND_GOLD);
-                }
+                _state.Gold = bq.ReadLong();
                 break;
             case ServerPacketId.StatExp: // 124
                 _state.Exp = bq.ReadLong();

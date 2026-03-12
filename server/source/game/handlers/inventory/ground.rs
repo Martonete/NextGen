@@ -3,11 +3,11 @@
 
 use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, privilege_level};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field};
 use crate::protocol::binary_packets;
-use crate::data::objects::{ObjData, ObjType};
+use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::constants::*;
 use crate::game::handlers::{
@@ -118,12 +118,13 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.inventory[slot].obj_index == obj_idx {
             // Stack
-            user.inventory[slot].amount += amount;
+            let new_amt = user.inventory[slot].amount + amount;
+            user.inventory[slot].amount = new_amt;
         } else {
             // New slot
             user.inventory[slot].obj_index = obj_idx;
-            user.inventory[slot].amount = amount;
-            user.inventory[slot].equipped = false;
+        user.inventory[slot].amount = amount;
+        user.inventory[slot].equipped = false;
         }
     }
 
@@ -272,10 +273,12 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 
         if remaining <= 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
+                let saved_body = u.montado_body;
+                let saved_head = u.orig_head;
                 u.montado = false;
                 u.levitando = false;
-                u.body = u.montado_body;
-                u.head = u.orig_head;
+                u.body = saved_body;
+                u.head = saved_head;
             }
             let (wa, sa, ca) = get_equipped_anims(state, conn_id);
             if let Some(u) = state.users.get_mut(&conn_id) {
@@ -315,9 +318,11 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 
         if remaining <= 0 {
             if let Some(u) = state.users.get_mut(&conn_id) {
+                let saved_body = u.montado_body;
+                let saved_head = u.old_head;
                 u.navigating = false;
-                u.body = u.montado_body;
-                if u.old_head > 0 { u.head = u.old_head; }
+                u.body = saved_body;
+                if saved_head > 0 { u.head = saved_head; }
                 u.barco_slot = 0;
             }
             let (wa, sa, ca) = get_equipped_anims(state, conn_id);
@@ -371,11 +376,13 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 
     // Remove from inventory
     if let Some(user) = state.users.get_mut(&conn_id) {
-        let inv = &mut user.inventory[idx];
-        if drop_amount >= inv.amount {
-            *inv = InventorySlot::default();
+        let cur_amt = user.inventory[idx].amount;
+        if drop_amount >= cur_amt {
+            user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
         } else {
-            inv.amount -= drop_amount;
+            user.inventory[idx].amount = cur_amt - drop_amount;
         }
     }
 

@@ -89,7 +89,8 @@ pub(super) async fn handle_skse(state: &mut GameState, conn_id: ConnectionId, da
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         for i in 0..22 {
-            user.skills[i] = (user.skills[i] + increments[i]).min(100);
+            let new_val = (user.skills[i] + increments[i]).min(100);
+            user.skills[i] = new_val;
         }
         user.skill_pts_libres -= total;
     }
@@ -301,7 +302,8 @@ pub(super) async fn handle_bof(state: &mut GameState, conn_id: ConnectionId, dat
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.max_hp += hp_bonus;
-        user.min_hp = user.min_hp.min(user.max_hp);
+        let clamped = user.min_hp.min(user.max_hp);
+        user.min_hp = clamped;
     }
 
     send_stats_hp(state, conn_id).await;
@@ -484,14 +486,6 @@ pub(super) async fn handle_consul(state: &mut GameState, conn_id: ConnectionId) 
     let pkt = binary_packets::write_sos_data(&data_sos);
     state.send_bytes(conn_id, &pkt);
 }
-
-/// ENVFPZ — FPZ anti-hack report.
-pub(super) async fn handle_envfpz(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-    state.send_msg_id_to(SendTarget::ToAdmins, 218, &format!("{}@{}", name, payload));
-}
-
 
 
 /// DYDTRA — Drag & drop transfer items to another player.

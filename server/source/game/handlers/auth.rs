@@ -474,11 +474,9 @@ pub(crate) async fn connect_user(
         // Inventory
         for (i, &(obj_idx, amount, equipped)) in char_data.inventory.iter().enumerate() {
             if i < MAX_INVENTORY_SLOTS {
-                user.inventory[i] = InventorySlot {
-                    obj_index: obj_idx,
-                    amount,
-                    equipped,
-                };
+                user.inventory[i].obj_index = obj_idx;
+        user.inventory[i].amount = amount;
+        user.inventory[i].equipped = equipped;
             }
         }
         // Reconstruct ring equip slot from inventory (equipped Tool/Ring item)
@@ -493,14 +491,12 @@ pub(crate) async fn connect_user(
                 }
             }
         }
-        user.equip = EquipSlots {
-            weapon: char_data.weapon_eqp_slot,
-            armor: char_data.armour_eqp_slot,
-            shield: char_data.shield_eqp_slot,
-            helmet: char_data.helmet_eqp_slot,
-            municion: char_data.municion_eqp_slot,
-            ring: ring_slot,
-        };
+        user.equip.weapon = char_data.weapon_eqp_slot;
+        user.equip.armor = char_data.armour_eqp_slot;
+        user.equip.shield = char_data.shield_eqp_slot;
+        user.equip.helmet = char_data.helmet_eqp_slot;
+        user.equip.municion = char_data.municion_eqp_slot;
+        user.equip.ring = ring_slot;
 
         // Restore backpack (VB6: MochilaEqpSlot → CurrentInventorySlots on login)
         user.backpack_slot = 0;
@@ -522,7 +518,8 @@ pub(crate) async fn connect_user(
         // Bank
         for (i, &(obj_idx, amount)) in char_data.bank.iter().enumerate() {
             if i < user.bank.len() {
-                user.bank[i] = InventorySlot { obj_index: obj_idx, amount, equipped: false };
+                user.bank[i].obj_index = obj_idx;
+        user.bank[i].amount = amount;
             }
         }
 
@@ -616,7 +613,8 @@ pub(crate) async fn connect_user(
                 if let Some(user) = state.users.get_mut(&conn_id) {
                     user.mascotas_index[slot] = npc_idx;
                     user.mascotas_type[slot] = npc_type;
-                    user.nro_mascotas += 1;
+                    let new_nro = user.nro_mascotas + 1;
+                    user.nro_mascotas = new_nro;
                     // Restore elemental flags
                     match npc_type {
                         93 => user.ele_de_fuego = true,
@@ -629,6 +627,8 @@ pub(crate) async fn connect_user(
             }
         }
     }
+
+
 
     // Set Logged=1 in charfile
     let _ = charfile::set_logged_flag(&state.pool, char_name, true).await;

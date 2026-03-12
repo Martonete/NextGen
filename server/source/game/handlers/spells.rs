@@ -1095,8 +1095,8 @@ pub(super) async fn apply_spell_status(
 
             // Caster pays HP cost — VB6 13.3: hp * (1 - target_level * 0.015)
             if let Some(caster) = state.users.get_mut(&caster_id) {
-                caster.min_hp = ((caster.min_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
-                if caster.min_hp < 1 { caster.min_hp = 1; }
+                let new_hp = ((caster.min_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
+                caster.min_hp = new_hp.max(1);
             }
             send_stats_hp(state, caster_id).await;
         }
@@ -1247,7 +1247,7 @@ pub(super) async fn apply_spell_invocation(
                     if user.mascotas_index[slot] == 0 {
                         user.mascotas_index[slot] = npc_idx;
                         user.mascotas_type[slot] = npc_num;
-                        user.nro_mascotas += 1;
+                        user.nro_mascotas = user.nro_mascotas + 1;
                         break;
                     }
                 }

@@ -72,31 +72,8 @@ pub mod client_opcodes {
     pub const GUILD_NEWS: &str = "ACTGNEWS";   // Update guild news
     pub const GUILD_APPLY: &str = "SOLICITUD"; // Apply to join guild
     pub const GUILD_DETAILS: &str = "CLANDETAILS"; // Request guild details
-    pub const GUILD_BANK_PERMS_QUERY: &str = "VLKG"; // Query bank permissions
-    pub const GUILD_BANK_PERMS_SET: &str = "BOVC";  // Set bank permissions
-    pub const GUILD_BANK_OPEN: &str = "INIBOV";     // Open guild bank
-    pub const GUILD_BANK_SAVE: &str = "CCBG";       // Save guild bank inventory
-    pub const GUILD_BANK_DEPOSIT: &str = "CCDO";    // Deposit gold to guild bank
-    pub const GUILD_BANK_WITHDRAW: &str = "CCRO";   // Withdraw gold from guild bank
-    pub const CLAN_BANK_WITHDRAW_ITEM: &str = "RETB"; // Withdraw item from clan bank
-    pub const CLAN_BANK_DEPOSIT_ITEM: &str = "DEPB";  // Deposit item into clan bank
 
-    // Quest opcodes
-    pub const QUEST_LIST: &str = "IQUEST";    // Request quest list
-    pub const QUEST_INFO: &str = "INFD";      // Get quest details for selection
-    pub const QUEST_ACCEPT: &str = "ACQT";    // Accept quest
-
-    // Mail opcodes
-    pub const MAIL_SEND: &str = "CZM";       // Send mail
-    pub const MAIL_OPEN: &str = "CZC";       // Open/read mail slot
-    pub const MAIL_EXTRACT: &str = "CZR";    // Extract items from mail
-    pub const MAIL_DELETE: &str = "CZB";      // Delete mail
-
-    // Friend list
-    pub const FRIEND_ADD: &str = "ADDCON";    // Add friend
-    pub const FRIEND_REMOVE: &str = "BORRAC"; // Remove friend
-
-    // Missing high-priority opcodes (HandleData1/4)
+    // Core opcodes (VB6 13.3)
     pub const SWAP_ITEMS: &str = "SWAP";       // Swap inventory slots
     pub const SKILL_SET: &str = "SKSE";        // Distribute skill points
     pub const SPELL_INFO: &str = "INFS";       // Spell info
@@ -108,47 +85,21 @@ pub mod client_opcodes {
     pub const LEVEL_BONUS: &str = "BOF";       // Level bonus selection
     pub const TRAIN_CREATURE: &str = "ENTR";   // Train creature from trainer
     pub const USE_SKILL: &str = "UK";          // Use skill (skill tree / hide)
-    pub const SEND_POINTS: &str = "ACTPT";     // Request tournament/donation points
     pub const RANKINGS: &str = "RANKIN";       // View rankings
     pub const POSITION_UPDATE: &str = "ACTUALIZAR"; // Position re-sync
-    pub const DUEL_ARENA_INFO: &str = "IDUELOS";    // Duel arena info
     pub const MACRO_DETECT: &str = "TENGOMACROS";   // Macro detection
     pub const SOS_SEND: &str = "#";            // Send SOS/consultation
     pub const SOS_RESPOND: &str = "X";         // Admin responds to SOS
     pub const SOS_VIEW: &str = "CONSUL";       // Admin view SOS messages
-    pub const CLOSE_GUILD_BANK: &str = "FINCBN"; // Close guild bank
-    pub const DONATION_MENU: &str = "DCANJE";  // Donation exchange menu
-    pub const DONATION_PREVIEW: &str = "DPX";  // Donation item preview
-    pub const DONATION_REDEEM: &str = "DRX";   // Redeem donation
-    pub const TOURNAMENT_MENU: &str = "CCANJE"; // Tournament prize menu
-    pub const PRIZE_INFO: &str = "IPX";        // Prize item info
-    pub const PRIZE_BUY: &str = "SPX";         // Buy tournament prize
-    pub const FPZ_REPORT: &str = "ENVFPZ";     // FPZ anti-hack report
     pub const DRAG_DROP: &str = "DYDTRA";      // Drag & drop transfer
     pub const CAST_BY_NAME: &str = "DOWNSI";   // Cast spell by target name
-    pub const TOINFO: &str = "TOINFO";         // Tournament info
     pub const VOTE: &str = "NVOT";             // Vote in poll
     pub const REPORT: &str = "NEWD";           // New report/denuncia
-    pub const INIT_CHAT: &str = "INCHAT";      // Init chat with friend
-    pub const CHAT_MSG: &str = "KKCHAT";       // Chat message to friend
-    pub const GUILD_DONATE_PTS: &str = "ADDPTS"; // Donate points to guild
 
-    // Missing handlers
+    // House system (VB6 13.3)
     pub const HOUSE_QUERY: &str = "FWO";       // Query house owner/price
     pub const HOUSE_BUY: &str = "CUC";         // Buy house
     pub const PET_RENAME: &str = "CNM";        // Rename pet
-    pub const GEM_EXCHANGE: &str = "GEMS";     // Gem exchange (7 gems)
-    pub const MEDAL_EXCHANGE: &str = "GEPS";   // Medal exchange
-    pub const DIVINE_OFFER: &str = "OFDIOZ";   // Divine offering
-    pub const TS_SHOP: &str = "FTSPTS";        // TS points shop
-    pub const UPGRADE_QUERY: &str = "SPH";     // Upgrade item info (Mejorados)
-    pub const UPGRADE_DO: &str = "SP\u{00C9}";  // Upgrade item (SPÉ)
-    pub const ARENA_SPECTATE: &str = "ARE";    // Arena spectate
-    pub const CLAN_VALID_NAME: &str = "NANVAME";   // Clan name valid notification
-    pub const CLAN_INVALID_NAME: &str = "NANVAMX"; // Clan name invalid notification
-    pub const PCGF: &str = "PCGF";            // Party/clan GUI forwarding
-    pub const PCWC: &str = "PCWC";            // Party/clan window command
-    pub const PCCC: &str = "PCCC";            // Party/clan caption command
 }
 
 /// Font index constants — byte IDs matching client FontTypes table (TextosLoader.cs).

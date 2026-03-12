@@ -320,6 +320,7 @@ pub struct UserState {
 
     // SOS help request (/GM)
     pub gm_request_pending: bool,    // Has pending /GM request
+
 }
 
 impl UserState {

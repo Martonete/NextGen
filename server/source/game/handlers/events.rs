@@ -80,7 +80,8 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
 
     if privileges > privilege_level::USER {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.min_mana = user.max_mana;
+            let max = user.max_mana;
+            user.min_mana = max;
         }
         state.send_msg_id(conn_id, 393, "");
         send_stats_mana(state, conn_id).await;

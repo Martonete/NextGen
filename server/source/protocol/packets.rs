@@ -94,75 +94,26 @@ pub enum ClientPacketID {
     GuildNews = 106,      // ACTGNEWS
     GuildApply = 107,     // SOLICITUD
     GuildDetails = 108,   // CLANDETAILS
-    GuildBankPermsQuery = 109, // VLKG
-    GuildBankPermsSet = 110,   // BOVC
-    GuildBankOpen = 111,  // INIBOV
-    GuildBankSave = 112,  // CCBG
-    GuildBankDeposit = 113, // CCDO
-    GuildBankWithdraw = 114, // CCRO
-    ClanBankWithdrawItem = 115, // RETB
-    ClanBankDepositItem = 116,  // DEPB
-    CloseGuildBank = 117, // FINCBN
-    GuildDonatePts = 118, // ADDPTS
-    ClanValidName = 119,  // NANVAME
 
     // Forum (123)
     ForumPost = 123,      // DEMSG — post to forum
-
-    // Quest (120-122)
-    QuestList = 120,      // IQUEST
-    QuestInfo = 121,      // INFD
-    QuestAccept = 122,    // ACQT
-
-    // Mail (125-128)
-    MailSend = 125,       // CZM
-    MailOpen = 126,       // CZC
-    MailExtract = 127,    // CZR
-    MailDelete = 128,     // CZB
-
-    // Friends (130-131)
-    FriendAdd = 130,      // ADDCON
-    FriendRemove = 131,   // BORRAC
-    InitChat = 132,       // INCHAT
-    ChatMsg = 133,        // KKCHAT
 
     // Player info (140-149)
     PlayerInfo = 140,     // DAMINF
     MiniStats = 141,      // FEST
     HeadChange = 142,     // CABEZI
     Rankings = 143,       // RANKIN
-    SendPoints = 144,     // ACTPT
-    DuelArenaInfo = 145,  // IDUELOS
-    ToInfo = 146,         // TOINFO
 
     // Misc (150-169)
     HouseQuery = 150,     // FWO
     HouseBuy = 151,       // CUC
     PetRename = 152,      // CNM
-    GemExchange = 153,    // GEMS
-    MedalExchange = 154,  // GEPS
-    DivineOffer = 155,    // OFDIOZ
-    TsShop = 156,         // FTSPTS
-    UpgradeQuery = 157,   // SPH
-    UpgradeDo = 158,      // SPÉ
-    ArenaSpectate = 159,  // ARE
     DragDrop = 160,       // DYDTRA
     Vote = 161,           // NVOT
     Report = 162,         // NEWD
     SosView = 163,        // CONSUL
     SosSend = 164,        // #
     SosRespond = 165,     // X
-    DonationMenu = 166,   // DCANJE
-    DonationPreview = 167, // DPX
-    DonationRedeem = 168,  // DRX
-    TournamentMenu = 169,  // CCANJE
-    PrizeInfo = 170,      // IPX
-    PrizeBuy = 171,       // SPX
-    FpzReport = 172,      // ENVFPZ
-    ClanInvalidName = 173, // NANVAMX
-    PCGF = 174,           // PCGF
-    PCWC = 175,           // PCWC
-    PCCC = 176,           // PCCC
 }
 
 // ── Server → Client ────────────────────────────────────────
@@ -278,7 +229,6 @@ pub enum ServerPacketID {
     AddSlots = 103,
     MultiMessage = 104,
     CancelOfferItem = 105,
-    ShowPartyForm = 106,
     HeadingChange = 107,
     Arrow = 108,
     NavigateBroadcast = 109,
@@ -323,7 +273,6 @@ pub enum ServerPacketID {
     YouDied = 141,
     UserMount = 142,
     Levitate = 143,
-    ClassOptions = 144,
 
     // Inventory/Spells (legacy IDs)
     InvSlot = 145,
@@ -343,25 +292,19 @@ pub enum ServerPacketID {
     CarpItems = 160,
     MedOK = 161,
     Navigation = 162,
-    BattleTeamScores = 163,  // BTM1: event team kill scores
     AmbientColor = 164,      // PCR: map ambient RGB color
 
     // Bank (legacy)
     InitBankLegacy = 165,
     BankSlotLegacy = 166,
     BankGoldLegacy = 167,
-    BankCloseOK = 168,
-
     // Commerce (legacy)
     NpcInvReset = 170,
     NpcInvItem = 171,
     NpcInvSlotLegacy = 172,
     InitCommerceLegacy = 173,
     TransOK = 174,
-    CommerceCloseOK = 175,
-    TournamentPoints = 176,
     ResponseMsg = 177,
-    AuctionInit = 178,
     AuctionBid = 179,
 
     // Trading (legacy)
@@ -370,33 +313,14 @@ pub enum ServerPacketID {
     TradeItems = 182,
     TradeChatMsgLegacy = 183,
     TradeOKLegacy = 184,
-    TradeCancelOK = 185,
-
     // Guild (legacy)
     GuildListLegacy = 190,
     GuildInfoLeader = 191,
     GuildInfoMember = 192,
     GuildShowForm = 193,
     GuildDetailsResp = 194,
-    GuildBankPermsResp = 195,
     ClanChatResp = 196,
     GuildBankSlotData = 197, // SBG: full guild bank slot data (slot+item+gold)
-
-    // Quest (legacy)
-    QuestListResp = 200,
-    QuestCurrent = 201,
-    QuestSelected = 202,
-    QuestNpcList = 203,
-
-    // Mail (legacy)
-    MailList = 205,
-    MailPlayerInfo = 206,
-    MailFriends = 207,
-    MailContent = 208,
-    MailItems = 209,
-
-    // Friends
-    FriendList = 210,
 
     // Character particles
     CharParticleCreate = 211,
@@ -405,23 +329,16 @@ pub enum ServerPacketID {
     StopDancing = 220,
     MenuData = 221,
     SelectData = 222,
-    MiniTopData = 223,
     ImageData = 224,
     AnimData = 225,
     BkwData = 226,
     FestData = 227,
-    EnchatData = 228,
-    IrchatData = 229,
     GinfData = 230,
     IcoData = 231,
     ZsosData = 232,
     RptData = 233,
     SbrData = 234,
-    KfmData = 235,
-    DfmData = 236,
-    AuctionList = 237,
     CosmeticSurgery = 238,
-    CosmeticImage = 239,
     CosmeticPcgn = 240,
     CosmeticPcss = 241,
     CosmeticPccc = 242,
@@ -438,9 +355,6 @@ pub enum ServerPacketID {
     TravelsOpen = 251,
     MailOpenTrigger = 252,
     FriendDialog = 253,
-
-    // Arena duel list (MAR packet sent to client)
-    ArenaData = 254,
 
     // Generic text fallback (for any remaining text-based packets)
     GenericText = 255,
@@ -512,63 +426,20 @@ impl ClientPacketID {
             106 => Some(Self::GuildNews),
             107 => Some(Self::GuildApply),
             108 => Some(Self::GuildDetails),
-            109 => Some(Self::GuildBankPermsQuery),
-            110 => Some(Self::GuildBankPermsSet),
-            111 => Some(Self::GuildBankOpen),
-            112 => Some(Self::GuildBankSave),
-            113 => Some(Self::GuildBankDeposit),
-            114 => Some(Self::GuildBankWithdraw),
-            115 => Some(Self::ClanBankWithdrawItem),
-            116 => Some(Self::ClanBankDepositItem),
-            117 => Some(Self::CloseGuildBank),
-            118 => Some(Self::GuildDonatePts),
-            119 => Some(Self::ClanValidName),
-            120 => Some(Self::QuestList),
-            121 => Some(Self::QuestInfo),
-            122 => Some(Self::QuestAccept),
             123 => Some(Self::ForumPost),
-            125 => Some(Self::MailSend),
-            126 => Some(Self::MailOpen),
-            127 => Some(Self::MailExtract),
-            128 => Some(Self::MailDelete),
-            130 => Some(Self::FriendAdd),
-            131 => Some(Self::FriendRemove),
-            132 => Some(Self::InitChat),
-            133 => Some(Self::ChatMsg),
             140 => Some(Self::PlayerInfo),
             141 => Some(Self::MiniStats),
             142 => Some(Self::HeadChange),
             143 => Some(Self::Rankings),
-            144 => Some(Self::SendPoints),
-            145 => Some(Self::DuelArenaInfo),
-            146 => Some(Self::ToInfo),
             150 => Some(Self::HouseQuery),
             151 => Some(Self::HouseBuy),
             152 => Some(Self::PetRename),
-            153 => Some(Self::GemExchange),
-            154 => Some(Self::MedalExchange),
-            155 => Some(Self::DivineOffer),
-            156 => Some(Self::TsShop),
-            157 => Some(Self::UpgradeQuery),
-            158 => Some(Self::UpgradeDo),
-            159 => Some(Self::ArenaSpectate),
             160 => Some(Self::DragDrop),
             161 => Some(Self::Vote),
             162 => Some(Self::Report),
             163 => Some(Self::SosView),
             164 => Some(Self::SosSend),
             165 => Some(Self::SosRespond),
-            166 => Some(Self::DonationMenu),
-            167 => Some(Self::DonationPreview),
-            168 => Some(Self::DonationRedeem),
-            169 => Some(Self::TournamentMenu),
-            170 => Some(Self::PrizeInfo),
-            171 => Some(Self::PrizeBuy),
-            172 => Some(Self::FpzReport),
-            173 => Some(Self::ClanInvalidName),
-            174 => Some(Self::PCGF),
-            175 => Some(Self::PCWC),
-            176 => Some(Self::PCCC),
             _ => None,
         }
     }

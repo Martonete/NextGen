@@ -637,19 +637,19 @@ pub(super) async fn remove_items_from_inv(state: &mut GameState, conn_id: Connec
 
 pub(super) fn add_item_to_user_inventory(state: &mut GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> bool {
     if let Some(user) = state.users.get_mut(&conn_id) {
-        for slot in user.inventory.iter_mut() {
-            if slot.obj_index == obj_index && slot.amount > 0 {
-                slot.amount += amount;
-                return true;
-            }
+        let stack_idx = user.inventory.iter().position(|s| s.obj_index == obj_index && s.amount > 0);
+        if let Some(i) = stack_idx {
+            user.inventory[i].amount += amount;
+
+            return true;
         }
-        for slot in user.inventory.iter_mut() {
-            if slot.obj_index <= 0 || slot.amount <= 0 {
-                slot.obj_index = obj_index;
-                slot.amount = amount;
-                slot.equipped = false;
-                return true;
-            }
+        let empty_idx = user.inventory.iter().position(|s| s.obj_index <= 0 || s.amount <= 0);
+        if let Some(i) = empty_idx {
+            user.inventory[i].obj_index = obj_index;
+            user.inventory[i].amount = amount;
+            user.inventory[i].equipped = false;
+
+            return true;
         }
     }
     false
@@ -943,8 +943,10 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
     if dead {
         revive_user(state, conn_id).await;
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.min_hp = user.max_hp;
-            user.min_sta = user.max_sta;
+            let max_hp = user.max_hp;
+            let max_sta = user.max_sta;
+            user.min_hp = max_hp;
+            user.min_sta = max_sta;
         }
         state.send_msg_id(conn_id, 693, "");
         let (map, x, y) = match state.users.get(&conn_id) {
@@ -956,7 +958,8 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
         send_stats_sta(state, conn_id).await;
     } else if hp_low {
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.min_hp = user.max_hp;
+            let max_hp = user.max_hp;
+            user.min_hp = max_hp;
         }
         state.send_msg_id(conn_id, 694, "");
         let (map, x, y) = match state.users.get(&conn_id) {

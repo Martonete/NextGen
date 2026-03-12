@@ -345,20 +345,30 @@ public partial class InventoryPanel : Control
 
     private int HitTestSlot(Vector2 pos)
     {
-        // Bounds check — outside the grid area
-        if (pos.X < 0 || pos.X >= Cols * SlotSize || pos.Y < 0 || pos.Y >= Rows * SlotSize)
+        // Slots are drawn with 1px gaps between columns and rows, so the
+        // effective stride is SlotSize+1 (35px) except for column/row 0
+        // which starts at x=1, y=0.  Use the same position formula as
+        // _Draw to find which slot the mouse is over.
+        int stride = SlotSize + 1; // 35px per slot (34 + 1px gap)
+
+        // Total grid extent including gaps
+        int gridW = 1 + Cols * SlotSize + (Cols - 1); // 1 + 170 + 4 = 175
+        int gridH = Rows * SlotSize + (Rows - 1);     // 170 + 4 = 174
+
+        if (pos.X < 0 || pos.X >= gridW || pos.Y < 0 || pos.Y >= gridH)
             return -1;
 
-        // VB6: ClickItem uses X \ 34 and Y \ 34 (integer division)
-        int tempX = (int)pos.X / SlotSize;
-        int tempY = (int)pos.Y / SlotSize;
+        // Column: first slot starts at x=1, subsequent at stride intervals
+        int tempX = (int)(pos.X - 1) / stride;
+        int tempY = (int)pos.Y / stride;
 
-        // VB6: TempItem = temp_x + temp_y * 5 + 1 (1-indexed)
-        int item = tempX + tempY * Cols + 1;
+        if (tempX < 0) tempX = 0;
+        if (tempX >= Cols) tempX = Cols - 1;
+        if (tempY >= Rows) tempY = Rows - 1;
 
-        // Convert to 0-indexed and bounds check
-        if (item >= 1 && item <= TotalSlots)
-            return item - 1;
+        int item = tempX + tempY * Cols;
+        if (item >= 0 && item < TotalSlots)
+            return item;
         return -1;
     }
 

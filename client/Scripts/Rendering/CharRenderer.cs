@@ -19,6 +19,9 @@ namespace ArgentumNextgen.Rendering;
 public static partial class CharRenderer
 {
     private const int TileSize = 32;
+    // VB6: OFFSET_HEAD = -34 — vertical offset for helmet sprite above head position.
+    // Helmets are drawn at HeadOffset + OFFSET_HEAD (head uses just HeadOffset).
+    private const int OFFSET_HEAD = -34;
 
     public static void DrawCharacter(
         Node2D canvas,
@@ -240,7 +243,7 @@ public static partial class CharRenderer
                 {
                     float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
                     float cascoDrawX = screenPos.X + data.Bodies[ch.Body].HeadOffsetX + xAdj;
-                    float cascoDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY;
+                    float cascoDrawY = screenPos.Y + data.Bodies[ch.Body].HeadOffsetY + OFFSET_HEAD;
                     if (cascoRes.TileWidth != 1f && cascoRes.TileWidth > 0)
                         cascoDrawX -= (int)(cascoRes.TileWidth * (TileSize / 2)) - TileSize / 2;
                     if (cascoRes.TileHeight != 1f && cascoRes.TileHeight > 0)
@@ -475,7 +478,7 @@ public static partial class CharRenderer
 
         float xAdj = (heading >= 1 && heading <= 3) ? 1f : 0f;
         if (ch.Mounted) xAdj += 1f;
-        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y);
+        Vector2 helmetPos = bodyPos + new Vector2(headOffset.X + xAdj, headOffset.Y + OFFSET_HEAD);
 
         DrawGrh(canvas, data, grhIdx, 0, helmetPos, true, colorOverride);
     }

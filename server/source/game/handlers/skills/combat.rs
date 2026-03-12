@@ -104,7 +104,7 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
                 npc.target = None;
             }
             if let Some(u) = state.users.get_mut(&conn_id) {
-                u.nro_mascotas += 1;
+                u.nro_mascotas = u.nro_mascotas + 1;
                 // Store in pet slots
                 for i in 0..3 {
                     if u.mascotas_index[i] == 0 {
@@ -242,15 +242,20 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
     // Consume 1 projectile
     if let Some(user) = state.users.get_mut(&conn_id) {
         if consume_slot > 0 && consume_slot <= MAX_INVENTORY_SLOTS {
-            user.inventory[consume_slot - 1].amount -= 1;
-            if user.inventory[consume_slot - 1].amount <= 0 {
-                user.inventory[consume_slot - 1] = InventorySlot::default();
+            let idx = consume_slot - 1;
+            let new_amt = user.inventory[idx].amount - 1;
+            if new_amt <= 0 {
+                user.inventory[idx].obj_index = 0;
+        user.inventory[idx].amount = 0;
+        user.inventory[idx].equipped = false;
                 if weapon_needs_ammo {
                     user.equip.municion = 0;
                 } else {
                     user.equip.weapon = 0;
                     user.weapon_anim = crate::game::handlers::common::NINGUN_ARMA;
                 }
+            } else {
+                user.inventory[idx].amount = new_amt;
             }
         }
     }

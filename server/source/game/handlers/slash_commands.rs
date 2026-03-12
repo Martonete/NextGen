@@ -600,10 +600,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_compartir(state, conn_id).await;
     } else if cmd_upper == "/NOCOMPARTIR" {
         handle_slash_nocompartir(state, conn_id).await;
-    // Item upgrade
-    } else if cmd_upper.starts_with("/UPGRADE ") {
-        let slot = cmd[9..].trim();
-        handle_slash_upgrade(state, conn_id, slot).await;
     // Council messages
     } else if cmd_upper.starts_with("/CONSEJO ") {
         let text = &cmd[9..];

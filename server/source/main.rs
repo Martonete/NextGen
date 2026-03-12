@@ -266,71 +266,9 @@ async fn main() {
                         );
                     }
 
-                    // Save full character state to DB
+                    // Save full character state to DB (always save on disconnect, regardless of dirty flag)
                     if let Some(user) = state.users.get(&conn_id) {
-                        let save_data = db::charfile::CharSaveData {
-                            head: if user.navigating { user.old_head } else { user.head },
-                            body: user.body,
-                            heading: user.heading,
-                            weapon: user.weapon_anim,
-                            shield: user.shield_anim,
-                            helmet: user.casco_anim,
-                            map: user.pos_map,
-                            x: user.pos_x,
-                            y: user.pos_y,
-                            level: user.level,
-                            exp: user.exp,
-                            max_hp: user.max_hp,
-                            min_hp: user.min_hp,
-                            max_sta: user.max_sta,
-                            min_sta: user.min_sta,
-                            max_mana: user.max_mana,
-                            min_mana: user.min_mana,
-                            max_hit: user.max_hit,
-                            min_hit: user.min_hit,
-                            max_agua: user.max_agua,
-                            min_agua: user.min_agua,
-                            max_ham: user.max_ham,
-                            min_ham: user.min_ham,
-                            gold: user.gold,
-                            bank_gold: user.bank_gold,
-                            attributes: user.attributes,
-                            skills: user.skills,
-                            dead: user.dead,
-                            poisoned: user.poisoned,
-                            paralyzed: user.paralyzed,
-                            criminal: user.criminal,
-                            hidden: user.hidden,
-                            navigating: user.navigating,
-                            barco_slot: user.barco_slot,
-                            montado: user.montado,
-                            levitando: user.levitando,
-                            montado_body: user.montado_body,
-                            privileges: user.saved_privileges,
-                            spells: user.spells,
-                            inventory: user.inventory.iter().map(|s| (s.obj_index, s.amount, s.equipped)).collect(),
-                            bank: user.bank.iter().map(|s| (s.obj_index, s.amount)).collect(),
-                            weapon_eqp_slot: user.equip.weapon,
-                            armour_eqp_slot: user.equip.armor,
-                            shield_eqp_slot: user.equip.shield,
-                            helmet_eqp_slot: user.equip.helmet,
-                            municion_eqp_slot: user.equip.municion,
-                            reputation: user.reputation,
-                            guild_index: user.guild_index,
-                            criminales_matados: user.criminales_matados,
-                            ciudadanos_matados: user.ciudadanos_matados,
-                            ejercito_real: user.armada_real,
-                            ejercito_caos: user.fuerzas_caos,
-                            skill_pts_libres: user.skill_pts_libres,
-                            recompensas_real: user.recompensas_real,
-                            recompensas_caos: user.recompensas_caos,
-                            reenlistadas: user.reenlistadas,
-                            description: user.desc.clone(),
-                            pet_count: user.nro_mascotas,
-                            pet_types: (0..3).filter_map(|i| {
-                                if user.mascotas_type[i] > 0 { Some(user.mascotas_type[i]) } else { None }
-                            }).collect(),
-                        };
+                        let save_data = game::handlers::build_char_save_data(user);
                         let pool = state.pool.clone();
                         match db::charfile::save_charfile(&pool, &name, &save_data).await {
                             Ok(()) => info!("[DISC] Character saved for '{}'", name),

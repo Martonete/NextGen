@@ -465,7 +465,8 @@ pub(super) async fn user_attack_npc(
                         user.inventory[slot].amount -= 1;
                         if user.inventory[slot].amount <= 0 {
                             user.inventory[slot].obj_index = 0;
-                            user.inventory[slot].amount = 0;
+        user.inventory[slot].amount = 0;
+        user.inventory[slot].equipped = false;
                             user.equip.weapon = 0;
                         }
                     }

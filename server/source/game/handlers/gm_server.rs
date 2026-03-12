@@ -328,12 +328,12 @@ pub(super) async fn handle_slash_nave(state: &mut GameState, conn_id: Connection
         Some(u) if u.logged && u.privileges > privilege_level::USER => {}
         _ => return,
     }
+    let new_nav = !state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
     if let Some(user) = state.users.get_mut(&conn_id) {
-        user.navigating = !user.navigating;
-        let status = if user.navigating { "activada" } else { "desactivada" };
-        let conn = user.conn_id;
-        state.send_console(conn, &format!("Navegacion {}", status), font_index::SERVER);
+        user.navigating = new_nav;
     }
+    let status = if new_nav { "activada" } else { "desactivada" };
+    state.send_console(conn_id, &format!("Navegacion {}", status), font_index::SERVER);
 }
 
 /// /HABILITAR — Toggle server GM-only mode. Requires privileges > 0.

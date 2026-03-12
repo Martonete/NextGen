@@ -25,35 +25,11 @@ pub struct MapAreaStats {
     pub slots: HashMap<(u8, u8), i32>,
 }
 
-impl MapAreaStats {
-    /// Get the optimal connection group size for a given day type and hour slot.
-    /// Returns at least 1 (VB6: If OptValue = 0 Then OptValue = 1).
-    pub fn get_opt_value(&self, day_type: u8, hour_slot: u8) -> i32 {
-        self.slots.get(&(day_type, hour_slot)).copied().unwrap_or(0).max(1)
-    }
-}
-
 /// All area statistics indexed by map number.
 #[derive(Debug, Clone)]
 pub struct AreasStats {
     /// Map number → area stats. Map numbers are 1-based.
     pub maps: HashMap<i32, MapAreaStats>,
-}
-
-impl AreasStats {
-    /// Get stats for a specific map, or None if not present.
-    pub fn get_map(&self, map_num: i32) -> Option<&MapAreaStats> {
-        self.maps.get(&map_num)
-    }
-
-    /// Get the optimal connection group size for a map at a given time.
-    /// Returns 1 if no data exists.
-    pub fn get_opt_value(&self, map_num: i32, day_type: u8, hour_slot: u8) -> i32 {
-        self.maps
-            .get(&map_num)
-            .map(|m| m.get_opt_value(day_type, hour_slot))
-            .unwrap_or(1)
-    }
 }
 
 impl Default for AreasStats {

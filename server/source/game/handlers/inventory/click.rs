@@ -4,16 +4,16 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerRace;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, privilege_level};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
 use crate::protocol::{font_index, fields::read_field};
 use crate::protocol::binary_packets;
-use crate::data::objects::{ObjData, ObjType};
+use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::constants::*;
 use crate::game::handlers::{
     send_inventory_slot, send_full_inventory, build_anm_packet,
-    warp_user, iniciar_comercio_npc, iniciar_banco, iniciar_boveda_clan,
+    warp_user, iniciar_comercio_npc, iniciar_banco,
     naked_body,
 };
 use crate::game::handlers::skills::skill_id;
@@ -576,11 +576,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 10 {
-                                state.send_msg_id(conn_id, 13, ""); return;
-                            }
-                            iniciar_boveda_clan(state, conn_id).await;
+                            // Guild bank removed (TSAO-only feature)
                         }
                         NpcType::Traveler => {
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
@@ -605,7 +601,8 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
 
                             // Always full-heal + cure poison (VB6: MinHP=MaxHP, Envenenado=False)
                             if let Some(user) = state.users.get_mut(&conn_id) {
-                                user.min_hp = user.max_hp;
+                                let max = user.max_hp;
+                                user.min_hp = max;
                                 user.poisoned = false;
                             }
                             send_stats_hp(state, conn_id).await;

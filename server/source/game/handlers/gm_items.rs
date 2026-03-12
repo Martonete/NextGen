@@ -2,7 +2,7 @@
 
 use tracing::{info};
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, InventorySlot, EquipSlots, privilege_level};
+use crate::game::types::{GameState, SendTarget, InventorySlot, privilege_level};
 use crate::protocol::{font_index, binary_packets};
 use super::world;
 use super::{send_inventory_slot, send_full_inventory, find_closest_legal_pos};
@@ -49,11 +49,9 @@ pub(super) async fn handle_slash_item(state: &mut GameState, conn_id: Connection
     match slot {
         Some(slot_idx) => {
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.inventory[slot_idx] = InventorySlot {
-                    obj_index: obj_idx,
-                    amount,
-                    equipped: false,
-                };
+                user.inventory[slot_idx].obj_index = obj_idx;
+        user.inventory[slot_idx].amount = amount;
+        user.inventory[slot_idx].equipped = false;
             }
             // Send CSI to update client inventory
             send_inventory_slot(state, conn_id, slot_idx).await;
@@ -138,10 +136,16 @@ pub(super) async fn handle_slash_dametodo(state: &mut GameState, conn_id: Connec
         Some(tc) => {
             // Clear inventory
             if let Some(user) = state.users.get_mut(&tc) {
-                for slot in &mut user.inventory {
-                    *slot = InventorySlot { obj_index: 0, amount: 0, equipped: false };
+                for i in 0..user.inventory.len() {
+                    user.inventory[i].obj_index = 0;
+        user.inventory[i].amount = 0;
+        user.inventory[i].equipped = false;
                 }
-                user.equip = EquipSlots::default();
+                user.equip.weapon = 0;
+                user.equip.armor = 0;
+                user.equip.shield = 0;
+                user.equip.helmet = 0;
+                user.equip.municion = 0;
             }
 
             // Send full inventory update
@@ -441,8 +445,9 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
 
     // Clear target's bank
     if let Some(u) = state.users.get_mut(&target_id) {
-        for slot in u.bank.iter_mut() {
-            *slot = InventorySlot::default();
+        for i in 0..u.bank.len() {
+            u.bank[i].obj_index = 0;
+        u.bank[i].amount = 0;
         }
     }
 
@@ -453,7 +458,9 @@ pub(super) async fn handle_slash_damebanco(state: &mut GameState, conn_id: Conne
             .and_then(|u| u.inventory.iter().position(|s| s.obj_index == 0));
         if let Some(slot_idx) = empty_slot {
             if let Some(user) = state.users.get_mut(&conn_id) {
-                user.inventory[slot_idx] = item.clone();
+                user.inventory[slot_idx].obj_index = item.obj_index;
+                user.inventory[slot_idx].amount = item.amount;
+                user.inventory[slot_idx].equipped = item.equipped;
                 added += 1;
             }
         }
@@ -529,7 +536,9 @@ async fn give_item_to_player(state: &mut GameState, gm_id: ConnectionId, target_
 
     if let Some(slot_idx) = empty_slot {
         if let Some(user) = state.users.get_mut(&target_id) {
-            user.inventory[slot_idx] = InventorySlot { obj_index: item_id, amount, equipped: false };
+            user.inventory[slot_idx].obj_index = item_id;
+        user.inventory[slot_idx].amount = amount;
+        user.inventory[slot_idx].equipped = false;
         }
         send_inventory_slot(state, target_id, slot_idx + 1).await;
         state.send_console(gm_id, &format!("Item {} dado a '{}'.", item_id, target_name), font_index::INFO);

@@ -616,13 +616,19 @@ pub struct CharSaveData {
 }
 
 /// Save full character state back to DB (called on disconnect / auto-save).
+/// Wrapped in an atomic transaction — either everything saves or nothing does.
+/// Inventory and bank use multi-row batch upserts (71 → 3 queries).
 pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) -> Result<(), String> {
+    // Begin transaction — all-or-nothing save
+    let mut tx = pool.begin().await
+        .map_err(|e| format!("DB error starting transaction: {}", e))?;
+
     // Get character ID
     let char_id: i32 = sqlx::query_scalar(
         "SELECT id FROM characters WHERE UPPER(name) = UPPER($1)"
     )
     .bind(char_name)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *tx)
     .await
     .map_err(|e| format!("DB error: {}", e))?
     .ok_or_else(|| format!("Character '{}' not found for save", char_name))?;
@@ -677,46 +683,76 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(&data.description)
     .bind(data.pet_count)
     .bind(&data.pet_types.iter().map(|t| t.to_string()).collect::<Vec<_>>().join(","))
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| format!("DB error saving character: {}", e))?;
 
-    // Upsert inventory (30 slots max)
-    for i in 0..data.inventory.len().min(30) {
-        let (obj_idx, amount, equipped) = data.inventory[i];
-        sqlx::query(
-            "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (character_id, slot)
-             DO UPDATE SET obj_index = $3, amount = $4, equipped = $5"
-        )
-        .bind(char_id)
-        .bind(i as i16)
-        .bind(obj_idx)
-        .bind(amount)
-        .bind(equipped)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("DB error saving inventory slot {}: {}", i, e))?;
+    // Batch upsert inventory (up to 30 slots in 1 query)
+    {
+        let count = data.inventory.len().min(30);
+        if count > 0 {
+            // Build multi-row VALUES: ($1, 0, obj, amt, eq), ($1, 1, obj, amt, eq), ...
+            let mut sql = String::from(
+                "INSERT INTO character_inventory (character_id, slot, obj_index, amount, equipped) VALUES "
+            );
+            let mut param_idx = 2u32; // $1 = char_id
+            for i in 0..count {
+                if i > 0 { sql.push_str(", "); }
+                sql.push_str(&format!(
+                    "($1, ${}, ${}, ${}, ${})",
+                    param_idx, param_idx + 1, param_idx + 2, param_idx + 3
+                ));
+                param_idx += 4;
+            }
+            sql.push_str(
+                " ON CONFLICT (character_id, slot) DO UPDATE SET \
+                 obj_index = EXCLUDED.obj_index, amount = EXCLUDED.amount, equipped = EXCLUDED.equipped"
+            );
+
+            let mut query = sqlx::query(&sql).bind(char_id);
+            for i in 0..count {
+                let (obj_idx, amount, equipped) = data.inventory[i];
+                query = query.bind(i as i16).bind(obj_idx).bind(amount).bind(equipped);
+            }
+            query.execute(&mut *tx).await
+                .map_err(|e| format!("DB error batch-saving inventory: {}", e))?;
+        }
     }
 
-    // Upsert bank (up to 40 slots)
-    for i in 0..data.bank.len().min(40) {
-        let (obj_idx, amount) = data.bank[i];
-        sqlx::query(
-            "INSERT INTO character_bank (character_id, slot, obj_index, amount)
-             VALUES ($1, $2, $3, $4)
-             ON CONFLICT (character_id, slot)
-             DO UPDATE SET obj_index = $3, amount = $4"
-        )
-        .bind(char_id)
-        .bind(i as i16)
-        .bind(obj_idx)
-        .bind(amount)
-        .execute(pool)
-        .await
-        .map_err(|e| format!("DB error saving bank slot {}: {}", i, e))?;
+    // Batch upsert bank (up to 40 slots in 1 query)
+    {
+        let count = data.bank.len().min(40);
+        if count > 0 {
+            let mut sql = String::from(
+                "INSERT INTO character_bank (character_id, slot, obj_index, amount) VALUES "
+            );
+            let mut param_idx = 2u32; // $1 = char_id
+            for i in 0..count {
+                if i > 0 { sql.push_str(", "); }
+                sql.push_str(&format!(
+                    "($1, ${}, ${}, ${})",
+                    param_idx, param_idx + 1, param_idx + 2
+                ));
+                param_idx += 3;
+            }
+            sql.push_str(
+                " ON CONFLICT (character_id, slot) DO UPDATE SET \
+                 obj_index = EXCLUDED.obj_index, amount = EXCLUDED.amount"
+            );
+
+            let mut query = sqlx::query(&sql).bind(char_id);
+            for i in 0..count {
+                let (obj_idx, amount) = data.bank[i];
+                query = query.bind(i as i16).bind(obj_idx).bind(amount);
+            }
+            query.execute(&mut *tx).await
+                .map_err(|e| format!("DB error batch-saving bank: {}", e))?;
+        }
     }
+
+    // Commit transaction — atomic save complete
+    tx.commit().await
+        .map_err(|e| format!("DB error committing save: {}", e))?;
 
     Ok(())
 }
