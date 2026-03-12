@@ -178,6 +178,9 @@ public partial class SoundManager : Node
         PlaySoundInternal(soundId, volumeDb);
     }
 
+    // Track which sound ID each player is currently playing (for dedup)
+    private readonly int[] _sfxPlayerSoundId = new int[MaxConcurrentSounds];
+
     private void PlaySoundInternal(int soundId, float volumeDb)
     {
         if (!_soundEnabled || soundId <= 0) return;
@@ -192,23 +195,31 @@ public partial class SoundManager : Node
 
         if (stream == null) return;
 
-        // Find a free player (not currently playing)
-        AudioStreamPlayer? player = null;
-        foreach (var p in _sfxPlayers)
+        // If this sound ID is already playing, restart it instead of stacking
+        for (int i = 0; i < _sfxPlayers.Count; i++)
         {
-            if (!p.Playing)
+            if (_sfxPlayers[i].Playing && _sfxPlayerSoundId[i] == soundId)
             {
-                player = p;
-                break;
+                _sfxPlayers[i].VolumeDb = volumeDb;
+                _sfxPlayers[i].Seek(0);
+                return;
             }
         }
 
-        // If all busy, steal the first one (oldest sound)
-        player ??= _sfxPlayers[0];
+        // Find a free player (not currently playing)
+        int idx = -1;
+        for (int i = 0; i < _sfxPlayers.Count; i++)
+        {
+            if (!_sfxPlayers[i].Playing) { idx = i; break; }
+        }
 
-        player.VolumeDb = volumeDb;
-        player.Stream = stream;
-        player.Play();
+        // If all busy, steal the first one (oldest sound)
+        if (idx < 0) idx = 0;
+
+        _sfxPlayers[idx].VolumeDb = volumeDb;
+        _sfxPlayers[idx].Stream = stream;
+        _sfxPlayers[idx].Play();
+        _sfxPlayerSoundId[idx] = soundId;
     }
 
     public void PlayMusic(int musicId)

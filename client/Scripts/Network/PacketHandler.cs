@@ -46,6 +46,9 @@ public partial class PacketHandler
     /// Args: (charIndex, text, colorHex)
     public Action<int, string, string>? OnFloatingText;
 
+    /// Callback to stop all SFX (called on position warp within same map).
+    public Action? OnStopSfx;
+
     // Meditation FX IDs — cleared when character moves
     private static readonly HashSet<int> MeditationFxIds = new()
     {

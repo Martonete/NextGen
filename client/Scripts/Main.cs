@@ -284,6 +284,7 @@ public partial class Main : Control
         _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
         _packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
         _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
+        _packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
 
         // Wire floating text callback: spawns rising damage/heal numbers above characters
         _packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
@@ -326,6 +327,7 @@ public partial class Main : Control
                 _packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
                 _packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
                 _packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
+                _packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
             }
             _inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
             if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
