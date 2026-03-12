@@ -376,6 +376,7 @@ public partial class Main
         _minimapPanel.Position = new Vector2(456, 24);
         _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
+        _minimapPanel.ZIndex = -1; // Draw behind all panels/dialogs
         _gameUI.AddChild(_minimapPanel);
         UpdateConsoleWidth();
 
