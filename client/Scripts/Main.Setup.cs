@@ -416,6 +416,7 @@ public partial class Main
             HandleDisconnect("");
         };
         _dialogManager.OnQuit = () => GetTree().Quit();
+        _dialogManager.OnRestoreFullscreen = () => EnterFullscreen();
         _dialogManager.OnWindowModeChosen = (windowed) => OnWindowModeChosen(windowed);
         _dialogManager.OnDropItem = (slot, qty) =>
         {
@@ -444,5 +445,7 @@ public partial class Main
         _inputRouter.HideEscapeMenu = () => HideEscapeMenu();
         _inputRouter.HandleDisconnect = (msg) => HandleDisconnect(msg);
         _inputRouter.DataPath = _dataPath;
+        _inputRouter.OnEnterFullscreen = () => EnterFullscreen();
+        _inputRouter.OnExitFullscreen = () => ExitFullscreen();
     }
 }

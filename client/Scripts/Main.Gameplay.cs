@@ -133,6 +133,36 @@ public partial class Main
     }
 
     /// <summary>
+    /// Enter fullscreen with pixel-perfect integer scaling (2x, 3x, etc.).
+    /// Falls back to largest integer multiple that fits the screen, with black bars.
+    /// </summary>
+    private void EnterFullscreen()
+    {
+        var root = GetTree().Root;
+        root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+        root.ContentScaleStretch = Window.ContentScaleStretchEnum.Integer;
+        DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+    }
+
+    /// <summary>
+    /// Exit fullscreen to windowed 800×600, centered.
+    /// </summary>
+    private void ExitFullscreen()
+    {
+        var root = GetTree().Root;
+        root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
+        root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
+        DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+        DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
+        var winSize = new Vector2I(800, 600);
+        DisplayServer.WindowSetSize(winSize);
+        var screenSize = DisplayServer.ScreenGetSize();
+        DisplayServer.WindowSetPosition(new Vector2I(
+            (screenSize.X - winSize.X) / 2,
+            (screenSize.Y - winSize.Y) / 2));
+    }
+
+    /// <summary>
     /// Apply GameConfig values to all subsystems (called after options are saved).
     /// </summary>
     private void ApplyConfigToSystems()
@@ -160,22 +190,9 @@ public partial class Main
 
         // Apply display mode
         if (cfg.Fullscreen)
-        {
-            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
-        }
+            EnterFullscreen();
         else
-        {
-            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-            var winSize = new Vector2I(800, 600);
-            DisplayServer.WindowSetSize(winSize);
-            var screenSize = DisplayServer.ScreenGetSize();
-            DisplayServer.WindowSetPosition(new Vector2I(
-                (screenSize.X - winSize.X) / 2,
-                (screenSize.Y - winSize.Y) / 2));
-            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-        }
+            ExitFullscreen();
 
         // Apply day/night cycle toggle
         if (_dayNightCycle != null)
@@ -651,21 +668,9 @@ public partial class Main
             _state.Config.AspectRatioMode = 1;
 
         if (!windowed)
-        {
-            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
-        }
+            EnterFullscreen();
         else
-        {
-            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-            var winSize = new Vector2I(800, 600);
-            DisplayServer.WindowSetSize(winSize);
-            var screenSize = DisplayServer.ScreenGetSize();
-            DisplayServer.WindowSetPosition(new Vector2I(
-                (screenSize.X - winSize.X) / 2,
-                (screenSize.Y - winSize.Y) / 2));
-            GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-        }
+            ExitFullscreen();
 
         _state.Config.Save(_dataPath);
         _dialogManager?.HideWindowModeDialog();

@@ -555,16 +555,9 @@ public partial class Main : Control
         {
             GD.Print("[MAIN] Config loaded from file — applying saved display preference");
             if (_state.Config.Fullscreen)
-            {
-                GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-                DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
-            }
+                EnterFullscreen();
             else
-            {
-                DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-                DisplayServer.WindowSetSize(new Vector2I(800, 600));
-                GetTree().Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-            }
+                ExitFullscreen();
         }
         else
         {

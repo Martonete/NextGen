@@ -48,6 +48,10 @@ public class InputRouter
     /// <summary>Data path for config save.</summary>
     public string DataPath = "";
 
+    /// <summary>Callbacks for fullscreen toggle (wired by Main).</summary>
+    public Action? OnEnterFullscreen;
+    public Action? OnExitFullscreen;
+
     public InputRouter(GameState state)
     {
         _state = state;
@@ -279,24 +283,9 @@ public class InputRouter
     {
         bool goFullscreen = DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen;
         if (goFullscreen)
-        {
-            tree.Root.ContentScaleAspect = _state.Config.AspectRatioMode == 1
-                ? Window.ContentScaleAspectEnum.Keep
-                : Window.ContentScaleAspectEnum.Keep;
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
-        }
+            OnEnterFullscreen?.Invoke();
         else
-        {
-            DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
-            DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-            var winSize = new Vector2I(800, 600);
-            DisplayServer.WindowSetSize(winSize);
-            var screenSize = DisplayServer.ScreenGetSize();
-            DisplayServer.WindowSetPosition(new Vector2I(
-                (screenSize.X - winSize.X) / 2,
-                (screenSize.Y - winSize.Y) / 2));
-            tree.Root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
-        }
+            OnExitFullscreen?.Invoke();
         _state.Config.Fullscreen = goFullscreen;
         _state.Config.Save(DataPath);
         viewport.SetInputAsHandled();

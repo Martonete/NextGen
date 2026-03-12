@@ -222,14 +222,14 @@ public class DialogManager
         _restoringFullscreen = true;
     }
 
+    /// <summary>Callback for fullscreen restore (wired by Main).</summary>
+    public Action? OnRestoreFullscreen;
+
     public void RestoreFullscreen(GameConfig cfg)
     {
         var tree = Engine.GetMainLoop() as SceneTree;
         if (tree == null) return;
-        tree.Root.ContentScaleAspect = cfg.AspectRatioMode == 1
-            ? Window.ContentScaleAspectEnum.Keep
-            : Window.ContentScaleAspectEnum.Keep;
-        DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
+        OnRestoreFullscreen?.Invoke();
         tree.CreateTimer(0.5).Timeout += () => _restoringFullscreen = false;
     }
 
