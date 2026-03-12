@@ -107,13 +107,14 @@ static func button(text: String, callback: Callable = Callable(), color := TEXT_
 static func primary_button(text: String, callback: Callable = Callable(), min_w := 0) -> Button:
 	var b := Button.new()
 	b.text = text
+	b.clip_text = true
 	b.add_theme_color_override("font_color", Color.WHITE)
 	b.add_theme_color_override("font_hover_color", Color.WHITE)
 	b.add_theme_color_override("font_pressed_color", Color(0.85, 0.85, 0.85))
-	b.add_theme_font_size_override("font_size", FONT_SIZE_LG)
-	b.add_theme_stylebox_override("normal", _flat_box(BG_BTN_PRIMARY, 5, 12, 5))
-	b.add_theme_stylebox_override("hover", _flat_box(BG_BTN_PRIMARY_H, 5, 12, 5))
-	b.add_theme_stylebox_override("pressed", _flat_box(BG_BTN_PRIMARY_P, 5, 12, 5))
+	b.add_theme_font_size_override("font_size", FONT_SIZE_MD)
+	b.add_theme_stylebox_override("normal", _flat_box(BG_BTN_PRIMARY, 5, 8, 5))
+	b.add_theme_stylebox_override("hover", _flat_box(BG_BTN_PRIMARY_H, 5, 8, 5))
+	b.add_theme_stylebox_override("pressed", _flat_box(BG_BTN_PRIMARY_P, 5, 8, 5))
 	if min_w > 0:
 		b.custom_minimum_size.x = min_w
 	if callback.is_valid():
@@ -125,13 +126,14 @@ static func primary_button(text: String, callback: Callable = Callable(), min_w 
 static func success_button(text: String, callback: Callable = Callable(), min_w := 0) -> Button:
 	var b := Button.new()
 	b.text = text
+	b.clip_text = true
 	b.add_theme_color_override("font_color", Color.WHITE)
 	b.add_theme_color_override("font_hover_color", Color.WHITE)
 	b.add_theme_color_override("font_pressed_color", Color(0.85, 0.85, 0.85))
 	b.add_theme_font_size_override("font_size", FONT_SIZE_MD)
-	b.add_theme_stylebox_override("normal", _flat_box(BG_BTN_SUCCESS, 5, 10, 4))
-	b.add_theme_stylebox_override("hover", _flat_box(BG_BTN_SUCCESS_H, 5, 10, 4))
-	b.add_theme_stylebox_override("pressed", _flat_box(BG_BTN_SUCCESS_P, 5, 10, 4))
+	b.add_theme_stylebox_override("normal", _flat_box(BG_BTN_SUCCESS, 5, 8, 4))
+	b.add_theme_stylebox_override("hover", _flat_box(BG_BTN_SUCCESS_H, 5, 8, 4))
+	b.add_theme_stylebox_override("pressed", _flat_box(BG_BTN_SUCCESS_P, 5, 8, 4))
 	if min_w > 0:
 		b.custom_minimum_size.x = min_w
 	if callback.is_valid():

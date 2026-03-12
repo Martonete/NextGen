@@ -889,6 +889,7 @@ func _build_detect_tab() -> Control:
 	# Presets
 	grid_inner.add_child(IndexerTheme.label("Presets:", IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
 	var presets_row1 := HFlowContainer.new()
+	presets_row1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	presets_row1.add_theme_constant_override("h_separation", 3)
 	presets_row1.add_theme_constant_override("v_separation", 2)
 	grid_inner.add_child(presets_row1)
@@ -897,6 +898,7 @@ func _build_detect_tab() -> Control:
 	presets_row1.add_child(IndexerTheme.preset_button("Escudo 25x25", _make_preset_cb(25, 25), "Escudos"))
 
 	var presets_row2 := HFlowContainer.new()
+	presets_row2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	presets_row2.add_theme_constant_override("h_separation", 3)
 	presets_row2.add_theme_constant_override("v_separation", 2)
 	grid_inner.add_child(presets_row2)
@@ -904,7 +906,9 @@ func _build_detect_tab() -> Control:
 		var pw: int = p[0]; var ph: int = p[1]
 		presets_row2.add_child(IndexerTheme.preset_button("%dx%d" % [pw, ph], _make_preset_cb(pw, ph), "Tiles %dx%d" % [pw, ph]))
 
-	grid_inner.add_child(IndexerTheme.primary_button("Generar frames", _on_detect_grid_btn))
+	var btn_gen := IndexerTheme.primary_button("Generar frames", _on_detect_grid_btn)
+	btn_gen.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid_inner.add_child(btn_gen)
 
 	# ── Blob section ──
 	root.add_child(IndexerTheme.separator_h())
@@ -935,7 +939,9 @@ func _build_detect_tab() -> Control:
 	_spin_padding.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	bgrid.add_child(_spin_padding)
 
-	blob_inner.add_child(IndexerTheme.primary_button("Detectar Blobs", _on_detect_blobs_btn))
+	var btn_blobs := IndexerTheme.primary_button("Detectar Blobs", _on_detect_blobs_btn)
+	btn_blobs.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	blob_inner.add_child(btn_blobs)
 
 	# ── Auto-detect section ──
 	root.add_child(IndexerTheme.separator_h())
@@ -948,7 +954,9 @@ func _build_detect_tab() -> Control:
 	auto_inner.add_child(IndexerTheme.label(
 		"Detecta blobs, los agrupa y ajusta cada frame al tamaño estándar AO más cercano (32, 64, 96, 128, 192, 256...).",
 		IndexerTheme.TEXT_MUTED, IndexerTheme.FONT_SIZE_SM))
-	auto_inner.add_child(IndexerTheme.success_button("Auto-Detectar Frames", _on_detect_auto_btn))
+	var btn_auto := IndexerTheme.success_button("Auto-Detectar Frames", _on_detect_auto_btn)
+	btn_auto.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	auto_inner.add_child(btn_auto)
 
 	return scroll
 

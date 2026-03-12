@@ -37,10 +37,10 @@ var _indices_categories: PackedStringArray = []  # Unique category names
 var _dirty: bool = false  # True when there are unsaved changes in memory
 var _grh_data_original: Dictionary = {}  # Snapshot of entries at load time
 
-# Undo stack: stores snapshots of {frames, selected, next_grh}
+# Undo stack: per-image, keyed by file_num → Array of snapshots
 const MAX_UNDO := 50
-var _undo_stack: Array = []
-var _redo_stack: Array = []
+var _undo_stacks: Dictionary = {}  # file_num → Array (undo)
+var _redo_stacks: Dictionary = {}  # file_num → Array (redo)
 
 # Background analysis thread
 var _analysis_thread: Thread = null
@@ -1085,57 +1085,73 @@ func _apply_detected_frames(detected: Array) -> void:
 
 # ── Undo / Redo ──────────────────────────────────────────────────────────────
 
+func _get_undo_stack() -> Array:
+	if not _undo_stacks.has(_current_file_num):
+		_undo_stacks[_current_file_num] = []
+	return _undo_stacks[_current_file_num]
+
+func _get_redo_stack() -> Array:
+	if not _redo_stacks.has(_current_file_num):
+		_redo_stacks[_current_file_num] = []
+	return _redo_stacks[_current_file_num]
+
 func _push_undo() -> void:
 	var snapshot := {
 		"frames": _current_frames.duplicate(true),
 		"selected": _selected_frame_idx,
 		"next_grh": _next_grh_index
 	}
-	_undo_stack.append(snapshot)
-	if _undo_stack.size() > MAX_UNDO:
-		_undo_stack.pop_front()
-	_redo_stack.clear()
+	var stack := _get_undo_stack()
+	stack.append(snapshot)
+	if stack.size() > MAX_UNDO:
+		stack.pop_front()
+	# Clear redo for this image only
+	_redo_stacks[_current_file_num] = []
 
 
 func _undo() -> void:
-	if _undo_stack.is_empty():
+	var stack := _get_undo_stack()
+	if stack.is_empty():
 		_update_status("Nada que deshacer.")
 		return
 	# Save current state for redo
-	_redo_stack.append({
+	var redo := _get_redo_stack()
+	redo.append({
 		"frames": _current_frames.duplicate(true),
 		"selected": _selected_frame_idx,
 		"next_grh": _next_grh_index
 	})
 	var old_frames := _current_frames
-	var snapshot: Dictionary = _undo_stack.pop_back()
+	var snapshot: Dictionary = stack.pop_back()
 	_current_frames = snapshot["frames"]
 	_selected_frame_idx = snapshot["selected"]
 	_next_grh_index = snapshot["next_grh"]
 	_sync_grh_after_frame_swap(old_frames, _current_frames)
 	_inspector.set_next_grh(_next_grh_index)
 	_refresh_all()
-	_update_status("Deshacer. (%d en pila)" % _undo_stack.size())
+	_update_status("Deshacer. (%d en pila)" % stack.size())
 
 
 func _redo() -> void:
-	if _redo_stack.is_empty():
+	var redo := _get_redo_stack()
+	if redo.is_empty():
 		_update_status("Nada que rehacer.")
 		return
-	_undo_stack.append({
+	var stack := _get_undo_stack()
+	stack.append({
 		"frames": _current_frames.duplicate(true),
 		"selected": _selected_frame_idx,
 		"next_grh": _next_grh_index
 	})
 	var old_frames := _current_frames
-	var snapshot: Dictionary = _redo_stack.pop_back()
+	var snapshot: Dictionary = redo.pop_back()
 	_current_frames = snapshot["frames"]
 	_selected_frame_idx = snapshot["selected"]
 	_next_grh_index = snapshot["next_grh"]
 	_sync_grh_after_frame_swap(old_frames, _current_frames)
 	_inspector.set_next_grh(_next_grh_index)
 	_refresh_all()
-	_update_status("Rehacer. (%d en pila)" % _redo_stack.size())
+	_update_status("Rehacer. (%d en pila)" % redo.size())
 
 
 ## Sync _grh_data["entries"] after swapping _current_frames (undo/redo).
@@ -1457,9 +1473,9 @@ func _do_revert_all() -> void:
 	if _client_graficos_path.is_empty():
 		_update_status("No hay carpeta de cliente cargada.")
 		return
-	# Clear undo stacks
-	_undo_stack.clear()
-	_redo_stack.clear()
+	# Clear all undo stacks
+	_undo_stacks.clear()
+	_redo_stacks.clear()
 	_current_frames = []
 	_selected_frame_idx = -1
 	_dirty = false
