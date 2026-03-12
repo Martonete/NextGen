@@ -187,11 +187,10 @@ theme_override_font_sizes/font_size = 8
 
 [node name="OnlineLabel" type="Label" parent="GameUI"]
 layout_mode = 0
-offset_left = 47.0
-offset_top = 547.0
-offset_right = 64.0
-offset_bottom = 564.0
-horizontal_alignment = 1
+offset_left = 370.0
+offset_top = 6.0
+offset_right = 438.0
+offset_bottom = 18.0
 theme_override_colors/font_color = Color(1, 1, 1, 1)
 theme_override_font_sizes/font_size = 7
 

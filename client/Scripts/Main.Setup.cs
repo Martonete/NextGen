@@ -218,12 +218,13 @@ public partial class Main
         _consoleLabel.OffsetRight = minimapVisible ? 453f : 556f;
     }
 
-    /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned).</summary>
+    /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned, above minimap).</summary>
     private T AddPanel<T>(Vector2? position = null) where T : Control, new()
     {
         var panel = new T();
         if (position.HasValue) panel.Position = position.Value;
         panel.Visible = false;
+        panel.ZIndex = 1; // Draw above minimap/HUD elements
         _gameUI!.AddChild(panel);
         return panel;
     }
@@ -320,6 +321,7 @@ public partial class Main
     {
         // Tooltip panel
         _tooltipPanel = new TooltipPanel();
+        _tooltipPanel.ZIndex = 2; // Above all panels and minimap
         _gameUI!.AddChild(_tooltipPanel);
 
         // Wire tooltip to all panels with item/spell slots
@@ -367,6 +369,7 @@ public partial class Main
 
         // Context menu
         _contextMenu = new ContextMenu();
+        _contextMenu.ZIndex = 1;
         _gameUI.AddChild(_contextMenu);
 
         // Minimap panel
@@ -376,7 +379,6 @@ public partial class Main
         _minimapPanel.Position = new Vector2(456, 24);
         _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
-        _minimapPanel.ZIndex = -1; // Draw behind all panels/dialogs
         _gameUI.AddChild(_minimapPanel);
         UpdateConsoleWidth();
 
@@ -384,12 +386,14 @@ public partial class Main
         _questPanel = new QuestPanel();
         _questPanel.Position = new Vector2(8 + (544 - 560) / 2, 50);
         _questPanel.Visible = false;
+        _questPanel.ZIndex = 1;
         _gameUI.AddChild(_questPanel);
 
         // Trainer/Pet panel
         _trainerPanel = new TrainerPanel();
         _trainerPanel.Position = new Vector2(150, 80);
         _trainerPanel.Visible = false;
+        _trainerPanel.ZIndex = 1;
         _gameUI.AddChild(_trainerPanel);
 
         // Blind screen overlay

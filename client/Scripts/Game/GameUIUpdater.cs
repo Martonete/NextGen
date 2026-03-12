@@ -95,7 +95,7 @@ public class GameUIUpdater
         _goldLabel!.Text = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
         _levelLabel!.Text = $"Nivel: {_state.Level}";
         _nameLabel!.Text = _state.UserName;
-        _onlineLabel!.Text = $"{_state.OnlineCount}";
+        _onlineLabel!.Text = $"Onlines: {_state.OnlineCount}";
         // VB6: Coord.Caption = NombreMapa on first line, (Map, X, Y) on second
         _coordsLabel!.Text = $"{_state.MapName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
 
