@@ -161,6 +161,9 @@ public partial class Main : Control
     // Minimap panel (shows player/NPC dots on 100x100 tile grid)
     private MinimapPanel? _minimapPanel;
 
+    // Console (chat output) — stored for resizing when minimap toggles
+    private RichTextLabel? _consoleLabel;
+
     // Blind screen overlay (VB6: frmMain goes black when blinded)
     private ColorRect? _blindOverlay;
 
@@ -356,6 +359,7 @@ public partial class Main : Control
 
         // Chat system
         var console = GetNode<RichTextLabel>("GameUI/Console");
+        _consoleLabel = console;
         var consoleStyle = new StyleBoxEmpty();
         consoleStyle.ContentMarginLeft = 2;
         consoleStyle.ContentMarginRight = 2;

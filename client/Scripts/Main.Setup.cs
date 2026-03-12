@@ -150,7 +150,12 @@ public partial class Main
     {
         var mapaButton = CreateInvisibleButton(682, 445, 93, 20);
         _gameUI!.AddChild(mapaButton);
-        mapaButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); _minimapPanel?.Toggle(); };
+        mapaButton.Pressed += () =>
+        {
+            _soundManager?.PlayNamedSound("click.wav");
+            _minimapPanel?.Toggle();
+            UpdateConsoleWidth();
+        };
 
         var grupoButton = CreateInvisibleButton(681, 466, 94, 21);
         _gameUI.AddChild(grupoButton);
@@ -199,6 +204,18 @@ public partial class Main
             else
                 _dialogManager?.ShowEscapeMenu(GetViewportRect().Size);
         };
+    }
+
+    /// <summary>
+    /// Expand console to fill minimap space when hidden, shrink when shown.
+    /// Console default right edge = 453 (leaves room for 100px minimap at x=456).
+    /// When minimap hidden, expand to 556 (full sidebar width).
+    /// </summary>
+    private void UpdateConsoleWidth()
+    {
+        if (_consoleLabel == null) return;
+        bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
+        _consoleLabel.OffsetRight = minimapVisible ? 453f : 556f;
     }
 
     /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned).</summary>
@@ -360,6 +377,7 @@ public partial class Main
         _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
         _gameUI.AddChild(_minimapPanel);
+        UpdateConsoleWidth();
 
         // Quest panel
         _questPanel = new QuestPanel();

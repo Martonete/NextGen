@@ -181,6 +181,13 @@ public partial class Main
         if (_dayNightCycle != null)
             _dayNightCycle.Enabled = cfg.ShowDayNight;
 
+        // Apply minimap visibility + resize console accordingly
+        if (_minimapPanel != null)
+        {
+            _minimapPanel.Visible = cfg.ShowMinimap;
+            UpdateConsoleWidth();
+        }
+
         GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
     }
 
