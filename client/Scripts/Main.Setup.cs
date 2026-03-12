@@ -285,7 +285,7 @@ public partial class Main
         _dayNightCycle = new Rendering.DayNightCycle();
         _dayNightCycle.Init(_state);
         _dayNightCycle.Enabled = _state.Config.ShowDayNight;
-        _gameUI.AddChild(_dayNightCycle);
+        _gameUI!.AddChild(_dayNightCycle);
 
         // Loading Screen
         _loadingScreen = new LoadingScreen();

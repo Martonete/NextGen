@@ -198,7 +198,6 @@ public partial class Main
         _packetHandler = null;
         _inputHandler = null;
         _connecting = false;
-        _packetCount = 0;
 
         // Reset all game state (VB6: clear logged, skills, attributes, etc.)
         ResetGameState();
