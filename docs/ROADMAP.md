@@ -25,7 +25,6 @@ All core game systems are implemented and functional. Server: 55 Rust files, 35.
 - Pet rename (CNM)
 - Gem/medal exchange (GEMS/GEPS)
 - Divine offering system (OFDIOZ)
-- TS points shop (FTSPTS)
 - Item upgrade system (Mejorados: SPH/SP+special)
 - Arena spectating (ARE)
 - Drag & drop transfer (DYDTRA)
@@ -39,8 +38,6 @@ All core game systems are implemented and functional. Server: 55 Rust files, 35.
 - Noble status (/NOBLE)
 - Surgery/race change (/CIRUJIA)
 - Marriage system (/CASAR, /DIVORCIARSE)
-- Donation/tournament prize exchange (DCANJE/CCANJE/DPX/DRX)
-
 ### Client — Not Yet Implemented
 - Guild UI (frmGuildInfo)
 - Quest UI
@@ -53,6 +50,15 @@ All core game systems are implemented and functional. Server: 55 Rust files, 35.
 - Comprehensive GM action logging
 - Stress testing (400+ concurrent users)
 - Integration tests with real VB6 client
+
+## Removed Features
+
+The following features were evaluated and intentionally removed from the project:
+
+- **Emoticon system** — FX overlays used for gameplay effects only, emoticons stripped
+- **Friend system** — `account_friends` table dropped (migration 007), opcodes removed
+- **Guild bank** — table exists but feature not active
+- **TSAO-specific point systems** — `puntos_donacion`, `puntos_torneo`, `ts_points` and related exchange opcodes (FTSPTS, DCANJE/CCANJE/DPX/DRX) removed as they were custom to Tierras Sagradas, not part of standard AO 13.3
 
 ## Key Compatibility Notes
 

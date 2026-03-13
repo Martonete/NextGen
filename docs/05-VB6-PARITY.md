@@ -186,7 +186,7 @@ dead, poisoned, paralyzed, criminal, hidden, navigating, privileges,
 spells[35], inventory[25] (with equipped flag), bank[40],
 equipment slots, reputation[7], guild_index,
 criminales_matados, ciudadanos_matados, ejercito_real, ejercito_caos,
-skill_pts_libres, puntos_donacion, puntos_torneo, ts_points
+skill_pts_libres
 ```
 
 ## Text Code System (|| Migration)
@@ -212,7 +212,7 @@ Bank: 223
 ### Messages Still Using P| Format
 - Player whispers (`P|text~r~g~b~bold~italic`) — by design, whispers use P| for custom styling
 - NPC dialog and custom server messages — no || equivalent exists
-- Some TS-specific messages with no standard text code
+- Some custom messages with no standard text code
 
 ## Floating Combat Text (N| Packet)
 
@@ -253,7 +253,7 @@ VB6 has three modal message packet types. The Godot client renders these as a ce
 ### Client Behavior
 - Dialog blocks all input until "Aceptar" is pressed (or Enter key)
 - ERR: Also sets `LoginError` for screen-specific handling (Login, CharSelect, CharCreate)
-- ERO: Used for non-fatal validations (friends list errors, in-game warnings)
+- ERO: Used for non-fatal validations (in-game warnings)
 - !!: Used for GM broadcasts to all players
 
 ## FPS-Independent Dialog Animation

@@ -1,6 +1,6 @@
 # Skill: Argentum Online Map System
 
-How maps work in Argentum Online (TSAO). Complete byte-level format spec.
+How maps work in Argentum Online. Complete byte-level format spec.
 
 ## Overview
 

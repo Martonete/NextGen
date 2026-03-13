@@ -2,12 +2,13 @@
 
 ## Project Goal
 
-Drop-in replacement for the Argentum Online (AO) VB6 server, written in Rust. The VB6 client remains untouched — the Rust server must be 100% protocol-compatible.
+Drop-in replacement for the Argentum Online (AO) VB6 server, written in Rust. A Godot 4 C# client exists alongside the reference VB6 client source — the Rust server must be 100% protocol-compatible with both.
 
 ## Source Reference
 
 - **Original VB6 server**: `Servidor/Codigo/` — 98 files, ~63,000 lines of Visual Basic 6
-- **VB6 client**: `Cliente/CODIGO/` — 158 files (read-only reference, never modified)
+- **Godot 4 C# client**: `client/` — active client implementation
+- **VB6 client reference**: `Cliente/CODIGO/` — 158 files (read-only reference, never modified)
 - **Rust server**: `server-rust/server/source/` — all new code
 
 ## Module Structure
@@ -63,7 +64,7 @@ server/source/
         ├── spells.rs        # Spell mechanics (~1,000 lines)
         ├── npcs.rs          # NPC interaction (~975 lines)
         ├── commerce.rs      # Trading & shops (~960 lines)
-        ├── social.rs        # Friends, private messages (~780 lines)
+        ├── social.rs        # Mail, whisper, guild messaging (~780 lines)
         ├── combat.rs        # Attack mechanics (~720 lines)
         ├── common.rs        # Shared utilities (~660 lines)
         ├── quests_party.rs  # Quests & parties (~660 lines)
@@ -98,7 +99,7 @@ Server → PlainText → [AoDefServEncrypt (hex)] → [AoDefEncode (base64)] →
 ## Key Design Decisions
 
 1. **Single-threaded async**: Matches VB6's single-threaded model. No need for locks on game state.
-2. **Text-based protocol**: VB6 client uses string-based packets, not binary. All packets are ASCII/Latin-1.
+2. **Text-based protocol**: Client uses string-based packets, not binary. All packets are ASCII/Latin-1.
 3. **HashMap for users**: `HashMap<ConnectionId, UserState>` — constant-time lookup by connection ID.
 4. **Shared CharIndex pool**: Players and NPCs share the same `CharIndex` namespace for client rendering.
 5. **Area-based visibility**: 9×9 zone grid (matching VB6 `ModAreas.bas`) — only send packets to nearby players.

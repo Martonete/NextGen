@@ -120,7 +120,6 @@
 - [x] Level bonuses — ClassBonus.dat at levels 53, 56, 60
 - [x] Ranking system
 - [x] Mail system
-- [x] Friend list
 
 ## Godot 4 Client (VB6 → Godot C#)
 
@@ -132,7 +131,7 @@
 - [x] Body + head rendering with heading-dependent draw order
 - [x] Weapon, shield, helmet rendering (Armas.dat, Escudos.dat, Cascos.ind)
 - [x] Aura system (5 equipment slots + NPC aura, rotation, color tint)
-- [x] FX overlays (3 simultaneous slots + emoticons)
+- [x] FX overlays (3 simultaneous slots)
 - [x] Character shadows (ellipse)
 - [x] Dead character transparency pulsing
 - [x] Dialog bubbles (FPS-independent delta-time animation)
@@ -149,7 +148,6 @@
 - [x] Full frmMain: chat console, HP/MP/STA/EXP bars, inventory, spells
 - [x] Bottom bar stats (weapon, defense, magdef, str, agi, rep, fps)
 - [x] Death panel (frmMuertito: Continuar/Regresar)
-- [x] Friends list with online status + add friend dialog
 - [x] Commerce panel (NPC buy/sell)
 - [x] Bank panel (deposit/withdraw gold)
 - [x] Vault panel (item bank, 40 slots)
@@ -195,7 +193,6 @@
 - TS points shop (FTSPTS)
 - Item upgrade system (SPH/SPÉ)
 - Arena spectating (ARE)
-- Some chat/friend features (INCHAT/KKCHAT)
 - Drag & drop transfer (DYDTRA)
 - FPZ anti-hack report (ENVFPZ)
 - Vote system (NVOT)

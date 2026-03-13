@@ -235,9 +235,7 @@ Weapon, Armor, Shield, Helmet, Food, Potion, Scroll, Key, Boat, Mount, Instrumen
 - Gold deposit/withdraw separate from items
 
 ### Guild Bank
-- Shared inventory for guild members
-- Permission system (leader sets who can deposit/withdraw)
-- Separate gold pool
+Not implemented (removed).
 
 ## 9. Trading System
 
@@ -287,7 +285,6 @@ Weapon, Armor, Shield, Helmet, Food, Potion, Scroll, Key, Boat, Mount, Instrumen
 ### Guild Data
 - Guild name, description, codex (rules)
 - Leader, members list, applicants
-- Guild bank (items + gold)
 - Alignment (citizen/criminal guild)
 
 ### Operations

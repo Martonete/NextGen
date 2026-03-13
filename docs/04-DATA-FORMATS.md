@@ -315,7 +315,7 @@ Name=Los Defensores
 Leader=PlayerName
 Members=Player1,Player2,Player3
 Alignment=0
-BankGold=5000
+BankGold=5000       # Note: guild bank is not active/implemented
 ```
 
 ## 11. Class Balance (`dat/ClassBonus.dat`)
@@ -331,7 +331,7 @@ MaxHIT=+3
 MaxMAN=+50
 ```
 
-## 12. Text Codes (`Cliente/Data/INIT/Textos.ao`)
+## 12. Text Codes (`client/Data/INIT/Textos.ao`)
 
 Client-side text database with 983 entries:
 
