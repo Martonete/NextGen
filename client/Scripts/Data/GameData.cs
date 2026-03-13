@@ -92,7 +92,10 @@ public class GameData
 
         try
         {
-            var textosPath = System.IO.Path.Combine(initPath, "Textos.ao");
+            // Try Textos.tsao first (has more entries), fallback to Textos.ao
+            var textosPath = System.IO.Path.Combine(initPath, "Textos.tsao");
+            if (!System.IO.File.Exists(textosPath))
+                textosPath = System.IO.Path.Combine(initPath, "Textos.ao");
             TextMessages = TextosLoader.Load(textosPath);
         }
         catch (Exception ex)
