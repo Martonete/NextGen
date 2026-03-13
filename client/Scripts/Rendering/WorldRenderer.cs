@@ -514,7 +514,7 @@ void fragment() {
                     && (!ch.Invisible || kvp.Key == _state.UserCharIndex))
                 {
                     CharRenderer.CollectReflAuraDraws(this, ch,
-                        new Vector2(charPx, charPy), headOffset, _data);
+                        new Vector2(charPx, charPy), headOffset, _data, _animator!.GlobalTimeMs);
                 }
 
                 _frameAnyReflection = true;
@@ -564,7 +564,7 @@ void fragment() {
                     // TransparenciaBody ranges 18-53, maps to alpha ~45-135 out of 255
                     auraAlpha = (ch.TransparenciaBody + 45f) / 255f;
                 }
-                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data, auraAlpha);
+                CharRenderer.CollectAuraDraws(this, ch, new Vector2(charPx, charPy), headOffset, _data, _animator!.GlobalTimeMs, auraAlpha);
             }
         }
 

@@ -19,7 +19,7 @@ public class AoTcpClient : IDisposable
     private CancellationTokenSource? _cts;
     private readonly ConcurrentQueue<byte[]> _inboundQueue = new();
     private readonly byte[] _readBuffer = new byte[8192];
-    private bool _connected;
+    private volatile bool _connected;
 
     public bool IsConnected => _connected;
     public int PendingPackets => _inboundQueue.Count;
@@ -34,6 +34,9 @@ public class AoTcpClient : IDisposable
 
         using var connectCts = new CancellationTokenSource(timeoutMs);
         await _client.ConnectAsync(host, port, connectCts.Token);
+        _client.NoDelay = true;             // Disable Nagle — send packets immediately
+        _client.SendBufferSize = 65536;     // 64KB send buffer
+        _client.ReceiveBufferSize = 65536;  // 64KB receive buffer
         _stream = _client.GetStream();
         _connected = true;
 

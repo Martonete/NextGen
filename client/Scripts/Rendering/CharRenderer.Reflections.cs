@@ -161,7 +161,7 @@ public static partial class CharRenderer
     /// </summary>
     public static void CollectReflAuraDraws(
         WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
-        GameData data)
+        GameData data, double globalTimeMs)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
 
@@ -186,17 +186,17 @@ public static partial class CharRenderer
             mirrorAdj = -4f; // all races: pull mirror 4px closer to body
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA, mirrorY);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW, mirrorY);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE, mirrorY);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR, mirrorY);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC, mirrorY);
-        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle, mirrorY);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ch.AuraAngleA, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ch.AuraAngleW, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ch.AuraAngleE, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ch.AuraAngleR, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ch.AuraAngleC, mirrorY, globalTimeMs);
+        CollectSingleReflAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ch.NpcAuraAngle, mirrorY, globalTimeMs);
     }
 
     private static void CollectSingleReflAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
-        GameData data, int auraIndex, float angle, float mirrorY)
+        GameData data, int auraIndex, float angle, float mirrorY, double globalTimeMs)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
         var aura = data.Auras[auraIndex];
@@ -209,9 +209,8 @@ public static partial class CharRenderer
             var grh = data.Grhs[grhIndex];
             if (grh.NumFrames > 1)
             {
-                long now = System.Environment.TickCount64;
                 float speed = grh.Speed > 0 ? grh.Speed : 100f;
-                frame = (int)(now / speed % grh.NumFrames);
+                frame = (int)(globalTimeMs / speed % grh.NumFrames);
             }
         }
 

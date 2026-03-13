@@ -28,7 +28,9 @@ public partial class SoundManager : Node
 
     private readonly List<AudioStreamPlayer> _sfxPlayers = new();
     private AudioStreamPlayer? _musicPlayer;
+    private const int MaxSfxCacheSize = 200;
     private readonly Dictionary<int, AudioStream?> _sfxCache = new();
+    private readonly Queue<int> _sfxCacheOrder = new();    // LRU eviction order
     private readonly Dictionary<int, AudioStream?> _musCache = new();
 
     private string _dataPath = "";
@@ -189,6 +191,13 @@ public partial class SoundManager : Node
         {
             stream = LoadWav(soundId) ?? LoadWavAsMp3(soundId) ?? LoadMp3(soundId);
             _sfxCache[soundId] = stream;
+            _sfxCacheOrder.Enqueue(soundId);
+            // Evict oldest entries when cache exceeds limit
+            while (_sfxCacheOrder.Count > MaxSfxCacheSize)
+            {
+                int oldest = _sfxCacheOrder.Dequeue();
+                _sfxCache.Remove(oldest);
+            }
             if (stream == null)
                 GD.Print($"[SND] Could not load sound {soundId}");
         }

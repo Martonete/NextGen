@@ -125,7 +125,7 @@ public static partial class CharRenderer
 
         // Character-attached particles — not drawn when invisible
         if (!ch.Invisible && state != null && (state.Config?.ShowParticles ?? true))
-            DrawCharParticles(canvas, ch, screenPos, state, data, worldRenderer);
+            DrawCharParticles(canvas, ch, screenPos, state, data, animator?.GlobalTimeMs ?? 0, worldRenderer);
 
         // Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
         // VB6: name IS drawn for invisible self (visible to self/GMs)
@@ -502,22 +502,22 @@ public static partial class CharRenderer
     /// </summary>
     public static void CollectAuraDraws(
         WorldRenderer worldRenderer, Character ch, Vector2 pos, Vector2 headOffset,
-        GameData data, float alphaOverride = 1f)
+        GameData data, double globalTimeMs, float alphaOverride = 1f)
     {
         if (data.Auras == null || data.Auras.Length <= 1) return;
         if (ch.Navigating) return; // No auras while on a boat
 
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA, alphaOverride);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW, alphaOverride);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE, alphaOverride);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR, alphaOverride);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC, alphaOverride);
-        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexA, ref ch.AuraAngleA, globalTimeMs, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexW, ref ch.AuraAngleW, globalTimeMs, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexE, ref ch.AuraAngleE, globalTimeMs, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexR, ref ch.AuraAngleR, globalTimeMs, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.AuraIndexC, ref ch.AuraAngleC, globalTimeMs, alphaOverride);
+        CollectSingleAura(worldRenderer, pos, headOffset, data, ch.NpcAura, ref ch.NpcAuraAngle, globalTimeMs, alphaOverride);
     }
 
     private static void CollectSingleAura(
         WorldRenderer worldRenderer, Vector2 pos, Vector2 headOffset,
-        GameData data, int auraIndex, ref float angle, float alphaOverride = 1f)
+        GameData data, int auraIndex, ref float angle, double globalTimeMs, float alphaOverride = 1f)
     {
         if (auraIndex <= 0 || auraIndex >= data.Auras.Length) return;
 
@@ -528,7 +528,7 @@ public static partial class CharRenderer
         // Use absolute time so rotation speed is FPS-independent.
         if (aura.Giratoria)
         {
-            angle = (float)(System.Environment.TickCount64 * 0.000096 % 180.0);
+            angle = (float)(globalTimeMs * 0.000096 % 180.0);
         }
 
         // VB6 position: PixelOffsetX + HeadOffset.X, HeadOffset.Y + PixelOffsetY + 72 - offset
@@ -546,9 +546,8 @@ public static partial class CharRenderer
             var grh = data.Grhs[grhIndex];
             if (grh.NumFrames > 1)
             {
-                long now = System.Environment.TickCount64;
                 float speed = grh.Speed > 0 ? grh.Speed : 100f;
-                frame = (int)(now / speed % grh.NumFrames);
+                frame = (int)(globalTimeMs / speed % grh.NumFrames);
             }
         }
 
@@ -636,6 +635,7 @@ public static partial class CharRenderer
     /// </summary>
     private static void DrawCharParticles(Node2D canvas, Character ch, Vector2 pos,
                                            GameState state, GameData data,
+                                           double globalTimeMs,
                                            WorldRenderer? worldRenderer = null)
     {
         // Find char index for this character in state.Characters
@@ -671,10 +671,8 @@ public static partial class CharRenderer
                     var grh = data.Grhs[p.GrhIndex];
                     if (grh.NumFrames > 1)
                     {
-                        // Use global animation clock
-                        long now = System.Environment.TickCount64;
                         float speed = grh.Speed > 0 ? grh.Speed : 100f;
-                        frame = (int)(now / speed % grh.NumFrames);
+                        frame = (int)(globalTimeMs / speed % grh.NumFrames);
                     }
                 }
 
