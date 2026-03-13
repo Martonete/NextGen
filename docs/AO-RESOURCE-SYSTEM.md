@@ -129,7 +129,7 @@ AO uses black (0,0,0) as the transparency color:
 - Frame = `(globalTime × numFrames / speed) % numFrames`
 - All tiles with same GRH are perfectly synchronized
 
-**B) One-Shot FX Animations** (spell hits, emoticons):
+**B) One-Shot FX Animations** (spell hits, effects):
 - Per-instance counter, advances independently
 - Stops at last frame (no loop)
 - Frame = `min(accumulated, numFrames - 1)`
@@ -561,7 +561,6 @@ Per FX (6 bytes):
 
 ### Usage
 - Spell impact effects, combat hit flashes
-- Emoticons (displayed above character head)
 - One-shot animations (play once, stop at last frame)
 
 ---

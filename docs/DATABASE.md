@@ -13,7 +13,6 @@ The server uses **PostgreSQL** for persistent storage. Migrations run automatica
 | Table | Description |
 |-------|-------------|
 | `accounts` | Login credentials, banking, ban status |
-| `account_friends` | Friend list (max 20 per account) |
 | `account_bank` | Account-level bank storage (max 40 slots) |
 | `characters` | Full character state (stats, position, skills, flags, equipment) |
 | `character_inventory` | Inventory items (max 25 slots, tracks equipped status) |
@@ -21,7 +20,7 @@ The server uses **PostgreSQL** for persistent storage. Migrations run automatica
 | `guilds` | Guild metadata, level, points, castle ownership |
 | `guild_members` | Guild membership |
 | `guild_applicants` | Pending guild applications |
-| `guild_bank_items` | Guild bank storage |
+| `guild_bank_items` | Guild bank storage (not active) |
 | `banned_ips` | IP ban list |
 | `banned_hds` | Hardware ID ban list |
 | `rankings` | Leaderboard data (9 categories x 10 positions) |
