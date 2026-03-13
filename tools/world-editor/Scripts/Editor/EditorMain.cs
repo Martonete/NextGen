@@ -608,17 +608,11 @@ public partial class EditorMain : Control
             _statusOuter.Size = new Vector2(win.X, StatusHeight);
         }
 
-        // Preload overlay (centered in viewport area)
-        if (_preloadOverlay != null && _viewport != null)
+        // Preload overlay — covers entire window to block all interaction
+        if (_preloadOverlay != null)
         {
-            float vpX = PaletteWidth + SidebarBorderWidth;
-            float vpW = win.X - vpX;
-            float ovW = 340;
-            float ovH = 80;
-            _preloadOverlay.Position = new Vector2(
-                vpX + (vpW - ovW) / 2,
-                contentTop + (contentH - ovH) / 2);
-            _preloadOverlay.Size = new Vector2(ovW, ovH);
+            _preloadOverlay.Position = Vector2.Zero;
+            _preloadOverlay.Size = win;
         }
     }
 
