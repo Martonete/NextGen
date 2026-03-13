@@ -89,7 +89,6 @@ public partial class Main
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
                     _forumPanel!.Init(_state, _tcp);
-                    _friendListPanel!.Init(_state, _tcp);
                     _mailPanel!.Init(_state, _tcp);
                     _partyPanel!.Init(_state, _tcp);
                     if (_chatSystem != null) _chatSystem.PartyPanel = _partyPanel;
@@ -109,11 +108,6 @@ public partial class Main
                         _state.WhisperTarget = name;
                         _chatSystem?.ShowChat();
                     };
-                    _contextMenu!.OnAddFriend += (name) =>
-                    {
-                        _tcp.SendPacket(ClientPackets.WriteTalk($"/AGREGAR {name}"));
-                    };
-
                     // Wire TCP to new panels
                     _gmPanel?.SetTcp(_tcp);
                     _spawnListPanel?.SetTcp(_tcp);

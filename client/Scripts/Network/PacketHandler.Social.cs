@@ -6,7 +6,7 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Network;
 
 /// <summary>
-/// Binary packet handlers: Chat / Guild / Party / Forum / Mail / Quest / Friends
+/// Binary packet handlers: Chat / Guild / Party / Forum / Mail / Quest
 /// </summary>
 public partial class PacketHandler
 {
@@ -308,7 +308,7 @@ public partial class PacketHandler
     // ── Mail ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// MailList / MailPlayerInfo / MailFriends / MailContent / MailItems — mail data.
+    /// MailList / MailPlayerInfo / MailContent / MailItems — mail data.
     /// Wire: string data
     /// </summary>
 
@@ -316,7 +316,7 @@ public partial class PacketHandler
     // ── Mail ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// MailList / MailPlayerInfo / MailFriends / MailContent / MailItems — mail data.
+    /// MailList / MailPlayerInfo / MailContent / MailItems — mail data.
     /// Wire: string data
     /// </summary>
     private void HandleBinMailData(ByteQueue bq, string tag)
@@ -381,43 +381,6 @@ public partial class PacketHandler
                 _state.MailInboxDirty = true;
             }
         }
-    }
-
-    // ── Friends ───────────────────────────────────────────────────
-
-
-    // ── Friends ───────────────────────────────────────────────────
-
-    private void HandleBinFriendList(ByteQueue bq)
-    {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] FriendList: {data.Length} chars");
-
-        // Parse friend list: "name1,status1;name2,status2;..."
-        // status: 1=online, 0=offline
-        _state.FriendList.Clear();
-
-        if (!string.IsNullOrEmpty(data))
-        {
-            string[] entries = data.Split(';', System.StringSplitOptions.RemoveEmptyEntries);
-            foreach (string entry in entries)
-            {
-                string[] parts = entry.Split(',');
-                if (parts.Length >= 1)
-                {
-                    var friend = new FriendEntry
-                    {
-                        Name = parts[0].Trim(),
-                        Online = parts.Length >= 2 && parts[1].Trim() == "1"
-                    };
-                    if (!string.IsNullOrEmpty(friend.Name))
-                        _state.FriendList.Add(friend);
-                }
-            }
-        }
-
-        _state.FriendListDirty = true;
-        _state.ShowFriendListPanel = true;
     }
 
     // ── Misc data ─────────────────────────────────────────────────
@@ -522,51 +485,6 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = $"[{sender}] {msg}", Color = "AAFFAA" });
     }
 
-
-    private void HandleBinKfmData(ByteQueue bq)
-    {
-        string name = bq.ReadString();
-        GD.Print($"[PKT] KfmData (friend online): {name}");
-
-        // Mark friend as online
-        foreach (var f in _state.FriendList)
-        {
-            if (f.Name.Equals(name, System.StringComparison.OrdinalIgnoreCase))
-            {
-                f.Online = true;
-                break;
-            }
-        }
-        _state.FriendListDirty = true;
-        _state.ChatMessages.Enqueue(new ChatMessage
-        {
-            Text = $"{name} se ha conectado.",
-            Color = "00FF88"
-        });
-    }
-
-
-    private void HandleBinDfmData(ByteQueue bq)
-    {
-        string name = bq.ReadString();
-        GD.Print($"[PKT] DfmData (friend offline): {name}");
-
-        // Mark friend as offline
-        foreach (var f in _state.FriendList)
-        {
-            if (f.Name.Equals(name, System.StringComparison.OrdinalIgnoreCase))
-            {
-                f.Online = false;
-                break;
-            }
-        }
-        _state.FriendListDirty = true;
-        _state.ChatMessages.Enqueue(new ChatMessage
-        {
-            Text = $"{name} se ha desconectado.",
-            Color = "888888"
-        });
-    }
 
     // ── Cosmetics ─────────────────────────────────────────────────
 

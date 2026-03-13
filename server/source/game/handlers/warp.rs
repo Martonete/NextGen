@@ -189,7 +189,7 @@ pub(crate) async fn check_update_needed_user(
     };
 
     // Send mutual CC + [CD + NOVER to newly visible users
-    // TSAO: clanmates can see each other even when invisible/hidden.
+    // Clanmates can see each other even when invisible/hidden.
     for other_id in new_users {
         if let Some(other) = state.users.get(&other_id) {
             if other.logged {
@@ -574,7 +574,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     make_user_visible(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
-    //     Skip if invisible (GM or spell) — others must NOT see us (TSAO: except clanmates).
+    //     Skip if invisible (GM or spell) — others must NOT see us (except clanmates).
     let is_invis = state.users.get(&conn_id).map(|u| u.invisible).unwrap_or(false);
     if !is_invis {
         state.send_data_bytes(

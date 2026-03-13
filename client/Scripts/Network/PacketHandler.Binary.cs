@@ -682,19 +682,11 @@ public partial class PacketHandler
             case ServerPacketId.MailPlayerInfo: // 206
                 HandleBinMailData(bq, "MailPlayerInfo");
                 break;
-            case ServerPacketId.MailFriends: // 207
-                HandleBinMailData(bq, "MailFriends");
-                break;
             case ServerPacketId.MailContent: // 208
                 HandleBinMailData(bq, "MailContent");
                 break;
             case ServerPacketId.MailItems: // 209
                 HandleBinMailData(bq, "MailItems");
-                break;
-
-            // ── Friends ───────────────────────────────────────────
-            case ServerPacketId.FriendList: // 210
-                HandleBinFriendList(bq);
                 break;
 
             // ── Misc data ─────────────────────────────────────────
@@ -733,12 +725,6 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.SbrData: // 234
                 HandleBinBankReset(bq);
-                break;
-            case ServerPacketId.KfmData: // 235
-                HandleBinKfmData(bq);
-                break;
-            case ServerPacketId.DfmData: // 236
-                HandleBinDfmData(bq);
                 break;
             case ServerPacketId.AuctionList: // 237
                 HandleBinStringOnly(bq, "AuctionList");
@@ -786,10 +772,6 @@ public partial class PacketHandler
             case ServerPacketId.MailOpenTrigger: // 252
                 GD.Print("[PKT] MailOpenTrigger");
                 _state.ShowMailPanel = true;
-                break;
-            case ServerPacketId.FriendDialog: // 253
-                GD.Print("[PKT] FriendDialog");
-                _state.ShowFriendListPanel = true;
                 break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);

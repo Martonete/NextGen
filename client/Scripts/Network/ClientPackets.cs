@@ -604,24 +604,4 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    // ── Friends ──────────────────────────────────────────────────
-
-    /// <summary>
-    /// FriendAdd (ID 130) — add a friend by name.
-    /// Wire: u8 opcode, string name
-    /// </summary>
-    public static byte[] WriteFriendAdd(string name)
-    {
-        return WriteStringPacket(ClientPacketId.FriendAdd, name);
-    }
-
-    /// <summary>
-    /// FriendRemove (ID 131) — remove a friend by name.
-    /// Wire: u8 opcode, string name
-    /// </summary>
-    public static byte[] WriteFriendRemove(string name)
-    {
-        return WriteStringPacket(ClientPacketId.FriendRemove, name);
-    }
-
 }

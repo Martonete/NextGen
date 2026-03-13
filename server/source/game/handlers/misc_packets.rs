@@ -340,7 +340,7 @@ pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data
             let pkt = binary_packets::write_work_mode(skill_num as u8);
             state.send_bytes(conn_id, &pkt);
         }
-        8 => { // Ocultarse — all checks handled inside do_ocultarse (TSAO mechanic)
+        8 => { // Ocultarse — all checks handled inside do_ocultarse
             super::skills::do_ocultarse(state, conn_id).await;
         }
         _ => {} // Unknown skill, ignore

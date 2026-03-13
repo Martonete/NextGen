@@ -116,9 +116,6 @@ public partial class Main : Control
     // Forum panel (frmForo)
     private ForumPanel? _forumPanel;
 
-    // Friend list panel
-    private FriendListPanel? _friendListPanel;
-
     // Mail panel
     private MailPanel? _mailPanel;
 

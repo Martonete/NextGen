@@ -1,6 +1,6 @@
-/// TSAO Binary Protocol — Packet IDs.
+/// Binary Protocol — Packet IDs.
 ///
-/// These are numeric IDs that map 1:1 to our existing TSAO text opcodes.
+/// These are numeric IDs that map 1:1 to our existing text opcodes.
 /// The game logic is IDENTICAL — only the wire encoding changes from text to binary.
 /// Each packet starts with a 1-byte opcode followed by typed binary fields.
 
@@ -354,7 +354,6 @@ pub enum ServerPacketID {
     Ping = 250,
     TravelsOpen = 251,
     MailOpenTrigger = 252,
-    FriendDialog = 253,
 
     // Generic text fallback (for any remaining text-based packets)
     GenericText = 255,

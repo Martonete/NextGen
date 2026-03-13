@@ -1,14 +1,7 @@
-//! Social/UI packets: Friends, Mail, Chat system, Guild info/bank, Quests, Auction, Cosmetic.
+//! Social/UI packets: Mail, Chat system, Guild info/bank, Quests, Auction, Cosmetic.
 
 use crate::protocol::byte_queue::ByteQueue;
 use crate::protocol::packets::ServerPacketID;
-
-/// ID 253: Friend dialog trigger (MFC).
-pub fn write_friend_dialog() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::FriendDialog.to_byte());
-    pkt.into_bytes()
-}
 
 /// ID 252: Mail open trigger (CORREO).
 pub fn write_mail_open() -> Vec<u8> {

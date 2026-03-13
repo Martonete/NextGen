@@ -316,10 +316,7 @@ mod db_tests {
         let ehys = login_packets.iter().find(|p| p.starts_with("EHYS")).expect("Missing EHYS packet");
         assert!(ehys.contains("100"), "EHYS should contain 100 (full hunger/thirst)");
 
-        // 7. LDM (Friend List)
-        assert!(login_packets.iter().any(|p| p.starts_with("LDM")), "Missing LDM packet");
-
-        // 8. [ES (Bulk Stats)
+        // 7. [ES (Bulk Stats)
         let bulk = login_packets.iter().find(|p| p.starts_with("[ES")).expect("Missing [ES bulk stats packet");
         assert!(bulk.contains("TestHero"), "[ES should contain character name, got: {}", bulk);
 

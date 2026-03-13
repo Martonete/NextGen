@@ -174,7 +174,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
 
     // Broadcast movement to area (CharacterMove packet) — only to OTHER players
     // VB6 SendToUserAreaButindex: broadcasts to all users in the sender's 27x27 area
-    // TSAO: when invisible, still send movement to same-clan members.
+    // When invisible, still send movement to same-clan members.
     let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
     {
         let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);

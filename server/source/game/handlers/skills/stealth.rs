@@ -196,7 +196,7 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
         return;
     }
 
-    // TSAO mechanic: Using ocultarse while invisible (spell) breaks the spell invisibility.
+    // Using ocultarse while invisible (spell) breaks the spell invisibility.
     // Then the normal hide check runs — success = hidden via skill, failure = fully visible.
     if is_invisible {
         if let Some(user) = state.users.get_mut(&conn_id) {
@@ -242,7 +242,7 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             user.hidden = true;
             user.counter_oculto = counter;
         }
-        // Send NOVER to make invisible on all clients (TSAO: clanmates still see us)
+        // Send NOVER to make invisible on all clients (clanmates still see us)
         if !navigating {
             let ci = char_index.0 as i16;
             let nover = binary_packets::write_set_invisible(ci, true, 0);

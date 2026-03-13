@@ -294,9 +294,4 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = data, Color = "FFFFFF" });
     }
 
-    // ── Stubs ────────────────────────────────────────────────────
-
-    private void HandleFriendsList(string data) { }
-    private void HandleFriendOnline(string data) { }
-    private void HandleFriendOffline(string data) { }
 }

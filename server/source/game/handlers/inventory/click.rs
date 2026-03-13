@@ -576,7 +576,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            // Guild bank removed (TSAO-only feature)
+                            // Guild bank (not implemented)
                         }
                         NpcType::Traveler => {
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
@@ -645,10 +645,9 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             state.send_console(conn_id, "Habla conmigo para cambiar tu ciudadania. Escribe /CIUDADANO para convertirte en ciudadano o /CRIMINAL para renunciar.", font_index::INFO);
                         }
                         NpcType::HouseSeller => {
-                            // VB6: ShowCasas (type 15) — MFC packet
+                            // VB6: ShowCasas (type 15) — house seller NPC
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            let pkt_mfc = binary_packets::write_friend_dialog();
-                            state.send_bytes(conn_id, &pkt_mfc);
+                            // TODO: implement house system UI trigger
                         }
                         NpcType::Arena => { }
                         NpcType::GodNpc => {

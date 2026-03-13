@@ -461,15 +461,6 @@ public partial class PacketHandler
         {
             HandlePrivileges(packet[3..]);
         }
-        else if (packet.StartsWith("LDM"))
-        {
-        }
-        else if (packet.StartsWith("KFM"))
-        {
-        }
-        else if (packet.StartsWith("DFM"))
-        {
-        }
         else if (packet.StartsWith("BKW"))
         {
             HandleTogglePause();

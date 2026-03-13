@@ -316,11 +316,6 @@ public class GameState
     public byte ForumCanMakeSticky;     // 0=no, 2=GM can make stickies
     public bool ShowForumPanel;         // Trigger to open forum panel
 
-    // Friend list system
-    public List<FriendEntry> FriendList = new();
-    public bool ShowFriendListPanel;    // Trigger to open friend list panel
-    public bool FriendListDirty;        // True when friend list changed (KFM/DFM update)
-
     // Mail system
     public List<MailEntry> MailInbox = new();
     public MailEntry? MailCurrentMessage; // Currently viewed message (from MailContent)
@@ -588,13 +583,6 @@ public class CraftEntry
     public int Mat3;      // LingO (smith only)
     public int ObjIndex;
     public int Upgrade;
-}
-
-/// A friend entry in the friend list.
-public class FriendEntry
-{
-    public string Name = "";
-    public bool Online;
 }
 
 /// A mail entry in the inbox.

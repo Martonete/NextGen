@@ -358,7 +358,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 state.send_msg_id(conn_id, 155, "");
                 return;
             }
-            // TSAO: Clan safe check — can't cast offensive spells on clanmates with seguro_clan on
+            // Clan safe check — can't cast offensive spells on clanmates with seguro_clan on
             let caster_seguro = state.users.get(&conn_id).map(|u| u.seguro_clan).unwrap_or(false);
             if caster_seguro && same_clan(state, conn_id, target_id) {
                 state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
@@ -1015,7 +1015,7 @@ pub(super) async fn apply_spell_status(
 
     // Invisibility spell — remove from others' screens, tell self
     // VB6: skip SetInvisible packet if navigating (boat already hides char)
-    // TSAO: clanmates see the character as semi-transparent instead of removing it.
+    // Clanmates see the character as semi-transparent instead of removing it.
     if send_invis && !target_navigating {
         if let Some(u) = state.users.get(&target_id) {
             let ci = u.char_index.0 as i16;

@@ -189,8 +189,6 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "00FFFF" });
     }
 
-    private void HandleFriendChat(string data) { }
-
     // ── FX / Emotes / Particles ─────────────────────────────────
 
     /// <summary>

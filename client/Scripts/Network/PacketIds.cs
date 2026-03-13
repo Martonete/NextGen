@@ -115,9 +115,7 @@ public static class ClientPacketId
     public const byte MailExtract = 127;
     public const byte MailDelete = 128;
 
-    // Friends (130-133)
-    public const byte FriendAdd = 130;
-    public const byte FriendRemove = 131;
+    // Chat rooms (132-133)
     public const byte InitChat = 132;
     public const byte ChatMsg = 133;
 
@@ -579,19 +577,11 @@ public static class ServerPacketId
     /// MailPlayerInfo — mail recipient player info. ID 206.
     public const byte MailPlayerInfo = 206;
 
-    /// MailFriends — mail friends list. ID 207.
-    public const byte MailFriends = 207;
-
     /// MailContent — mail message content. ID 208.
     public const byte MailContent = 208;
 
     /// MailItems — mail attached items. ID 209.
     public const byte MailItems = 209;
-
-    // ── Friends ──────────────────────────────────────────────
-
-    /// FriendList — friends list data. ID 210.
-    public const byte FriendList = 210;
 
     // ── Misc data packets ────────────────────────────────────
 
@@ -630,12 +620,6 @@ public static class ServerPacketId
 
     /// SbrData — SBR data packet. ID 234.
     public const byte SbrData = 234;
-
-    /// KfmData — friend came online (KFM). ID 235.
-    public const byte KfmData = 235;
-
-    /// DfmData — friend went offline (DFM). ID 236.
-    public const byte DfmData = 236;
 
     /// AuctionList — auction item list (APT). ID 237.
     public const byte AuctionList = 237;
@@ -681,9 +665,6 @@ public static class ServerPacketId
 
     /// MailOpenTrigger — open mail UI (CORREO). ID 252.
     public const byte MailOpenTrigger = 252;
-
-    /// FriendDialog — open friend dialog (MFC). ID 253.
-    public const byte FriendDialog = 253;
 
     /// ArenaData — arena duel list (MAR). ID 254.
     public const byte ArenaData = 254;

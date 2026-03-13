@@ -23,7 +23,6 @@ public class PanelStateSync
     private GuildPanel? _guildPanel;
     private GuildFoundationPanel? _guildFoundationPanel;
     private ForumPanel? _forumPanel;
-    private FriendListPanel? _friendListPanel;
     private MailPanel? _mailPanel;
     private PartyPanel? _partyPanel;
     private TravelPanel? _travelPanel;
@@ -68,7 +67,7 @@ public class PanelStateSync
         BankPanel? bankPanel, VaultPanel? vaultPanel,
         GuildBankPanel? guildBankPanel, CraftPanel? craftPanel,
         GuildPanel? guildPanel, GuildFoundationPanel? guildFoundationPanel,
-        ForumPanel? forumPanel, FriendListPanel? friendListPanel,
+        ForumPanel? forumPanel,
         MailPanel? mailPanel, PartyPanel? partyPanel,
         TravelPanel? travelPanel, QuestPanel? questPanel,
         TrainerPanel? trainerPanel, NpcDialogPanel? npcDialogPanel,
@@ -85,7 +84,6 @@ public class PanelStateSync
         _guildPanel = guildPanel;
         _guildFoundationPanel = guildFoundationPanel;
         _forumPanel = forumPanel;
-        _friendListPanel = friendListPanel;
         _mailPanel = mailPanel;
         _partyPanel = partyPanel;
         _travelPanel = travelPanel;
@@ -205,13 +203,6 @@ public class PanelStateSync
         {
             _state.ShowForumPanel = false;
             _forumPanel?.ShowForum();
-        }
-
-        // Friend list panel — open from FriendList/FriendDialog packet
-        if (_state.ShowFriendListPanel)
-        {
-            _state.ShowFriendListPanel = false;
-            _friendListPanel?.ShowPanel();
         }
 
         // Mail panel — open from MailList/MailOpenTrigger packet
@@ -391,7 +382,6 @@ public class PanelStateSync
         _guildPanel?.Hide();
         _guildFoundationPanel?.Hide();
         _forumPanel?.Hide();
-        _friendListPanel?.Hide();
         _mailPanel?.Hide();
         _partyPanel?.Hide();
         _travelPanel?.CloseTravel();

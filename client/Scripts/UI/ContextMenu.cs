@@ -36,12 +36,6 @@ public partial class ContextMenu : PanelContainer
     /// </summary>
     public event Action<string>? OnWhisper;
 
-    /// <summary>
-    /// Fired when user selects "Add Friend".
-    /// Arg: target character name.
-    /// </summary>
-    public event Action<string>? OnAddFriend;
-
     public void Init(GameState state, AoTcpClient tcp)
     {
         _state = state;
@@ -180,10 +174,6 @@ public partial class ContextMenu : PanelContainer
             });
             AddMenuItem("Invitar al Grupo", () => {
                 _tcp?.SendPacket(ClientPackets.WriteTalk($"/PARTY {cleanName}"));
-                CloseMenu();
-            });
-            AddMenuItem("Agregar Amigo", () => {
-                OnAddFriend?.Invoke(cleanName);
                 CloseMenu();
             });
             AddMenuItem("Comerciar", () => {
