@@ -360,11 +360,7 @@ public class InputRouter
                     InputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
                 }
             }
-            else if (mb.ButtonIndex == MouseButton.Right && _state.Config.MouseRightClick)
-            {
-                InputHandler?.HandleLeftClick(viewPos, _state.UserPosX, _state.UserPosY);
-                InputHandler?.HandleRightClick(viewPos, _state.UserPosX, _state.UserPosY);
-            }
+            // Right-click release: no action (press already handled above)
         }
     }
 }
