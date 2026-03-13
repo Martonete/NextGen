@@ -265,25 +265,6 @@ public partial class PacketHandler
         ParticleSystem.CreateCharStream(_state, streamId, charIdx);
     }
 
-    /// <summary>
-    /// CFE — Emoticon display on character.
-    /// </summary>
-    private void HandleCharEmoticon(string data)
-    {
-        var parts = data.Split(',');
-        if (parts.Length < 3) return;
-
-        int charIdx = ParseInt(parts[0]);
-        int fxId = ParseInt(parts[1]);
-        int loops = ParseInt(parts[2]);
-
-        if (!_state.Characters.TryGetValue(charIdx, out var ch))
-            return;
-
-        ch.EmoticonIndex = fxId;
-        ch.EmoticonLoops = loops > 0 ? loops : 0;
-    }
-
     // ── Sound / Music ────────────────────────────────────────────
 
     private void HandlePlaySound(string data)

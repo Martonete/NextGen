@@ -478,10 +478,6 @@ public partial class PacketHandler
         {
             HandleCharFx(packet[3..]);
         }
-        else if (packet.StartsWith("CFE"))
-        {
-            HandleCharEmoticon(packet[3..]);
-        }
         else if (packet.StartsWith("CFF"))
         {
             HandleCharParticle(packet[3..]);

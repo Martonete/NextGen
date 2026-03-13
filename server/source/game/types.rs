@@ -281,7 +281,6 @@ pub struct UserState {
     pub gm_show_name: bool,       // GM name visible to players (VB6: /SHOWNAME toggle)
     pub old_body: i32,            // Saved body before going invisible
     pub old_head: i32,            // Saved head before going invisible
-    pub emoticons: bool,          // Emoticons enabled (toggle via /EMOTICONS)
     pub silenced: bool,           // Muted by GM
     pub silence_timer: i32,       // Mute countdown in seconds (0 = permanent until toggled)
     pub jail_timer: i32,          // Jail countdown in seconds (0 = not jailed)
@@ -527,7 +526,6 @@ impl UserState {
             gm_show_name: false,
             old_body: 0,
             old_head: 0,
-            emoticons: false,
             silenced: false,
             silence_timer: 0,
             jail_timer: 0,

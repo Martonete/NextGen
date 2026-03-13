@@ -70,7 +70,7 @@ public static partial class CharRenderer
     }
 
     /// <summary>
-    /// Draw reflected FX overlays (up to 3 simultaneous) and emoticons on water.
+    /// Draw reflected FX overlays (up to 3 simultaneous) on water.
     /// Uses the same Y-flip mirror as DrawReflection. Called from WorldRenderer PASS 1.5.
     /// Does NOT advance frame counters — those are advanced in DrawFx/DrawCharacter.
     /// </summary>
@@ -79,14 +79,12 @@ public static partial class CharRenderer
         int heading, GameData data, GrhAnimator animator)
     {
         // Check if there's anything to draw
-        bool hasEmoticon = ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0
-                           && ch.EmoticonIndex < data.Fxs.Length;
         bool hasAnyFx = false;
         for (int i = 0; i < 3; i++)
         {
             if (ch.ActiveFxSlots[i] > 0) { hasAnyFx = true; break; }
         }
-        if (!hasEmoticon && !hasAnyFx) return;
+        if (!hasAnyFx) return;
 
         // Compute mirrorY — same logic as DrawReflection
         float mirrorAdj = 0f;
@@ -122,28 +120,6 @@ public static partial class CharRenderer
 
         // Set Y-flip transform
         canvas.DrawSetTransform(new Vector2(0f, mirrorY * 2f), 0f, new Vector2(1f, -1f));
-
-        // Emoticon reflection
-        if (hasEmoticon)
-        {
-            var emFx = data.Fxs[ch.EmoticonIndex];
-            if (emFx.Animacion > 0)
-            {
-                Vector2 emPos = pos + headOffset + new Vector2(emFx.OffsetX, emFx.OffsetY);
-                int emFrame = 0;
-                if (emFx.Animacion > 0 && emFx.Animacion < data.Grhs.Length)
-                {
-                    var emGrh = data.Grhs[emFx.Animacion];
-                    if (emGrh.NumFrames > 1)
-                    {
-                        long now = System.Environment.TickCount64;
-                        float speed = emGrh.Speed > 0 ? emGrh.Speed : 100f;
-                        emFrame = (int)(now / speed % emGrh.NumFrames);
-                    }
-                }
-                DrawGrh(canvas, data, emFx.Animacion, emFrame, emPos, true, fxReflColor);
-            }
-        }
 
         // FX slot reflections (read-only — no frame counter changes)
         for (int i = 0; i < 3; i++)

@@ -46,14 +46,10 @@ public class Character
     public float InvisibleMaxCountdown;   // Max seconds (for progress bar ratio)
     public float InvisibleCountdownTimer; // Accumulates deltaMs to tick each second
 
-    // VB6: EmoticonLoops countdown (separate from FX slots)
-    public int EmoticonLoops;
-
-    // FX (VB6: up to 3 simultaneous + 1 emoticon)
+    // FX (VB6: up to 3 simultaneous)
     public int[] ActiveFxSlots = new int[3]; // FxData indices
     public int[] FxLoops = new int[3];         // -1 = infinite, 0 = done
     public float[] FxFrameCounter = new float[3]; // per-slot frame accumulator
-    public int EmoticonIndex;
 
     // Dialog system (VB6: cDialogos — speech bubble above head)
     public string DialogText = "";

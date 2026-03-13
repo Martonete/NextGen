@@ -89,42 +89,6 @@ public static partial class CharRenderer
             }
         }
 
-        // Emoticon loop countdown (VB6: decrements each frame, clears at 0)
-        if (ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0)
-        {
-            ch.EmoticonLoops--;
-            if (ch.EmoticonLoops <= 0)
-            {
-                ch.EmoticonIndex = 0;
-                ch.EmoticonLoops = 0;
-            }
-        }
-
-        // Emoticon (VB6: rendered before body, at FxData offset above head, alpha 150)
-        // Not drawn when invisible (VB6: entire char skipped in invisible branch)
-        if (!ch.Invisible && ch.EmoticonIndex > 0 && ch.EmoticonLoops > 0 && ch.EmoticonIndex < data.Fxs.Length)
-        {
-            var emFx = data.Fxs[ch.EmoticonIndex];
-            if (emFx.Animacion > 0)
-            {
-                // Position above head: screenPos + headOffset + FxData offset
-                Vector2 emPos = screenPos + headOffset + new Vector2(emFx.OffsetX, emFx.OffsetY);
-                int emFrame = 0;
-                if (emFx.Animacion > 0 && emFx.Animacion < data.Grhs.Length)
-                {
-                    var emGrh = data.Grhs[emFx.Animacion];
-                    if (emGrh.NumFrames > 1)
-                    {
-                        long now = System.Environment.TickCount64;
-                        float speed = emGrh.Speed > 0 ? emGrh.Speed : 100f;
-                        emFrame = (int)(now / speed % emGrh.NumFrames);
-                    }
-                }
-                DrawGrh(canvas, data, emFx.Animacion, emFrame, emPos, true,
-                        new Color(1, 1, 1, 150f / 255f));
-            }
-        }
-
         // Water reflections are now drawn by WorldRenderer (PASS 1.5) between
         // Layer 1 and Layer 2, so they clip naturally to water tiles.
 

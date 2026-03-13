@@ -295,11 +295,6 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_casar(state, conn_id, target).await;
     } else if cmd_upper == "/DIVORCIARSE" {
         handle_slash_divorciarse(state, conn_id).await;
-    } else if cmd_upper == "/EMOTICONS" {
-        // VB6: Toggle emoticons flag (no server response)
-        if let Some(u) = state.users.get_mut(&conn_id) {
-            u.emoticons = !u.emoticons;
-        }
     } else if cmd_upper.starts_with("/VOTO ") {
         let candidate = cmd[6..].trim();
         handle_slash_voto(state, conn_id, candidate).await;

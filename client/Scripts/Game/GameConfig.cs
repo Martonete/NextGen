@@ -44,7 +44,6 @@ public class GameConfig
     public bool ShowMinimap = true;         // VB6: MiniMap_Activate
     public bool ShowMinimapPosition = true; // VB6: MiniMap_Show_Position
     public bool ShowDeathDialog = true;     // VB6: General_Mostrar_Cartel_Muerte
-    public bool ReplaceEmoticons = true;    // VB6: General_Emoticons_Reeplace
     public int ScreenshotFormat;            // VB6: 0=JPG, 1=BMP
 
     // ── Console/Chat ──────────────────────────────────────
@@ -107,7 +106,6 @@ public class GameConfig
         ShowMinimap = other.ShowMinimap;
         ShowMinimapPosition = other.ShowMinimapPosition;
         ShowDeathDialog = other.ShowDeathDialog;
-        ReplaceEmoticons = other.ReplaceEmoticons;
         ScreenshotFormat = other.ScreenshotFormat;
 
         ShowGlobalChat = other.ShowGlobalChat;
@@ -201,7 +199,6 @@ public class GameConfig
                     case "ShowMinimap": cfg.ShowMinimap = val == "1"; break;
                     case "ShowMinimapPosition": cfg.ShowMinimapPosition = val == "1"; break;
                     case "ShowDeathDialog": cfg.ShowDeathDialog = val == "1"; break;
-                    case "ReplaceEmoticons": cfg.ReplaceEmoticons = val == "1"; break;
                     case "ScreenshotFormat": if (int.TryParse(val, out int ssf)) cfg.ScreenshotFormat = ssf; break;
 
                     // Console/Chat
@@ -281,7 +278,6 @@ public class GameConfig
             sb.AppendLine($"ShowMinimap={(ShowMinimap ? "1" : "0")}");
             sb.AppendLine($"ShowMinimapPosition={(ShowMinimapPosition ? "1" : "0")}");
             sb.AppendLine($"ShowDeathDialog={(ShowDeathDialog ? "1" : "0")}");
-            sb.AppendLine($"ReplaceEmoticons={(ReplaceEmoticons ? "1" : "0")}");
             sb.AppendLine($"ScreenshotFormat={ScreenshotFormat}");
 
             // Console/Chat
