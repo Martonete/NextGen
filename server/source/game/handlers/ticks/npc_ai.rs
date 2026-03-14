@@ -117,14 +117,19 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // First: check adjacent tiles for attack
                 if can_attack {
                     if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
-                        // VB6 AtacaDoble: 50% chance to cast spell instead of melee
-                        if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                            let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                            let spell_id = spells[spell_idx];
-                            npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                        } else {
-                            npc_attack_user(state, npc_idx, target_conn).await;
+                        // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                        // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                        // Non-AtacaDoble with LanzaSpells = always spell+melee.
+                        if lanza_spells > 0 && !spells.is_empty() {
+                            let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                            if !skip_spell {
+                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                let spell_id = spells[spell_idx];
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            }
                         }
+                        // Melee ALWAYS happens after spell
+                        npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
                             n.target = Some(target_conn);
@@ -240,14 +245,18 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         let dist = (x - tx).abs() + (y - ty).abs();
 
                         if dist <= 1 && can_attack {
-                            // VB6 AtacaDoble: 50% chance to cast spell instead of melee
-                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else {
-                                npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                            // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                            if lanza_spells > 0 && !spells.is_empty() {
+                                let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                                if !skip_spell {
+                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                    let spell_id = spells[spell_idx];
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                             }
+                            // Melee ALWAYS happens after spell
+                            npc_attack_user(state, npc_idx, target_conn).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
@@ -330,14 +339,18 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     if let Some((tx, ty)) = target_pos {
                         let dist = (x - tx).abs() + (y - ty).abs();
                         if dist <= 1 && can_attack {
-                            // VB6 AtacaDoble: 50% chance to cast spell instead of melee
-                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else {
-                                npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                            // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                            if lanza_spells > 0 && !spells.is_empty() {
+                                let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                                if !skip_spell {
+                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                    let spell_id = spells[spell_idx];
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                             }
+                            // Melee ALWAYS happens after spell
+                            npc_attack_user(state, npc_idx, target_conn).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
@@ -409,19 +422,20 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 if hostile && can_attack {
                     // Adjacent melee/spell attack (VB6: same attack phase as other hostiles)
                     if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
-                        // VB6: NpcObjeto → RandomNumber(1,3) < 3 → 2/3 chance to attack
+                        // VB6: NpcObjeto -> RandomNumber(1,3) < 3 -> 2/3 chance to attack
                         if rand_range(1, 3) < 3 {
-                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else if lanza_spells > 0 && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else {
-                                npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                            // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                            if lanza_spells > 0 && !spells.is_empty() {
+                                let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                                if !skip_spell {
+                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                    let spell_id = spells[spell_idx];
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                             }
+                            // Melee ALWAYS happens after spell
+                            npc_attack_user(state, npc_idx, target_conn).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }

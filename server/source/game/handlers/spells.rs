@@ -899,10 +899,9 @@ pub(super) async fn apply_spell_status(
         return;
     }
 
-    // VB6: Super Anillo (700) blocks paralysis, poison, curse, blindness, stun
-    // modHechizos.bas lines 141-143, 166, 186
-    if spell.paraliza || spell.inmoviliza || spell.envenena || spell.maldicion
-        || spell.estupidez || spell.ceguera {
+    // VB6: Super Anillo (700) blocks paralysis, immobilize, stun, blindness only
+    // Does NOT block poison (envenena) or curse (maldicion)
+    if spell.paraliza || spell.inmoviliza || spell.estupidez || spell.ceguera {
         let ring_slot = state.users.get(&target_id).map(|u| u.equip.ring).unwrap_or(0);
         let ring_obj = get_equipped_obj_index(state, target_id, ring_slot);
         if ring_obj == SUPERANILLO {
@@ -1039,7 +1038,7 @@ pub(super) async fn apply_spell_status(
         }
     }
 
-    // Resurrection spell
+    // Resurrection spell — VB6 13.3: all classes resurrect immediately
     if spell.revivir {
         let target_dead = state.users.get(&target_id).map(|u| u.dead).unwrap_or(false);
         let target_seguro_resu = state.users.get(&target_id).map(|u| u.seguro_resu).unwrap_or(false);
@@ -1057,7 +1056,6 @@ pub(super) async fn apply_spell_status(
                 return;
             }
 
-            // Check if caster is cleric (instant full HP rez)
             let caster_class = state.users.get(&caster_id)
                 .map(|u| u.class)
                 .unwrap_or_default();
@@ -1065,40 +1063,61 @@ pub(super) async fn apply_spell_status(
                 .map(|u| u.char_name.clone())
                 .unwrap_or_default();
 
+            // VB6 13.3: Caster must have full stamina to resurrect
+            let (caster_min_sta, caster_max_sta) = state.users.get(&caster_id)
+                .map(|u| (u.min_sta, u.max_sta))
+                .unwrap_or((0, 1));
+            if caster_min_sta != caster_max_sta {
+                state.send_console(caster_id, "Necesitas tener toda tu energia para resucitar.", font_index::INFO);
+                return;
+            }
+
+            // VB6 13.3: Instrument check — Bardo needs LAUDELFICO or LAUDMAGICO,
+            // Druida needs FLAUTAELFICA or FLAUTAMAGICA equipped as ring
+            let ring_slot = state.users.get(&caster_id).map(|u| u.equip.ring).unwrap_or(0);
+            let ring_obj = get_equipped_obj_index(state, caster_id, ring_slot);
+            const FLAUTAMAGICA: i32 = 208;
+
+            if caster_class == PlayerClass::Bardo {
+                if ring_obj != LAUDELFICO && ring_obj != LAUDMAGICO {
+                    state.send_console(caster_id, "Necesitas un laúd para resucitar.", font_index::INFO);
+                    return;
+                }
+            } else if caster_class == PlayerClass::Druida {
+                if ring_obj != FLAUTAELFICA && ring_obj != FLAUTAMAGICA {
+                    state.send_console(caster_id, "Necesitas una flauta para resucitar.", font_index::INFO);
+                    return;
+                }
+            }
+
             let target_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(1);
 
-            if caster_class == PlayerClass::Clerigo {
-                // Cleric: instant resurrection at full HP
-                revive_user(state, target_id).await;
-                if let Some(target) = state.users.get_mut(&target_id) {
-                    target.min_hp = target.max_hp;
-                    // VB6 13.3: reset stats on resurrection
-                    target.min_ham = 0;
-                    target.min_agua = 0;
-                    target.min_mana = 0;
-                    target.min_sta = 0;
-                }
-                send_stats_hp(state, target_id).await;
-                state.send_msg_id(target_id, 749, &caster_name);
-            } else {
-                // Non-cleric: 10 second delayed resurrection
-                if let Some(target) = state.users.get_mut(&target_id) {
-                    target.segundos_para_revivir = 10;
-                    // VB6 13.3: reset stats on resurrection
-                    target.min_ham = 0;
-                    target.min_agua = 0;
-                    target.min_mana = 0;
-                    target.min_sta = 0;
-                }
-                state.send_msg_id(target_id, 845, "");
+            // VB6 13.3: ALL classes resurrect immediately (no Cleric vs others branching)
+            revive_user(state, target_id).await;
+            if let Some(target) = state.users.get_mut(&target_id) {
+                target.min_hp = target.max_hp;
+                // VB6 13.3: reset stats on resurrection
+                target.min_ham = 0;
+                target.min_agua = 0;
+                target.min_mana = 0;
+                target.min_sta = 0;
             }
+            send_stats_hp(state, target_id).await;
+            state.send_msg_id(target_id, 749, &caster_name);
 
             // Caster pays HP cost — VB6 13.3: hp * (1 - target_level * 0.015)
+            // Allow HP to reach 0 (caster can die from resurrection cost)
             if let Some(caster) = state.users.get_mut(&caster_id) {
                 let new_hp = ((caster.min_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
-                caster.min_hp = new_hp.max(1);
+                caster.min_hp = new_hp;
             }
             send_stats_hp(state, caster_id).await;
+
+            // If caster HP <= 0, caster dies from the resurrection cost
+            let caster_hp = state.users.get(&caster_id).map(|u| u.min_hp).unwrap_or(0);
+            if caster_hp <= 0 {
+                user_die(state, caster_id, None).await;
+            }
         }
     }
 }

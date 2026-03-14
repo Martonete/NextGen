@@ -118,6 +118,12 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, d
             return;
         }
 
+        // VB6 parity: newbie items can only be used by players level <= 12
+        if obj_data.newbie && user_level > 12 && !is_gm {
+            state.send_console(conn_id, "Solo los newbies pueden usar este objeto.", font_index::INFO);
+            return;
+        }
+
         // Class restriction (VB6: ClasePuedeUsarItem Or Privilegios >= Semidios)
         if !is_gm && !obj_data.class_prohibida.is_empty() {
             let uc = user_class.to_string().to_uppercase();

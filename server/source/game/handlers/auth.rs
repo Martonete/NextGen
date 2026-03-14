@@ -983,10 +983,22 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// RollDice — Roll dice for character attributes.
+/// VB6 parity (Modulo_UsUaRiOs.bas TirarDados):
+///   STR = max(15, 13 + rand(0,3) + rand(0,2))   → 15-18
+///   AGI = max(15, 12 + rand(0,3) + rand(0,3))   → 15-18
+///   INT = max(16, 13 + rand(0,3) + rand(0,2))   → 16-18
+///   CHA = max(15, 12 + rand(0,3) + rand(0,3))   → 15-18
+///   CON = 16 + rand(0,1) + rand(0,1)            → 16-18
 pub(super) async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) {
     info!("[AUTH] Dice roll request from #{}", conn_id);
 
-    let attrs = [18i32; 5];
+    let str_val = (13 + rand_range(0, 3) + rand_range(0, 2)).max(15);
+    let agi_val = (12 + rand_range(0, 3) + rand_range(0, 3)).max(15);
+    let int_val = (13 + rand_range(0, 3) + rand_range(0, 2)).max(16);
+    let cha_val = (12 + rand_range(0, 3) + rand_range(0, 3)).max(15);
+    let con_val = 16 + rand_range(0, 1) + rand_range(0, 1);
+
+    let attrs = [str_val, agi_val, int_val, cha_val, con_val];
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.dice_attributes = attrs;

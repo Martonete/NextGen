@@ -216,6 +216,9 @@ pub struct ObjData {
     pub staff_power: i32,
     pub staff_damage_bonus: i32,
 
+    // Backstab flag (VB6: Apuñala=1 — weapon enables backstab)
+    pub apunala: bool,
+
     // Pirate throat-cut (VB6: Acuchilla — weapon flag for DoAcuchillar)
     pub acuchilla: bool,
 
@@ -296,6 +299,7 @@ impl Default for ObjData {
             defensa_magica_max: 0,
             staff_power: 0,
             staff_damage_bonus: 0,
+            apunala: false,
             acuchilla: false,
             upgrade: 0,
             foro_id: String::new(),
@@ -399,6 +403,7 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             defensa_magica_max: get_int("DefensaMagicaMax"),
             staff_power: get_int("StaffPower"),
             staff_damage_bonus: get_int("StaffDamageBonus"),
+            apunala: get_bool("Apuñala"),
             acuchilla: get_bool("Acuchilla"),
             upgrade: get_int("Upgrade"),
             foro_id: get_str("ForoID"),

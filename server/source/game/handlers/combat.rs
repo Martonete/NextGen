@@ -73,9 +73,10 @@ pub(super) fn poder_ataque_wrestling(skill: i32, agility: i32, level: i32, class
 }
 
 /// VB6: PoderEvasion — evasion power.
-/// Formula: (Tacticas + Tacticas/33 * Agility) * ModClase.Evasion + 2.5 * max(0, Level-12)
+/// Formula: (Tacticas + (Tacticas\33) * Agility) * ModClase.Evasion + 2.5 * max(0, Level-12)
+/// Note: VB6 uses integer division (backslash operator) for Tacticas\33.
 pub(super) fn poder_evasion(tacticas: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    let temp = (tacticas as f64 + (tacticas as f64 / 33.0 * agility as f64)) * class_mod as f64;
+    let temp = (tacticas as f64 + ((tacticas / 33) as f64 * agility as f64)) * class_mod as f64;
     temp as i64 + (2.5 * (level - 12).max(0) as f64) as i64
 }
 
@@ -201,10 +202,9 @@ pub(super) fn do_apunalar(
 }
 
 /// VB6: PuedeApuñalar — check if user can backstab.
-/// Requirements: same heading as victim, Apuñalar skill > 0, behind the target.
-pub(super) fn puede_apunalar(_class: PlayerClass, attacker_heading: i32, victim_heading: i32) -> bool {
-    // VB6: Must be facing the same direction (behind the target)
-    attacker_heading == victim_heading
+/// Requirements: weapon.Apuñala == 1 AND (skill >= MIN_APUÑALAR OR class == Asesino).
+pub(super) fn puede_apunalar(class: PlayerClass, weapon_apunala: bool, skill_apunalar: i32) -> bool {
+    weapon_apunala && (skill_apunalar > 0 || class == PlayerClass::Asesino)
 }
 
 // =====================================================================
@@ -243,22 +243,24 @@ pub(super) fn do_golpe_critico(
 // VB6 DoDesequipar — unequip victim's item (shield → weapon → helmet)
 // =====================================================================
 
-/// VB6: DoDesequipar — try to unequip victim's shield, weapon, or helmet (in that order).
+/// VB6: DoDesequipar — try to unequip victim's shield, weapon, or helmet.
+/// Uses 3 sequential rolls: first shield, if miss try weapon, if miss try helmet.
+/// VB6 formula: prob = wrestling * 0.2 + level * 0.66
 /// Returns true if something was unequipped.
-async fn do_desequipar(state: &mut GameState, victim_id: ConnectionId) -> bool {
+async fn do_desequipar(state: &mut GameState, victim_id: ConnectionId, prob: i32) -> bool {
     if let Some(victim) = state.users.get_mut(&victim_id) {
-        // Try shield first
-        if victim.equip.shield > 0 {
+        // Roll 1: Try shield
+        if victim.equip.shield > 0 && rand_range(1, 100) <= prob {
             victim.equip.shield = 0;
             return true;
         }
-        // Then weapon
-        if victim.equip.weapon > 0 {
+        // Roll 2: Try weapon
+        if victim.equip.weapon > 0 && rand_range(1, 100) <= prob {
             victim.equip.weapon = 0;
             return true;
         }
-        // Then helmet
-        if victim.equip.helmet > 0 {
+        // Roll 3: Try helmet
+        if victim.equip.helmet > 0 && rand_range(1, 100) <= prob {
             victim.equip.helmet = 0;
             return true;
         }
@@ -302,6 +304,7 @@ pub(super) struct WeaponInfo {
     pub ammo_min_hit: i32,
     pub ammo_max_hit: i32,
     pub acuchilla: bool,
+    pub apunala: bool,
 }
 
 pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> WeaponInfo {
@@ -310,7 +313,7 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         None => return WeaponInfo {
             obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
             refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false,
+            acuchilla: false, apunala: false,
         },
     };
 
@@ -318,7 +321,7 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         return WeaponInfo {
             obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
             refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false,
+            acuchilla: false, apunala: false,
         };
     }
 
@@ -327,13 +330,13 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         return WeaponInfo {
             obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
             refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false,
+            acuchilla: false, apunala: false,
         };
     }
 
-    let (is_proy, w_min, w_max, refuerzo, envenena, uses_ammo, acuchilla) = match state.get_object(obj_idx) {
-        Some(o) => (o.proyectil, o.min_hit, o.max_hit, o.refuerzo, o.envenena, o.municion > 0, o.acuchilla),
-        None => (false, 0, 0, 0, false, false, false),
+    let (is_proy, w_min, w_max, refuerzo, envenena, uses_ammo, acuchilla, apunala) = match state.get_object(obj_idx) {
+        Some(o) => (o.proyectil, o.min_hit, o.max_hit, o.refuerzo, o.envenena, o.municion > 0, o.acuchilla, o.apunala),
+        None => (false, 0, 0, 0, false, false, false, false),
     };
 
     let (has_ammo, ammo_min, ammo_max) = if is_proy && uses_ammo {
@@ -361,10 +364,12 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         ammo_min_hit: ammo_min,
         ammo_max_hit: ammo_max,
         acuchilla,
+        apunala,
     }
 }
 
-/// Get ring/glove info for wrestling bonus
+/// Get ring/glove info for wrestling bonus.
+/// VB6: If ring slot has GUANTE_HURTO (873), its MinHIT/MaxHIT add to wrestling damage.
 pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, bool, i32, i32) {
     let user = match state.users.get(&conn_id) {
         Some(u) => u,
@@ -374,9 +379,15 @@ pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, b
         return (0, false, 0, 0);
     }
     let obj_idx = user.inventory[user.equip.ring - 1].obj_index;
-    // VB6: ObjData(ObjIndex).Guante = 1 — we check if the ring is a "guante" type
-    // Since we don't have a guante field, skip for now
-    (obj_idx, false, 0, 0)
+    // VB6: GUANTE_HURTO (873) adds min_hit/max_hit to wrestling base damage (4-9)
+    if obj_idx == GUANTE_HURTO {
+        let (g_min, g_max) = state.get_object(obj_idx)
+            .map(|o| (o.min_hit, o.max_hit))
+            .unwrap_or((0, 0));
+        (obj_idx, true, g_min, g_max)
+    } else {
+        (obj_idx, false, 0, 0)
+    }
 }
 
 // =====================================================================
@@ -585,6 +596,23 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         let hit = rand_range(1, 100) <= prob_exito;
 
+        // VB6: Desarmar (Ladrón class — disarm) runs regardless of hit or miss
+        if class == PlayerClass::Ladron {
+            let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
+            if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
+                if let Some(victim) = state.users.get_mut(&victim_id) {
+                    if victim.equip.weapon > 0 {
+                        victim.equip.weapon = 0;
+                    }
+                }
+                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
+                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    try_level_skill(u, 20);
+                }
+            }
+        }
+
         if !hit {
             // VB6: Shield block check — separate from evasion
             if v_has_shield {
@@ -644,37 +672,34 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // VB6: Blood FX on victim (if not navigating)
         // (client handles this via MultiMessage)
 
-        // VB6: DoDesequipar — requires pickpocket gloves (ring=873) + unarmed
+        // VB6: DoDesequipar — requires Bandido class + pickpocket gloves (ring=873) + unarmed
         {
-            let (has_gloves, is_unarmed, wrestling_sk, attacker_level) = state.users.get(&conn_id)
+            let (has_gloves, is_unarmed, wrestling_sk, attacker_level, is_bandido) = state.users.get(&conn_id)
                 .map(|u| {
                     let ring_idx = if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
                         u.inventory[u.equip.ring - 1].obj_index
                     } else { 0 };
-                    (ring_idx == GUANTE_HURTO, u.equip.weapon == 0, u.skills[20], u.level)
+                    (ring_idx == GUANTE_HURTO, u.equip.weapon == 0, u.skills[20], u.level, u.class == PlayerClass::Bandido)
                 })
-                .unwrap_or((false, false, 0, 0));
+                .unwrap_or((false, false, 0, 0, false));
 
-            if has_gloves && is_unarmed {
+            if is_bandido && has_gloves && is_unarmed {
                 // VB6: Probabilidad = Wrestling*0.2 + Level*0.66
                 let prob = (wrestling_sk as f64 * 0.2 + attacker_level as f64 * 0.66) as i32;
-                let roll = rand_range(1, 100);
 
-                if roll <= prob {
-                    // Try unequip: shield → weapon → helmet
-                    let unequipped = do_desequipar(state, victim_id).await;
-                    if unequipped {
-                        // Send CP to area to update victim appearance
-                        if let Some(v) = state.users.get(&victim_id) {
-                            let cp = binary_packets::write_character_change(
-                                v.char_index.0 as i16, v.body as i16, v.head as i16, v.heading as u8,
-                                v.weapon_anim as i16, v.shield_anim as i16, v.casco_anim as i16, 0, 0,
-                            );
-                            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
-                        }
-                        state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
-                        state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
+                // VB6: 3 sequential rolls (shield, weapon, helmet) inside do_desequipar
+                let unequipped = do_desequipar(state, victim_id, prob).await;
+                if unequipped {
+                    // Send CP to area to update victim appearance
+                    if let Some(v) = state.users.get(&victim_id) {
+                        let cp = binary_packets::write_character_change(
+                            v.char_index.0 as i16, v.body as i16, v.head as i16, v.heading as u8,
+                            v.weapon_anim as i16, v.shield_anim as i16, v.casco_anim as i16, 0, 0,
+                        );
+                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
                     }
+                    state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                    state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
                 }
             }
 
@@ -733,7 +758,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         );
 
         // VB6: EspadaMataDragonesIndex (402) — always deals 1 damage to players
-        if weapon.obj_index == ESPADA_VIKINGA {
+        if weapon.obj_index == ESPADA_MATA_DRAGONES {
             damage = 1;
         } else {
             // VB6: Weapon Refuerzo (penetration) adds to damage
@@ -744,7 +769,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         let lugar = rand_range(BODY_PART_HEAD, BODY_PART_TORSO);
 
         // VB6: Armor absorption (skip for Dragon Slayer — always 1)
-        if weapon.obj_index != ESPADA_VIKINGA {
+        if weapon.obj_index != ESPADA_MATA_DRAGONES {
             let (head_defense, body_defense) = calc_pvp_armor_absorption(state, victim_id, lugar);
             damage = damage - head_defense as i64 - body_defense as i64;
         }
@@ -799,7 +824,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // VB6: DoApuñalar (backstab attempt)
-            if puede_apunalar(class, heading, v_heading) && skill_apunalar > 0 {
+            if puede_apunalar(class, weapon.apunala, skill_apunalar) {
                 if let Some(stab_dmg) = do_apunalar(skill_apunalar, class, damage, false) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
                         victim.min_hp -= stab_dmg as i32;
@@ -836,23 +861,6 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     }
                     state.send_console(conn_id, &format!("Has acuchillado a {} por {}", victim_name, cut_dmg), font_index::FIGHT);
                     state.send_console(victim_id, &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg), font_index::FIGHT);
-                }
-            }
-        }
-
-        // VB6: Desarmar (Ladrón class — disarm)
-        if class == PlayerClass::Ladron {
-            let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
-            if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    if victim.equip.weapon > 0 {
-                        victim.equip.weapon = 0;
-                    }
-                }
-                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
-                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill(u, 20);
                 }
             }
         }
@@ -1172,18 +1180,30 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         }
     }
 
-    // Drop non-newbie items on the ground (VB6 TirarTodo)
-    let is_newbie = victim_level < 13;
-    let is_criminal = state.users.get(&conn_id).map(|u| u.criminal).unwrap_or(false);
-    if !is_newbie || is_criminal {
+    // VB6 parity: item drops on death
+    // - ZONAPELEA (trigger 6): NO item drops at all
+    // - Non-newbie (level > 12): TirarTodo — drop ALL items
+    // - Newbie (level <= 12): TirarTodosLosItemsNoNewbies — drop only non-newbie items
+    // Note: VB6 does NOT check criminal status for drops
+    let tile_trigger = get_map_tile_trigger(state, map, x, y);
+    let in_arena = tile_trigger == crate::data::maps::Trigger::CombatZone;
+    let is_newbie = victim_level <= 12;
+
+    if !in_arena {
         let mut items_to_drop: Vec<(i32, i32)> = Vec::new();
         if let Some(user) = state.users.get(&conn_id) {
             for slot in user.inventory.iter() {
                 if slot.obj_index > 0 && slot.amount > 0 {
-                    let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
-                        .map(|o| o.newbie)
-                        .unwrap_or(false);
-                    if !is_newbie_item {
+                    if is_newbie {
+                        // Newbie: only drop non-newbie items
+                        let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
+                            .map(|o| o.newbie)
+                            .unwrap_or(false);
+                        if !is_newbie_item {
+                            items_to_drop.push((slot.obj_index, slot.amount));
+                        }
+                    } else {
+                        // Non-newbie: drop ALL items (TirarTodo)
                         items_to_drop.push((slot.obj_index, slot.amount));
                     }
                 }
@@ -1193,10 +1213,16 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         if let Some(user) = state.users.get_mut(&conn_id) {
             for slot in user.inventory.iter_mut() {
                 if slot.obj_index > 0 {
-                    let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
-                        .map(|o| o.newbie)
-                        .unwrap_or(false);
-                    if !is_newbie_item {
+                    if is_newbie {
+                        let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
+                            .map(|o| o.newbie)
+                            .unwrap_or(false);
+                        if !is_newbie_item {
+                            slot.obj_index = 0;
+                            slot.amount = 0;
+                        }
+                    } else {
+                        // Non-newbie: clear ALL items
                         slot.obj_index = 0;
                         slot.amount = 0;
                     }
