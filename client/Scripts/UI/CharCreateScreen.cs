@@ -119,8 +119,18 @@ public class CharCreateScreen
         _charCreatePanel.AddChild(marginC);
         RpgTheme.FillParent(marginC);
 
+        // ScrollContainer so buttons aren't clipped when content exceeds panel height
+        var scroll = new ScrollContainer();
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        scroll.MouseFilter = Control.MouseFilterEnum.Pass;
+        // Hide scrollbar — content fits with slight scroll
+        scroll.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        marginC.AddChild(scroll);
+
         var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
-        marginC.AddChild(vbox);
+        vbox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        scroll.AddChild(vbox);
 
         // Title
         var title = RpgTheme.CreateTitleLabel("Crear Personaje", 16);
