@@ -59,7 +59,6 @@ mod db_tests {
             max_users: 100,
             version: "1.0.0".into(),
             client_version: "1.0.0".into(),
-            idle_limit: 0,
             allow_multi_logins: false,
             can_create_characters: true,
             server_only_gms: false,

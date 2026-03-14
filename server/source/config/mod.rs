@@ -80,7 +80,6 @@ pub struct ServerConfig {
     pub max_users: u32,
     pub version: String,
     pub client_version: String,
-    pub idle_limit: u32,
     pub allow_multi_logins: bool,
     pub can_create_characters: bool,
     pub server_only_gms: bool,
@@ -119,9 +118,6 @@ impl ServerConfig {
                 .unwrap_or(400),
             version: ini.get("INIT", "Version").unwrap_or("0.11.5".into()),
             client_version: ini.get("INIT", "ClientVersion").unwrap_or("1.0.0".into()),
-            idle_limit: ini.get("INIT", "IdleLimit")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(10),
             allow_multi_logins: ini.get("INIT", "AllowMultiLogins")
                 .map(|s| s == "1")
                 .unwrap_or(true),
