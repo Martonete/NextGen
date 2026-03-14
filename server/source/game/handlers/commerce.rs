@@ -804,6 +804,21 @@ pub(super) async fn handle_trade_chat(state: &mut GameState, conn_id: Connection
 /// Maximum bank item stack.
 const MAX_BANK_STACK: i32 = 999;
 
+/// Check if another character from the same account is currently using the bank.
+/// Defense-in-depth against item duplication via concurrent bank access.
+fn is_same_account_banking(state: &GameState, conn_id: ConnectionId) -> bool {
+    let my_account = match state.users.get(&conn_id) {
+        Some(u) if !u.account_name.is_empty() => u.account_name.clone(),
+        _ => return false,
+    };
+    state.users.values().any(|u| {
+        u.conn_id != conn_id
+            && u.logged
+            && u.comerciando
+            && u.account_name.eq_ignore_ascii_case(&my_account)
+    })
+}
+
 /// Open bank window (VB6: IniciarDeposito).
 pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
@@ -812,6 +827,13 @@ pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) 
             state.send_bytes(conn_id, &pkt);
             return;
         }
+    }
+
+    // Safety: block bank access if another character from the same account is already banking.
+    // Prevents item duplication via race condition if two chars from same account are online.
+    if is_same_account_banking(state, conn_id) {
+        state.send_console(conn_id, "No puedes acceder a la bóveda porque otro personaje de tu cuenta la está usando.", font_index::INFO);
+        return;
     }
 
     // VB6 IniciarDeposito: UpdateBanUserInv(True) → bank slots, SendUserGLD, INITBANCO, Comerciando=True
