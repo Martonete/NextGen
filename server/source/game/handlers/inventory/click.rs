@@ -410,8 +410,9 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
         user.target_map = map;
     }
 
-    // NOTE: Spells are NOT cast from right-click. They are cast from WLC (Work Left Click)
-    // with skill_type = MAGIA (2). The right-click only does LookatTile (inspect).
+    // VB6: Right-click also shows tile info (LookatTile) before performing the action.
+    // This displays NPC/player name, health, guild, faction, etc.
+    do_lookat_tile(state, conn_id, x, y).await;
 
     // Gather tile data without holding borrows
     let tile_data = state.world.grid(map).and_then(|g| g.tile(x, y)).map(|t| {
