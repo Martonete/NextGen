@@ -47,9 +47,7 @@ The server reads `server/server.ini` on startup. All settings are in INI format.
 |---------|---------|-------------|
 | `PuedeCrearPersonajes` | `1` | Allow new character creation |
 | `AllowMultiLogins` | `1` | Allow multiple characters from same account |
-| `IdleLimit` | `10` | Minutes before idle players are disconnected |
 | `ServerSoloGMs` | `0` | Restrict server to GM accounts only |
-| `Testing` | `0` | Enable testing mode (relaxed restrictions) |
 
 ### Multipliers
 
@@ -107,7 +105,7 @@ Reload at runtime with `/RELOADSINI`.
 
 ## 5. Intervalos.ini
 
-Located at `server/dat/Intervalos.ini`. Anti-speedhack cooldowns in **milliseconds** (converted to ticks /40ms at load):
+`dat/Intervalos.ini` is the **single source of truth** for ALL interval/cooldown settings. Values are in **milliseconds** (converted to ticks /40ms at load):
 
 | Setting | Default (ms) | Ticks | Description |
 |---------|-------------|-------|-------------|
@@ -119,15 +117,10 @@ Located at `server/dat/Intervalos.ini`. Anti-speedhack cooldowns in **millisecon
 | `PoteoU` | `1200` | 30 | Potion use cooldown |
 | `PoteoClick` | `240` | 6 | Click action cooldown |
 | `Work` | `720` | 18 | Crafting/resource cooldown |
-
-`server.ini [INTERVALOS]` also uses milliseconds:
-
-| Setting | Default (ms) | Description |
-|---------|-------------|-------------|
-| `IntervaloParalizado` | `20000` | Paralysis duration (20s) |
-| `IntervaloInvisible` | `20000` | Spell invisibility duration (20s) |
-| `IntervaloOculto` | `20000` | Hide duration base (20s) |
-| `IntervaloNpcAI` | `1300` | NPC AI tick (ms, used directly) |
+| `IntervaloParalizado` | `20000` | 500 | Paralysis duration (20s) |
+| `IntervaloInvisible` | `20000` | 500 | Spell invisibility duration (20s) |
+| `IntervaloOculto` | `20000` | 500 | Hide duration base (20s) |
+| `IntervaloNpcAI` | `1300` | -- | NPC AI tick (ms, used directly) |
 
 ---
 

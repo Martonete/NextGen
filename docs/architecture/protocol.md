@@ -55,16 +55,16 @@ Common delimiters:
 #### Pre-Login
 | Opcode | Name | Fields | Description |
 |--------|------|--------|-------------|
-| `KERD22` | HardwareCheck | `hd_serial` | HD serial for ban check |
-| `ALOGIN` | AccountLogin | `account,password,version,hd` | Login to account |
-| `NACCNT` | NewAccount | `account,password,email,pin,code` | Create account |
-| `OOLOGI` | CharSelect | `char_name,account,password` | Select character |
-| `THCJXD` | CharSelectAlt | `char_name,account,password` | Alt char select |
-| `NLOGIN` | NewChar | `name,race,gender,class,head,mail,hogar,...,attrs,code` | Create character |
-| `TIRDAD` | DiceRoll | *(none)* | Roll attributes |
-| `TBRP` | DeleteChar | `char_name,account,password` | Delete character |
-| `REPASS` | ChangePass | `account,old_pass,new_pass` | Change password |
-| `REECUH` | Recovery | `account,pin` | Account recovery |
+| `HardwareCheck` | HardwareCheck | `hd_serial` | HD serial for ban check |
+| `AccountLogin` | AccountLogin | `account,password,version,hd` | Login to account |
+| `CreateAccount` | CreateAccount | `account,password,email,pin,code` | Create account |
+| `CharacterLogin` | CharacterLogin | `char_name,account,password` | Select character |
+| `CharacterSelect` | CharacterSelect | `char_name,account,password` | Alt char select |
+| `CreateCharacter` | CreateCharacter | `name,race,gender,class,head,mail,hogar,...,attrs,code` | Create character |
+| `RollDice` | RollDice | *(none)* | Roll attributes |
+| `DeleteCharacter` | DeleteCharacter | `char_name,account,password` | Delete character |
+| `ChangePassword` | ChangePassword | `account,old_pass,new_pass` | Change password |
+| `AccountRecovery` | AccountRecovery | `account,pin` | Account recovery |
 
 #### Movement & Combat
 | Opcode | Name | Fields | Description |
@@ -132,7 +132,7 @@ Common delimiters:
 | Opcode | Format | Description |
 |--------|--------|-------------|
 | `INIAC` | `INIAC<num_chars>,<notice>` | Account accepted |
-| `ADDPJ` | `ADDPJ<name>,<level>,<class>,<map>,<body>,<head>,<weapon>,<shield>,<helmet>` | Character in selection |
+| `AddCharPreview` | `AddCharPreview<name>,<level>,<class>,<map>,<body>,<head>,<weapon>,<shield>,<helmet>` | Character in selection |
 | `CODEH` | `CODEH<code>` | Security code |
 | `LOGGED` | `LOGGED` | Login complete |
 | `ERR` | `ERR<message>` | Error (disconnects) |
@@ -177,7 +177,7 @@ Common delimiters:
 | `[E]` | `[E]<exp_next>,<exp_current>` | Experience update |
 | `CSI` | `CSI<slot>,<obj>,<name>,<amt>,<equipped>,<grh>,<type>,<maxhit>,<minhit>,<maxdef>,<valor/3>` | Inventory slot |
 | `NAVEG` | `NAVEG` | Toggle navigation mode (boat) |
-| `PARADOK` | `PARADOK` | Toggle paralysis |
+| `ParalyzeOK` | `ParalyzeOK` | Toggle paralysis |
 | `MUERT` | `MUERT` | Character died |
 
 ## Text Code System (|| Codes)

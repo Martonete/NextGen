@@ -130,7 +130,7 @@ Toggle: if pet of same type exists, dismiss it. Otherwise spawn like Invocation.
 
 Warps caster to `spell.portal_map/portal_x/portal_y`.
 - Drains ALL mana to 0
-- Sends ChangeMap + PosUpdate + PlayMidi + MapName packets
+- Sends ChangeMap + PosUpdate + PlayMusic + MapName packets
 
 ---
 
@@ -199,8 +199,8 @@ Message: "El Super Anillo rechaza el hechizo."
 ### Paralysis
 
 - Duration: `config.intervalo_paralizado` ticks
-- Sends PARADOK packet + PosUpdate (prevent ghost movement)
-- RemoverParalisis: clears paralyzed+immobilized, sends PARADOK(0)
+- Sends ParalyzeOK packet + PosUpdate (prevent ghost movement)
+- RemoverParalisis: clears paralyzed+immobilized, sends ParalyzeOK(0)
 
 ### Invisibility
 

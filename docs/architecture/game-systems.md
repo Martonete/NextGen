@@ -6,18 +6,18 @@
 INI format with sections: `[INIT]` (password, email, PIN, security code, ban status, HD serial), `[PERSONAJE#]` (character names).
 
 ### Login Flow
-1. Client sends `KERD22` with HD serial → server checks ban list
-2. Client sends `ALOGIN` with account/password/version → server validates credentials
-3. Server sends `INIAC` (num chars + notice), `ADDPJ` (per character), `CODEH` (security code)
-4. Client sends `OOLOGI`/`THCJXD` with character name → server loads charfile
+1. Client sends `HardwareCheck` with HD serial → server checks ban list
+2. Client sends `AccountLogin` with account/password/version → server validates credentials
+3. Server sends `INIAC` (num chars + notice), `AddCharPreview` (per character), `CODEH` (security code)
+4. Client sends `CharacterLogin`/`CharacterSelect` with character name → server loads charfile
 5. Server sends full login sequence: stats, inventory, spells, map data, LOGGED
 
 ### Character Creation
-Client sends `NLOGIN` with race, gender, class, head, homeland, attributes. Server validates (attribute total = 210, class/race restrictions), creates charfile, then auto-logs in.
+Client sends `CreateCharacter` with race, gender, class, head, homeland, attributes. Server validates (attribute total = 210, class/race restrictions), creates charfile, then auto-logs in.
 
 ### Security
 - IP ban list (`BanIps.dat`) — checked on connection
-- HD serial ban — checked on `KERD22`
+- HD serial ban — checked on `HardwareCheck`
 - Multi-login prevention — same account can't login twice
 - IP rate limiting — max connections per IP, connection cooldown
 - Version check — client version must match server config

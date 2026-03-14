@@ -128,7 +128,7 @@ appended via `RecvAppend()`, then packets are consumed from the front.
 | 33 | CharacterChange | (complex, see source) |
 | 34 | ObjectCreate | u8 x, u8 y, i16 grhIdx, string name |
 | 35 | ObjectDelete | u8 x, u8 y |
-| 37 | PlayMIDI | i16 midiId |
+| 37 | PlayMusic | i16 musicId |
 | 38 | PlayWave | u8 wav, u8 x, u8 y |
 | 40 | AreaChanged | u8 areaX, u8 areaY |
 | 41 | PauseToggle | (none) |
@@ -173,7 +173,7 @@ The client parses the inner text using legacy dispatch (prefix matching).
 
 | Range | Category | Examples |
 |-------|----------|---------|
-| 0-9 | Pre-login | KERD22(0), ALOGIN(1), NLOGIN(2), NACCNT(5) |
+| 0-9 | Pre-login | HardwareCheck(0), AccountLogin(1), CreateCharacter(2), CreateAccount(5) |
 | 10-14 | Movement | Walk(10), ChangeHeading(11), RequestPos(12) |
 | 20-24 | Combat | Attack(20), CastSpell(21), LeftClick(22) |
 | 30-35 | Chat | Talk(30), Yell(31), Whisper(32), SlashCommand(33) |
