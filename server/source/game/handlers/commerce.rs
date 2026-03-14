@@ -832,7 +832,10 @@ pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) 
     // Safety: block bank access if another character from the same account is already banking.
     // Prevents item duplication via race condition if two chars from same account are online.
     if is_same_account_banking(state, conn_id) {
-        state.send_console(conn_id, "No puedes acceder a la bóveda porque otro personaje de tu cuenta la está usando.", font_index::INFO);
+        let pkt = binary_packets::write_error_show(
+            "No puedes acceder a la bóveda porque otro personaje de tu cuenta la está usando."
+        );
+        state.send_bytes(conn_id, &pkt);
         return;
     }
 
