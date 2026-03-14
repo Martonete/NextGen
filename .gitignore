@@ -16,3 +16,6 @@ dist/
 *.dll
 *.pdb
 *.cache
+
+# Claude Code local settings
+.claude/
