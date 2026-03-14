@@ -18,6 +18,19 @@ pub const Y_WINDOW: i32 = 13;
 pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 8
 pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 6
 
+// Zone grid for O(1) area user lookups (VB6 ModAreas.bas zone system)
+const ZONE_SIZE: i32 = 9;
+const ZONES_PER_AXIS: usize = 12; // ceil(100/9) = 12
+const TOTAL_ZONES: usize = ZONES_PER_AXIS * ZONES_PER_AXIS; // 144
+
+/// Convert tile position to zone index (0-based).
+#[inline]
+fn zone_index(x: i32, y: i32) -> usize {
+    let zx = ((x - 1) / ZONE_SIZE) as usize;
+    let zy = ((y - 1) / ZONE_SIZE) as usize;
+    zy.min(ZONES_PER_AXIS - 1) * ZONES_PER_AXIS + zx.min(ZONES_PER_AXIS - 1)
+}
+
 // Heading directions
 pub const HEADING_NORTH: i32 = 1;
 pub const HEADING_EAST: i32 = 2;
@@ -48,6 +61,9 @@ pub struct TileRuntime {
 pub struct MapGrid {
     pub tiles: Box<[[TileRuntime; MAP_WIDTH]; MAP_HEIGHT]>,
     pub num_users: i32,
+    /// Per-zone user lists for O(1) area lookups (144 zones per map).
+    /// Stores (conn_id, x, y) to enable viewport distance filtering without tile re-scan.
+    zone_users: Vec<Vec<(ConnectionId, i32, i32)>>,
 }
 
 impl MapGrid {
@@ -55,7 +71,22 @@ impl MapGrid {
         Self {
             tiles: Box::new(std::array::from_fn(|_| std::array::from_fn(|_| TileRuntime::default()))),
             num_users: 0,
+            zone_users: (0..TOTAL_ZONES).map(|_| Vec::new()).collect(),
         }
+    }
+
+    /// Add a user to a zone's tracking list.
+    fn zone_add(&mut self, x: i32, y: i32, conn: ConnectionId) {
+        let idx = zone_index(x, y);
+        if !self.zone_users[idx].iter().any(|&(c, _, _)| c == conn) {
+            self.zone_users[idx].push((conn, x, y));
+        }
+    }
+
+    /// Remove a user from a zone's tracking list.
+    fn zone_remove(&mut self, x: i32, y: i32, conn: ConnectionId) {
+        let idx = zone_index(x, y);
+        self.zone_users[idx].retain(|&(c, _, _)| c != conn);
     }
 
     /// Get tile at (x, y). Coordinates are 1-based (VB6 style).
@@ -131,20 +162,25 @@ impl WorldState {
         self.grids.entry(map).or_insert_with(MapGrid::new)
     }
 
-    /// Place a user on a tile.
+    /// Place a user on a tile and register in zone tracking.
     pub fn place_user(&mut self, map: i32, x: i32, y: i32, conn_id: ConnectionId) {
         let grid = self.grid_mut(map);
         if let Some(tile) = grid.tile_mut(x, y) {
             tile.user_conn = Some(conn_id);
         }
+        grid.zone_add(x, y, conn_id);
         grid.num_users += 1;
     }
 
-    /// Remove a user from a tile.
+    /// Remove a user from a tile and unregister from zone tracking.
     pub fn remove_user(&mut self, map: i32, x: i32, y: i32) {
         if let Some(grid) = self.grids.get_mut(&map) {
+            let conn = grid.tile(x, y).and_then(|t| t.user_conn);
             if let Some(tile) = grid.tile_mut(x, y) {
                 tile.user_conn = None;
+            }
+            if let Some(conn_id) = conn {
+                grid.zone_remove(x, y, conn_id);
             }
             grid.num_users = (grid.num_users - 1).max(0);
         }
@@ -191,22 +227,26 @@ pub fn heading_to_offset(heading: i32) -> (i32, i32) {
     }
 }
 
-/// Get all user connections in the area around (center_x, center_y) on a map.
-/// Area matches the full client viewport: ±8 X, ±6 Y (17×13 tiles).
-/// This ensures players see FX/sounds for anything visible on their screen,
-/// including characters on the very edge of the viewport.
+/// Get all user connections within viewport range (±8 X, ±6 Y) around a point.
+/// Uses zone-based lookup (9 zones) then filters by exact viewport distance.
+/// This is O(users_in_9_zones) instead of the old O(221_tiles) scan.
 pub fn get_users_in_area(grid: &MapGrid, center_x: i32, center_y: i32) -> Vec<ConnectionId> {
+    let czx = ((center_x - 1) / ZONE_SIZE) as i32;
+    let czy = ((center_y - 1) / ZONE_SIZE) as i32;
     let mut users = Vec::new();
-    let min_y = (center_y - MIN_Y_BORDER).max(1);
-    let max_y = (center_y + MIN_Y_BORDER).min(MAP_HEIGHT as i32);
-    let min_x = (center_x - MIN_X_BORDER).max(1);
-    let max_x = (center_x + MIN_X_BORDER).min(MAP_WIDTH as i32);
-
-    for y in min_y..=max_y {
-        for x in min_x..=max_x {
-            if let Some(tile) = grid.tile(x, y) {
-                if let Some(conn) = tile.user_conn {
-                    users.push(conn);
+    for dy in -1..=1i32 {
+        for dx in -1..=1i32 {
+            let zx = czx + dx;
+            let zy = czy + dy;
+            if zx >= 0 && zx < ZONES_PER_AXIS as i32 && zy >= 0 && zy < ZONES_PER_AXIS as i32 {
+                let idx = zy as usize * ZONES_PER_AXIS + zx as usize;
+                for &(conn, ux, uy) in &grid.zone_users[idx] {
+                    // Filter by actual viewport distance (±8 X, ±6 Y)
+                    if (ux - center_x).abs() <= MIN_X_BORDER
+                        && (uy - center_y).abs() <= MIN_Y_BORDER
+                    {
+                        users.push(conn);
+                    }
                 }
             }
         }
