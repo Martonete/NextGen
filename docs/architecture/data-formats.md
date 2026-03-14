@@ -27,7 +27,7 @@ IntervaloParalizado=8
 Notice=Welcome to Argentum Nextgen!
 ```
 
-**Key fields**: port, max_users, version, start_map/x/y, encryption toggle, EXP multiplier, NPC AI interval.
+**Key fields**: port, max_users, version, start_map/x/y, EXP multiplier, NPC AI interval.
 
 ## 2. Objects Database (`dat/Obj.dat`)
 

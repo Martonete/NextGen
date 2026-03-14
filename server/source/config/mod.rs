@@ -81,7 +81,6 @@ pub struct ServerConfig {
     pub allow_multi_logins: bool,
     pub can_create_characters: bool,
     pub server_only_gms: bool,
-    pub encrypt: bool,
     pub exp_multiplier: u32,
     pub gold_multiplier: u32,
     pub drop_multiplier: u32,
@@ -122,7 +121,7 @@ impl ServerConfig {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(400),
             version: ini.get("INIT", "Version").unwrap_or("0.11.5".into()),
-            client_version: ini.get("INIT", "ClientVersion").unwrap_or("1.0.1".into()),
+            client_version: ini.get("INIT", "ClientVersion").unwrap_or("1.0.0".into()),
             idle_limit: ini.get("INIT", "IdleLimit")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(10),
@@ -135,9 +134,6 @@ impl ServerConfig {
             server_only_gms: ini.get("INIT", "ServerSoloGMs")
                 .map(|s| s != "0")
                 .unwrap_or(false),
-            encrypt: ini.get("INIT", "Encriptar")
-                .map(|s| s == "1")
-                .unwrap_or(true),
             exp_multiplier: ini.get("INIT", "MultiplicadordeExp")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1),

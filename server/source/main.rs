@@ -52,7 +52,6 @@ async fn main() {
             info!("  Max users: {}", cfg.max_users);
             info!("  Version: {}", cfg.version);
             info!("  Start position: Map {} ({}, {})", cfg.start_map, cfg.start_x, cfg.start_y);
-            info!("  Encryption: {}", if cfg.encrypt { "enabled" } else { "disabled" });
             info!("  EXP multiplier: {}x", cfg.exp_multiplier);
             info!("  Can create characters: {}", cfg.can_create_characters);
             info!("  Multi-login: {}", if cfg.allow_multi_logins { "allowed" } else { "blocked" });

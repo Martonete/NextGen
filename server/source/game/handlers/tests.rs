@@ -63,7 +63,6 @@ mod db_tests {
             allow_multi_logins: false,
             can_create_characters: true,
             server_only_gms: false,
-            encrypt: true,
             exp_multiplier: 1,
             gold_multiplier: 1,
             drop_multiplier: 1,

@@ -40,7 +40,6 @@ The server reads `server/server.ini` on startup. All settings are in INI format.
 | `ServerIp` | `127.0.0.1` | Bind address (use `0.0.0.0` for external access) |
 | `StartPort` | `5028` | Game server TCP port |
 | `MaxUsers` | `400` | Maximum concurrent player connections |
-| `Encriptar` | `1` | Enable packet encryption (`0` = plaintext, `1` = encrypted) |
 
 ### Game
 
@@ -72,8 +71,8 @@ The server reads `server/server.ini` on startup. All settings are in INI format.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `Version` | `0.11.5` | Server version string |
-| `ClientVersion` | `1.0.1` | Expected client version |
+| `Version` | `0.14.0` | Server version string |
+| `ClientVersion` | `1.0.0` | Expected client version |
 | `Notice` | (text) | Login screen notice message |
 
 ---
