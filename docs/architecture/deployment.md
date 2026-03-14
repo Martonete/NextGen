@@ -79,27 +79,29 @@ The server reads `server/server.ini` on startup. All settings are in INI format.
 
 ## 4. Privilege Levels (GM hierarchy)
 
-Configured in `server.ini` under named sections. Hierarchy from highest to lowest:
+Configured in `server.ini` `[INIT]` section. Comma-separated character names per role key. Hierarchy from highest to lowest:
 
-| Level | Section | Permission scope |
-|-------|---------|-----------------|
-| Admin | `[Administradores]` | All commands, server management |
-| SubAdmin | `[SubAdministradores]` | Most commands, no server shutdown |
-| Desarrollador | `[Desarrolladores]` | Debug commands, item/NPC creation |
-| Director | `[Directores]` | Event management, moderate commands |
-| Gran Dios | `[GranDioses]` | Advanced moderation |
-| Dios | `[Dioses]` | Standard moderation |
-| Events | `[Events]` | Event-only commands |
-| SemiDios | `[SemiDioses]` | Limited moderation |
-| Consejero | `[Consejeros]` | Help and advisory role |
-| RolesMaster | `[RolesMasters]` | RP event management |
+| Key | Level | Value | Permission scope |
+|-----|-------|-------|-----------------|
+| `Admins` | ADMINISTRADOR | 12 | All commands, server management |
+| `SubAdmins` | SUB_ADMINISTRADOR | 11 | Most commands, no server shutdown |
+| `Devs` | DEVELOPER | 10 | Debug commands, item/NPC creation |
+| `Directors` | DIRECTOR | 9 | Event management, moderate commands |
+| `GranDioses` | GRAN_DIOS | 8 | Advanced moderation |
+| `Dioses` | DIOS | 4 | Standard moderation |
+| `Events` | EVENT_MASTER | 3 | Event-only commands |
+| `SemiDioses` | SEMIDIOS | 2 | Limited moderation |
+| `Consejeros` | CONSEJERO | 1 | Help and advisory role |
 
-Each section lists the character names with that privilege level:
 ```ini
-[Administradores]
-Count=1
-1=Shay
+; Comma-separated character names (e.g. Admins=Shay,Shay2)
+Admins=Shay
+SubAdmins=
+Devs=
+Dioses=GameMaster1,GameMaster2
 ```
+
+Reload at runtime with `/RELOADSINI`.
 
 ---
 
