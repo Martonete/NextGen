@@ -91,9 +91,9 @@ public class GameUIUpdater
             _state.Exp, _state.ExpNext
         );
 
-        _expLabel!.Text = $"{_state.Exp}/{_state.ExpNext}";
-        _goldLabel!.Text = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
-        _levelLabel!.Text = $"Nivel: {_state.Level}";
+        _expLabel!.Text = $"EXP: {_state.Exp}/{_state.ExpNext}";
+        _goldLabel!.Text = $"Oro: {_state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".")}";
+        _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"Onlines: {_state.OnlineCount}";
         // VB6: Coord.Caption = NombreMapa on first line, (Map, X, Y) on second
@@ -103,27 +103,15 @@ public class GameUIUpdater
         if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;
 
         // Combat stat labels
-        _armorLabel!.Text = _state.ArmourLabel;
-        _helmLabel!.Text = _state.HelmLabel;
-        _shieldLabel!.Text = _state.ShieldLabel;
-        _weaponLabel!.Text = _state.WeaponLabel;
-        _fuerzaLabel!.Text = $"{_state.Strength}";
-        _agilidadLabel!.Text = $"{_state.Agility}";
-
-        // Reputation: negative = red with "- " prefix, positive = white
-        if (_state.Reputation < 0)
-        {
-            _repLabel!.Text = $"- {Math.Abs(_state.Reputation)}";
-            _repLabel.AddThemeColorOverride("font_color", new Color(1, 0, 0));
-        }
-        else
-        {
-            _repLabel!.Text = $"{_state.Reputation}";
-            _repLabel.AddThemeColorOverride("font_color", Colors.White);
-        }
+        _armorLabel!.Text = $"Armadura: {_state.ArmourLabel}";
+        _helmLabel!.Text = $"Casco: {_state.HelmLabel}";
+        _shieldLabel!.Text = $"Escudo: {_state.ShieldLabel}";
+        _weaponLabel!.Text = $"Arma: {_state.WeaponLabel}";
+        _fuerzaLabel!.Text = $"Fuerza: {_state.Strength}";
+        _agilidadLabel!.Text = $"Agilidad: {_state.Agility}";
 
         // FPS
-        _fpsLabel!.Text = $"{Engine.GetFramesPerSecond()}";
+        _fpsLabel!.Text = $"FPS: {Engine.GetFramesPerSecond()}";
 
         // Macro status indicator
         if (_macroStatusLabel != null)

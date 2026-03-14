@@ -30,27 +30,27 @@ public partial class Main
         switch (newScreen)
         {
             case Screen.Login:
-                _loginPanel!.Visible = true;
-                _charSelectPanel!.Visible = false;
+                _loginForm!.ShowForm();
+                _charSelectForm!.HideForm();
                 _charCreateScreen!.Panel!.Visible = false;
                 _accountCreateScreen!.Panel!.Visible = false;
                 _gameUI!.Visible = false;
                 break;
 
             case Screen.CharSelect:
-                _loginPanel!.Visible = false;
-                _charSelectPanel!.Visible = true;
+                _loginForm!.HideForm();
+                _charSelectForm!.ShowForm();
                 _charCreateScreen!.Panel!.Visible = false;
                 _accountCreateScreen!.Panel!.Visible = false;
                 _gameUI!.Visible = false;
-                _enterButton!.Disabled = false;
-                _noticeLabel!.Text = "";
+                _charSelectForm!.EnterButton!.Disabled = false;
+                _charSelectForm!.NoticeLabel!.Text = "";
                 PopulateCharList();
                 break;
 
             case Screen.AccountCreate:
-                _loginPanel!.Visible = false;
-                _charSelectPanel!.Visible = false;
+                _loginForm!.HideForm();
+                _charSelectForm!.HideForm();
                 _charCreateScreen!.Panel!.Visible = false;
                 _accountCreateScreen!.Panel!.Visible = true;
                 _gameUI!.Visible = false;
@@ -58,8 +58,8 @@ public partial class Main
                 break;
 
             case Screen.CharCreate:
-                _loginPanel!.Visible = false;
-                _charSelectPanel!.Visible = false;
+                _loginForm!.HideForm();
+                _charSelectForm!.HideForm();
                 _charCreateScreen!.Panel!.Visible = true;
                 _accountCreateScreen!.Panel!.Visible = false;
                 _gameUI!.Visible = false;
@@ -67,8 +67,8 @@ public partial class Main
                 break;
 
             case Screen.Game:
-                _loginPanel!.Visible = false;
-                _charSelectPanel!.Visible = false;
+                _loginForm!.HideForm();
+                _charSelectForm!.HideForm();
                 _charCreateScreen!.Panel!.Visible = false;
                 _accountCreateScreen!.Panel!.Visible = false;
                 _gameUI!.Visible = true;
@@ -127,13 +127,18 @@ public partial class Main
     }
 
     /// <summary>
-    /// Enter fullscreen — stretches 800×600 to fill the screen (aspect-ratio preserved).
+    /// Enter fullscreen with aspect ratio mode from config.
+    /// 0 = 4:3 (keep aspect, black bars on wide screens)
+    /// 1 = 16:9 (stretch to fill, no black bars)
     /// </summary>
     private void EnterFullscreen()
     {
         var root = GetTree().Root;
-        root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
+        // 4:3 = Keep aspect (black bars), 16:9 = Ignore aspect (stretch to fill)
+        root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
+            ? Window.ContentScaleAspectEnum.Keep
+            : Window.ContentScaleAspectEnum.Ignore;
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
     }
 
@@ -198,6 +203,10 @@ public partial class Main
             UpdateConsoleWidth();
         }
 
+        // Apply form transparency
+        float formAlpha = cfg.FormTransparency ? cfg.FormTransparencyAlpha / 100f : 1.0f;
+        RpgBaseForm.ApplyGlobalAlpha(formAlpha);
+
         GD.Print($"[CFG] Applied config: VSync={cfg.VsyncEnabled}, FPS={cfg.FpsLimit}, Music={cfg.MusicEnabled}, Fullscreen={cfg.Fullscreen}, Aspect={cfg.AspectRatioMode}");
     }
 
@@ -249,8 +258,8 @@ public partial class Main
         _state.CurrentScreen = Screen.Login;
         HandleScreenChange(Screen.Login);
         _lastScreen = Screen.Login;
-        if (_loginController?.StatusLabel != null) _loginController.StatusLabel.Text = message;
-        if (_loginController?.ConnectButton != null) _loginController.ConnectButton.Disabled = false;
+        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = message;
+        if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
 
         // VB6: frmConnect.MousePointer = 1 (normal cursor)
         Input.SetDefaultCursorShape(Input.CursorShape.Arrow);
@@ -535,61 +544,29 @@ public partial class Main
         }
     }
 
-    private void LoadBackgroundImage(string dataPath)
+    private void LoadInvEquTextures(string dataPath)
     {
-        // All Principal assets live in the Godot client's own Data/Graficos/Principal/
-        string principalDir = System.IO.Path.Combine(dataPath, "Graficos", "Principal");
-        string principalPath = System.IO.Path.Combine(principalDir, "Principal.jpg");
-
-        GD.Print($"[MAIN] Looking for Principal.jpg at {principalPath}");
-
-        if (!System.IO.File.Exists(principalPath))
-        {
-            GD.Print("[MAIN] Principal.jpg not found — using dark background");
-            return;
-        }
-
-        // Load Principal.jpg
-        try
-        {
-            var image = new Image();
-            image.Load(principalPath);
-            _backgroundImage!.Texture = ImageTexture.CreateFromImage(image);
-            GD.Print($"[MAIN] Loaded Principal.jpg from {principalDir}");
-        }
-        catch (Exception ex)
-        {
-            GD.PrintErr($"[MAIN] Failed to load Principal.jpg: {ex.Message}");
-        }
-
-        // Load InvEqu textures (inventory / spells panel backgrounds)
-        _invEquInvTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroInventario.jpg"));
-        _invEquSpellTexture = LoadJpgTexture(System.IO.Path.Combine(principalDir, "CentroHechizos.jpg"));
-
-        // Wire textures to InventoryUI and set default
-        _inventoryUI?.SetInvEquTextures(_invEquInvTexture, _invEquSpellTexture);
-        if (_invEquImage != null && _invEquInvTexture != null)
-            _invEquImage.Texture = _invEquInvTexture;
+        // CentroInventario/CentroHechizos removed — HUD frame is now UIKit-based
     }
 
     private void PopulateCharList()
     {
-        _charList!.Clear();
+        _charSelectForm!.CharList!.Clear();
         foreach (var ch in _state.CharacterList)
         {
             string label = $"{ch.Name} — Lvl {ch.Level} ({ch.Class})";
             if (ch.Dead) label += " [MUERTO]";
-            _charList.AddItem(label);
+            _charSelectForm!.CharList!.AddItem(label);
         }
         if (!string.IsNullOrEmpty(_state.ServerNotice))
-            _noticeLabel!.Text = _state.ServerNotice;
+            _charSelectForm!.NoticeLabel!.Text = _state.ServerNotice;
     }
 
     private void OnEnterPressed()
     {
-        if (_charList!.IsAnythingSelected())
+        if (_charSelectForm!.CharList!.IsAnythingSelected())
         {
-            int[] selected = _charList.GetSelectedItems();
+            int[] selected = _charSelectForm!.CharList!.GetSelectedItems();
             if (selected.Length > 0 && selected[0] < _state.CharacterList.Count)
             {
                 var charPreview = _state.CharacterList[selected[0]];
@@ -597,8 +574,13 @@ public partial class Main
                 string account = _state.AccountName;
                 string code = _state.SecurityCode;
 
-                _enterButton!.Disabled = true;
-                _noticeLabel!.Text = "Entrando al mundo...";
+                // Pre-populate name/class/race from preview (server may overwrite later)
+                _state.UserName = charPreview.Name;
+                _state.UserClassName = charPreview.Class;
+                _state.UserRaceName = charPreview.Race;
+
+                _charSelectForm!.EnterButton!.Disabled = true;
+                _charSelectForm!.NoticeLabel!.Text = "Entrando al mundo...";
 
                 _tcp!.SendPacket(ClientPackets.WriteOologi(charName, account, code));
                 GD.Print($"[MAIN] Sent: OOLOGI {charName}");
@@ -606,7 +588,7 @@ public partial class Main
         }
         else
         {
-            _noticeLabel!.Text = "Seleccione un personaje";
+            _charSelectForm!.NoticeLabel!.Text = "Seleccione un personaje";
         }
     }
 
@@ -668,8 +650,8 @@ public partial class Main
         _state.Config.Save(_dataPath);
         _dialogManager?.HideWindowModeDialog();
 
-        if (_loginPanel != null)
-            _loginPanel.Visible = true;
+        if (_loginForm != null)
+            _loginForm.Visible = true;
 
         CallDeferred(MethodName.FocusAccountInput);
     }
@@ -681,10 +663,10 @@ public partial class Main
             GD.Print($"[MAIN] Connecting to {ServerHost}:{ServerPort}...");
             await _tcp!.ConnectAsync(ServerHost, ServerPort);
             _connecting = false;
-            if (_loginController != null) _loginController.Connecting = false;
+            if (_loginForm != null) _loginForm.Connecting = false;
             GD.Print("[MAIN] Connected! Sending login...");
 
-            if (_loginController?.StatusLabel != null) _loginController.StatusLabel.Text = "Enviando login...";
+            if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = "Enviando login...";
 
             await Task.Delay(100);
             _tcp.SendPacket(ClientPackets.WriteKerd22());
@@ -697,7 +679,7 @@ public partial class Main
             {
                 await Task.Delay(8000);
                 if (_state.CurrentScreen == Screen.Login && !_connecting
-                    && _loginController?.StatusLabel?.Text == "Enviando login...")
+                    && _loginForm?.StatusLabel?.Text == "Enviando login...")
                 {
                     CallDeferred(nameof(LoginTimeout));
                 }
@@ -707,15 +689,14 @@ public partial class Main
         {
             GD.PrintErr($"[MAIN] Connection failed: {ex}");
             _connecting = false;
-            if (_loginController != null) _loginController.Connecting = false;
+            if (_loginForm != null) _loginForm.Connecting = false;
             _tcp?.Dispose();
             _tcp = null;
             _inputHandler = null;
 
-            if (_loginController?.StatusLabel != null)
-                _loginController.StatusLabel.Text = FriendlyConnectionError(ex);
-            if (_loginController?.ConnectButton != null)
-                _loginController.ConnectButton.Disabled = false;
+            _dialogManager?.ShowMensaje(FriendlyConnectionError(ex), GetViewportRect().Size);
+            if (_loginForm?.ConnectButton != null)
+                _loginForm.ConnectButton.Disabled = false;
         }
     }
 
@@ -725,7 +706,7 @@ public partial class Main
         _tcp?.Dispose();
         _tcp = null;
         _inputHandler = null;
-        _loginController?.LoginTimeout();
+        _loginForm?.LoginTimeout();
     }
 
     private async Task ConnectAndCreateAccount(string account, string password, string pin)

@@ -6,7 +6,7 @@ namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Manages modal dialogs: window mode, escape menu, mensaje dialog, drop dialog.
-/// Extracted from Main.cs.
+/// Now uses RpgTheme for consistent RPG-styled UI.
 /// </summary>
 public class DialogManager
 {
@@ -18,26 +18,24 @@ public class DialogManager
     private bool _restoringFullscreen;
 
     // Escape menu
-    private PanelContainer? _escapeMenu;
+    private Control? _escapeMenu;
 
     // Message dialog (VB6: Mensaje form)
     private ColorRect? _mensajeOverlay; // full-screen modal backdrop
-    private PanelContainer? _mensajeDialog;
+    private Control? _mensajeDialog;
     private Label? _mensajeLabel;
 
     // Drop quantity dialog (VB6: frmCantidad)
-    private PanelContainer? _dropDialog;
+    private Control? _dropDialog;
     private Label? _dropDialogLabel;
     private LineEdit? _dropDialogInput;
-    private Button? _dropDialogOk;
-    private Button? _dropDialogAll;
-    private Button? _dropDialogCancel;
 
     private readonly GameState _state;
 
     // Callbacks
     public Action? OnLogout;
     public Action? OnQuit;
+    public Action? OnOptions;
     public Action<bool>? OnWindowModeChosen;
 
     /// <summary>Access for centering from Main's CallDeferred.</summary>
@@ -52,6 +50,7 @@ public class DialogManager
 
     public void CreateWindowModeDialog(Node parent)
     {
+        // Use a simple PanelContainer with RpgTheme styling
         _windowModeDialog = new PanelContainer();
         _windowModeDialog.Size = new Vector2(360, 140);
         _windowModeDialog.Visible = false;
@@ -65,33 +64,23 @@ public class DialogManager
         bg.SetCornerRadiusAll(4);
         _windowModeDialog.AddThemeStyleboxOverride("panel", bg);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 12);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingLg);
         _windowModeDialog.AddChild(vbox);
 
-        var label = new Label();
-        label.Text = "¿Deseas ejecutar en modo ventana?";
-        label.HorizontalAlignment = HorizontalAlignment.Center;
-        label.AddThemeColorOverride("font_color", Colors.White);
-        label.AddThemeFontSizeOverride("font_size", 13);
+        var label = RpgTheme.CreateTitleLabel("¿Deseas ejecutar en modo ventana?", 14);
         vbox.AddChild(label);
 
-        var btnBox = new HBoxContainer();
-        btnBox.AddThemeConstantOverride("separation", 16);
+        var btnBox = RpgTheme.CreateRow(RpgTheme.SpacingXl);
         btnBox.Alignment = BoxContainer.AlignmentMode.Center;
         vbox.AddChild(btnBox);
 
-        var yesBtn = new Button();
-        yesBtn.Text = "Sí (Ventana)";
-        yesBtn.CustomMinimumSize = new Vector2(130, 34);
-        yesBtn.AddThemeFontSizeOverride("font_size", 12);
+        var yesBtn = RpgTheme.CreateRpgButton("Sí (Ventana)", false, 13);
+        yesBtn.CustomMinimumSize = new Vector2(140, 36);
         yesBtn.Pressed += () => OnWindowModeChosen?.Invoke(true);
         btnBox.AddChild(yesBtn);
 
-        var noBtn = new Button();
-        noBtn.Text = "No (Pantalla Completa)";
-        noBtn.CustomMinimumSize = new Vector2(160, 34);
-        noBtn.AddThemeFontSizeOverride("font_size", 12);
+        var noBtn = RpgTheme.CreateRpgButton("No (Completa)", false, 13);
+        noBtn.CustomMinimumSize = new Vector2(140, 36);
         noBtn.Pressed += () => OnWindowModeChosen?.Invoke(false);
         btnBox.AddChild(noBtn);
 
@@ -105,16 +94,12 @@ public class DialogManager
             (screenSize.X - _windowModeDialog.Size.X) / 2,
             (screenSize.Y - _windowModeDialog.Size.Y) / 2
         );
-        GD.Print($"[DIALOG] Window mode dialog centered at {_windowModeDialog.Position}, screen={screenSize}");
     }
 
     public void ShowWindowModeDialog()
     {
         if (_windowModeDialog != null)
-        {
             _windowModeDialog.Visible = true;
-            GD.Print("[DIALOG] Window mode dialog shown");
-        }
     }
 
     public void HideWindowModeDialog()
@@ -127,37 +112,69 @@ public class DialogManager
 
     public void CreateEscapeMenu(Node parent)
     {
-        _escapeMenu = new PanelContainer();
-        _escapeMenu.Size = new Vector2(260, 200);
+        _escapeMenu = new Control();
+        _escapeMenu.CustomMinimumSize = new Vector2(280, 220);
+        _escapeMenu.Size = new Vector2(280, 220);
         _escapeMenu.Visible = false;
         _escapeMenu.ZIndex = 200;
+        _escapeMenu.MouseFilter = Control.MouseFilterEnum.Stop;
 
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.97f);
-        bg.BorderColor = new Color(0.55f, 0.45f, 0.3f);
-        bg.SetBorderWidthAll(2);
-        bg.SetContentMarginAll(14);
-        bg.SetCornerRadiusAll(4);
-        _escapeMenu.AddThemeStyleboxOverride("panel", bg);
+        // Background frame
+        var solidBg = new ColorRect();
+        solidBg.Color = new Color(0.10f, 0.09f, 0.08f, 0.95f);
+        solidBg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _escapeMenu.AddChild(solidBg);
+        RpgTheme.FillParent(solidBg);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 10);
-        _escapeMenu.AddChild(vbox);
+        var frame = RpgTheme.CreateNinePatch("info_window.png", new Vector4(16, 16, 16, 16));
+        _escapeMenu.AddChild(frame);
+        RpgTheme.FillParent(frame);
 
-        var title = new Label();
-        title.Text = "Menú";
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-        title.AddThemeColorOverride("font_color", Colors.White);
-        title.AddThemeFontSizeOverride("font_size", 15);
-        vbox.AddChild(title);
+        // Title
+        var titleBg = RpgTheme.CreateNinePatch("dialoge_frame.png", new Vector4(20, 10, 20, 10));
+        _escapeMenu.AddChild(titleBg);
+        titleBg.AnchorLeft = 0f; titleBg.AnchorRight = 1f;
+        titleBg.AnchorTop = 0f;  titleBg.AnchorBottom = 0f;
+        titleBg.OffsetLeft = 8;  titleBg.OffsetTop = 4;
+        titleBg.OffsetRight = -8; titleBg.OffsetBottom = 50;
 
-        var sep = new HSeparator();
-        vbox.AddChild(sep);
+        var titleLabel = RpgTheme.CreateTitleLabel("Menú", 18);
+        titleBg.AddChild(titleLabel);
+        RpgTheme.FillParent(titleLabel);
 
-        var logoutBtn = new Button();
-        logoutBtn.Text = "Cerrar Sesión";
-        logoutBtn.CustomMinimumSize = new Vector2(0, 34);
-        logoutBtn.AddThemeFontSizeOverride("font_size", 12);
+        // Close X button (top-right)
+        var closeBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(28, 28));
+        closeBtn.Pressed += HideEscapeMenu;
+        _escapeMenu.AddChild(closeBtn);
+        closeBtn.AnchorLeft = 1.0f; closeBtn.AnchorRight = 1.0f;
+        closeBtn.AnchorTop = 0.0f;  closeBtn.AnchorBottom = 0.0f;
+        closeBtn.OffsetLeft = -38;   closeBtn.OffsetTop = 13;
+        closeBtn.OffsetRight = -8;   closeBtn.OffsetBottom = 36;
+
+        // Content
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_top", RpgTheme.FormMarginTop);
+        margin.AddThemeConstantOverride("margin_left", RpgTheme.FormMarginLeft);
+        margin.AddThemeConstantOverride("margin_right", RpgTheme.FormMarginRight);
+        margin.AddThemeConstantOverride("margin_bottom", RpgTheme.FormMarginBottom);
+        margin.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _escapeMenu.AddChild(margin);
+        RpgTheme.FillParent(margin);
+
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        margin.AddChild(vbox);
+
+        var optionsBtn = RpgTheme.CreateRpgButton("Ajustes", true, 14);
+        optionsBtn.CustomMinimumSize = new Vector2(0, 38);
+        optionsBtn.Pressed += () =>
+        {
+            HideEscapeMenu();
+            OnOptions?.Invoke();
+        };
+        vbox.AddChild(optionsBtn);
+
+        var logoutBtn = RpgTheme.CreateRpgButton("Cerrar Sesión", true, 14);
+        logoutBtn.CustomMinimumSize = new Vector2(0, 38);
         logoutBtn.Pressed += () =>
         {
             HideEscapeMenu();
@@ -165,19 +182,10 @@ public class DialogManager
         };
         vbox.AddChild(logoutBtn);
 
-        var quitBtn = new Button();
-        quitBtn.Text = "Salir del Juego";
-        quitBtn.CustomMinimumSize = new Vector2(0, 34);
-        quitBtn.AddThemeFontSizeOverride("font_size", 12);
+        var quitBtn = RpgTheme.CreateRpgButton("Salir del Juego", true, 14);
+        quitBtn.CustomMinimumSize = new Vector2(0, 38);
         quitBtn.Pressed += () => OnQuit?.Invoke();
         vbox.AddChild(quitBtn);
-
-        var backBtn = new Button();
-        backBtn.Text = "Volver";
-        backBtn.CustomMinimumSize = new Vector2(0, 34);
-        backBtn.AddThemeFontSizeOverride("font_size", 12);
-        backBtn.Pressed += HideEscapeMenu;
-        vbox.AddChild(backBtn);
 
         parent.AddChild(_escapeMenu);
     }
@@ -209,7 +217,6 @@ public class DialogManager
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Minimized);
     }
 
-    /// <summary>Check if fullscreen restore is needed on window focus.</summary>
     public bool ShouldRestoreFullscreen()
     {
         return _preMiniMode == DisplayServer.WindowMode.Fullscreen
@@ -222,7 +229,6 @@ public class DialogManager
         _restoringFullscreen = true;
     }
 
-    /// <summary>Callback for fullscreen restore (wired by Main).</summary>
     public Action? OnRestoreFullscreen;
 
     public void RestoreFullscreen(GameConfig cfg)
@@ -237,54 +243,70 @@ public class DialogManager
 
     public void CreateMensajeDialog(Node parent)
     {
-        // Full-screen dark overlay — blocks all input behind the dialog
+        // Full-screen dark overlay — blocks ALL input behind the dialog
         _mensajeOverlay = new ColorRect();
         _mensajeOverlay.Color = new Color(0f, 0f, 0f, 0.55f);
-        _mensajeOverlay.SetAnchorsPreset(Control.LayoutPreset.FullRect);
-        _mensajeOverlay.MouseFilter = Control.MouseFilterEnum.Stop; // block clicks behind
+        // Explicit size (FullRect anchors don't work in CanvasLayer)
+        _mensajeOverlay.Position = Vector2.Zero;
+        _mensajeOverlay.Size = new Vector2(800, 600);
+        _mensajeOverlay.MouseFilter = Control.MouseFilterEnum.Stop;
         _mensajeOverlay.Visible = false;
-        _mensajeOverlay.ZIndex = 199;
+        _mensajeOverlay.ZIndex = 200;
         parent.AddChild(_mensajeOverlay);
 
-        _mensajeDialog = new PanelContainer();
-        _mensajeDialog.Visible = false;
-        _mensajeDialog.ZIndex = 200;
+        // Dialog panel — CHILD of overlay so it renders on top and receives input
+        _mensajeDialog = new Control();
+        _mensajeDialog.CustomMinimumSize = new Vector2(380, 200);
+        _mensajeDialog.Size = new Vector2(380, 200);
+        _mensajeDialog.MouseFilter = Control.MouseFilterEnum.Stop;
+        _mensajeOverlay.AddChild(_mensajeDialog);
 
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.97f);
-        bg.BorderColor = new Color(0.55f, 0.45f, 0.3f);
-        bg.SetBorderWidthAll(2);
-        bg.SetContentMarginAll(14);
-        bg.SetCornerRadiusAll(4);
-        _mensajeDialog.AddThemeStyleboxOverride("panel", bg);
+        // V2 background
+        var bg = new TextureRect();
+        bg.Texture = RpgTheme.GetTex("big_bar.png");
+        bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        bg.StretchMode = TextureRect.StretchModeEnum.Scale;
+        bg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _mensajeDialog.AddChild(bg);
+        RpgTheme.FillParent(bg);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 10);
-        _mensajeDialog.AddChild(vbox);
+        // Content with V2 margins
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_top", 24);
+        margin.AddThemeConstantOverride("margin_left", 36);
+        margin.AddThemeConstantOverride("margin_right", 36);
+        margin.AddThemeConstantOverride("margin_bottom", 38);
+        margin.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _mensajeDialog.AddChild(margin);
+        RpgTheme.FillParent(margin);
 
-        _mensajeLabel = new Label();
-        _mensajeLabel.Text = "";
+        var root = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        root.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        margin.AddChild(root);
+
+        // Message text — expands
+        _mensajeLabel = RpgTheme.CreateInfoLabel("", 13);
         _mensajeLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _mensajeLabel.VerticalAlignment = VerticalAlignment.Center;
         _mensajeLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _mensajeLabel.CustomMinimumSize = new Vector2(300, 0);
-        _mensajeLabel.AddThemeColorOverride("font_color", Colors.White);
-        _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
-        vbox.AddChild(_mensajeLabel);
+        _mensajeLabel.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        root.AddChild(_mensajeLabel);
 
-        var acceptBtn = new Button();
-        acceptBtn.Text = "Aceptar";
-        acceptBtn.CustomMinimumSize = new Vector2(100, 30);
-        acceptBtn.AddThemeFontSizeOverride("font_size", 12);
-        acceptBtn.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
+        // Footer with Aceptar button
+        var footer = RpgTheme.CreateFooterRow();
+        root.AddChild(footer);
+        var btnRow = footer.GetMeta("row").As<HBoxContainer>();
+
+        var acceptBtn = RpgTheme.CreateRpgButton("Aceptar", true, 14);
+        acceptBtn.CustomMinimumSize = new Vector2(130, 36);
+        acceptBtn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
         acceptBtn.Pressed += OnMensajeAccept;
-        vbox.AddChild(acceptBtn);
-
-        parent.AddChild(_mensajeDialog);
+        btnRow.AddChild(acceptBtn);
     }
 
     public void ShowMensaje(string text, Vector2 screenSize)
     {
-        if (_mensajeDialog == null || _mensajeLabel == null) return;
+        if (_mensajeDialog == null || _mensajeLabel == null || _mensajeOverlay == null) return;
 
         _mensajeLabel.Text = text;
 
@@ -293,96 +315,86 @@ public class DialogManager
         else if (text.Length > 75)
             _mensajeLabel.AddThemeFontSizeOverride("font_size", 11);
         else
-            _mensajeLabel.AddThemeFontSizeOverride("font_size", 12);
+            _mensajeLabel.AddThemeFontSizeOverride("font_size", 13);
 
-        // Show the dark overlay first
-        if (_mensajeOverlay != null)
-            _mensajeOverlay.Visible = true;
+        // Show overlay (blocks all input behind) — dialog is child, auto-visible
+        _mensajeOverlay.Visible = true;
 
-        // Reset and let PanelContainer auto-size from content, then center
-        _mensajeDialog.ResetSize();
-        _mensajeDialog.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        // Force a reasonable width so autowrap works, height auto-fits
-        _mensajeDialog.CustomMinimumSize = new Vector2(340, 0);
-        _mensajeDialog.Visible = true;
-
-        // Defer centering so Godot can compute the final size after layout
-        _mensajeDialog.CallDeferred("set_position", new Vector2(
-            (screenSize.X - 340) / 2,
-            (screenSize.Y - 140) / 2
-        ));
+        // Center dialog in screen
+        _mensajeDialog.Position = new Vector2(
+            (screenSize.X - _mensajeDialog.Size.X) / 2,
+            (screenSize.Y - _mensajeDialog.Size.Y) / 2
+        );
     }
 
     public void OnMensajeAccept()
     {
-        if (_mensajeDialog != null)
-            _mensajeDialog.Visible = false;
         if (_mensajeOverlay != null)
             _mensajeOverlay.Visible = false;
     }
 
-    public bool IsMensajeVisible => _mensajeDialog != null && _mensajeDialog.Visible;
+    public bool IsMensajeVisible => _mensajeOverlay != null && _mensajeOverlay.Visible;
 
     // === Drop Dialog ===
 
     public void CreateDropDialog(Control parent)
     {
-        _dropDialog = new PanelContainer();
-        _dropDialog.Size = new Vector2(200, 110);
-        _dropDialog.Position = new Vector2(180, 297);
+        _dropDialog = new Control();
+        _dropDialog.CustomMinimumSize = new Vector2(220, 130);
+        _dropDialog.Size = new Vector2(220, 130);
+        _dropDialog.Position = new Vector2(170, 290);
         _dropDialog.Visible = false;
+        _dropDialog.MouseFilter = Control.MouseFilterEnum.Stop;
 
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.12f, 0.12f, 0.18f, 0.95f);
-        bg.BorderColor = new Color(0.4f, 0.4f, 0.6f);
-        bg.SetBorderWidthAll(1);
-        bg.SetContentMarginAll(8);
-        _dropDialog.AddThemeStyleboxOverride("panel", bg);
+        var solidBg = new ColorRect();
+        solidBg.Color = new Color(0.10f, 0.09f, 0.08f, 0.95f);
+        solidBg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _dropDialog.AddChild(solidBg);
+        RpgTheme.FillParent(solidBg);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 6);
-        _dropDialog.AddChild(vbox);
+        var frame = RpgTheme.CreateNinePatch("info_window.png", new Vector4(16, 16, 16, 16));
+        _dropDialog.AddChild(frame);
+        RpgTheme.FillParent(frame);
 
-        _dropDialogLabel = new Label();
-        _dropDialogLabel.Text = "Cantidad a tirar:";
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_top", RpgTheme.PanelMarginTop);
+        margin.AddThemeConstantOverride("margin_left", RpgTheme.PanelMarginLeft);
+        margin.AddThemeConstantOverride("margin_right", RpgTheme.PanelMarginRight);
+        margin.AddThemeConstantOverride("margin_bottom", RpgTheme.PanelMarginBottom);
+        margin.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _dropDialog.AddChild(margin);
+        RpgTheme.FillParent(margin);
+
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        margin.AddChild(vbox);
+
+        _dropDialogLabel = RpgTheme.CreateInfoLabel("Cantidad a tirar:", 13);
         _dropDialogLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _dropDialogLabel.AddThemeColorOverride("font_color", Colors.White);
-        _dropDialogLabel.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_dropDialogLabel);
 
-        _dropDialogInput = new LineEdit();
+        _dropDialogInput = RpgTheme.CreateRpgInput("1", 160);
         _dropDialogInput.Text = "1";
         _dropDialogInput.Alignment = HorizontalAlignment.Center;
-        _dropDialogInput.FocusMode = Control.FocusModeEnum.Click;
-        _dropDialogInput.AddThemeFontSizeOverride("font_size", 12);
         _dropDialogInput.TextSubmitted += (_) => OnDropDialogOk();
         vbox.AddChild(_dropDialogInput);
 
-        var hbox = new HBoxContainer();
-        hbox.AddThemeConstantOverride("separation", 4);
+        var hbox = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         hbox.Alignment = BoxContainer.AlignmentMode.Center;
         vbox.AddChild(hbox);
 
-        _dropDialogOk = new Button();
-        _dropDialogOk.Text = "Tirar";
-        _dropDialogOk.CustomMinimumSize = new Vector2(55, 24);
-        _dropDialogOk.AddThemeFontSizeOverride("font_size", 11);
-        _dropDialogOk.Pressed += OnDropDialogOk;
-        hbox.AddChild(_dropDialogOk);
+        var okBtn = RpgTheme.CreateRpgButton("Tirar", false, 12);
+        okBtn.CustomMinimumSize = new Vector2(60, 28);
+        okBtn.Pressed += OnDropDialogOk;
+        hbox.AddChild(okBtn);
 
-        _dropDialogAll = new Button();
-        _dropDialogAll.Text = "Todo";
-        _dropDialogAll.CustomMinimumSize = new Vector2(55, 24);
-        _dropDialogAll.AddThemeFontSizeOverride("font_size", 11);
-        _dropDialogAll.Pressed += OnDropDialogAll;
-        hbox.AddChild(_dropDialogAll);
+        var allBtn = RpgTheme.CreateRpgButton("Todo", false, 12);
+        allBtn.CustomMinimumSize = new Vector2(60, 28);
+        allBtn.Pressed += OnDropDialogAll;
+        hbox.AddChild(allBtn);
 
-        _dropDialogCancel = new Button();
-        _dropDialogCancel.Text = "X";
-        _dropDialogCancel.CustomMinimumSize = new Vector2(30, 24);
-        _dropDialogCancel.AddThemeFontSizeOverride("font_size", 11);
-        _dropDialogCancel.Pressed += CloseDropDialog;
-        hbox.AddChild(_dropDialogCancel);
+        var cancelBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(24, 24));
+        cancelBtn.Pressed += CloseDropDialog;
+        hbox.AddChild(cancelBtn);
 
         parent.AddChild(_dropDialog);
     }
@@ -420,7 +432,6 @@ public class DialogManager
             _dropDialog.Visible = false;
     }
 
-    /// <summary>Show the drop dialog for a specific item slot.</summary>
     public void ShowDropDialog(int slot, string itemName)
     {
         _state.DropDialogSlot = slot;
@@ -435,7 +446,6 @@ public class DialogManager
         }
     }
 
-    /// <summary>Show the drop dialog if state says it should be open but isn't visible.</summary>
     public void UpdateDropDialogVisibility()
     {
         if (_state.DropDialogOpen && _dropDialog != null && !_dropDialog.Visible)

@@ -129,6 +129,34 @@ pub struct CharData {
     pub pareja: String,
 }
 
+/// Load the obj_indices of equipped weapon/shield/helmet for a character.
+/// Uses correlated subqueries — a single lightweight query, no full charfile load.
+/// Returns (weapon_obj_idx, shield_obj_idx, helmet_obj_idx) — 0 if not equipped.
+pub async fn load_equipped_obj_indices(pool: &PgPool, char_name: &str) -> (i32, i32, i32) {
+    let row = sqlx::query_as::<_, (i32, i32, i32)>(
+        "SELECT
+            COALESCE(CASE WHEN c.weapon_eqp_slot > 0 THEN
+                (SELECT ci.obj_index FROM character_inventory ci
+                 WHERE ci.character_id = c.id AND ci.slot = c.weapon_eqp_slot - 1)
+            END, 0),
+            COALESCE(CASE WHEN c.shield_eqp_slot > 0 THEN
+                (SELECT ci.obj_index FROM character_inventory ci
+                 WHERE ci.character_id = c.id AND ci.slot = c.shield_eqp_slot - 1)
+            END, 0),
+            COALESCE(CASE WHEN c.helmet_eqp_slot > 0 THEN
+                (SELECT ci.obj_index FROM character_inventory ci
+                 WHERE ci.character_id = c.id AND ci.slot = c.helmet_eqp_slot - 1)
+            END, 0)
+         FROM characters c WHERE UPPER(c.name) = UPPER($1)"
+    )
+    .bind(char_name)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None)
+    .unwrap_or((0, 0, 0));
+    row
+}
+
 /// Check if a character exists.
 pub async fn character_exists(pool: &PgPool, char_name: &str) -> bool {
     let result = sqlx::query_scalar::<_, i64>(

@@ -12,12 +12,12 @@ public partial class StatBarOverlay : Control
 {
     // Bar positions from VB6 13.3 frmMain (shpEnergia, shpMana, shpVida, shpHambre, shpSed)
     // Order: Energia(STA), Mana, Vida(HP), Hambre, Sed
-    private static readonly Rect2 StaRect  = new(584, 453, 75, 12);
-    private static readonly Rect2 ManaRect = new(584, 477, 75, 12);
-    private static readonly Rect2 HpRect   = new(584, 498, 75, 12);
-    private static readonly Rect2 HamRect  = new(584, 521, 75, 12);
-    private static readonly Rect2 AguaRect = new(584, 544, 75, 12);   // Sed (thirst)
-    private static readonly Rect2 ExpRect  = new(585, 85,  172, 5);
+    private static readonly Rect2 StaRect  = new(584, 443, 75, 12);
+    private static readonly Rect2 ManaRect = new(584, 467, 75, 12);
+    private static readonly Rect2 HpRect   = new(584, 488, 75, 12);
+    private static readonly Rect2 HamRect  = new(584, 511, 75, 12);
+    private static readonly Rect2 AguaRect = new(584, 534, 75, 12);   // Sed (thirst)
+    private static readonly Rect2 ExpRect  = new(565, 80, 202, 10);
 
     private static readonly Color TextColor = new(1f, 1f, 1f);
 

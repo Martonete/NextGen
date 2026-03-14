@@ -297,8 +297,7 @@ public class PanelStateSync
         if (_state.ShowDeathPanel)
         {
             _state.ShowDeathPanel = false;
-            if (_state.Config?.ShowDeathDialog ?? true)
-                _deathPanel?.Show();
+            _deathPanel?.Show();
         }
         if (!_state.Dead && _deathPanel != null && _deathPanel.Visible)
         {

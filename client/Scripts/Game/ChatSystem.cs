@@ -207,6 +207,9 @@ public class ChatSystem
         _console?.Clear();
     }
 
+    /// <summary>No-op kept for API compat.</summary>
+    public void ExpandConsole() { }
+
     public void ShowChat()
     {
         if (_chatInput == null) return;

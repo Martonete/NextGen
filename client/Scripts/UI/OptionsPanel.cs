@@ -7,35 +7,26 @@ using ArgentumNextgen.Network;
 namespace ArgentumNextgen.UI;
 
 /// <summary>
-/// VB6 frmOpcionesNew — Options panel with 3 tabs: Juego, Controles, Render.
+/// VB6 frmOpcionesNew — Options panel with 4 tabs: Juego, Controles, Render, Clan.
 /// Changes apply immediately. Draggable by title bar. X button to close.
 /// Saves to Data/INIT/Options.ao on every change.
+/// Now extends RpgBaseForm for consistent RPG-themed look.
 /// </summary>
-public partial class OptionsPanel : PanelContainer
+public partial class OptionsPanel : RpgBaseForm
 {
     private const int PanelW = 420;
-    private const int MaxPanelH = 560; // cap so panel never exceeds 600px window
-    private const int TitleBarH = 28;
 
     private GameState? _state;
     private GameConfig? _config;
     private string _dataPath = "";
 
-    // Dragging state
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     private AoTcpClient? _tcp;
 
-    // Tab containers
+    // Tab system
+    private HBoxContainer? _tabBar;
     private Control? _gameTab;
-    private Control? _controlsTab;
     private Control? _renderTab;
     private Control? _clanTab;
-    private Button? _gameTabBtn;
-    private Button? _controlsTabBtn;
-    private Button? _renderTabBtn;
-    private Button? _clanTabBtn;
     private int _activeTab;
 
     // ── Clan tab controls ──
@@ -43,47 +34,49 @@ public partial class OptionsPanel : PanelContainer
     private bool _clanTabRequested;
 
     // ── Game tab controls ──
-    private CheckBox? _chkMusic;
-    private CheckBox? _chkSfx;
+    private Button? _chkMusic;
+    private Button? _chkSfx;
     private HSlider? _sldMusicVol;
     private HSlider? _sldSfxVol;
     private Label? _lblMusicVol;
     private Label? _lblSfxVol;
-    private CheckBox? _chkGlobalChat;
-    private CheckBox? _chkPrivateChat;
-    private CheckBox? _chkBuffTimers;
-    private CheckBox? _chkContactSignIn;
-    private CheckBox? _chkContactSignOut;
-    private CheckBox? _chkChatSound;
-    private CheckBox? _chkVsync;
+    private Button? _chkGlobalChat;
+    private Button? _chkPrivateChat;
+    private Button? _chkBuffTimers;
+    // _chkChatSound removed (Alerta sonora removed from UI)
+    private Button? _chkVsync;
     private OptionButton? _optFpsLimit;
 
     // ── Controls tab controls ──
-    private Button? _btnKeyConfig;
-    private CheckBox? _chkMouseDClick;
-    private CheckBox? _chkMouseRClick;
-    private CheckBox? _chkMouseContext;
+    private TextureButton? _btnKeyConfig;
+    private Button? _chkMouseDClick;
+    private Button? _chkMouseRClick;
+    private Button? _chkMouseContext;
 
     // ── Render tab controls (Display) ──
-    private CheckBox? _chkFullscreen;
+    private Button? _chkFullscreen;
     private HBoxContainer? _aspectRow;
     private OptionButton? _optAspect;
 
     // ── Render tab controls ──
     private OptionButton? _optPerformance;
-    private CheckBox? _chkAuras;
-    private CheckBox? _chkParticles;
-    private CheckBox? _chkShadows;
-    private CheckBox? _chkNpcShadows;
-    private CheckBox? _chkReflections;
-    private CheckBox? _chkDayNight;
-    private CheckBox? _chkNames;
-    private CheckBox? _chkLights;
-    private CheckBox? _chkTreeTransparency;
-    private CheckBox? _chkDeadTransparency;
-    private CheckBox? _chkMinimap;
-    private CheckBox? _chkMinimapPos;
-    private CheckBox? _chkDeathDialog;
+    private Button? _chkAuras;
+    private Button? _chkParticles;
+    private Button? _chkShadows;
+    private Button? _chkReflections;
+    private Button? _chkDayNight;
+    private Button? _chkNames;
+    private Button? _chkLights;
+    private Button? _chkTreeTransparency;
+    private HSlider? _sldTreeTransparency;
+    private HBoxContainer? _treeSliderWrap;
+    private Button? _chkDeadTransparency;
+    private HSlider? _sldDeadTransparency;
+    private HBoxContainer? _deadSliderWrap;
+    private Button? _chkFormTransparency;
+    private HSlider? _sldFormTransparency;
+    private HBoxContainer? _formSliderWrap;
+    private Button? _chkMinimap;
 
     // Suppress initial load toggles from triggering saves
     private bool _loading;
@@ -94,6 +87,8 @@ public partial class OptionsPanel : PanelContainer
     // Callback to open the key binding panel
     public event System.Action? OnOpenKeyBinds;
 
+    public OptionsPanel() : base("Opciones", new Vector2(630, 500), "v2") { }
+
     public void Init(GameState state, GameConfig config, string dataPath, AoTcpClient? tcp = null)
     {
         _state = state;
@@ -102,389 +97,333 @@ public partial class OptionsPanel : PanelContainer
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        CustomMinimumSize = new Vector2(PanelW, 0);
-        Size = new Vector2(PanelW, MaxPanelH);
-        MouseFilter = MouseFilterEnum.Stop;
-        ClipContents = true;
+        var root = RpgTheme.CreateColumn();
+        root.SizeFlagsVertical = SizeFlags.ExpandFill;
 
-        // Panel style
-        var style = new StyleBoxFlat();
-        style.BgColor = new Color(0.10f, 0.10f, 0.15f, 0.97f);
-        style.BorderColor = new Color(0.55f, 0.48f, 0.28f);
-        style.SetBorderWidthAll(2);
-        style.SetCornerRadiusAll(4);
-        style.SetContentMarginAll(8);
-        AddThemeStyleboxOverride("panel", style);
+        // Tab bar — 2 tabs (Controles merged into Juego, Clan has own panel)
+        _tabBar = RpgTheme.CreateTabBar(
+            new[] { "Juego", "Video" },
+            idx => SetTab(idx)
+        );
+        root.AddChild(_tabBar);
+        root.AddChild(RpgTheme.CreateSeparator());
+        root.AddChild(RpgTheme.CreateSpacer(4));
 
-        var root = new VBoxContainer();
-        root.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-
-        // Title bar with close button
-        var titleBar = new HBoxContainer();
-        titleBar.CustomMinimumSize = new Vector2(0, TitleBarH);
-
-        var title = new Label();
-        title.Text = "Opciones";
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-        title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        title.AddThemeFontSizeOverride("font_size", 16);
-        title.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.4f));
-        titleBar.AddChild(title);
-
-        var closeBtn = new Button();
-        closeBtn.Text = "X";
-        closeBtn.CustomMinimumSize = new Vector2(28, 28);
-        closeBtn.AddThemeFontSizeOverride("font_size", 13);
-        closeBtn.FocusMode = FocusModeEnum.None;
-        var closeBtnStyle = new StyleBoxFlat();
-        closeBtnStyle.BgColor = new Color(0.6f, 0.15f, 0.15f, 0.9f);
-        closeBtnStyle.SetCornerRadiusAll(3);
-        closeBtn.AddThemeStyleboxOverride("normal", closeBtnStyle);
-        var closeBtnHover = new StyleBoxFlat();
-        closeBtnHover.BgColor = new Color(0.8f, 0.2f, 0.2f, 0.9f);
-        closeBtnHover.SetCornerRadiusAll(3);
-        closeBtn.AddThemeStyleboxOverride("hover", closeBtnHover);
-        closeBtn.Pressed += Close;
-        titleBar.AddChild(closeBtn);
-
-        root.AddChild(titleBar);
-        root.AddChild(Spacer(2));
-
-        // Tab buttons row
-        var tabRow = new HBoxContainer();
-        tabRow.Alignment = BoxContainer.AlignmentMode.Center;
-
-        _gameTabBtn = MakeTabButton("Juego");
-        _gameTabBtn.Pressed += () => SetTab(0);
-        tabRow.AddChild(_gameTabBtn);
-
-        _controlsTabBtn = MakeTabButton("Controles");
-        _controlsTabBtn.Pressed += () => SetTab(1);
-        tabRow.AddChild(_controlsTabBtn);
-
-        _renderTabBtn = MakeTabButton("Render");
-        _renderTabBtn.Pressed += () => SetTab(2);
-        tabRow.AddChild(_renderTabBtn);
-
-        root.AddChild(tabRow);
-        root.AddChild(Spacer(4));
-
-        // Separator
-        var sep = new HSeparator();
-        sep.AddThemeConstantOverride("separation", 2);
-        root.AddChild(sep);
-        root.AddChild(Spacer(4));
-
-        // Tab content area — scroll if content exceeds max height
-        var scroll = new ScrollContainer();
-        scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        scroll.VerticalScrollMode = ScrollContainer.ScrollMode.Auto;
-
-        var tabHost = new VBoxContainer();
-        tabHost.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        // Tab content area — scroll with custom scrollbar in padding area
+        var scrollArea = RpgTheme.CreateScrollArea();
+        root.AddChild(scrollArea);
+        var tabHost = scrollArea.GetMeta("content").As<VBoxContainer>();
 
         _gameTab = BuildGameTab();
-        _controlsTab = BuildControlsTab();
         _renderTab = BuildRenderTab();
         tabHost.AddChild(_gameTab);
-        tabHost.AddChild(_controlsTab);
         tabHost.AddChild(_renderTab);
 
-        scroll.AddChild(tabHost);
-        root.AddChild(scroll);
-
-        AddChild(root);
+        ContentContainer.AddChild(root);
 
         SetTab(0);
-        Visible = false;
-    }
-
-    // ── Dragging + click-through prevention ─────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed)
-                {
-                    // Start drag if clicking in title bar area
-                    if (mb.Position.Y <= TitleBarH)
-                    {
-                        _dragging = true;
-                        _dragOffset = mb.GlobalPosition - GlobalPosition;
-                    }
-                }
-                else
-                {
-                    _dragging = false;
-                }
-            }
-            // Consume all mouse clicks so they don't pass through
-            AcceptEvent();
-        }
-        else if (@event is InputEventMouseMotion mm)
-        {
-            if (_dragging)
-            {
-                GlobalPosition = mm.GlobalPosition - _dragOffset;
-                AcceptEvent();
-            }
-        }
     }
 
     // ── Tab builders ──────────────────────────────────────
 
     private VBoxContainer BuildGameTab()
     {
-        var vbox = new VBoxContainer();
+        var cols = RpgTheme.CreateRow(RpgTheme.SpacingXl);
 
-        // -- Audio section --
-        vbox.AddChild(SectionLabel("Audio"));
+        // -- Left column: Audio --
+        var leftCol = RpgTheme.CreateColumn();
+        leftCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkMusic = MakeCheck("Musica habilitada");
-        _chkMusic.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkMusic);
+        leftCol.AddChild(RpgTheme.CreateTitleLabel("Audio", 15));
 
-        var musicVolRow = new HBoxContainer();
-        musicVolRow.AddChild(SmallLabel("Volumen musica:"));
-        _sldMusicVol = MakeSlider(0, 100, 70);
-        _sldMusicVol.ValueChanged += v =>
-        {
-            if (_lblMusicVol != null) _lblMusicVol.Text = $"{(int)v}%";
-            ApplyImmediate();
-        };
-        musicVolRow.AddChild(_sldMusicVol);
-        _lblMusicVol = SmallLabel("70%", 40);
-        musicVolRow.AddChild(_lblMusicVol);
-        vbox.AddChild(musicVolRow);
+        // Musica: [label] [slider] [%] [checkbox]
+        var musicRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        var musicLabel = RpgTheme.CreateInfoLabel("Musica", 13);
+        RpgTheme.SetMinW(musicLabel, 70);
+        musicRow.AddChild(musicLabel);
+        _sldMusicVol = RpgTheme.CreateRpgSlider(70, 0, 100, 40);
+        _sldMusicVol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        musicRow.AddChild(_sldMusicVol);
+        _lblMusicVol = RpgTheme.CreateInfoLabel("70%", 11);
+        musicRow.AddChild(_lblMusicVol);
+        _sldMusicVol.ValueChanged += v => { _lblMusicVol.Text = $"{(int)v}%"; ApplyImmediate(); };
+        _chkMusic = RpgTheme.CreateRpgCheckbox("default", true);
+        _chkMusic.Toggled += on => { SetSliderEnabled(_sldMusicVol, _lblMusicVol, on); ApplyImmediate(); };
+        musicRow.AddChild(_chkMusic);
+        leftCol.AddChild(musicRow);
 
-        _chkSfx = MakeCheck("Efectos de sonido");
-        _chkSfx.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkSfx);
+        // Efectos: [label] [slider] [%] [checkbox]
+        var sfxRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        var sfxLabel = RpgTheme.CreateInfoLabel("Efectos", 13);
+        RpgTheme.SetMinW(sfxLabel, 70);
+        sfxRow.AddChild(sfxLabel);
+        _sldSfxVol = RpgTheme.CreateRpgSlider(100, 0, 100, 40);
+        _sldSfxVol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        sfxRow.AddChild(_sldSfxVol);
+        _lblSfxVol = RpgTheme.CreateInfoLabel("100%", 11);
+        sfxRow.AddChild(_lblSfxVol);
+        _sldSfxVol.ValueChanged += v => { _lblSfxVol.Text = $"{(int)v}%"; ApplyImmediate(); };
+        _chkSfx = RpgTheme.CreateRpgCheckbox("default", true);
+        _chkSfx.Toggled += on => { SetSliderEnabled(_sldSfxVol, _lblSfxVol, on); ApplyImmediate(); };
+        sfxRow.AddChild(_chkSfx);
+        leftCol.AddChild(sfxRow);
 
-        var sfxVolRow = new HBoxContainer();
-        sfxVolRow.AddChild(SmallLabel("Volumen FX:"));
-        _sldSfxVol = MakeSlider(0, 100, 100);
-        _sldSfxVol.ValueChanged += v =>
-        {
-            if (_lblSfxVol != null) _lblSfxVol.Text = $"{(int)v}%";
-            ApplyImmediate();
-        };
-        sfxVolRow.AddChild(_sldSfxVol);
-        _lblSfxVol = SmallLabel("100%", 40);
-        sfxVolRow.AddChild(_lblSfxVol);
-        vbox.AddChild(sfxVolRow);
+        cols.AddChild(leftCol);
 
-        vbox.AddChild(Spacer(8));
+        // Vertical separator between columns
+        var sep = new VSeparator();
+        sep.AddThemeConstantOverride("separation", 4);
+        cols.AddChild(sep);
 
-        // -- Chat section --
-        vbox.AddChild(SectionLabel("Chat / Consola"));
+        // -- Right column: Chat --
+        var rightCol = RpgTheme.CreateColumn();
+        rightCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkGlobalChat = MakeCheck("Mostrar mensajes globales");
+        rightCol.AddChild(RpgTheme.CreateTitleLabel("Chat / Consola", 15));
+
+        var globalChatRow = RpgTheme.CreateRpgCheckboxRow("Mensajes globales");
+        _chkGlobalChat = GetCheckboxFromRow(globalChatRow);
         _chkGlobalChat.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkGlobalChat);
+        rightCol.AddChild(globalChatRow);
 
-        _chkPrivateChat = MakeCheck("Mostrar mensajes privados");
+        var privateChatRow = RpgTheme.CreateRpgCheckboxRow("Mensajes privados");
+        _chkPrivateChat = GetCheckboxFromRow(privateChatRow);
         _chkPrivateChat.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkPrivateChat);
+        rightCol.AddChild(privateChatRow);
 
-        _chkBuffTimers = MakeCheck("Mostrar contadores de buffs");
-        _chkBuffTimers.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkBuffTimers);
+        cols.AddChild(rightCol);
 
-        _chkContactSignIn = MakeCheck("Notificar conexion de contactos");
-        _chkContactSignIn.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkContactSignIn);
+        var vbox = RpgTheme.CreateColumn();
+        vbox.AddChild(cols);
 
-        _chkContactSignOut = MakeCheck("Notificar desconexion de contactos");
-        _chkContactSignOut.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkContactSignOut);
+        vbox.AddChild(RpgTheme.CreateSeparator());
 
-        _chkChatSound = MakeCheck("Alerta sonora de mensajes");
-        _chkChatSound.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkChatSound);
+        // -- Controls section (merged from Controles tab) --
+        var ctrlCols = RpgTheme.CreateRow(RpgTheme.SpacingXl);
 
-        vbox.AddChild(Spacer(8));
-
-        // -- Performance section --
-        vbox.AddChild(SectionLabel("Rendimiento"));
-
-        _chkVsync = MakeCheck("V-Sync (sincronizar con monitor)");
-        _chkVsync.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkVsync);
-
-        var fpsRow = new HBoxContainer();
-        fpsRow.AddChild(SmallLabel("Limite FPS:"));
-        _optFpsLimit = new OptionButton();
-        _optFpsLimit.AddItem("60 FPS", 0);
-        _optFpsLimit.AddItem("120 FPS", 1);
-        _optFpsLimit.AddItem("144 FPS", 2);
-        _optFpsLimit.AddItem("165 FPS", 3);
-        _optFpsLimit.AddItem("240 FPS", 4);
-        _optFpsLimit.AddItem("Sin limite", 5);
-        _optFpsLimit.CustomMinimumSize = new Vector2(120, 0);
-        _optFpsLimit.AddThemeFontSizeOverride("font_size", 11);
-        _optFpsLimit.ItemSelected += _ => ApplyImmediate();
-        fpsRow.AddChild(_optFpsLimit);
-        vbox.AddChild(fpsRow);
-
-        return vbox;
-    }
-
-    private VBoxContainer BuildControlsTab()
-    {
-        var vbox = new VBoxContainer();
-
-        vbox.AddChild(SectionLabel("Configuracion de Teclas"));
-
-        _btnKeyConfig = new Button();
-        _btnKeyConfig.Text = "Configurar Teclas";
-        _btnKeyConfig.CustomMinimumSize = new Vector2(250, 32);
+        var ctrlLeft = RpgTheme.CreateColumn();
+        ctrlLeft.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        ctrlLeft.AddChild(RpgTheme.CreateTitleLabel("Teclas", 15));
+        _btnKeyConfig = RpgTheme.CreateRpgButton("Configurar Teclas", false, 13);
+        _btnKeyConfig.CustomMinimumSize = new Vector2(0, 34);
         _btnKeyConfig.Pressed += () => OnOpenKeyBinds?.Invoke();
-        vbox.AddChild(_btnKeyConfig);
+        ctrlLeft.AddChild(_btnKeyConfig);
+        ctrlCols.AddChild(ctrlLeft);
 
-        vbox.AddChild(Spacer(12));
-        vbox.AddChild(SectionLabel("Raton"));
+        var ctrlSep = new VSeparator();
+        ctrlSep.AddThemeConstantOverride("separation", 4);
+        ctrlCols.AddChild(ctrlSep);
 
-        _chkMouseDClick = MakeCheck("Doble click para interactuar");
+        var ctrlRight = RpgTheme.CreateColumn();
+        ctrlRight.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        ctrlRight.AddChild(RpgTheme.CreateTitleLabel("Raton", 15));
+
+        var dclickRow = RpgTheme.CreateRpgCheckboxRow("Doble click interactuar");
+        _chkMouseDClick = GetCheckboxFromRow(dclickRow);
         _chkMouseDClick.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkMouseDClick);
+        ctrlRight.AddChild(dclickRow);
 
-        _chkMouseRClick = MakeCheck("Click derecho como doble click");
+        var rclickRow = RpgTheme.CreateRpgCheckboxRow("Usar click derecho como doble click");
+        _chkMouseRClick = GetCheckboxFromRow(rclickRow);
         _chkMouseRClick.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkMouseRClick);
+        ctrlRight.AddChild(rclickRow);
 
-        _chkMouseContext = MakeCheck("Menu contextual al hacer click derecho");
+        var contextRow = RpgTheme.CreateRpgCheckboxRow("Menu contextual");
+        _chkMouseContext = GetCheckboxFromRow(contextRow);
         _chkMouseContext.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkMouseContext);
+        ctrlRight.AddChild(contextRow);
+
+        ctrlCols.AddChild(ctrlRight);
+        vbox.AddChild(ctrlCols);
 
         return vbox;
     }
+
+    // BuildControlsTab removed — merged into BuildGameTab
+
+    private HBoxContainer? _fpsRow;
 
     private VBoxContainer BuildRenderTab()
     {
-        var vbox = new VBoxContainer();
+        var mainCols = RpgTheme.CreateRow(RpgTheme.SpacingXl);
 
-        // -- Display section --
-        vbox.AddChild(SectionLabel("Pantalla"));
+        // ═══ LEFT COLUMN: Pantalla + Transparencias ═══
+        var leftCol = RpgTheme.CreateColumn();
+        leftCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkFullscreen = MakeCheck("Pantalla Completa");
+        leftCol.AddChild(RpgTheme.CreateTitleLabel("Pantalla", 15));
+
+        var qualityRow = RpgTheme.CreateRpgDropdownRow("Calidad:",
+            new[] { "Minimo", "Bajo", "Medio", "Alto", "Maximo" }, 100);
+        _optPerformance = GetDropdownFromRow(qualityRow);
+        _optPerformance.ItemSelected += OnPerformanceSelected;
+        leftCol.AddChild(qualityRow);
+
+        var fullscreenRow = RpgTheme.CreateRpgCheckboxRow("Pantalla Completa");
+        _chkFullscreen = GetCheckboxFromRow(fullscreenRow);
         _chkFullscreen.Toggled += on =>
         {
             if (_aspectRow != null) _aspectRow.Visible = on;
             ApplyImmediate();
         };
-        vbox.AddChild(_chkFullscreen);
+        leftCol.AddChild(fullscreenRow);
 
-        _aspectRow = new HBoxContainer();
-        _aspectRow.AddChild(SmallLabel("Aspecto:"));
-        _optAspect = new OptionButton();
-        _optAspect.AddItem("Ratio 4:3", 0);
-        _optAspect.AddItem("Ratio 16:9", 1);
-        _optAspect.CustomMinimumSize = new Vector2(220, 0);
-        _optAspect.AddThemeFontSizeOverride("font_size", 11);
-        _optAspect.Disabled = true;
-        _aspectRow.AddChild(_optAspect);
-        vbox.AddChild(_aspectRow);
+        _aspectRow = RpgTheme.CreateRpgDropdownRow("Aspecto:",
+            new[] { "4:3", "16:9" }, 100);
+        _optAspect = GetDropdownFromRow(_aspectRow);
+        _optAspect.ItemSelected += _ => ApplyImmediate();
+        leftCol.AddChild(_aspectRow);
 
-        vbox.AddChild(Spacer(8));
+        _fpsRow = RpgTheme.CreateRpgDropdownRow("FPS:",
+            new[] { "60", "120", "144", "165", "240", "Sin limite" }, 100);
+        _optFpsLimit = GetDropdownFromRow(_fpsRow);
+        _optFpsLimit.ItemSelected += _ => ApplyImmediate();
+        leftCol.AddChild(_fpsRow);
 
-        // Performance preset as dropdown selector
-        vbox.AddChild(SectionLabel("Calidad Grafica"));
+        var vsyncRow = RpgTheme.CreateRpgCheckboxRow("V-Sync");
+        _chkVsync = GetCheckboxFromRow(vsyncRow);
+        _chkVsync.Toggled += on =>
+        {
+            if (_fpsRow != null)
+            {
+                _fpsRow.Modulate = on ? new Color(1, 1, 1, 0.3f) : Colors.White;
+                if (_optFpsLimit != null)
+                {
+                    _optFpsLimit.Disabled = on;
+                    if (on) SelectMonitorRefreshRate();
+                }
+            }
+            ApplyImmediate();
+        };
+        leftCol.AddChild(vsyncRow);
 
-        var qualityRow = new HBoxContainer();
-        qualityRow.AddChild(SmallLabel("Preset:"));
-        _optPerformance = new OptionButton();
-        _optPerformance.AddItem("Minimo", 0);
-        _optPerformance.AddItem("Bajo", 1);
-        _optPerformance.AddItem("Medio", 2);
-        _optPerformance.AddItem("Alto", 3);
-        _optPerformance.AddItem("Maximo", 4);
-        _optPerformance.CustomMinimumSize = new Vector2(140, 0);
-        _optPerformance.AddThemeFontSizeOverride("font_size", 11);
-        _optPerformance.ItemSelected += OnPerformanceSelected;
-        qualityRow.AddChild(_optPerformance);
-        vbox.AddChild(qualityRow);
+        // ── Transparencias ──
+        leftCol.AddChild(RpgTheme.CreateSpacer(6));
+        leftCol.AddChild(RpgTheme.CreateTitleLabel("Transparencias", 15));
 
-        vbox.AddChild(Spacer(8));
+        // Arboles: [label] [slider + %] [checkbox]
+        var treeTransRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        var treeLabel = RpgTheme.CreateInfoLabel("Arboles", 13);
+        treeLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        RpgTheme.SetMinW(treeLabel, 60);
+        treeTransRow.AddChild(treeLabel);
+        _treeSliderWrap = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _treeSliderWrap.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _sldTreeTransparency = RpgTheme.CreateRpgSlider(47, 35, 100, 40);
+        _sldTreeTransparency.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _treeSliderWrap.AddChild(_sldTreeTransparency);
+        var lblTreeAlpha = RpgTheme.CreateInfoLabel("47%", 11);
+        _treeSliderWrap.AddChild(lblTreeAlpha);
+        _sldTreeTransparency.ValueChanged += v => { lblTreeAlpha.Text = $"{(int)v}%"; ApplyImmediate(); };
+        treeTransRow.AddChild(_treeSliderWrap);
+        _chkTreeTransparency = RpgTheme.CreateRpgCheckbox("default", true);
+        _chkTreeTransparency.Toggled += on => { SetSliderWrapEnabled(_sldTreeTransparency, _treeSliderWrap, on); ApplyImmediate(); };
+        treeTransRow.AddChild(_chkTreeTransparency);
+        leftCol.AddChild(treeTransRow);
 
-        // -- Effects section in two columns --
-        vbox.AddChild(SectionLabel("Efectos Visuales"));
+        // Muertos: [label] [slider + %] [checkbox]
+        var deadTransRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        var deadLabel = RpgTheme.CreateInfoLabel("Muertos", 13);
+        deadLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        RpgTheme.SetMinW(deadLabel, 60);
+        deadTransRow.AddChild(deadLabel);
+        _deadSliderWrap = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _deadSliderWrap.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _sldDeadTransparency = RpgTheme.CreateRpgSlider(47, 35, 100, 40);
+        _sldDeadTransparency.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _deadSliderWrap.AddChild(_sldDeadTransparency);
+        var lblDeadAlpha = RpgTheme.CreateInfoLabel("47%", 11);
+        _deadSliderWrap.AddChild(lblDeadAlpha);
+        _sldDeadTransparency.ValueChanged += v => { lblDeadAlpha.Text = $"{(int)v}%"; ApplyImmediate(); };
+        deadTransRow.AddChild(_deadSliderWrap);
+        _chkDeadTransparency = RpgTheme.CreateRpgCheckbox("default", true);
+        _chkDeadTransparency.Toggled += on => { SetSliderWrapEnabled(_sldDeadTransparency, _deadSliderWrap, on); ApplyImmediate(); };
+        deadTransRow.AddChild(_chkDeadTransparency);
+        leftCol.AddChild(deadTransRow);
 
-        var cols = new HBoxContainer();
-        cols.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        // Formularios: [label] [slider + %] [checkbox]
+        var formTransRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        var formLabel = RpgTheme.CreateInfoLabel("Formularios", 13);
+        formLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        RpgTheme.SetMinW(formLabel, 80);
+        formTransRow.AddChild(formLabel);
+        _formSliderWrap = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _formSliderWrap.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _sldFormTransparency = RpgTheme.CreateRpgSlider(90, 40, 100, 40);
+        _sldFormTransparency.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _formSliderWrap.AddChild(_sldFormTransparency);
+        var lblFormAlpha = RpgTheme.CreateInfoLabel("90%", 11);
+        _formSliderWrap.AddChild(lblFormAlpha);
+        _sldFormTransparency.ValueChanged += v => { lblFormAlpha.Text = $"{(int)v}%"; ApplyImmediate(); };
+        formTransRow.AddChild(_formSliderWrap);
+        _chkFormTransparency = RpgTheme.CreateRpgCheckbox("default", true);
+        _chkFormTransparency.Toggled += on => { SetSliderWrapEnabled(_sldFormTransparency, _formSliderWrap, on); ApplyImmediate(); };
+        formTransRow.AddChild(_chkFormTransparency);
+        leftCol.AddChild(formTransRow);
 
-        // Left column
-        var leftCol = new VBoxContainer();
-        leftCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        mainCols.AddChild(leftCol);
 
-        _chkAuras = MakeCheck("Auras");
-        _chkAuras.Toggled += _ => ApplyImmediate();
-        leftCol.AddChild(_chkAuras);
+        var videoSep = new VSeparator();
+        videoSep.AddThemeConstantOverride("separation", 4);
+        mainCols.AddChild(videoSep);
 
-        _chkParticles = MakeCheck("Particulas");
-        _chkParticles.Toggled += _ => ApplyImmediate();
-        leftCol.AddChild(_chkParticles);
-
-        _chkShadows = MakeCheck("Sombras PJ");
-        _chkShadows.Toggled += _ => ApplyImmediate();
-        leftCol.AddChild(_chkShadows);
-
-        _chkNpcShadows = MakeCheck("Sombras NPC");
-        _chkNpcShadows.Toggled += _ => ApplyImmediate();
-        leftCol.AddChild(_chkNpcShadows);
-
-        _chkLights = MakeCheck("Luces");
-        _chkLights.Toggled += _ => ApplyImmediate();
-        leftCol.AddChild(_chkLights);
-
-        _chkTreeTransparency = MakeCheck("Transp. arboles");
-        _chkTreeTransparency.Toggled += _ => ApplyImmediate();
-        leftCol.AddChild(_chkTreeTransparency);
-
-        cols.AddChild(leftCol);
-
-        // Right column
-        var rightCol = new VBoxContainer();
+        // ═══ RIGHT COLUMN: Efectos Visuales ═══
+        var rightCol = RpgTheme.CreateColumn();
         rightCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
 
-        _chkReflections = MakeCheck("Reflejos agua");
+        rightCol.AddChild(RpgTheme.CreateTitleLabel("Efectos", 15));
+
+        var aurasRow = RpgTheme.CreateRpgCheckboxRow("Auras");
+        _chkAuras = GetCheckboxFromRow(aurasRow);
+        _chkAuras.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(aurasRow);
+
+        var particlesRow = RpgTheme.CreateRpgCheckboxRow("Particulas");
+        _chkParticles = GetCheckboxFromRow(particlesRow);
+        _chkParticles.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(particlesRow);
+
+        var shadowsRow = RpgTheme.CreateRpgCheckboxRow("Sombras");
+        _chkShadows = GetCheckboxFromRow(shadowsRow);
+        _chkShadows.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(shadowsRow);
+
+        var lightsRow = RpgTheme.CreateRpgCheckboxRow("Luces");
+        _chkLights = GetCheckboxFromRow(lightsRow);
+        _chkLights.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(lightsRow);
+
+        var reflectionsRow = RpgTheme.CreateRpgCheckboxRow("Reflejos agua");
+        _chkReflections = GetCheckboxFromRow(reflectionsRow);
         _chkReflections.Toggled += _ => ApplyImmediate();
-        rightCol.AddChild(_chkReflections);
+        rightCol.AddChild(reflectionsRow);
 
-        _chkDayNight = MakeCheck("Dia/Noche");
+        var dayNightRow = RpgTheme.CreateRpgCheckboxRow("Dia/Noche");
+        _chkDayNight = GetCheckboxFromRow(dayNightRow);
         _chkDayNight.Toggled += _ => ApplyImmediate();
-        rightCol.AddChild(_chkDayNight);
+        rightCol.AddChild(dayNightRow);
 
-        _chkNames = MakeCheck("Nombres");
+        var namesRow = RpgTheme.CreateRpgCheckboxRow("Nombres");
+        _chkNames = GetCheckboxFromRow(namesRow);
         _chkNames.Toggled += _ => ApplyImmediate();
-        rightCol.AddChild(_chkNames);
+        rightCol.AddChild(namesRow);
 
-        _chkDeadTransparency = MakeCheck("Transp. muertos");
-        _chkDeadTransparency.Toggled += _ => ApplyImmediate();
-        rightCol.AddChild(_chkDeadTransparency);
+        var buffTimersRow = RpgTheme.CreateRpgCheckboxRow("Contadores de buffs");
+        _chkBuffTimers = GetCheckboxFromRow(buffTimersRow);
+        _chkBuffTimers.Toggled += _ => ApplyImmediate();
+        rightCol.AddChild(buffTimersRow);
 
-        _chkMinimap = MakeCheck("Minimapa");
+        var minimapRow = RpgTheme.CreateRpgCheckboxRow("Minimapa");
+        _chkMinimap = GetCheckboxFromRow(minimapRow);
         _chkMinimap.Toggled += _ => ApplyImmediate();
-        rightCol.AddChild(_chkMinimap);
+        rightCol.AddChild(minimapRow);
 
-        _chkMinimapPos = MakeCheck("Pos. minimapa");
-        _chkMinimapPos.Toggled += _ => ApplyImmediate();
-        rightCol.AddChild(_chkMinimapPos);
+        mainCols.AddChild(rightCol);
 
-        cols.AddChild(rightCol);
-        vbox.AddChild(cols);
-
-        vbox.AddChild(Spacer(6));
-
-        _chkDeathDialog = MakeCheck("Mostrar cartel de muerte");
-        _chkDeathDialog.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(_chkDeathDialog);
+        var vbox = RpgTheme.CreateColumn();
+        vbox.AddChild(mainCols);
 
         return vbox;
     }
@@ -500,16 +439,18 @@ public partial class OptionsPanel : PanelContainer
         _loading = false;
 
         _state.OptionsPanelOpen = true;
-        Visible = true;
+        ShowForm();
         SetTab(0);
     }
 
-    public void Close()
+    public override void HideForm()
     {
         if (_state != null)
             _state.OptionsPanelOpen = false;
-        Visible = false;
+        base.HideForm();
     }
+
+    public void Close() => HideForm();
 
     // ── Immediate apply on any control change ────────────
 
@@ -547,18 +488,13 @@ public partial class OptionsPanel : PanelContainer
     {
         _activeTab = idx;
         if (_gameTab != null) _gameTab.Visible = idx == 0;
-        if (_controlsTab != null) _controlsTab.Visible = idx == 1;
-        if (_renderTab != null) _renderTab.Visible = idx == 2;
+        if (_renderTab != null) _renderTab.Visible = idx == 1;
 
-        // Highlight active tab button
-        var activeColor = new Color(1f, 0.85f, 0.4f);
-        var inactiveColor = new Color(0.7f, 0.7f, 0.7f);
-        if (_gameTabBtn != null) _gameTabBtn.Modulate = idx == 0 ? activeColor : inactiveColor;
-        if (_controlsTabBtn != null) _controlsTabBtn.Modulate = idx == 1 ? activeColor : inactiveColor;
-        if (_renderTabBtn != null) _renderTabBtn.Modulate = idx == 2 ? activeColor : inactiveColor;
+        if (_tabBar != null)
+            RpgTheme.SetTabBarActive(_tabBar, idx);
     }
 
-    // ── Config ↔ Controls sync ────────────────────────────
+    // ── Config <-> Controls sync ────────────────────────────
 
     private void LoadControlsFromConfig(GameConfig cfg)
     {
@@ -569,16 +505,16 @@ public partial class OptionsPanel : PanelContainer
         if (_sldSfxVol != null) _sldSfxVol.Value = cfg.SfxVolume;
         if (_lblMusicVol != null) _lblMusicVol.Text = $"{cfg.MusicVolume}%";
         if (_lblSfxVol != null) _lblSfxVol.Text = $"{cfg.SfxVolume}%";
+        SetSliderEnabled(_sldMusicVol, _lblMusicVol, cfg.MusicEnabled);
+        SetSliderEnabled(_sldSfxVol, _lblSfxVol, cfg.SfxEnabled);
 
         SetCheck(_chkGlobalChat, cfg.ShowGlobalChat);
         SetCheck(_chkPrivateChat, cfg.ShowPrivateChat);
         SetCheck(_chkBuffTimers, cfg.ShowBuffTimers);
-        SetCheck(_chkContactSignIn, cfg.ContactSignIn);
-        SetCheck(_chkContactSignOut, cfg.ContactSignOut);
-        SetCheck(_chkChatSound, cfg.ChatSoundAlert);
+        // Contact sign-in/out removed (friend system removed)
+        // ChatSoundAlert not in UI (removed)
 
         // V-Sync & FPS
-        SetCheck(_chkVsync, cfg.VsyncEnabled);
         if (_optFpsLimit != null)
         {
             int sel = cfg.FpsLimit switch
@@ -591,6 +527,17 @@ public partial class OptionsPanel : PanelContainer
                 _ => 5 // unlimited
             };
             _optFpsLimit.Selected = sel;
+        }
+        SetCheck(_chkVsync, cfg.VsyncEnabled);
+        // V-Sync disables FPS selector and shows monitor refresh rate
+        if (_fpsRow != null)
+        {
+            _fpsRow.Modulate = cfg.VsyncEnabled ? new Color(1, 1, 1, 0.3f) : Colors.White;
+            if (_optFpsLimit != null)
+            {
+                _optFpsLimit.Disabled = cfg.VsyncEnabled;
+                if (cfg.VsyncEnabled) SelectMonitorRefreshRate();
+            }
         }
 
         // Controls tab
@@ -613,16 +560,21 @@ public partial class OptionsPanel : PanelContainer
         SetCheck(_chkAuras, cfg.ShowAuras);
         SetCheck(_chkParticles, cfg.ShowParticles);
         SetCheck(_chkShadows, cfg.ShowShadows);
-        SetCheck(_chkNpcShadows, cfg.ShowNpcShadows);
         SetCheck(_chkReflections, cfg.ShowReflections);
         SetCheck(_chkDayNight, cfg.ShowDayNight);
         SetCheck(_chkNames, cfg.ShowNames);
         SetCheck(_chkLights, cfg.ShowLights);
-        SetCheck(_chkTreeTransparency, cfg.TreeRoofTransparency);
-        SetCheck(_chkDeadTransparency, cfg.DeadCharTransparency);
         SetCheck(_chkMinimap, cfg.ShowMinimap);
-        SetCheck(_chkMinimapPos, cfg.ShowMinimapPosition);
-        SetCheck(_chkDeathDialog, cfg.ShowDeathDialog);
+        // Transparencias
+        SetCheck(_chkTreeTransparency, cfg.TreeRoofTransparency);
+        if (_sldTreeTransparency != null) _sldTreeTransparency.Value = cfg.TreeTransparencyAlpha;
+        SetSliderWrapEnabled(_sldTreeTransparency, _treeSliderWrap, cfg.TreeRoofTransparency);
+        SetCheck(_chkDeadTransparency, cfg.DeadCharTransparency);
+        if (_sldDeadTransparency != null) _sldDeadTransparency.Value = cfg.DeadTransparencyAlpha;
+        SetSliderWrapEnabled(_sldDeadTransparency, _deadSliderWrap, cfg.DeadCharTransparency);
+        SetCheck(_chkFormTransparency, cfg.FormTransparency);
+        if (_sldFormTransparency != null) _sldFormTransparency.Value = cfg.FormTransparencyAlpha;
+        SetSliderWrapEnabled(_sldFormTransparency, _formSliderWrap, cfg.FormTransparency);
     }
 
     private void SaveControlsToConfig(GameConfig cfg)
@@ -636,9 +588,7 @@ public partial class OptionsPanel : PanelContainer
         cfg.ShowGlobalChat = IsChecked(_chkGlobalChat);
         cfg.ShowPrivateChat = IsChecked(_chkPrivateChat);
         cfg.ShowBuffTimers = IsChecked(_chkBuffTimers);
-        cfg.ContactSignIn = IsChecked(_chkContactSignIn);
-        cfg.ContactSignOut = IsChecked(_chkContactSignOut);
-        cfg.ChatSoundAlert = IsChecked(_chkChatSound);
+        // ChatSoundAlert not in UI (removed)
 
         cfg.VsyncEnabled = IsChecked(_chkVsync);
         cfg.FpsLimit = (_optFpsLimit?.Selected ?? 5) switch
@@ -665,131 +615,106 @@ public partial class OptionsPanel : PanelContainer
         cfg.ShowAuras = IsChecked(_chkAuras);
         cfg.ShowParticles = IsChecked(_chkParticles);
         cfg.ShowShadows = IsChecked(_chkShadows);
-        cfg.ShowNpcShadows = IsChecked(_chkNpcShadows);
+        cfg.ShowNpcShadows = IsChecked(_chkShadows); // Single toggle controls both
         cfg.ShowReflections = IsChecked(_chkReflections);
         cfg.ShowDayNight = IsChecked(_chkDayNight);
         cfg.ShowNames = IsChecked(_chkNames);
         cfg.ShowLights = IsChecked(_chkLights);
-        cfg.TreeRoofTransparency = IsChecked(_chkTreeTransparency);
-        cfg.DeadCharTransparency = IsChecked(_chkDeadTransparency);
         cfg.ShowMinimap = IsChecked(_chkMinimap);
-        cfg.ShowMinimapPosition = IsChecked(_chkMinimapPos);
-        cfg.ShowDeathDialog = IsChecked(_chkDeathDialog);
+        // Transparencias
+        cfg.TreeRoofTransparency = IsChecked(_chkTreeTransparency);
+        cfg.TreeTransparencyAlpha = _sldTreeTransparency != null ? (int)_sldTreeTransparency.Value : 47;
+        cfg.DeadCharTransparency = IsChecked(_chkDeadTransparency);
+        cfg.DeadTransparencyAlpha = _sldDeadTransparency != null ? (int)_sldDeadTransparency.Value : 47;
+        cfg.FormTransparency = IsChecked(_chkFormTransparency);
+        cfg.FormTransparencyAlpha = _sldFormTransparency != null ? (int)_sldFormTransparency.Value : 90;
     }
 
     // ── UI helpers ────────────────────────────────────────
 
-    private static Button MakeTabButton(string text)
+    /// <summary>Enable/disable a slider + its % label (dimmed when disabled).</summary>
+    private static void SetSliderEnabled(HSlider? slider, Label? label, bool enabled)
     {
-        var btn = new Button();
-        btn.Text = text;
-        btn.CustomMinimumSize = new Vector2(90, 28);
-        btn.AddThemeFontSizeOverride("font_size", 11);
-        return btn;
+        var dim = enabled ? Colors.White : new Color(1, 1, 1, 0.3f);
+        if (slider != null) { slider.Editable = enabled; slider.Modulate = dim; }
+        if (label != null) label.Modulate = dim;
     }
 
-    // Shared checkbox icon textures (created once, reused for all checkboxes)
-    private static Texture2D? _checkUncheckedTex;
-    private static Texture2D? _checkCheckedTex;
-
-    private static void EnsureCheckIcons()
+    /// <summary>Enable/disable slider wrap container (dims slider + % label together).</summary>
+    private static void SetSliderWrapEnabled(HSlider? slider, HBoxContainer? wrap, bool enabled)
     {
-        if (_checkUncheckedTex != null) return;
+        if (slider != null) slider.Editable = enabled;
+        if (wrap != null) wrap.Modulate = enabled ? Colors.White : new Color(1, 1, 1, 0.3f);
+    }
 
-        // Unchecked: 16x16 box with light border and dark fill
-        var uncheckedImg = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
-        var border = new Color(0.7f, 0.65f, 0.5f);       // warm light border
-        var fill = new Color(0.18f, 0.18f, 0.22f);        // dark fill (visible against panel bg)
-        uncheckedImg.Fill(fill);
-        for (int i = 0; i < 16; i++)
+    /// <summary>Set FPS dropdown to the closest match for the monitor refresh rate.</summary>
+    private void SelectMonitorRefreshRate()
+    {
+        if (_optFpsLimit == null) return;
+        float rate = (float)DisplayServer.ScreenGetRefreshRate();
+        int hz = rate > 0 ? (int)System.Math.Round(rate) : 60;
+        // Map to closest dropdown option: 60,120,144,165,240,unlimited
+        int sel = hz switch
         {
-            uncheckedImg.SetPixel(i, 0, border);
-            uncheckedImg.SetPixel(i, 15, border);
-            uncheckedImg.SetPixel(0, i, border);
-            uncheckedImg.SetPixel(15, i, border);
-        }
-        _checkUncheckedTex = ImageTexture.CreateFromImage(uncheckedImg);
+            <= 75 => 0,   // 60
+            <= 132 => 1,  // 120
+            <= 154 => 2,  // 144
+            <= 200 => 3,  // 165
+            <= 300 => 4,  // 240
+            _ => 5        // Sin limite
+        };
+        _optFpsLimit.Selected = sel;
+    }
 
-        // Checked: same box with a bright checkmark
-        var checkedImg = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
-        checkedImg.Fill(fill);
-        for (int i = 0; i < 16; i++)
+    /// <summary>Extract the Button (RpgCheckbox) from a row created by CreateRpgCheckboxRow.</summary>
+    private static Button GetCheckboxFromRow(HBoxContainer row)
+    {
+        for (int i = row.GetChildCount() - 1; i >= 0; i--)
         {
-            checkedImg.SetPixel(i, 0, border);
-            checkedImg.SetPixel(i, 15, border);
-            checkedImg.SetPixel(0, i, border);
-            checkedImg.SetPixel(15, i, border);
+            if (row.GetChild(i) is Button btn && btn.ToggleMode)
+                return btn;
         }
-        // Draw checkmark (simple diagonal lines)
-        var check = new Color(1f, 0.85f, 0.3f); // gold checkmark
-        // Short stroke: (3,8)→(6,11)
-        checkedImg.SetPixel(3, 8, check); checkedImg.SetPixel(4, 9, check);
-        checkedImg.SetPixel(5, 10, check); checkedImg.SetPixel(6, 11, check);
-        // Long stroke: (6,11)→(12,5)
-        checkedImg.SetPixel(7, 10, check); checkedImg.SetPixel(8, 9, check);
-        checkedImg.SetPixel(9, 8, check); checkedImg.SetPixel(10, 7, check);
-        checkedImg.SetPixel(11, 6, check); checkedImg.SetPixel(12, 5, check);
-        // Thicken by 1px vertically
-        checkedImg.SetPixel(3, 7, check); checkedImg.SetPixel(4, 8, check);
-        checkedImg.SetPixel(5, 9, check); checkedImg.SetPixel(6, 10, check);
-        checkedImg.SetPixel(7, 9, check); checkedImg.SetPixel(8, 8, check);
-        checkedImg.SetPixel(9, 7, check); checkedImg.SetPixel(10, 6, check);
-        checkedImg.SetPixel(11, 5, check); checkedImg.SetPixel(12, 4, check);
-        _checkCheckedTex = ImageTexture.CreateFromImage(checkedImg);
+        return null!;
     }
 
-    private static CheckBox MakeCheck(string text)
+    /// <summary>Extract the HSlider from a row created by CreateRpgSliderRow.</summary>
+    private static HSlider GetSliderFromRow(HBoxContainer row)
     {
-        EnsureCheckIcons();
-        var cb = new CheckBox();
-        cb.Text = text;
-        cb.AddThemeFontSizeOverride("font_size", 11);
-        cb.AddThemeIconOverride("unchecked", _checkUncheckedTex);
-        cb.AddThemeIconOverride("checked", _checkCheckedTex);
-        return cb;
+        foreach (var child in row.GetChildren())
+        {
+            if (child is HSlider slider)
+                return slider;
+        }
+        return null!;
     }
 
-    private static HSlider MakeSlider(int min, int max, int value)
+    /// <summary>Extract the value Label (last label child) from a row created by CreateRpgSliderRow.</summary>
+    private static Label GetValueLabelFromRow(HBoxContainer row)
     {
-        var slider = new HSlider();
-        slider.MinValue = min;
-        slider.MaxValue = max;
-        slider.Value = value;
-        slider.Step = 1;
-        slider.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        slider.CustomMinimumSize = new Vector2(120, 0);
-        return slider;
+        Label? last = null;
+        foreach (var child in row.GetChildren())
+        {
+            if (child is Label lbl)
+                last = lbl;
+        }
+        return last!;
     }
 
-    private static Label SectionLabel(string text)
+    /// <summary>Extract the OptionButton from a row created by CreateRpgDropdownRow.</summary>
+    private static OptionButton GetDropdownFromRow(HBoxContainer row)
     {
-        var lbl = new Label();
-        lbl.Text = text;
-        lbl.AddThemeFontSizeOverride("font_size", 13);
-        lbl.AddThemeColorOverride("font_color", new Color(0.85f, 0.75f, 0.45f));
-        return lbl;
+        foreach (var child in row.GetChildren())
+        {
+            if (child is OptionButton opt)
+                return opt;
+        }
+        return null!;
     }
 
-    private static Label SmallLabel(string text, int minWidth = 0)
-    {
-        var lbl = new Label();
-        lbl.Text = text;
-        lbl.AddThemeFontSizeOverride("font_size", 11);
-        if (minWidth > 0) lbl.CustomMinimumSize = new Vector2(minWidth, 0);
-        return lbl;
-    }
-
-    private static Control Spacer(int size, bool horizontal = false)
-    {
-        var s = new Control();
-        s.CustomMinimumSize = horizontal ? new Vector2(size, 0) : new Vector2(0, size);
-        return s;
-    }
-
-    private static void SetCheck(CheckBox? cb, bool val)
+    private static void SetCheck(Button? cb, bool val)
     {
         if (cb != null) cb.ButtonPressed = val;
     }
 
-    private static bool IsChecked(CheckBox? cb) => cb?.ButtonPressed ?? false;
+    private static bool IsChecked(Button? cb) => cb?.ButtonPressed ?? false;
 }

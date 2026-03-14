@@ -110,10 +110,34 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
         }
         match charfile::load_char_preview(&state.pool, pj_name).await {
             Ok(preview) => {
+                // Resolve equip slots → obj indices → animation indices
+                let (weapon_obj, shield_obj, helmet_obj) =
+                    charfile::load_equipped_obj_indices(&state.pool, pj_name).await;
+
+                let mut weapon_anim: i16 = 0;
+                let mut shield_anim: i16 = 0;
+                let mut helmet_anim: i16 = 0;
+
+                if weapon_obj >= 1 {
+                    if let Some(obj) = state.game_data.objects.get((weapon_obj - 1) as usize) {
+                        weapon_anim = obj.weapon_anim as i16;
+                    }
+                }
+                if shield_obj >= 1 {
+                    if let Some(obj) = state.game_data.objects.get((shield_obj - 1) as usize) {
+                        shield_anim = obj.shield_anim as i16;
+                    }
+                }
+                if helmet_obj >= 1 {
+                    if let Some(obj) = state.game_data.objects.get((helmet_obj - 1) as usize) {
+                        helmet_anim = obj.casco_anim as i16;
+                    }
+                }
+
                 state.send_bytes(conn_id, &binary_packets::write_add_pj(
                     pj_name, (i + 1) as u8,
                     preview.head as i16, preview.body as i16,
-                    preview.weapon as i16, preview.shield as i16, preview.helmet as i16,
+                    weapon_anim, shield_anim, helmet_anim,
                     preview.level as u8, &preview.class, preview.dead, &preview.race,
                 ));
             }

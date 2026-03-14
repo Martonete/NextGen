@@ -20,43 +20,54 @@ public partial class Main
     /// </summary>
     private void SetupGamePanels()
     {
-        // === Inventory & Spells UI (VB6-exact pixel positions, twips/15) ===
+        // === HUD Frame (replaces Principal.jpg) ===
+        var hudFrame = new GameHudFrame();
+        hudFrame.ZIndex = 0;
+        _gameUI!.AddChild(hudFrame);
+        _gameUI.MoveChild(hudFrame, 0);
 
-        // InvEqu panel background -- VB6: InvEqu at (581,125) 198x282 pixels
-        _invEquImage = new TextureRect();
-        _invEquImage.Position = new Vector2(581, 125);
-        _invEquImage.Size = new Vector2(198, 282);
-        _invEquImage.StretchMode = TextureRect.StretchModeEnum.Scale;
-        _invEquImage.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _gameUI!.AddChild(_invEquImage);
+        // Frame overlay — draws big_bar.png borders on top of all HUD content
+        if (hudFrame.FrameOverlay != null)
+            _gameUI.AddChild(hudFrame.FrameOverlay);
 
-        // Tab buttons -- VB6 13.3: Label4 "Inventario" (592,128,93,29), Label7 "Hechizos" (688,128,75,30)
-        _invTabButton = CreateInvisibleButton(592, 128, 93, 29);
+        // === Inventory & Spells UI (VB6-exact pixel positions) ===
+
+        // Sidebar usable area: x=580→784 (204px). Content width=190px centered.
+        const int sideX = 577;  // centered start (shifted 10px left)
+        const int contentW = 190;
+        const int tabW = contentW / 2; // 95 each
+
+        // Tab buttons — centered in sidebar
+        _invTabButton = RpgTheme.CreateRpgButton("Inventario", false, 10);
+        _invTabButton.Position = new Vector2(sideX, 128);
+        _invTabButton.Size = new Vector2(tabW, 28);
         _gameUI.AddChild(_invTabButton);
         _invTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnInventoryTabPressed(); };
 
-        _spellTabButton = CreateInvisibleButton(688, 128, 75, 30);
+        _spellTabButton = RpgTheme.CreateRpgButton("Hechizos", false, 10);
+        _spellTabButton.Position = new Vector2(sideX + tabW, 128);
+        _spellTabButton.Size = new Vector2(tabW, 28);
         _gameUI.AddChild(_spellTabButton);
         _spellTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnSpellTabPressed(); };
 
-        // Inventory panel -- VB6: picInv at (600,160) 160x128 pixels
+        // Inventory panel — centered (grid is 5col x 5row = 170px wide, center in 190)
+        int invX = sideX + (contentW - 171) / 2; // ~596
         _inventoryPanel = new InventoryPanel();
-        _inventoryPanel.Position = new Vector2(600, 160);
-        _inventoryPanel.Size = new Vector2(175, 174);
+        _inventoryPanel.Position = new Vector2(invX, 158);
+        _inventoryPanel.Size = new Vector2(171, 174);
         _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
 
-        // Old item name label removed — tooltip panel now shows item names directly
-
-        // DyD toggle -- VB6: DyD at (541,338,21,21)
+        // DyD toggle
         _dydOffTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
         _dydOnTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
         _dydToggle = new TextureButton();
-        _dydToggle.Position = new Vector2(541, 338);
+        _dydToggle.Position = new Vector2(sideX - 25, 338);
         _dydToggle.Size = new Vector2(21, 21);
         _dydToggle.StretchMode = TextureButton.StretchModeEnum.Scale;
         _dydToggle.TextureNormal = _dydOffTex;
+        _dydToggle.MouseDefaultCursorShape = CursorShape.PointingHand;
         _dydToggle.Pressed += () => {
             _soundManager?.PlayNamedSound("click.wav");
             _inventoryPanel!.DyDEnabled = !_inventoryPanel.DyDEnabled;
@@ -64,54 +75,63 @@ public partial class Main
         };
         _gameUI.AddChild(_dydToggle);
 
-        // Spell panel -- VB6: hlst at (8880,2400,2565,2790) = (592,160,171,186)
+        // Spell panel — same width as inventory, centered
         _spellPanel = new SpellPanel();
-        _spellPanel.Position = new Vector2(592, 160);
-        _spellPanel.Size = new Vector2(171, 186);
+        _spellPanel.Position = new Vector2(sideX, 158);
+        _spellPanel.Size = new Vector2(contentW, 186);
         _spellPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _spellPanel.FocusMode = Control.FocusModeEnum.None;
         _spellPanel.Visible = false;
         _gameUI.AddChild(_spellPanel);
 
-        // LANZAR button -- VB6 13.3: CmdLanzar at (584, 352, 77, 25)
-        _lanzarButton = CreateInvisibleButton(584, 352, 77, 25);
+        // LANZAR + INFO — span full content width, centered
+        int halfBtn = contentW / 2 - 2; // 93 each with 4px gap
+        _lanzarButton = RpgTheme.CreateRpgButton("Lanzar", false, 12);
+        _lanzarButton.Position = new Vector2(sideX, 348);
+        _lanzarButton.Size = new Vector2(halfBtn, 28);
         _lanzarButton.Visible = false;
         _gameUI.AddChild(_lanzarButton);
         _lanzarButton.Pressed += OnLanzarPressed;
 
-        // INFO button -- VB6 13.3: cmdInfo at (712, 352, 57, 27)
-        _infoButton = CreateInvisibleButton(712, 352, 57, 27);
+        _infoButton = RpgTheme.CreateRpgButton("Info", false, 12);
+        _infoButton.Position = new Vector2(sideX + halfBtn + 4, 348);
+        _infoButton.Size = new Vector2(halfBtn, 28);
         _infoButton.Visible = false;
         _gameUI.AddChild(_infoButton);
         _infoButton.Pressed += () => _spellPanel.InfoSelected();
 
-        // Spell move arrows -- VB6: cmdMoverHechi[0] up at (766,222,15,25), [1] down at (766,247,15,25)
-        _spellUpButton = CreateInvisibleButton(766, 222, 15, 25);
+        // Spell move arrows — right edge of content
+        _spellUpButton = RpgTheme.CreateMiniButton("Mini_arrow_top2.png", "Mini_arrow_top2_t.png", new Vector2(15, 25));
+        _spellUpButton.Position = new Vector2(sideX + contentW + 2, 200);
         _spellUpButton.Visible = false;
         _gameUI.AddChild(_spellUpButton);
         _spellUpButton.Pressed += () => _spellPanel.MoveSpell(1);
 
-        _spellDownButton = CreateInvisibleButton(766, 247, 15, 25);
+        _spellDownButton = RpgTheme.CreateMiniButton("Mini_arrow_bot2.png", "Mini_arrow_bot2_t.png", new Vector2(15, 25));
+        _spellDownButton.Position = new Vector2(sideX + contentW + 2, 230);
         _spellDownButton.Visible = false;
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
-        // === Bottom bar labels -- VB6 13.3 exact positions ===
-        _armorLabel = CreateStatLabel(78, 580, 57, 17, Colors.White, 8);
+        // === Bottom bar labels ===
+        _armorLabel = CreateStatLabel(55, 574, 100, 17, Colors.White, 7);
         _gameUI.AddChild(_armorLabel);
-        _helmLabel = CreateStatLabel(196, 580, 57, 17, Colors.White, 8);
+        _helmLabel = CreateStatLabel(170, 574, 90, 17, Colors.White, 7);
         _gameUI.AddChild(_helmLabel);
-        _shieldLabel = CreateStatLabel(342, 580, 57, 17, Colors.White, 8);
+        _shieldLabel = CreateStatLabel(310, 574, 95, 17, Colors.White, 7);
         _gameUI.AddChild(_shieldLabel);
-        _weaponLabel = CreateStatLabel(464, 580, 57, 17, Colors.White, 8);
+        _weaponLabel = CreateStatLabel(435, 574, 90, 17, Colors.White, 7);
         _gameUI.AddChild(_weaponLabel);
-        _fuerzaLabel = CreateStatLabel(648, 415, 14, 14, new Color(0, 1, 0), 9);
-        _gameUI.AddChild(_fuerzaLabel);
-        _agilidadLabel = CreateStatLabel(608, 415, 14, 14, new Color(1f, 1f, 0f), 9);
+        _agilidadLabel = CreateStatLabel(580, 405, 55, 14, new Color(1f, 1f, 0f), 9);
         _gameUI.AddChild(_agilidadLabel);
-        _repLabel = CreateStatLabel(616, 52, 32, 12, Colors.White, 10, "Cambria", 400);
-        _gameUI.AddChild(_repLabel);
-        _fpsLabel = CreateStatLabel(440, 6, 37, 12, Colors.White, 7);
+        var statSepLabel = CreateStatLabel(635, 405, 10, 14, new Color(0.5f, 0.5f, 0.5f), 9);
+        statSepLabel.Text = "|";
+        statSepLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _gameUI.AddChild(statSepLabel);
+        _fuerzaLabel = CreateStatLabel(645, 405, 50, 14, new Color(0, 1, 0), 9);
+        _gameUI.AddChild(_fuerzaLabel);
+        // Reputation label removed (system disabled)
+        _fpsLabel = CreateStatLabel(682, 565, 93, 12, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Macro status indicator
@@ -129,8 +149,8 @@ public partial class Main
         _gameUIUpdater = new GameUIUpdater(_state);
         _gameUIUpdater.BindLabels(_expLabel!, _goldLabel!, _levelLabel!, _nameLabel!,
             _onlineLabel!, _coordsLabel!, _armorLabel, _helmLabel, _shieldLabel, _weaponLabel,
-            _fuerzaLabel, _agilidadLabel, _repLabel, _fpsLabel, _macroStatusLabel,
-            _btnCastiGM, _statBarOverlay);
+            _fuerzaLabel, _agilidadLabel, null, _fpsLabel, _macroStatusLabel,
+            null, _statBarOverlay);
         _gameUIUpdater.QueueWorldRedraw = () => _worldRenderer?.QueueRedraw();
 
         // VB6 13.3 sidebar buttons
@@ -148,7 +168,9 @@ public partial class Main
 
     private void SetupSidebarButtons()
     {
-        var mapaButton = CreateInvisibleButton(682, 445, 93, 20);
+        var mapaButton = RpgTheme.CreateRpgButton("Mapa", false, 10);
+        mapaButton.Position = new Vector2(682, 445);
+        mapaButton.Size = new Vector2(93, 20);
         _gameUI!.AddChild(mapaButton);
         mapaButton.Pressed += () =>
         {
@@ -157,11 +179,15 @@ public partial class Main
             UpdateConsoleWidth();
         };
 
-        var grupoButton = CreateInvisibleButton(681, 466, 94, 21);
+        var grupoButton = RpgTheme.CreateRpgButton("Grupo", false, 10);
+        grupoButton.Position = new Vector2(682, 466);
+        grupoButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(grupoButton);
         grupoButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); _partyPanel?.TogglePanel(); };
 
-        var opcionesButton = CreateInvisibleButton(681, 485, 95, 22);
+        var opcionesButton = RpgTheme.CreateRpgButton("Opciones", false, 10);
+        opcionesButton.Position = new Vector2(682, 487);
+        opcionesButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
         {
@@ -173,7 +199,9 @@ public partial class Main
             }
         };
 
-        var estadisticasButton = CreateInvisibleButton(681, 507, 95, 24);
+        var estadisticasButton = RpgTheme.CreateRpgButton("Stats", false, 10);
+        estadisticasButton.Position = new Vector2(682, 508);
+        estadisticasButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(estadisticasButton);
         estadisticasButton.Pressed += () =>
         {
@@ -185,17 +213,23 @@ public partial class Main
             }
         };
 
-        var clanesButton = CreateInvisibleButton(683, 532, 92, 26);
+        var clanesButton = RpgTheme.CreateRpgButton("Clanes", false, 10);
+        clanesButton.Position = new Vector2(682, 529);
+        clanesButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(clanesButton);
         clanesButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnClanesButtonPressed(); };
 
-        // Minimize button -- VB6: lblMinimizar at (11280,60) = (752,4) 17x17
-        var minimizeButton = CreateInvisibleButton(752, 4, 17, 17);
+        // Minimize button (arrow down = minimize) — above frame overlay
+        var minimizeButton = RpgTheme.CreateMiniButton("Mini_arrow_bot.png", "Mini_arrow_bot.png", new Vector2(17, 17));
+        minimizeButton.Position = new Vector2(752, 4);
+        minimizeButton.ZIndex = 51;
         _gameUI.AddChild(minimizeButton);
         minimizeButton.Pressed += () => _dialogManager?.OnMinimizePressed();
 
-        // Close/Menu button -- VB6: lblCerrar at (11550,60) = (770,4) 17x17
-        var closeMenuButton = CreateInvisibleButton(770, 4, 17, 17);
+        // Close/Menu button — above frame overlay
+        var closeMenuButton = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(17, 17));
+        closeMenuButton.Position = new Vector2(770, 4);
+        closeMenuButton.ZIndex = 51;
         _gameUI.AddChild(closeMenuButton);
         closeMenuButton.Pressed += () =>
         {
@@ -207,15 +241,20 @@ public partial class Main
     }
 
     /// <summary>
-    /// Expand console to fill minimap space when hidden, shrink when shown.
-    /// Console default right edge = 453 (leaves room for 100px minimap at x=456).
-    /// When minimap hidden, expand to 556 (full sidebar width).
+    /// Resize console + chat input based on minimap visibility.
+    /// Minimap visible: console/input shrink to leave room for minimap.
+    /// Minimap hidden: console/input expand to fill full width.
     /// </summary>
     private void UpdateConsoleWidth()
     {
         if (_consoleLabel == null) return;
         bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
-        _consoleLabel.OffsetRight = minimapVisible ? 453f : 556f;
+        float right = minimapVisible ? 423f : 547f;
+        _consoleLabel.OffsetRight = right;
+        if (_chatInputNode != null)
+            _chatInputNode.OffsetRight = right;
+        if (_minimapBorder != null)
+            _minimapBorder.Visible = minimapVisible;
     }
 
     /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned, above minimap).</summary>
@@ -224,7 +263,7 @@ public partial class Main
         var panel = new T();
         if (position.HasValue) panel.Position = position.Value;
         panel.Visible = false;
-        panel.ZIndex = 1; // Draw above minimap/HUD elements
+        panel.ZIndex = RpgBaseForm.ZPanel;
         _gameUI!.AddChild(panel);
         return panel;
     }
@@ -320,7 +359,7 @@ public partial class Main
     {
         // Tooltip panel
         _tooltipPanel = new TooltipPanel();
-        _tooltipPanel.ZIndex = 2; // Above all panels and minimap
+        _tooltipPanel.ZIndex = RpgBaseForm.ZTooltip;
         _gameUI!.AddChild(_tooltipPanel);
 
         // Wire tooltip to all panels with item/spell slots
@@ -335,7 +374,8 @@ public partial class Main
         _inventoryUI = new UI.InventoryUI(_state);
         _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, null, _dydToggle!,
             _dydOffTex, _dydOnTex, _lanzarButton!, _infoButton!, _spellUpButton!, _spellDownButton!,
-            _invEquImage, null, null, _tooltipPanel);
+            null, null, null, _tooltipPanel);
+        _inventoryUI.BindTabButtons(_invTabButton!, _spellTabButton!);
         _inventoryUI.SendPacket = (pkt) => _tcp?.SendPacket(pkt);
         _inventoryUI.OnShowDropDialog = (slot, name) => _dialogManager?.ShowDropDialog(slot, name);
         _inventoryUI.TryTradeOffer = (slot, pos) =>
@@ -368,31 +408,46 @@ public partial class Main
 
         // Context menu
         _contextMenu = new ContextMenu();
-        _contextMenu.ZIndex = 1;
+        _contextMenu.ZIndex = RpgBaseForm.ZContextMenu;
         _gameUI.AddChild(_contextMenu);
 
-        // Minimap panel
-        // Minimap — next to the console (console ends at X=447, minimap at X=450)
+        // Minimap panel with styled border
+        var minimapBorder = new Panel();
+        minimapBorder.Position = new Vector2(429, 19);
+        minimapBorder.Size = new Vector2(118, 118);
+        minimapBorder.MouseFilter = Control.MouseFilterEnum.Ignore;
+        var mmStyle = new StyleBoxFlat();
+        mmStyle.BgColor = new Color(0f, 0f, 0f, 0.55f);
+        mmStyle.BorderColor = new Color(0.4f, 0.33f, 0.2f, 0.6f);
+        mmStyle.SetBorderWidthAll(1);
+        mmStyle.SetCornerRadiusAll(2);
+        minimapBorder.AddThemeStyleboxOverride("panel", mmStyle);
+        _gameUI.AddChild(minimapBorder);
+
         _minimapPanel = new MinimapPanel();
         _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"));
-        _minimapPanel.Position = new Vector2(456, 24);
+        _minimapPanel.Position = new Vector2(438, 28);
         _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
         _gameUI.AddChild(_minimapPanel);
+        minimapBorder.Visible = _state.Config.ShowMinimap;
+
+        // Store border ref for toggling with minimap
+        _minimapBorder = minimapBorder;
         UpdateConsoleWidth();
 
         // Quest panel
         _questPanel = new QuestPanel();
         _questPanel.Position = new Vector2(8 + (544 - 560) / 2, 50);
         _questPanel.Visible = false;
-        _questPanel.ZIndex = 1;
+        _questPanel.ZIndex = RpgBaseForm.ZPanel;
         _gameUI.AddChild(_questPanel);
 
         // Trainer/Pet panel
         _trainerPanel = new TrainerPanel();
         _trainerPanel.Position = new Vector2(150, 80);
         _trainerPanel.Visible = false;
-        _trainerPanel.ZIndex = 1;
+        _trainerPanel.ZIndex = RpgBaseForm.ZPanel;
         _gameUI.AddChild(_trainerPanel);
 
         // Blind screen overlay
@@ -402,7 +457,7 @@ public partial class Main
         _blindOverlay.Size = new Vector2(800, 600);
         _blindOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
         _blindOverlay.Visible = true;
-        _blindOverlay.ZIndex = 100;
+        _blindOverlay.ZIndex = RpgBaseForm.ZBlind;
         _gameUI.AddChild(_blindOverlay);
     }
 
@@ -420,6 +475,7 @@ public partial class Main
             HandleDisconnect("");
         };
         _dialogManager.OnQuit = () => GetTree().Quit();
+        _dialogManager.OnOptions = () => _optionsPanel?.Open();
         _dialogManager.OnRestoreFullscreen = () => EnterFullscreen();
         _dialogManager.OnWindowModeChosen = (windowed) => OnWindowModeChosen(windowed);
         _dialogManager.OnDropItem = (slot, qty) =>
