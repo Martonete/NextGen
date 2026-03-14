@@ -467,10 +467,19 @@ public partial class Main : Control
 		_expLabel.AddThemeConstantOverride("shadow_offset_x", 1);
 		_expLabel.AddThemeConstantOverride("shadow_offset_y", 1);
 
-		// Gold label: centered above sidebar buttons
-		_goldLabel.Position = new Vector2(670, 430);
-		_goldLabel.Size = new Vector2(118, 14);
-		_goldLabel.HorizontalAlignment = HorizontalAlignment.Center;
+		// Gold icon + label: centered above sidebar buttons (buttons at X=682, W=93)
+		var goldIcon = new TextureRect();
+		goldIcon.Texture = RpgTheme.GetTex("Icons/greed.png");
+		goldIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+		goldIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+		goldIcon.Position = new Vector2(700, 428);
+		goldIcon.Size = new Vector2(14, 14);
+		goldIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
+		_gameUI.AddChild(goldIcon);
+
+		_goldLabel.Position = new Vector2(715, 430);
+		_goldLabel.Size = new Vector2(60, 14);
+		_goldLabel.HorizontalAlignment = HorizontalAlignment.Left;
 		ApplyFont(_goldLabel, "Tahoma", 700);
 		_goldLabel.AddThemeFontSizeOverride("font_size", 8);
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));

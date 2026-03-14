@@ -802,6 +802,44 @@ public static class RpgTheme
         return btn;
     }
 
+    /// <summary>Create an RPG button with an icon to the left of the text.</summary>
+    public static TextureButton CreateRpgButtonWithIcon(string text, string iconFile, bool isLong = true, int fontSize = 18, int iconSize = 16)
+    {
+        var btn = CreateRpgButton("", isLong, fontSize);
+        // Remove the empty label that CreateRpgButton added
+        foreach (var child in btn.GetChildren())
+            if (child is Label) { child.QueueFree(); break; }
+
+        // HBox with icon + label, centered
+        var hbox = new HBoxContainer();
+        hbox.Alignment = BoxContainer.AlignmentMode.Center;
+        hbox.AddThemeConstantOverride("separation", 4);
+        hbox.MouseFilter = Control.MouseFilterEnum.Ignore;
+        btn.AddChild(hbox);
+        FillParent(hbox);
+
+        var icon = new TextureRect();
+        icon.Texture = GetTex("Icons/" + iconFile);
+        icon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        icon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
+        icon.CustomMinimumSize = new Vector2(iconSize, iconSize);
+        icon.MouseFilter = Control.MouseFilterEnum.Ignore;
+        hbox.AddChild(icon);
+
+        var label = new Label();
+        label.Text = text;
+        label.VerticalAlignment = VerticalAlignment.Center;
+        label.AddThemeFontSizeOverride("font_size", fontSize);
+        label.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
+        label.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.8f));
+        label.AddThemeConstantOverride("shadow_offset_x", 1);
+        label.AddThemeConstantOverride("shadow_offset_y", 1);
+        label.MouseFilter = Control.MouseFilterEnum.Ignore;
+        hbox.AddChild(label);
+
+        return btn;
+    }
+
     public static TextureButton CreateMiniButton(string iconName, string iconHover,
                                                    Vector2? btnSize = null)
     {

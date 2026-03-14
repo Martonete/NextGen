@@ -92,7 +92,7 @@ public class GameUIUpdater
         );
 
         _expLabel!.Text = $"EXP: {_state.Exp}/{_state.ExpNext}";
-        _goldLabel!.Text = $"Oro: {_state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".")}";
+        _goldLabel!.Text = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
         _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"Onlines: {_state.OnlineCount}";

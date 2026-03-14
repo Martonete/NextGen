@@ -165,7 +165,7 @@ public partial class StatBarOverlay : Control
         var textSize = _font.GetStringSize(text, HorizontalAlignment.Center, -1, _fontSize);
         float textX = rect.Position.X + (rect.Size.X - textSize.X) / 2f;
         float ascent = _font.GetAscent(_fontSize);
-        float textY = rect.Position.Y + (rect.Size.Y + ascent) / 2f;
+        float textY = rect.Position.Y + (rect.Size.Y + ascent) / 2f - 1f;
         var pos = new Vector2(textX, textY);
         DrawString(_font, pos, text, HorizontalAlignment.Left, -1, _fontSize, TextColor);
     }

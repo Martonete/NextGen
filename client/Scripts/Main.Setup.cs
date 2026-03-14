@@ -37,16 +37,21 @@ public partial class Main
         const int contentW = 190;
         const int tabW = contentW / 2; // 95 each
 
-        // Tab buttons — centered in sidebar
-        _invTabButton = RpgTheme.CreateRpgButton("Inventario", false, 10);
-        _invTabButton.Position = new Vector2(sideX, 128);
-        _invTabButton.Size = new Vector2(tabW, 28);
+        // Tab buttons — centered in sidebar, with icons (+20% from original, expanded up and to sides)
+        int tabH = 34;
+        int tabY = 122;
+        int tabX = sideX - 6;
+        int tabBtnW = (contentW + 12) / 2;
+
+        _invTabButton = RpgTheme.CreateRpgButtonWithIcon("Inventario", "Inventory.png", false, 10, 16);
+        _invTabButton.Position = new Vector2(tabX, tabY);
+        _invTabButton.Size = new Vector2(tabBtnW, tabH);
         _gameUI.AddChild(_invTabButton);
         _invTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnInventoryTabPressed(); };
 
-        _spellTabButton = RpgTheme.CreateRpgButton("Hechizos", false, 10);
-        _spellTabButton.Position = new Vector2(sideX + tabW, 128);
-        _spellTabButton.Size = new Vector2(tabW, 28);
+        _spellTabButton = RpgTheme.CreateRpgButtonWithIcon("Hechizos", "skills.png", false, 10, 16);
+        _spellTabButton.Position = new Vector2(tabX + tabBtnW, tabY);
+        _spellTabButton.Size = new Vector2(tabBtnW, tabH);
         _gameUI.AddChild(_spellTabButton);
         _spellTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnSpellTabPressed(); };
 
