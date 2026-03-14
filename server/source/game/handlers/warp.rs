@@ -464,11 +464,16 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     state.world.remove_user(old_map, old_x, old_y);
 
     // Cancel resting and meditating on map change (VB6: WarpUserChar)
+    let was_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.resting = false;
         if user.meditating {
             user.meditating = false;
         }
+    }
+    // VB6: Send meditate toggle to client so it clears the meditation UI state
+    if was_meditating {
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
     }
 
     // VB6: Remove invisibility when entering InviSinEfecto map

@@ -92,6 +92,9 @@ pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: Connect
     let was_meditating = meditating;
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.meditating = !was_meditating;
+        if !was_meditating {
+            user.meditation_start_tick = 50; // VB6: 2-second concentration delay (2000ms / 40ms = 50 ticks)
+        }
     }
 
     if !was_meditating {

@@ -890,6 +890,28 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         }
     }
 
+    // VB6: NpcDano meditation break formula — conditional based on damage vs threshold
+    {
+        let med_data = state.users.get(&target_conn).map(|u| {
+            (u.meditating, u.min_hp, u.attributes[2], u.skills[6], u.char_index.0, u.pos_map, u.pos_x, u.pos_y)
+        });
+        if let Some((is_meditating, min_hp, intelligence, meditar_skill, ci, umap, ux, uy)) = med_data {
+            if is_meditating {
+                let threshold = (min_hp as f64 / 100.0 * intelligence as f64
+                    * meditar_skill as f64 / 100.0 * 12.0
+                    / (rand_range(0, 5) as f64 + 7.0)) as i32;
+                if damage > threshold {
+                    if let Some(user) = state.users.get_mut(&target_conn) {
+                        user.meditating = false;
+                    }
+                    state.send_bytes(target_conn, &binary_packets::write_meditate_toggle());
+                    let fx_clear = binary_packets::write_create_fx(ci as i16, 0, 0);
+                    state.send_data_bytes(SendTarget::ToArea { map: umap, x: ux, y: uy }, &fx_clear);
+                }
+            }
+        }
+    }
+
     // VB6: CheckPets — user's pets react to NPC attacking their master
     check_pets(state, npc_idx, target_conn, true);
 

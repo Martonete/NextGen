@@ -12,6 +12,7 @@ use crate::game::handlers::world;
 use crate::game::handlers::{
     user_die, revive_user, warp_user,
 };
+use crate::game::handlers::skills::try_level_skill_with_hit;
 
 // =====================================================================
 // Meditation FX constants (VB6: Declares.bas)
@@ -81,6 +82,7 @@ pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
 
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = true;
+            user.meditation_start_tick = 50; // VB6: 2-second concentration delay (2000ms / 40ms = 50 ticks)
         }
 
         // VB6: meditation FX scales by level (5 tiers), 999 loops = forever
@@ -428,34 +430,56 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // Anti-cheat intervals now decremented in tick_intervals (40ms tick)
 
         // --- Meditation (mana regen) — VB6: Trabajo.bas DoMeditar ---
+        // VB6 runs at ~100ms tick; our passive tick runs every 1s, so roll 10x per call.
         if meditating && min_mana < max_mana {
-            // VB6: Skill-based "1 in N" chance per tick (lower N = better)
-            let suerte = match meditate_skill {
-                0..=10 => 35,
-                11..=20 => 30,
-                21..=30 => 28,
-                31..=40 => 24,
-                41..=50 => 22,
-                51..=60 => 20,
-                61..=70 => 18,
-                71..=80 => 15,
-                81..=90 => 10,
-                91..=99 => 7,
-                _ => 5, // skill 100
-            };
+            // VB6: 2-second concentration delay — skip regen while warming up
+            let warmup = state.users.get(&conn_id).map(|u| u.meditation_start_tick).unwrap_or(0);
+            if warmup <= 0 {
+                // VB6: Skill-based "1 in N" chance per tick (lower N = better)
+                let suerte = match meditate_skill {
+                    0..=10 => 35,
+                    11..=20 => 30,
+                    21..=30 => 28,
+                    31..=40 => 24,
+                    41..=50 => 22,
+                    51..=60 => 20,
+                    61..=70 => 18,
+                    71..=80 => 15,
+                    81..=90 => 10,
+                    91..=99 => 7,
+                    _ => 5, // skill 100
+                };
 
-            if rand_range(1, suerte) == 1 {
-                // VB6: cant = Porcentaje(MaxMAN, PorcentajeRecuperoMana)
-                // PorcentajeRecuperoMana is typically 5 from Balance.dat
-                let regen = ((max_mana as f64 * 5.0) / 100.0) as i32;
-                let regen = regen.max(1);
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    u.min_mana = (u.min_mana + regen).min(u.max_mana);
-                    if u.min_mana >= u.max_mana {
-                        u.meditating = false;
+                let mut did_regen = false;
+                for _ in 0..10 {
+                    if rand_range(1, suerte) == 1 {
+                        // VB6: cant = Porcentaje(MaxMAN, PorcentajeRecuperoMana)
+                        // PorcentajeRecuperoMana is typically 5 from Balance.dat
+                        let regen = ((max_mana as f64 * 5.0) / 100.0) as i32;
+                        let regen = regen.max(1);
+                        if let Some(u) = state.users.get_mut(&conn_id) {
+                            u.min_mana = (u.min_mana + regen).min(u.max_mana);
+                            // MED3: Skill up on successful regen proc
+                            try_level_skill_with_hit(u, 7, true); // skill_idx 7 → skills[6] = Meditar
+                            if u.min_mana >= u.max_mana {
+                                u.meditating = false;
+                            }
+                        }
+                        did_regen = true;
+                        // Break early if mana is full
+                        let full = state.users.get(&conn_id).map(|u| u.min_mana >= u.max_mana).unwrap_or(true);
+                        if full { break; }
+                    } else {
+                        // MED3: Skill up attempt on failed regen proc
+                        if let Some(u) = state.users.get_mut(&conn_id) {
+                            try_level_skill_with_hit(u, 7, false); // skill_idx 7 → skills[6] = Meditar
+                        }
                     }
                 }
-                send_stats_mana(state, conn_id).await;
+
+                if did_regen {
+                    send_stats_mana(state, conn_id).await;
+                }
 
                 // Stop meditation when full — clear FX + notify
                 let stopped = state.users.get(&conn_id).map(|u| !u.meditating).unwrap_or(false);

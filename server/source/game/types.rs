@@ -345,6 +345,9 @@ pub struct UserState {
     pub counter_pena: i32,           // COUNTERS.Pena (jail/penalty ticks)
     pub last_map: i32,               // FLAGS.LastMap
     pub uptime: i64,                 // INIT.UpTime (seconds played)
+
+    // Meditation concentration delay (VB6: 2-second warmup before regen starts)
+    pub meditation_start_tick: i32,   // Countdown ticks (40ms each); regen skipped while > 0
 }
 
 impl UserState {
@@ -559,6 +562,7 @@ impl UserState {
             counter_pena: 0,
             last_map: 0,
             uptime: 0,
+            meditation_start_tick: 0,
         }
     }
 

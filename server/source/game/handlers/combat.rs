@@ -423,6 +423,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
+    // VB6: HandleAttack exits early if Meditando
+    let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
+    if is_meditating {
+        return;
+    }
+
     // VB6: Attacking ALWAYS reveals hidden users (no chance check).
     let (was_hidden, was_invisible) = state.users.get(&conn_id)
         .map(|u| (u.hidden && !u.admin_invisible, u.invisible && !u.admin_invisible))
@@ -789,6 +795,24 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // Apply damage to victim
         if let Some(victim) = state.users.get_mut(&victim_id) {
             victim.min_hp -= damage as i32;
+        }
+
+        // VB6: Any PvP hit cancels victim meditation unconditionally
+        {
+            let victim_meditating = state.users.get(&victim_id).map(|u| u.meditating).unwrap_or(false);
+            if victim_meditating {
+                if let Some(victim) = state.users.get_mut(&victim_id) {
+                    victim.meditating = false;
+                }
+                state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
+                if let Some(v) = state.users.get(&victim_id) {
+                    let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
+                    state.send_data_bytes(
+                        SendTarget::ToArea { map: v.pos_map, x: v.pos_x, y: v.pos_y },
+                        &fx_clear,
+                    );
+                }
+            }
         }
 
         // VB6: Weapon poison application (60% chance if weapon has Envenena=1)

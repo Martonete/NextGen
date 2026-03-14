@@ -25,6 +25,9 @@ pub async fn tick_intervals(state: &mut GameState) {
         if user.interval_pu > 0 { user.interval_pu -= 1; }
         if user.warp_immunity_ticks > 0 { user.warp_immunity_ticks -= 1; }
 
+        // VB6: Meditation concentration delay — 2-second warmup before regen starts
+        if user.meditation_start_tick > 0 { user.meditation_start_tick -= 1; }
+
         // VB6: EfectoParalisisUser — count down paralysis timer each tick
         if user.paralyzed {
             if user.counter_paralisis > 0 {

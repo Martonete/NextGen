@@ -24,6 +24,12 @@ use super::equip::unequip_slot;
 /// VB6: picInv_DblClick sends QSA<slot>,<True|False>.
 /// If InvenVisible = "FALSO", it's a hack attempt (using items with inv hidden).
 pub(crate) async fn handle_use_item_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    // VB6: HandleUseItem exits early if Meditando
+    let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
+    if is_meditating {
+        return;
+    }
+
     let payload = strip_opcode(data, 3);
     let slot_str = read_field(1, payload, ',');
     let visible_str = read_field(2, payload, ',');
@@ -88,6 +94,12 @@ pub(crate) async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId
 /// which means puede_clickear() already set both interval_click and interval_poteo,
 /// so we skip the puede_potear() check to avoid double-blocking.
 pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, data: &str, from_click: bool) {
+    // VB6: HandleUseItem exits early if Meditando
+    let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
+    if is_meditating {
+        return;
+    }
+
     let slot_str = strip_opcode(data, 3);
     let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
     let slot: usize = match slot_str.parse::<usize>() {
