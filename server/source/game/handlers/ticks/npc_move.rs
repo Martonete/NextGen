@@ -19,28 +19,9 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
     // VB6 movement packet: *charindex,x,y → binary CharacterMove
     let pkt = binary_packets::write_character_move(char_idx as i16, x as u8, y as u8);
 
-    // VB6 SendToNpcArea: sends to all users in the NPC's 27x27 area zone
-    // (NOT the smaller 17x13 client window used by SendTarget::ToArea)
-    let area_max_x = (area_min_x + 26).min(100);
-    let area_max_y = (area_min_y + 26).min(100);
-    let area_min_x_clamped = area_min_x.max(1);
-    let area_min_y_clamped = area_min_y.max(1);
-
-    let mut targets: Vec<ConnectionId> = Vec::new();
-    if let Some(grid) = state.world.grid(map) {
-        for sy in area_min_y_clamped..=area_max_y {
-            for sx in area_min_x_clamped..=area_max_x {
-                if let Some(tile) = grid.tile(sx, sy) {
-                    if let Some(conn) = tile.user_conn {
-                        targets.push(conn);
-                    }
-                }
-            }
-        }
-    }
-    for conn in targets {
-        state.send_bytes(conn, &pkt);
-    }
+    // Send to all players in viewport range (17x13 tiles) — replaces the old
+    // 27x27 tile scan (729 tiles) with the standard area broadcast (221 tiles).
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
 
     // Check if NPC crossed a 9x9 area boundary — if so, send CC to newly visible players
     check_update_needed_npc(state, npc_idx, heading).await;
