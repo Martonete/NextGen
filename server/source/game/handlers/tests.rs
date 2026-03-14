@@ -69,8 +69,6 @@ mod db_tests {
             start_map: 1,
             start_x: 50,
             start_y: 50,
-            char_dir: "charfile".into(),
-            log_dir: "logs".into(),
             notice: notice.to_string(),
             pretoriano_map: 0,
             intervalo_paralizado: 500,

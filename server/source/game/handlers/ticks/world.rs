@@ -46,7 +46,7 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // VB6: EfectoInvisibilidad — count up invisibility timer each tick.
     // Only for spell invisibility (not admin_invisible which is permanent).
-    let intervalo_invis = state.config.intervalo_invisible;
+    let intervalo_invis = state.intervals.invisible;
     let mut uninvis: Vec<(ConnectionId, i16, i32, i32, i32, bool, bool)> = Vec::new();
     for (&conn_id, user) in state.users.iter_mut() {
         if user.invisible && !user.admin_invisible {

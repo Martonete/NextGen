@@ -622,23 +622,33 @@ pub mod privilege_level {
 /// Values are in game ticks (1 tick = 40ms).
 /// VB6 reference (ms): Melee=1500, Arrows=1400, Spells=1400, Potions=1200, Work=700.
 #[derive(Debug, Clone)]
-/// Anti-cheat cooldown settings. Configured in ms in dat/Intervalos.ini,
-/// converted to ticks (/40, rounded) at load time.
+/// All interval settings loaded from dat/Intervalos.ini.
+/// Configured in milliseconds, converted to ticks (/40, rounded) at load time.
 pub struct IntervalSettings {
-    pub golpe: i32,           // Melee attack cooldown (ticks)
-    pub flechas: i32,         // Arrow shot cooldown (ticks)
-    pub lanzar_hechizo: i32,  // Spell cast cooldown (ticks)
-    pub magia_golpe: i32,     // Delay after spell before melee (ticks)
-    pub golpe_magia: i32,     // Delay after melee before spell (ticks)
-    pub poteo_u: i32,         // Potion use cooldown (ticks)
-    pub poteo_click: i32,     // Click action cooldown (ticks)
-    pub work: i32,            // Work/skill cooldown (ticks)
+    // Status effect durations (ticks)
+    pub paralizado: i32,      // Paralysis duration
+    pub invisible: i32,       // Spell invisibility duration
+    pub oculto: i32,          // Hide duration base
+    pub npc_ai_ms: u64,       // NPC AI tick interval (ms, used directly)
+
+    // Anti-cheat cooldowns (ticks)
+    pub golpe: i32,           // Melee attack cooldown
+    pub flechas: i32,         // Arrow shot cooldown
+    pub lanzar_hechizo: i32,  // Spell cast cooldown
+    pub magia_golpe: i32,     // Delay after spell before melee
+    pub golpe_magia: i32,     // Delay after melee before spell
+    pub poteo_u: i32,         // Potion use cooldown
+    pub poteo_click: i32,     // Click action cooldown
+    pub work: i32,            // Work/skill cooldown
 }
 
 impl Default for IntervalSettings {
     fn default() -> Self {
-        // Defaults in ms, converted to ticks (ms / 40)
         Self {
+            paralizado: 500,     // 20000ms / 40
+            invisible: 500,      // 20000ms / 40
+            oculto: 500,         // 20000ms / 40
+            npc_ai_ms: 1300,
             golpe: 38,           // 1520ms / 40
             flechas: 35,         // 1400ms / 40
             lanzar_hechizo: 35,  // 1400ms / 40
@@ -1492,7 +1502,14 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
                     .unwrap_or(default_ms);
                 ms_to_ticks(ms)
             };
+            let npc_ai_ms: u64 = ini.get("INTERVALOS", "IntervaloNpcAI")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1300);
             let settings = IntervalSettings {
+                paralizado: get_ms("IntervaloParalizado", 20000),
+                invisible: get_ms("IntervaloInvisible", 20000),
+                oculto: get_ms("IntervaloOculto", 20000),
+                npc_ai_ms,
                 golpe: get_ms("Golpe", 1520),
                 flechas: get_ms("Flechas", 1400),
                 lanzar_hechizo: get_ms("LanzarHechizo", 1400),
@@ -1503,9 +1520,9 @@ fn load_intervals(base: &std::path::Path) -> IntervalSettings {
                 golpe_magia: get_ms("GolpeMagia", 2000),
             };
             tracing::info!(
-                "Intervals loaded (ms→ticks): golpe={}, flechas={}, hechizo={}, poteo={}, click={}, work={}",
-                settings.golpe, settings.flechas, settings.lanzar_hechizo,
-                settings.poteo_u, settings.poteo_click, settings.work
+                "Intervals loaded (ms→ticks): paralizado={}, invisible={}, oculto={}, npc_ai={}ms, golpe={}, flechas={}, hechizo={}",
+                settings.paralizado, settings.invisible, settings.oculto, settings.npc_ai_ms,
+                settings.golpe, settings.flechas, settings.lanzar_hechizo
             );
             settings
         }

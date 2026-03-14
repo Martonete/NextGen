@@ -677,7 +677,7 @@ pub(super) async fn apply_spell_status_npc(
         }
     }
 
-    let paralisis_interval = state.config.intervalo_paralizado;
+    let paralisis_interval = state.intervals.paralizado;
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         if spell.envenena {
             npc.veneno = true;
@@ -953,7 +953,7 @@ pub(super) async fn apply_spell_status(
                 if spell.inmoviliza {
                     target.immobilized = true;
                 }
-                target.counter_paralisis = state.config.intervalo_paralizado;
+                target.counter_paralisis = state.intervals.paralizado;
                 send_paradok_on = true;
             }
         }
@@ -979,7 +979,7 @@ pub(super) async fn apply_spell_status(
         }
         if spell.estupidez {
             target.stunned = true;
-            target.counter_stun = state.config.intervalo_paralizado; // VB6: same duration
+            target.counter_stun = state.intervals.paralizado; // VB6: same duration
         }
         if spell.remover_estupidez {
             target.stunned = false;
@@ -987,7 +987,7 @@ pub(super) async fn apply_spell_status(
         }
         if spell.ceguera {
             target.blind = true;
-            target.counter_blind = state.config.intervalo_paralizado / 3; // VB6: IntervaloParalizado / 3
+            target.counter_blind = state.intervals.paralizado / 3; // VB6: IntervaloParalizado / 3
         }
         if spell.invisibilidad {
             target.invisible = true;
@@ -999,7 +999,7 @@ pub(super) async fn apply_spell_status(
 
     // Send PARADOK + PU outside borrow scope (VB6: lines 759-760)
     if send_paradok_on {
-        let para_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
+        let para_secs = (state.intervals.paralizado as f32 * 0.04) as i16;
         let pkt = binary_packets::write_paralize_ok(para_secs);
         state.send_bytes(target_id, &pkt);
         // PU forces client position to server-known position (prevents ghost movement)
@@ -1020,7 +1020,7 @@ pub(super) async fn apply_spell_status(
         if let Some(u) = state.users.get(&target_id) {
             let ci = u.char_index.0 as i16;
             let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
-            let invis_secs = (state.config.intervalo_invisible as f32 * 0.04) as i16;
+            let invis_secs = (state.intervals.invisible as f32 * 0.04) as i16;
             let bp_remove = binary_packets::write_character_remove(ci);
             let nover_pkt = binary_packets::write_set_invisible(ci, true, invis_secs);
             // Collect area users and decide per-user

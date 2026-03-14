@@ -103,7 +103,7 @@ async fn main() {
     let bans = db::bans::BanList::load(&pool).await;
 
     // Initialize game state
-    let mut state = GameState::new(config.clone(), base_path, game_data, pool, bans);
+    let mut state = GameState::new(config.clone(), base_path.clone(), game_data, pool, bans);
     info!("Game state initialized");
 
     // Spawn NPCs from map data
@@ -150,7 +150,15 @@ async fn main() {
     // Game tick (40ms — anti-cheat interval decrements, matches VB6 TimerRestoTiempo)
     let mut game_tick = tokio::time::interval(std::time::Duration::from_millis(40));
     // AI tick timer — VB6: TIMER_AI.Interval = IntervaloNpcAI (default 1300ms from server.ini)
-    let ai_interval_ms = config.npc_ai_interval_ms.max(100); // floor at 100ms
+    // Load NPC AI interval from Intervalos.ini (needed before GameState)
+    let ai_interval_ms = {
+        let ini_path = base_path.join("dat").join("Intervalos.ini");
+        crate::config::IniFile::load(&ini_path).ok()
+            .and_then(|ini| ini.get("INTERVALOS", "IntervaloNpcAI"))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(1300)
+            .max(100)
+    };
     let mut ai_tick = tokio::time::interval(std::time::Duration::from_millis(ai_interval_ms));
     info!("NPC AI interval: {}ms", ai_interval_ms);
     // Respawn timer (every 30 seconds check for dead NPCs to respawn)

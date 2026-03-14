@@ -685,7 +685,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     // VB6: prob = Wrestling / 4
                     let prob = wrestling_sk / 4;
                     if rand_range(0, 100) < prob {
-                        let half_para = state.config.intervalo_paralizado / 2;
+                        let half_para = state.intervals.paralizado / 2;
                         if let Some(victim) = state.users.get_mut(&victim_id) {
                             victim.paralyzed = true;
                             victim.counter_paralisis = half_para;

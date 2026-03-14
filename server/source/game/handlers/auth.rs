@@ -442,7 +442,7 @@ pub(crate) async fn connect_user(
         user.paralyzed = char_data.paralyzed;
         // VB6: FileIO.bas sets Counters.Paralisis = IntervaloParalizado on load
         if user.paralyzed {
-            user.counter_paralisis = state.config.intervalo_paralizado;
+            user.counter_paralisis = state.intervals.paralizado;
         }
         user.criminal = char_data.criminal;
         user.hidden = char_data.hidden;

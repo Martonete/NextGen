@@ -561,7 +561,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     if let Some(u) = state.users.get(&conn_id) {
         if u.invisible {
             let remaining = if u.admin_invisible { 0 } else {
-                ((state.config.intervalo_invisible - u.counter_invisible) as f32 * 0.04) as i16
+                ((state.intervals.invisible - u.counter_invisible) as f32 * 0.04) as i16
             };
             state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining));
         }
