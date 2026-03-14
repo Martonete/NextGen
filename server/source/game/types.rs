@@ -622,28 +622,31 @@ pub mod privilege_level {
 /// Values are in game ticks (1 tick = 40ms).
 /// VB6 reference (ms): Melee=1500, Arrows=1400, Spells=1400, Potions=1200, Work=700.
 #[derive(Debug, Clone)]
+/// Anti-cheat cooldown settings. Configured in ms in dat/Intervalos.ini,
+/// converted to ticks (/40, rounded) at load time.
 pub struct IntervalSettings {
-    pub golpe: i32,           // Melee attack interval (VB6: 1500ms → 38 ticks)
-    pub flechas: i32,         // Arrow shot interval (VB6: 1400ms → 35 ticks)
-    pub lanzar_hechizo: i32,  // Spell cast interval (VB6: 1400ms → 35 ticks)
-    pub magia_golpe: i32,     // VB6: IntervaloMagiaGolpe — delay after spell before melee
-    pub golpe_magia: i32,     // VB6: IntervaloGolpeMagia — delay after melee before spell
-    pub poteo_u: i32,         // Potion use interval (VB6: 1200ms → 30 ticks)
-    pub poteo_click: i32,     // Click action interval (default 6)
-    pub work: i32,            // Work/skill interval (VB6: 700ms → 18 ticks)
+    pub golpe: i32,           // Melee attack cooldown (ticks)
+    pub flechas: i32,         // Arrow shot cooldown (ticks)
+    pub lanzar_hechizo: i32,  // Spell cast cooldown (ticks)
+    pub magia_golpe: i32,     // Delay after spell before melee (ticks)
+    pub golpe_magia: i32,     // Delay after melee before spell (ticks)
+    pub poteo_u: i32,         // Potion use cooldown (ticks)
+    pub poteo_click: i32,     // Click action cooldown (ticks)
+    pub work: i32,            // Work/skill cooldown (ticks)
 }
 
 impl Default for IntervalSettings {
     fn default() -> Self {
+        // Defaults in ms, converted to ticks (ms / 40)
         Self {
-            golpe: 38,           // VB6: IntervaloUserPuedeAtacar = 1500ms / 40ms
-            flechas: 35,         // VB6: IntervaloUserPuedeFlechas = 1400ms / 40ms
-            lanzar_hechizo: 35,  // VB6: IntervaloUserPuedeLanzarHechizo = 1400ms / 40ms
-            magia_golpe: 50,     // VB6: IntervaloMagiaGolpe = 2000ms / 40ms
-            golpe_magia: 50,     // VB6: IntervaloGolpeMagia = 2000ms / 40ms
-            poteo_u: 30,         // VB6: IntervaloUserPuedePotear = 1200ms / 40ms
-            poteo_click: 6,
-            work: 18,            // VB6: IntervaloUserPuedeTrabajar = 700ms / 40ms
+            golpe: 38,           // 1520ms / 40
+            flechas: 35,         // 1400ms / 40
+            lanzar_hechizo: 35,  // 1400ms / 40
+            magia_golpe: 50,     // 2000ms / 40
+            golpe_magia: 50,     // 2000ms / 40
+            poteo_u: 30,         // 1200ms / 40
+            poteo_click: 6,      //  240ms / 40
+            work: 18,            //  720ms / 40
         }
     }
 }
@@ -1473,27 +1476,34 @@ fn rand_simple() -> u32 {
 }
 
 /// Load anti-cheat interval settings from dat/Intervalos.ini.
+/// Convert milliseconds to game ticks (1 tick = 40ms), rounded.
+fn ms_to_ticks(ms: i32) -> i32 {
+    ((ms as f64) / 40.0).round() as i32
+}
+
 fn load_intervals(base: &std::path::Path) -> IntervalSettings {
     let path = base.join("dat").join("Intervalos.ini");
     match crate::config::IniFile::load(&path) {
         Ok(ini) => {
-            let get = |key: &str, default: i32| -> i32 {
-                ini.get("INTERVALOS", key)
+            // Values in INI are milliseconds — convert to ticks (/40, rounded)
+            let get_ms = |key: &str, default_ms: i32| -> i32 {
+                let ms: i32 = ini.get("INTERVALOS", key)
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(default)
+                    .unwrap_or(default_ms);
+                ms_to_ticks(ms)
             };
             let settings = IntervalSettings {
-                golpe: get("Golpe", 38),           // VB6: 1500ms / 40ms
-                flechas: get("Flechas", 35),       // VB6: 1400ms / 40ms
-                lanzar_hechizo: get("LanzarHechizo", 35), // VB6: 1400ms / 40ms
-                poteo_u: get("PoteoU", 30),        // VB6: 1200ms / 40ms
-                poteo_click: get("PoteoClick", 6),
-                work: get("Work", 18),             // VB6: 700ms / 40ms
-                magia_golpe: get("MagiaGolpe", 50), // VB6: IntervaloMagiaGolpe cross-cooldown
-                golpe_magia: get("GolpeMagia", 50), // VB6: IntervaloGolpeMagia cross-cooldown
+                golpe: get_ms("Golpe", 1520),
+                flechas: get_ms("Flechas", 1400),
+                lanzar_hechizo: get_ms("LanzarHechizo", 1400),
+                poteo_u: get_ms("PoteoU", 1200),
+                poteo_click: get_ms("PoteoClick", 240),
+                work: get_ms("Work", 720),
+                magia_golpe: get_ms("MagiaGolpe", 2000),
+                golpe_magia: get_ms("GolpeMagia", 2000),
             };
             tracing::info!(
-                "Intervals loaded: golpe={}, flechas={}, hechizo={}, poteo={}, click={}, work={}",
+                "Intervals loaded (ms→ticks): golpe={}, flechas={}, hechizo={}, poteo={}, click={}, work={}",
                 settings.golpe, settings.flechas, settings.lanzar_hechizo,
                 settings.poteo_u, settings.poteo_click, settings.work
             );

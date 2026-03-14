@@ -107,16 +107,27 @@ Reload at runtime with `/RELOADSINI`.
 
 ## 5. Intervalos.ini
 
-Located at `server/dat/Intervalos.ini`. Controls anti-speedhack timers (in server ticks of 40ms each):
+Located at `server/dat/Intervalos.ini`. Anti-speedhack cooldowns in **milliseconds** (converted to ticks /40ms at load):
 
-| Setting | Default (ticks) | Approx. ms | Description |
-|---------|----------------|------------|-------------|
-| `Golpe` | `37` | ~1480ms | Melee attack cooldown |
-| `Flechas` | `28` | ~1120ms | Ranged attack cooldown |
-| `LanzarHechizo` | `13` | ~520ms | Spell cast cooldown |
-| `PoteoU` | `8` | ~320ms | Potion use cooldown |
-| `PoteoClick` | `6` | ~240ms | Potion click cooldown |
-| `Work` | `10` | ~400ms | Crafting/resource cooldown |
+| Setting | Default (ms) | Ticks | Description |
+|---------|-------------|-------|-------------|
+| `Golpe` | `1520` | 38 | Melee attack cooldown |
+| `Flechas` | `1400` | 35 | Ranged attack cooldown |
+| `LanzarHechizo` | `1400` | 35 | Spell cast cooldown |
+| `MagiaGolpe` | `2000` | 50 | Cross-cooldown: spell → melee |
+| `GolpeMagia` | `2000` | 50 | Cross-cooldown: melee → spell |
+| `PoteoU` | `1200` | 30 | Potion use cooldown |
+| `PoteoClick` | `240` | 6 | Click action cooldown |
+| `Work` | `720` | 18 | Crafting/resource cooldown |
+
+`server.ini [INTERVALOS]` also uses milliseconds:
+
+| Setting | Default (ms) | Description |
+|---------|-------------|-------------|
+| `IntervaloParalizado` | `20000` | Paralysis duration (20s) |
+| `IntervaloInvisible` | `20000` | Spell invisibility duration (20s) |
+| `IntervaloOculto` | `20000` | Hide duration base (20s) |
+| `IntervaloNpcAI` | `1300` | NPC AI tick (ms, used directly) |
 
 ---
 

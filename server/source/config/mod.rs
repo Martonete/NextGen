@@ -10,6 +10,15 @@ pub use ini::{IniFile, get_var, write_var};
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Convert a millisecond INI value to game ticks (1 tick = 40ms).
+/// Rounds to nearest integer. Falls back to default_ms if missing/invalid.
+fn ms_to_ticks(ini_value: Option<String>, default_ms: i32) -> i32 {
+    let ms: i32 = ini_value
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(default_ms);
+    ((ms as f64) / 40.0).round() as i32
+}
+
 /// Role overrides from server.ini — maps lowercase character names to privilege levels.
 pub type RoleMap = HashMap<String, i32>;
 
@@ -94,10 +103,10 @@ pub struct ServerConfig {
     pub log_dir: String,
     pub notice: String,
     pub pretoriano_map: i32,
-    pub intervalo_paralizado: i32,  // VB6: IntervaloParalizado (ticks at 40ms — default 500 = 20s)
-    pub intervalo_invisible: i32,   // VB6: IntervaloInvisible (ticks at 40ms — default 500 = 20s)
-    pub intervalo_oculto: i32,      // VB6: IntervaloOculto (ticks at 40ms — default 500 = 20s)
-    pub npc_ai_interval_ms: u64,    // VB6: IntervaloNpcAI (ms — default 1300)
+    pub intervalo_paralizado: i32,  // Paralysis duration in ticks (loaded as ms, /40)
+    pub intervalo_invisible: i32,   // Spell invisibility in ticks (loaded as ms, /40)
+    pub intervalo_oculto: i32,      // Hide duration base in ticks (loaded as ms, /40)
+    pub npc_ai_interval_ms: u64,    // NPC AI tick interval (ms, used directly)
     // Security settings (loaded from [Security] section)
     pub max_packets_per_second: Option<u32>,  // Per-connection packet rate limit (default 60)
     pub ip_max_connections: Option<u32>,       // Max simultaneous connections per IP (default 10)
@@ -161,18 +170,16 @@ impl ServerConfig {
             pretoriano_map: ini.get("INIT", "MapaPretoriano")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(163),
-            intervalo_paralizado: ini.get("INTERVALOS", "IntervaloParalizado")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(500),
-            intervalo_invisible: ini.get("INTERVALOS", "IntervaloInvisible")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(500),
-            intervalo_oculto: ini.get("INTERVALOS", "IntervaloOculto")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(500),
+            // Intervals are configured in milliseconds, converted to ticks (/40, rounded)
+            intervalo_paralizado: ms_to_ticks(
+                ini.get("INTERVALOS", "IntervaloParalizado"), 20000), // 20000ms = 20s
+            intervalo_invisible: ms_to_ticks(
+                ini.get("INTERVALOS", "IntervaloInvisible"), 20000),
+            intervalo_oculto: ms_to_ticks(
+                ini.get("INTERVALOS", "IntervaloOculto"), 20000),
             npc_ai_interval_ms: ini.get("INTERVALOS", "IntervaloNpcAI")
                 .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(1300),
+                .unwrap_or(1300), // Already in ms, used directly
             max_packets_per_second: ini.get("Security", "MaxPacketsPerSecond")
                 .and_then(|s| s.trim().parse().ok()),
             ip_max_connections: ini.get("Security", "IpMaxConnections")
