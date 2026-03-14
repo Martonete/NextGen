@@ -26,8 +26,9 @@ public partial class SoundManager : Node
     /// <summary>VB6: NumSoundBuffers = 30 concurrent sound slots.</summary>
     private const int NumSoundBuffers = 30;
 
-    /// <summary>VB6: MAX_DISTANCE_TO_SOURCE — tiles beyond which sound is inaudible.</summary>
-    private const float MaxDistanceToSource = 150f;
+    /// <summary>Practical hearing range in tiles (~2 screens). VB6 used 150 but
+    /// linear attenuation made sounds inaudible well before that.</summary>
+    private const float MaxDistanceToSource = 22f;
 
     /// <summary>VB6: DELTA_FQ — Doppler frequency variation coefficient.</summary>
     private const float DeltaFq = 75f;
