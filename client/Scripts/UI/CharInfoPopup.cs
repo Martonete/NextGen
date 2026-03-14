@@ -24,7 +24,6 @@ public partial class CharInfoPopup : Control
     private Label? _statusLabel;
     private Label? _statsLabel;
     private Label? _killsLabel;
-    private Button? _closeBtn;
     private float _timer;
 
     public void Init(GameState state)
@@ -38,89 +37,87 @@ public partial class CharInfoPopup : Control
         CustomMinimumSize = new Vector2(PanelW, PanelH);
         Size = new Vector2(PanelW, PanelH);
         MouseFilter = MouseFilterEnum.Stop;
+        ZIndex = RpgBaseForm.ZDialog;
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.06f, 0.06f, 0.10f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
+        // Background: solid dark + NinePatch frame
+        var solidBg = new ColorRect();
+        solidBg.Color = new Color(0.06f, 0.06f, 0.10f, 0.95f);
+        solidBg.MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(solidBg);
+        RpgTheme.FillParent(solidBg);
 
-        // Border
-        var border = new ReferenceRect();
-        border.EditorOnly = false;
-        border.BorderColor = new Color(0.5f, 0.6f, 0.9f, 0.6f);
-        border.BorderWidth = 1.0f;
-        border.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(border);
+        var frameBg = RpgTheme.CreateNinePatch("info_window.png", new Vector4(16, 16, 16, 16));
+        AddChild(frameBg);
+        RpgTheme.FillParent(frameBg);
 
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 4);
-        _closeBtn.Size = new Vector2(24, 22);
-        _closeBtn.Pressed += () => { Visible = false; };
-        AddChild(_closeBtn);
+        // Content margin
+        var margin = new MarginContainer();
+        margin.MouseFilter = MouseFilterEnum.Ignore;
+        margin.AddThemeConstantOverride("margin_top", RpgTheme.PanelMarginTop);
+        margin.AddThemeConstantOverride("margin_left", RpgTheme.PanelMarginLeft);
+        margin.AddThemeConstantOverride("margin_right", RpgTheme.PanelMarginRight);
+        margin.AddThemeConstantOverride("margin_bottom", RpgTheme.PanelMarginBottom);
+        AddChild(margin);
+        RpgTheme.FillParent(margin);
 
-        // Character name (large, yellow)
-        _nameLabel = new Label();
-        _nameLabel.Position = new Vector2(10, 8);
-        _nameLabel.Size = new Vector2(PanelW - 50, 24);
-        _nameLabel.AddThemeFontSizeOverride("font_size", 15);
-        _nameLabel.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.2f));
+        var col = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        margin.AddChild(col);
+
+        // Header row: character name + close button
+        var headerRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        col.AddChild(headerRow);
+
+        _nameLabel = RpgTheme.CreateTitleLabel("", 15);
+        _nameLabel.HorizontalAlignment = HorizontalAlignment.Left;
         _nameLabel.ClipText = true;
-        AddChild(_nameLabel);
+        _nameLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        headerRow.AddChild(_nameLabel);
 
-        // Separator line
-        var sep = new ColorRect();
-        sep.Color = new Color(0.3f, 0.3f, 0.4f, 0.8f);
-        sep.Position = new Vector2(10, 34);
-        sep.Size = new Vector2(PanelW - 20, 1);
-        AddChild(sep);
+        var closeBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(22, 22));
+        closeBtn.Pressed += () => { Visible = false; };
+        headerRow.AddChild(closeBtn);
 
-        float y = 42;
-        const float rowH = 22;
+        // Separator
+        col.AddChild(RpgTheme.CreateSeparator());
 
-        // Level + Class
-        _levelClassLabel = CreateInfoLabel(ref y, rowH);
+        // Info labels
+        _levelClassLabel = RpgTheme.CreateInfoLabel("", 11);
+        _levelClassLabel.ClipText = true;
+        col.AddChild(_levelClassLabel);
 
-        // Race
-        _raceLabel = CreateInfoLabel(ref y, rowH);
+        _raceLabel = RpgTheme.CreateInfoLabel("", 11);
+        _raceLabel.ClipText = true;
+        col.AddChild(_raceLabel);
 
-        // Faction
-        _factionLabel = CreateInfoLabel(ref y, rowH);
+        _factionLabel = RpgTheme.CreateInfoLabel("", 11);
+        _factionLabel.ClipText = true;
+        col.AddChild(_factionLabel);
 
-        // Guild
-        _guildLabel = CreateInfoLabel(ref y, rowH);
+        _guildLabel = RpgTheme.CreateInfoLabel("", 11);
+        _guildLabel.ClipText = true;
+        col.AddChild(_guildLabel);
 
-        // Status (Criminal/Ciudadano) — colored
-        _statusLabel = CreateInfoLabel(ref y, rowH);
+        _statusLabel = RpgTheme.CreateInfoLabel("", 11);
+        _statusLabel.ClipText = true;
+        col.AddChild(_statusLabel);
 
-        // Stats (HP/Mana/Sta)
-        _statsLabel = CreateInfoLabel(ref y, rowH);
+        _statsLabel = RpgTheme.CreateInfoLabel("", 11);
+        _statsLabel.ClipText = true;
+        col.AddChild(_statsLabel);
 
-        // Kills
-        _killsLabel = CreateInfoLabel(ref y, rowH);
+        _killsLabel = RpgTheme.CreateInfoLabel("", 11);
+        _killsLabel.ClipText = true;
+        col.AddChild(_killsLabel);
 
-        // "Cerrar" button at bottom
-        var cerrarBtn = new Button();
-        cerrarBtn.Text = "Cerrar";
-        cerrarBtn.Position = new Vector2(PanelW / 2 - 35, PanelH - 34);
-        cerrarBtn.Size = new Vector2(70, 26);
+        // "Cerrar" button at bottom, centered
+        var footerRow = RpgTheme.CreateRow();
+        footerRow.Alignment = BoxContainer.AlignmentMode.Center;
+        col.AddChild(footerRow);
+
+        var cerrarBtn = RpgTheme.CreateRpgButton("Cerrar", false, 12);
+        cerrarBtn.CustomMinimumSize = new Vector2(80, 26);
         cerrarBtn.Pressed += () => { Visible = false; };
-        AddChild(cerrarBtn);
-    }
-
-    private Label CreateInfoLabel(ref float y, float rowH)
-    {
-        var label = new Label();
-        label.Position = new Vector2(14, y);
-        label.Size = new Vector2(PanelW - 28, rowH);
-        label.AddThemeFontSizeOverride("font_size", 11);
-        label.AddThemeColorOverride("font_color", new Color(0.85f, 0.85f, 0.9f));
-        label.ClipText = true;
-        AddChild(label);
-        y += rowH;
-        return label;
+        footerRow.AddChild(cerrarBtn);
     }
 
     /// <summary>

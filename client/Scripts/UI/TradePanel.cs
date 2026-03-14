@@ -12,47 +12,35 @@ namespace ArgentumNextgen.UI;
 /// Two columns: your offer (left) and partner offer (right).
 /// Up to 10 item slots per side, gold input, accept/cancel buttons.
 /// Reads all trade data from GameState (populated by PacketHandler).
+/// Now uses RpgBaseForm for consistent RPG chrome (frame, title, close, drag).
+/// Custom _Draw() rendering for trade slots is preserved inside a child Control.
 /// </summary>
-public partial class TradePanel : Control
+public partial class TradePanel : RpgBaseForm
 {
-    // Panel dimensions
-    private const int PanelW = 420;
-    private const int PanelH = 420;
-
-    // Layout constants
-    private const int TitleBarH = 28;
-    private const int ColW = 185;
-    private const int LeftColX = 12;
-    private const int RightColX = PanelW - ColW - 12; // 223
-    private const int HeaderY = 34;
-    private const int SlotStartY = 52;
+    // Content area layout constants (relative to _drawArea origin)
+    private const int ContentW = 360;
+    private const int ColW = 165;
+    private const int LeftColX = 0;
+    private const int RightColX = ContentW - ColW; // 195
+    private const int HeaderY = 0;
+    private const int SlotStartY = 18;
     private const int SlotH = 22;
     private const int MaxSlots = 10;
     private const int SlotsAreaH = MaxSlots * SlotH; // 220
 
-    // Gold area
-    private const int GoldY = SlotStartY + SlotsAreaH + 8; // 280
+    // Gold area (relative to _drawArea)
+    private const int GoldY = SlotStartY + SlotsAreaH + 8; // 246
     private const int GoldLabelH = 18;
 
-    // Status area
-    private const int StatusY = GoldY + GoldLabelH + 32; // 330
-
-    // Buttons
-    private const int BtnY = StatusY + 24; // 354
-    private const int BtnW = 90;
-    private const int BtnH = 26;
-    private const int AcceptBtnX = PanelW / 2 - BtnW - 8; // 122
-    private const int CancelBtnX = PanelW / 2 + 8; // 218
-    private const int CloseBtnX = PanelW - 30;
-    private const int CloseBtnY = 2;
-    private const int CloseBtnW = 26;
-    private const int CloseBtnH = 24;
+    // Status area (relative to _drawArea)
+    private const int StatusY = GoldY + GoldLabelH + 32; // 296
+    private const int DrawAreaH = StatusY + 16; // 312
 
     private GameState? _state;
     private GameData? _data;
     private AoTcpClient? _tcp;
 
-    // Local acceptance state (our side — reset when offer changes)
+    // Local acceptance state (our side -- reset when offer changes)
     private bool _myAccepted;
 
     // Track slot/gold counts to detect changes and reset acceptance
@@ -61,19 +49,17 @@ public partial class TradePanel : Control
     private int _lastMyGold;
     private int _lastPartnerGold;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     // UI controls
+    private Control? _drawArea;
     private LineEdit? _goldInput;
-    private Button? _acceptBtn;
-    private Button? _cancelBtn;
-    private Button? _closeBtn;
-    private Button? _offerGoldBtn;
+    private TextureButton? _acceptBtn;
+    private TextureButton? _cancelBtn;
+    private TextureButton? _offerGoldBtn;
 
     // Rich tooltip panel (set by Main.cs)
     public TooltipPanel? RichTooltip;
+
+    public TradePanel() : base("Comercio", new Vector2(420, 470), "v3") { }
 
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
@@ -82,56 +68,53 @@ public partial class TradePanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Size = new Vector2(PanelW, PanelH);
-        MouseFilter = MouseFilterEnum.Stop;
-        FocusMode = FocusModeEnum.None;
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(vbox);
 
-        // Gold input for your offer
-        _goldInput = new LineEdit();
-        _goldInput.Position = new Vector2(LeftColX + 40, GoldY + GoldLabelH + 2);
-        _goldInput.Size = new Vector2(80, 20);
+        // Custom draw area for trade columns, slots, status indicators
+        _drawArea = new Control();
+        _drawArea.CustomMinimumSize = new Vector2(ContentW, DrawAreaH);
+        _drawArea.MouseFilter = MouseFilterEnum.Stop;
+        _drawArea.Draw += OnDrawArea;
+        _drawArea.GuiInput += OnDrawAreaInput;
+        vbox.AddChild(_drawArea);
+
+        // Gold input row (your side)
+        var goldRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        vbox.AddChild(goldRow);
+
+        var goldLabel = RpgTheme.CreateInfoLabel("Oro:", 12);
+        goldRow.AddChild(goldLabel);
+
+        _goldInput = RpgTheme.CreateRpgInput("0", 80);
         _goldInput.Text = "0";
         _goldInput.Alignment = HorizontalAlignment.Center;
-        _goldInput.FocusMode = FocusModeEnum.Click;
-        _goldInput.AddThemeColorOverride("font_color", Colors.White);
-        _goldInput.AddThemeFontSizeOverride("font_size", 10);
-        AddChild(_goldInput);
+        goldRow.AddChild(_goldInput);
 
-        // Offer gold button
-        _offerGoldBtn = CreateButton("Ofrecer", LeftColX + 124, GoldY + GoldLabelH + 2, 60, 20);
+        _offerGoldBtn = RpgTheme.CreateRpgButton("Ofrecer", false, 12);
+        _offerGoldBtn.CustomMinimumSize = new Vector2(80, 24);
         _offerGoldBtn.Pressed += OnOfferGoldPressed;
-        AddChild(_offerGoldBtn);
+        goldRow.AddChild(_offerGoldBtn);
 
-        // Accept button
-        _acceptBtn = CreateButton("Aceptar", AcceptBtnX, BtnY, BtnW, BtnH);
+        // Button row: Accept / Cancel
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
+
+        _acceptBtn = RpgTheme.CreateRpgButton("Aceptar", false, 14);
+        _acceptBtn.CustomMinimumSize = new Vector2(130, 30);
         _acceptBtn.Pressed += OnAcceptPressed;
-        AddChild(_acceptBtn);
+        btnRow.AddChild(_acceptBtn);
 
-        // Cancel button
-        _cancelBtn = CreateButton("Cancelar", CancelBtnX, BtnY, BtnW, BtnH);
+        _cancelBtn = RpgTheme.CreateRpgButton("Cancelar", false, 14);
+        _cancelBtn.CustomMinimumSize = new Vector2(130, 30);
         _cancelBtn.Pressed += OnCancelPressed;
-        AddChild(_cancelBtn);
-
-        // Close button (X)
-        _closeBtn = CreateButton("X", CloseBtnX, CloseBtnY, CloseBtnW, CloseBtnH);
-        _closeBtn.Pressed += OnCancelPressed;
-        AddChild(_closeBtn);
+        btnRow.AddChild(_cancelBtn);
     }
 
-    private static Button CreateButton(string text, int x, int y, int w, int h)
-    {
-        var btn = new Button();
-        btn.Text = text;
-        btn.Position = new Vector2(x, y);
-        btn.Size = new Vector2(w, h);
-        btn.FocusMode = Control.FocusModeEnum.None;
-        btn.MouseDefaultCursorShape = CursorShape.PointingHand;
-        return btn;
-    }
-
-    // ── Public API (called by Main) ──────────────────────────────
+    // -- Public API (called by Main) --
 
     public void OpenTrade()
     {
@@ -142,12 +125,12 @@ public partial class TradePanel : Control
         _lastMyGold = 0;
         _lastPartnerGold = 0;
         _goldInput!.Text = "0";
-        Visible = true;
+        ShowForm();
     }
 
     public void CloseTrade()
     {
-        Visible = false;
+        HideForm();
         _myAccepted = false;
         RichTooltip?.Hide();
     }
@@ -183,7 +166,7 @@ public partial class TradePanel : Control
         _tcp.SendPacket(ClientPackets.WriteTradeOfferItem((byte)(invSlot + 1), (short)qty));
     }
 
-    // ── Process / Draw ───────────────────────────────────────────
+    // -- Process / Draw --
 
     public override void _Process(double delta)
     {
@@ -202,28 +185,24 @@ public partial class TradePanel : Control
             _lastPartnerGold = _state.PartnerTradeGold;
         }
 
-        QueueRedraw();
+        // Update title with partner name
+        string partnerName = _state.TradePartnerName;
+        if (!string.IsNullOrEmpty(partnerName))
+            TitleText = $"Comercio con {partnerName}";
+        else
+            TitleText = "Comercio";
+
+        _drawArea?.QueueRedraw();
     }
 
-    public override void _Draw()
+    private void OnDrawArea()
     {
-        if (_state == null || _data == null) return;
+        if (_state == null || _data == null || _drawArea == null) return;
 
         var font = _data.Fonts?[1];
 
-        // Background
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.08f, 0.06f, 0.12f, 0.96f));
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.5f, 0.4f, 0.3f, 0.8f), false, 2f);
-
-        // Title
-        string partnerName = _state.TradePartnerName;
-        string title = string.IsNullOrEmpty(partnerName)
-            ? "Comercio"
-            : $"Comercio con {partnerName}";
-        font?.DrawText(this, PanelW / 2, 6, title, new Color(1f, 0.85f, 0.4f), center: true);
-
         // Divider line
-        DrawLine(new Vector2(PanelW / 2, HeaderY - 4), new Vector2(PanelW / 2, StatusY - 4),
+        _drawArea.DrawLine(new Vector2(ContentW / 2, HeaderY), new Vector2(ContentW / 2, StatusY - 4),
             new Color(0.5f, 0.4f, 0.3f, 0.5f), 1f);
 
         // Left column: Your offer
@@ -231,6 +210,7 @@ public partial class TradePanel : Control
             _state.MyTradeSlots, _state.MyTradeSlotCount, _state.MyTradeGold, true);
 
         // Right column: Partner offer
+        string partnerName = _state.TradePartnerName;
         string partnerHeader = string.IsNullOrEmpty(partnerName)
             ? "Su oferta"
             : $"Oferta de {partnerName}";
@@ -244,13 +224,15 @@ public partial class TradePanel : Control
     private void DrawColumn(AoFont? font, int colX, string header,
         TradeOfferSlot[] slots, int slotCount, int gold, bool isLeft)
     {
+        if (_drawArea == null) return;
+
         // Column header
-        font?.DrawText(this, colX + ColW / 2, HeaderY, header, Colors.White, center: true);
+        font?.DrawText(_drawArea, colX + ColW / 2, HeaderY, header, Colors.White, center: true);
 
         // Slot list background
-        DrawRect(new Rect2(colX, SlotStartY, ColW, SlotsAreaH),
+        _drawArea.DrawRect(new Rect2(colX, SlotStartY, ColW, SlotsAreaH),
             new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(colX, SlotStartY, ColW, SlotsAreaH),
+        _drawArea.DrawRect(new Rect2(colX, SlotStartY, ColW, SlotsAreaH),
             new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
         // Draw item slots
@@ -260,11 +242,11 @@ public partial class TradePanel : Control
 
             // Alternating row background
             if (i % 2 == 1)
-                DrawRect(new Rect2(colX, sy, ColW, SlotH), new Color(1f, 1f, 1f, 0.03f));
+                _drawArea.DrawRect(new Rect2(colX, sy, ColW, SlotH), new Color(1f, 1f, 1f, 0.03f));
 
             // Row separator
             if (i > 0)
-                DrawLine(new Vector2(colX, sy), new Vector2(colX + ColW, sy),
+                _drawArea.DrawLine(new Vector2(colX, sy), new Vector2(colX + ColW, sy),
                     new Color(0.3f, 0.3f, 0.4f, 0.3f), 1f);
 
             if (i < slotCount)
@@ -278,12 +260,12 @@ public partial class TradePanel : Control
                 float textX = colX + 4;
                 if (slot.GrhIndex > 0)
                 {
-                    CharRenderer.DrawGrh(this, _data!, slot.GrhIndex, 0,
+                    CharRenderer.DrawGrh(_drawArea, _data!, slot.GrhIndex, 0,
                         new Vector2(colX + 2, sy + 1));
                     textX = colX + 22;
                 }
 
-                font?.DrawText(this, (int)textX, (int)sy + 4, itemText,
+                font?.DrawText(_drawArea, (int)textX, (int)sy + 4, itemText,
                     new Color(0.9f, 0.9f, 0.8f));
             }
         }
@@ -292,76 +274,55 @@ public partial class TradePanel : Control
         float goldLabelY = GoldY;
         if (isLeft)
         {
-            font?.DrawText(this, colX + 2, (int)goldLabelY, "Oro:", new Color(1f, 1f, 0f));
-            // Gold input and offer button are child Controls (positioned in _Ready)
+            font?.DrawText(_drawArea, colX + 2, (int)goldLabelY, "Oro:", new Color(1f, 1f, 0f));
+            // Gold input and offer button are child Controls (in BuildContent)
         }
         else
         {
-            font?.DrawText(this, colX + 2, (int)goldLabelY, "Oro:", new Color(1f, 1f, 0f));
-            font?.DrawText(this, colX + 40, (int)goldLabelY,
+            font?.DrawText(_drawArea, colX + 2, (int)goldLabelY, "Oro:", new Color(1f, 1f, 0f));
+            font?.DrawText(_drawArea, colX + 40, (int)goldLabelY,
                 gold.ToString("N0"), Colors.White);
         }
     }
 
     private void DrawStatusIndicators(AoFont? font)
     {
+        if (_drawArea == null || _state == null) return;
+
         // Your acceptance status
         var myColor = _myAccepted
             ? new Color(0.2f, 0.8f, 0.2f) // green
             : new Color(0.5f, 0.5f, 0.5f); // gray
         string myStatus = _myAccepted ? "Aceptado" : "Pendiente";
-        DrawRect(new Rect2(LeftColX, StatusY, 10, 10), myColor);
-        font?.DrawText(this, LeftColX + 14, StatusY - 2, $"Tu: {myStatus}", myColor);
+        _drawArea.DrawRect(new Rect2(LeftColX, StatusY, 10, 10), myColor);
+        font?.DrawText(_drawArea, LeftColX + 14, StatusY - 2, $"Tu: {myStatus}", myColor);
 
         // Partner acceptance status (from GameState)
-        bool partnerAccepted = _state?.TradePartnerAccepted ?? false;
+        bool partnerAccepted = _state.TradePartnerAccepted;
         var partnerColor = partnerAccepted
             ? new Color(0.2f, 0.8f, 0.2f)
             : new Color(0.5f, 0.5f, 0.5f);
         string partnerStatus = partnerAccepted ? "Aceptado" : "Pendiente";
-        string partnerName = _state?.TradePartnerName ?? "";
-        DrawRect(new Rect2(RightColX, StatusY, 10, 10), partnerColor);
-        font?.DrawText(this, RightColX + 14, StatusY - 2, $"{partnerName}: {partnerStatus}", partnerColor);
+        string partnerName = _state.TradePartnerName ?? "";
+        _drawArea.DrawRect(new Rect2(RightColX, StatusY, 10, 10), partnerColor);
+        font?.DrawText(_drawArea, RightColX + 14, StatusY - 2, $"{partnerName}: {partnerStatus}", partnerColor);
     }
 
-    // ── Input handling ───────────────────────────────────────────
+    // -- Input handling --
 
-    public override void _GuiInput(InputEvent @event)
+    private void OnDrawAreaInput(InputEvent @event)
     {
-        if (_state == null || _tcp == null) return;
+        if (_state == null || _tcp == null || _drawArea == null) return;
 
-        // Dragging by title bar
-        if (@event is InputEventMouseButton dragMb)
+        if (@event is InputEventMouseMotion mm)
         {
-            if (dragMb.ButtonIndex == MouseButton.Left)
-            {
-                if (dragMb.Pressed && dragMb.Position.Y <= TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
-                    AcceptEvent();
-                    return;
-                }
-                if (!dragMb.Pressed && _dragging)
-                    _dragging = false;
-            }
-        }
-        if (@event is InputEventMouseMotion dragMm)
-        {
-            if (_dragging)
-            {
-                GlobalPosition = dragMm.GlobalPosition - _dragOffset;
-                AcceptEvent();
-                return;
-            }
-
             // Tooltip on hover over trade slot list items
             if (RichTooltip != null && _state != null)
             {
                 bool shown = false;
                 // Left column: your offer slots
-                float ly = dragMm.Position.Y - SlotStartY;
-                if (dragMm.Position.X >= LeftColX && dragMm.Position.X < LeftColX + ColW
+                float ly = mm.Position.Y - SlotStartY;
+                if (mm.Position.X >= LeftColX && mm.Position.X < LeftColX + ColW
                     && ly >= 0 && ly < SlotsAreaH)
                 {
                     int idx = (int)(ly / SlotH);
@@ -372,7 +333,7 @@ public partial class TradePanel : Control
                     }
                 }
                 // Right column: partner offer slots
-                if (!shown && dragMm.Position.X >= RightColX && dragMm.Position.X < RightColX + ColW
+                if (!shown && mm.Position.X >= RightColX && mm.Position.X < RightColX + ColW
                     && ly >= 0 && ly < SlotsAreaH)
                 {
                     int idx = (int)(ly / SlotH);
@@ -392,14 +353,14 @@ public partial class TradePanel : Control
             if (mb.ButtonIndex == MouseButton.Right)
             {
                 OnCancelPressed();
-                AcceptEvent();
+                _drawArea.AcceptEvent();
                 return;
             }
-            AcceptEvent();
+            _drawArea.AcceptEvent();
         }
     }
 
-    // ── Button handlers ──────────────────────────────────────────
+    // -- Button handlers --
 
     private void OnOfferGoldPressed()
     {

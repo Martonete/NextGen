@@ -20,9 +20,8 @@ public class DialogManager
     // Escape menu
     private Control? _escapeMenu;
 
-    // Message dialog (VB6: Mensaje form)
-    private ColorRect? _mensajeOverlay; // full-screen modal backdrop
-    private Control? _mensajeDialog;
+    // Message dialog — uses RpgBaseForm (guaranteed input handling)
+    private MensajeForm? _mensajeForm;
     private Label? _mensajeLabel;
 
     // Drop quantity dialog (VB6: frmCantidad)
@@ -243,70 +242,16 @@ public class DialogManager
 
     public void CreateMensajeDialog(Node parent)
     {
-        // Full-screen dark overlay — blocks ALL input behind the dialog
-        _mensajeOverlay = new ColorRect();
-        _mensajeOverlay.Color = new Color(0f, 0f, 0f, 0.55f);
-        // Explicit size (FullRect anchors don't work in CanvasLayer)
-        _mensajeOverlay.Position = Vector2.Zero;
-        _mensajeOverlay.Size = new Vector2(800, 600);
-        _mensajeOverlay.MouseFilter = Control.MouseFilterEnum.Stop;
-        _mensajeOverlay.Visible = false;
-        _mensajeOverlay.ZIndex = 200;
-        parent.AddChild(_mensajeOverlay);
-
-        // Dialog panel — CHILD of overlay so it renders on top and receives input
-        _mensajeDialog = new Control();
-        _mensajeDialog.CustomMinimumSize = new Vector2(380, 200);
-        _mensajeDialog.Size = new Vector2(380, 200);
-        _mensajeDialog.MouseFilter = Control.MouseFilterEnum.Stop;
-        _mensajeOverlay.AddChild(_mensajeDialog);
-
-        // V2 background
-        var bg = new TextureRect();
-        bg.Texture = RpgTheme.GetTex("big_bar.png");
-        bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        bg.StretchMode = TextureRect.StretchModeEnum.Scale;
-        bg.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _mensajeDialog.AddChild(bg);
-        RpgTheme.FillParent(bg);
-
-        // Content with V2 margins
-        var margin = new MarginContainer();
-        margin.AddThemeConstantOverride("margin_top", 24);
-        margin.AddThemeConstantOverride("margin_left", 36);
-        margin.AddThemeConstantOverride("margin_right", 36);
-        margin.AddThemeConstantOverride("margin_bottom", 38);
-        margin.MouseFilter = Control.MouseFilterEnum.Ignore;
-        _mensajeDialog.AddChild(margin);
-        RpgTheme.FillParent(margin);
-
-        var root = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
-        root.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-        margin.AddChild(root);
-
-        // Message text — expands
-        _mensajeLabel = RpgTheme.CreateInfoLabel("", 13);
-        _mensajeLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _mensajeLabel.VerticalAlignment = VerticalAlignment.Center;
-        _mensajeLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _mensajeLabel.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-        root.AddChild(_mensajeLabel);
-
-        // Footer with Aceptar button
-        var footer = RpgTheme.CreateFooterRow();
-        root.AddChild(footer);
-        var btnRow = footer.GetMeta("row").As<HBoxContainer>();
-
-        var acceptBtn = RpgTheme.CreateRpgButton("Aceptar", true, 14);
-        acceptBtn.CustomMinimumSize = new Vector2(130, 36);
-        acceptBtn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
-        acceptBtn.Pressed += OnMensajeAccept;
-        btnRow.AddChild(acceptBtn);
+        _mensajeForm = new MensajeForm();
+        _mensajeForm.ZIndex = RpgBaseForm.ZDialog;
+        _mensajeForm.OnAccept = OnMensajeAccept;
+        parent.AddChild(_mensajeForm);
+        _mensajeLabel = _mensajeForm.MessageLabel;
     }
 
     public void ShowMensaje(string text, Vector2 screenSize)
     {
-        if (_mensajeDialog == null || _mensajeLabel == null || _mensajeOverlay == null) return;
+        if (_mensajeForm == null || _mensajeLabel == null) return;
 
         _mensajeLabel.Text = text;
 
@@ -317,23 +262,15 @@ public class DialogManager
         else
             _mensajeLabel.AddThemeFontSizeOverride("font_size", 13);
 
-        // Show overlay (blocks all input behind) — dialog is child, auto-visible
-        _mensajeOverlay.Visible = true;
-
-        // Center dialog in screen
-        _mensajeDialog.Position = new Vector2(
-            (screenSize.X - _mensajeDialog.Size.X) / 2,
-            (screenSize.Y - _mensajeDialog.Size.Y) / 2
-        );
+        _mensajeForm.ShowForm();
     }
 
     public void OnMensajeAccept()
     {
-        if (_mensajeOverlay != null)
-            _mensajeOverlay.Visible = false;
+        _mensajeForm?.HideForm();
     }
 
-    public bool IsMensajeVisible => _mensajeOverlay != null && _mensajeOverlay.Visible;
+    public bool IsMensajeVisible => _mensajeForm != null && _mensajeForm.Visible;
 
     // === Drop Dialog ===
 

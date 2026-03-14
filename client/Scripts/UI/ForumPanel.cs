@@ -11,12 +11,10 @@ namespace ArgentumNextgen.UI;
 /// Boards: General (type 0/1), Armada Real (type 4/5), Legion Oscura (type 2/3).
 /// Server sends AddForumMsg packets (accumulated in GameState.ForumPosts),
 /// then ShowForumForm to trigger display.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class ForumPanel : Control
+public partial class ForumPanel : RpgBaseForm
 {
-    private const int PanelW = 520;
-    private const int PanelH = 500;
-
     // Forum type constants (match server forum_msg_type)
     private const byte TYPE_GENERAL = 0;
     private const byte TYPE_GENERAL_STICKY = 1;
@@ -33,36 +31,27 @@ public partial class ForumPanel : Control
     private GameState? _state;
     private AoTcpClient? _tcp;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     // Current tab index: 0=General, 1=Armada Real, 2=Legion Oscura
     private int _currentTab;
 
-    // UI controls
-    private Label? _titleLabel;
-    private Button? _closeBtn;
+    // Tab bar
     private HBoxContainer? _tabBar;
-    private Button? _tabGeneral;
-    private Button? _tabReal;
-    private Button? _tabCaos;
-    private ScrollContainer? _postListScroll;
+
+    // Views (toggled via visibility)
+    private VBoxContainer? _postListView;
     private VBoxContainer? _postListBox;
-    private Panel? _postDetailPanel;
+    private VBoxContainer? _postDetailView;
+    private VBoxContainer? _newPostView;
+
+    // Post detail controls
     private Label? _postDetailTitle;
     private Label? _postDetailAuthor;
-    private RichTextLabel? _postDetailBody;
-    private Button? _backBtn;
-    private Button? _newPostBtn;
+    private TextEdit? _postDetailBody;
 
-    // New post form
-    private Panel? _newPostPanel;
+    // New post controls
     private LineEdit? _newPostTitle;
     private TextEdit? _newPostBody;
-    private Button? _submitBtn;
-    private Button? _cancelPostBtn;
-    private CheckBox? _stickyCheck;
+    private Button? _stickyCheck;
 
     // Cached post lists per board (populated from GameState.ForumPosts)
     private readonly List<ForumPostEntry> _generalPosts = new();
@@ -72,159 +61,109 @@ public partial class ForumPanel : Control
     // Currently selected post for detail view
     private ForumPostEntry? _selectedPost;
 
+    public ForumPanel() : base("Foro", new Vector2(520, 500), "v2") { }
+
     public void Init(GameState state, AoTcpClient tcp)
     {
         _state = state;
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        // Clear accumulated posts when the form is hidden (close button, Hide(), etc.)
+        VisibilityChanged += () =>
+        {
+            if (!Visible) _state?.ForumPosts.Clear();
+        };
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
-
-        // Title
-        _titleLabel = new Label();
-        _titleLabel.Text = "Foro";
-        _titleLabel.Position = new Vector2(10, 4);
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(_titleLabel);
-
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 2);
-        _closeBtn.Size = new Vector2(24, 24);
-        _closeBtn.Pressed += OnClose;
-        AddChild(_closeBtn);
+        var root = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(root);
 
         // Tab bar
-        _tabBar = new HBoxContainer();
-        _tabBar.Position = new Vector2(8, 28);
-        _tabBar.Size = new Vector2(PanelW - 16, 28);
-        AddChild(_tabBar);
+        _tabBar = RpgTheme.CreateTabBar(
+            new[] { "General", "Armada Real", "Legion Oscura" },
+            OnTabChanged
+        );
+        root.AddChild(_tabBar);
 
-        _tabGeneral = new Button { Text = "General", ToggleMode = true, ButtonPressed = true };
-        _tabGeneral.CustomMinimumSize = new Vector2(100, 26);
-        _tabGeneral.Pressed += () => SwitchTab(0);
-        _tabBar.AddChild(_tabGeneral);
+        // ── Post List View ──────────────────────────────────────
+        _postListView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _postListView.SizeFlagsVertical = SizeFlags.ExpandFill;
+        root.AddChild(_postListView);
 
-        _tabReal = new Button { Text = "Armada Real", ToggleMode = true };
-        _tabReal.CustomMinimumSize = new Vector2(120, 26);
-        _tabReal.Pressed += () => SwitchTab(1);
-        _tabBar.AddChild(_tabReal);
+        _postListBox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _postListBox.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _postListView.AddChild(_postListBox);
 
-        _tabCaos = new Button { Text = "Legion Oscura", ToggleMode = true };
-        _tabCaos.CustomMinimumSize = new Vector2(130, 26);
-        _tabCaos.Pressed += () => SwitchTab(2);
-        _tabBar.AddChild(_tabCaos);
+        var listBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _postListView.AddChild(listBtnRow);
 
-        // Post list (scrollable)
-        _postListScroll = new ScrollContainer();
-        _postListScroll.Position = new Vector2(8, 60);
-        _postListScroll.Size = new Vector2(PanelW - 16, PanelH - 110);
-        AddChild(_postListScroll);
+        var newPostBtn = RpgTheme.CreateRpgButton("Nuevo Post", false, 12);
+        newPostBtn.CustomMinimumSize = new Vector2(100, 30);
+        newPostBtn.Pressed += OnNewPost;
+        listBtnRow.AddChild(newPostBtn);
 
-        _postListBox = new VBoxContainer();
-        _postListBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _postListScroll.AddChild(_postListBox);
+        // ── Post Detail View ────────────────────────────────────
+        _postDetailView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _postDetailView.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _postDetailView.Visible = false;
+        root.AddChild(_postDetailView);
 
-        // Post detail panel (hidden by default)
-        _postDetailPanel = new Panel();
-        _postDetailPanel.Position = new Vector2(8, 60);
-        _postDetailPanel.Size = new Vector2(PanelW - 16, PanelH - 110);
-        _postDetailPanel.Visible = false;
-        AddChild(_postDetailPanel);
+        _postDetailTitle = RpgTheme.CreateTitleLabel("", 14);
+        _postDetailTitle.HorizontalAlignment = HorizontalAlignment.Left;
+        _postDetailView.AddChild(_postDetailTitle);
 
-        _postDetailTitle = new Label();
-        _postDetailTitle.Position = new Vector2(8, 8);
-        _postDetailTitle.Size = new Vector2(PanelW - 40, 20);
-        _postDetailTitle.AddThemeFontSizeOverride("font_size", 13);
-        _postDetailPanel.AddChild(_postDetailTitle);
-
-        _postDetailAuthor = new Label();
-        _postDetailAuthor.Position = new Vector2(8, 30);
-        _postDetailAuthor.Size = new Vector2(PanelW - 40, 18);
+        _postDetailAuthor = RpgTheme.CreateInfoLabel("", 11);
         _postDetailAuthor.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.7f));
-        _postDetailPanel.AddChild(_postDetailAuthor);
+        _postDetailView.AddChild(_postDetailAuthor);
 
-        _postDetailBody = new RichTextLabel();
-        _postDetailBody.Position = new Vector2(8, 54);
-        _postDetailBody.Size = new Vector2(PanelW - 40, PanelH - 200);
-        _postDetailBody.BbcodeEnabled = false;
-        _postDetailBody.ScrollActive = true;
-        _postDetailPanel.AddChild(_postDetailBody);
+        _postDetailBody = RpgTheme.CreateRpgTextEdit("", 0, 250, readOnly: true);
+        _postDetailView.AddChild(_postDetailBody);
 
-        _backBtn = new Button { Text = "Volver" };
-        _backBtn.Position = new Vector2(8, PanelH - 140);
-        _backBtn.Size = new Vector2(80, 28);
-        _backBtn.Pressed += OnBackFromDetail;
-        _postDetailPanel.AddChild(_backBtn);
+        var backBtn = RpgTheme.CreateRpgButton("Volver", false, 12);
+        backBtn.CustomMinimumSize = new Vector2(80, 28);
+        backBtn.Pressed += OnBackFromDetail;
+        _postDetailView.AddChild(backBtn);
 
-        // New post panel (hidden by default)
-        _newPostPanel = new Panel();
-        _newPostPanel.Position = new Vector2(8, 60);
-        _newPostPanel.Size = new Vector2(PanelW - 16, PanelH - 110);
-        _newPostPanel.Visible = false;
-        AddChild(_newPostPanel);
+        // ── New Post View ───────────────────────────────────────
+        _newPostView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _newPostView.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _newPostView.Visible = false;
+        root.AddChild(_newPostView);
 
-        var titleLbl = new Label { Text = "Titulo:" };
-        titleLbl.Position = new Vector2(8, 8);
-        _newPostPanel.AddChild(titleLbl);
+        _newPostView.AddChild(RpgTheme.CreateInfoLabel("Titulo:", 12));
 
-        _newPostTitle = new LineEdit();
-        _newPostTitle.Position = new Vector2(8, 28);
-        _newPostTitle.Size = new Vector2(PanelW - 40, 28);
+        _newPostTitle = RpgTheme.CreateRpgInput("Titulo del mensaje...");
         _newPostTitle.MaxLength = 100;
-        _newPostTitle.PlaceholderText = "Titulo del mensaje...";
-        _newPostPanel.AddChild(_newPostTitle);
+        _newPostView.AddChild(_newPostTitle);
 
-        var bodyLbl = new Label { Text = "Mensaje:" };
-        bodyLbl.Position = new Vector2(8, 62);
-        _newPostPanel.AddChild(bodyLbl);
+        _newPostView.AddChild(RpgTheme.CreateInfoLabel("Mensaje:", 12));
 
-        _newPostBody = new TextEdit();
-        _newPostBody.Position = new Vector2(8, 82);
-        _newPostBody.Size = new Vector2(PanelW - 40, PanelH - 240);
-        _newPostBody.PlaceholderText = "Escribe tu mensaje...";
-        _newPostPanel.AddChild(_newPostBody);
+        _newPostBody = RpgTheme.CreateRpgTextEdit("Escribe tu mensaje...", 0, 200);
+        _newPostView.AddChild(_newPostBody);
 
-        _stickyCheck = new CheckBox { Text = "Fijar (Sticky)" };
-        _stickyCheck.Position = new Vector2(8, PanelH - 150);
-        _stickyCheck.Visible = false; // Only visible for GMs
-        _newPostPanel.AddChild(_stickyCheck);
+        // Sticky checkbox (only visible for GMs)
+        _stickyCheck = RpgTheme.CreateRpgCheckbox("default", false, new Vector2(26, 26));
+        var stickyRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        stickyRow.AddChild(RpgTheme.CreateInfoLabel("Fijar (Sticky)", 11));
+        stickyRow.AddChild(_stickyCheck);
+        stickyRow.Visible = false; // Only visible for GMs
+        _newPostView.AddChild(stickyRow);
+        _newPostView.SetMeta("sticky_row", stickyRow);
 
-        _submitBtn = new Button { Text = "Publicar" };
-        _submitBtn.Position = new Vector2(PanelW - 220, PanelH - 148);
-        _submitBtn.Size = new Vector2(90, 28);
-        _submitBtn.Pressed += OnSubmitPost;
-        _newPostPanel.AddChild(_submitBtn);
+        var composeBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _newPostView.AddChild(composeBtnRow);
 
-        _cancelPostBtn = new Button { Text = "Cancelar" };
-        _cancelPostBtn.Position = new Vector2(PanelW - 120, PanelH - 148);
-        _cancelPostBtn.Size = new Vector2(90, 28);
-        _cancelPostBtn.Pressed += OnCancelPost;
-        _newPostPanel.AddChild(_cancelPostBtn);
+        var submitBtn = RpgTheme.CreateRpgButton("Publicar", false, 12);
+        submitBtn.CustomMinimumSize = new Vector2(90, 28);
+        submitBtn.Pressed += OnSubmitPost;
+        composeBtnRow.AddChild(submitBtn);
 
-        // Bottom bar: Nuevo Post + Cerrar
-        _newPostBtn = new Button { Text = "Nuevo Post" };
-        _newPostBtn.Position = new Vector2(8, PanelH - 40);
-        _newPostBtn.Size = new Vector2(100, 30);
-        _newPostBtn.Pressed += OnNewPost;
-        AddChild(_newPostBtn);
-
-        var closeBottomBtn = new Button { Text = "Cerrar" };
-        closeBottomBtn.Position = new Vector2(PanelW - 80, PanelH - 40);
-        closeBottomBtn.Size = new Vector2(70, 30);
-        closeBottomBtn.Pressed += OnClose;
-        AddChild(closeBottomBtn);
+        var cancelPostBtn = RpgTheme.CreateRpgButton("Cancelar", false, 12);
+        cancelPostBtn.CustomMinimumSize = new Vector2(90, 28);
+        cancelPostBtn.Pressed += OnCancelPost;
+        composeBtnRow.AddChild(cancelPostBtn);
     }
 
     /// <summary>
@@ -261,37 +200,50 @@ public partial class ForumPanel : Control
 
         // Show/hide faction tabs based on visibility flags
         byte vis = _state.ForumVisibility;
-        _tabReal!.Visible = (vis & VIS_REAL) != 0;
-        _tabCaos!.Visible = (vis & VIS_CAOS) != 0;
+        // Tab buttons are children of the tab bar — indices: 0=General, 1=Real, 2=Caos
+        if (_tabBar != null && _tabBar.GetChildCount() >= 3)
+        {
+            if (_tabBar.GetChild(1) is Button tabReal)
+                tabReal.Visible = (vis & VIS_REAL) != 0;
+            if (_tabBar.GetChild(2) is Button tabCaos)
+                tabCaos.Visible = (vis & VIS_CAOS) != 0;
+        }
 
         // Show sticky checkbox for GMs
-        _stickyCheck!.Visible = _state.ForumCanMakeSticky > 0;
+        var stickyRow = _newPostView?.GetMeta("sticky_row").As<Control>();
+        if (stickyRow != null)
+            stickyRow.Visible = _state.ForumCanMakeSticky > 0;
 
         // Reset to list view, General tab
-        _postDetailPanel!.Visible = false;
-        _newPostPanel!.Visible = false;
-        _postListScroll!.Visible = true;
+        ShowListView();
         _selectedPost = null;
 
         SwitchTab(0);
-        Visible = true;
+        ShowForm();
+    }
+
+    private void OnTabChanged(int tab)
+    {
+        SwitchTab(tab);
     }
 
     private void SwitchTab(int tab)
     {
         _currentTab = tab;
 
-        // Update toggle state
-        _tabGeneral!.ButtonPressed = (tab == 0);
-        _tabReal!.ButtonPressed = (tab == 1);
-        _tabCaos!.ButtonPressed = (tab == 2);
+        RpgTheme.SetTabBarActive(_tabBar!, tab);
 
         // Show list view
-        _postDetailPanel!.Visible = false;
-        _newPostPanel!.Visible = false;
-        _postListScroll!.Visible = true;
+        ShowListView();
 
         BuildPostList();
+    }
+
+    private void ShowListView()
+    {
+        if (_postListView != null) _postListView.Visible = true;
+        if (_postDetailView != null) _postDetailView.Visible = false;
+        if (_newPostView != null) _newPostView.Visible = false;
     }
 
     private void BuildPostList()
@@ -319,7 +271,7 @@ public partial class ForumPanel : Control
 
         if (sorted.Count == 0)
         {
-            var emptyLbl = new Label { Text = "No hay mensajes en este foro." };
+            var emptyLbl = RpgTheme.CreateInfoLabel("No hay mensajes en este foro.", 11);
             emptyLbl.AddThemeColorOverride("font_color", new Color(0.5f, 0.5f, 0.5f));
             _postListBox.AddChild(emptyLbl);
             return;
@@ -327,17 +279,16 @@ public partial class ForumPanel : Control
 
         foreach (var post in sorted)
         {
-            var row = new Button();
-            row.CustomMinimumSize = new Vector2(PanelW - 30, 36);
-            row.Alignment = HorizontalAlignment.Left;
-            row.ClipText = true;
+            var row = RpgTheme.CreateRpgButton("", true, 11);
+            row.CustomMinimumSize = new Vector2(0, 34);
 
             string prefix = post.IsSticky ? "[FIJO] " : "";
-            row.Text = $"{prefix}{post.Title}  —  {post.Author}";
-
-            if (post.IsSticky)
+            if (row.GetChildCount() > 0 && row.GetChild(0) is Label lbl)
             {
-                row.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.3f));
+                lbl.Text = $"{prefix}{post.Title}  --  {post.Author}";
+                lbl.HorizontalAlignment = HorizontalAlignment.Left;
+                if (post.IsSticky)
+                    lbl.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.3f));
             }
 
             var captured = post;
@@ -350,9 +301,9 @@ public partial class ForumPanel : Control
     {
         _selectedPost = post;
 
-        _postListScroll!.Visible = false;
-        _newPostPanel!.Visible = false;
-        _postDetailPanel!.Visible = true;
+        if (_postListView != null) _postListView.Visible = false;
+        if (_newPostView != null) _newPostView.Visible = false;
+        if (_postDetailView != null) _postDetailView.Visible = true;
 
         string prefix = post.IsSticky ? "[FIJO] " : "";
         _postDetailTitle!.Text = $"{prefix}{post.Title}";
@@ -362,19 +313,19 @@ public partial class ForumPanel : Control
 
     private void OnBackFromDetail()
     {
-        _postDetailPanel!.Visible = false;
-        _postListScroll!.Visible = true;
+        if (_postDetailView != null) _postDetailView.Visible = false;
+        if (_postListView != null) _postListView.Visible = true;
         _selectedPost = null;
     }
 
     private void OnNewPost()
     {
-        _postListScroll!.Visible = false;
-        _postDetailPanel!.Visible = false;
-        _newPostPanel!.Visible = true;
+        if (_postListView != null) _postListView.Visible = false;
+        if (_postDetailView != null) _postDetailView.Visible = false;
+        if (_newPostView != null) _newPostView.Visible = true;
         _newPostTitle!.Text = "";
         _newPostBody!.Text = "";
-        _stickyCheck!.ButtonPressed = false;
+        if (_stickyCheck != null) _stickyCheck.ButtonPressed = false;
         _newPostTitle.GrabFocus();
     }
 
@@ -407,8 +358,7 @@ public partial class ForumPanel : Control
         _tcp.SendPacket(ClientPackets.WriteForumPost(msgType, title, body));
 
         // Return to post list
-        _newPostPanel!.Visible = false;
-        _postListScroll!.Visible = true;
+        ShowListView();
 
         _state.ChatMessages.Enqueue(new ChatMessage
         {
@@ -419,39 +369,6 @@ public partial class ForumPanel : Control
 
     private void OnCancelPost()
     {
-        _newPostPanel!.Visible = false;
-        _postListScroll!.Visible = true;
-    }
-
-    private void OnClose()
-    {
-        Visible = false;
-        // Clear accumulated posts (they'll be resent on next forum open)
-        _state?.ForumPosts.Clear();
-    }
-
-    // ── Dragging ─────────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.Position;
-                }
-                else
-                {
-                    _dragging = false;
-                }
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            Position += mm.Position - _dragOffset;
-        }
+        ShowListView();
     }
 }

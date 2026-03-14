@@ -11,46 +11,77 @@ namespace ArgentumNextgen.UI;
 /// Crafting panel for Blacksmith (weapons + armors tabs) and Carpenter (single list).
 /// VB6: frmHerrero / frmCarpintero — shows buildable items list with material costs.
 /// Player selects an item and clicks "Construir" to request construction.
+/// Now uses RpgBaseForm for consistent RPG chrome (frame, title, close, drag).
 /// </summary>
-public partial class CraftPanel : Control
+public partial class CraftPanel : RpgBaseForm
 {
-    private const int PanelW = 360;
-    private const int PanelH = 420;
-    private const int TitleBarH = 28;
     private const int ItemH = 24;
-    private const int ListY = 60;
-    private const int ListH = 280;
 
     private GameState? _state;
     private GameData? _data;
     private AoTcpClient? _tcp;
 
     // UI elements
-    private Panel? _bg;
-    private Label? _titleLabel;
-    private Button? _closeBtn;
-    private Button? _tab1Btn;    // Weapons / (hidden for carpenter)
-    private Button? _tab2Btn;    // Armors / (hidden for carpenter)
-    private ScrollContainer? _scroll;
+    private HBoxContainer? _tabBar;
+    private Control? _scrollArea;
     private VBoxContainer? _list;
-    private Label? _matLabel;    // Material requirements for selected item
-    private Button? _buildBtn;
+    private Label? _matLabel;
+    private TextureButton? _buildBtn;
 
     // State
-    private bool _dragging;
-    private Vector2 _dragOffset;
     private bool _isBlacksmith; // true=blacksmith, false=carpenter
     private int _activeTab;     // 0=weapons/carp items, 1=armors
     private int _selectedIndex = -1;
     private List<CraftEntry> _currentList = new();
+
+    public CraftPanel() : base("Herreria", new Vector2(360, 420), "v2") { }
 
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
         _state = state;
         _data = data;
         _tcp = tcp;
-        BuildUI();
-        Visible = false;
+    }
+
+    protected override void BuildContent()
+    {
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(vbox);
+
+        // Tab bar (Armas / Armaduras) — hidden for carpenter
+        _tabBar = RpgTheme.CreateTabBar(new[] { "Armas", "Armaduras" }, OnTabChanged);
+        vbox.AddChild(_tabBar);
+
+        // Scroll list
+        _scrollArea = RpgTheme.CreateScrollArea();
+        _scrollArea.CustomMinimumSize = new Vector2(0, 230);
+        vbox.AddChild(_scrollArea);
+        _list = _scrollArea.GetMeta("content").As<VBoxContainer>();
+        _list.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+
+        // Material label
+        _matLabel = RpgTheme.CreateInfoLabel("Selecciona un item para ver los materiales.", 11);
+        _matLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _matLabel.CustomMinimumSize = new Vector2(0, 36);
+        vbox.AddChild(_matLabel);
+
+        // Build button
+        var footerRow = RpgTheme.CreateRow();
+        footerRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(footerRow);
+
+        _buildBtn = RpgTheme.CreateRpgButton("Construir", true, 16);
+        _buildBtn.CustomMinimumSize = new Vector2(140, 32);
+        _buildBtn.Pressed += OnBuildPressed;
+        _buildBtn.Disabled = true;
+        footerRow.AddChild(_buildBtn);
+    }
+
+    private void OnTabChanged(int tabIndex)
+    {
+        _activeTab = tabIndex;
+        _selectedIndex = -1;
+        RefreshList();
     }
 
     public void ShowBlacksmith()
@@ -58,12 +89,11 @@ public partial class CraftPanel : Control
         _isBlacksmith = true;
         _activeTab = 0;
         _selectedIndex = -1;
-        if (_tab1Btn != null) { _tab1Btn.Visible = true; _tab1Btn.Text = "Armas"; }
-        if (_tab2Btn != null) { _tab2Btn.Visible = true; _tab2Btn.Text = "Armaduras"; }
-        if (_titleLabel != null) _titleLabel.Text = "Herrería";
+        if (_tabBar != null) _tabBar.Visible = true;
+        TitleText = "Herreria";
+        RpgTheme.SetTabBarActive(_tabBar!, 0);
         RefreshList();
-        CenterOnScreen();
-        Visible = true;
+        ShowForm();
     }
 
     public void ShowCarpenter()
@@ -71,100 +101,15 @@ public partial class CraftPanel : Control
         _isBlacksmith = false;
         _activeTab = 0;
         _selectedIndex = -1;
-        if (_tab1Btn != null) _tab1Btn.Visible = false;
-        if (_tab2Btn != null) _tab2Btn.Visible = false;
-        if (_titleLabel != null) _titleLabel.Text = "Carpintería";
+        if (_tabBar != null) _tabBar.Visible = false;
+        TitleText = "Carpinteria";
         RefreshList();
-        CenterOnScreen();
-        Visible = true;
+        ShowForm();
     }
 
     public void ClosePanel()
     {
-        Visible = false;
-    }
-
-    private void CenterOnScreen()
-    {
-        var vp = GetViewportRect().Size;
-        Position = new Vector2((vp.X - PanelW) / 2, (vp.Y - PanelH) / 2);
-    }
-
-    private void BuildUI()
-    {
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
-        MouseFilter = MouseFilterEnum.Stop;
-
-        _bg = new Panel();
-        _bg.Size = new Vector2(PanelW, PanelH);
-        var style = new StyleBoxFlat();
-        style.BgColor = new Color(0.12f, 0.12f, 0.16f, 0.95f);
-        style.BorderColor = new Color(0.6f, 0.5f, 0.3f, 1f);
-        style.SetBorderWidthAll(2);
-        style.SetCornerRadiusAll(4);
-        _bg.AddThemeStyleboxOverride("panel", style);
-        AddChild(_bg);
-
-        // Title
-        _titleLabel = new Label();
-        _titleLabel.Position = new Vector2(10, 5);
-        _titleLabel.Size = new Vector2(PanelW - 50, TitleBarH);
-        _titleLabel.Text = "Herrería";
-        _titleLabel.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.4f));
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(_titleLabel);
-
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Position = new Vector2(PanelW - 30, 4);
-        _closeBtn.Size = new Vector2(24, 22);
-        _closeBtn.Text = "X";
-        _closeBtn.Pressed += ClosePanel;
-        AddChild(_closeBtn);
-
-        // Tab buttons
-        _tab1Btn = new Button();
-        _tab1Btn.Position = new Vector2(10, 32);
-        _tab1Btn.Size = new Vector2(100, 24);
-        _tab1Btn.Text = "Armas";
-        _tab1Btn.Pressed += () => { _activeTab = 0; _selectedIndex = -1; RefreshList(); };
-        AddChild(_tab1Btn);
-
-        _tab2Btn = new Button();
-        _tab2Btn.Position = new Vector2(115, 32);
-        _tab2Btn.Size = new Vector2(100, 24);
-        _tab2Btn.Text = "Armaduras";
-        _tab2Btn.Pressed += () => { _activeTab = 1; _selectedIndex = -1; RefreshList(); };
-        AddChild(_tab2Btn);
-
-        // Scroll list
-        _scroll = new ScrollContainer();
-        _scroll.Position = new Vector2(8, ListY);
-        _scroll.Size = new Vector2(PanelW - 16, ListH);
-        _scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        AddChild(_scroll);
-
-        _list = new VBoxContainer();
-        _list.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _scroll.AddChild(_list);
-
-        // Material label
-        _matLabel = new Label();
-        _matLabel.Position = new Vector2(10, ListY + ListH + 4);
-        _matLabel.Size = new Vector2(PanelW - 20, 40);
-        _matLabel.AddThemeFontSizeOverride("font_size", 10);
-        _matLabel.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.8f));
-        _matLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        AddChild(_matLabel);
-
-        // Build button
-        _buildBtn = new Button();
-        _buildBtn.Position = new Vector2(PanelW / 2 - 55, PanelH - 36);
-        _buildBtn.Size = new Vector2(110, 28);
-        _buildBtn.Text = "Construir";
-        _buildBtn.Pressed += OnBuildPressed;
-        AddChild(_buildBtn);
+        HideForm();
     }
 
     private void RefreshList()
@@ -181,21 +126,16 @@ public partial class CraftPanel : Control
         foreach (var child in _list.GetChildren())
             child.QueueFree();
 
-        // Highlight tabs
-        if (_tab1Btn != null && _tab1Btn.Visible)
-        {
-            _tab1Btn.Modulate = _activeTab == 0 ? Colors.White : new Color(0.6f, 0.6f, 0.6f);
-            _tab2Btn!.Modulate = _activeTab == 1 ? Colors.White : new Color(0.6f, 0.6f, 0.6f);
-        }
-
         for (int i = 0; i < _currentList.Count; i++)
         {
             var entry = _currentList[i];
             var btn = new Button();
-            btn.CustomMinimumSize = new Vector2(PanelW - 32, ItemH);
+            btn.CustomMinimumSize = new Vector2(0, ItemH);
             btn.Text = entry.Name;
             btn.Alignment = HorizontalAlignment.Left;
             btn.AddThemeFontSizeOverride("font_size", 11);
+            btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            btn.FocusMode = FocusModeEnum.None;
             int idx = i;
             btn.Pressed += () => SelectItem(idx);
 
@@ -261,7 +201,7 @@ public partial class CraftPanel : Control
         else
         {
             _matLabel.Text = entry.Mat2 > 0
-                ? $"Madera: {entry.Mat1}  Madera Élfica: {entry.Mat2}"
+                ? $"Madera: {entry.Mat1}  Madera Elfica: {entry.Mat2}"
                 : $"Madera: {entry.Mat1}";
         }
     }
@@ -281,28 +221,5 @@ public partial class CraftPanel : Control
             _tcp.SendPacket(ClientPackets.WriteConstructSmith((short)entry.ObjIndex));
         else
             _tcp.SendPacket(ClientPackets.WriteConstructCarp((short)entry.ObjIndex));
-    }
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - GlobalPosition;
-                    AcceptEvent();
-                }
-                else if (!mb.Pressed)
-                    _dragging = false;
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            GlobalPosition = mm.GlobalPosition - _dragOffset;
-            AcceptEvent();
-        }
     }
 }

@@ -7,25 +7,19 @@ namespace ArgentumNextgen.UI;
 /// <summary>
 /// Change password panel — 3 fields: current, new, confirm.
 /// Sends /PASSWD old@new to server on submit.
-/// Opened via /PASSWD chat command.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class ChangePasswordPanel : Control
+public partial class ChangePasswordPanel : RpgBaseForm
 {
-    private const int PanelW = 340;
-    private const int PanelH = 260;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
-    // Controls
     private LineEdit? _currentPasswordInput;
     private LineEdit? _newPasswordInput;
     private LineEdit? _confirmPasswordInput;
     private Label? _errorLabel;
+
+    public ChangePasswordPanel() : base("Cambiar Contraseña", new Vector2(360, 320), "v2") { }
 
     public void Init(GameState state, AoTcpClient tcp)
     {
@@ -33,101 +27,51 @@ public partial class ChangePasswordPanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
-
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
-
-        // Title
-        var title = new Label();
-        title.Text = "Cambiar Contrasena";
-        title.Position = new Vector2(10, 4);
-        title.AddThemeFontSizeOverride("font_size", 14);
-        title.AddThemeColorOverride("font_color", new Color(1f, 0.85f, 0.4f));
-        AddChild(title);
-
-        // Close button
-        var closeBtn = new Button();
-        closeBtn.Text = "X";
-        closeBtn.Position = new Vector2(PanelW - 28, 2);
-        closeBtn.Size = new Vector2(24, 24);
-        closeBtn.Pressed += OnClose;
-        AddChild(closeBtn);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        ContentContainer.AddChild(vbox);
 
         // Current password
-        var currentLabel = new Label();
-        currentLabel.Text = "Contrasena actual:";
-        currentLabel.Position = new Vector2(16, 36);
-        currentLabel.AddThemeFontSizeOverride("font_size", 12);
-        AddChild(currentLabel);
-
-        _currentPasswordInput = new LineEdit();
-        _currentPasswordInput.Position = new Vector2(16, 56);
-        _currentPasswordInput.Size = new Vector2(PanelW - 32, 28);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Contraseña actual:", 12));
+        _currentPasswordInput = RpgTheme.CreateRpgInput("Ingresa tu contraseña actual...");
         _currentPasswordInput.Secret = true;
-        _currentPasswordInput.PlaceholderText = "Ingresa tu contrasena actual...";
         _currentPasswordInput.MaxLength = 30;
-        AddChild(_currentPasswordInput);
+        vbox.AddChild(_currentPasswordInput);
 
         // New password
-        var newLabel = new Label();
-        newLabel.Text = "Nueva contrasena:";
-        newLabel.Position = new Vector2(16, 92);
-        newLabel.AddThemeFontSizeOverride("font_size", 12);
-        AddChild(newLabel);
-
-        _newPasswordInput = new LineEdit();
-        _newPasswordInput.Position = new Vector2(16, 112);
-        _newPasswordInput.Size = new Vector2(PanelW - 32, 28);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Nueva contraseña:", 12));
+        _newPasswordInput = RpgTheme.CreateRpgInput("Ingresa la nueva contraseña...");
         _newPasswordInput.Secret = true;
-        _newPasswordInput.PlaceholderText = "Ingresa la nueva contrasena...";
         _newPasswordInput.MaxLength = 30;
-        AddChild(_newPasswordInput);
+        vbox.AddChild(_newPasswordInput);
 
         // Confirm password
-        var confirmLabel = new Label();
-        confirmLabel.Text = "Confirmar nueva contrasena:";
-        confirmLabel.Position = new Vector2(16, 148);
-        confirmLabel.AddThemeFontSizeOverride("font_size", 12);
-        AddChild(confirmLabel);
-
-        _confirmPasswordInput = new LineEdit();
-        _confirmPasswordInput.Position = new Vector2(16, 168);
-        _confirmPasswordInput.Size = new Vector2(PanelW - 32, 28);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Confirmar nueva contraseña:", 12));
+        _confirmPasswordInput = RpgTheme.CreateRpgInput("Repite la nueva contraseña...");
         _confirmPasswordInput.Secret = true;
-        _confirmPasswordInput.PlaceholderText = "Repite la nueva contrasena...";
         _confirmPasswordInput.MaxLength = 30;
-        AddChild(_confirmPasswordInput);
+        vbox.AddChild(_confirmPasswordInput);
 
         // Error label
-        _errorLabel = new Label();
-        _errorLabel.Position = new Vector2(16, 200);
-        _errorLabel.Size = new Vector2(PanelW - 32, 18);
-        _errorLabel.AddThemeFontSizeOverride("font_size", 11);
+        _errorLabel = RpgTheme.CreateInfoLabel("", 11);
         _errorLabel.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
-        AddChild(_errorLabel);
+        vbox.AddChild(_errorLabel);
 
         // Buttons
-        var submitBtn = new Button();
-        submitBtn.Text = "Cambiar";
-        submitBtn.Position = new Vector2(PanelW / 2 - 110, PanelH - 40);
-        submitBtn.Size = new Vector2(100, 30);
-        submitBtn.Pressed += OnSubmit;
-        AddChild(submitBtn);
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
 
-        var cancelBtn = new Button();
-        cancelBtn.Text = "Cancelar";
-        cancelBtn.Position = new Vector2(PanelW / 2 + 10, PanelH - 40);
-        cancelBtn.Size = new Vector2(100, 30);
-        cancelBtn.Pressed += OnClose;
-        AddChild(cancelBtn);
+        var submitBtn = RpgTheme.CreateRpgButton("Cambiar", false, 13);
+        submitBtn.CustomMinimumSize = new Vector2(110, 34);
+        submitBtn.Pressed += OnSubmit;
+        btnRow.AddChild(submitBtn);
+
+        var cancelBtn = RpgTheme.CreateRpgButton("Cancelar", false, 13);
+        cancelBtn.CustomMinimumSize = new Vector2(110, 34);
+        cancelBtn.Pressed += () => HideForm();
+        btnRow.AddChild(cancelBtn);
     }
 
     public void Open()
@@ -136,15 +80,7 @@ public partial class ChangePasswordPanel : Control
         _newPasswordInput!.Text = "";
         _confirmPasswordInput!.Text = "";
         _errorLabel!.Text = "";
-        Visible = true;
-
-        // Center on screen
-        var screenSize = GetViewportRect().Size;
-        Position = new Vector2(
-            (screenSize.X - PanelW) / 2,
-            (screenSize.Y - PanelH) / 2
-        );
-
+        ShowForm();
         _currentPasswordInput.GrabFocus();
     }
 
@@ -156,71 +92,25 @@ public partial class ChangePasswordPanel : Control
         string newPass = _newPasswordInput!.Text.Trim();
         string confirm = _confirmPasswordInput!.Text.Trim();
 
-        // Validate
         if (string.IsNullOrEmpty(current))
-        {
-            _errorLabel!.Text = "Ingresa tu contrasena actual.";
-            return;
-        }
+        { _errorLabel!.Text = "Ingresa tu contraseña actual."; return; }
         if (string.IsNullOrEmpty(newPass))
-        {
-            _errorLabel!.Text = "Ingresa la nueva contrasena.";
-            return;
-        }
+        { _errorLabel!.Text = "Ingresa la nueva contraseña."; return; }
         if (newPass.Length < 6)
-        {
-            _errorLabel!.Text = "La nueva contrasena debe tener al menos 6 caracteres.";
-            return;
-        }
+        { _errorLabel!.Text = "La nueva contraseña debe tener al menos 6 caracteres."; return; }
         if (newPass != confirm)
-        {
-            _errorLabel!.Text = "Las contrasenas nuevas no coinciden.";
-            return;
-        }
+        { _errorLabel!.Text = "Las contraseñas nuevas no coinciden."; return; }
         if (current == newPass)
-        {
-            _errorLabel!.Text = "La nueva contrasena debe ser diferente a la actual.";
-            return;
-        }
+        { _errorLabel!.Text = "La nueva contraseña debe ser diferente a la actual."; return; }
 
-        // Send /PASSWD old@new to server
         _tcp.SendPacket(ClientPackets.WriteTalk($"/PASSWD {current}@{newPass}"));
 
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = "Solicitud de cambio de contrasena enviada.",
+            Text = "Solicitud de cambio de contraseña enviada.",
             Color = "00FF00"
         });
 
-        OnClose();
-    }
-
-    private void OnClose()
-    {
-        Visible = false;
-    }
-
-    // ── Dragging ─────────────────────────────────────────────────
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.Position;
-                }
-                else
-                {
-                    _dragging = false;
-                }
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            Position += mm.Position - _dragOffset;
-        }
+        HideForm();
     }
 }

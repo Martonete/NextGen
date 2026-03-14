@@ -12,52 +12,38 @@ namespace ArgentumNextgen.UI;
 /// - "Leader" view: leader/sublider management (members, applicants, codex, news)
 /// - "Member" view: regular member view (read-only info, codex, members)
 /// - "Details" view: detailed info about a specific guild
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class GuildPanel : Control
+public partial class GuildPanel : RpgBaseForm
 {
-    private const int PanelW = 420;
-    private const int PanelH = 480;
     private const char BF = '\u00BF'; // Delimiter used in guild data
 
     private GameState? _state;
     private AoTcpClient? _tcp;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     // Current view
     private string _currentView = "";
 
-    // Controls
-    private Label? _titleLabel;
-    private Button? _closeBtn;
-    private VBoxContainer? _contentBox;
-    private ScrollContainer? _scrollContainer;
+    // Views (all built in BuildContent, toggled via visibility)
+    private VBoxContainer? _listView;
+    private VBoxContainer? _leaderView;
+    private VBoxContainer? _memberView;
+    private VBoxContainer? _detailsView;
 
-    // List view
+    // List view controls
     private ItemList? _guildList;
-    private Button? _applyBtn;
-    private Button? _detailsBtn;
     private LineEdit? _petitionEdit;
 
-    // Leader/Member view
+    // Leader/Member view controls
     private Label? _infoLabel;
     private ItemList? _memberList;
     private ItemList? _applicantList;
-    private Button? _acceptBtn;
-    private Button? _rejectBtn;
-    private Button? _expelBtn;
-    private TextEdit? _newsEdit;
-    private Button? _saveNewsBtn;
-    private TextEdit? _codexEdit;
-    private Button? _saveCodexBtn;
-
-    // Details view
-    private Label? _detailsLabel;
-
-    // Applicant comment/rejection reason
     private LineEdit? _rejectReasonEdit;
+    private TextEdit? _newsEdit;
+    private TextEdit? _codexEdit;
+
+    // Details view controls
+    private Label? _detailsLabel;
 
     // Parsed guild list entries
     private readonly List<(string name, string align, string level)> _guilds = new();
@@ -66,82 +52,199 @@ public partial class GuildPanel : Control
     // Parsed applicants
     private readonly List<string> _applicants = new();
 
+    public GuildPanel() : base("Clanes", new Vector2(420, 520), "v2") { }
+
     public void Init(GameState state, AoTcpClient tcp)
     {
         _state = state;
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        var root = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        ContentContainer.AddChild(root);
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
+        // ── List View ───────────────────────────────────────────────
+        _listView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _listView.Visible = false;
+        root.AddChild(_listView);
 
-        // Title
-        _titleLabel = new Label();
-        _titleLabel.Text = "Clanes";
-        _titleLabel.Position = new Vector2(10, 4);
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(_titleLabel);
+        _guildList = RpgTheme.CreateRpgItemList(0, 260);
+        _listView.AddChild(_guildList);
 
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 2);
-        _closeBtn.Size = new Vector2(24, 24);
-        _closeBtn.Pressed += () => Hide();
-        AddChild(_closeBtn);
+        var listBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _listView.AddChild(listBtnRow);
 
-        // Content container
-        _scrollContainer = new ScrollContainer();
-        _scrollContainer.Position = new Vector2(8, 30);
-        _scrollContainer.Size = new Vector2(PanelW - 16, PanelH - 38);
-        AddChild(_scrollContainer);
+        var detailsBtn = RpgTheme.CreateRpgButton("Ver detalles", false, 12);
+        detailsBtn.CustomMinimumSize = new Vector2(120, 30);
+        detailsBtn.Pressed += OnDetailsPressed;
+        listBtnRow.AddChild(detailsBtn);
 
-        _contentBox = new VBoxContainer();
-        _contentBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _scrollContainer.AddChild(_contentBox);
+        _listView.AddChild(RpgTheme.CreateInfoLabel("Solicitud de ingreso:", 11));
+
+        _petitionEdit = RpgTheme.CreateRpgInput("Escribe tu solicitud aqui...");
+        _listView.AddChild(_petitionEdit);
+
+        var applyBtn = RpgTheme.CreateRpgButton("Enviar solicitud", false, 12);
+        applyBtn.CustomMinimumSize = new Vector2(140, 30);
+        applyBtn.Pressed += OnApplyPressed;
+        _listView.AddChild(applyBtn);
+
+        // ── Leader View ─────────────────────────────────────────────
+        _leaderView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _leaderView.Visible = false;
+        root.AddChild(_leaderView);
+
+        BuildLeaderViewContent();
+
+        // ── Member View ─────────────────────────────────────────────
+        _memberView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _memberView.Visible = false;
+        root.AddChild(_memberView);
+
+        BuildMemberViewContent();
+
+        // ── Details View ────────────────────────────────────────────
+        _detailsView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _detailsView.Visible = false;
+        root.AddChild(_detailsView);
+
+        BuildDetailsViewContent();
+    }
+
+    private void BuildLeaderViewContent()
+    {
+        _infoLabel = RpgTheme.CreateInfoLabel("", 11);
+        _infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _leaderView!.AddChild(_infoLabel);
+
+        _leaderView.AddChild(RpgTheme.CreateInfoLabel("Miembros:", 12));
+
+        _memberList = RpgTheme.CreateRpgItemList(0, 100);
+        _leaderView.AddChild(_memberList);
+
+        var expelBtn = RpgTheme.CreateRpgButton("Expulsar miembro", false, 12);
+        expelBtn.CustomMinimumSize = new Vector2(140, 30);
+        expelBtn.Pressed += OnExpelPressed;
+        _leaderView.AddChild(expelBtn);
+
+        _leaderView.AddChild(RpgTheme.CreateInfoLabel("Solicitudes pendientes:", 12));
+
+        _applicantList = RpgTheme.CreateRpgItemList(0, 80);
+        _leaderView.AddChild(_applicantList);
+
+        _leaderView.AddChild(RpgTheme.CreateInfoLabel("Motivo de rechazo (opcional):", 10));
+
+        _rejectReasonEdit = RpgTheme.CreateRpgInput("Motivo...");
+        _leaderView.AddChild(_rejectReasonEdit);
+
+        var appBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _leaderView.AddChild(appBtnRow);
+
+        var acceptBtn = RpgTheme.CreateRpgButton("Aceptar", false, 12);
+        acceptBtn.CustomMinimumSize = new Vector2(100, 30);
+        acceptBtn.Pressed += OnAcceptPressed;
+        appBtnRow.AddChild(acceptBtn);
+
+        var rejectBtn = RpgTheme.CreateRpgButton("Rechazar", false, 12);
+        rejectBtn.CustomMinimumSize = new Vector2(100, 30);
+        rejectBtn.Pressed += OnRejectPressed;
+        appBtnRow.AddChild(rejectBtn);
+
+        _leaderView.AddChild(RpgTheme.CreateInfoLabel("Noticias del clan:", 12));
+
+        _newsEdit = RpgTheme.CreateRpgTextEdit("", 0, 60);
+        _leaderView.AddChild(_newsEdit);
+
+        var saveNewsBtn = RpgTheme.CreateRpgButton("Guardar noticias", false, 12);
+        saveNewsBtn.CustomMinimumSize = new Vector2(140, 30);
+        saveNewsBtn.Pressed += OnSaveNewsPressed;
+        _leaderView.AddChild(saveNewsBtn);
+
+        _leaderView.AddChild(RpgTheme.CreateInfoLabel("Codex del clan:", 12));
+
+        _codexEdit = RpgTheme.CreateRpgTextEdit("Escriba las reglas del clan (una por linea)...", 0, 80);
+        _leaderView.AddChild(_codexEdit);
+
+        var saveCodexBtn = RpgTheme.CreateRpgButton("Guardar codex", false, 12);
+        saveCodexBtn.CustomMinimumSize = new Vector2(140, 30);
+        saveCodexBtn.Pressed += OnSaveCodexPressed;
+        _leaderView.AddChild(saveCodexBtn);
+    }
+
+    private void BuildMemberViewContent()
+    {
+        // Re-use _infoLabel only for leader — member gets its own
+        var memberInfoLabel = RpgTheme.CreateInfoLabel("", 11);
+        memberInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _memberView!.AddChild(memberInfoLabel);
+        // Store as meta for later access
+        _memberView.SetMeta("info_label", memberInfoLabel);
+
+        _memberView.AddChild(RpgTheme.CreateInfoLabel("Miembros:", 12));
+
+        var memberMemberList = RpgTheme.CreateRpgItemList(0, 200);
+        _memberView.AddChild(memberMemberList);
+        _memberView.SetMeta("member_list", memberMemberList);
+    }
+
+    private void BuildDetailsViewContent()
+    {
+        _detailsLabel = RpgTheme.CreateInfoLabel("", 11);
+        _detailsLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _detailsView!.AddChild(_detailsLabel);
+
+        var backBtn = RpgTheme.CreateRpgButton("Volver a la lista", false, 12);
+        backBtn.CustomMinimumSize = new Vector2(140, 30);
+        backBtn.Pressed += () => {
+            if (_tcp != null) _tcp.SendPacket(ClientPackets.WriteGuildInfo());
+        };
+        _detailsView.AddChild(backBtn);
     }
 
     public void ShowView(string viewType)
     {
-        if (_contentBox == null || _state == null) return;
+        if (_state == null) return;
         _currentView = viewType;
-        Visible = true;
 
-        // Clear content
-        foreach (var child in _contentBox.GetChildren())
-            child.QueueFree();
-        _guildList = null;
-        _memberList = null;
-        _applicantList = null;
-        _rejectReasonEdit = null;
-        _codexEdit = null;
-        _saveCodexBtn = null;
+        // Hide all views
+        if (_listView != null) _listView.Visible = false;
+        if (_leaderView != null) _leaderView.Visible = false;
+        if (_memberView != null) _memberView.Visible = false;
+        if (_detailsView != null) _detailsView.Visible = false;
 
         switch (viewType)
         {
-            case "List": BuildListView(); break;
-            case "Leader": BuildLeaderView(); break;
-            case "Member": BuildMemberView(); break;
-            case "Details": BuildDetailsView(); break;
+            case "List":
+                TitleText = "Lista de Clanes";
+                PopulateListView();
+                if (_listView != null) _listView.Visible = true;
+                break;
+            case "Leader":
+                TitleText = "Gestion del Clan (Lider)";
+                PopulateLeaderView();
+                if (_leaderView != null) _leaderView.Visible = true;
+                break;
+            case "Member":
+                TitleText = "Info del Clan (Miembro)";
+                PopulateMemberView();
+                if (_memberView != null) _memberView.Visible = true;
+                break;
+            case "Details":
+                TitleText = "Detalles del Clan";
+                PopulateDetailsView();
+                if (_detailsView != null) _detailsView.Visible = true;
+                break;
         }
+
+        ShowForm();
     }
 
-    // ── List View (no clan) ──────────────────────────────────────────
+    // ── View population ─────────────────────────────────────────
 
-    private void BuildListView()
+    private void PopulateListView()
     {
-        _titleLabel!.Text = "Lista de Clanes";
-
-        // Parse guild list: "count,name1-align1-level1,name2-align2-level2,..."
         _guilds.Clear();
         var data = _state!.GuildListData;
         if (!string.IsNullOrEmpty(data))
@@ -157,211 +260,54 @@ public partial class GuildPanel : Control
             }
         }
 
-        _guildList = new ItemList();
-        _guildList.CustomMinimumSize = new Vector2(PanelW - 24, 280);
-        _guildList.AddThemeFontSizeOverride("font_size", 12);
+        _guildList!.Clear();
         foreach (var g in _guilds)
             _guildList.AddItem($"{g.name}  [{g.align}]  Nivel {g.level}");
-        _contentBox!.AddChild(_guildList);
-
-        // Details button
-        _detailsBtn = new Button();
-        _detailsBtn.Text = "Ver detalles";
-        _detailsBtn.Pressed += OnDetailsPressed;
-        _contentBox.AddChild(_detailsBtn);
-
-        // Petition text
-        var petLabel = new Label();
-        petLabel.Text = "Solicitud de ingreso:";
-        petLabel.AddThemeFontSizeOverride("font_size", 11);
-        _contentBox.AddChild(petLabel);
-
-        _petitionEdit = new LineEdit();
-        _petitionEdit.PlaceholderText = "Escribe tu solicitud aqui...";
-        _contentBox.AddChild(_petitionEdit);
-
-        // Apply button
-        _applyBtn = new Button();
-        _applyBtn.Text = "Enviar solicitud";
-        _applyBtn.Pressed += OnApplyPressed;
-        _contentBox.AddChild(_applyBtn);
     }
 
-    private void OnDetailsPressed()
+    private void PopulateLeaderView()
     {
-        if (_guildList == null || _tcp == null) return;
-        var selected = _guildList.GetSelectedItems();
-        if (selected.Length == 0) return;
-        int idx = selected[0];
-        if (idx < 0 || idx >= _guilds.Count) return;
-        _tcp.SendPacket(ClientPackets.WriteGuildDetails(_guilds[idx].name));
-    }
-
-    private void OnApplyPressed()
-    {
-        if (_guildList == null || _tcp == null || _petitionEdit == null) return;
-        var selected = _guildList.GetSelectedItems();
-        if (selected.Length == 0) return;
-        int idx = selected[0];
-        if (idx < 0 || idx >= _guilds.Count) return;
-        string petition = _petitionEdit.Text.Trim();
-        if (string.IsNullOrEmpty(petition)) petition = "Solicito ingresar.";
-        _tcp.SendPacket(ClientPackets.WriteGuildApply($"{_guilds[idx].name},{petition}"));
-    }
-
-    // ── Leader View ──────────────────────────────────────────────────
-
-    private void BuildLeaderView()
-    {
-        _titleLabel!.Text = "Gestion del Clan (Lider)";
         ParseLeaderData();
-
-        // Info label (points, level, leader, subliders, etc.)
-        _infoLabel = new Label();
-        _infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _infoLabel.CustomMinimumSize = new Vector2(PanelW - 24, 0);
-        _infoLabel.AddThemeFontSizeOverride("font_size", 11);
-        _contentBox!.AddChild(_infoLabel);
         UpdateInfoLabel();
 
-        // Members section
-        var memLabel = new Label();
-        memLabel.Text = "Miembros:";
-        memLabel.AddThemeFontSizeOverride("font_size", 12);
-        _contentBox.AddChild(memLabel);
-
-        _memberList = new ItemList();
-        _memberList.CustomMinimumSize = new Vector2(PanelW - 24, 100);
-        _memberList.AddThemeFontSizeOverride("font_size", 11);
+        _memberList!.Clear();
         foreach (var m in _members) _memberList.AddItem(m);
-        _contentBox.AddChild(_memberList);
 
-        _expelBtn = new Button();
-        _expelBtn.Text = "Expulsar miembro";
-        _expelBtn.Pressed += OnExpelPressed;
-        _contentBox.AddChild(_expelBtn);
-
-        // Applicants section
-        var appLabel = new Label();
-        appLabel.Text = "Solicitudes pendientes:";
-        appLabel.AddThemeFontSizeOverride("font_size", 12);
-        _contentBox.AddChild(appLabel);
-
-        _applicantList = new ItemList();
-        _applicantList.CustomMinimumSize = new Vector2(PanelW - 24, 80);
-        _applicantList.AddThemeFontSizeOverride("font_size", 11);
+        _applicantList!.Clear();
         foreach (var a in _applicants) _applicantList.AddItem(a);
-        _contentBox.AddChild(_applicantList);
 
-        // Rejection reason input
-        var reasonLabel = new Label();
-        reasonLabel.Text = "Motivo de rechazo (opcional):";
-        reasonLabel.AddThemeFontSizeOverride("font_size", 10);
-        _contentBox.AddChild(reasonLabel);
-
-        _rejectReasonEdit = new LineEdit();
-        _rejectReasonEdit.PlaceholderText = "Motivo...";
-        _rejectReasonEdit.CustomMinimumSize = new Vector2(PanelW - 24, 0);
-        _contentBox.AddChild(_rejectReasonEdit);
-
-        var btnRow = new HBoxContainer();
-        _acceptBtn = new Button();
-        _acceptBtn.Text = "Aceptar";
-        _acceptBtn.Pressed += OnAcceptPressed;
-        btnRow.AddChild(_acceptBtn);
-
-        _rejectBtn = new Button();
-        _rejectBtn.Text = "Rechazar";
-        _rejectBtn.Pressed += OnRejectPressed;
-        btnRow.AddChild(_rejectBtn);
-        _contentBox.AddChild(btnRow);
-
-        // News section
-        var newsLabel = new Label();
-        newsLabel.Text = "Noticias del clan:";
-        newsLabel.AddThemeFontSizeOverride("font_size", 12);
-        _contentBox.AddChild(newsLabel);
-
-        _newsEdit = new TextEdit();
-        _newsEdit.CustomMinimumSize = new Vector2(PanelW - 24, 60);
-        _newsEdit.AddThemeFontSizeOverride("font_size", 11);
-        _contentBox.AddChild(_newsEdit);
-
-        _saveNewsBtn = new Button();
-        _saveNewsBtn.Text = "Guardar noticias";
-        _saveNewsBtn.Pressed += OnSaveNewsPressed;
-        _contentBox.AddChild(_saveNewsBtn);
-
-        // Codex section (guild code of conduct — up to 8 lines)
-        var codexLabel = new Label();
-        codexLabel.Text = "Codex del clan:";
-        codexLabel.AddThemeFontSizeOverride("font_size", 12);
-        _contentBox.AddChild(codexLabel);
-
-        _codexEdit = new TextEdit();
-        _codexEdit.CustomMinimumSize = new Vector2(PanelW - 24, 80);
-        _codexEdit.AddThemeFontSizeOverride("font_size", 11);
-        _codexEdit.PlaceholderText = "Escriba las reglas del clan (una por linea)...";
-        // Pre-populate with existing codex
+        // Pre-populate codex
         if (_state != null && !string.IsNullOrEmpty(_state.GuildCodexText))
-            _codexEdit.Text = _state.GuildCodexText;
-        _contentBox.AddChild(_codexEdit);
-
-        _saveCodexBtn = new Button();
-        _saveCodexBtn.Text = "Guardar codex";
-        _saveCodexBtn.Pressed += OnSaveCodexPressed;
-        _contentBox.AddChild(_saveCodexBtn);
+            _codexEdit!.Text = _state.GuildCodexText;
     }
 
-    // ── Member View ──────────────────────────────────────────────────
-
-    private void BuildMemberView()
+    private void PopulateMemberView()
     {
-        _titleLabel!.Text = "Info del Clan (Miembro)";
         ParseMemberData();
 
-        _infoLabel = new Label();
-        _infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _infoLabel.CustomMinimumSize = new Vector2(PanelW - 24, 0);
-        _infoLabel.AddThemeFontSizeOverride("font_size", 11);
-        _contentBox!.AddChild(_infoLabel);
-        UpdateInfoLabel();
+        var memberInfoLabel = _memberView!.GetMeta("info_label").As<Label>();
+        if (memberInfoLabel != null)
+        {
+            memberInfoLabel.Text = $"Nivel del clan: {_guildLevel} | Puntos: {_guildPoints}\n" +
+                $"Lider: {_leader}\n" +
+                $"Sub-lideres: {_sub1}, {_sub2}\n" +
+                $"Reputacion: {_reputation}";
+        }
 
-        var memLabel = new Label();
-        memLabel.Text = "Miembros:";
-        memLabel.AddThemeFontSizeOverride("font_size", 12);
-        _contentBox.AddChild(memLabel);
-
-        _memberList = new ItemList();
-        _memberList.CustomMinimumSize = new Vector2(PanelW - 24, 200);
-        _memberList.AddThemeFontSizeOverride("font_size", 11);
-        foreach (var m in _members) _memberList.AddItem(m);
-        _contentBox.AddChild(_memberList);
+        var memberMemberList = _memberView.GetMeta("member_list").As<ItemList>();
+        if (memberMemberList != null)
+        {
+            memberMemberList.Clear();
+            foreach (var m in _members) memberMemberList.AddItem(m);
+        }
     }
 
-    // ── Details View ─────────────────────────────────────────────────
-
-    private void BuildDetailsView()
+    private void PopulateDetailsView()
     {
-        _titleLabel!.Text = "Detalles del Clan";
         ParseDetailsData();
-
-        _detailsLabel = new Label();
-        _detailsLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _detailsLabel.CustomMinimumSize = new Vector2(PanelW - 24, 0);
-        _detailsLabel.AddThemeFontSizeOverride("font_size", 11);
-        _contentBox!.AddChild(_detailsLabel);
-
-        // Apply button (to go back to list)
-        var backBtn = new Button();
-        backBtn.Text = "Volver a la lista";
-        backBtn.Pressed += () => {
-            if (_tcp != null) _tcp.SendPacket(ClientPackets.WriteGuildInfo());
-        };
-        _contentBox.AddChild(backBtn);
     }
 
-    // ── Parsing ──────────────────────────────────────────────────────
+    // ── Parsing ──────────────────────────────────────────────────
 
     private string _guildPoints = "0";
     private string _guildLevel = "1";
@@ -522,7 +468,29 @@ public partial class GuildPanel : Control
             $"Asedios: {_castleSieges}";
     }
 
-    // ── Button Handlers ──────────────────────────────────────────────
+    // ── Button Handlers ──────────────────────────────────────────
+
+    private void OnDetailsPressed()
+    {
+        if (_guildList == null || _tcp == null) return;
+        var selected = _guildList.GetSelectedItems();
+        if (selected.Length == 0) return;
+        int idx = selected[0];
+        if (idx < 0 || idx >= _guilds.Count) return;
+        _tcp.SendPacket(ClientPackets.WriteGuildDetails(_guilds[idx].name));
+    }
+
+    private void OnApplyPressed()
+    {
+        if (_guildList == null || _tcp == null || _petitionEdit == null) return;
+        var selected = _guildList.GetSelectedItems();
+        if (selected.Length == 0) return;
+        int idx = selected[0];
+        if (idx < 0 || idx >= _guilds.Count) return;
+        string petition = _petitionEdit.Text.Trim();
+        if (string.IsNullOrEmpty(petition)) petition = "Solicito ingresar.";
+        _tcp.SendPacket(ClientPackets.WriteGuildApply($"{_guilds[idx].name},{petition}"));
+    }
 
     private void OnAcceptPressed()
     {
@@ -573,28 +541,5 @@ public partial class GuildPanel : Control
         // Send codex update via guild update codex packet
         // VB6 format: desc + BF + codex lines joined by BF
         _tcp.SendPacket(ClientPackets.WriteGuildUpdateCodex(codexText));
-    }
-
-    // ── Drag ─────────────────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent ev)
-    {
-        if (ev is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - GlobalPosition;
-                }
-                else
-                    _dragging = false;
-            }
-        }
-        else if (ev is InputEventMouseMotion mm && _dragging)
-        {
-            GlobalPosition = mm.GlobalPosition - _dragOffset;
-        }
     }
 }

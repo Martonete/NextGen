@@ -184,13 +184,15 @@ public class AoFont
             float srcX = col * CellWidth;
             float srcY = row * CellHeight;
 
-            var srcRect = new Rect2(srcX, srcY, CellWidth, CellHeight);
-            var destRect = new Rect2(curX, y, CellWidth, CellHeight);
+            int charW = CharWidths[ascii];
+            if (charW <= 0) { curX += CellWidth; continue; }
+
+            var srcRect = new Rect2(srcX, srcY, charW, CellHeight);
+            var destRect = new Rect2(curX, y, charW, CellHeight);
 
             canvas.DrawTextureRectRegion(Texture, destRect, srcRect, color);
 
-            // VB6: advance by character width (variable-width font)
-            curX += CharWidths[ascii];
+            curX += charW;
         }
     }
 }

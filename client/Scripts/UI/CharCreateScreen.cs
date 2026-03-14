@@ -8,24 +8,25 @@ namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Character creation + selection + deletion UI. Extracted from Main.cs.
+/// Styled with RpgTheme.
 /// </summary>
 public class CharCreateScreen
 {
-    private PanelContainer? _charCreatePanel;
+    private Control? _charCreatePanel;
     private LineEdit? _charCreateNameInput;
-    private Button[]? _raceButtons;
-    private Button[]? _genderButtons;
-    private Button[]? _classButtons;
-    private Button[]? _factionButtons;
+    private BoxContainer? _raceToggle;
+    private BoxContainer? _genderToggle;
+    private GridContainer? _classToggle;
+    private BoxContainer? _factionToggle;
     private Label? _charCreateHeadLabel;
     private Node2D? _charCreateHeadPreview;
     private Label? _charCreateError;
-    private Button? _charCreateCreateBtn;
-    private Button? _charSelectCreateBtn;
-    private Button? _charSelectDeleteBtn;
+    private TextureButton? _charCreateCreateBtn;
+    private TextureButton? _charSelectCreateBtn;
+    private TextureButton? _charSelectDeleteBtn;
 
     // Delete character confirmation dialog
-    private PanelContainer? _deleteConfirmDialog;
+    private Control? _deleteConfirmDialog;
     private Label? _deleteConfirmLabel;
     private LineEdit? _deleteConfirmInput;
     private int _deleteConfirmCode;
@@ -33,7 +34,7 @@ public class CharCreateScreen
     private readonly GameState _state;
     private readonly GameData _gameData;
 
-    public PanelContainer? Panel => _charCreatePanel;
+    public Control? Panel => _charCreatePanel;
 
     // Callbacks
     public Action? OnCreateCharConfirm;
@@ -44,7 +45,7 @@ public class CharCreateScreen
     /// <summary>Access to the error label for external error messages.</summary>
     public Label? ErrorLabel => _charCreateError;
     /// <summary>Access to create button for enable/disable from outside.</summary>
-    public Button? CreateButton => _charCreateCreateBtn;
+    public TextureButton? CreateButton => _charCreateCreateBtn;
 
     private static readonly string[] RaceNames = { "Humano", "Elfo", "Elfo Oscuro", "Enano", "Gnomo" };
     private static readonly string[] GenderNames = { "Hombre", "Mujer" };
@@ -78,85 +79,88 @@ public class CharCreateScreen
 
     public void CreatePanel(Node parent)
     {
-        _charCreatePanel = new PanelContainer();
-        _charCreatePanel.Size = new Vector2(420, 520);
-        _charCreatePanel.Position = new Vector2(190, 40);
+        _charCreatePanel = new Control();
+        _charCreatePanel.Size = new Vector2(420, 560);
+        _charCreatePanel.CustomMinimumSize = new Vector2(420, 560);
+        _charCreatePanel.Position = new Vector2(190, 20);
         _charCreatePanel.Visible = false;
+        _charCreatePanel.ClipContents = true;
+        _charCreatePanel.MouseFilter = Control.MouseFilterEnum.Stop;
 
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.08f, 0.08f, 0.14f, 0.95f);
-        bg.BorderColor = new Color(0.4f, 0.35f, 0.2f);
-        bg.SetBorderWidthAll(2);
-        bg.SetContentMarginAll(12);
-        _charCreatePanel.AddThemeStyleboxOverride("panel", bg);
+        // V2 background: big_bar stretched
+        var bg = new TextureRect();
+        bg.Texture = RpgTheme.GetTex("big_bar.png");
+        bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        bg.StretchMode = TextureRect.StretchModeEnum.Scale;
+        bg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _charCreatePanel.AddChild(bg);
+        RpgTheme.FillParent(bg);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 6);
-        _charCreatePanel.AddChild(vbox);
+        // V2 title bar
+        var titleBg = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
+        _charCreatePanel.AddChild(titleBg);
+        titleBg.AnchorLeft = 0f; titleBg.AnchorRight = 1f;
+        titleBg.AnchorTop = 0f;  titleBg.AnchorBottom = 0f;
+        titleBg.OffsetLeft = 10; titleBg.OffsetTop = 5;
+        titleBg.OffsetRight = -10; titleBg.OffsetBottom = 48;
+
+        var titleLabel = RpgTheme.CreateTitleLabel("Crear Personaje", 18);
+        titleBg.AddChild(titleLabel);
+        RpgTheme.FillParent(titleLabel);
+        titleLabel.OffsetTop = 4; titleLabel.OffsetBottom = -4;
+
+        // Content area with V2 margins
+        var marginC = new MarginContainer();
+        marginC.AddThemeConstantOverride("margin_top", 54);
+        marginC.AddThemeConstantOverride("margin_left", RpgTheme.FormMarginLeft);
+        marginC.AddThemeConstantOverride("margin_right", RpgTheme.FormMarginRight);
+        marginC.AddThemeConstantOverride("margin_bottom", RpgTheme.FormMarginBottom);
+        marginC.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _charCreatePanel.AddChild(marginC);
+        RpgTheme.FillParent(marginC);
+
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        marginC.AddChild(vbox);
 
         // Title
-        var title = new Label();
-        title.Text = "Crear Personaje";
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-        title.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.4f));
-        title.AddThemeFontSizeOverride("font_size", 16);
-        UIHelpers.ApplyFont(title);
+        var title = RpgTheme.CreateTitleLabel("Crear Personaje", 16);
         vbox.AddChild(title);
 
         // Name input
-        var nameLabel = new Label();
-        nameLabel.Text = "Nombre:";
-        nameLabel.AddThemeColorOverride("font_color", Colors.White);
-        nameLabel.AddThemeFontSizeOverride("font_size", 11);
+        var nameLabel = RpgTheme.CreateInfoLabel("Nombre:", 11);
         vbox.AddChild(nameLabel);
 
-        _charCreateNameInput = new LineEdit();
-        _charCreateNameInput.PlaceholderText = "4-15 caracteres";
+        _charCreateNameInput = RpgTheme.CreateRpgInput("4-15 caracteres");
         _charCreateNameInput.MaxLength = 15;
-        _charCreateNameInput.CustomMinimumSize = new Vector2(0, 28);
-        _charCreateNameInput.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_charCreateNameInput);
 
         // Race selector
-        AddSectionLabel(vbox, "Raza:");
-        var raceBox = new HBoxContainer();
-        raceBox.AddThemeConstantOverride("separation", 3);
-        vbox.AddChild(raceBox);
-        _raceButtons = CreateToggleGroup(raceBox, RaceNames, OnRaceSelected);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Raza:", 11));
+        _raceToggle = RpgTheme.CreateRpgToggleGroup(RaceNames, 0, OnRaceSelected);
+        vbox.AddChild(_raceToggle);
 
         // Gender selector
-        AddSectionLabel(vbox, "Genero:");
-        var genderBox = new HBoxContainer();
-        genderBox.AddThemeConstantOverride("separation", 3);
-        vbox.AddChild(genderBox);
-        _genderButtons = CreateToggleGroup(genderBox, GenderNames, OnGenderSelected);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Genero:", 11));
+        _genderToggle = RpgTheme.CreateRpgToggleGroup(GenderNames, 0, OnGenderSelected);
+        vbox.AddChild(_genderToggle);
 
-        // Class selector (2 rows of 4)
-        AddSectionLabel(vbox, "Clase:");
-        var classGrid = new GridContainer();
-        classGrid.Columns = 4;
-        classGrid.AddThemeConstantOverride("h_separation", 3);
-        classGrid.AddThemeConstantOverride("v_separation", 3);
-        vbox.AddChild(classGrid);
-        _classButtons = CreateToggleGroup(classGrid, ClassNames, OnClassSelected);
+        // Class selector (grid: 4 columns)
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Clase:", 11));
+        _classToggle = RpgTheme.CreateRpgToggleGrid(ClassNames, 4, 0, OnClassSelected);
+        vbox.AddChild(_classToggle);
 
         // Faction selector
-        AddSectionLabel(vbox, "Faccion:");
-        var factionBox = new HBoxContainer();
-        factionBox.AddThemeConstantOverride("separation", 3);
-        vbox.AddChild(factionBox);
-        _factionButtons = CreateToggleGroup(factionBox, FactionNames, OnFactionSelected);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Faccion:", 11));
+        _factionToggle = RpgTheme.CreateRpgToggleGroup(FactionNames, 0, OnFactionSelected);
+        vbox.AddChild(_factionToggle);
 
         // Head selector with preview
-        AddSectionLabel(vbox, "Cabeza:");
-        var headRow = new HBoxContainer();
-        headRow.AddThemeConstantOverride("separation", 6);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Cabeza:", 11));
+        var headRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
         headRow.Alignment = BoxContainer.AlignmentMode.Center;
         vbox.AddChild(headRow);
 
-        var headLeftBtn = new Button();
-        headLeftBtn.Text = "<";
-        headLeftBtn.CustomMinimumSize = new Vector2(32, 32);
+        var headLeftBtn = RpgTheme.CreateMiniButton("Mini_arrow_left2.png", "Mini_arrow_left2_t.png", new Vector2(32, 32));
         headLeftBtn.Pressed += OnHeadPrev;
         headRow.AddChild(headLeftBtn);
 
@@ -175,16 +179,11 @@ public class CharCreateScreen
         _charCreateHeadPreview.Draw += DrawCharCreateHead;
         headViewport.AddChild(_charCreateHeadPreview);
 
-        var headRightBtn = new Button();
-        headRightBtn.Text = ">";
-        headRightBtn.CustomMinimumSize = new Vector2(32, 32);
+        var headRightBtn = RpgTheme.CreateMiniButton("Mini_arrow_right2.png", "Mini_arrow_right2_t.png", new Vector2(32, 32));
         headRightBtn.Pressed += OnHeadNext;
         headRow.AddChild(headRightBtn);
 
-        _charCreateHeadLabel = new Label();
-        _charCreateHeadLabel.Text = "1";
-        _charCreateHeadLabel.AddThemeColorOverride("font_color", Colors.White);
-        _charCreateHeadLabel.AddThemeFontSizeOverride("font_size", 11);
+        _charCreateHeadLabel = RpgTheme.CreateInfoLabel("1", 11);
         headRow.AddChild(_charCreateHeadLabel);
 
         // Error label
@@ -197,20 +196,17 @@ public class CharCreateScreen
         vbox.AddChild(_charCreateError);
 
         // Buttons row
-        var btnRow = new HBoxContainer();
-        btnRow.AddThemeConstantOverride("separation", 8);
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
         btnRow.Alignment = BoxContainer.AlignmentMode.Center;
         vbox.AddChild(btnRow);
 
-        _charCreateCreateBtn = new Button();
-        _charCreateCreateBtn.Text = "Crear";
-        _charCreateCreateBtn.CustomMinimumSize = new Vector2(100, 32);
+        _charCreateCreateBtn = RpgTheme.CreateRpgButton("Crear", false, 14);
+        _charCreateCreateBtn.CustomMinimumSize = new Vector2(100, 36);
         _charCreateCreateBtn.Pressed += OnCharCreateConfirm;
         btnRow.AddChild(_charCreateCreateBtn);
 
-        var backBtn = new Button();
-        backBtn.Text = "Volver";
-        backBtn.CustomMinimumSize = new Vector2(100, 32);
+        var backBtn = RpgTheme.CreateRpgButton("Volver", false, 14);
+        backBtn.CustomMinimumSize = new Vector2(100, 36);
         backBtn.Pressed += () => OnBack?.Invoke();
         btnRow.AddChild(backBtn);
 
@@ -224,38 +220,49 @@ public class CharCreateScreen
     {
         var charSelectVBox = charList.GetParent();
 
-        _charSelectCreateBtn = new Button();
-        _charSelectCreateBtn.Text = "Crear Personaje";
-        _charSelectCreateBtn.CustomMinimumSize = new Vector2(0, 32);
+        _charSelectCreateBtn = RpgTheme.CreateRpgButton("Crear Personaje", true, 14);
+        _charSelectCreateBtn.CustomMinimumSize = new Vector2(0, 36);
         _charSelectCreateBtn.Pressed += () => OnCharSelectCreate?.Invoke();
         charSelectVBox.AddChild(_charSelectCreateBtn);
 
-        _charSelectDeleteBtn = new Button();
-        _charSelectDeleteBtn.Text = "Borrar Personaje";
-        _charSelectDeleteBtn.CustomMinimumSize = new Vector2(0, 32);
-        _charSelectDeleteBtn.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
+        _charSelectDeleteBtn = RpgTheme.CreateRpgButton("Borrar Personaje", true, 14);
+        _charSelectDeleteBtn.CustomMinimumSize = new Vector2(0, 36);
         _charSelectDeleteBtn.Pressed += () => OnDeleteCharRequest?.Invoke();
         charSelectVBox.AddChild(_charSelectDeleteBtn);
     }
 
     public void CreateDeleteConfirmDialog(Node parent)
     {
-        _deleteConfirmDialog = new PanelContainer();
-        _deleteConfirmDialog.Size = new Vector2(280, 140);
-        _deleteConfirmDialog.Position = new Vector2(127, 258);
+        // --- Delete confirm dialog with NinePatch frame ---
+        _deleteConfirmDialog = new Control();
+        _deleteConfirmDialog.Size = new Vector2(320, 200);
+        _deleteConfirmDialog.CustomMinimumSize = new Vector2(320, 200);
+        _deleteConfirmDialog.Position = new Vector2(240, 200);
         _deleteConfirmDialog.Visible = false;
         _deleteConfirmDialog.ZIndex = 100;
+        _deleteConfirmDialog.MouseFilter = Control.MouseFilterEnum.Stop;
 
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.15f, 0.08f, 0.08f, 0.95f);
-        bg.BorderColor = new Color(0.8f, 0.2f, 0.2f);
-        bg.SetBorderWidthAll(1);
-        bg.SetContentMarginAll(10);
-        _deleteConfirmDialog.AddThemeStyleboxOverride("panel", bg);
+        // V2 background
+        var bgTex = new TextureRect();
+        bgTex.Texture = RpgTheme.GetTex("big_bar.png");
+        bgTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        bgTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+        bgTex.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _deleteConfirmDialog.AddChild(bgTex);
+        RpgTheme.FillParent(bgTex);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 6);
-        _deleteConfirmDialog.AddChild(vbox);
+        // Content area with margins
+        var marginC = new MarginContainer();
+        marginC.AddThemeConstantOverride("margin_top", 30);
+        marginC.AddThemeConstantOverride("margin_left", 36);
+        marginC.AddThemeConstantOverride("margin_right", 36);
+        marginC.AddThemeConstantOverride("margin_bottom", 38);
+        marginC.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _deleteConfirmDialog.AddChild(marginC);
+        RpgTheme.FillParent(marginC);
+
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        marginC.AddChild(vbox);
 
         _deleteConfirmLabel = new Label();
         _deleteConfirmLabel.Text = "";
@@ -265,30 +272,23 @@ public class CharCreateScreen
         _deleteConfirmLabel.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_deleteConfirmLabel);
 
-        _deleteConfirmInput = new LineEdit();
-        _deleteConfirmInput.PlaceholderText = "Codigo";
+        _deleteConfirmInput = RpgTheme.CreateRpgInput("Codigo");
         _deleteConfirmInput.Alignment = HorizontalAlignment.Center;
         _deleteConfirmInput.FocusMode = Control.FocusModeEnum.Click;
-        _deleteConfirmInput.AddThemeFontSizeOverride("font_size", 12);
         _deleteConfirmInput.TextSubmitted += (_) => OnDeleteConfirm();
         vbox.AddChild(_deleteConfirmInput);
 
-        var hbox = new HBoxContainer();
-        hbox.AddThemeConstantOverride("separation", 6);
+        var hbox = RpgTheme.CreateRow(RpgTheme.SpacingMd);
         hbox.Alignment = BoxContainer.AlignmentMode.Center;
         vbox.AddChild(hbox);
 
-        var confirmBtn = new Button();
-        confirmBtn.Text = "Confirmar";
-        confirmBtn.CustomMinimumSize = new Vector2(80, 28);
-        confirmBtn.AddThemeFontSizeOverride("font_size", 11);
+        var confirmBtn = RpgTheme.CreateRpgButton("Confirmar", false, 12);
+        confirmBtn.CustomMinimumSize = new Vector2(80, 30);
         confirmBtn.Pressed += OnDeleteConfirm;
         hbox.AddChild(confirmBtn);
 
-        var cancelBtn = new Button();
-        cancelBtn.Text = "Cancelar";
-        cancelBtn.CustomMinimumSize = new Vector2(80, 28);
-        cancelBtn.AddThemeFontSizeOverride("font_size", 11);
+        var cancelBtn = RpgTheme.CreateRpgButton("Cancelar", false, 12);
+        cancelBtn.CustomMinimumSize = new Vector2(80, 30);
         cancelBtn.Pressed += OnDeleteConfirmCancel;
         hbox.AddChild(cancelBtn);
 
@@ -354,10 +354,10 @@ public class CharCreateScreen
         _state.CreateCharFaction = 1;
         _charCreateNameInput!.Text = "";
         _charCreateError!.Text = "";
-        SetToggleSelection(_raceButtons!, 0);
-        SetToggleSelection(_genderButtons!, 0);
-        SetToggleSelection(_classButtons!, 0);
-        SetToggleSelection(_factionButtons!, 0);
+        RpgTheme.SetToggleGroupActive(_raceToggle!, 0);
+        RpgTheme.SetToggleGroupActive(_genderToggle!, 0);
+        RpgTheme.SetToggleGroupActive(_classToggle!, 0);
+        RpgTheme.SetToggleGroupActive(_factionToggle!, 0);
         UpdateHeadRange();
     }
 
@@ -438,27 +438,23 @@ public class CharCreateScreen
     private void OnRaceSelected(int idx)
     {
         _state.CreateCharRace = idx + 1;
-        SetToggleSelection(_raceButtons!, idx);
         UpdateHeadRange();
     }
 
     private void OnGenderSelected(int idx)
     {
         _state.CreateCharGender = idx + 1;
-        SetToggleSelection(_genderButtons!, idx);
         UpdateHeadRange();
     }
 
     private void OnClassSelected(int idx)
     {
         _state.CreateCharClass = idx + 1;
-        SetToggleSelection(_classButtons!, idx);
     }
 
     private void OnFactionSelected(int idx)
     {
         _state.CreateCharFaction = idx + 1;
-        SetToggleSelection(_factionButtons!, idx);
     }
 
     private void OnHeadPrev()
@@ -477,38 +473,5 @@ public class CharCreateScreen
         else
             _state.CreateCharHead = _state.CreateCharHeadMin;
         UpdateHeadPreview();
-    }
-
-    private static void AddSectionLabel(VBoxContainer vbox, string text)
-    {
-        var label = new Label();
-        label.Text = text;
-        label.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
-        label.AddThemeFontSizeOverride("font_size", 10);
-        vbox.AddChild(label);
-    }
-
-    private static Button[] CreateToggleGroup(Container parent, string[] labels, Action<int> onSelected)
-    {
-        var buttons = new Button[labels.Length];
-        for (int i = 0; i < labels.Length; i++)
-        {
-            int idx = i;
-            var btn = new Button();
-            btn.Text = labels[i];
-            btn.ToggleMode = true;
-            btn.CustomMinimumSize = new Vector2(0, 26);
-            btn.AddThemeFontSizeOverride("font_size", 10);
-            btn.Pressed += () => onSelected(idx);
-            parent.AddChild(btn);
-            buttons[i] = btn;
-        }
-        return buttons;
-    }
-
-    private static void SetToggleSelection(Button[] buttons, int selectedIndex)
-    {
-        for (int i = 0; i < buttons.Length; i++)
-            buttons[i].ButtonPressed = (i == selectedIndex);
     }
 }

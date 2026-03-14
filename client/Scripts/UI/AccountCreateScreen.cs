@@ -7,23 +7,23 @@ namespace ArgentumNextgen.UI;
 /// <summary>
 /// Account creation UI panel. Extracted from Main.cs.
 /// Handles all account creation form logic, validation, and TCP connection for NACCNT.
+/// Styled with RpgTheme.
 /// </summary>
 public class AccountCreateScreen
 {
-    private PanelContainer? _panel;
+    private Control? _panel;
     private LineEdit? _nameInput;
     private LineEdit? _passwordInput;
     private LineEdit? _passwordConfirmInput;
     private LineEdit? _pinInput;
     private LineEdit? _pinConfirmInput;
     private Label? _errorLabel;
-    private Button? _createButton;
-    private Button? _backButton;
+    private TextureButton? _createButton;
 
     private readonly GameState _state;
 
-    /// <summary>The root panel container (for show/hide from Main).</summary>
-    public PanelContainer? Panel => _panel;
+    /// <summary>The root panel control (for show/hide from Main).</summary>
+    public Control? Panel => _panel;
 
     /// <summary>Timer for auto-switching back to login after successful creation.</summary>
     public double SuccessTimer { get; set; }
@@ -44,102 +44,99 @@ public class AccountCreateScreen
     /// </summary>
     public void CreatePanel(Node parent)
     {
-        _panel = new PanelContainer();
-        _panel.Size = new Vector2(400, 420);
-        _panel.Position = new Vector2(200, 90);
+        // --- Root panel with NinePatch frame ---
+        _panel = new Control();
+        _panel.Size = new Vector2(400, 480);
+        _panel.CustomMinimumSize = new Vector2(400, 480);
+        _panel.Position = new Vector2(200, 60);
         _panel.Visible = false;
         _panel.ZIndex = 1;
+        _panel.ClipContents = true;
+        _panel.MouseFilter = Control.MouseFilterEnum.Stop;
 
-        var bg = new StyleBoxFlat();
-        bg.BgColor = new Color(0.08f, 0.08f, 0.14f, 0.95f);
-        bg.BorderColor = new Color(0.4f, 0.35f, 0.2f);
-        bg.SetBorderWidthAll(2);
-        bg.SetContentMarginAll(12);
-        _panel.AddThemeStyleboxOverride("panel", bg);
+        // V2 background: big_bar stretched
+        var bg = new TextureRect();
+        bg.Texture = RpgTheme.GetTex("big_bar.png");
+        bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        bg.StretchMode = TextureRect.StretchModeEnum.Scale;
+        bg.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _panel.AddChild(bg);
+        RpgTheme.FillParent(bg);
 
-        var vbox = new VBoxContainer();
-        vbox.AddThemeConstantOverride("separation", 6);
-        _panel.AddChild(vbox);
+        // V2 title bar
+        var titleBg = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
+        _panel.AddChild(titleBg);
+        titleBg.AnchorLeft = 0f; titleBg.AnchorRight = 1f;
+        titleBg.AnchorTop = 0f;  titleBg.AnchorBottom = 0f;
+        titleBg.OffsetLeft = 10; titleBg.OffsetTop = 5;
+        titleBg.OffsetRight = -10; titleBg.OffsetBottom = 48;
 
-        // Title
-        var title = new Label();
-        title.Text = "Crear Cuenta";
-        title.HorizontalAlignment = HorizontalAlignment.Center;
-        title.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.4f));
-        title.AddThemeFontSizeOverride("font_size", 16);
-        UIHelpers.ApplyFont(title);
-        vbox.AddChild(title);
+        var titleLabel = RpgTheme.CreateTitleLabel("Crear Cuenta", 18);
+        titleBg.AddChild(titleLabel);
+        RpgTheme.FillParent(titleLabel);
+        titleLabel.OffsetTop = 4; titleLabel.OffsetBottom = -4;
+
+        // Content area with V2 margins
+        var marginC = new MarginContainer();
+        marginC.AddThemeConstantOverride("margin_top", 54);
+        marginC.AddThemeConstantOverride("margin_left", 36);
+        marginC.AddThemeConstantOverride("margin_right", 36);
+        marginC.AddThemeConstantOverride("margin_bottom", 38);
+        marginC.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _panel.AddChild(marginC);
+        RpgTheme.FillParent(marginC);
+
+        // Root column: scrollable content + fixed footer
+        var root = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        root.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        marginC.AddChild(root);
+
+        var scrollArea = RpgTheme.CreateScrollArea(RpgTheme.SpacingMd);
+        root.AddChild(scrollArea);
+        var vbox = scrollArea.GetMeta("content").As<VBoxContainer>();
 
         // Account name
-        var nameLabel = new Label();
-        nameLabel.Text = "Nombre de cuenta:";
-        nameLabel.AddThemeColorOverride("font_color", Colors.White);
-        nameLabel.AddThemeFontSizeOverride("font_size", 11);
+        var nameLabel = RpgTheme.CreateInfoLabel("Nombre de cuenta:", 11);
         vbox.AddChild(nameLabel);
 
-        _nameInput = new LineEdit();
-        _nameInput.PlaceholderText = "3-15 caracteres";
+        _nameInput = RpgTheme.CreateRpgInput("3-15 caracteres");
         _nameInput.MaxLength = 15;
-        _nameInput.CustomMinimumSize = new Vector2(0, 28);
-        _nameInput.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_nameInput);
 
         // Password
-        var passLabel = new Label();
-        passLabel.Text = "Contraseña:";
-        passLabel.AddThemeColorOverride("font_color", Colors.White);
-        passLabel.AddThemeFontSizeOverride("font_size", 11);
+        var passLabel = RpgTheme.CreateInfoLabel("Contraseña:", 11);
         vbox.AddChild(passLabel);
 
-        _passwordInput = new LineEdit();
-        _passwordInput.PlaceholderText = "4-15 caracteres";
+        _passwordInput = RpgTheme.CreateRpgInput("4-15 caracteres");
         _passwordInput.MaxLength = 15;
         _passwordInput.Secret = true;
-        _passwordInput.CustomMinimumSize = new Vector2(0, 28);
-        _passwordInput.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_passwordInput);
 
         // Confirm password
-        var passConfirmLabel = new Label();
-        passConfirmLabel.Text = "Repetir contraseña:";
-        passConfirmLabel.AddThemeColorOverride("font_color", Colors.White);
-        passConfirmLabel.AddThemeFontSizeOverride("font_size", 11);
+        var passConfirmLabel = RpgTheme.CreateInfoLabel("Repetir contraseña:", 11);
         vbox.AddChild(passConfirmLabel);
 
-        _passwordConfirmInput = new LineEdit();
+        _passwordConfirmInput = RpgTheme.CreateRpgInput();
         _passwordConfirmInput.MaxLength = 15;
         _passwordConfirmInput.Secret = true;
-        _passwordConfirmInput.CustomMinimumSize = new Vector2(0, 28);
-        _passwordConfirmInput.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_passwordConfirmInput);
 
         // PIN
-        var pinLabel = new Label();
-        pinLabel.Text = "PIN:";
-        pinLabel.AddThemeColorOverride("font_color", Colors.White);
-        pinLabel.AddThemeFontSizeOverride("font_size", 11);
+        var pinLabel = RpgTheme.CreateInfoLabel("PIN:", 11);
         vbox.AddChild(pinLabel);
 
-        _pinInput = new LineEdit();
-        _pinInput.PlaceholderText = "4-5 dígitos";
+        _pinInput = RpgTheme.CreateRpgInput("4-5 dígitos");
         _pinInput.MaxLength = 5;
         _pinInput.Secret = true;
-        _pinInput.CustomMinimumSize = new Vector2(0, 28);
-        _pinInput.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_pinInput);
 
         // Confirm PIN
-        var pinConfirmLabel = new Label();
-        pinConfirmLabel.Text = "Repetir PIN:";
-        pinConfirmLabel.AddThemeColorOverride("font_color", Colors.White);
-        pinConfirmLabel.AddThemeFontSizeOverride("font_size", 11);
+        var pinConfirmLabel = RpgTheme.CreateInfoLabel("Repetir PIN:", 11);
         vbox.AddChild(pinConfirmLabel);
 
-        _pinConfirmInput = new LineEdit();
+        _pinConfirmInput = RpgTheme.CreateRpgInput();
         _pinConfirmInput.MaxLength = 5;
         _pinConfirmInput.Secret = true;
-        _pinConfirmInput.CustomMinimumSize = new Vector2(0, 28);
-        _pinConfirmInput.AddThemeFontSizeOverride("font_size", 12);
         vbox.AddChild(_pinConfirmInput);
 
         // Error/status label
@@ -151,23 +148,20 @@ public class AccountCreateScreen
         _errorLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         vbox.AddChild(_errorLabel);
 
-        // Buttons row
-        var btnBox = new HBoxContainer();
-        btnBox.AddThemeConstantOverride("separation", 8);
-        btnBox.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.AddChild(btnBox);
+        // Footer row — fixed at bottom, outside scroll
+        var footer = RpgTheme.CreateFooterRow(RpgTheme.SpacingLg);
+        root.AddChild(footer);
+        var btnRow = footer.GetMeta("row").As<HBoxContainer>();
 
-        _createButton = new Button();
-        _createButton.Text = "Crear Cuenta";
-        _createButton.CustomMinimumSize = new Vector2(140, 32);
+        var backButton = RpgTheme.CreateRpgButton("Volver", false, 14);
+        backButton.CustomMinimumSize = new Vector2(100, 36);
+        backButton.Pressed += () => OnBack?.Invoke();
+        btnRow.AddChild(backButton);
+
+        _createButton = RpgTheme.CreateRpgButton("Crear Cuenta", false, 14);
+        _createButton.CustomMinimumSize = new Vector2(140, 36);
         _createButton.Pressed += OnCreatePressed;
-        btnBox.AddChild(_createButton);
-
-        _backButton = new Button();
-        _backButton.Text = "Volver";
-        _backButton.CustomMinimumSize = new Vector2(100, 32);
-        _backButton.Pressed += () => OnBack?.Invoke();
-        btnBox.AddChild(_backButton);
+        btnRow.AddChild(_createButton);
 
         parent.AddChild(_panel);
     }

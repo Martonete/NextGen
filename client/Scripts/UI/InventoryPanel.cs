@@ -172,12 +172,9 @@ public partial class InventoryPanel : Control
             // Slot background
             DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.15f, 0.15f, 0.2f, 0.8f));
 
-            // VB6: Draw_GrhIndex(32758, X, Y) for selected slot
             if (slot == _selectedSlot)
             {
-                // Background fill + selection GRH overlay
-                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.12f));
-                CharRenderer.DrawGrh(this, _data, GrhSelectionHighlight, 0, new Vector2(x, y));
+                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0.4f, 0.35f, 0.2f, 0.35f));
             }
             else if (_dragging && _dydEnabled && slot == _hoveredSlot && slot != _dragSourceSlot)
             {

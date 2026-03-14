@@ -8,34 +8,32 @@ using ArgentumNextgen.Rendering;
 namespace ArgentumNextgen.UI;
 
 /// <summary>
-/// VB6 frmBovClan — Guild bank (bóveda de clan) panel.
-/// Same layout as VaultPanel (450x527) but operates on GuildBankItems.
+/// VB6 frmBovClan — Guild bank (boveda de clan) panel.
+/// Same layout as VaultPanel but operates on GuildBankItems.
 /// Leader/sublider can withdraw; all members can deposit.
+/// Now uses RpgBaseForm for consistent RPG chrome (frame, title, close, drag).
+/// Custom _Draw() rendering for item lists is preserved inside a child Control.
 /// </summary>
-public partial class GuildBankPanel : Control
+public partial class GuildBankPanel : RpgBaseForm
 {
-    private const int PanelW = 450;
-    private const int PanelH = 527;
+    // Content area dimensions
+    private const int ContentW = 390;
 
-    private const int BankListX = 36, BankListY = 107;
-    private const int BankListW = 181, BankListH = 249;
-    private const int InvListX = 233, InvListY = 107;
-    private const int InvListW = 182, InvListH = 249;
+    // List layout — relative to _drawArea origin
+    private const int BankListX = 0, BankListY = 72;
+    private const int BankListW = 175, BankListH = 249;
+    private const int InvListX = 200, InvListY = 72;
+    private const int InvListW = 175, InvListH = 249;
 
-    private const int PreviewX = 37, PreviewY = 40, PreviewSize = 34;
-    private const int QtyX = 196, QtyY = 383, QtyW = 61, QtyH = 15;
-    private const int GoldDisplayX = 195, GoldDisplayW = 119;
-    private const int BankGoldY = 422, MyGoldY = 446;
+    private const int PreviewX = 0, PreviewY = 4, PreviewSize = 34;
     private const int ItemRowH = 16;
+
+    // Draw area total height
+    private const int DrawAreaH = BankListY + BankListH + 4; // 325
 
     private static readonly Color ListBg = new(19f / 255f, 21f / 255f, 22f / 255f);
     private static readonly Color ListFg = new(145f / 255f, 123f / 255f, 85f / 255f);
-    private static readonly Color GoldInputFg = new(145f / 255f, 123f / 255f, 85f / 255f);
     private static readonly Color DisabledFg = new(0.5f, 0.5f, 0.5f, 0.6f);
-
-    private bool _dragging;
-    private Vector2 _dragOffset;
-    private const int TitleBarH = 30;
 
     private GameState? _state;
     private GameData? _data;
@@ -50,17 +48,21 @@ public partial class GuildBankPanel : Control
     private int _userSlotCount;
     private int _bankItemCount;
 
+    // UI controls
+    private Control? _drawArea;
     private LineEdit? _qtyInput;
     private Label? _bankGoldLabel;
     private Label? _myGoldLabel;
-    private Button? _retirarBtn;
-    private Button? _depositarBtn;
-    private Button? _retirarOroBtn;
-    private Button? _depositarOroBtn;
-    private Button? _salirBtn;
+    private TextureButton? _retirarBtn;
+    private TextureButton? _depositarBtn;
+    private TextureButton? _retirarOroBtn;
+    private TextureButton? _depositarOroBtn;
+    private TextureButton? _salirBtn;
 
     // Rich tooltip panel (set by Main.cs)
     public TooltipPanel? RichTooltip;
+
+    public GuildBankPanel() : base("Boveda de Clan", new Vector2(450, 560), "v3") { }
 
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
@@ -69,73 +71,87 @@ public partial class GuildBankPanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Size = new Vector2(PanelW, PanelH);
-        MouseFilter = MouseFilterEnum.Stop;
-        FocusMode = FocusModeEnum.None;
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(vbox);
 
-        _qtyInput = new LineEdit();
-        _qtyInput.Position = new Vector2(QtyX, QtyY);
-        _qtyInput.Size = new Vector2(QtyW, QtyH);
+        // Custom draw area for lists, preview, and headers
+        _drawArea = new Control();
+        _drawArea.CustomMinimumSize = new Vector2(ContentW, DrawAreaH);
+        _drawArea.MouseFilter = MouseFilterEnum.Stop;
+        _drawArea.Draw += OnDrawArea;
+        _drawArea.GuiInput += OnDrawAreaInput;
+        vbox.AddChild(_drawArea);
+
+        // Button row: Retirar / Depositar
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
+
+        _retirarBtn = RpgTheme.CreateRpgButton("Retirar", false, 14);
+        _retirarBtn.CustomMinimumSize = new Vector2(140, 28);
+        _retirarBtn.Pressed += OnRetirarPressed;
+        btnRow.AddChild(_retirarBtn);
+
+        // Quantity input
+        var qtyLabel = RpgTheme.CreateInfoLabel("Cant:", 11);
+        btnRow.AddChild(qtyLabel);
+
+        _qtyInput = RpgTheme.CreateRpgInput("1", 60);
         _qtyInput.Text = "1";
         _qtyInput.Alignment = HorizontalAlignment.Center;
-        _qtyInput.FocusMode = FocusModeEnum.Click;
-        _qtyInput.AddThemeColorOverride("font_color", GoldInputFg);
-        _qtyInput.AddThemeFontSizeOverride("font_size", 9);
-        AddChild(_qtyInput);
+        btnRow.AddChild(_qtyInput);
 
-        _bankGoldLabel = CreateLabel("0", GoldDisplayX, BankGoldY, GoldDisplayW, 15);
-        AddChild(_bankGoldLabel);
-
-        _myGoldLabel = CreateLabel("0", GoldDisplayX, MyGoldY, GoldDisplayW, 15);
-        AddChild(_myGoldLabel);
-
-        _retirarBtn = CreateButton("Retirar", 54, 374, 113, 25);
-        _retirarBtn.Pressed += OnRetirarPressed;
-        AddChild(_retirarBtn);
-
-        _depositarBtn = CreateButton("Depositar", 282, 374, 113, 25);
+        _depositarBtn = RpgTheme.CreateRpgButton("Depositar", false, 14);
+        _depositarBtn.CustomMinimumSize = new Vector2(140, 28);
         _depositarBtn.Pressed += OnDepositarPressed;
-        AddChild(_depositarBtn);
+        btnRow.AddChild(_depositarBtn);
 
-        _retirarOroBtn = CreateButton("Retirar", 321, BankGoldY, 87, 15);
+        // Gold display rows
+        var bankGoldRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
+        vbox.AddChild(bankGoldRow);
+
+        var bankGoldTitle = RpgTheme.CreateInfoLabel("Oro Boveda Clan:", 11);
+        bankGoldRow.AddChild(bankGoldTitle);
+
+        _bankGoldLabel = RpgTheme.CreateTitleLabel("0", 12);
+        _bankGoldLabel.AddThemeColorOverride("font_color", new Color(1f, 0.95f, 0.4f));
+        _bankGoldLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _bankGoldLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        bankGoldRow.AddChild(_bankGoldLabel);
+
+        _retirarOroBtn = RpgTheme.CreateRpgButton("Retirar", false, 11);
+        _retirarOroBtn.CustomMinimumSize = new Vector2(87, 22);
         _retirarOroBtn.Pressed += OnRetirarOroPressed;
-        AddChild(_retirarOroBtn);
+        bankGoldRow.AddChild(_retirarOroBtn);
 
-        _depositarOroBtn = CreateButton("Depositar", 321, MyGoldY, 87, 15);
+        var myGoldRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
+        vbox.AddChild(myGoldRow);
+
+        var myGoldTitle = RpgTheme.CreateInfoLabel("Mi Oro:", 11);
+        myGoldRow.AddChild(myGoldTitle);
+
+        _myGoldLabel = RpgTheme.CreateTitleLabel("0", 12);
+        _myGoldLabel.AddThemeColorOverride("font_color", new Color(1f, 0.95f, 0.4f));
+        _myGoldLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _myGoldLabel.HorizontalAlignment = HorizontalAlignment.Left;
+        myGoldRow.AddChild(_myGoldLabel);
+
+        _depositarOroBtn = RpgTheme.CreateRpgButton("Depositar", false, 11);
+        _depositarOroBtn.CustomMinimumSize = new Vector2(87, 22);
         _depositarOroBtn.Pressed += OnDepositarOroPressed;
-        AddChild(_depositarOroBtn);
+        myGoldRow.AddChild(_depositarOroBtn);
 
-        _salirBtn = CreateButton("Salir", 176, 481, 98, 24);
+        // Salir button
+        var footerRow = RpgTheme.CreateRow();
+        footerRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(footerRow);
+
+        _salirBtn = RpgTheme.CreateRpgButton("Salir", false, 14);
+        _salirBtn.CustomMinimumSize = new Vector2(120, 28);
         _salirBtn.Pressed += OnSalirPressed;
-        AddChild(_salirBtn);
-    }
-
-    private static Button CreateButton(string text, int x, int y, int w, int h)
-    {
-        var btn = new Button();
-        btn.Text = text;
-        btn.Position = new Vector2(x, y);
-        btn.Size = new Vector2(w, h);
-        btn.FocusMode = Control.FocusModeEnum.None;
-        btn.MouseDefaultCursorShape = CursorShape.PointingHand;
-        return btn;
-    }
-
-    private static Label CreateLabel(string text, int x, int y, int w, int h)
-    {
-        var lbl = new Label();
-        lbl.Text = text;
-        lbl.Position = new Vector2(x, y);
-        lbl.Size = new Vector2(w, h);
-        lbl.HorizontalAlignment = HorizontalAlignment.Center;
-        lbl.AddThemeColorOverride("font_color", GoldInputFg);
-        lbl.AddThemeFontSizeOverride("font_size", 9);
-        var boldFont = new SystemFont();
-        boldFont.FontWeight = 700;
-        lbl.AddThemeFontOverride("font", boldFont);
-        return lbl;
+        footerRow.AddChild(_salirBtn);
     }
 
     public void OpenGuildBank()
@@ -145,12 +161,12 @@ public partial class GuildBankPanel : Control
         _bankScrollOffset = 0;
         _invScrollOffset = 0;
         _qtyInput!.Text = "1";
-        Visible = true;
+        ShowForm();
     }
 
     public void CloseGuildBank()
     {
-        Visible = false;
+        HideForm();
         _selectedBankIdx = -1;
         _selectedInvIdx = -1;
         HideGoldInputDialog();
@@ -191,28 +207,26 @@ public partial class GuildBankPanel : Control
         _retirarBtn!.Disabled = !_state.GuildBankCanObj;
         _retirarOroBtn!.Disabled = !_state.GuildBankCanGold;
 
-        QueueRedraw();
+        _drawArea?.QueueRedraw();
     }
 
-    public override void _Draw()
+    private void OnDrawArea()
     {
-        if (_state == null || _data == null) return;
-
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.08f, 0.06f, 0.12f, 0.96f));
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.5f, 0.4f, 0.3f, 0.8f), false, 2f);
+        if (_state == null || _data == null || _drawArea == null) return;
 
         var font = _data.Fonts?[1];
 
-        font?.DrawText(this, PanelW / 2, 8, "Bóveda de Clan", new Color(1f, 0.85f, 0.4f), center: true);
+        // List headers
+        font?.DrawText(_drawArea, BankListX + BankListW / 2, BankListY - 14, "Boveda Clan", Colors.White, center: true);
+        font?.DrawText(_drawArea, InvListX + InvListW / 2, InvListY - 14, "Inventario", Colors.White, center: true);
 
-        font?.DrawText(this, BankListX + BankListW / 2, BankListY - 14, "Bóveda Clan", Colors.White, center: true);
-        font?.DrawText(this, InvListX + InvListW / 2, InvListY - 14, "Inventario", Colors.White, center: true);
+        // Bank list background
+        _drawArea.DrawRect(new Rect2(BankListX, BankListY, BankListW, BankListH), ListBg);
+        _drawArea.DrawRect(new Rect2(BankListX, BankListY, BankListW, BankListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
-        DrawRect(new Rect2(BankListX, BankListY, BankListW, BankListH), ListBg);
-        DrawRect(new Rect2(BankListX, BankListY, BankListW, BankListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
-
-        DrawRect(new Rect2(InvListX, InvListY, InvListW, InvListH), ListBg);
-        DrawRect(new Rect2(InvListX, InvListY, InvListW, InvListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        // Inventory list background
+        _drawArea.DrawRect(new Rect2(InvListX, InvListY, InvListW, InvListH), ListBg);
+        _drawArea.DrawRect(new Rect2(InvListX, InvListY, InvListW, InvListH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
         // Draw guild bank items
         int maxBankVisible = BankListH / ItemRowH;
@@ -225,10 +239,10 @@ public partial class GuildBankPanel : Control
             int rowY = BankListY + i * ItemRowH;
 
             if (idx == _selectedBankIdx)
-                DrawRect(new Rect2(BankListX + 1, rowY, BankListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
+                _drawArea.DrawRect(new Rect2(BankListX + 1, rowY, BankListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
 
             string displayName = item.Name.Length > 13 ? item.Name[..13] : item.Name;
-            font?.DrawText(this, BankListX + 3, rowY + 1, $"{displayName} x{item.Amount}", ListFg);
+            font?.DrawText(_drawArea, BankListX + 3, rowY + 1, $"{displayName} x{item.Amount}", ListFg);
         }
 
         // Draw inventory items
@@ -242,27 +256,23 @@ public partial class GuildBankPanel : Control
             int rowY = InvListY + i * ItemRowH;
 
             if (idx == _selectedInvIdx)
-                DrawRect(new Rect2(InvListX + 1, rowY, InvListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
+                _drawArea.DrawRect(new Rect2(InvListX + 1, rowY, InvListW - 2, ItemRowH), new Color(0.3f, 0.3f, 0.6f, 0.7f));
 
             string equip = inv.Equipped ? "(E)" : "";
             string displayName = inv.Name.Length > 12 ? inv.Name[..12] : inv.Name;
-            font?.DrawText(this, InvListX + 3, rowY + 1, $"{displayName} x{inv.Amount}{equip}", ListFg);
+            font?.DrawText(_drawArea, InvListX + 3, rowY + 1, $"{displayName} x{inv.Amount}{equip}", ListFg);
         }
 
         DrawItemPreview(font);
 
-        font?.DrawText(this, 145, QtyY + 1, "Cant:", Colors.White);
-        font?.DrawText(this, 120, BankGoldY + 1, "Oro Bóveda Clan:", Colors.White);
-        font?.DrawText(this, 155, MyGoldY + 1, "Mi Oro:", Colors.White);
-
         // Permission indicator
         if (!_state.GuildBankCanObj)
-            font?.DrawText(this, PanelW / 2, 365, "(Solo depósito — sin permiso de retiro)", DisabledFg, center: true);
+            font?.DrawText(_drawArea, ContentW / 2, BankListY + BankListH + 8, "(Solo deposito -- sin permiso de retiro)", DisabledFg, center: true);
     }
 
     private void DrawItemPreview(AoFont? font)
     {
-        if (_state == null || _data == null) return;
+        if (_state == null || _data == null || _drawArea == null) return;
 
         int grhIndex = 0;
         string name = "";
@@ -284,41 +294,19 @@ public partial class GuildBankPanel : Control
             name = inv.Name;
         }
 
-        DrawRect(new Rect2(PreviewX, PreviewY, PreviewSize, PreviewSize), new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(PreviewX, PreviewY, PreviewSize, PreviewSize), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
+        _drawArea.DrawRect(new Rect2(PreviewX, PreviewY, PreviewSize, PreviewSize), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        _drawArea.DrawRect(new Rect2(PreviewX, PreviewY, PreviewSize, PreviewSize), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
 
         if (grhIndex > 0)
-            CharRenderer.DrawGrh(this, _data, grhIndex, 0, new Vector2(PreviewX, PreviewY));
+            CharRenderer.DrawGrh(_drawArea, _data, grhIndex, 0, new Vector2(PreviewX, PreviewY));
 
         if (!string.IsNullOrEmpty(name))
-            font?.DrawText(this, PreviewX + PreviewSize + 8, PreviewY + 10, name, new Color(1f, 0.9f, 0.5f));
+            font?.DrawText(_drawArea, PreviewX + PreviewSize + 8, PreviewY + 10, name, new Color(1f, 0.9f, 0.5f));
     }
 
-    public override void _GuiInput(InputEvent @event)
+    private void OnDrawAreaInput(InputEvent @event)
     {
-        if (_state == null || _tcp == null) return;
-
-        if (@event is InputEventMouseButton dragMb)
-        {
-            if (dragMb.ButtonIndex == MouseButton.Left)
-            {
-                if (dragMb.Pressed && dragMb.Position.Y <= TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
-                    AcceptEvent();
-                    return;
-                }
-                if (!dragMb.Pressed && _dragging)
-                    _dragging = false;
-            }
-        }
-        if (@event is InputEventMouseMotion dragMm && _dragging)
-        {
-            GlobalPosition = dragMm.GlobalPosition - _dragOffset;
-            AcceptEvent();
-            return;
-        }
+        if (_state == null || _tcp == null || _drawArea == null) return;
 
         if (@event is InputEventMouseButton mb && mb.Pressed)
         {
@@ -334,7 +322,7 @@ public partial class GuildBankPanel : Control
                     _selectedBankIdx = idx;
                     _selectedInvIdx = -1;
                 }
-                AcceptEvent();
+                _drawArea.AcceptEvent();
                 return;
             }
 
@@ -347,11 +335,11 @@ public partial class GuildBankPanel : Control
                     _selectedInvIdx = idx;
                     _selectedBankIdx = -1;
                 }
-                AcceptEvent();
+                _drawArea.AcceptEvent();
                 return;
             }
 
-            AcceptEvent();
+            _drawArea.AcceptEvent();
         }
         else if (@event is InputEventMouseButton mbScroll)
         {
@@ -365,7 +353,7 @@ public partial class GuildBankPanel : Control
                     _bankScrollOffset = Math.Min(_bankScrollOffset + 1, Math.Max(0, _bankItemCount - maxVisible));
                 else if (mbScroll.ButtonIndex == MouseButton.WheelUp)
                     _bankScrollOffset = Math.Max(0, _bankScrollOffset - 1);
-                AcceptEvent();
+                _drawArea.AcceptEvent();
                 return;
             }
 
@@ -376,7 +364,7 @@ public partial class GuildBankPanel : Control
                     _invScrollOffset = Math.Min(_invScrollOffset + 1, Math.Max(0, _userSlotCount - maxVisible));
                 else if (mbScroll.ButtonIndex == MouseButton.WheelUp)
                     _invScrollOffset = Math.Max(0, _invScrollOffset - 1);
-                AcceptEvent();
+                _drawArea.AcceptEvent();
                 return;
             }
         }
@@ -410,7 +398,7 @@ public partial class GuildBankPanel : Control
         {
             _state.ChatMessages.Enqueue(new ChatMessage
             {
-                Text = "No podés depositar un objeto equipado.",
+                Text = "No podes depositar un objeto equipado.",
                 Color = "FF0000"
             });
             return;
@@ -446,63 +434,58 @@ public partial class GuildBankPanel : Control
         return int.TryParse(_qtyInput.Text.Trim(), out int v) && v > 0 ? v : 1;
     }
 
-    // ── Inline gold input dialog ────────────────────────────────
+    // -- Inline gold input dialog --
 
     private LineEdit? _goldInput;
     private Label? _goldInputLabel;
-    private Button? _goldInputOk;
-    private Button? _goldInputCancel;
+    private TextureButton? _goldInputOk;
+    private TextureButton? _goldInputCancel;
+    private HBoxContainer? _goldInputRow;
     private bool _isDepositing;
 
     private void ShowGoldInputDialog(bool deposit)
     {
         _isDepositing = deposit;
 
-        if (_goldInput == null)
+        if (_goldInputRow == null)
         {
-            _goldInputLabel = new Label();
-            _goldInputLabel.Position = new Vector2(130, 400);
-            _goldInputLabel.Size = new Vector2(190, 16);
-            _goldInputLabel.HorizontalAlignment = HorizontalAlignment.Center;
-            _goldInputLabel.AddThemeColorOverride("font_color", Colors.White);
-            _goldInputLabel.AddThemeFontSizeOverride("font_size", 10);
-            AddChild(_goldInputLabel);
+            _goldInputRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+            _goldInputRow.Alignment = BoxContainer.AlignmentMode.Center;
 
-            _goldInput = new LineEdit();
-            _goldInput.Position = new Vector2(150, 418);
-            _goldInput.Size = new Vector2(100, 20);
+            _goldInputLabel = RpgTheme.CreateInfoLabel("", 11);
+            _goldInputRow.AddChild(_goldInputLabel);
+
+            _goldInput = RpgTheme.CreateRpgInput("0", 100);
             _goldInput.Text = "0";
             _goldInput.Alignment = HorizontalAlignment.Center;
-            _goldInput.FocusMode = FocusModeEnum.Click;
-            _goldInput.AddThemeFontSizeOverride("font_size", 10);
             _goldInput.TextSubmitted += (_) => OnGoldInputOk();
-            AddChild(_goldInput);
+            _goldInputRow.AddChild(_goldInput);
 
-            _goldInputOk = CreateButton("OK", 260, 418, 40, 20);
+            _goldInputOk = RpgTheme.CreateRpgButton("OK", false, 11);
+            _goldInputOk.CustomMinimumSize = new Vector2(50, 22);
             _goldInputOk.Pressed += OnGoldInputOk;
-            AddChild(_goldInputOk);
+            _goldInputRow.AddChild(_goldInputOk);
 
-            _goldInputCancel = CreateButton("X", 305, 418, 25, 20);
+            _goldInputCancel = RpgTheme.CreateRpgButton("X", false, 11);
+            _goldInputCancel.CustomMinimumSize = new Vector2(30, 22);
             _goldInputCancel.Pressed += OnGoldInputCancel;
-            AddChild(_goldInputCancel);
+            _goldInputRow.AddChild(_goldInputCancel);
+
+            // Add to the vbox (parent of _drawArea)
+            var vbox = _drawArea?.GetParent();
+            vbox?.AddChild(_goldInputRow);
         }
 
         _goldInputLabel!.Text = deposit ? "Depositar oro en clan:" : "Retirar oro del clan:";
         _goldInput!.Text = "0";
-        _goldInput.Visible = true;
-        _goldInputLabel.Visible = true;
-        _goldInputOk!.Visible = true;
-        _goldInputCancel!.Visible = true;
+        _goldInputRow!.Visible = true;
         _goldInput.GrabFocus();
         _goldInput.SelectAll();
     }
 
     private void HideGoldInputDialog()
     {
-        if (_goldInput != null) _goldInput.Visible = false;
-        if (_goldInputLabel != null) _goldInputLabel.Visible = false;
-        if (_goldInputOk != null) _goldInputOk.Visible = false;
-        if (_goldInputCancel != null) _goldInputCancel.Visible = false;
+        if (_goldInputRow != null) _goldInputRow.Visible = false;
     }
 
     private void OnGoldInputOk()

@@ -9,25 +9,23 @@ namespace ArgentumNextgen.UI;
 /// VB6 frmGuildFoundation — Guild creation form.
 /// Fields: clan name, description, URL, 8 codex lines.
 /// Sends CIG packet with BF-delimited data.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class GuildFoundationPanel : Control
+public partial class GuildFoundationPanel : RpgBaseForm
 {
-    private const int PanelW = 380;
-    private const int PanelH = 500;
     private const char BF = '\u00BF';
 
     private GameState? _state;
     private AoTcpClient? _tcp;
 
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     private LineEdit? _nameEdit;
     private TextEdit? _descEdit;
     private LineEdit? _urlEdit;
     private LineEdit?[] _codexEdits = new LineEdit[8];
-    private Button? _createBtn;
-    private Button? _cancelBtn;
+    private TextureButton? _createBtn;
+    private TextureButton? _cancelBtn;
+
+    public GuildFoundationPanel() : base("Fundar Clan", new Vector2(380, 500), "v2") { }
 
     public void Init(GameState state, AoTcpClient tcp)
     {
@@ -35,91 +33,50 @@ public partial class GuildFoundationPanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
-
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
-
-        var title = new Label();
-        title.Text = "Fundar Clan";
-        title.Position = new Vector2(10, 4);
-        title.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(title);
-
-        var closeBtn = new Button();
-        closeBtn.Text = "X";
-        closeBtn.Position = new Vector2(PanelW - 28, 2);
-        closeBtn.Size = new Vector2(24, 24);
-        closeBtn.Pressed += () => Hide();
-        AddChild(closeBtn);
-
-        var scroll = new ScrollContainer();
-        scroll.Position = new Vector2(8, 30);
-        scroll.Size = new Vector2(PanelW - 16, PanelH - 38);
-        AddChild(scroll);
-
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        scroll.AddChild(vbox);
+        var scrollArea = RpgTheme.CreateScrollArea(RpgTheme.SpacingMd);
+        ContentContainer.AddChild(scrollArea);
+        var vbox = scrollArea.GetMeta("content").As<VBoxContainer>();
 
         // Name
-        vbox.AddChild(MakeLabel("Nombre del clan:"));
-        _nameEdit = new LineEdit();
-        _nameEdit.PlaceholderText = "Solo letras y espacios";
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Nombre del clan:", 12));
+        _nameEdit = RpgTheme.CreateRpgInput("Solo letras y espacios");
         _nameEdit.MaxLength = 40;
         vbox.AddChild(_nameEdit);
 
         // Description
-        vbox.AddChild(MakeLabel("Descripcion:"));
-        _descEdit = new TextEdit();
-        _descEdit.CustomMinimumSize = new Vector2(0, 60);
-        _descEdit.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Descripcion:", 12));
+        _descEdit = RpgTheme.CreateRpgTextEdit("", 0, 60);
         vbox.AddChild(_descEdit);
 
         // URL
-        vbox.AddChild(MakeLabel("URL (opcional):"));
-        _urlEdit = new LineEdit();
-        _urlEdit.PlaceholderText = "http://...";
+        vbox.AddChild(RpgTheme.CreateInfoLabel("URL (opcional):", 12));
+        _urlEdit = RpgTheme.CreateRpgInput("http://...");
         vbox.AddChild(_urlEdit);
 
         // Codex
-        vbox.AddChild(MakeLabel("Codex (hasta 8 lineas):"));
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Codex (hasta 8 lineas):", 12));
         for (int i = 0; i < 8; i++)
         {
-            _codexEdits[i] = new LineEdit();
-            _codexEdits[i]!.PlaceholderText = $"Linea {i + 1}";
-            _codexEdits[i]!.AddThemeFontSizeOverride("font_size", 11);
+            _codexEdits[i] = RpgTheme.CreateRpgInput($"Linea {i + 1}");
             vbox.AddChild(_codexEdits[i]!);
         }
 
         // Buttons
-        var btnRow = new HBoxContainer();
-        _createBtn = new Button();
-        _createBtn.Text = "Fundar Clan";
-        _createBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
+
+        _createBtn = RpgTheme.CreateRpgButton("Fundar Clan", false, 13);
+        _createBtn.CustomMinimumSize = new Vector2(140, 34);
         _createBtn.Pressed += OnCreate;
         btnRow.AddChild(_createBtn);
 
-        _cancelBtn = new Button();
-        _cancelBtn.Text = "Cancelar";
-        _cancelBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _cancelBtn.Pressed += () => Hide();
+        _cancelBtn = RpgTheme.CreateRpgButton("Cancelar", false, 13);
+        _cancelBtn.CustomMinimumSize = new Vector2(110, 34);
+        _cancelBtn.Pressed += () => HideForm();
         btnRow.AddChild(_cancelBtn);
-        vbox.AddChild(btnRow);
-    }
-
-    private static Label MakeLabel(string text)
-    {
-        var lbl = new Label();
-        lbl.Text = text;
-        lbl.AddThemeFontSizeOverride("font_size", 11);
-        return lbl;
     }
 
     private void OnCreate()
@@ -148,27 +105,6 @@ public partial class GuildFoundationPanel : Control
             data += BF.ToString() + (_codexEdits[i]?.Text ?? "");
 
         _tcp.SendPacket(ClientPackets.WriteGuildCreate(data));
-        Hide();
-    }
-
-    public override void _GuiInput(InputEvent ev)
-    {
-        if (ev is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - GlobalPosition;
-                }
-                else
-                    _dragging = false;
-            }
-        }
-        else if (ev is InputEventMouseMotion mm && _dragging)
-        {
-            GlobalPosition = mm.GlobalPosition - _dragOffset;
-        }
+        HideForm();
     }
 }

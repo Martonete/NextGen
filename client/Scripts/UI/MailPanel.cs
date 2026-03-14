@@ -7,57 +7,46 @@ namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Mail panel — inbox list, read view, and compose view.
-/// Follows ForumPanel pattern: programmatic nodes, dark theme, draggable.
+/// 3 views toggled via visibility: inbox (0), read (1), compose (2).
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class MailPanel : Control
+public partial class MailPanel : RpgBaseForm
 {
-    private const int PanelW = 520;
-    private const int PanelH = 480;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
-
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
 
     // Current view: 0=inbox, 1=read, 2=compose
     private int _currentView;
 
-    // UI controls — shared
-    private Label? _titleLabel;
-    private Button? _closeBtn;
+    // Tab bar
     private HBoxContainer? _tabBar;
-    private Button? _tabInbox;
-    private Button? _tabCompose;
 
-    // Inbox view
-    private ScrollContainer? _inboxScroll;
+    // Views
+    private VBoxContainer? _inboxView;
+    private VBoxContainer? _readView;
+    private VBoxContainer? _composeView;
+
+    // Inbox controls
     private VBoxContainer? _inboxListBox;
     private Label? _inboxCountLabel;
 
-    // Read view
-    private Panel? _readPanel;
+    // Read controls
     private Label? _readSender;
     private Label? _readSubject;
     private Label? _readDate;
-    private RichTextLabel? _readBody;
+    private TextEdit? _readBody;
     private Label? _readAttachLabel;
-    private Button? _readReplyBtn;
-    private Button? _readDeleteBtn;
-    private Button? _readExtractBtn;
-    private Button? _readBackBtn;
+    private TextureButton? _readExtractBtn;
 
-    // Compose view
-    private Panel? _composePanel;
+    // Compose controls
     private LineEdit? _composeRecipient;
     private LineEdit? _composeSubject;
     private TextEdit? _composeBody;
-    private Button? _composeSendBtn;
-    private Button? _composeCancelBtn;
 
     // Currently selected mail for read view
     private MailEntry? _selectedMail;
+
+    public MailPanel() : base("Correo", new Vector2(520, 480), "v2") { }
 
     public void Init(GameState state, AoTcpClient tcp)
     {
@@ -65,214 +54,127 @@ public partial class MailPanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        // Clear selected mail when the form is hidden (close button, Hide(), etc.)
+        VisibilityChanged += () =>
+        {
+            if (!Visible) _selectedMail = null;
+        };
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
-
-        // Title
-        _titleLabel = new Label();
-        _titleLabel.Text = "Correo";
-        _titleLabel.Position = new Vector2(10, 4);
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(_titleLabel);
-
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 2);
-        _closeBtn.Size = new Vector2(24, 24);
-        _closeBtn.Pressed += OnClose;
-        AddChild(_closeBtn);
+        var root = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(root);
 
         // Tab bar
-        _tabBar = new HBoxContainer();
-        _tabBar.Position = new Vector2(8, 28);
-        _tabBar.Size = new Vector2(PanelW - 16, 28);
-        AddChild(_tabBar);
+        _tabBar = RpgTheme.CreateTabBar(
+            new[] { "Bandeja de Entrada", "Escribir" },
+            OnTabChanged
+        );
+        root.AddChild(_tabBar);
 
-        _tabInbox = new Button { Text = "Bandeja de Entrada", ToggleMode = true, ButtonPressed = true };
-        _tabInbox.CustomMinimumSize = new Vector2(160, 26);
-        _tabInbox.Pressed += () => SwitchView(0);
-        _tabBar.AddChild(_tabInbox);
+        // ── Inbox View ──────────────────────────────────────────
+        _inboxView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _inboxView.SizeFlagsVertical = SizeFlags.ExpandFill;
+        root.AddChild(_inboxView);
 
-        _tabCompose = new Button { Text = "Escribir", ToggleMode = true };
-        _tabCompose.CustomMinimumSize = new Vector2(100, 26);
-        _tabCompose.Pressed += () => SwitchView(2);
-        _tabBar.AddChild(_tabCompose);
-
-        BuildInboxView();
-        BuildReadView();
-        BuildComposeView();
-
-        // Bottom close button
-        var closeBottomBtn = new Button { Text = "Cerrar" };
-        closeBottomBtn.Position = new Vector2(PanelW - 80, PanelH - 36);
-        closeBottomBtn.Size = new Vector2(70, 28);
-        closeBottomBtn.Pressed += OnClose;
-        AddChild(closeBottomBtn);
-    }
-
-    private void BuildInboxView()
-    {
-        // Inbox count label
-        _inboxCountLabel = new Label();
-        _inboxCountLabel.Text = "0 mensajes";
-        _inboxCountLabel.Position = new Vector2(PanelW - 180, 30);
-        _inboxCountLabel.Size = new Vector2(160, 20);
+        _inboxCountLabel = RpgTheme.CreateInfoLabel("0 mensajes", 11);
         _inboxCountLabel.HorizontalAlignment = HorizontalAlignment.Right;
         _inboxCountLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.7f));
-        _inboxCountLabel.AddThemeFontSizeOverride("font_size", 11);
-        AddChild(_inboxCountLabel);
+        _inboxView.AddChild(_inboxCountLabel);
 
-        _inboxScroll = new ScrollContainer();
-        _inboxScroll.Position = new Vector2(8, 60);
-        _inboxScroll.Size = new Vector2(PanelW - 16, PanelH - 106);
-        AddChild(_inboxScroll);
+        _inboxListBox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _inboxListBox.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _inboxView.AddChild(_inboxListBox);
 
-        _inboxListBox = new VBoxContainer();
-        _inboxListBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _inboxScroll.AddChild(_inboxListBox);
-    }
+        // ── Read View ───────────────────────────────────────────
+        _readView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _readView.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _readView.Visible = false;
+        root.AddChild(_readView);
 
-    private void BuildReadView()
-    {
-        _readPanel = new Panel();
-        _readPanel.Position = new Vector2(8, 60);
-        _readPanel.Size = new Vector2(PanelW - 16, PanelH - 106);
-        _readPanel.Visible = false;
-        AddChild(_readPanel);
-
-        _readSender = new Label();
-        _readSender.Position = new Vector2(8, 8);
-        _readSender.Size = new Vector2(PanelW - 40, 18);
+        _readSender = RpgTheme.CreateInfoLabel("", 12);
         _readSender.AddThemeColorOverride("font_color", new Color(0.7f, 0.85f, 1.0f));
-        _readSender.AddThemeFontSizeOverride("font_size", 12);
-        _readPanel.AddChild(_readSender);
+        _readView.AddChild(_readSender);
 
-        _readSubject = new Label();
-        _readSubject.Position = new Vector2(8, 28);
-        _readSubject.Size = new Vector2(PanelW - 40, 20);
-        _readSubject.AddThemeFontSizeOverride("font_size", 13);
-        _readPanel.AddChild(_readSubject);
+        _readSubject = RpgTheme.CreateTitleLabel("", 14);
+        _readSubject.HorizontalAlignment = HorizontalAlignment.Left;
+        _readView.AddChild(_readSubject);
 
-        _readDate = new Label();
-        _readDate.Position = new Vector2(8, 50);
-        _readDate.Size = new Vector2(PanelW - 40, 16);
+        _readDate = RpgTheme.CreateInfoLabel("", 10);
         _readDate.AddThemeColorOverride("font_color", new Color(0.5f, 0.5f, 0.6f));
-        _readDate.AddThemeFontSizeOverride("font_size", 10);
-        _readPanel.AddChild(_readDate);
+        _readView.AddChild(_readDate);
 
-        // Separator
-        var sep = new HSeparator();
-        sep.Position = new Vector2(8, 68);
-        sep.Size = new Vector2(PanelW - 40, 2);
-        _readPanel.AddChild(sep);
+        _readView.AddChild(RpgTheme.CreateSeparator());
 
-        _readBody = new RichTextLabel();
-        _readBody.Position = new Vector2(8, 76);
-        _readBody.Size = new Vector2(PanelW - 40, PanelH - 260);
-        _readBody.BbcodeEnabled = false;
-        _readBody.ScrollActive = true;
-        _readPanel.AddChild(_readBody);
+        _readBody = RpgTheme.CreateRpgTextEdit("", 0, 180, readOnly: true);
+        _readView.AddChild(_readBody);
 
         // Attachment label
-        _readAttachLabel = new Label();
-        _readAttachLabel.Position = new Vector2(8, PanelH - 178);
-        _readAttachLabel.Size = new Vector2(PanelW - 40, 18);
+        _readAttachLabel = RpgTheme.CreateInfoLabel("", 11);
         _readAttachLabel.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.3f));
-        _readAttachLabel.AddThemeFontSizeOverride("font_size", 11);
         _readAttachLabel.Visible = false;
-        _readPanel.AddChild(_readAttachLabel);
+        _readView.AddChild(_readAttachLabel);
 
-        // Button row
-        float btnY = PanelH - 152;
+        // Read view buttons
+        var readBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _readView.AddChild(readBtnRow);
 
-        _readBackBtn = new Button { Text = "Volver" };
-        _readBackBtn.Position = new Vector2(8, btnY);
-        _readBackBtn.Size = new Vector2(70, 28);
-        _readBackBtn.Pressed += OnBackFromRead;
-        _readPanel.AddChild(_readBackBtn);
+        var readBackBtn = RpgTheme.CreateRpgButton("Volver", false, 12);
+        readBackBtn.CustomMinimumSize = new Vector2(70, 28);
+        readBackBtn.Pressed += OnBackFromRead;
+        readBtnRow.AddChild(readBackBtn);
 
-        _readReplyBtn = new Button { Text = "Responder" };
-        _readReplyBtn.Position = new Vector2(86, btnY);
-        _readReplyBtn.Size = new Vector2(90, 28);
-        _readReplyBtn.Pressed += OnReply;
-        _readPanel.AddChild(_readReplyBtn);
+        var readReplyBtn = RpgTheme.CreateRpgButton("Responder", false, 12);
+        readReplyBtn.CustomMinimumSize = new Vector2(90, 28);
+        readReplyBtn.Pressed += OnReply;
+        readBtnRow.AddChild(readReplyBtn);
 
-        _readExtractBtn = new Button { Text = "Retirar Adjunto" };
-        _readExtractBtn.Position = new Vector2(184, btnY);
-        _readExtractBtn.Size = new Vector2(120, 28);
+        _readExtractBtn = RpgTheme.CreateRpgButton("Retirar Adjunto", false, 11);
+        _readExtractBtn.CustomMinimumSize = new Vector2(120, 28);
         _readExtractBtn.Pressed += OnExtractAttachment;
-        _readPanel.AddChild(_readExtractBtn);
+        _readExtractBtn.Visible = false;
+        readBtnRow.AddChild(_readExtractBtn);
 
-        _readDeleteBtn = new Button { Text = "Eliminar" };
-        _readDeleteBtn.Position = new Vector2(PanelW - 106, btnY);
-        _readDeleteBtn.Size = new Vector2(80, 28);
-        _readDeleteBtn.Pressed += OnDeleteMail;
-        _readPanel.AddChild(_readDeleteBtn);
-    }
+        var readDeleteBtn = RpgTheme.CreateRpgButton("Eliminar", false, 12);
+        readDeleteBtn.CustomMinimumSize = new Vector2(80, 28);
+        readDeleteBtn.Pressed += OnDeleteMail;
+        readBtnRow.AddChild(readDeleteBtn);
 
-    private void BuildComposeView()
-    {
-        _composePanel = new Panel();
-        _composePanel.Position = new Vector2(8, 60);
-        _composePanel.Size = new Vector2(PanelW - 16, PanelH - 106);
-        _composePanel.Visible = false;
-        AddChild(_composePanel);
+        // ── Compose View ────────────────────────────────────────
+        _composeView = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _composeView.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _composeView.Visible = false;
+        root.AddChild(_composeView);
 
-        var recipLbl = new Label { Text = "Destinatario:" };
-        recipLbl.Position = new Vector2(8, 8);
-        _composePanel.AddChild(recipLbl);
+        _composeView.AddChild(RpgTheme.CreateInfoLabel("Destinatario:", 12));
 
-        _composeRecipient = new LineEdit();
-        _composeRecipient.Position = new Vector2(8, 28);
-        _composeRecipient.Size = new Vector2(PanelW - 40, 28);
+        _composeRecipient = RpgTheme.CreateRpgInput("Nombre del destinatario...");
         _composeRecipient.MaxLength = 30;
-        _composeRecipient.PlaceholderText = "Nombre del destinatario...";
-        _composePanel.AddChild(_composeRecipient);
+        _composeView.AddChild(_composeRecipient);
 
-        var subjectLbl = new Label { Text = "Asunto:" };
-        subjectLbl.Position = new Vector2(8, 62);
-        _composePanel.AddChild(subjectLbl);
+        _composeView.AddChild(RpgTheme.CreateInfoLabel("Asunto:", 12));
 
-        _composeSubject = new LineEdit();
-        _composeSubject.Position = new Vector2(8, 82);
-        _composeSubject.Size = new Vector2(PanelW - 40, 28);
+        _composeSubject = RpgTheme.CreateRpgInput("Asunto del mensaje...");
         _composeSubject.MaxLength = 100;
-        _composeSubject.PlaceholderText = "Asunto del mensaje...";
-        _composePanel.AddChild(_composeSubject);
+        _composeView.AddChild(_composeSubject);
 
-        var bodyLbl = new Label { Text = "Mensaje:" };
-        bodyLbl.Position = new Vector2(8, 116);
-        _composePanel.AddChild(bodyLbl);
+        _composeView.AddChild(RpgTheme.CreateInfoLabel("Mensaje:", 12));
 
-        _composeBody = new TextEdit();
-        _composeBody.Position = new Vector2(8, 136);
-        _composeBody.Size = new Vector2(PanelW - 40, PanelH - 280);
-        _composeBody.PlaceholderText = "Escribe tu mensaje...";
-        _composePanel.AddChild(_composeBody);
+        _composeBody = RpgTheme.CreateRpgTextEdit("Escribe tu mensaje...", 0, 160);
+        _composeView.AddChild(_composeBody);
 
-        float btnY = PanelH - 138;
+        var composeBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _composeView.AddChild(composeBtnRow);
 
-        _composeSendBtn = new Button { Text = "Enviar" };
-        _composeSendBtn.Position = new Vector2(PanelW - 210, btnY);
-        _composeSendBtn.Size = new Vector2(80, 28);
-        _composeSendBtn.Pressed += OnSendMail;
-        _composePanel.AddChild(_composeSendBtn);
+        var composeSendBtn = RpgTheme.CreateRpgButton("Enviar", false, 12);
+        composeSendBtn.CustomMinimumSize = new Vector2(80, 28);
+        composeSendBtn.Pressed += OnSendMail;
+        composeBtnRow.AddChild(composeSendBtn);
 
-        _composeCancelBtn = new Button { Text = "Cancelar" };
-        _composeCancelBtn.Position = new Vector2(PanelW - 120, btnY);
-        _composeCancelBtn.Size = new Vector2(90, 28);
-        _composeCancelBtn.Pressed += () => SwitchView(0);
-        _composePanel.AddChild(_composeCancelBtn);
+        var composeCancelBtn = RpgTheme.CreateRpgButton("Cancelar", false, 12);
+        composeCancelBtn.CustomMinimumSize = new Vector2(90, 28);
+        composeCancelBtn.Pressed += () => SwitchView(0);
+        composeBtnRow.AddChild(composeCancelBtn);
     }
 
     public override void _Process(double delta)
@@ -302,7 +204,7 @@ public partial class MailPanel : Control
         if (_state == null) return;
         SwitchView(0);
         BuildInboxList();
-        Visible = true;
+        ShowForm();
     }
 
     /// <summary>
@@ -316,17 +218,28 @@ public partial class MailPanel : Control
             ShowPanel();
     }
 
+    private void OnTabChanged(int tab)
+    {
+        // Tab 0 = Inbox, Tab 1 = Compose
+        if (tab == 0)
+            SwitchView(0);
+        else if (tab == 1)
+            SwitchView(2);
+    }
+
     private void SwitchView(int view)
     {
         _currentView = view;
 
-        _tabInbox!.ButtonPressed = (view == 0);
-        _tabCompose!.ButtonPressed = (view == 2);
+        // Update tab bar (inbox=tab0, compose=tab1, read=no tab)
+        if (view == 0)
+            RpgTheme.SetTabBarActive(_tabBar!, 0);
+        else if (view == 2)
+            RpgTheme.SetTabBarActive(_tabBar!, 1);
 
-        _inboxScroll!.Visible = (view == 0);
-        _inboxCountLabel!.Visible = (view == 0);
-        _readPanel!.Visible = (view == 1);
-        _composePanel!.Visible = (view == 2);
+        _inboxView!.Visible = (view == 0);
+        _readView!.Visible = (view == 1);
+        _composeView!.Visible = (view == 2);
 
         if (view == 0)
             BuildInboxList();
@@ -352,7 +265,7 @@ public partial class MailPanel : Control
 
         if (mails.Count == 0)
         {
-            var emptyLbl = new Label { Text = "No tienes mensajes." };
+            var emptyLbl = RpgTheme.CreateInfoLabel("No tienes mensajes.", 11);
             emptyLbl.AddThemeColorOverride("font_color", new Color(0.5f, 0.5f, 0.5f));
             _inboxListBox.AddChild(emptyLbl);
             return;
@@ -360,39 +273,37 @@ public partial class MailPanel : Control
 
         foreach (var mail in mails)
         {
-            var row = new HBoxContainer();
-            row.CustomMinimumSize = new Vector2(PanelW - 30, 34);
+            var row = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+            row.CustomMinimumSize = new Vector2(0, 32);
 
             // Unread indicator
-            var indicator = new Label();
-            indicator.Text = mail.Read ? "  " : "● ";
-            indicator.CustomMinimumSize = new Vector2(20, 30);
+            var indicator = RpgTheme.CreateInfoLabel(mail.Read ? "  " : "* ", 12);
+            indicator.CustomMinimumSize = new Vector2(20, 28);
             indicator.AddThemeColorOverride("font_color",
                 mail.Read ? new Color(0.3f, 0.3f, 0.3f) : new Color(1.0f, 0.85f, 0.2f));
-            indicator.AddThemeFontSizeOverride("font_size", 12);
             row.AddChild(indicator);
 
             // Mail info button (clickable to open)
             var captured = mail;
-            var infoBtn = new Button();
-            infoBtn.Text = $"{mail.Sender}: {mail.Subject}  ({mail.Date})";
+            var infoBtn = RpgTheme.CreateRpgButton("", true, 11);
             infoBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            infoBtn.Alignment = HorizontalAlignment.Left;
-            infoBtn.ClipText = true;
-            infoBtn.CustomMinimumSize = new Vector2(0, 30);
+            infoBtn.CustomMinimumSize = new Vector2(0, 28);
 
-            if (!mail.Read)
-                infoBtn.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f));
-            else
-                infoBtn.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
+            if (infoBtn.GetChildCount() > 0 && infoBtn.GetChild(0) is Label lbl)
+            {
+                lbl.Text = $"{mail.Sender}: {mail.Subject}  ({mail.Date})";
+                lbl.HorizontalAlignment = HorizontalAlignment.Left;
+                if (!mail.Read)
+                    lbl.AddThemeColorOverride("font_color", new Color(1.0f, 1.0f, 1.0f));
+                else
+                    lbl.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
+            }
 
             infoBtn.Pressed += () => OnOpenMail(captured);
             row.AddChild(infoBtn);
 
             // Delete button
-            var delBtn = new Button();
-            delBtn.Text = "X";
-            delBtn.CustomMinimumSize = new Vector2(28, 28);
+            var delBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(24, 24));
             delBtn.TooltipText = "Eliminar mensaje";
             delBtn.Pressed += () => OnDeleteMailFromList(captured);
             row.AddChild(delBtn);
@@ -404,14 +315,7 @@ public partial class MailPanel : Control
     private void OnOpenMail(MailEntry mail)
     {
         // If we already have the body, show it directly
-        if (!string.IsNullOrEmpty(mail.Body))
-        {
-            ShowReadView(mail);
-            return;
-        }
-
-        // Otherwise request full content from server
-        // For now, show what we have (the server should send MailContent in response)
+        // Otherwise request full content from server (the server should send MailContent in response)
         ShowReadView(mail);
     }
 
@@ -420,13 +324,12 @@ public partial class MailPanel : Control
         _selectedMail = mail;
         _currentView = 1;
 
-        _inboxScroll!.Visible = false;
-        _inboxCountLabel!.Visible = false;
-        _composePanel!.Visible = false;
-        _readPanel!.Visible = true;
+        _inboxView!.Visible = false;
+        _composeView!.Visible = false;
+        _readView!.Visible = true;
 
-        _tabInbox!.ButtonPressed = false;
-        _tabCompose!.ButtonPressed = false;
+        // No tab is active when reading
+        RpgTheme.SetTabBarActive(_tabBar!, -1);
 
         _readSender!.Text = $"De: {mail.Sender}";
         _readSubject!.Text = mail.Subject;
@@ -577,32 +480,7 @@ public partial class MailPanel : Control
 
     private void OnClose()
     {
-        Visible = false;
+        HideForm();
         _selectedMail = null;
-    }
-
-    // ── Dragging ─────────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.Position;
-                }
-                else
-                {
-                    _dragging = false;
-                }
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            Position += mm.Position - _dragOffset;
-        }
     }
 }

@@ -1071,32 +1071,48 @@ public static class RpgTheme
     public static HBoxContainer CreateTabBar(string[] tabNames, Action<int>? onTabChanged = null)
     {
         var bar = new HBoxContainer();
-        bar.AddThemeConstantOverride("separation", 2);
+        bar.AddThemeConstantOverride("separation", 4);
         bar.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
 
-        var buttons = new Button[tabNames.Length];
+        var controls = new Control[tabNames.Length];
         for (int i = 0; i < tabNames.Length; i++)
         {
             int idx = i;
-            var btn = new Button();
-            btn.Text = tabNames[i];
+            var btn = new TextureButton();
+            btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+            btn.TextureNormal = GetTex("mid_button.png");
+            btn.TextureHover = GetTex("mid_button_on.png");
+            btn.TexturePressed = GetTex("mid_button_on.png");
+            btn.StretchMode = TextureButton.StretchModeEnum.Scale;
+            btn.IgnoreTextureSize = true;
             btn.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
             btn.CustomMinimumSize = new Vector2(0, 28);
-            btn.AddThemeFontSizeOverride("font_size", 12);
-            btn.FocusMode = Control.FocusModeEnum.None;
+
+            var label = new Label();
+            label.Text = tabNames[i];
+            label.HorizontalAlignment = HorizontalAlignment.Center;
+            label.VerticalAlignment = VerticalAlignment.Center;
+            label.AddThemeFontSizeOverride("font_size", 12);
+            label.AddThemeColorOverride("font_color", new Color(0.9f, 0.85f, 0.7f));
+            label.AddThemeColorOverride("font_shadow_color", new Color(0, 0, 0, 0.8f));
+            label.AddThemeConstantOverride("shadow_offset_x", 1);
+            label.AddThemeConstantOverride("shadow_offset_y", 1);
+            label.MouseFilter = Control.MouseFilterEnum.Ignore;
+            btn.AddChild(label);
+            FillParent(label);
+
             btn.Pressed += () =>
             {
                 SetTabBarActive(bar, idx);
                 onTabChanged?.Invoke(idx);
             };
             bar.AddChild(btn);
-            buttons[i] = btn;
+            controls[i] = btn;
         }
 
-        bar.SetMeta("buttons", Variant.From(new Godot.Collections.Array(buttons)));
+        bar.SetMeta("buttons", Variant.From(new Godot.Collections.Array(controls)));
         bar.SetMeta("active", 0);
 
-        // Apply initial style
         bar.Ready += () => SetTabBarActive(bar, 0);
 
         return bar;
@@ -1104,48 +1120,15 @@ public static class RpgTheme
 
     /// <summary>
     /// Set the active tab in a tab bar created by CreateTabBar().
+    /// Active tab: full brightness. Inactive: dimmed (same as Inventario/Hechizos tabs).
     /// </summary>
     public static void SetTabBarActive(HBoxContainer tabBar, int activeIndex)
     {
         tabBar.SetMeta("active", activeIndex);
         for (int i = 0; i < tabBar.GetChildCount(); i++)
         {
-            if (tabBar.GetChild(i) is not Button btn) continue;
-
-            if (i == activeIndex)
-            {
-                var active = new StyleBoxFlat();
-                active.BgColor = new Color(0.22f, 0.18f, 0.12f, 1f);
-                active.BorderColor = new Color(0.65f, 0.55f, 0.35f, 1f);
-                active.BorderWidthBottom = 2;
-                active.BorderWidthLeft = 1;
-                active.BorderWidthRight = 1;
-                active.BorderWidthTop = 1;
-                active.SetCornerRadiusAll(2);
-                active.ContentMarginLeft = 6; active.ContentMarginRight = 6;
-                active.ContentMarginTop = 4;  active.ContentMarginBottom = 4;
-                btn.AddThemeStyleboxOverride("normal", active);
-                btn.AddThemeStyleboxOverride("hover", active);
-                btn.AddThemeStyleboxOverride("pressed", active);
-                btn.AddThemeColorOverride("font_color", new Color(0.95f, 0.9f, 0.75f));
-            }
-            else
-            {
-                var inactive = new StyleBoxFlat();
-                inactive.BgColor = new Color(0.12f, 0.10f, 0.08f, 0.8f);
-                inactive.BorderColor = new Color(0.4f, 0.35f, 0.25f, 0.6f);
-                inactive.SetBorderWidthAll(1);
-                inactive.SetCornerRadiusAll(2);
-                inactive.ContentMarginLeft = 6; inactive.ContentMarginRight = 6;
-                inactive.ContentMarginTop = 4;  inactive.ContentMarginBottom = 4;
-                btn.AddThemeStyleboxOverride("normal", inactive);
-
-                var hover = (StyleBoxFlat)inactive.Duplicate();
-                hover.BgColor = new Color(0.16f, 0.14f, 0.10f, 0.9f);
-                btn.AddThemeStyleboxOverride("hover", hover);
-                btn.AddThemeStyleboxOverride("pressed", (StyleBoxFlat)hover.Duplicate());
-                btn.AddThemeColorOverride("font_color", new Color(0.7f, 0.65f, 0.5f));
-            }
+            if (tabBar.GetChild(i) is not TextureButton btn) continue;
+            btn.Modulate = i == activeIndex ? Colors.White : new Color(0.6f, 0.55f, 0.5f);
         }
     }
 

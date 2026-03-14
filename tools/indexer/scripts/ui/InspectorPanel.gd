@@ -1716,5 +1716,3 @@ func _anim_step(dir: int) -> void:
 	_anim_frame_idx = clampi(_anim_frame_idx + dir, 0, _frames_for_anim.size() - 1)
 	_preview.show_frame(_anim_frame_idx)
 	_lbl_anim_info.text = "%d / %d" % [_anim_frame_idx + 1, _frames_for_anim.size()]
-
-

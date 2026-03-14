@@ -11,38 +11,25 @@ namespace ArgentumNextgen.UI;
 /// Commands: /NUEVAPARTY, /PARTY target, /FINPARTY, /CANCELAR, /PINFO, /SACAR target, /DARPARTIDO target.
 /// The server sends party info as console messages (text-based). This panel
 /// parses incoming console messages tagged as party info to populate the member list.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class PartyPanel : Control
+public partial class PartyPanel : RpgBaseForm
 {
-    private const int PanelW = 300;
-    private const int PanelH = 340;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     // Controls
-    private Label? _titleLabel;
-    private Button? _closeBtn;
-    private VBoxContainer? _contentBox;
-    private ScrollContainer? _scrollContainer;
-
-    // Member list
     private VBoxContainer? _memberListBox;
 
     // Action buttons
-    private Button? _createBtn;
-    private Button? _disbandBtn;
-    private Button? _leaveBtn;
-    private Button? _refreshBtn;
+    private TextureButton? _createBtn;
+    private TextureButton? _disbandBtn;
+    private TextureButton? _leaveBtn;
+    private TextureButton? _refreshBtn;
 
     // Invite row
-    private HBoxContainer? _inviteRow;
     private LineEdit? _inviteNameEdit;
-    private Button? _inviteBtn;
+    private TextureButton? _inviteBtn;
 
     // Context menu (right-click on member)
     private PopupMenu? _contextMenu;
@@ -60,48 +47,70 @@ public partial class PartyPanel : Control
     private bool _parsingPinfo;
     private readonly List<string> _pinfoLines = new();
 
+    public PartyPanel() : base("Grupo", new Vector2(300, 380), "v2") { }
+
     public void Init(GameState state, AoTcpClient tcp)
     {
         _state = state;
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        ContentContainer.AddChild(vbox);
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
+        // Invite row
+        var inviteRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        vbox.AddChild(inviteRow);
 
-        // Title
-        _titleLabel = new Label();
-        _titleLabel.Text = "Grupo";
-        _titleLabel.Position = new Vector2(10, 4);
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(_titleLabel);
+        _inviteNameEdit = RpgTheme.CreateRpgInput("Nombre del jugador...", 150);
+        inviteRow.AddChild(_inviteNameEdit);
 
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 2);
-        _closeBtn.Size = new Vector2(24, 24);
-        _closeBtn.Pressed += () => Hide();
-        AddChild(_closeBtn);
+        _inviteBtn = RpgTheme.CreateRpgButton("Invitar", false, 12);
+        _inviteBtn.CustomMinimumSize = new Vector2(70, 30);
+        _inviteBtn.Pressed += OnInvitePressed;
+        inviteRow.AddChild(_inviteBtn);
 
-        // Content container
-        _scrollContainer = new ScrollContainer();
-        _scrollContainer.Position = new Vector2(8, 30);
-        _scrollContainer.Size = new Vector2(PanelW - 16, PanelH - 38);
-        AddChild(_scrollContainer);
+        // Separator
+        vbox.AddChild(RpgTheme.CreateSeparator());
 
-        _contentBox = new VBoxContainer();
-        _contentBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _scrollContainer.AddChild(_contentBox);
+        // Members header
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Miembros:", 13));
+
+        // Member list (scrollable VBox)
+        _memberListBox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _memberListBox.CustomMinimumSize = new Vector2(0, 120);
+        vbox.AddChild(_memberListBox);
+
+        // Separator
+        vbox.AddChild(RpgTheme.CreateSeparator());
+
+        // Action buttons row
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
+
+        _createBtn = RpgTheme.CreateRpgButton("Crear", false, 11);
+        _createBtn.CustomMinimumSize = new Vector2(70, 28);
+        _createBtn.Pressed += OnCreatePressed;
+        btnRow.AddChild(_createBtn);
+
+        _disbandBtn = RpgTheme.CreateRpgButton("Disolver", false, 11);
+        _disbandBtn.CustomMinimumSize = new Vector2(70, 28);
+        _disbandBtn.Pressed += OnDisbandPressed;
+        btnRow.AddChild(_disbandBtn);
+
+        _leaveBtn = RpgTheme.CreateRpgButton("Salir", false, 11);
+        _leaveBtn.CustomMinimumSize = new Vector2(60, 28);
+        _leaveBtn.Pressed += OnLeavePressed;
+        btnRow.AddChild(_leaveBtn);
+
+        // Refresh button
+        _refreshBtn = RpgTheme.CreateRpgButton("Actualizar (/PINFO)", true, 12);
+        _refreshBtn.CustomMinimumSize = new Vector2(0, 30);
+        _refreshBtn.Pressed += OnRefreshPressed;
+        vbox.AddChild(_refreshBtn);
 
         // Context menu for right-click actions
         _contextMenu = new PopupMenu();
@@ -109,81 +118,6 @@ public partial class PartyPanel : Control
         _contextMenu.AddItem("Dar liderazgo", 1);
         _contextMenu.IdPressed += OnContextMenuItemPressed;
         AddChild(_contextMenu);
-
-        BuildUI();
-    }
-
-    private void BuildUI()
-    {
-        if (_contentBox == null) return;
-
-        // Clear existing
-        foreach (var child in _contentBox.GetChildren())
-            child.QueueFree();
-
-        // Invite row
-        _inviteRow = new HBoxContainer();
-        _inviteNameEdit = new LineEdit();
-        _inviteNameEdit.PlaceholderText = "Nombre del jugador...";
-        _inviteNameEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _inviteNameEdit.CustomMinimumSize = new Vector2(150, 0);
-        _inviteRow.AddChild(_inviteNameEdit);
-
-        _inviteBtn = new Button();
-        _inviteBtn.Text = "Invitar";
-        _inviteBtn.Pressed += OnInvitePressed;
-        _inviteRow.AddChild(_inviteBtn);
-        _contentBox.AddChild(_inviteRow);
-
-        // Separator
-        var sep1 = new HSeparator();
-        sep1.CustomMinimumSize = new Vector2(0, 8);
-        _contentBox.AddChild(sep1);
-
-        // Members header
-        var memHeader = new Label();
-        memHeader.Text = "Miembros:";
-        memHeader.AddThemeFontSizeOverride("font_size", 12);
-        _contentBox.AddChild(memHeader);
-
-        // Member list (scrollable VBox with HP bars)
-        _memberListBox = new VBoxContainer();
-        _memberListBox.CustomMinimumSize = new Vector2(PanelW - 24, 120);
-        _contentBox.AddChild(_memberListBox);
-
-        // Separator
-        var sep2 = new HSeparator();
-        sep2.CustomMinimumSize = new Vector2(0, 8);
-        _contentBox.AddChild(sep2);
-
-        // Action buttons row
-        var btnRow = new HBoxContainer();
-
-        _createBtn = new Button();
-        _createBtn.Text = "Crear Grupo";
-        _createBtn.Pressed += OnCreatePressed;
-        _createBtn.CustomMinimumSize = new Vector2(85, 0);
-        btnRow.AddChild(_createBtn);
-
-        _disbandBtn = new Button();
-        _disbandBtn.Text = "Disolver";
-        _disbandBtn.Pressed += OnDisbandPressed;
-        _disbandBtn.CustomMinimumSize = new Vector2(70, 0);
-        btnRow.AddChild(_disbandBtn);
-
-        _leaveBtn = new Button();
-        _leaveBtn.Text = "Salir";
-        _leaveBtn.Pressed += OnLeavePressed;
-        _leaveBtn.CustomMinimumSize = new Vector2(55, 0);
-        btnRow.AddChild(_leaveBtn);
-
-        _contentBox.AddChild(btnRow);
-
-        // Refresh button
-        _refreshBtn = new Button();
-        _refreshBtn.Text = "Actualizar info (/PINFO)";
-        _refreshBtn.Pressed += OnRefreshPressed;
-        _contentBox.AddChild(_refreshBtn);
 
         UpdateButtonStates();
         RefreshMemberList();
@@ -196,12 +130,11 @@ public partial class PartyPanel : Control
     {
         if (Visible)
         {
-            Hide();
+            HideForm();
         }
         else
         {
-            Show();
-            // Request party info
+            ShowForm();
             RequestPartyInfo();
         }
     }
@@ -211,7 +144,7 @@ public partial class PartyPanel : Control
     /// </summary>
     public void OpenPanel()
     {
-        Show();
+        ShowForm();
         RequestPartyInfo();
     }
 
@@ -334,9 +267,8 @@ public partial class PartyPanel : Control
 
         if (_members.Count == 0)
         {
-            var emptyLabel = new Label();
-            emptyLabel.Text = _inParty ? "(Esperando info...)" : "No perteneces a un grupo.";
-            emptyLabel.AddThemeFontSizeOverride("font_size", 11);
+            var emptyLabel = RpgTheme.CreateInfoLabel(
+                _inParty ? "(Esperando info...)" : "No perteneces a un grupo.", 11);
             emptyLabel.Modulate = new Color(0.6f, 0.6f, 0.6f);
             _memberListBox.AddChild(emptyLabel);
             return;
@@ -345,35 +277,23 @@ public partial class PartyPanel : Control
         for (int i = 0; i < _members.Count; i++)
         {
             var member = _members[i];
-            var row = new HBoxContainer();
-            row.CustomMinimumSize = new Vector2(PanelW - 32, 24);
+            var row = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+            row.CustomMinimumSize = new Vector2(0, 24);
 
             // Leader tag + name
-            var nameLabel = new Label();
             string tag = member.IsLeader ? "[L] " : "    ";
-            nameLabel.Text = $"{tag}{member.Name}";
-            nameLabel.AddThemeFontSizeOverride("font_size", 11);
+            var nameLabel = RpgTheme.CreateInfoLabel($"{tag}{member.Name}", 11);
             nameLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
             if (member.IsLeader)
                 nameLabel.Modulate = new Color(1.0f, 0.85f, 0.2f); // Gold for leader
             row.AddChild(nameLabel);
 
-            // HP bar (placeholder — server doesn't send HP info in PINFO)
-            var hpBar = new ProgressBar();
-            hpBar.CustomMinimumSize = new Vector2(60, 16);
+            // HP bar
+            var hpBar = RpgTheme.CreateRpgProgressBar(60, 16,
+                fillColor: new Color(0.2f, 0.7f, 0.2f),
+                bgColor: new Color(0.3f, 0.1f, 0.1f));
             hpBar.MaxValue = 100;
             hpBar.Value = member.HpPercent > 0 ? member.HpPercent : 100;
-            hpBar.ShowPercentage = false;
-
-            // Style the HP bar green
-            var styleFill = new StyleBoxFlat();
-            styleFill.BgColor = new Color(0.2f, 0.7f, 0.2f);
-            hpBar.AddThemeStyleboxOverride("fill", styleFill);
-
-            var styleBg = new StyleBoxFlat();
-            styleBg.BgColor = new Color(0.3f, 0.1f, 0.1f);
-            hpBar.AddThemeStyleboxOverride("background", styleBg);
-
             row.AddChild(hpBar);
 
             _memberListBox.AddChild(row);
@@ -429,7 +349,7 @@ public partial class PartyPanel : Control
         if (_refreshBtn != null) _refreshBtn.Disabled = !_inParty;
     }
 
-    // ── Button Handlers ──────────────────────────────────────────────
+    // -- Button Handlers --
 
     private void OnCreatePressed()
     {
@@ -458,29 +378,6 @@ public partial class PartyPanel : Control
     private void OnRefreshPressed()
     {
         RequestPartyInfo();
-    }
-
-    // ── Drag ─────────────────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent ev)
-    {
-        if (ev is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - GlobalPosition;
-                }
-                else
-                    _dragging = false;
-            }
-        }
-        else if (ev is InputEventMouseMotion mm && _dragging)
-        {
-            GlobalPosition = mm.GlobalPosition - _dragOffset;
-        }
     }
 }
 

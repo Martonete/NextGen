@@ -10,19 +10,12 @@ namespace ArgentumNextgen.UI;
 /// VB6 frmSpawnList — NPC spawn list for GMs.
 /// Filterable list of NPCs by name. Selecting + clicking Spawn sends /ACC command.
 /// Can be populated from GameData NPC definitions or a simple index input.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class SpawnListPanel : PanelContainer
+public partial class SpawnListPanel : RpgBaseForm
 {
-    private const int PanelW = 320;
-    private const int PanelH = 420;
-    private const int TitleBarH = 28;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
-
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
 
     // Controls
     private LineEdit? _searchEdit;
@@ -33,6 +26,8 @@ public partial class SpawnListPanel : PanelContainer
     // NPC data: (index, name)
     private readonly List<(int index, string name)> _allNpcs = new();
     private readonly List<(int index, string name)> _filteredNpcs = new();
+
+    public SpawnListPanel() : base("Lista de NPCs", new Vector2(320, 420), "v2") { }
 
     public void Init(GameState state, AoTcpClient? tcp)
     {
@@ -58,83 +53,37 @@ public partial class SpawnListPanel : PanelContainer
         ApplyFilter("");
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
-
-        var style = new StyleBoxFlat();
-        style.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        style.BorderColor = new Color(0.4f, 0.35f, 0.25f, 1f);
-        style.SetBorderWidthAll(2);
-        style.SetCornerRadiusAll(3);
-        AddThemeStyleboxOverride("panel", style);
-
-        var root = new VBoxContainer();
-        root.SetAnchorsPreset(LayoutPreset.FullRect);
-        root.AddThemeConstantOverride("separation", 4);
-        AddChild(root);
-
-        // Title bar
-        var titleBar = new HBoxContainer();
-        titleBar.CustomMinimumSize = new Vector2(0, TitleBarH);
-        root.AddChild(titleBar);
-
-        var titleLabel = new Label();
-        titleLabel.Text = "  Lista de NPCs";
-        titleLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.5f));
-        titleLabel.AddThemeFontSizeOverride("font_size", 13);
-        titleBar.AddChild(titleLabel);
-
-        var closeBtn = new Button();
-        closeBtn.Text = "X";
-        closeBtn.CustomMinimumSize = new Vector2(28, 24);
-        closeBtn.Pressed += () => Visible = false;
-        titleBar.AddChild(closeBtn);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(vbox);
 
         // Search bar
-        _searchEdit = new LineEdit();
-        _searchEdit.PlaceholderText = "Filtrar por nombre...";
+        _searchEdit = RpgTheme.CreateRpgInput("Filtrar por nombre...");
         _searchEdit.TextChanged += OnSearchTextChanged;
-        root.AddChild(_searchEdit);
+        vbox.AddChild(_searchEdit);
 
         // NPC list
-        _npcList = new ItemList();
-        _npcList.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _npcList.CustomMinimumSize = new Vector2(PanelW - 16, 200);
-        _npcList.AddThemeFontSizeOverride("font_size", 11);
-        root.AddChild(_npcList);
+        _npcList = RpgTheme.CreateRpgItemList(0, 200);
+        vbox.AddChild(_npcList);
 
         // Manual index row
-        var manualRow = new HBoxContainer();
-        manualRow.AddThemeConstantOverride("separation", 4);
-        root.AddChild(manualRow);
+        var manualRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        vbox.AddChild(manualRow);
 
-        var idxLabel = new Label();
-        idxLabel.Text = "Index:";
-        idxLabel.AddThemeFontSizeOverride("font_size", 11);
-        manualRow.AddChild(idxLabel);
+        manualRow.AddChild(RpgTheme.CreateInfoLabel("Index:", 12));
 
-        _manualIndexEdit = new LineEdit();
-        _manualIndexEdit.CustomMinimumSize = new Vector2(60, 0);
-        _manualIndexEdit.PlaceholderText = "NPC #";
+        _manualIndexEdit = RpgTheme.CreateRpgInput("NPC #", 60);
         manualRow.AddChild(_manualIndexEdit);
 
-        var qtyLabel = new Label();
-        qtyLabel.Text = "Cant:";
-        qtyLabel.AddThemeFontSizeOverride("font_size", 11);
-        manualRow.AddChild(qtyLabel);
+        manualRow.AddChild(RpgTheme.CreateInfoLabel("Cant:", 12));
 
-        _quantityEdit = new LineEdit();
-        _quantityEdit.CustomMinimumSize = new Vector2(40, 0);
+        _quantityEdit = RpgTheme.CreateRpgInput("", 40);
         _quantityEdit.Text = "1";
         manualRow.AddChild(_quantityEdit);
 
         // Spawn button
-        var spawnBtn = new Button();
-        spawnBtn.Text = "Spawn";
+        var spawnBtn = RpgTheme.CreateRpgButton("Spawn", false, 13);
         spawnBtn.CustomMinimumSize = new Vector2(80, 28);
         spawnBtn.Pressed += OnSpawnPressed;
         manualRow.AddChild(spawnBtn);
@@ -195,31 +144,6 @@ public partial class SpawnListPanel : PanelContainer
 
     public void Open()
     {
-        Visible = true;
-    }
-
-    // ── Dragging ──────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.Position;
-                    AcceptEvent();
-                }
-                else if (!mb.Pressed)
-                    _dragging = false;
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            Position += mm.Relative;
-            AcceptEvent();
-        }
+        ShowForm();
     }
 }

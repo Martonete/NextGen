@@ -10,19 +10,12 @@ namespace ArgentumNextgen.UI;
 /// SOS/Help request panel for GMs.
 /// Displays player help requests (/GM messages). GMs can click to teleport to the requester.
 /// Populated from server SOS notifications (ShowSOSForm packet or similar).
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class SosPanel : PanelContainer
+public partial class SosPanel : RpgBaseForm
 {
-    private const int PanelW = 360;
-    private const int PanelH = 350;
-    private const int TitleBarH = 28;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
-
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
 
     // Controls
     private ItemList? _sosList;
@@ -30,6 +23,8 @@ public partial class SosPanel : PanelContainer
 
     // SOS entries: (playerName, message)
     private readonly List<(string name, string message)> _entries = new();
+
+    public SosPanel() : base("Pedidos de Ayuda (SOS)", new Vector2(360, 350), "v2") { }
 
     public void Init(GameState state, AoTcpClient? tcp)
     {
@@ -39,79 +34,42 @@ public partial class SosPanel : PanelContainer
 
     public void SetTcp(AoTcpClient? tcp) => _tcp = tcp;
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
-
-        var style = new StyleBoxFlat();
-        style.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        style.BorderColor = new Color(0.6f, 0.4f, 0.1f, 1f);
-        style.SetBorderWidthAll(2);
-        style.SetCornerRadiusAll(3);
-        AddThemeStyleboxOverride("panel", style);
-
-        var root = new VBoxContainer();
-        root.SetAnchorsPreset(LayoutPreset.FullRect);
-        root.AddThemeConstantOverride("separation", 4);
-        AddChild(root);
-
-        // Title bar
-        var titleBar = new HBoxContainer();
-        titleBar.CustomMinimumSize = new Vector2(0, TitleBarH);
-        root.AddChild(titleBar);
-
-        var titleLabel = new Label();
-        titleLabel.Text = "  Pedidos de Ayuda (SOS)";
-        titleLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.5f));
-        titleLabel.AddThemeFontSizeOverride("font_size", 13);
-        titleBar.AddChild(titleLabel);
-
-        var closeBtn = new Button();
-        closeBtn.Text = "X";
-        closeBtn.CustomMinimumSize = new Vector2(28, 24);
-        closeBtn.Pressed += () => Visible = false;
-        titleBar.AddChild(closeBtn);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(vbox);
 
         // SOS list
-        _sosList = new ItemList();
-        _sosList.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _sosList.CustomMinimumSize = new Vector2(PanelW - 16, 150);
-        _sosList.AddThemeFontSizeOverride("font_size", 11);
+        _sosList = RpgTheme.CreateRpgItemList(0, 150);
         _sosList.ItemSelected += OnSosSelected;
-        root.AddChild(_sosList);
+        vbox.AddChild(_sosList);
 
         // Detail label
-        _detailLabel = new Label();
+        _detailLabel = RpgTheme.CreateInfoLabel("Seleccione un pedido para ver el detalle.", 11);
         _detailLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _detailLabel.CustomMinimumSize = new Vector2(PanelW - 16, 40);
-        _detailLabel.AddThemeFontSizeOverride("font_size", 11);
+        _detailLabel.CustomMinimumSize = new Vector2(0, 40);
         _detailLabel.AddThemeColorOverride("font_color", Colors.White);
-        _detailLabel.Text = "Seleccione un pedido para ver el detalle.";
-        root.AddChild(_detailLabel);
+        vbox.AddChild(_detailLabel);
 
         // Action buttons
-        var btnRow = new HBoxContainer();
-        btnRow.AddThemeConstantOverride("separation", 4);
-        root.AddChild(btnRow);
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        vbox.AddChild(btnRow);
 
-        var goToBtn = new Button();
-        goToBtn.Text = "Ir al jugador";
+        var goToBtn = RpgTheme.CreateRpgButton("Ir al jugador", false, 12);
         goToBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        goToBtn.CustomMinimumSize = new Vector2(0, 30);
         goToBtn.Pressed += OnGoToPressed;
         btnRow.AddChild(goToBtn);
 
-        var removeBtn = new Button();
-        removeBtn.Text = "Remover";
+        var removeBtn = RpgTheme.CreateRpgButton("Remover", false, 12);
         removeBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        removeBtn.CustomMinimumSize = new Vector2(0, 30);
         removeBtn.Pressed += OnRemovePressed;
         btnRow.AddChild(removeBtn);
 
-        var clearBtn = new Button();
-        clearBtn.Text = "Limpiar todo";
+        var clearBtn = RpgTheme.CreateRpgButton("Limpiar todo", false, 12);
         clearBtn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        clearBtn.CustomMinimumSize = new Vector2(0, 30);
         clearBtn.Pressed += () =>
         {
             _entries.Clear();
@@ -177,31 +135,6 @@ public partial class SosPanel : PanelContainer
 
     public void Open()
     {
-        Visible = true;
-    }
-
-    // ── Dragging ──────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.Position;
-                    AcceptEvent();
-                }
-                else if (!mb.Pressed)
-                    _dragging = false;
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            Position += mm.Relative;
-            AcceptEvent();
-        }
+        ShowForm();
     }
 }

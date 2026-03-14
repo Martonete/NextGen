@@ -162,13 +162,16 @@ public partial class PacketHandler
             Slot = slot,
             Head = head,
             Body = body,
+            Weapon = weapon,
+            Shield = shield,
+            Helmet = helmet,
             Level = level,
             Class = charClass,
             Dead = dead,
             Race = race,
         };
         _state.CharacterList.Add(preview);
-        GD.Print($"[LOGIN] ADDPJ (binary): {name} Lvl {level} ({charClass})");
+        GD.Print($"[LOGIN] ADDPJ (binary): {name} Lvl {level} ({charClass}) body={body} head={head} weapon={weapon} shield={shield} helmet={helmet}");
     }
 
 

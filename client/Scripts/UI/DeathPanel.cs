@@ -57,6 +57,7 @@ public partial class DeathPanel : Control
         Size = new Vector2(PanelW, PanelH);
         MouseFilter = MouseFilterEnum.Stop;
         FocusMode = FocusModeEnum.None;
+        ZIndex = RpgBaseForm.ZDialog;
     }
 
     private void LoadTextures()

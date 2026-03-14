@@ -693,12 +693,14 @@ public partial class Main : Control
 		{
 			if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
 			{
-				// Server dropped connection during login/account creation — reset UI immediately
+				// Server dropped connection during login/account creation — reset UI
 				_tcp?.Dispose();
 				_tcp = null;
 				_packetHandler = null;
 				_inputHandler = null;
-				_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
+				// Only show generic disconnect if no specific error is pending
+				if (string.IsNullOrEmpty(_state.LoginError))
+					_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
 				if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
 				return;
 			}

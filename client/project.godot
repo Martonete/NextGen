@@ -1,12 +1,18 @@
 ; Engine configuration file.
 ; It's best edited using the editor UI and not directly,
-; but it can also be edited via script.
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
 
 [application]
 
 config/name="Argentum Nextgen"
 run/main_scene="res://Scenes/Main.tscn"
-config/features=PackedStringArray("4.4", "C#")
+config/features=PackedStringArray("4.3", "C#")
 config/icon="res://icon.svg"
 
 [display]
@@ -22,6 +28,6 @@ project/assembly_name="ArgentumNextgen"
 
 [rendering]
 
-renderer/rendering_method="gl_compatibility"
 textures/canvas_textures/default_texture_filter=0
+renderer/rendering_method="gl_compatibility"
 environment/defaults/default_clear_color=Color(0, 0, 0, 1)

@@ -8,39 +8,29 @@ namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// VB6 frmBanco — Personal bank panel (gold + open vault).
-/// ScaleWidth=165, ScaleHeight=196 (VB6 pixel mode).
-/// 3 buttons: Abrir Bóveda, Depositar Oro, Retirar Oro.
-/// Gold display label at top. Close button (Label1) at top-right.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class BankPanel : Control
+public partial class BankPanel : RpgBaseForm
 {
-    private const int PanelW = 165;
-    private const int PanelH = 196;
-
     private GameState? _state;
     private GameData? _data;
     private AoTcpClient? _tcp;
 
-    // VB6 control positions (converted from twips÷15 to pixels)
-    // Text1: gold display — Left=255/15=17, Top=720/15=48, Width=1920/15=128, Height=375/15=25
-    // Image1(0): Bóveda — Left=360/15=24, Top=1200/15=80, Width=1770/15=118, Height=420/15=28
-    // Image1(1): Depositar — Left=360/15=24, Top=1740/15=116, Width=1770/15=118, Height=420/15=28
-    // Image1(2): Retirar — Left=360/15=24, Top=2280/15=152, Width=1770/15=118, Height=420/15=28
-    // Label1: Close — Left=2085/15=139, Top=0, Width=375/15=25, Height=375/15=25
-
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-    private const int TitleBarH = 25;
-
     private Label? _goldLabel;
-    private Button? _bovedaBtn;
-    private Button? _depositarBtn;
-    private Button? _retirarBtn;
-    private Button? _closeBtn;
+    private TextureButton? _bovedaBtn;
+    private TextureButton? _depositarBtn;
+    private TextureButton? _retirarBtn;
 
-    /// <summary>Fired when user clicks "Abrir Bóveda" — Main.cs opens VaultPanel.</summary>
+    // Gold input dialog controls
+    private VBoxContainer? _mainContent;
+    private VBoxContainer? _goldInputContent;
+    private Label? _goldInputLabel;
+    private LineEdit? _goldInput;
+    private bool _isDepositing;
+
     public event Action? OnOpenVault;
+
+    public BankPanel() : base("Banco", new Vector2(240, 260), "v2") { }
 
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
@@ -49,231 +39,124 @@ public partial class BankPanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Size = new Vector2(PanelW, PanelH);
-        MouseFilter = MouseFilterEnum.Stop;
-        FocusMode = FocusModeEnum.None;
+        // Main content (shown by default)
+        _mainContent = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        ContentContainer.AddChild(_mainContent);
 
         // Gold display
-        _goldLabel = new Label();
-        _goldLabel.Position = new Vector2(17, 48);
-        _goldLabel.Size = new Vector2(128, 25);
-        _goldLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _goldLabel.AddThemeColorOverride("font_color", Colors.White);
-        _goldLabel.AddThemeFontSizeOverride("font_size", 12);
-        var boldFont = new SystemFont();
-        boldFont.FontWeight = 700;
-        _goldLabel.AddThemeFontOverride("font", boldFont);
-        _goldLabel.Text = "0";
-        AddChild(_goldLabel);
+        var goldRow = RpgTheme.CreateRow();
+        goldRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _mainContent.AddChild(goldRow);
 
-        // Abrir Bóveda
-        _bovedaBtn = CreateButton("Abrir Bóveda", 24, 80, 118, 28);
+        var goldTitle = RpgTheme.CreateInfoLabel("Oro en bóveda:", 13);
+        goldRow.AddChild(goldTitle);
+
+        _goldLabel = RpgTheme.CreateTitleLabel("0", 16);
+        _goldLabel.AddThemeColorOverride("font_color", new Color(1f, 0.95f, 0.4f));
+        _mainContent.AddChild(_goldLabel);
+
+        _mainContent.AddChild(RpgTheme.CreateSpacer(4));
+
+        // Buttons
+        _bovedaBtn = RpgTheme.CreateRpgButton("Abrir Bóveda", true, 13);
+        _bovedaBtn.CustomMinimumSize = new Vector2(0, 34);
         _bovedaBtn.Pressed += OnBovedaPressed;
-        AddChild(_bovedaBtn);
+        _mainContent.AddChild(_bovedaBtn);
 
-        // Depositar Oro
-        _depositarBtn = CreateButton("Depositar Oro", 24, 116, 118, 28);
-        _depositarBtn.Pressed += OnDepositarPressed;
-        AddChild(_depositarBtn);
+        _depositarBtn = RpgTheme.CreateRpgButton("Depositar Oro", true, 13);
+        _depositarBtn.CustomMinimumSize = new Vector2(0, 34);
+        _depositarBtn.Pressed += () => ShowGoldInputDialog(true);
+        _mainContent.AddChild(_depositarBtn);
 
-        // Retirar Oro
-        _retirarBtn = CreateButton("Retirar Oro", 24, 152, 118, 28);
-        _retirarBtn.Pressed += OnRetirarPressed;
-        AddChild(_retirarBtn);
+        _retirarBtn = RpgTheme.CreateRpgButton("Retirar Oro", true, 13);
+        _retirarBtn.CustomMinimumSize = new Vector2(0, 34);
+        _retirarBtn.Pressed += () => ShowGoldInputDialog(false);
+        _mainContent.AddChild(_retirarBtn);
 
-        // Close (X)
-        _closeBtn = CreateButton("X", 139, 0, 25, 25);
-        _closeBtn.Pressed += OnClosePressed;
-        AddChild(_closeBtn);
-    }
+        // Gold input dialog (hidden by default)
+        _goldInputContent = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        _goldInputContent.Visible = false;
+        ContentContainer.AddChild(_goldInputContent);
 
-    private static Button CreateButton(string text, int x, int y, int w, int h)
-    {
-        var btn = new Button();
-        btn.Text = text;
-        btn.Position = new Vector2(x, y);
-        btn.Size = new Vector2(w, h);
-        btn.FocusMode = Control.FocusModeEnum.None;
-        btn.MouseDefaultCursorShape = CursorShape.PointingHand;
-        return btn;
+        _goldInputLabel = RpgTheme.CreateInfoLabel("Depositar oro:", 13);
+        _goldInputLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _goldInputContent.AddChild(_goldInputLabel);
+
+        _goldInput = RpgTheme.CreateRpgInput("0");
+        _goldInput.Text = "0";
+        _goldInput.Alignment = HorizontalAlignment.Center;
+        _goldInput.TextSubmitted += (_) => OnGoldInputOk();
+        _goldInputContent.AddChild(_goldInput);
+
+        var inputBtnRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
+        inputBtnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        _goldInputContent.AddChild(inputBtnRow);
+
+        var okBtn = RpgTheme.CreateRpgButton("OK", false, 12);
+        okBtn.CustomMinimumSize = new Vector2(70, 28);
+        okBtn.Pressed += OnGoldInputOk;
+        inputBtnRow.AddChild(okBtn);
+
+        var cancelInputBtn = RpgTheme.CreateRpgButton("Cancelar", false, 12);
+        cancelInputBtn.CustomMinimumSize = new Vector2(80, 28);
+        cancelInputBtn.Pressed += HideGoldInputDialog;
+        inputBtnRow.AddChild(cancelInputBtn);
     }
 
     public void OpenBank()
     {
-        Visible = true;
+        ShowForm();
     }
 
     public void CloseBank()
     {
-        Visible = false;
+        HideForm();
     }
 
     public override void _Process(double delta)
     {
         if (!Visible || _state == null) return;
         _goldLabel!.Text = _state.BankGold.ToString("N0");
-        QueueRedraw();
-    }
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y <= TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - GlobalPosition;
-                }
-                else if (!mb.Pressed)
-                    _dragging = false;
-            }
-            AcceptEvent();
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            GlobalPosition = mm.GlobalPosition - _dragOffset;
-            AcceptEvent();
-        }
-    }
-
-    public override void _Draw()
-    {
-        // Background
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.08f, 0.06f, 0.12f, 0.96f));
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.5f, 0.4f, 0.3f, 0.8f), false, 2f);
-
-        var font = _data?.Fonts?[1];
-        font?.DrawText(this, PanelW / 2, 8, "Banco", new Color(1f, 0.85f, 0.4f), center: true);
-        font?.DrawText(this, PanelW / 2, 30, "Oro en bóveda:", Colors.White, center: true);
     }
 
     private void OnBovedaPressed()
     {
-        // VB6: SendData("INIBOV") then Unload Me
         _tcp?.SendPacket(new byte[] { ClientPacketId.GuildBankOpen });
-        // Signal Main.cs to open VaultPanel
         _state!.BovedaAbierta = true;
         OnOpenVault?.Invoke();
-        Visible = false; // Close bank panel, vault opens
+        HideForm();
     }
-
-    private void OnDepositarPressed()
-    {
-        if (_state == null || _tcp == null) return;
-        // VB6 uses InputBox — we'll use a simple prompt via chat message
-        // For now, show a LineEdit dialog or use a fixed approach
-        // Since we can't do VB6 InputBox in Godot easily, we'll add an inline input
-        ShowGoldInputDialog(true);
-    }
-
-    private void OnRetirarPressed()
-    {
-        if (_state == null || _tcp == null) return;
-        ShowGoldInputDialog(false);
-    }
-
-    private void OnClosePressed()
-    {
-        _tcp?.SendPacket(ClientPackets.WriteBankClose());
-    }
-
-    // ── Inline gold input dialog ────────────────────────────────
-
-    private LineEdit? _goldInput;
-    private Label? _goldInputLabel;
-    private Button? _goldInputOk;
-    private Button? _goldInputCancel;
-    private bool _isDepositing;
 
     private void ShowGoldInputDialog(bool deposit)
     {
         _isDepositing = deposit;
-
-        if (_goldInput == null)
-        {
-            _goldInputLabel = new Label();
-            _goldInputLabel.Position = new Vector2(10, 80);
-            _goldInputLabel.Size = new Vector2(145, 16);
-            _goldInputLabel.HorizontalAlignment = HorizontalAlignment.Center;
-            _goldInputLabel.AddThemeColorOverride("font_color", Colors.White);
-            _goldInputLabel.AddThemeFontSizeOverride("font_size", 10);
-            AddChild(_goldInputLabel);
-
-            _goldInput = new LineEdit();
-            _goldInput.Position = new Vector2(24, 100);
-            _goldInput.Size = new Vector2(118, 20);
-            _goldInput.Text = "0";
-            _goldInput.Alignment = HorizontalAlignment.Center;
-            _goldInput.FocusMode = FocusModeEnum.Click;
-            _goldInput.AddThemeFontSizeOverride("font_size", 10);
-            _goldInput.TextSubmitted += (_) => OnGoldInputOk();
-            AddChild(_goldInput);
-
-            _goldInputOk = CreateButton("OK", 24, 125, 55, 20);
-            _goldInputOk.Pressed += OnGoldInputOk;
-            AddChild(_goldInputOk);
-
-            _goldInputCancel = CreateButton("Cancelar", 84, 125, 58, 20);
-            _goldInputCancel.Pressed += OnGoldInputCancel;
-            AddChild(_goldInputCancel);
-        }
-
         _goldInputLabel!.Text = deposit ? "Depositar oro:" : "Retirar oro:";
         _goldInput!.Text = "0";
-        _goldInput.Visible = true;
-        _goldInputLabel.Visible = true;
-        _goldInputOk!.Visible = true;
-        _goldInputCancel!.Visible = true;
+        _mainContent!.Visible = false;
+        _goldInputContent!.Visible = true;
         _goldInput.GrabFocus();
         _goldInput.SelectAll();
-
-        // Hide main buttons while dialog is open
-        _bovedaBtn!.Visible = false;
-        _depositarBtn!.Visible = false;
-        _retirarBtn!.Visible = false;
     }
 
     private void HideGoldInputDialog()
     {
-        if (_goldInput != null) _goldInput.Visible = false;
-        if (_goldInputLabel != null) _goldInputLabel.Visible = false;
-        if (_goldInputOk != null) _goldInputOk.Visible = false;
-        if (_goldInputCancel != null) _goldInputCancel.Visible = false;
-
-        _bovedaBtn!.Visible = true;
-        _depositarBtn!.Visible = true;
-        _retirarBtn!.Visible = true;
+        _mainContent!.Visible = true;
+        _goldInputContent!.Visible = false;
     }
 
     private void OnGoldInputOk()
     {
         if (_goldInput == null || _tcp == null || _state == null) return;
         if (!long.TryParse(_goldInput.Text.Trim(), out long amount) || amount <= 0)
-        {
-            HideGoldInputDialog();
-            return;
-        }
+        { HideGoldInputDialog(); return; }
 
         if (_isDepositing)
-        {
-            // VB6: SendData("/DEPOSITAR " & cantidad)
             _tcp.SendPacket(ClientPackets.WriteTalk($"/DEPOSITAR {amount}"));
-        }
         else
-        {
-            // VB6: SendData("/RETIRAR " & cantidad)
             _tcp.SendPacket(ClientPackets.WriteTalk($"/RETIRAR {amount}"));
-        }
 
-        HideGoldInputDialog();
-    }
-
-    private void OnGoldInputCancel()
-    {
         HideGoldInputDialog();
     }
 }

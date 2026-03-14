@@ -106,7 +106,7 @@ public partial class RpgBaseForm : Control
 
     private void BuildV1()
     {
-        // --- Layer 0: Solid background (semi-transparent to show info_window texture) ---
+        // --- Layer 0: Solid background ---
         var solidBg = new ColorRect();
         solidBg.Color = new Color(0.10f, 0.09f, 0.08f, 1.0f);
         solidBg.MouseFilter = MouseFilterEnum.Ignore;
@@ -118,23 +118,8 @@ public partial class RpgBaseForm : Control
         AddChild(frameBg);
         RpgTheme.FillParent(frameBg);
 
-        // --- Layer 2: Title bar ---
-        var titleBg = RpgTheme.CreateNinePatch("dialoge_frame.png", new Vector4(20, 10, 20, 10));
-        AddChild(titleBg);
-        titleBg.AnchorLeft = 0.0f;
-        titleBg.AnchorRight = 1.0f;
-        titleBg.AnchorTop = 0.0f;
-        titleBg.AnchorBottom = 0.0f;
-        titleBg.OffsetLeft = 8;
-        titleBg.OffsetTop = 4;
-        titleBg.OffsetRight = -8;
-        titleBg.OffsetBottom = 50;
-
-        var titleLabel = RpgTheme.CreateTitleLabel(TitleText, 18);
-        titleBg.AddChild(titleLabel);
-        RpgTheme.FillParent(titleLabel);
-        titleLabel.OffsetTop = 4;
-        titleLabel.OffsetBottom = -4;
+        // --- Title: name_frame centered on top border ---
+        AddTitleFrame();
 
         // --- Content area ---
         ContentContainer = new MarginContainer();
@@ -161,23 +146,8 @@ public partial class RpgBaseForm : Control
         AddChild(frameBg);
         RpgTheme.FillParent(frameBg);
 
-        // --- Layer 2: Title bar ---
-        var titleBg = RpgTheme.CreateNinePatch("dialoge_frame.png", new Vector4(20, 10, 20, 10));
-        AddChild(titleBg);
-        titleBg.AnchorLeft = 0.0f;
-        titleBg.AnchorRight = 1.0f;
-        titleBg.AnchorTop = 0.0f;
-        titleBg.AnchorBottom = 0.0f;
-        titleBg.OffsetLeft = 8;
-        titleBg.OffsetTop = 4;
-        titleBg.OffsetRight = -8;
-        titleBg.OffsetBottom = 50;
-
-        var titleLabel = RpgTheme.CreateTitleLabel(TitleText, 18);
-        titleBg.AddChild(titleLabel);
-        RpgTheme.FillParent(titleLabel);
-        titleLabel.OffsetTop = 4;
-        titleLabel.OffsetBottom = -4;
+        // --- Title: name_frame centered on top border ---
+        AddTitleFrame();
 
         // --- Content area ---
         ContentContainer = new MarginContainer();
@@ -192,7 +162,7 @@ public partial class RpgBaseForm : Control
 
     private void BuildV2()
     {
-        // --- big_bar.png stretched as background (with alpha for see-through) ---
+        // --- big_bar.png stretched as background ---
         var bg = new TextureRect();
         bg.Texture = RpgTheme.GetTex("big_bar.png");
         bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
@@ -202,23 +172,8 @@ public partial class RpgBaseForm : Control
         AddChild(bg);
         RpgTheme.FillParent(bg);
 
-        // --- Title bar with name_frame_mid_ready ---
-        var titleBg = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
-        AddChild(titleBg);
-        titleBg.AnchorLeft = 0.0f;
-        titleBg.AnchorRight = 1.0f;
-        titleBg.AnchorTop = 0.0f;
-        titleBg.AnchorBottom = 0.0f;
-        titleBg.OffsetLeft = 10;
-        titleBg.OffsetTop = 5;
-        titleBg.OffsetRight = -10;
-        titleBg.OffsetBottom = 48;
-
-        var titleLabel = RpgTheme.CreateTitleLabel(TitleText, 18);
-        titleBg.AddChild(titleLabel);
-        RpgTheme.FillParent(titleLabel);
-        titleLabel.OffsetTop = 4;
-        titleLabel.OffsetBottom = -4;
+        // --- Title: name_frame centered on top border ---
+        AddTitleFrame();
 
         // --- Content area (V2 has thicker borders → larger margins) ---
         ContentContainer = new MarginContainer();
@@ -299,6 +254,38 @@ public partial class RpgBaseForm : Control
             HideForm();
             GetViewport().SetInputAsHandled();
         }
+    }
+
+    /// <summary>
+    /// Add a name_frame_mid_ready.png title bar centered on the top border of the form.
+    /// The frame sits half above, half below the top edge for a "badge" effect.
+    /// </summary>
+    private void AddTitleFrame()
+    {
+        if (string.IsNullOrEmpty(TitleText)) return;
+
+        // Size frame to fit title text generously
+        int textLen = TitleText.Length;
+        float frameW = System.Math.Max(textLen * 14 + 80, 220); // wide frame, min 220px
+        float frameH = 50;
+
+        var titleBg = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
+        AddChild(titleBg);
+        // Centered horizontally, straddling the top border (-8px above, +22px below)
+        titleBg.AnchorLeft = 0.5f;
+        titleBg.AnchorRight = 0.5f;
+        titleBg.AnchorTop = 0.0f;
+        titleBg.AnchorBottom = 0.0f;
+        titleBg.OffsetLeft = -frameW / 2f;
+        titleBg.OffsetRight = frameW / 2f;
+        titleBg.OffsetTop = -8;
+        titleBg.OffsetBottom = -8 + frameH;
+
+        var titleLabel = RpgTheme.CreateTitleLabel(TitleText, 16);
+        titleBg.AddChild(titleLabel);
+        RpgTheme.FillParent(titleLabel);
+        titleLabel.OffsetTop = 2;
+        titleLabel.OffsetBottom = -2;
     }
 
     public override void _GuiInput(InputEvent @event)

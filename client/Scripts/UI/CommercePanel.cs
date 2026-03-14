@@ -10,42 +10,37 @@ namespace ArgentumNextgen.UI;
 /// <summary>
 /// NPC commerce panel — two icon grids (NPC items / player inventory)
 /// with buy/sell buttons, quantity input, and item preview.
+/// Now uses RpgBaseForm for consistent RPG chrome (frame, title, close, drag).
+/// Custom _Draw() rendering for item grids is preserved inside a child Control.
 /// </summary>
-public partial class CommercePanel : Control
+public partial class CommercePanel : RpgBaseForm
 {
-    // Panel dimensions
-    private const int PanelW = 445;
-    private const int PanelH = 486;
+    // Content area dimensions (inside the form chrome)
+    private const int ContentW = 385;
+    private const int ContentH = 400;
 
-    // Grid layout — 5 columns, 34×34 cells
+    // Grid layout — 5 columns, 34x34 cells
     private const int GridCols = 5;
     private const int CellSize = 34;
 
-    // NPC grid area (left side)
-    private const int NpcGridX = 14, NpcGridY = 120;
+    // NPC grid area (left side) — relative to _drawArea origin
+    private const int NpcGridX = 0, NpcGridY = 82;
     private const int NpcGridW = GridCols * CellSize; // 170
-    private const int NpcGridRows = 7; // visible rows
+    private const int NpcGridRows = 7;
     private const int NpcGridH = NpcGridRows * CellSize; // 238
 
-    // User grid area (right side)
-    private const int UserGridX = 243, UserGridY = 120;
+    // User grid area (right side) — relative to _drawArea origin
+    private const int UserGridX = 215, UserGridY = 82;
     private const int UserGridW = GridCols * CellSize;
     private const int UserGridRows = 7;
     private const int UserGridH = UserGridRows * CellSize;
 
-    // Item preview area
-    private const int PreviewIconX = 19, PreviewIconY = 50;
-    private const int PreviewNameX = 62, PreviewNameY = 48;
-    private const int PriceLabelX = 62, PriceLabelY = 64;
-    private const int AmountLabelX = 62, AmountLabelY = 80;
-    private const int Stat1X = 62, Stat1Y = 96;
-
-    // Buttons
-    private const int BuyBtnX = 14, BuyBtnY = 370, BtnW = 170, BtnH = 23;
-    private const int SellBtnX = 243, SellBtnY = 370;
-    private const int SelectAllBtnX = 243, SelectAllBtnY = 443;
-    private const int QtyInputX = 78, QtyInputY = 442, QtyInputW = 66, QtyInputH = 15;
-    private const int CloseBtnX = 408, CloseBtnY = 0, CloseBtnW = 33, CloseBtnH = 33;
+    // Item preview area — relative to _drawArea origin
+    private const int PreviewIconX = 5, PreviewIconY = 12;
+    private const int PreviewNameX = 48, PreviewNameY = 10;
+    private const int PriceLabelX = 48, PriceLabelY = 26;
+    private const int AmountLabelX = 48, AmountLabelY = 42;
+    private const int Stat1X = 48, Stat1Y = 58;
 
     private GameState? _state;
     private GameData? _data;
@@ -61,20 +56,17 @@ public partial class CommercePanel : Control
     private int[] _userSlots = new int[25];
     private int _userSlotCount;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-    private const int TitleBarH = 30;
-
     // UI controls
+    private Control? _drawArea;
     private LineEdit? _qtyInput;
-    private Button? _buyBtn;
-    private Button? _sellBtn;
-    private Button? _selectAllBtn;
-    private Button? _closeBtn;
+    private TextureButton? _buyBtn;
+    private TextureButton? _sellBtn;
+    private TextureButton? _selectAllBtn;
 
     // Rich tooltip panel (set by Main.cs)
     public TooltipPanel? RichTooltip;
+
+    public CommercePanel() : base("Comerciar", new Vector2(445, 486), "v3") { }
 
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
@@ -83,48 +75,54 @@ public partial class CommercePanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Size = new Vector2(PanelW, PanelH);
-        MouseFilter = MouseFilterEnum.Stop;
-        FocusMode = FocusModeEnum.None;
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        ContentContainer.AddChild(vbox);
 
-        _qtyInput = new LineEdit();
-        _qtyInput.Position = new Vector2(QtyInputX, QtyInputY);
-        _qtyInput.Size = new Vector2(QtyInputW, QtyInputH);
+        // Custom draw area for grids, preview, and labels
+        _drawArea = new Control();
+        _drawArea.CustomMinimumSize = new Vector2(ContentW, 330);
+        _drawArea.MouseFilter = MouseFilterEnum.Stop;
+        _drawArea.Draw += OnDrawArea;
+        _drawArea.GuiInput += OnDrawAreaInput;
+        vbox.AddChild(_drawArea);
+
+        // Grid headers (drawn labels)
+        // NPC / Inventario headers are drawn in OnDrawArea
+
+        // Button row: Buy / Sell
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
+        btnRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(btnRow);
+
+        _buyBtn = RpgTheme.CreateRpgButton("Comprar", false, 14);
+        _buyBtn.CustomMinimumSize = new Vector2(170, 28);
+        _buyBtn.Pressed += OnBuyPressed;
+        btnRow.AddChild(_buyBtn);
+
+        _sellBtn = RpgTheme.CreateRpgButton("Vender", false, 14);
+        _sellBtn.CustomMinimumSize = new Vector2(170, 28);
+        _sellBtn.Pressed += OnSellPressed;
+        btnRow.AddChild(_sellBtn);
+
+        // Quantity row
+        var qtyRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
+        qtyRow.Alignment = BoxContainer.AlignmentMode.Center;
+        vbox.AddChild(qtyRow);
+
+        var qtyLabel = RpgTheme.CreateInfoLabel("Cant:", 12);
+        qtyRow.AddChild(qtyLabel);
+
+        _qtyInput = RpgTheme.CreateRpgInput("1", 66);
         _qtyInput.Text = "1";
         _qtyInput.Alignment = HorizontalAlignment.Center;
-        _qtyInput.FocusMode = FocusModeEnum.Click;
-        _qtyInput.AddThemeColorOverride("font_color", Colors.White);
-        _qtyInput.AddThemeFontSizeOverride("font_size", 10);
-        AddChild(_qtyInput);
+        qtyRow.AddChild(_qtyInput);
 
-        _buyBtn = CreateButton("Comprar", BuyBtnX, BuyBtnY, BtnW, BtnH);
-        _buyBtn.Pressed += OnBuyPressed;
-        AddChild(_buyBtn);
-
-        _sellBtn = CreateButton("Vender", SellBtnX, SellBtnY, BtnW, BtnH);
-        _sellBtn.Pressed += OnSellPressed;
-        AddChild(_sellBtn);
-
-        _selectAllBtn = CreateButton("Todo", SelectAllBtnX, SelectAllBtnY, BtnW, BtnH);
+        _selectAllBtn = RpgTheme.CreateRpgButton("Todo", false, 12);
+        _selectAllBtn.CustomMinimumSize = new Vector2(80, 24);
         _selectAllBtn.Pressed += OnSelectAllPressed;
-        AddChild(_selectAllBtn);
-
-        _closeBtn = CreateButton("X", CloseBtnX, CloseBtnY, CloseBtnW, CloseBtnH);
-        _closeBtn.Pressed += OnClosePressed;
-        AddChild(_closeBtn);
-    }
-
-    private static Button CreateButton(string text, int x, int y, int w, int h)
-    {
-        var btn = new Button();
-        btn.Text = text;
-        btn.Position = new Vector2(x, y);
-        btn.Size = new Vector2(w, h);
-        btn.FocusMode = Control.FocusModeEnum.None;
-        btn.MouseDefaultCursorShape = CursorShape.PointingHand;
-        return btn;
+        qtyRow.AddChild(_selectAllBtn);
     }
 
     public void OpenShop()
@@ -134,12 +132,12 @@ public partial class CommercePanel : Control
         _npcScrollRow = 0;
         _userScrollRow = 0;
         _qtyInput!.Text = "1";
-        Visible = true;
+        ShowForm();
     }
 
     public void CloseShop()
     {
-        Visible = false;
+        HideForm();
         _selectedNpcIdx = -1;
         _selectedUserIdx = -1;
         RichTooltip?.Hide();
@@ -162,33 +160,26 @@ public partial class CommercePanel : Control
                 _userSlots[_userSlotCount++] = i;
         }
 
-        QueueRedraw();
+        _drawArea?.QueueRedraw();
     }
 
-    public override void _Draw()
+    private void OnDrawArea()
     {
-        if (_state == null || _data == null) return;
-
-        // Background
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.08f, 0.06f, 0.12f, 0.96f));
-        DrawRect(new Rect2(0, 0, PanelW, PanelH), new Color(0.5f, 0.4f, 0.3f, 0.8f), false, 2f);
+        if (_state == null || _data == null || _drawArea == null) return;
 
         var font = _data.Fonts?[1];
 
-        // Title
-        font?.DrawText(this, PanelW / 2, 8, "Comerciar", new Color(1f, 0.85f, 0.4f), center: true);
-
         // Grid headers
-        font?.DrawText(this, NpcGridX + NpcGridW / 2, NpcGridY - 14, "NPC", Colors.White, center: true);
-        font?.DrawText(this, UserGridX + UserGridW / 2, UserGridY - 14, "Inventario", Colors.White, center: true);
+        font?.DrawText(_drawArea, NpcGridX + NpcGridW / 2, NpcGridY - 14, "NPC", Colors.White, center: true);
+        font?.DrawText(_drawArea, UserGridX + UserGridW / 2, UserGridY - 14, "Inventario", Colors.White, center: true);
 
         // NPC grid background
-        DrawRect(new Rect2(NpcGridX, NpcGridY, NpcGridW, NpcGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(NpcGridX, NpcGridY, NpcGridW, NpcGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        _drawArea.DrawRect(new Rect2(NpcGridX, NpcGridY, NpcGridW, NpcGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        _drawArea.DrawRect(new Rect2(NpcGridX, NpcGridY, NpcGridW, NpcGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
         // User grid background
-        DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
-        DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
+        _drawArea.DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.05f, 0.05f, 0.08f, 0.9f));
+        _drawArea.DrawRect(new Rect2(UserGridX, UserGridY, UserGridW, UserGridH), new Color(0.4f, 0.35f, 0.3f, 0.6f), false, 1f);
 
         // Draw NPC items as icon grid
         int npcStartIdx = _npcScrollRow * GridCols;
@@ -209,19 +200,19 @@ public partial class CommercePanel : Control
             // Selection highlight
             if (idx == _selectedNpcIdx)
             {
-                DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
+                _drawArea.DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
             }
 
             // Item icon
             if (item.GrhIndex > 0)
-                CharRenderer.DrawGrh(this, _data, item.GrhIndex, 0, new Vector2(cx + 1, cy));
+                CharRenderer.DrawGrh(_drawArea, _data, item.GrhIndex, 0, new Vector2(cx + 1, cy));
 
             // Amount overlay
             if (item.Amount > 0 && font != null)
-                font.DrawText(this, (int)cx, (int)cy + 3, item.Amount.ToString(), Colors.White);
+                font.DrawText(_drawArea, (int)cx, (int)cy + 3, item.Amount.ToString(), Colors.White);
 
             // Cell border
-            DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
+            _drawArea.DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
         }
 
         // Draw User items as icon grid
@@ -243,35 +234,32 @@ public partial class CommercePanel : Control
             // Selection highlight
             if (idx == _selectedUserIdx)
             {
-                DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
+                _drawArea.DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(1f, 1f, 1f, 0.15f));
             }
 
             // Item icon
             if (inv.GrhIndex > 0)
-                CharRenderer.DrawGrh(this, _data, inv.GrhIndex, 0, new Vector2(cx + 1, cy));
+                CharRenderer.DrawGrh(_drawArea, _data, inv.GrhIndex, 0, new Vector2(cx + 1, cy));
 
             // Amount overlay
             if (inv.Amount > 0 && font != null)
-                font.DrawText(this, (int)cx, (int)cy + 3, inv.Amount.ToString(), Colors.White);
+                font.DrawText(_drawArea, (int)cx, (int)cy + 3, inv.Amount.ToString(), Colors.White);
 
             // Equipped marker
             if (inv.Equipped && font != null)
-                font.DrawText(this, (int)cx + 23, (int)cy + 20, "E", new Color(1f, 1f, 0f));
+                font.DrawText(_drawArea, (int)cx + 23, (int)cy + 20, "E", new Color(1f, 1f, 0f));
 
             // Cell border
-            DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
+            _drawArea.DrawRect(new Rect2(cx, cy, CellSize, CellSize), new Color(0.4f, 0.4f, 0.5f, 0.4f), false, 1f);
         }
 
         // Preview area
         DrawPreview(font);
-
-        // Labels
-        font?.DrawText(this, 14, QtyInputY + 1, "Cant:", Colors.White);
     }
 
     private void DrawPreview(AoFont? font)
     {
-        if (_state == null || _data == null) return;
+        if (_state == null || _data == null || _drawArea == null) return;
 
         string name = "";
         long price = 0;
@@ -299,20 +287,20 @@ public partial class CommercePanel : Control
         if (string.IsNullOrEmpty(name)) return;
 
         // Preview border
-        DrawRect(new Rect2(14, 38, PanelW - 28, 66), new Color(0.12f, 0.1f, 0.15f, 0.9f));
-        DrawRect(new Rect2(14, 38, PanelW - 28, 66), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
+        _drawArea.DrawRect(new Rect2(0, 0, ContentW, 68), new Color(0.12f, 0.1f, 0.15f, 0.9f));
+        _drawArea.DrawRect(new Rect2(0, 0, ContentW, 68), new Color(0.4f, 0.35f, 0.3f, 0.5f), false, 1f);
 
         if (grhIndex > 0)
-            CharRenderer.DrawGrh(this, _data, grhIndex, 0, new Vector2(PreviewIconX, PreviewIconY));
+            CharRenderer.DrawGrh(_drawArea, _data, grhIndex, 0, new Vector2(PreviewIconX, PreviewIconY));
 
-        font?.DrawText(this, PreviewNameX, PreviewNameY, name, new Color(1f, 0.9f, 0.5f));
-        font?.DrawText(this, PriceLabelX, PriceLabelY, $"Precio: {price}", new Color(1f, 1f, 0f));
-        font?.DrawText(this, AmountLabelX, AmountLabelY, $"x{amount}", Colors.White);
+        font?.DrawText(_drawArea, PreviewNameX, PreviewNameY, name, new Color(1f, 0.9f, 0.5f));
+        font?.DrawText(_drawArea, PriceLabelX, PriceLabelY, $"Precio: {price}", new Color(1f, 1f, 0f));
+        font?.DrawText(_drawArea, AmountLabelX, AmountLabelY, $"x{amount}", Colors.White);
 
         if (objType == 2)
-            font?.DrawText(this, Stat1X + 120, Stat1Y - 32, $"Daño: {minHit}/{maxHit}", Colors.White);
+            font?.DrawText(_drawArea, Stat1X + 120, Stat1Y - 32, $"Dano: {minHit}/{maxHit}", Colors.White);
         else if (objType == 3 || objType == 16 || objType == 17)
-            font?.DrawText(this, Stat1X + 120, Stat1Y - 32, $"Def: {maxDef}", Colors.White);
+            font?.DrawText(_drawArea, Stat1X + 120, Stat1Y - 32, $"Def: {maxDef}", Colors.White);
     }
 
     private int HitTestGrid(Vector2 pos, int gridX, int gridY, int gridW, int gridH, int scrollRow, int itemCount)
@@ -326,40 +314,17 @@ public partial class CommercePanel : Control
         return idx < itemCount ? idx : -1;
     }
 
-    public override void _GuiInput(InputEvent @event)
+    private void OnDrawAreaInput(InputEvent @event)
     {
         if (_state == null || _tcp == null) return;
 
-        // Dragging by title bar
-        if (@event is InputEventMouseButton dragMb)
+        if (@event is InputEventMouseMotion mm)
         {
-            if (dragMb.ButtonIndex == MouseButton.Left)
-            {
-                if (dragMb.Pressed && dragMb.Position.Y <= TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = dragMb.GlobalPosition - GlobalPosition;
-                    AcceptEvent();
-                    return;
-                }
-                if (!dragMb.Pressed && _dragging)
-                    _dragging = false;
-            }
-        }
-        if (@event is InputEventMouseMotion dragMm)
-        {
-            if (_dragging)
-            {
-                GlobalPosition = dragMm.GlobalPosition - _dragOffset;
-                AcceptEvent();
-                return;
-            }
-
             // Tooltip on hover over grid items
             if (RichTooltip != null && _state != null)
             {
-                int npcIdx = HitTestGrid(dragMm.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state!.NpcShopCount);
-                int userIdx = HitTestGrid(dragMm.Position, UserGridX, UserGridY, UserGridW, UserGridH, _userScrollRow, _userSlotCount);
+                int npcIdx = HitTestGrid(mm.Position, NpcGridX, NpcGridY, NpcGridW, NpcGridH, _npcScrollRow, _state!.NpcShopCount);
+                int userIdx = HitTestGrid(mm.Position, UserGridX, UserGridY, UserGridW, UserGridH, _userScrollRow, _userSlotCount);
 
                 if (npcIdx >= 0 && npcIdx < _state!.NpcShopCount)
                     RichTooltip.ShowNpcShopItem(_state.NpcShopItems[npcIdx]);
@@ -378,7 +343,7 @@ public partial class CommercePanel : Control
             {
                 _selectedNpcIdx = npcIdx;
                 _selectedUserIdx = -1;
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
 
@@ -388,7 +353,7 @@ public partial class CommercePanel : Control
             {
                 _selectedUserIdx = userIdx;
                 _selectedNpcIdx = -1;
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
 
@@ -397,7 +362,7 @@ public partial class CommercePanel : Control
                 mb.Position.Y >= NpcGridY && mb.Position.Y < NpcGridY + NpcGridH)
             {
                 HandleScroll(mb, ref _npcScrollRow, _state!.NpcShopCount, NpcGridRows);
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
 
@@ -406,18 +371,18 @@ public partial class CommercePanel : Control
                 mb.Position.Y >= UserGridY && mb.Position.Y < UserGridY + UserGridH)
             {
                 HandleScroll(mb, ref _userScrollRow, _userSlotCount, UserGridRows);
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
 
             if (mb.ButtonIndex == MouseButton.Right)
             {
                 OnClosePressed();
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
 
-            AcceptEvent();
+            _drawArea!.AcceptEvent();
         }
         else if (@event is InputEventMouseButton mbScroll)
         {
@@ -426,7 +391,7 @@ public partial class CommercePanel : Control
                 mbScroll.Position.Y >= NpcGridY && mbScroll.Position.Y < NpcGridY + NpcGridH)
             {
                 HandleScroll(mbScroll, ref _npcScrollRow, _state!.NpcShopCount, NpcGridRows);
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
 
@@ -435,7 +400,7 @@ public partial class CommercePanel : Control
                 mbScroll.Position.Y >= UserGridY && mbScroll.Position.Y < UserGridY + UserGridH)
             {
                 HandleScroll(mbScroll, ref _userScrollRow, _userSlotCount, UserGridRows);
-                AcceptEvent();
+                _drawArea!.AcceptEvent();
                 return;
             }
         }

@@ -250,6 +250,19 @@ public partial class SpellPanel : Control
         if (_selectedSlot >= 0 && _selectedSlot < MaxSpells)
         {
             _tcp.SendPacket(ClientPackets.WriteMoveSpell((byte)direction, (byte)(_selectedSlot + 1)));
+
+            // Follow the moved spell so user can keep pressing arrow
+            int newSlot = direction == 1 ? _selectedSlot - 1 : _selectedSlot + 1;
+            if (newSlot >= 0 && newSlot < MaxSpells)
+            {
+                _selectedSlot = newSlot;
+
+                // Auto-scroll to keep selection visible
+                if (_selectedSlot < _scrollOffset)
+                    _scrollOffset = _selectedSlot;
+                else if (_selectedSlot >= _scrollOffset + VisibleLines)
+                    _scrollOffset = _selectedSlot - VisibleLines + 1;
+            }
         }
     }
 

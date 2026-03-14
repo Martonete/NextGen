@@ -183,11 +183,12 @@ public partial class CharSelectForm : RpgBaseForm
         ch._equipDebugLogged = true;
 
         // Center character in 130x130 viewport.
-        // CharRenderer draws body at pos, head at pos+headOffset.
-        // DrawGrh applies TileWidth/TileHeight centering internally.
-        // Use tile-center approach: character "center" is at (pos.X + 16, ~pos.Y).
-        float posX = 49f; // tile center (49+16=65) at viewport center
-        float posY = 60f; // default: slightly above center
+        // Use the tile-center approach: in-game characters are centered at pos.X + 16.
+        // Then measure body height + head offset for vertical centering.
+        // Heading 3 = South: shield draws right, weapon draws left.
+        // Shift X slightly right (+5) to account for shield visual weight.
+        float posX = 49f; // tile center at 65 (49+16=65)
+        float posY = 65f;
         if (charInfo.Body > 0 && charInfo.Body < _data.Bodies.Length)
         {
             var body = _data.Bodies[charInfo.Body];
@@ -197,28 +198,21 @@ public partial class CharSelectForm : RpgBaseForm
                 var res = _data.ResolveGrh(walkGrh, 0);
                 if (res != null)
                 {
-                    float bodyW = res.PixelWidth;
                     float bodyH = res.PixelHeight;
                     float headOff = body.HeadOffsetY;
-
-                    // DrawGrh centering adjustments (multi-tile sprites)
-                    float tileAdjX = 0f;
-                    if (res.TileWidth != 1f && res.TileWidth > 0)
-                        tileAdjX = (int)(res.TileWidth * 16f) - 16f;
-                    float tileAdjY = 0f;
+                    float bodyDrawY = 0f;
                     if (res.TileHeight != 1f && res.TileHeight > 0)
-                        tileAdjY = (int)(res.TileHeight * 32f) - 32f;
+                        bodyDrawY = -((int)(res.TileHeight * 32f) - 32f);
 
-                    // X: body visual center = (posX - tileAdjX) + bodyW/2 = 65
-                    posX = 65f - bodyW / 2f + tileAdjX;
-
-                    // Y: head top = posY + headOff, body bottom = posY - tileAdjY + bodyH
-                    // Visual center = posY + (headOff - tileAdjY + bodyH) / 2
-                    // Target center at Y=60 (slightly above box center to feel grounded)
-                    posY = 60f - (bodyH + headOff - tileAdjY) / 2f;
+                    // Vertical: center between head top and body bottom
+                    posY = 65f - (headOff + bodyDrawY + bodyH) / 2f;
                 }
             }
         }
+        // Equipment offset: shield extends right on heading 3 (south)
+        bool hasShield = ch.ShieldAnim > 0;
+        bool hasWeapon = ch.WeaponAnim > 0;
+        if (hasShield) posX -= 5f; // shift left so shield+body visual center hits 65
         CharRenderer.DrawCharacter(_previewNode, ch, new Vector2(posX, posY), _data, _animator);
     }
 }

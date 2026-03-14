@@ -15,16 +15,13 @@ public partial class OptionsPanel
 
     private VBoxContainer BuildClanTab()
     {
-        var vbox = new VBoxContainer();
-        _clanContent = new VBoxContainer();
+        var vbox = RpgTheme.CreateColumn();
+        _clanContent = RpgTheme.CreateColumn();
         _clanContent.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         vbox.AddChild(_clanContent);
 
         // Initial placeholder
-        var placeholder = new Label();
-        placeholder.Text = "Cargando informacion del clan...";
-        placeholder.AddThemeFontSizeOverride("font_size", 11);
-        _clanContent.AddChild(placeholder);
+        _clanContent.AddChild(RpgTheme.CreateInfoLabel("Cargando informacion del clan...", 12));
 
         return vbox;
     }
@@ -54,17 +51,10 @@ public partial class OptionsPanel
             BuildClanNoGuildContent();
     }
 
-    /// <summary>Open options directly on the Clanes tab.</summary>
+    /// <summary>Clan tab removed from Options — this is now a no-op.</summary>
     public void OpenClanTab()
     {
-        if (_state == null || _config == null) return;
-        _loading = true;
-        LoadControlsFromConfig(_config);
-        _loading = false;
-        _state.OptionsPanelOpen = true;
-        Visible = true;
-        _clanTabRequested = false; // allow re-request
-        SetTab(3);
+        // Clan has its own panel now, no longer in Options.
     }
 
     // ── No Guild View (VB6: frmGuildMember without a guild) ──
@@ -73,20 +63,15 @@ public partial class OptionsPanel
     {
         if (_clanContent == null || _state == null) return;
 
-        _clanContent.AddChild(SectionLabel("Sin Clan"));
+        _clanContent.AddChild(RpgTheme.CreateTitleLabel("Sin Clan", 15));
 
-        var infoLabel = new Label();
-        infoLabel.Text = "No perteneces a ningun clan.";
-        infoLabel.AddThemeFontSizeOverride("font_size", 11);
-        _clanContent.AddChild(infoLabel);
+        _clanContent.AddChild(RpgTheme.CreateInfoLabel("No perteneces a ningun clan.", 12));
 
-        _clanContent.AddChild(Spacer(8));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(8));
 
         // Found clan button
-        var foundBtn = new Button();
-        foundBtn.Text = "Fundar Clan";
-        foundBtn.CustomMinimumSize = new Vector2(200, 30);
-        foundBtn.AddThemeFontSizeOverride("font_size", 12);
+        var foundBtn = RpgTheme.CreateRpgButton("Fundar Clan", false, 14);
+        foundBtn.CustomMinimumSize = new Vector2(200, 36);
         foundBtn.Pressed += () =>
         {
             if (_tcp != null)
@@ -94,24 +79,19 @@ public partial class OptionsPanel
         };
         _clanContent.AddChild(foundBtn);
 
-        _clanContent.AddChild(Spacer(8));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(8));
 
         // Guild list
-        _clanContent.AddChild(SectionLabel("Clanes Disponibles"));
+        _clanContent.AddChild(RpgTheme.CreateTitleLabel("Clanes Disponibles", 15));
 
         // Search filter
-        var searchRow = new HBoxContainer();
-        searchRow.AddChild(SmallLabel("Buscar:"));
-        var searchEdit = new LineEdit();
-        searchEdit.PlaceholderText = "Filtrar clanes...";
-        searchEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        searchEdit.AddThemeFontSizeOverride("font_size", 11);
+        var searchRow = RpgTheme.CreateRow();
+        searchRow.AddChild(RpgTheme.CreateInfoLabel("Buscar:", 12));
+        var searchEdit = RpgTheme.CreateRpgInput("Filtrar clanes...", 200);
         searchRow.AddChild(searchEdit);
         _clanContent.AddChild(searchRow);
 
-        var guildList = new ItemList();
-        guildList.CustomMinimumSize = new Vector2(0, 160);
-        guildList.AddThemeFontSizeOverride("font_size", 11);
+        var guildList = RpgTheme.CreateRpgItemList(0, 160);
         _clanContent.AddChild(guildList);
 
         // Parse guild list data
@@ -145,9 +125,7 @@ public partial class OptionsPanel
         };
 
         // Details button
-        var detailsBtn = new Button();
-        detailsBtn.Text = "Ver Detalles";
-        detailsBtn.AddThemeFontSizeOverride("font_size", 11);
+        var detailsBtn = RpgTheme.CreateRpgButton("Ver Detalles", false, 12);
         detailsBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -159,18 +137,14 @@ public partial class OptionsPanel
         };
         _clanContent.AddChild(detailsBtn);
 
-        _clanContent.AddChild(Spacer(4));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(4));
 
         // Petition + apply
-        _clanContent.AddChild(SmallLabel("Solicitud de ingreso:"));
-        var petitionEdit = new LineEdit();
-        petitionEdit.PlaceholderText = "Escribe tu solicitud...";
-        petitionEdit.AddThemeFontSizeOverride("font_size", 11);
+        _clanContent.AddChild(RpgTheme.CreateInfoLabel("Solicitud de ingreso:", 12));
+        var petitionEdit = RpgTheme.CreateRpgInput("Escribe tu solicitud...", 200);
         _clanContent.AddChild(petitionEdit);
 
-        var applyBtn = new Button();
-        applyBtn.Text = "Enviar Solicitud";
-        applyBtn.AddThemeFontSizeOverride("font_size", 11);
+        var applyBtn = RpgTheme.CreateRpgButton("Enviar Solicitud", false, 12);
         applyBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -193,7 +167,7 @@ public partial class OptionsPanel
     {
         if (_clanContent == null || _state == null) return;
 
-        _clanContent.AddChild(SectionLabel("Administracion del Clan"));
+        _clanContent.AddChild(RpgTheme.CreateTitleLabel("Administracion del Clan", 15));
 
         var data = _state.GuildInfoData;
         var parts = data.Split(BF);
@@ -207,10 +181,9 @@ public partial class OptionsPanel
         string reputation = parts.Length > 9 ? parts[9] : "0";
 
         // Info
-        var infoLabel = new Label();
+        var infoLabel = RpgTheme.CreateInfoLabel("", 12);
         infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         infoLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
-        infoLabel.AddThemeFontSizeOverride("font_size", 11);
         string infoText = $"Nivel: {guildLevel} | Puntos: {guildPoints}\n" +
             $"Lider: {leader}\n";
         // Only show sub-lideres if at least one is set
@@ -227,7 +200,7 @@ public partial class OptionsPanel
         infoLabel.Text = infoText;
         _clanContent.AddChild(infoLabel);
 
-        _clanContent.AddChild(Spacer(6));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(6));
 
         // Guild list (other clans)
         int idx = 13;
@@ -242,22 +215,17 @@ public partial class OptionsPanel
         }
 
         // Two columns: left=clans, right=members
-        var cols = new HBoxContainer();
-        cols.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        var cols = RpgTheme.CreateRow();
 
         // Left column — Clans
-        var leftCol = new VBoxContainer();
+        var leftCol = RpgTheme.CreateColumn();
         leftCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        leftCol.AddChild(SmallLabel("Clanes:"));
+        leftCol.AddChild(RpgTheme.CreateInfoLabel("Clanes:", 12));
 
-        var filterClans = new LineEdit();
-        filterClans.PlaceholderText = "Filtrar...";
-        filterClans.AddThemeFontSizeOverride("font_size", 10);
+        var filterClans = RpgTheme.CreateRpgInput("Filtrar...", 120);
         leftCol.AddChild(filterClans);
 
-        var guildList = new ItemList();
-        guildList.CustomMinimumSize = new Vector2(0, 100);
-        guildList.AddThemeFontSizeOverride("font_size", 10);
+        var guildList = RpgTheme.CreateRpgItemList(0, 100);
         foreach (var g in guildNames)
         {
             // Leader format: name$align$level
@@ -280,18 +248,14 @@ public partial class OptionsPanel
         };
 
         // Right column — Members
-        var rightCol = new VBoxContainer();
+        var rightCol = RpgTheme.CreateColumn();
         rightCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        rightCol.AddChild(SmallLabel("Miembros:"));
+        rightCol.AddChild(RpgTheme.CreateInfoLabel("Miembros:", 12));
 
-        var filterMembers = new LineEdit();
-        filterMembers.PlaceholderText = "Filtrar...";
-        filterMembers.AddThemeFontSizeOverride("font_size", 10);
+        var filterMembers = RpgTheme.CreateRpgInput("Filtrar...", 120);
         rightCol.AddChild(filterMembers);
 
-        var memberList = new ItemList();
-        memberList.CustomMinimumSize = new Vector2(0, 100);
-        memberList.AddThemeFontSizeOverride("font_size", 10);
+        var memberList = RpgTheme.CreateRpgItemList(0, 100);
         rightCol.AddChild(memberList);
         cols.AddChild(rightCol);
 
@@ -322,18 +286,14 @@ public partial class OptionsPanel
         _clanContent.AddChild(cols);
 
         // News
-        _clanContent.AddChild(Spacer(4));
-        _clanContent.AddChild(SmallLabel("Noticias del clan:"));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(4));
+        _clanContent.AddChild(RpgTheme.CreateInfoLabel("Noticias del clan:", 12));
 
-        var newsEdit = new TextEdit();
-        newsEdit.CustomMinimumSize = new Vector2(0, 50);
-        newsEdit.AddThemeFontSizeOverride("font_size", 10);
+        var newsEdit = RpgTheme.CreateRpgTextEdit("", 0, 50);
         newsEdit.Text = _state.GuildNewsText;
         _clanContent.AddChild(newsEdit);
 
-        var updateNewsBtn = new Button();
-        updateNewsBtn.Text = "Actualizar Noticias";
-        updateNewsBtn.AddThemeFontSizeOverride("font_size", 11);
+        var updateNewsBtn = RpgTheme.CreateRpgButton("Actualizar Noticias", false, 12);
         updateNewsBtn.Pressed += () =>
         {
             if (_tcp != null)
@@ -341,13 +301,11 @@ public partial class OptionsPanel
         };
         _clanContent.AddChild(updateNewsBtn);
 
-        _clanContent.AddChild(Spacer(4));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(4));
 
         // Solicitudes
-        _clanContent.AddChild(SmallLabel("Solicitudes pendientes:"));
-        var applicantList = new ItemList();
-        applicantList.CustomMinimumSize = new Vector2(0, 60);
-        applicantList.AddThemeFontSizeOverride("font_size", 10);
+        _clanContent.AddChild(RpgTheme.CreateInfoLabel("Solicitudes pendientes:", 12));
+        var applicantList = RpgTheme.CreateRpgItemList(0, 60);
 
         var applicants = new List<string>();
         if (idx < parts.Length)
@@ -363,10 +321,8 @@ public partial class OptionsPanel
         }
         _clanContent.AddChild(applicantList);
 
-        var appBtnRow = new HBoxContainer();
-        var acceptBtn = new Button();
-        acceptBtn.Text = "Aceptar";
-        acceptBtn.AddThemeFontSizeOverride("font_size", 11);
+        var appBtnRow = RpgTheme.CreateRow();
+        var acceptBtn = RpgTheme.CreateRpgButton("Aceptar", false, 12);
         acceptBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -379,9 +335,7 @@ public partial class OptionsPanel
         };
         appBtnRow.AddChild(acceptBtn);
 
-        var rejectBtn = new Button();
-        rejectBtn.Text = "Rechazar";
-        rejectBtn.AddThemeFontSizeOverride("font_size", 11);
+        var rejectBtn = RpgTheme.CreateRpgButton("Rechazar", false, 12);
         rejectBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -395,14 +349,12 @@ public partial class OptionsPanel
         appBtnRow.AddChild(rejectBtn);
         _clanContent.AddChild(appBtnRow);
 
-        _clanContent.AddChild(Spacer(4));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(4));
 
         // Action buttons row
-        var actionRow = new HBoxContainer();
+        var actionRow = RpgTheme.CreateRow();
 
-        var detailsClanBtn = new Button();
-        detailsClanBtn.Text = "Detalles Clan";
-        detailsClanBtn.AddThemeFontSizeOverride("font_size", 10);
+        var detailsClanBtn = RpgTheme.CreateRpgButton("Detalles Clan", false, 11);
         detailsClanBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -413,9 +365,7 @@ public partial class OptionsPanel
         };
         actionRow.AddChild(detailsClanBtn);
 
-        var expelBtn = new Button();
-        expelBtn.Text = "Expulsar";
-        expelBtn.AddThemeFontSizeOverride("font_size", 10);
+        var expelBtn = RpgTheme.CreateRpgButton("Expulsar", false, 11);
         expelBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -428,10 +378,7 @@ public partial class OptionsPanel
         };
         actionRow.AddChild(expelBtn);
 
-        var closeGuildBtn = new Button();
-        closeGuildBtn.Text = "Cerrar Clan";
-        closeGuildBtn.AddThemeFontSizeOverride("font_size", 10);
-        closeGuildBtn.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+        var closeGuildBtn = RpgTheme.CreateRpgButton("Cerrar Clan", false, 11);
         closeGuildBtn.Pressed += () =>
         {
             if (_tcp != null)
@@ -452,7 +399,7 @@ public partial class OptionsPanel
     {
         if (_clanContent == null || _state == null) return;
 
-        _clanContent.AddChild(SectionLabel("Mi Clan"));
+        _clanContent.AddChild(RpgTheme.CreateTitleLabel("Mi Clan", 15));
 
         var data = _state.GuildInfoData;
         var parts = data.Split(BF);
@@ -464,10 +411,9 @@ public partial class OptionsPanel
         string sub2 = parts.Length > 4 ? parts[4] : "";
         string reputation = parts.Length > 9 ? parts[9] : "0";
 
-        var infoLabel = new Label();
+        var infoLabel = RpgTheme.CreateInfoLabel("", 12);
         infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         infoLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
-        infoLabel.AddThemeFontSizeOverride("font_size", 11);
         string infoText = $"Clan: {_state.UserGuildName}\n" +
             $"Nivel: {guildLevel} | Puntos: {guildPoints}\n" +
             $"Lider: {leader}\n";
@@ -484,25 +430,20 @@ public partial class OptionsPanel
         infoLabel.Text = infoText;
         _clanContent.AddChild(infoLabel);
 
-        _clanContent.AddChild(Spacer(6));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(6));
 
         // Two columns: clans list + members
-        var cols = new HBoxContainer();
-        cols.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        var cols = RpgTheme.CreateRow();
 
         // Left — other clans
-        var leftCol = new VBoxContainer();
+        var leftCol = RpgTheme.CreateColumn();
         leftCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        leftCol.AddChild(SmallLabel("Clanes:"));
+        leftCol.AddChild(RpgTheme.CreateInfoLabel("Clanes:", 12));
 
-        var searchClans = new LineEdit();
-        searchClans.PlaceholderText = "Filtrar...";
-        searchClans.AddThemeFontSizeOverride("font_size", 10);
+        var searchClans = RpgTheme.CreateRpgInput("Filtrar...", 120);
         leftCol.AddChild(searchClans);
 
-        var clanList = new ItemList();
-        clanList.CustomMinimumSize = new Vector2(0, 120);
-        clanList.AddThemeFontSizeOverride("font_size", 10);
+        var clanList = RpgTheme.CreateRpgItemList(0, 120);
         leftCol.AddChild(clanList);
 
         // Parse guild list from member data
@@ -536,13 +477,11 @@ public partial class OptionsPanel
         cols.AddChild(leftCol);
 
         // Right — members
-        var rightCol = new VBoxContainer();
+        var rightCol = RpgTheme.CreateColumn();
         rightCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        rightCol.AddChild(SmallLabel("Miembros:"));
+        rightCol.AddChild(RpgTheme.CreateInfoLabel("Miembros:", 12));
 
-        var memberList = new ItemList();
-        memberList.CustomMinimumSize = new Vector2(0, 140);
-        memberList.AddThemeFontSizeOverride("font_size", 10);
+        var memberList = RpgTheme.CreateRpgItemList(0, 140);
         rightCol.AddChild(memberList);
 
         var memberNames = new List<string>();
@@ -559,20 +498,17 @@ public partial class OptionsPanel
         }
         foreach (var m in memberNames) memberList.AddItem(m);
 
-        var countLabel = SmallLabel($"Total: {memberNames.Count}");
-        rightCol.AddChild(countLabel);
+        rightCol.AddChild(RpgTheme.CreateInfoLabel($"Total: {memberNames.Count}", 12));
         cols.AddChild(rightCol);
 
         _clanContent.AddChild(cols);
 
-        _clanContent.AddChild(Spacer(4));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(4));
 
         // Buttons
-        var btnRow = new HBoxContainer();
+        var btnRow = RpgTheme.CreateRow();
 
-        var detailsBtn = new Button();
-        detailsBtn.Text = "Detalles Clan";
-        detailsBtn.AddThemeFontSizeOverride("font_size", 11);
+        var detailsBtn = RpgTheme.CreateRpgButton("Detalles Clan", false, 12);
         detailsBtn.Pressed += () =>
         {
             if (_tcp == null) return;
@@ -583,9 +519,7 @@ public partial class OptionsPanel
         };
         btnRow.AddChild(detailsBtn);
 
-        var newsBtn = new Button();
-        newsBtn.Text = "Noticias";
-        newsBtn.AddThemeFontSizeOverride("font_size", 11);
+        var newsBtn = RpgTheme.CreateRpgButton("Noticias", false, 12);
         newsBtn.Pressed += () =>
         {
             // Request news from server (will come as a console/chat message)
@@ -594,10 +528,7 @@ public partial class OptionsPanel
         };
         btnRow.AddChild(newsBtn);
 
-        var leaveBtn = new Button();
-        leaveBtn.Text = "Abandonar Clan";
-        leaveBtn.AddThemeFontSizeOverride("font_size", 11);
-        leaveBtn.AddThemeColorOverride("font_color", new Color(1f, 0.4f, 0.4f));
+        var leaveBtn = RpgTheme.CreateRpgButton("Abandonar Clan", false, 12);
         leaveBtn.Pressed += () =>
         {
             if (_tcp != null)
@@ -619,7 +550,7 @@ public partial class OptionsPanel
     {
         if (_clanContent == null || _state == null) return;
 
-        _clanContent.AddChild(SectionLabel("Detalles del Clan"));
+        _clanContent.AddChild(RpgTheme.CreateTitleLabel("Detalles del Clan", 15));
 
         var data = _state.GuildInfoData;
         var parts = data.Split(BF);
@@ -642,10 +573,9 @@ public partial class OptionsPanel
         string desc = parts.Length > 17 ? parts[17] : "";
         string clanName = parts.Length > 18 ? parts[18] : "";
 
-        var detailsLabel = new Label();
+        var detailsLabel = RpgTheme.CreateInfoLabel("", 12);
         detailsLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         detailsLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
-        detailsLabel.AddThemeFontSizeOverride("font_size", 11);
         string detailsText = $"Nombre: {clanName}\n" +
             $"Nivel: {level} | Alineacion: {alignment}\n" +
             $"Fundador: {founder} | Fecha: {date}\n" +
@@ -665,40 +595,33 @@ public partial class OptionsPanel
 
         if (!string.IsNullOrEmpty(desc))
         {
-            _clanContent.AddChild(Spacer(4));
-            _clanContent.AddChild(SmallLabel("Descripcion:"));
-            var descLabel = new Label();
+            _clanContent.AddChild(RpgTheme.CreateSpacer(4));
+            _clanContent.AddChild(RpgTheme.CreateInfoLabel("Descripcion:", 12));
+            var descLabel = RpgTheme.CreateInfoLabel(desc, 12);
             descLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
             descLabel.CustomMinimumSize = new Vector2(PanelW - 40, 0);
-            descLabel.AddThemeFontSizeOverride("font_size", 11);
-            descLabel.Text = desc;
             _clanContent.AddChild(descLabel);
         }
 
         if (codexLines.Count > 0)
         {
-            _clanContent.AddChild(Spacer(4));
-            _clanContent.AddChild(SmallLabel("Codex:"));
+            _clanContent.AddChild(RpgTheme.CreateSpacer(4));
+            _clanContent.AddChild(RpgTheme.CreateInfoLabel("Codex:", 12));
             foreach (var line in codexLines)
             {
-                var codexLabel = new Label();
-                codexLabel.Text = $"  - {line}";
-                codexLabel.AddThemeFontSizeOverride("font_size", 10);
-                _clanContent.AddChild(codexLabel);
+                _clanContent.AddChild(RpgTheme.CreateInfoLabel($"  - {line}", 11));
             }
         }
 
-        _clanContent.AddChild(Spacer(8));
+        _clanContent.AddChild(RpgTheme.CreateSpacer(8));
 
         // Buttons row
-        var btnRow = new HBoxContainer();
+        var btnRow = RpgTheme.CreateRow();
 
         // Solicitar ingreso (only if no guild)
         if (string.IsNullOrEmpty(_state.UserGuildName))
         {
-            var applyBtn = new Button();
-            applyBtn.Text = "Solicitar Ingreso";
-            applyBtn.AddThemeFontSizeOverride("font_size", 11);
+            var applyBtn = RpgTheme.CreateRpgButton("Solicitar Ingreso", false, 12);
             applyBtn.Pressed += () =>
             {
                 if (_tcp != null && !string.IsNullOrEmpty(clanName))
@@ -707,9 +630,7 @@ public partial class OptionsPanel
             btnRow.AddChild(applyBtn);
         }
 
-        var backBtn = new Button();
-        backBtn.Text = "Volver";
-        backBtn.AddThemeFontSizeOverride("font_size", 11);
+        var backBtn = RpgTheme.CreateRpgButton("Volver", false, 12);
         backBtn.Pressed += () =>
         {
             _clanTabRequested = false;

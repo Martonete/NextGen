@@ -11,25 +11,18 @@ namespace ArgentumNextgen.UI;
 /// Tabs: User Info, Teleport, Spawn, Moderation, Messages, Server, Map, Logs.
 /// All actions send slash commands via WriteTalk.
 /// Toggle with /PANELGM command or GM sidebar button.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class GmPanel : PanelContainer
+public partial class GmPanel : RpgBaseForm
 {
-    private const int PanelW = 500;
-    private const int PanelH = 450;
-    private const int TitleBarH = 28;
-    private const int TabBarH = 28;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
-
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
 
     // Tab system
     private int _activeTab;
     private Control?[] _tabs = new Control?[8];
-    private Button?[] _tabButtons = new Button?[8];
+    private HBoxContainer? _tabBar1;
+    private HBoxContainer? _tabBar2;
 
     // Tab 0: User Info
     private LineEdit? _userSearchEdit;
@@ -63,6 +56,8 @@ public partial class GmPanel : PanelContainer
     private TextEdit? _logTextArea;
     private readonly List<string> _logEntries = new();
 
+    public GmPanel() : base("Panel GM", new Vector2(500, 450), "v2") { }
+
     public void Init(GameState state, AoTcpClient? tcp)
     {
         _state = state;
@@ -71,73 +66,26 @@ public partial class GmPanel : PanelContainer
 
     public void SetTcp(AoTcpClient? tcp) => _tcp = tcp;
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        var root = RpgTheme.CreateColumn(0);
+        ContentContainer.AddChild(root);
 
-        var style = new StyleBoxFlat();
-        style.BgColor = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        style.BorderColor = new Color(0.6f, 0.2f, 0.2f, 1f);
-        style.SetBorderWidthAll(2);
-        style.SetCornerRadiusAll(3);
-        AddThemeStyleboxOverride("panel", style);
+        // Tab bars (two rows of 4 tabs for space)
+        string[] tabNames1 = { "Usuario", "Teleport", "Spawn", "Moderacion" };
+        string[] tabNames2 = { "Mensajes", "Servidor", "Mapa", "Logs" };
 
-        var root = new VBoxContainer();
-        root.SetAnchorsPreset(LayoutPreset.FullRect);
-        root.AddThemeConstantOverride("separation", 0);
-        AddChild(root);
+        _tabBar1 = RpgTheme.CreateTabBar(tabNames1, idx => SetTab(idx));
+        root.AddChild(_tabBar1);
 
-        // Title bar
-        var titleBar = new HBoxContainer();
-        titleBar.CustomMinimumSize = new Vector2(0, TitleBarH);
-        root.AddChild(titleBar);
-
-        var titleLabel = new Label();
-        titleLabel.Text = "  Panel GM";
-        titleLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        titleLabel.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
-        titleLabel.AddThemeFontSizeOverride("font_size", 13);
-        titleBar.AddChild(titleLabel);
-
-        var closeBtn = new Button();
-        closeBtn.Text = "X";
-        closeBtn.CustomMinimumSize = new Vector2(28, 24);
-        closeBtn.Pressed += Close;
-        titleBar.AddChild(closeBtn);
-
-        // Tab bar (two rows of 4 tabs for space)
-        var tabRow1 = new HBoxContainer();
-        tabRow1.CustomMinimumSize = new Vector2(0, TabBarH);
-        tabRow1.AddThemeConstantOverride("separation", 2);
-        root.AddChild(tabRow1);
-
-        var tabRow2 = new HBoxContainer();
-        tabRow2.CustomMinimumSize = new Vector2(0, TabBarH);
-        tabRow2.AddThemeConstantOverride("separation", 2);
-        root.AddChild(tabRow2);
-
-        string[] tabNames = { "Usuario", "Teleport", "Spawn", "Moderacion", "Mensajes", "Servidor", "Mapa", "Logs" };
-        for (int i = 0; i < 8; i++)
-        {
-            int idx = i;
-            var btn = new Button();
-            btn.Text = tabNames[i];
-            btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            btn.CustomMinimumSize = new Vector2(0, TabBarH);
-            btn.AddThemeFontSizeOverride("font_size", 10);
-            btn.Pressed += () => SetTab(idx);
-            _tabButtons[i] = btn;
-            if (i < 4) tabRow1.AddChild(btn);
-            else tabRow2.AddChild(btn);
-        }
+        _tabBar2 = RpgTheme.CreateTabBar(tabNames2, idx => SetTab(idx + 4));
+        root.AddChild(_tabBar2);
 
         // Content area
         var contentArea = new Control();
         contentArea.SizeFlagsVertical = SizeFlags.ExpandFill;
         contentArea.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        contentArea.CustomMinimumSize = new Vector2(PanelW - 8, PanelH - TitleBarH - TabBarH * 2 - 12);
+        contentArea.CustomMinimumSize = new Vector2(0, 280);
         root.AddChild(contentArea);
 
         _tabs[0] = BuildUserInfoTab();
@@ -162,10 +110,18 @@ public partial class GmPanel : PanelContainer
         {
             if (_tabs[i] != null) _tabs[i]!.Visible = i == index;
         }
-        var normalColor = new Color(0.7f, 0.7f, 0.7f);
-        var activeColor = new Color(1f, 0.4f, 0.4f);
-        for (int i = 0; i < 8; i++)
-            _tabButtons[i]?.AddThemeColorOverride("font_color", i == index ? activeColor : normalColor);
+        // Update tab bar styling
+        if (index < 4)
+        {
+            RpgTheme.SetTabBarActive(_tabBar1!, index);
+            // Deselect all in second row by setting an out-of-range index
+            RpgTheme.SetTabBarActive(_tabBar2!, -1);
+        }
+        else
+        {
+            RpgTheme.SetTabBarActive(_tabBar2!, index - 4);
+            RpgTheme.SetTabBarActive(_tabBar1!, -1);
+        }
     }
 
     // ── Tab 0: User Info ──────────────────────────────────────
@@ -176,22 +132,18 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 6);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Buscar jugador:");
-        var searchRow = new HBoxContainer();
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Buscar jugador:", 12));
+        var searchRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
         vbox.AddChild(searchRow);
 
-        _userSearchEdit = new LineEdit();
-        _userSearchEdit.PlaceholderText = "Nombre del jugador";
-        _userSearchEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _userSearchEdit = RpgTheme.CreateRpgInput("Nombre del jugador");
         searchRow.AddChild(_userSearchEdit);
 
-        var searchBtn = new Button();
-        searchBtn.Text = "Buscar";
+        var searchBtn = RpgTheme.CreateRpgButton("Buscar", false, 13);
+        searchBtn.CustomMinimumSize = new Vector2(90, 30);
         searchBtn.Pressed += () =>
         {
             string name = _userSearchEdit?.Text.Trim() ?? "";
@@ -203,12 +155,10 @@ public partial class GmPanel : PanelContainer
         };
         searchRow.AddChild(searchBtn);
 
-        _userInfoLabel = new Label();
+        _userInfoLabel = RpgTheme.CreateInfoLabel("Use /MIRAR to view player info in the chat console.", 11);
         _userInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _userInfoLabel.CustomMinimumSize = new Vector2(PanelW - 32, 100);
-        _userInfoLabel.AddThemeFontSizeOverride("font_size", 11);
+        _userInfoLabel.CustomMinimumSize = new Vector2(0, 100);
         _userInfoLabel.AddThemeColorOverride("font_color", Colors.White);
-        _userInfoLabel.Text = "Use /MIRAR to view player info in the chat console.";
         vbox.AddChild(_userInfoLabel);
 
         return scroll;
@@ -222,36 +172,27 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 6);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Teleport a coordenadas:");
-        var coordRow = new HBoxContainer();
-        coordRow.AddThemeConstantOverride("separation", 4);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Teleport a coordenadas:", 12));
+        var coordRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         vbox.AddChild(coordRow);
 
-        AddLabel(coordRow, "Mapa:");
-        _teleMapEdit = new LineEdit();
-        _teleMapEdit.CustomMinimumSize = new Vector2(50, 0);
-        _teleMapEdit.PlaceholderText = "1";
+        coordRow.AddChild(RpgTheme.CreateInfoLabel("Mapa:", 12));
+        _teleMapEdit = RpgTheme.CreateRpgInput("1", 50);
         coordRow.AddChild(_teleMapEdit);
 
-        AddLabel(coordRow, "X:");
-        _teleXEdit = new LineEdit();
-        _teleXEdit.CustomMinimumSize = new Vector2(40, 0);
-        _teleXEdit.PlaceholderText = "50";
+        coordRow.AddChild(RpgTheme.CreateInfoLabel("X:", 12));
+        _teleXEdit = RpgTheme.CreateRpgInput("50", 40);
         coordRow.AddChild(_teleXEdit);
 
-        AddLabel(coordRow, "Y:");
-        _teleYEdit = new LineEdit();
-        _teleYEdit.CustomMinimumSize = new Vector2(40, 0);
-        _teleYEdit.PlaceholderText = "50";
+        coordRow.AddChild(RpgTheme.CreateInfoLabel("Y:", 12));
+        _teleYEdit = RpgTheme.CreateRpgInput("50", 40);
         coordRow.AddChild(_teleYEdit);
 
-        var teleCoordsBtn = new Button();
-        teleCoordsBtn.Text = "Teleport";
+        var teleCoordsBtn = RpgTheme.CreateRpgButton("Teleport", false, 13);
+        teleCoordsBtn.CustomMinimumSize = new Vector2(110, 30);
         teleCoordsBtn.Pressed += () =>
         {
             string map = _teleMapEdit?.Text.Trim() ?? "1";
@@ -262,19 +203,17 @@ public partial class GmPanel : PanelContainer
         };
         vbox.AddChild(teleCoordsBtn);
 
-        AddSeparator(vbox);
+        vbox.AddChild(RpgTheme.CreateSeparator());
 
-        AddLabel(vbox, "Teleport a jugador:");
-        var telePlayerRow = new HBoxContainer();
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Teleport a jugador:", 12));
+        var telePlayerRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
         vbox.AddChild(telePlayerRow);
 
-        _telePlayerEdit = new LineEdit();
-        _telePlayerEdit.PlaceholderText = "Nombre del jugador";
-        _telePlayerEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _telePlayerEdit = RpgTheme.CreateRpgInput("Nombre del jugador");
         telePlayerRow.AddChild(_telePlayerEdit);
 
-        var teleToBtn = new Button();
-        teleToBtn.Text = "Ir a el";
+        var teleToBtn = RpgTheme.CreateRpgButton("Ir a el", false, 13);
+        teleToBtn.CustomMinimumSize = new Vector2(90, 30);
         teleToBtn.Pressed += () =>
         {
             string name = _telePlayerEdit?.Text.Trim() ?? "";
@@ -286,8 +225,8 @@ public partial class GmPanel : PanelContainer
         };
         telePlayerRow.AddChild(teleToBtn);
 
-        var summonBtn = new Button();
-        summonBtn.Text = "Traerlo";
+        var summonBtn = RpgTheme.CreateRpgButton("Traerlo", false, 13);
+        summonBtn.CustomMinimumSize = new Vector2(110, 30);
         summonBtn.Pressed += () =>
         {
             string name = _telePlayerEdit?.Text.Trim() ?? "";
@@ -310,31 +249,24 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 6);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Spawn NPC:");
-        var npcRow = new HBoxContainer();
-        npcRow.AddThemeConstantOverride("separation", 4);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Spawn NPC:", 12));
+        var npcRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         vbox.AddChild(npcRow);
 
-        AddLabel(npcRow, "Index:");
-        _spawnNpcIndexEdit = new LineEdit();
-        _spawnNpcIndexEdit.CustomMinimumSize = new Vector2(60, 0);
-        _spawnNpcIndexEdit.PlaceholderText = "1";
+        npcRow.AddChild(RpgTheme.CreateInfoLabel("Index:", 12));
+        _spawnNpcIndexEdit = RpgTheme.CreateRpgInput("1", 60);
         npcRow.AddChild(_spawnNpcIndexEdit);
 
-        AddLabel(npcRow, "Cantidad:");
-        _spawnNpcCountEdit = new LineEdit();
-        _spawnNpcCountEdit.CustomMinimumSize = new Vector2(40, 0);
-        _spawnNpcCountEdit.PlaceholderText = "1";
+        npcRow.AddChild(RpgTheme.CreateInfoLabel("Cantidad:", 12));
+        _spawnNpcCountEdit = RpgTheme.CreateRpgInput("1", 40);
         _spawnNpcCountEdit.Text = "1";
         npcRow.AddChild(_spawnNpcCountEdit);
 
-        var spawnNpcBtn = new Button();
-        spawnNpcBtn.Text = "Spawn NPC";
+        var spawnNpcBtn = RpgTheme.CreateRpgButton("Spawn NPC", false, 13);
+        spawnNpcBtn.CustomMinimumSize = new Vector2(120, 30);
         spawnNpcBtn.Pressed += () =>
         {
             string idx = _spawnNpcIndexEdit?.Text.Trim() ?? "1";
@@ -344,21 +276,18 @@ public partial class GmPanel : PanelContainer
         };
         vbox.AddChild(spawnNpcBtn);
 
-        AddSeparator(vbox);
+        vbox.AddChild(RpgTheme.CreateSeparator());
 
-        AddLabel(vbox, "Spawn Item:");
-        var itemRow = new HBoxContainer();
-        itemRow.AddThemeConstantOverride("separation", 4);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Spawn Item:", 12));
+        var itemRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         vbox.AddChild(itemRow);
 
-        AddLabel(itemRow, "Index:");
-        _spawnItemIndexEdit = new LineEdit();
-        _spawnItemIndexEdit.CustomMinimumSize = new Vector2(60, 0);
-        _spawnItemIndexEdit.PlaceholderText = "1";
+        itemRow.AddChild(RpgTheme.CreateInfoLabel("Index:", 12));
+        _spawnItemIndexEdit = RpgTheme.CreateRpgInput("1", 60);
         itemRow.AddChild(_spawnItemIndexEdit);
 
-        var spawnItemBtn = new Button();
-        spawnItemBtn.Text = "Crear Item";
+        var spawnItemBtn = RpgTheme.CreateRpgButton("Crear Item", false, 13);
+        spawnItemBtn.CustomMinimumSize = new Vector2(120, 30);
         spawnItemBtn.Pressed += () =>
         {
             string idx = _spawnItemIndexEdit?.Text.Trim() ?? "1";
@@ -368,8 +297,8 @@ public partial class GmPanel : PanelContainer
         vbox.AddChild(spawnItemBtn);
 
         // Spawn list button
-        var spawnListBtn = new Button();
-        spawnListBtn.Text = "Ver lista de NPCs";
+        var spawnListBtn = RpgTheme.CreateRpgButton("Ver lista de NPCs", false, 13);
+        spawnListBtn.CustomMinimumSize = new Vector2(160, 30);
         spawnListBtn.Pressed += OnOpenSpawnList;
         vbox.AddChild(spawnListBtn);
 
@@ -392,30 +321,23 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 6);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Jugador objetivo:");
-        _modPlayerEdit = new LineEdit();
-        _modPlayerEdit.PlaceholderText = "Nombre del jugador";
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Jugador objetivo:", 12));
+        _modPlayerEdit = RpgTheme.CreateRpgInput("Nombre del jugador");
         vbox.AddChild(_modPlayerEdit);
 
         string[] actions = { "Kick", "Ban", "Jail", "Mute", "Unmute", "Revivir", "Curar" };
         string[] commands = { "/KICK", "/BAN", "/CARCEL", "/SILENCIAR", "/DESILENCIAR", "/REVIVIR", "/CURAR" };
 
-        var grid = new GridContainer();
-        grid.Columns = 3;
-        grid.AddThemeConstantOverride("h_separation", 4);
-        grid.AddThemeConstantOverride("v_separation", 4);
+        var grid = RpgTheme.CreateGrid(3, RpgTheme.SpacingSm, RpgTheme.SpacingSm);
         vbox.AddChild(grid);
 
         for (int i = 0; i < actions.Length; i++)
         {
             int idx = i;
-            var btn = new Button();
-            btn.Text = actions[i];
+            var btn = RpgTheme.CreateRpgButton(actions[i], false, 12);
             btn.CustomMinimumSize = new Vector2(100, 28);
             btn.Pressed += () =>
             {
@@ -440,30 +362,25 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 6);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Mensaje:");
-        _msgTextEdit = new TextEdit();
-        _msgTextEdit.CustomMinimumSize = new Vector2(PanelW - 32, 80);
-        _msgTextEdit.AddThemeFontSizeOverride("font_size", 11);
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Mensaje:", 12));
+        _msgTextEdit = RpgTheme.CreateRpgTextEdit("", 0, 80);
         vbox.AddChild(_msgTextEdit);
 
         string[] msgTypes = { "Global", "Faccion", "Ciudadano", "Criminal" };
         string[] msgCmds = { "/GMSG", "/FMSG", "/RMSG", "/CMSG" };
 
-        var btnRow = new HBoxContainer();
-        btnRow.AddThemeConstantOverride("separation", 4);
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         vbox.AddChild(btnRow);
 
         for (int i = 0; i < msgTypes.Length; i++)
         {
             int idx = i;
-            var btn = new Button();
-            btn.Text = $"Enviar {msgTypes[i]}";
+            var btn = RpgTheme.CreateRpgButton($"Enviar {msgTypes[i]}", false, 10);
             btn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            btn.CustomMinimumSize = new Vector2(0, 28);
             btn.Pressed += () =>
             {
                 string msg = _msgTextEdit?.Text.Trim() ?? "";
@@ -488,38 +405,35 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 8);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Acciones del servidor:");
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Acciones del servidor:", 12));
 
-        var btnSaveAll = new Button();
-        btnSaveAll.Text = "Guardar Todo";
+        var btnSaveAll = RpgTheme.CreateRpgButton("Guardar Todo", false, 13);
+        btnSaveAll.CustomMinimumSize = new Vector2(160, 30);
         btnSaveAll.Pressed += () => { SendGmCommand("/GRABAR"); AddLog("Requested save all"); };
         vbox.AddChild(btnSaveAll);
 
-        var btnOnline = new Button();
-        btnOnline.Text = "Ver Online";
+        var btnOnline = RpgTheme.CreateRpgButton("Ver Online", false, 13);
+        btnOnline.CustomMinimumSize = new Vector2(160, 30);
         btnOnline.Pressed += () => { SendGmCommand("/ONLINE"); AddLog("Requested online list"); };
         vbox.AddChild(btnOnline);
 
-        var btnReload = new Button();
-        btnReload.Text = "Recargar NPCs";
+        var btnReload = RpgTheme.CreateRpgButton("Recargar NPCs", false, 13);
+        btnReload.CustomMinimumSize = new Vector2(160, 30);
         btnReload.Pressed += () => { SendGmCommand("/RELOADNPCS"); AddLog("Requested NPC reload"); };
         vbox.AddChild(btnReload);
 
-        var btnReloadSpells = new Button();
-        btnReloadSpells.Text = "Recargar Hechizos";
+        var btnReloadSpells = RpgTheme.CreateRpgButton("Recargar Hechizos", false, 13);
+        btnReloadSpells.CustomMinimumSize = new Vector2(160, 30);
         btnReloadSpells.Pressed += () => { SendGmCommand("/RELOADSPELLS"); AddLog("Requested spell reload"); };
         vbox.AddChild(btnReloadSpells);
 
-        AddSeparator(vbox);
+        vbox.AddChild(RpgTheme.CreateSeparator());
 
-        var btnShutdown = new Button();
-        btnShutdown.Text = "Apagar Servidor";
-        btnShutdown.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
+        var btnShutdown = RpgTheme.CreateRpgButton("Apagar Servidor", false, 13);
+        btnShutdown.CustomMinimumSize = new Vector2(160, 30);
         btnShutdown.Pressed += () => { SendGmCommand("/APAGAR"); AddLog("Requested server shutdown"); };
         vbox.AddChild(btnShutdown);
 
@@ -534,37 +448,28 @@ public partial class GmPanel : PanelContainer
         scroll.SetAnchorsPreset(LayoutPreset.FullRect);
         scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
 
-        var vbox = new VBoxContainer();
-        vbox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        vbox.AddThemeConstantOverride("separation", 6);
+        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
         scroll.AddChild(vbox);
 
-        AddLabel(vbox, "Tile (posicion actual o especificada):");
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Tile (posicion actual o especificada):", 12));
 
-        var coordRow = new HBoxContainer();
-        coordRow.AddThemeConstantOverride("separation", 4);
+        var coordRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
         vbox.AddChild(coordRow);
 
-        AddLabel(coordRow, "X:");
-        _mapTriggerXEdit = new LineEdit();
-        _mapTriggerXEdit.CustomMinimumSize = new Vector2(40, 0);
-        _mapTriggerXEdit.PlaceholderText = "50";
+        coordRow.AddChild(RpgTheme.CreateInfoLabel("X:", 12));
+        _mapTriggerXEdit = RpgTheme.CreateRpgInput("50", 40);
         coordRow.AddChild(_mapTriggerXEdit);
 
-        AddLabel(coordRow, "Y:");
-        _mapTriggerYEdit = new LineEdit();
-        _mapTriggerYEdit.CustomMinimumSize = new Vector2(40, 0);
-        _mapTriggerYEdit.PlaceholderText = "50";
+        coordRow.AddChild(RpgTheme.CreateInfoLabel("Y:", 12));
+        _mapTriggerYEdit = RpgTheme.CreateRpgInput("50", 40);
         coordRow.AddChild(_mapTriggerYEdit);
 
-        AddLabel(coordRow, "Value:");
-        _mapTriggerValueEdit = new LineEdit();
-        _mapTriggerValueEdit.CustomMinimumSize = new Vector2(40, 0);
-        _mapTriggerValueEdit.PlaceholderText = "0";
+        coordRow.AddChild(RpgTheme.CreateInfoLabel("Value:", 12));
+        _mapTriggerValueEdit = RpgTheme.CreateRpgInput("0", 40);
         coordRow.AddChild(_mapTriggerValueEdit);
 
-        var btnBlock = new Button();
-        btnBlock.Text = "Toggle Bloqueado";
+        var btnBlock = RpgTheme.CreateRpgButton("Toggle Bloqueado", false, 13);
+        btnBlock.CustomMinimumSize = new Vector2(160, 30);
         btnBlock.Pressed += () =>
         {
             SendGmCommand("/BLOQ");
@@ -572,8 +477,8 @@ public partial class GmPanel : PanelContainer
         };
         vbox.AddChild(btnBlock);
 
-        var btnTrigger = new Button();
-        btnTrigger.Text = "Set Trigger";
+        var btnTrigger = RpgTheme.CreateRpgButton("Set Trigger", false, 13);
+        btnTrigger.CustomMinimumSize = new Vector2(160, 30);
         btnTrigger.Pressed += () =>
         {
             string val = _mapTriggerValueEdit?.Text.Trim() ?? "0";
@@ -582,8 +487,8 @@ public partial class GmPanel : PanelContainer
         };
         vbox.AddChild(btnTrigger);
 
-        var btnSaveMap = new Button();
-        btnSaveMap.Text = "Guardar Mapa";
+        var btnSaveMap = RpgTheme.CreateRpgButton("Guardar Mapa", false, 13);
+        btnSaveMap.CustomMinimumSize = new Vector2(160, 30);
         btnSaveMap.Pressed += () =>
         {
             SendGmCommand("/GUARDARMAPA");
@@ -600,20 +505,15 @@ public partial class GmPanel : PanelContainer
     {
         var vbox = new VBoxContainer();
         vbox.SetAnchorsPreset(LayoutPreset.FullRect);
-        vbox.AddThemeConstantOverride("separation", 4);
+        vbox.AddThemeConstantOverride("separation", RpgTheme.SpacingSm);
 
-        AddLabel(vbox, "Log de acciones GM:");
+        vbox.AddChild(RpgTheme.CreateInfoLabel("Log de acciones GM:", 12));
 
-        _logTextArea = new TextEdit();
-        _logTextArea.Editable = false;
-        _logTextArea.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _logTextArea.CustomMinimumSize = new Vector2(PanelW - 32, 200);
-        _logTextArea.AddThemeFontSizeOverride("font_size", 10);
-        _logTextArea.AddThemeColorOverride("font_color", new Color(0.8f, 0.8f, 0.8f));
+        _logTextArea = RpgTheme.CreateRpgTextEdit("", 0, 200, readOnly: true);
         vbox.AddChild(_logTextArea);
 
-        var clearBtn = new Button();
-        clearBtn.Text = "Limpiar Log";
+        var clearBtn = RpgTheme.CreateRpgButton("Limpiar Log", false, 13);
+        clearBtn.CustomMinimumSize = new Vector2(130, 30);
         clearBtn.Pressed += () =>
         {
             _logEntries.Clear();
@@ -643,63 +543,22 @@ public partial class GmPanel : PanelContainer
         }
     }
 
-    private static void AddLabel(Control parent, string text)
-    {
-        var lbl = new Label();
-        lbl.Text = text;
-        lbl.AddThemeFontSizeOverride("font_size", 11);
-        lbl.AddThemeColorOverride("font_color", new Color(0.8f, 0.75f, 0.6f));
-        parent.AddChild(lbl);
-    }
-
-    private static void AddSeparator(VBoxContainer parent)
-    {
-        var sep = new HSeparator();
-        sep.AddThemeConstantOverride("separation", 8);
-        parent.AddChild(sep);
-    }
-
     // ── Open / Close ──────────────────────────────────────────
 
     public void Open()
     {
-        Visible = true;
         SetTab(0);
+        ShowForm();
     }
 
     public void Close()
     {
-        Visible = false;
+        HideForm();
     }
 
-    public void Toggle()
+    public new void Toggle()
     {
         if (Visible) Close();
         else Open();
-    }
-
-    // ── Dragging ──────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < TitleBarH)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.Position;
-                    AcceptEvent();
-                }
-                else if (!mb.Pressed)
-                    _dragging = false;
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            Position += mm.Relative;
-            AcceptEvent();
-        }
     }
 }

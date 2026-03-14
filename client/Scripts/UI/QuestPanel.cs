@@ -26,41 +26,32 @@ public class QuestEntry
 
 /// <summary>
 /// Quest panel (VB6: frmQuest) — shows available/active quests with details.
-/// Server sends QuestListResp (ID 200), QuestCurrent (ID 201), QuestSelected (ID 202).
-/// Client sends QuestList (ID 120) to request list, QuestInfo (ID 121) for details,
-/// QuestAccept (ID 122) to accept/abandon.
+/// Split-panel layout: quest list on the left, detail on the right.
+/// Now uses RpgBaseForm for consistent RPG styling.
 /// </summary>
-public partial class QuestPanel : Control
+public partial class QuestPanel : RpgBaseForm
 {
-    private const int PanelW = 560;
-    private const int PanelH = 420;
-
     private GameState? _state;
     private AoTcpClient? _tcp;
 
-    // Dragging
-    private bool _dragging;
-    private Vector2 _dragOffset;
-
     // UI controls — left side (quest list)
-    private Label? _titleLabel;
-    private Button? _closeBtn;
-    private ScrollContainer? _questListScroll;
     private VBoxContainer? _questListBox;
 
     // UI controls — right side (quest detail)
-    private Panel? _detailPanel;
+    private VBoxContainer? _detailColumn;
     private Label? _detailTitle;
     private Label? _detailType;
-    private RichTextLabel? _detailDesc;
+    private TextEdit? _detailDesc;
     private Label? _detailProgress;
     private Label? _detailRewards;
-    private Button? _acceptBtn;
-    private Button? _abandonBtn;
+    private TextureButton? _acceptBtn;
+    private TextureButton? _abandonBtn;
 
     // Data
     private readonly List<QuestEntry> _quests = new();
     private QuestEntry? _selectedQuest;
+
+    public QuestPanel() : base("Misiones", new Vector2(560, 420), "v2") { }
 
     public void Init(GameState state, AoTcpClient tcp)
     {
@@ -68,117 +59,65 @@ public partial class QuestPanel : Control
         _tcp = tcp;
     }
 
-    public override void _Ready()
+    protected override void BuildContent()
     {
-        Visible = false;
-        CustomMinimumSize = new Vector2(PanelW, PanelH);
-        Size = new Vector2(PanelW, PanelH);
+        var mainRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
+        ContentContainer.AddChild(mainRow);
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.08f, 0.08f, 0.12f, 0.95f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
+        // ── Left side: quest list ────────────────────────────────
+        var leftCol = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        leftCol.CustomMinimumSize = new Vector2(190, 0);
+        mainRow.AddChild(leftCol);
 
-        // Title
-        _titleLabel = new Label();
-        _titleLabel.Text = "Misiones";
-        _titleLabel.Position = new Vector2(10, 4);
-        _titleLabel.AddThemeFontSizeOverride("font_size", 14);
-        AddChild(_titleLabel);
+        _questListBox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _questListBox.SizeFlagsVertical = SizeFlags.ExpandFill;
+        leftCol.AddChild(_questListBox);
 
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 2);
-        _closeBtn.Size = new Vector2(24, 24);
-        _closeBtn.Pressed += OnClose;
-        AddChild(_closeBtn);
-
-        // Left side: quest list (scrollable)
-        _questListScroll = new ScrollContainer();
-        _questListScroll.Position = new Vector2(8, 30);
-        _questListScroll.Size = new Vector2(200, PanelH - 80);
-        AddChild(_questListScroll);
-
-        _questListBox = new VBoxContainer();
-        _questListBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _questListScroll.AddChild(_questListBox);
-
-        // Right side: detail panel
-        _detailPanel = new Panel();
-        _detailPanel.Position = new Vector2(216, 30);
-        _detailPanel.Size = new Vector2(PanelW - 224, PanelH - 80);
-        AddChild(_detailPanel);
-
-        // Detail: title
-        _detailTitle = new Label();
-        _detailTitle.Position = new Vector2(8, 8);
-        _detailTitle.Size = new Vector2(PanelW - 240, 22);
-        _detailTitle.AddThemeFontSizeOverride("font_size", 13);
-        _detailPanel.AddChild(_detailTitle);
-
-        // Detail: type label
-        _detailType = new Label();
-        _detailType.Position = new Vector2(8, 32);
-        _detailType.Size = new Vector2(PanelW - 240, 18);
-        _detailType.AddThemeColorOverride("font_color", new Color(0.6f, 0.7f, 0.9f));
-        _detailType.AddThemeFontSizeOverride("font_size", 11);
-        _detailPanel.AddChild(_detailType);
-
-        // Detail: description
-        _detailDesc = new RichTextLabel();
-        _detailDesc.Position = new Vector2(8, 54);
-        _detailDesc.Size = new Vector2(PanelW - 240, 160);
-        _detailDesc.BbcodeEnabled = false;
-        _detailDesc.ScrollActive = true;
-        _detailPanel.AddChild(_detailDesc);
-
-        // Detail: progress
-        _detailProgress = new Label();
-        _detailProgress.Position = new Vector2(8, 220);
-        _detailProgress.Size = new Vector2(PanelW - 240, 22);
-        _detailProgress.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.3f));
-        _detailPanel.AddChild(_detailProgress);
-
-        // Detail: rewards
-        _detailRewards = new Label();
-        _detailRewards.Position = new Vector2(8, 244);
-        _detailRewards.Size = new Vector2(PanelW - 240, 40);
-        _detailRewards.AddThemeFontSizeOverride("font_size", 11);
-        _detailRewards.AddThemeColorOverride("font_color", new Color(0.5f, 0.9f, 0.5f));
-        _detailPanel.AddChild(_detailRewards);
-
-        // Accept button
-        _acceptBtn = new Button();
-        _acceptBtn.Text = "Aceptar Mision";
-        _acceptBtn.Position = new Vector2(8, PanelH - 100);
-        _acceptBtn.Size = new Vector2(140, 30);
-        _acceptBtn.Pressed += OnAccept;
-        _detailPanel.AddChild(_acceptBtn);
-
-        // Abandon button
-        _abandonBtn = new Button();
-        _abandonBtn.Text = "Abandonar";
-        _abandonBtn.Position = new Vector2(156, PanelH - 100);
-        _abandonBtn.Size = new Vector2(110, 30);
-        _abandonBtn.Pressed += OnAbandon;
-        _detailPanel.AddChild(_abandonBtn);
-
-        // Bottom bar: Refresh + Close
-        var refreshBtn = new Button { Text = "Actualizar" };
-        refreshBtn.Position = new Vector2(8, PanelH - 42);
-        refreshBtn.Size = new Vector2(100, 30);
+        var refreshBtn = RpgTheme.CreateRpgButton("Actualizar", false, 11);
+        refreshBtn.CustomMinimumSize = new Vector2(100, 28);
         refreshBtn.Pressed += OnRefresh;
-        AddChild(refreshBtn);
+        leftCol.AddChild(refreshBtn);
 
-        var closeBottomBtn = new Button { Text = "Cerrar" };
-        closeBottomBtn.Position = new Vector2(PanelW - 80, PanelH - 42);
-        closeBottomBtn.Size = new Vector2(70, 30);
-        closeBottomBtn.Pressed += OnClose;
-        AddChild(closeBottomBtn);
+        // ── Right side: quest detail ─────────────────────────────
+        _detailColumn = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        _detailColumn.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _detailColumn.SizeFlagsVertical = SizeFlags.ExpandFill;
+        mainRow.AddChild(_detailColumn);
 
-        ClearDetail();
+        _detailTitle = RpgTheme.CreateTitleLabel("", 14);
+        _detailTitle.HorizontalAlignment = HorizontalAlignment.Left;
+        _detailColumn.AddChild(_detailTitle);
+
+        _detailType = RpgTheme.CreateInfoLabel("", 11);
+        _detailType.AddThemeColorOverride("font_color", new Color(0.6f, 0.7f, 0.9f));
+        _detailColumn.AddChild(_detailType);
+
+        _detailDesc = RpgTheme.CreateRpgTextEdit("Selecciona una mision de la lista.", 0, 140, readOnly: true);
+        _detailColumn.AddChild(_detailDesc);
+
+        _detailProgress = RpgTheme.CreateInfoLabel("", 12);
+        _detailProgress.AddThemeColorOverride("font_color", new Color(0.9f, 0.9f, 0.3f));
+        _detailColumn.AddChild(_detailProgress);
+
+        _detailRewards = RpgTheme.CreateInfoLabel("", 11);
+        _detailRewards.AddThemeColorOverride("font_color", new Color(0.5f, 0.9f, 0.5f));
+        _detailColumn.AddChild(_detailRewards);
+
+        // Action buttons
+        var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        _detailColumn.AddChild(btnRow);
+
+        _acceptBtn = RpgTheme.CreateRpgButton("Aceptar Mision", false, 12);
+        _acceptBtn.CustomMinimumSize = new Vector2(130, 30);
+        _acceptBtn.Pressed += OnAccept;
+        _acceptBtn.Visible = false;
+        btnRow.AddChild(_acceptBtn);
+
+        _abandonBtn = RpgTheme.CreateRpgButton("Abandonar", false, 12);
+        _abandonBtn.CustomMinimumSize = new Vector2(100, 30);
+        _abandonBtn.Pressed += OnAbandon;
+        _abandonBtn.Visible = false;
+        btnRow.AddChild(_abandonBtn);
     }
 
     /// <summary>
@@ -188,11 +127,13 @@ public partial class QuestPanel : Control
     {
         if (Visible)
         {
-            Hide();
+            HideForm();
+            _selectedQuest = null;
+            ClearDetail();
         }
         else
         {
-            Show();
+            ShowForm();
             RequestQuestList();
         }
     }
@@ -202,7 +143,7 @@ public partial class QuestPanel : Control
     /// </summary>
     public void OpenPanel()
     {
-        Show();
+        ShowForm();
         RequestQuestList();
     }
 
@@ -327,34 +268,33 @@ public partial class QuestPanel : Control
 
         if (_quests.Count == 0)
         {
-            var emptyLbl = new Label { Text = "No hay misiones." };
+            var emptyLbl = RpgTheme.CreateInfoLabel("No hay misiones.", 11);
             emptyLbl.AddThemeColorOverride("font_color", new Color(0.5f, 0.5f, 0.5f));
-            emptyLbl.AddThemeFontSizeOverride("font_size", 11);
             _questListBox.AddChild(emptyLbl);
             return;
         }
 
         foreach (var quest in _quests)
         {
-            var row = new Button();
-            row.CustomMinimumSize = new Vector2(185, 32);
-            row.Alignment = HorizontalAlignment.Left;
-            row.ClipText = true;
-            row.AddThemeFontSizeOverride("font_size", 11);
+            var row = RpgTheme.CreateRpgButton("", false, 11);
+            row.CustomMinimumSize = new Vector2(175, 30);
 
             string prefix = "";
             if (quest.Completed)
-            {
                 prefix = "[OK] ";
-                row.AddThemeColorOverride("font_color", new Color(0.5f, 0.8f, 0.5f));
-            }
             else if (quest.Active)
-            {
                 prefix = "[>>] ";
-                row.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.3f));
-            }
 
-            row.Text = $"{prefix}{quest.Name}";
+            // Set label text via the button's child label
+            if (row.GetChildCount() > 0 && row.GetChild(0) is Label lbl)
+            {
+                lbl.Text = $"{prefix}{quest.Name}";
+                lbl.HorizontalAlignment = HorizontalAlignment.Left;
+                if (quest.Completed)
+                    lbl.AddThemeColorOverride("font_color", new Color(0.5f, 0.8f, 0.5f));
+                else if (quest.Active)
+                    lbl.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.3f));
+            }
 
             var captured = quest;
             row.Pressed += () => OnQuestSelected(captured);
@@ -446,37 +386,5 @@ public partial class QuestPanel : Control
     private void RequestQuestList()
     {
         _tcp?.SendPacket(ClientPackets.WriteQuestList());
-    }
-
-    private void OnClose()
-    {
-        Visible = false;
-        _selectedQuest = null;
-        ClearDetail();
-    }
-
-    // ── Dragging ─────────────────────────────────────────────────
-
-    public override void _GuiInput(InputEvent @event)
-    {
-        if (@event is InputEventMouseButton mb)
-        {
-            if (mb.ButtonIndex == MouseButton.Left)
-            {
-                if (mb.Pressed && mb.Position.Y < 28)
-                {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - GlobalPosition;
-                }
-                else
-                {
-                    _dragging = false;
-                }
-            }
-        }
-        else if (@event is InputEventMouseMotion mm && _dragging)
-        {
-            GlobalPosition = mm.GlobalPosition - _dragOffset;
-        }
     }
 }

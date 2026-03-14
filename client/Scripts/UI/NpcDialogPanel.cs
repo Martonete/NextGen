@@ -18,7 +18,6 @@ public partial class NpcDialogPanel : Control
 
     private Label? _nameLabel;
     private RichTextLabel? _textLabel;
-    private Button? _closeBtn;
     private float _timer;
 
     public void Init(GameState state)
@@ -32,55 +31,65 @@ public partial class NpcDialogPanel : Control
         CustomMinimumSize = new Vector2(PanelW, PanelH);
         Size = new Vector2(PanelW, PanelH);
         MouseFilter = MouseFilterEnum.Stop;
+        ZIndex = RpgBaseForm.ZTooltip;
 
-        // Background
-        var bg = new ColorRect();
-        bg.Color = new Color(0.06f, 0.06f, 0.10f, 0.92f);
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(bg);
+        // Background: solid dark + NinePatch frame
+        var solidBg = new ColorRect();
+        solidBg.Color = new Color(0.06f, 0.06f, 0.10f, 0.92f);
+        solidBg.MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(solidBg);
+        RpgTheme.FillParent(solidBg);
 
-        // Border (thin outline)
-        var border = new ReferenceRect();
-        border.EditorOnly = false;
-        border.BorderColor = new Color(0.8f, 0.7f, 0.3f, 0.6f);
-        border.BorderWidth = 1.0f;
-        border.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        AddChild(border);
+        var frameBg = RpgTheme.CreateNinePatch("info_window.png", new Vector4(16, 16, 16, 16));
+        AddChild(frameBg);
+        RpgTheme.FillParent(frameBg);
 
-        // NPC name label (yellow, top)
-        _nameLabel = new Label();
-        _nameLabel.Position = new Vector2(10, 6);
-        _nameLabel.Size = new Vector2(PanelW - 50, 22);
-        _nameLabel.AddThemeFontSizeOverride("font_size", 13);
-        _nameLabel.AddThemeColorOverride("font_color", new Color(1.0f, 0.85f, 0.2f));
+        // Content margin
+        var margin = new MarginContainer();
+        margin.MouseFilter = MouseFilterEnum.Ignore;
+        margin.AddThemeConstantOverride("margin_top", RpgTheme.SpacingMd);
+        margin.AddThemeConstantOverride("margin_left", RpgTheme.SpacingLg);
+        margin.AddThemeConstantOverride("margin_right", RpgTheme.SpacingLg);
+        margin.AddThemeConstantOverride("margin_bottom", RpgTheme.SpacingMd);
+        AddChild(margin);
+        RpgTheme.FillParent(margin);
+
+        var col = RpgTheme.CreateColumn(RpgTheme.SpacingSm);
+        margin.AddChild(col);
+
+        // Header row: NPC name + close button
+        var headerRow = RpgTheme.CreateRow(RpgTheme.SpacingSm);
+        col.AddChild(headerRow);
+
+        _nameLabel = RpgTheme.CreateTitleLabel("", 13);
+        _nameLabel.HorizontalAlignment = HorizontalAlignment.Left;
         _nameLabel.ClipText = true;
-        AddChild(_nameLabel);
+        _nameLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        headerRow.AddChild(_nameLabel);
 
-        // Close button
-        _closeBtn = new Button();
-        _closeBtn.Text = "X";
-        _closeBtn.Position = new Vector2(PanelW - 28, 4);
-        _closeBtn.Size = new Vector2(24, 22);
-        _closeBtn.Pressed += () => { Visible = false; };
-        AddChild(_closeBtn);
+        var closeBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(22, 22));
+        closeBtn.Pressed += () => { Visible = false; };
+        headerRow.AddChild(closeBtn);
 
         // Dialog text (white, word-wrapped)
         _textLabel = new RichTextLabel();
-        _textLabel.Position = new Vector2(10, 30);
-        _textLabel.Size = new Vector2(PanelW - 20, PanelH - 70);
         _textLabel.BbcodeEnabled = false;
         _textLabel.ScrollActive = true;
+        _textLabel.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _textLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _textLabel.AddThemeColorOverride("default_color", new Color(0.9f, 0.9f, 0.9f));
         _textLabel.AddThemeFontSizeOverride("normal_font_size", 12);
-        AddChild(_textLabel);
+        col.AddChild(_textLabel);
 
-        // "Cerrar" button at bottom
-        var cerrarBtn = new Button();
-        cerrarBtn.Text = "Cerrar";
-        cerrarBtn.Position = new Vector2(PanelW / 2 - 35, PanelH - 34);
-        cerrarBtn.Size = new Vector2(70, 26);
+        // "Cerrar" button at bottom, centered
+        var footerRow = RpgTheme.CreateRow();
+        footerRow.Alignment = BoxContainer.AlignmentMode.Center;
+        col.AddChild(footerRow);
+
+        var cerrarBtn = RpgTheme.CreateRpgButton("Cerrar", false, 12);
+        cerrarBtn.CustomMinimumSize = new Vector2(80, 26);
         cerrarBtn.Pressed += () => { Visible = false; };
-        AddChild(cerrarBtn);
+        footerRow.AddChild(cerrarBtn);
     }
 
     /// <summary>

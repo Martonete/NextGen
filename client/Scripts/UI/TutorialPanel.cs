@@ -8,6 +8,7 @@ namespace ArgentumNextgen.UI;
 /// First-time player tutorial overlay.
 /// Step-by-step instruction panels covering movement, combat, inventory, chat, and skills.
 /// "Next" / "Skip" buttons. Saves tutorial completion state to config.
+/// Styled with RpgTheme.
 /// </summary>
 public partial class TutorialPanel : Control
 {
@@ -16,13 +17,13 @@ public partial class TutorialPanel : Control
 
     // Controls
     private ColorRect? _overlay;
-    private PanelContainer? _panel;
+    private Control? _panel;
     private Label? _titleLabel;
     private Label? _bodyLabel;
     private Label? _stepLabel;
-    private Button? _nextBtn;
-    private Button? _prevBtn;
-    private Button? _skipBtn;
+    private TextureButton? _nextBtn;
+    private TextureButton? _prevBtn;
+    private TextureButton? _skipBtn;
 
     // State
     private int _currentStep;
@@ -107,77 +108,86 @@ public partial class TutorialPanel : Control
         _overlay.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_overlay);
 
-        // Central panel
-        _panel = new PanelContainer();
+        // Central panel with NinePatch frame
+        _panel = new Control();
         _panel.Position = new Vector2(150, 100);
         _panel.Size = new Vector2(500, 400);
         _panel.CustomMinimumSize = new Vector2(500, 400);
+        _panel.ClipContents = true;
+        _panel.MouseFilter = MouseFilterEnum.Stop;
 
-        var panelStyle = new StyleBoxFlat();
-        panelStyle.BgColor = new Color(0.1f, 0.1f, 0.15f, 0.95f);
-        panelStyle.BorderColor = new Color(0.6f, 0.5f, 0.2f, 1f);
-        panelStyle.SetBorderWidthAll(2);
-        panelStyle.SetCornerRadiusAll(6);
-        panelStyle.SetContentMarginAll(16);
-        _panel.AddThemeStyleboxOverride("panel", panelStyle);
+        // V2 background
+        var bg = new TextureRect();
+        bg.Texture = RpgTheme.GetTex("big_bar.png");
+        bg.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        bg.StretchMode = TextureRect.StretchModeEnum.Scale;
+        bg.MouseFilter = MouseFilterEnum.Ignore;
+        _panel.AddChild(bg);
+        RpgTheme.FillParent(bg);
+
+        var titleBg = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
+        _panel.AddChild(titleBg);
+        titleBg.AnchorLeft = 0f; titleBg.AnchorRight = 1f;
+        titleBg.AnchorTop = 0f;  titleBg.AnchorBottom = 0f;
+        titleBg.OffsetLeft = 10; titleBg.OffsetTop = 5;
+        titleBg.OffsetRight = -10; titleBg.OffsetBottom = 48;
+
+        var titleLabel = RpgTheme.CreateTitleLabel("Tutorial", 18);
+        titleBg.AddChild(titleLabel);
+        RpgTheme.FillParent(titleLabel);
+
         AddChild(_panel);
 
-        var root = new VBoxContainer();
-        root.SetAnchorsPreset(LayoutPreset.FullRect);
-        root.AddThemeConstantOverride("separation", 8);
-        _panel.AddChild(root);
+        // Content area with V2 margins
+        var marginC = new MarginContainer();
+        marginC.AddThemeConstantOverride("margin_top", 54);
+        marginC.AddThemeConstantOverride("margin_left", RpgTheme.FormMarginLeft);
+        marginC.AddThemeConstantOverride("margin_right", RpgTheme.FormMarginRight);
+        marginC.AddThemeConstantOverride("margin_bottom", RpgTheme.FormMarginBottom);
+        marginC.MouseFilter = MouseFilterEnum.Ignore;
+        _panel.AddChild(marginC);
+        RpgTheme.FillParent(marginC);
+
+        var root = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        marginC.AddChild(root);
 
         // Title
-        _titleLabel = new Label();
-        _titleLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _titleLabel.AddThemeColorOverride("font_color", new Color(0.9f, 0.8f, 0.5f));
-        _titleLabel.AddThemeFontSizeOverride("font_size", 16);
+        _titleLabel = RpgTheme.CreateTitleLabel("", 16);
         root.AddChild(_titleLabel);
 
         // Separator
-        var sep = new HSeparator();
-        root.AddChild(sep);
+        root.AddChild(RpgTheme.CreateSeparator());
 
         // Body text (scrollable)
-        var scroll = new ScrollContainer();
-        scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
-        root.AddChild(scroll);
+        var scrollArea = RpgTheme.CreateScrollArea();
+        root.AddChild(scrollArea);
+        var scrollContent = scrollArea.GetMeta("content").As<VBoxContainer>();
 
-        _bodyLabel = new Label();
+        _bodyLabel = RpgTheme.CreateInfoLabel("", 12);
         _bodyLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _bodyLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _bodyLabel.AddThemeColorOverride("font_color", Colors.White);
-        _bodyLabel.AddThemeFontSizeOverride("font_size", 12);
-        scroll.AddChild(_bodyLabel);
+        scrollContent.AddChild(_bodyLabel);
 
         // Bottom bar: step indicator + buttons
-        var bottomBar = new HBoxContainer();
-        bottomBar.AddThemeConstantOverride("separation", 8);
+        var bottomBar = RpgTheme.CreateRow(RpgTheme.SpacingMd);
         root.AddChild(bottomBar);
 
-        _stepLabel = new Label();
+        _stepLabel = RpgTheme.CreateInfoLabel("", 10);
         _stepLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        _stepLabel.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
-        _stepLabel.AddThemeFontSizeOverride("font_size", 10);
         bottomBar.AddChild(_stepLabel);
 
-        _prevBtn = new Button();
-        _prevBtn.Text = "Anterior";
-        _prevBtn.CustomMinimumSize = new Vector2(80, 28);
+        _prevBtn = RpgTheme.CreateRpgButton("Anterior", false, 12);
+        _prevBtn.CustomMinimumSize = new Vector2(80, 30);
         _prevBtn.Pressed += OnPrevPressed;
         bottomBar.AddChild(_prevBtn);
 
-        _nextBtn = new Button();
-        _nextBtn.Text = "Siguiente";
-        _nextBtn.CustomMinimumSize = new Vector2(80, 28);
+        _nextBtn = RpgTheme.CreateRpgButton("Siguiente", false, 12);
+        _nextBtn.CustomMinimumSize = new Vector2(80, 30);
         _nextBtn.Pressed += OnNextPressed;
         bottomBar.AddChild(_nextBtn);
 
-        _skipBtn = new Button();
-        _skipBtn.Text = "Saltar";
-        _skipBtn.CustomMinimumSize = new Vector2(60, 28);
-        _skipBtn.AddThemeColorOverride("font_color", new Color(0.6f, 0.6f, 0.6f));
+        _skipBtn = RpgTheme.CreateRpgButton("Saltar", false, 12);
+        _skipBtn.CustomMinimumSize = new Vector2(60, 30);
         _skipBtn.Pressed += OnSkipPressed;
         bottomBar.AddChild(_skipBtn);
     }
@@ -219,7 +229,12 @@ public partial class TutorialPanel : Control
 
         if (_prevBtn != null) _prevBtn.Visible = _currentStep > 0;
         if (_nextBtn != null)
-            _nextBtn.Text = _currentStep == Steps.Length - 1 ? "Finalizar" : "Siguiente";
+        {
+            // Update the button label text for last step
+            var label = _nextBtn.GetChildOrNull<Label>(0);
+            if (label != null)
+                label.Text = _currentStep == Steps.Length - 1 ? "Finalizar" : "Siguiente";
+        }
     }
 
     private void OnNextPressed()

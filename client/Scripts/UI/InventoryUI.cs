@@ -22,14 +22,16 @@ public class InventoryUI
     private TextureButton? _dydToggle;
     private Texture2D? _dydOffTex;
     private Texture2D? _dydOnTex;
-    private Button? _lanzarButton;
-    private Button? _infoButton;
-    private Button? _spellUpButton;
-    private Button? _spellDownButton;
+    private TextureButton? _lanzarButton;
+    private TextureButton? _infoButton;
+    private TextureButton? _spellUpButton;
+    private TextureButton? _spellDownButton;
     private TextureRect? _invEquImage;
     private ImageTexture? _invEquInvTexture;
     private ImageTexture? _invEquSpellTexture;
     private TooltipPanel? _tooltipPanel;
+    private TextureButton? _invTabButton;
+    private TextureButton? _spellTabButton;
 
     /// <summary>Whether the spell tab is currently active.</summary>
     public bool ShowingSpells => _showingSpells;
@@ -59,8 +61,8 @@ public class InventoryUI
         InventoryPanel inventoryPanel, SpellPanel spellPanel,
         Label? itemNameLabel, TextureButton dydToggle,
         Texture2D? dydOffTex, Texture2D? dydOnTex,
-        Button lanzarButton, Button infoButton,
-        Button spellUpButton, Button spellDownButton,
+        TextureButton lanzarButton, TextureButton infoButton,
+        TextureButton spellUpButton, TextureButton spellDownButton,
         TextureRect? invEquImage, ImageTexture? invEquInvTexture, ImageTexture? invEquSpellTexture,
         TooltipPanel? tooltipPanel)
     {
@@ -78,6 +80,21 @@ public class InventoryUI
         _invEquInvTexture = invEquInvTexture;
         _invEquSpellTexture = invEquSpellTexture;
         _tooltipPanel = tooltipPanel;
+    }
+
+    public void BindTabButtons(TextureButton invTab, TextureButton spellTab)
+    {
+        _invTabButton = invTab;
+        _spellTabButton = spellTab;
+        UpdateTabVisuals();
+    }
+
+    private void UpdateTabVisuals()
+    {
+        if (_invTabButton != null)
+            _invTabButton.Modulate = _showingSpells ? new Color(0.6f, 0.55f, 0.5f) : Colors.White;
+        if (_spellTabButton != null)
+            _spellTabButton.Modulate = _showingSpells ? Colors.White : new Color(0.6f, 0.55f, 0.5f);
     }
 
     /// <summary>Update InvEqu textures after background image loading.</summary>
@@ -104,9 +121,9 @@ public class InventoryUI
         _infoButton!.Visible = false;
         _spellUpButton!.Visible = false;
         _spellDownButton!.Visible = false;
-        // Swap InvEqu background to inventory
         if (_invEquImage != null && _invEquInvTexture != null)
             _invEquImage.Texture = _invEquInvTexture;
+        UpdateTabVisuals();
     }
 
     /// <summary>Switch to spell tab.</summary>
@@ -125,6 +142,7 @@ public class InventoryUI
         // Swap InvEqu background to spells
         if (_invEquImage != null && _invEquSpellTexture != null)
             _invEquImage.Texture = _invEquSpellTexture;
+        UpdateTabVisuals();
     }
 
     /// <summary>

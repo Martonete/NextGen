@@ -39,7 +39,8 @@ public partial class WorldRenderer
                                        && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (objNearPlayer)
                     {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 120f / 255f));
+                        float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
+                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, treeAlpha));
                     }
                     else
                     {
@@ -73,7 +74,8 @@ public partial class WorldRenderer
                                    && x > (_frameUserX - 4) && x < (_frameUserX + 4);
                     if (nearPlayer)
                     {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, 120f / 255f));
+                        float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
+                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, treeAlpha));
                     }
                     else
                     {
