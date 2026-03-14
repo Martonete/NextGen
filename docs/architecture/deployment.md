@@ -1,6 +1,35 @@
-# Server Configuration Reference
+# Deployment & Configuration
 
-## server.ini
+## 1. PostgreSQL Setup
+
+The server uses **PostgreSQL** for persistent storage. Migrations run automatically on startup.
+
+**Docker:** PostgreSQL is included in `docker-compose.yml` -- no manual setup needed.
+
+**From source:** Create the database as shown in the [README](../../README.md) platform-specific instructions.
+
+---
+
+## 2. Database Schema (auto-migrated)
+
+| Table | Description |
+|-------|-------------|
+| `accounts` | Login credentials, banking, ban status |
+| `account_bank` | Account-level bank storage (max 40 slots) |
+| `characters` | Full character state (stats, position, skills, flags, equipment) |
+| `character_inventory` | Inventory items (max 25 slots, tracks equipped status) |
+| `character_bank` | Character bank items (max 40 slots) |
+| `guilds` | Guild metadata, level, points, castle ownership |
+| `guild_members` | Guild membership |
+| `guild_applicants` | Pending guild applications |
+| `guild_bank_items` | Guild bank storage (not active) |
+| `banned_ips` | IP ban list |
+| `banned_hds` | Hardware ID ban list |
+| `rankings` | Leaderboard data (9 categories x 10 positions) |
+
+---
+
+## 3. server.ini Reference
 
 The server reads `server/server.ini` on startup. All settings are in INI format.
 
@@ -47,7 +76,9 @@ The server reads `server/server.ini` on startup. All settings are in INI format.
 | `ClientVersion` | `1.0.1` | Expected client version |
 | `Notice` | (text) | Login screen notice message |
 
-## Privilege Levels (GM hierarchy)
+---
+
+## 4. Privilege Levels (GM hierarchy)
 
 Configured in `server.ini` under named sections. Hierarchy from highest to lowest:
 
@@ -71,7 +102,9 @@ Count=1
 1=Shay
 ```
 
-## Intervalos.ini
+---
+
+## 5. Intervalos.ini
 
 Located at `server/dat/Intervalos.ini`. Controls anti-speedhack timers (in server ticks of 40ms each):
 
@@ -84,10 +117,27 @@ Located at `server/dat/Intervalos.ini`. Controls anti-speedhack timers (in serve
 | `PoteoClick` | `6` | ~240ms | Potion click cooldown |
 | `Work` | `10` | ~400ms | Crafting/resource cooldown |
 
-## Environment Variables
+---
+
+## 6. Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgres://ao:ao_secret@localhost:5432/ao_server` | PostgreSQL connection string |
 | `POSTGRES_PASSWORD` | `ao_secret` | Used by docker-compose for the PostgreSQL container |
 | `RUST_LOG` | `ao_server=info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
+
+---
+
+## 7. Backup & Restore
+
+```bash
+# Backup (Docker)
+docker compose exec postgres pg_dump -U ao ao_server > backup.sql
+
+# Backup (local)
+pg_dump -U ao ao_server > backup.sql
+
+# Restore
+psql -U ao ao_server < backup.sql
+```
