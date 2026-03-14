@@ -590,7 +590,6 @@ pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
         fecha_ingreso: user.fecha_ingreso.clone(),
         matados_ingreso: user.matados_ingreso,
         next_recompensa: user.next_recompensa,
-        email: user.email.clone(),
         counter_pena: user.counter_pena,
         skills_asignados: user.skills_asignados,
         last_map: user.last_map,

@@ -6,7 +6,7 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Network;
 
 /// <summary>
-/// Binary packet handlers: Chat / Guild / Party / Forum / Mail / Quest
+/// Binary packet handlers: Chat / Guild / Party / Forum / Quest
 /// </summary>
 public partial class PacketHandler
 {
@@ -303,84 +303,6 @@ public partial class PacketHandler
         _state.QuestDataTag = tag;
         _state.QuestDataPayload = data;
         GD.Print($"[PKT] QuestData tag={tag} len={data.Length}");
-    }
-
-    // ── Mail ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// MailList / MailPlayerInfo / MailContent / MailItems — mail data.
-    /// Wire: string data
-    /// </summary>
-
-
-    // ── Mail ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// MailList / MailPlayerInfo / MailContent / MailItems — mail data.
-    /// Wire: string data
-    /// </summary>
-    private void HandleBinMailData(ByteQueue bq, string tag)
-    {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
-
-        if (tag == "MailList")
-        {
-            // Parse inbox: "id,sender,subject,date,read;id2,sender2,..."
-            _state.MailInbox.Clear();
-            if (!string.IsNullOrEmpty(data))
-            {
-                string[] entries = data.Split(';', System.StringSplitOptions.RemoveEmptyEntries);
-                foreach (string entry in entries)
-                {
-                    string[] parts = entry.Split(',');
-                    if (parts.Length >= 4)
-                    {
-                        int.TryParse(parts[0], out int id);
-                        var mail = new MailEntry
-                        {
-                            Id = id,
-                            Sender = parts[1],
-                            Subject = parts[2],
-                            Date = parts[3],
-                            Read = parts.Length >= 5 && parts[4] == "1"
-                        };
-                        _state.MailInbox.Add(mail);
-                    }
-                }
-            }
-            _state.MailInboxDirty = true;
-            _state.ShowMailPanel = true;
-        }
-        else if (tag == "MailContent")
-        {
-            // Parse full message: "id,sender,subject,body,date,gold,itemId,itemAmt"
-            string[] parts = data.Split(',');
-            if (parts.Length >= 5)
-            {
-                int.TryParse(parts[0], out int id);
-                var mail = new MailEntry
-                {
-                    Id = id,
-                    Sender = parts[1],
-                    Subject = parts[2],
-                    Body = parts[3],
-                    Date = parts[4],
-                    Read = true
-                };
-                if (parts.Length >= 6) int.TryParse(parts[5], out mail.AttachedGold);
-                if (parts.Length >= 7) int.TryParse(parts[6], out mail.AttachedItemId);
-                if (parts.Length >= 8) int.TryParse(parts[7], out mail.AttachedItemAmount);
-                _state.MailCurrentMessage = mail;
-
-                // Mark as read in inbox
-                foreach (var m in _state.MailInbox)
-                {
-                    if (m.Id == id) m.Read = true;
-                }
-                _state.MailInboxDirty = true;
-            }
-        }
     }
 
     // ── Misc data ─────────────────────────────────────────────────

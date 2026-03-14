@@ -7,7 +7,7 @@
 //! - `core` — Auth/Login, Map/Position, Character, Objects, Chat, Stats
 //! - `inventory` — Inventory/Spells, Commerce/Bank/Trade, Crafting, Toggles, Guild, Signals
 //! - `systems` — MultiMessage, GM Panel, NPC Trade, Pre-login, Navigation, Work
-//! - `social` — Mail, Chat system, Guild info/bank, Quests, Auction, Cosmetic
+//! - `social` — Chat system, Guild info/bank, Quests, Auction, Cosmetic
 
 mod core;
 mod inventory;

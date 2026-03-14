@@ -105,9 +105,6 @@ public partial class Main : Control
 	// Forum panel (frmForo)
 	private ForumPanel? _forumPanel;
 
-	// Mail panel
-	private MailPanel? _mailPanel;
-
 	// Party panel (frmGrupo)
 	private PartyPanel? _partyPanel;
 

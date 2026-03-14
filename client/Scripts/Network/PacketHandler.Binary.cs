@@ -675,20 +675,6 @@ public partial class PacketHandler
             case ServerPacketId.QuestNpcList: // 203
                 break;
 
-            // ── Mail ──────────────────────────────────────────────
-            case ServerPacketId.MailList: // 205
-                HandleBinMailData(bq, "MailList");
-                break;
-            case ServerPacketId.MailPlayerInfo: // 206
-                HandleBinMailData(bq, "MailPlayerInfo");
-                break;
-            case ServerPacketId.MailContent: // 208
-                HandleBinMailData(bq, "MailContent");
-                break;
-            case ServerPacketId.MailItems: // 209
-                HandleBinMailData(bq, "MailItems");
-                break;
-
             // ── Misc data ─────────────────────────────────────────
             case ServerPacketId.MenuData: // 221
                 HandleBinMenuData(bq);
@@ -768,10 +754,6 @@ public partial class PacketHandler
             case ServerPacketId.TravelsOpen: // 251
                 _state.ShowTravelPanel = true;
                 GD.Print("[PKT] TravelsOpen");
-                break;
-            case ServerPacketId.MailOpenTrigger: // 252
-                GD.Print("[PKT] MailOpenTrigger");
-                _state.ShowMailPanel = true;
                 break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);

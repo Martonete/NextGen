@@ -23,7 +23,6 @@ public class PanelStateSync
     private GuildPanel? _guildPanel;
     private GuildFoundationPanel? _guildFoundationPanel;
     private ForumPanel? _forumPanel;
-    private MailPanel? _mailPanel;
     private PartyPanel? _partyPanel;
     private TravelPanel? _travelPanel;
     private QuestPanel? _questPanel;
@@ -68,7 +67,7 @@ public class PanelStateSync
         GuildBankPanel? guildBankPanel, CraftPanel? craftPanel,
         GuildPanel? guildPanel, GuildFoundationPanel? guildFoundationPanel,
         ForumPanel? forumPanel,
-        MailPanel? mailPanel, PartyPanel? partyPanel,
+        PartyPanel? partyPanel,
         TravelPanel? travelPanel, QuestPanel? questPanel,
         TrainerPanel? trainerPanel, NpcDialogPanel? npcDialogPanel,
         ChangePasswordPanel? changePasswordPanel, CharInfoPopup? charInfoPopup,
@@ -84,7 +83,6 @@ public class PanelStateSync
         _guildPanel = guildPanel;
         _guildFoundationPanel = guildFoundationPanel;
         _forumPanel = forumPanel;
-        _mailPanel = mailPanel;
         _partyPanel = partyPanel;
         _travelPanel = travelPanel;
         _questPanel = questPanel;
@@ -203,13 +201,6 @@ public class PanelStateSync
         {
             _state.ShowForumPanel = false;
             _forumPanel?.ShowForum();
-        }
-
-        // Mail panel — open from MailList/MailOpenTrigger packet
-        if (_state.ShowMailPanel)
-        {
-            _state.ShowMailPanel = false;
-            _mailPanel?.ShowPanel();
         }
 
         // Party panel — open from ShowPartyForm packet
@@ -381,7 +372,6 @@ public class PanelStateSync
         _guildPanel?.Hide();
         _guildFoundationPanel?.Hide();
         _forumPanel?.Hide();
-        _mailPanel?.Hide();
         _partyPanel?.Hide();
         _travelPanel?.CloseTravel();
         _questPanel?.Hide();

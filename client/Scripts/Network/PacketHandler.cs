@@ -17,7 +17,7 @@ namespace ArgentumNextgen.Network;
 ///   - PacketHandler.Auth.cs        — binary auth/login handlers
 ///   - PacketHandler.Combat.cs      — binary combat/stats handlers
 ///   - PacketHandler.Movement.cs    — binary map/position/character handlers
-///   - PacketHandler.Social.cs      — binary chat/guild/quest/mail handlers
+///   - PacketHandler.Social.cs      — binary chat/guild/quest handlers
 ///   - PacketHandler.Commerce.cs    — binary commerce/bank/trade handlers
 ///   - PacketHandler.Inventory.cs   — binary inventory/spell handlers
 ///   - PacketHandler.TextMap.cs     — text map/position/character handlers

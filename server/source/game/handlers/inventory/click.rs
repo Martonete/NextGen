@@ -629,13 +629,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             }
                         }
                         NpcType::Mail => {
-                            // VB6: Correos (type 23) — opens mail form
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
-                            }
-                            let pkt_correo = binary_packets::write_mail_open();
-                            state.send_bytes(conn_id, &pkt_correo);
+                            // Mail system removed — was never part of VB6 13.3
                         }
                         NpcType::Citizenship => {
                             // VB6: Ciudadania (type 13)

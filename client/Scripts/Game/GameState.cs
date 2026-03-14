@@ -317,12 +317,6 @@ public class GameState
 	public byte ForumCanMakeSticky;     // 0=no, 2=GM can make stickies
 	public bool ShowForumPanel;         // Trigger to open forum panel
 
-	// Mail system
-	public List<MailEntry> MailInbox = new();
-	public MailEntry? MailCurrentMessage; // Currently viewed message (from MailContent)
-	public bool ShowMailPanel;           // Trigger to open mail panel
-	public bool MailInboxDirty;          // True when inbox changed
-
 	// Quest system (VB6: frmQuest)
 	public bool ShowQuestPanel;         // Trigger to open quest panel
 	public string QuestDataTag = "";    // Tag for pending quest data ("QuestList"/"QuestCurrent"/"QuestSelected")
@@ -584,20 +578,6 @@ public class CraftEntry
 	public int Mat3;      // LingO (smith only)
 	public int ObjIndex;
 	public int Upgrade;
-}
-
-/// A mail entry in the inbox.
-public class MailEntry
-{
-	public int Id;
-	public string Sender = "";
-	public string Subject = "";
-	public string Body = "";
-	public string Date = "";
-	public bool Read;
-	public int AttachedGold;
-	public int AttachedItemId;
-	public int AttachedItemAmount;
 }
 
 /// A slot in the guild bank (VB6: BancoInventarioB).

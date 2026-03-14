@@ -1,14 +1,7 @@
-//! Social/UI packets: Mail, Chat system, Guild info/bank, Quests, Auction, Cosmetic.
+//! Social/UI packets: Chat system, Guild info/bank, Quests, Auction, Cosmetic.
 
 use crate::protocol::byte_queue::ByteQueue;
 use crate::protocol::packets::ServerPacketID;
-
-/// ID 252: Mail open trigger (CORREO).
-pub fn write_mail_open() -> Vec<u8> {
-    let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::MailOpenTrigger.to_byte());
-    pkt.into_bytes()
-}
 
 // ── Festival / Full char info ─────────────────────────────
 

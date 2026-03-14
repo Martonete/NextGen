@@ -89,7 +89,6 @@ public partial class Main
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
                     _forumPanel!.Init(_state, _tcp);
-                    _mailPanel!.Init(_state, _tcp);
                     _partyPanel!.Init(_state, _tcp);
                     if (_chatSystem != null) _chatSystem.PartyPanel = _partyPanel;
                     _gameUIUpdater?.BindMinimap(_minimapPanel, _partyPanel);

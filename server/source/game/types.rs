@@ -342,7 +342,6 @@ pub struct UserState {
     pub npcs_muertos: i32,           // Total NPCs killed
 
     // VB6 13.3: Misc persisted fields
-    pub email: String,               // CONTACTO.Email
     pub counter_pena: i32,           // COUNTERS.Pena (jail/penalty ticks)
     pub last_map: i32,               // FLAGS.LastMap
     pub uptime: i64,                 // INIT.UpTime (seconds played)
@@ -557,7 +556,6 @@ impl UserState {
             gm_request_pending: false,
             usuarios_matados: 0,
             npcs_muertos: 0,
-            email: String::new(),
             counter_pena: 0,
             last_map: 0,
             uptime: 0,

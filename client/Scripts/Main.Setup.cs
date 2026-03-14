@@ -287,7 +287,6 @@ public partial class Main
         _guildPanel = AddPanel<GuildPanel>(new Vector2(60, 100));
         _guildFoundationPanel = AddPanel<GuildFoundationPanel>(new Vector2(80, 80));
         _forumPanel = AddPanel<ForumPanel>(new Vector2(20, 80));
-        _mailPanel = AddPanel<MailPanel>(new Vector2(30, 50));
         _partyPanel = AddPanel<PartyPanel>(new Vector2(480, 150));
         _travelPanel = AddPanel<TravelPanel>(new Vector2(55, 177));
         _deathPanel = AddPanel<DeathPanel>(new Vector2(148, 302));
@@ -492,7 +491,7 @@ public partial class Main
         _panelSync = new PanelStateSync(_state);
         _panelSync.BindPanels(_commercePanel, _tradePanel, _bankPanel, _vaultPanel,
             _guildBankPanel, _craftPanel, _guildPanel, _guildFoundationPanel,
-            _forumPanel, _mailPanel, _partyPanel,
+            _forumPanel, _partyPanel,
             _travelPanel, _questPanel, _trainerPanel, _npcDialogPanel,
             _changePasswordPanel, _charInfoPopup, _deathPanel, _optionsPanel,
             _tooltipPanel, _blindOverlay);

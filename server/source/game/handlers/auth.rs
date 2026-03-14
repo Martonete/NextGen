@@ -570,7 +570,6 @@ pub(crate) async fn connect_user(
         // Kill counters and misc
         user.usuarios_matados = char_data.usuarios_matados;
         user.npcs_muertos = char_data.npcs_muertos;
-        user.email = char_data.email.clone();
         user.counter_pena = char_data.counter_pena;
         user.last_map = char_data.last_map;
         user.uptime = char_data.uptime;

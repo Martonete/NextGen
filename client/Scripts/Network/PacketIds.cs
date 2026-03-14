@@ -109,12 +109,6 @@ public static class ClientPacketId
     // Forum (123)
     public const byte ForumPost = 123;
 
-    // Mail (125-128)
-    public const byte MailSend = 125;
-    public const byte MailOpen = 126;
-    public const byte MailExtract = 127;
-    public const byte MailDelete = 128;
-
     // Chat rooms (132-133)
     public const byte InitChat = 132;
     public const byte ChatMsg = 133;
@@ -569,20 +563,6 @@ public static class ServerPacketId
     /// QuestNpcList — quest NPC list trigger. ID 203.
     public const byte QuestNpcList = 203;
 
-    // ── Mail ─────────────────────────────────────────────────
-
-    /// MailList — mail list data. ID 205.
-    public const byte MailList = 205;
-
-    /// MailPlayerInfo — mail recipient player info. ID 206.
-    public const byte MailPlayerInfo = 206;
-
-    /// MailContent — mail message content. ID 208.
-    public const byte MailContent = 208;
-
-    /// MailItems — mail attached items. ID 209.
-    public const byte MailItems = 209;
-
     // ── Misc data packets ────────────────────────────────────
 
     /// MenuData — right-click context menu (MENU). ID 221.
@@ -662,9 +642,6 @@ public static class ServerPacketId
 
     /// TravelsOpen — open travels/teleport panel. ID 251.
     public const byte TravelsOpen = 251;
-
-    /// MailOpenTrigger — open mail UI (CORREO). ID 252.
-    public const byte MailOpenTrigger = 252;
 
     /// ArenaData — arena duel list (MAR). ID 254.
     public const byte ArenaData = 254;
