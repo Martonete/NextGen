@@ -788,6 +788,9 @@ pub struct GameState {
     // Maps lowercase character name → privilege level. Loaded at startup, reloaded with /RELOADSINI.
     pub role_overrides: crate::config::RoleMap,
 
+    /// Zone properties registry — loaded from zones.ini, falls back to legacy .dat info.
+    pub zone_registry: crate::game::zones::ZoneRegistry,
+
     /// Per-connection receive buffers for accumulating partial binary packets.
     /// When a TCP read delivers a partial packet, leftover bytes are stored here
     /// and prepended to the next read.
@@ -875,6 +878,14 @@ impl GameState {
         // Load role overrides from server.ini
         let role_overrides = crate::config::load_roles(&base_path);
 
+        // Load zone property overrides from zones.ini (falls back to legacy .dat)
+        let mut zone_registry = crate::game::zones::load_zone_overrides(&base_path);
+        // Auto-populate from legacy .dat MapInfo for zones not in zones.ini
+        for map in game_data.maps.iter().flatten() {
+            zone_registry.entry(map.info.num as i32)
+                .or_insert_with(|| crate::game::zones::ZoneProperties::from_map_info(&map.info));
+        }
+
         // Count loaded maps to pre-allocate world grids
         let map_count = game_data.maps.len();
 
@@ -933,6 +944,7 @@ impl GameState {
             map_user_counts: HashMap::new(),
             countdown_seconds: 0,
             role_overrides,
+            zone_registry,
             recv_buffers: HashMap::new(),
             packet_counts: HashMap::new(),
             max_packets_per_second: max_pps,
@@ -1135,6 +1147,11 @@ impl GameState {
         } else {
             Vec::new()
         }
+    }
+
+    /// Get zone properties for a map/zone ID. Returns None if zone not registered.
+    pub fn get_zone(&self, zone_id: i32) -> Option<&crate::game::zones::ZoneProperties> {
+        self.zone_registry.get(&zone_id)
     }
 
     /// Buffer binary bytes, flush immediately, and then close the connection.
