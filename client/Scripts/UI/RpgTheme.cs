@@ -398,7 +398,7 @@ public static class RpgTheme
         scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         scroll.VerticalScrollMode = ScrollContainer.ScrollMode.ShowNever;
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Auto;
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
         wrapper.AddChild(scroll);
         FillParent(scroll);
 
