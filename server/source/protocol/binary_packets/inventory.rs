@@ -85,10 +85,10 @@ pub fn write_change_npc_inv_slot(
 
 // ── Sound / Music ──────────────────────────────────────────
 
-/// ID 38: Play MIDI.
+/// ID 37: Play music.
 pub fn write_play_midi(midi_index: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::PlayMIDI.to_byte());
+    pkt.write_byte(ServerPacketID::PlayMusic.to_byte());
     pkt.write_byte(midi_index);
     pkt.into_bytes()
 }
@@ -236,7 +236,7 @@ pub fn write_rain_toggle() -> Vec<u8> {
 /// ID 54: Rest OK.
 pub fn write_rest_ok() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::RestOK.to_byte());
+    pkt.write_byte(ServerPacketID::RestToggle.to_byte());
     pkt.into_bytes()
 }
 
@@ -247,10 +247,10 @@ pub fn write_meditate_toggle() -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 82: Paralize OK.
+/// ID 82: Paralyze OK.
 pub fn write_paralize_ok(duration_secs: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ParalizeOK.to_byte());
+    pkt.write_byte(ServerPacketID::ParalyzeOK.to_byte());
     pkt.write_integer(duration_secs); // 0 = toggle off, >0 = paralysis countdown in seconds
     pkt.into_bytes()
 }
@@ -282,10 +282,10 @@ pub fn write_guild_list(guild_names: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 81: Show guild fundation form.
+/// ID 83: Show guild foundation form.
 pub fn write_show_guild_fundation_form() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::ShowGuildFundationForm.to_byte());
+    pkt.write_byte(ServerPacketID::ShowGuildFoundationForm.to_byte());
     pkt.into_bytes()
 }
 

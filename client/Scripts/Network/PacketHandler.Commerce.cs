@@ -256,13 +256,13 @@ public partial class PacketHandler
     }
 
     /// <summary>
-    /// TransOK (ID 174) — NPC commerce buy/sell confirmation.
+    /// TransactionOK (ID 174) — NPC commerce buy/sell confirmation.
     /// Wire: u8 slot, u8 tradeType (0=buy, 1=sell)
     /// </summary>
 
 
     /// <summary>
-    /// TransOK (ID 174) — NPC commerce buy/sell confirmation.
+    /// TransactionOK (ID 174) — NPC commerce buy/sell confirmation.
     /// Wire: u8 slot, u8 tradeType (0=buy, 1=sell)
     /// </summary>
     private void HandleBinTransOk(ByteQueue bq)

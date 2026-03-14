@@ -50,20 +50,20 @@ pub struct UserState {
     pub conn_id: ConnectionId,
     pub ip: String,
 
-    // Pre-login state (set by KERD22)
+    // Pre-login state (set by HardwareCheck)
     pub hd_serial: String,
     pub paso_hd: bool,
 
-    // Account state (set by ALOGIN)
+    // Account state (set by AccountLogin)
     pub account_name: String,
     pub account_password: String,
     pub account_id: i32,
 
-    // Character state (set by THCJXD/OOLOGI)
+    // Character state (set by CharacterSelect/CharacterLogin)
     pub char_name: String,
     pub logged: bool,
 
-    // Dice roll state (TIRDAD) — used during character creation only
+    // Dice roll state (RollDice) — used during character creation only
     pub dice_attributes: [i32; 5],
 
     // In-game position and character data (set after LOGGED)

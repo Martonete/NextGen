@@ -8,27 +8,27 @@ public static class ClientPackets
 {
     // ── Pre-login ──────────────────────────────────────────────
 
-    public static byte[] WriteKerd22(string hdSerial = "")
+    public static byte[] WriteHardwareCheck(string hdSerial = "")
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.KERD22);
+        bq.WriteByte(ClientPacketId.HardwareCheck);
         bq.WriteString(hdSerial);
         return bq.ToArray();
     }
 
-    public static byte[] WriteAlogin(string account, string password)
+    public static byte[] WriteAccountLogin(string account, string password)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.ALOGIN);
+        bq.WriteByte(ClientPacketId.AccountLogin);
         bq.WriteString(account);
         bq.WriteString(password);
         return bq.ToArray();
     }
 
-    public static byte[] WriteNlogin(string charName, byte race, byte gender, byte charClass, short head, byte homeland, string account)
+    public static byte[] WriteCreateCharacter(string charName, byte race, byte gender, byte charClass, short head, byte homeland, string account)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.NLOGIN);
+        bq.WriteByte(ClientPacketId.CreateCharacter);
         bq.WriteString(charName);
         bq.WriteByte(race);
         bq.WriteByte(gender);
@@ -39,65 +39,65 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    public static byte[] WriteOologi(string charName, string account, string codex)
+    public static byte[] WriteCharacterLogin(string charName, string account, string codex)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.OOLOGI);
+        bq.WriteByte(ClientPacketId.CharacterLogin);
         bq.WriteString(charName);
         bq.WriteString(account);
         bq.WriteString(codex);
         return bq.ToArray();
     }
 
-    public static byte[] WriteThcjxd(string charName, string account, string codex)
+    public static byte[] WriteCharacterSelect(string charName, string account, string codex)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.THCJXD);
+        bq.WriteByte(ClientPacketId.CharacterSelect);
         bq.WriteString(charName);
         bq.WriteString(account);
         bq.WriteString(codex);
         return bq.ToArray();
     }
 
-    public static byte[] WriteNaccnt(string account, string password, string pin)
+    public static byte[] WriteCreateAccount(string account, string password, string pin)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.NACCNT);
+        bq.WriteByte(ClientPacketId.CreateAccount);
         bq.WriteString(account);
         bq.WriteString(password);
         bq.WriteString(pin);
         return bq.ToArray();
     }
 
-    public static byte[] WriteRepass(string oldPass, string newPass)
+    public static byte[] WriteChangePassword(string oldPass, string newPass)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.REPASS);
+        bq.WriteByte(ClientPacketId.ChangePassword);
         bq.WriteString(oldPass);
         bq.WriteString(newPass);
         return bq.ToArray();
     }
 
-    public static byte[] WriteReecuh(string account, string pin)
+    public static byte[] WriteAccountRecovery(string account, string pin)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.REECUH);
+        bq.WriteByte(ClientPacketId.AccountRecovery);
         bq.WriteString(account);
         bq.WriteString(pin);
         return bq.ToArray();
     }
 
-    public static byte[] WriteTirdad()
+    public static byte[] WriteRollDice()
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.TIRDAD);
+        bq.WriteByte(ClientPacketId.RollDice);
         return bq.ToArray();
     }
 
-    public static byte[] WriteTbrp(string charName)
+    public static byte[] WriteDeleteCharacter(string charName)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.TBRP);
+        bq.WriteByte(ClientPacketId.DeleteCharacter);
         bq.WriteString(charName);
         return bq.ToArray();
     }
@@ -125,9 +125,9 @@ public static class ClientPackets
         return new byte[] { ClientPacketId.RequestPos };
     }
 
-    public static byte[] WriteActualizar()
+    public static byte[] WriteSyncPosition()
     {
-        return new byte[] { ClientPacketId.Actualizar };
+        return new byte[] { ClientPacketId.SyncPosition };
     }
 
     // ── Combat ─────────────────────────────────────────────────

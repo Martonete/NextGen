@@ -70,13 +70,13 @@ pub use events::{
 // Packet handlers — processes decrypted client packets.
 //
 // Pre-login flow:
-//   1. Client sends KERD22 + HD serial → server checks ban
-//   2. Client sends ALOGIN + account,password → server validates, sends INIAC + ADDPJ + CODEH
-//      OR client sends NACCNT + account,password,pin → server creates account
-//   3. Client sends THCJXD/OOLOGI + charname,account,codex → server loads character, sends LOGGED
-//      OR client sends NLOGIN + charname,race,gender,class,... → server creates character
-//   4. Client sends TIRDAD → server sends dice roll (during char creation)
-//   5. Client sends TBRP → server deletes character
+//   1. Client sends HardwareCheck + HD serial → server checks ban
+//   2. Client sends AccountLogin + account,password → server validates, sends INIAC + ADDPJ + CODEH
+//      OR client sends CreateAccount + account,password,pin → server creates account
+//   3. Client sends CharacterSelect/CharacterLogin + charname,account,codex → server loads character, sends LOGGED
+//      OR client sends CreateCharacter + charname,race,gender,class,... → server creates character
+//   4. Client sends RollDice → server sends dice roll (during char creation)
+//   5. Client sends DeleteCharacter → server deletes character
 //
 // In-game flow:
 //   M<heading> — movement
@@ -212,18 +212,18 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
     // Bridge: read binary fields, reconstruct text for existing handlers.
     match packet_id {
         // Pre-login
-        ClientPacketID::KERD22 => {
+        ClientPacketID::HardwareCheck => {
             let hd = bq.read_ascii_string().unwrap_or_default();
             let text = format!("KERD22{}", hd);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::ALOGIN => {
+        ClientPacketID::AccountLogin => {
             let account = bq.read_ascii_string().unwrap_or_default();
             let password = bq.read_ascii_string().unwrap_or_default();
             let text = format!("ALOGIN{},{}", account, password);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::NLOGIN => {
+        ClientPacketID::CreateCharacter => {
             // Read all fields from binary
             let char_name = bq.read_ascii_string().unwrap_or_default();
             let race_id = bq.read_byte().unwrap_or(0);
@@ -249,28 +249,28 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let text = format!("NLOGIN{},{},0,{},{},{},{},{}", char_name, race_name, gender_str, class_name, homeland, account, head);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::OOLOGI => {
+        ClientPacketID::CharacterLogin => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
             let account = bq.read_ascii_string().unwrap_or_default();
             let codex = bq.read_ascii_string().unwrap_or_default();
             let text = format!("OOLOGI{},{},{}", char_name, account, codex);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::THCJXD => {
+        ClientPacketID::CharacterSelect => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
             let account = bq.read_ascii_string().unwrap_or_default();
             let codex = bq.read_ascii_string().unwrap_or_default();
             let text = format!("THCJXD{},{},{}", char_name, account, codex);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::NACCNT => {
+        ClientPacketID::CreateAccount => {
             let account = bq.read_ascii_string().unwrap_or_default();
             let password = bq.read_ascii_string().unwrap_or_default();
             let pin = bq.read_ascii_string().unwrap_or_default();
             let text = format!("NACCNT{},{},{}", account, password, pin);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::REPASS => {
+        ClientPacketID::ChangePassword => {
             let old_pass = bq.read_ascii_string().unwrap_or_default();
             let new_pass = bq.read_ascii_string().unwrap_or_default();
             // Handler expects: REPASS<account>,<old>,<new>,<confirm>
@@ -280,21 +280,21 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let text = format!("REPASS{},{},{},{}", account, old_pass, new_pass, new_pass);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::REECUH => {
+        ClientPacketID::AccountRecovery => {
             let account = bq.read_ascii_string().unwrap_or_default();
             let pin = bq.read_ascii_string().unwrap_or_default();
             let text = format!("REECUH{},{}", account, pin);
             handle_packet(state, conn_id, &text).await;
         }
-        ClientPacketID::TIRDAD => {
+        ClientPacketID::RollDice => {
             handle_packet(state, conn_id, "TIRDAD").await;
         }
-        ClientPacketID::TBRP => {
+        ClientPacketID::DeleteCharacter => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
             // Handler expects: TBRP<name>,<account>,<password(codex)>
             // Binary client only sends name. Account is from connection state.
             // For security verification, load the charfile password (codex) server-side
-            // since the client is already authenticated via ALOGIN.
+            // since the client is already authenticated via AccountLogin.
             let account = state.users.get(&conn_id)
                 .map(|u| u.account_name.clone())
                 .unwrap_or_default();
@@ -318,7 +318,7 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::RequestPos => {
             handle_packet(state, conn_id, "RPU").await;
         }
-        ClientPacketID::Actualizar => {
+        ClientPacketID::SyncPosition => {
             handle_packet(state, conn_id, "ACTUALIZAR").await;
         }
 

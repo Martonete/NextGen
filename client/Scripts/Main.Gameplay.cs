@@ -582,8 +582,8 @@ public partial class Main
                 _charSelectForm!.EnterButton!.Disabled = true;
                 _charSelectForm!.NoticeLabel!.Text = "Entrando al mundo...";
 
-                _tcp!.SendPacket(ClientPackets.WriteOologi(charName, account, code));
-                GD.Print($"[MAIN] Sent: OOLOGI {charName}");
+                _tcp!.SendPacket(ClientPackets.WriteCharacterLogin(charName, account, code));
+                GD.Print($"[MAIN] Sent: CharacterLogin {charName}");
             }
         }
         else
@@ -669,11 +669,11 @@ public partial class Main
             if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = "Enviando login...";
 
             await Task.Delay(100);
-            _tcp.SendPacket(ClientPackets.WriteKerd22());
+            _tcp.SendPacket(ClientPackets.WriteHardwareCheck());
 
             await Task.Delay(50);
-            _tcp.SendPacket(ClientPackets.WriteAlogin(account, password));
-            GD.Print("[MAIN] Sent: ALOGIN (binary)");
+            _tcp.SendPacket(ClientPackets.WriteAccountLogin(account, password));
+            GD.Print("[MAIN] Sent: AccountLogin (binary)");
 
             _ = Task.Run(async () =>
             {
@@ -724,14 +724,14 @@ public partial class Main
             GD.Print($"[MAIN] Connecting for account creation...");
             await _tcp.ConnectAsync(ServerHost, ServerPort);
             _connecting = false;
-            GD.Print("[MAIN] Connected! Sending NACCNT...");
+            GD.Print("[MAIN] Connected! Sending CreateAccount...");
 
             await Task.Delay(100);
-            _tcp.SendPacket(ClientPackets.WriteKerd22());
+            _tcp.SendPacket(ClientPackets.WriteHardwareCheck());
 
             await Task.Delay(50);
-            _tcp.SendPacket(ClientPackets.WriteNaccnt(account, password, pin));
-            GD.Print("[MAIN] Sent: NACCNT (binary)");
+            _tcp.SendPacket(ClientPackets.WriteCreateAccount(account, password, pin));
+            GD.Print("[MAIN] Sent: CreateAccount (binary)");
         }
         catch (Exception ex)
         {

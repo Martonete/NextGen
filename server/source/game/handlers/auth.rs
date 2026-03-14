@@ -22,7 +22,7 @@ use super::{
 // Pre-login handlers
 // =====================================================================
 
-/// KERD22 — Hardware serial check (first packet from client).
+/// HardwareCheck — Hardware serial check (first packet from client).
 pub(super) async fn handle_kerd22(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let hd_serial = read_field(1, payload, ',');
@@ -41,7 +41,7 @@ pub(super) async fn handle_kerd22(state: &mut GameState, conn_id: ConnectionId, 
     }
 }
 
-/// ALOGIN — Account login.
+/// AccountLogin — Account login.
 pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
@@ -152,7 +152,7 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
     info!("[AUTH] Account '{}' authenticated, {} characters", account_name, account.num_pjs);
 }
 
-/// NACCNT — Create new account.
+/// CreateAccount — Create new account.
 pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
@@ -208,14 +208,14 @@ pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, 
     }
 }
 
-/// THCJXD — Character login (primary, with full validation).
+/// CharacterSelect — Character login (primary, with full validation).
 pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let char_name = read_field(1, payload, ',');
     let account = read_field(2, payload, ',');
     let codex = read_field(3, payload, ',');
 
-    info!("[AUTH] Character login (THCJXD): '{}' account='{}' from #{}", char_name, account, conn_id);
+    info!("[AUTH] Character login (CharacterSelect): '{}' account='{}' from #{}", char_name, account, conn_id);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
@@ -256,14 +256,14 @@ pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, 
     connect_user(state, conn_id, &char_name, &account, &codex).await;
 }
 
-/// OOLOGI — Character login (simplified variant).
+/// CharacterLogin — Character login (simplified variant).
 pub(super) async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let char_name = read_field(1, payload, ',');
     let account = read_field(2, payload, ',');
     let codex = read_field(3, payload, ',');
 
-    info!("[AUTH] Character login (OOLOGI): '{}' from #{}", char_name, conn_id);
+    info!("[AUTH] Character login (CharacterLogin): '{}' from #{}", char_name, conn_id);
 
     if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
@@ -282,7 +282,7 @@ pub(super) async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, 
     connect_user(state, conn_id, &char_name, &account, &codex).await;
 }
 
-/// ConnectUser — Full character login (called after THCJXD or OOLOGI validation).
+/// ConnectUser — Full character login (called after CharacterSelect or CharacterLogin validation).
 pub(crate) async fn connect_user(
     state: &mut GameState,
     conn_id: ConnectionId,
@@ -895,7 +895,7 @@ pub(crate) async fn connect_user(
 // Character creation/deletion handlers
 // =====================================================================
 
-/// NLOGIN — Create new character.
+/// CreateCharacter — Create new character.
 pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
 
@@ -983,7 +983,7 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
     }
 }
 
-/// TIRDAD — Roll dice for character attributes.
+/// RollDice — Roll dice for character attributes.
 pub(super) async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) {
     info!("[AUTH] Dice roll request from #{}", conn_id);
 
@@ -998,7 +998,7 @@ pub(super) async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) 
     ));
 }
 
-/// TBRP — Delete character.
+/// DeleteCharacter — Delete character.
 pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 4);
     let char_name = read_field(1, payload, ',');
@@ -1056,7 +1056,7 @@ pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, da
     close_connection(state, conn_id).await;
 }
 
-/// REPASS — Change account password.
+/// ChangePassword — Change account password.
 pub(super) async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
@@ -1114,7 +1114,7 @@ pub(super) async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, 
     }
 }
 
-/// REECUH — Account recovery via PIN.
+/// AccountRecovery — Account recovery via PIN.
 pub(super) async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');

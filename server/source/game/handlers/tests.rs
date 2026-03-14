@@ -226,7 +226,7 @@ mod db_tests {
         let mut state = GameState::new(config, test_dir.clone(), game_data);
         state.add_connection(writer);
 
-        // ====== STEP 1: Send KERD22 (HD serial check) ======
+        // ====== STEP 1: Send HardwareCheck (HD serial check) ======
         let kerd22_plain = b"KERD22ABC123HD";
         let kerd22_encrypted = encrypt_client_packet(kerd22_plain, 1);
 
@@ -252,10 +252,10 @@ mod db_tests {
         {
             let user = state.users.get(&1).unwrap();
             assert_eq!(user.hd_serial, "ABC123HD");
-            assert!(user.paso_hd, "paso_hd should be true after KERD22");
+            assert!(user.paso_hd, "paso_hd should be true after HardwareCheck");
         }
 
-        // ====== STEP 2: Send ALOGIN (account login) ======
+        // ====== STEP 2: Send AccountLogin (account login) ======
         handle_packet(&mut state, 1, "ALOGINtestaccount,testpass,1.0.0").await;
 
         // Read server responses (INIAC + ADDPJ + CODEH)
@@ -273,13 +273,13 @@ mod db_tests {
         let codeh = packets.iter().find(|p| p.starts_with("CODEH")).expect("Missing CODEH packet");
         assert!(codeh.len() > 5, "CODEH should have a security code, got: {}", codeh);
 
-        // Verify user state after ALOGIN
+        // Verify user state after AccountLogin
         {
             let user = state.users.get(&1).unwrap();
             assert_eq!(user.account_name, "testaccount");
         }
 
-        // ====== STEP 3: Send THCJXD (character login) ======
+        // ====== STEP 3: Send CharacterSelect (character login) ======
         let codex = &codeh[5..]; // Extract security code from CODEH response
         let thcjxd_pkt = format!("THCJXDTestHero,testaccount,{}", codex);
         handle_packet(&mut state, 1, &thcjxd_pkt).await;
@@ -371,7 +371,7 @@ mod db_tests {
         let mut state = GameState::new(config, test_dir.clone(), game_data);
         state.add_connection(writer);
 
-        // Send KERD22 first (required for paso_hd)
+        // Send HardwareCheck first (required for paso_hd)
         handle_packet(&mut state, 1, "KERD22ABC123HD").await;
 
         // Try login with wrong password
@@ -421,7 +421,7 @@ mod db_tests {
         let mut state = GameState::new(config, test_dir.clone(), game_data);
         state.add_connection(writer);
 
-        // Skip KERD22 — go straight to ALOGIN (paso_hd = false)
+        // Skip HardwareCheck — go straight to AccountLogin (paso_hd = false)
         handle_packet(&mut state, 1, "ALOGINtestaccount,testpass,1.0.0").await;
 
         let packets = read_all_server_packets(&mut client_stream).await;
@@ -443,7 +443,7 @@ mod db_tests {
         let mut state = GameState::new(config, test_dir.clone(), game_data);
         state.add_connection(writer);
 
-        // Create new account via NACCNT
+        // Create new account via CreateAccount
         handle_packet(&mut state, 1, "NACCNTnewplayer,secret123,5678").await;
 
         let packets = read_all_server_packets(&mut client_stream).await;

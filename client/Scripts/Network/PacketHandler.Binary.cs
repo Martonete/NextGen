@@ -146,7 +146,7 @@ public partial class PacketHandler
                 break;
 
             // ── Sound / Music ─────────────────────────────────────
-            case ServerPacketId.PlayMIDI: // 37
+            case ServerPacketId.PlayMusic: // 37
                 HandleBinPlayMidi(bq);
                 break;
             case ServerPacketId.PlayWave: // 38
@@ -200,7 +200,7 @@ public partial class PacketHandler
             case ServerPacketId.ChangeSpellSlot: // 48
                 HandleBinChangeSpellSlot(bq);
                 break;
-            case ServerPacketId.Atributes: // 49
+            case ServerPacketId.Attributes: // 49
                 HandleBinAtributes(bq);
                 break;
             case ServerPacketId.SendSkills: // 50
@@ -211,7 +211,7 @@ public partial class PacketHandler
                 break;
 
             // ── Status / Toggles ──────────────────────────────────
-            case ServerPacketId.RestOK: // 54
+            case ServerPacketId.RestToggle: // 54
                 _state.Resting = !_state.Resting;
                 break;
             case ServerPacketId.ErrorShow: // 55
@@ -220,7 +220,7 @@ public partial class PacketHandler
             case ServerPacketId.Blind: // 56
                 _state.UserBlind = true;
                 break;
-            case ServerPacketId.Dumb: // 57
+            case ServerPacketId.Silence: // 57
                 _state.UserDumb = true;
                 break;
             case ServerPacketId.ShowSignal: // 58
@@ -241,7 +241,7 @@ public partial class PacketHandler
             case ServerPacketId.LevelUp: // 63
                 HandleBinLevelUp(bq);
                 break;
-            case ServerPacketId.AddPJ: // 64
+            case ServerPacketId.AddCharPreview: // 64
                 HandleBinAddPJ(bq);
                 break;
             case ServerPacketId.SecurityCode: // 65
@@ -259,7 +259,7 @@ public partial class PacketHandler
             case ServerPacketId.BlindNoMore: // 70
                 _state.UserBlind = false;
                 break;
-            case ServerPacketId.DumbNoMore: // 71
+            case ServerPacketId.SilenceEnd: // 71
                 _state.UserDumb = false;
                 break;
             case ServerPacketId.TrainerCreatureList: // 72
@@ -302,12 +302,12 @@ public partial class PacketHandler
             case ServerPacketId.NavigateToggle: // 81
                 _state.UserNavigating = !_state.UserNavigating;
                 break;
-            case ServerPacketId.ParalizeOK: // 82
+            case ServerPacketId.ParalyzeOK: // 82
                 HandleBinParalizeOk(bq);
                 break;
-            case ServerPacketId.ShowGuildFundationForm: // 83
+            case ServerPacketId.ShowGuildFoundationForm: // 83
                 _state.ShowGuildFoundation = true;
-                GD.Print("[PKT] ShowGuildFundationForm (binary)");
+                GD.Print("[PKT] ShowGuildFoundationForm (binary)");
                 break;
             case ServerPacketId.TradeOK: // 84
                 HandleBinTradeOk();
@@ -547,8 +547,8 @@ public partial class PacketHandler
             case ServerPacketId.CarpItems: // 160
                 HandleBinCraftList(bq, _state.CarpItems, false);
                 break;
-            case ServerPacketId.MedOK: // 161
-                GD.Print("[PKT] MedOK");
+            case ServerPacketId.MeditateOK: // 161
+                GD.Print("[PKT] MeditateOK");
                 break;
             case ServerPacketId.Navigation: // 162
                 HandleBinNavigationData(bq);
@@ -589,7 +589,7 @@ public partial class PacketHandler
             case ServerPacketId.InitCommerceLegacy: // 173
                 _state.Comerciando = true;
                 break;
-            case ServerPacketId.TransOK: // 174
+            case ServerPacketId.TransactionOK: // 174
                 HandleBinTransOk(bq);
                 break;
             case ServerPacketId.CommerceCloseOK: // 175

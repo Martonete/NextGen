@@ -540,8 +540,8 @@ public partial class Main : Control
 			int[] selected = charList.GetSelectedItems();
 			if (selected.Length == 0 || selected[0] >= _state.CharacterList.Count || _tcp == null) return;
 			string charName = _state.CharacterList[selected[0]].Name;
-			_tcp.SendPacket(ClientPackets.WriteTbrp(charName));
-			GD.Print($"[MAIN] Sent: TBRP {charName}");
+			_tcp.SendPacket(ClientPackets.WriteDeleteCharacter(charName));
+			GD.Print($"[MAIN] Sent: DeleteCharacter {charName}");
 			noticeLabel.Text = "Eliminando personaje...";
 		};
 
@@ -563,10 +563,10 @@ public partial class Main : Control
 		{
 			int head = _state.CreateCharHead;
 			string account = _state.AccountName;
-			_tcp!.SendPacket(ClientPackets.WriteNlogin(
+			_tcp!.SendPacket(ClientPackets.WriteCreateCharacter(
 				_state.CreateCharName, (byte)_state.CreateCharRace, (byte)_state.CreateCharGender,
 				(byte)_state.CreateCharClass, (short)head, (byte)_state.CreateCharFaction, account));
-			GD.Print("[MAIN] Sent: NLOGIN (binary)");
+			GD.Print("[MAIN] Sent: CreateCharacter (binary)");
 		};
 
 		// Load InvEqu textures (inventory/spell backgrounds) — no longer depends on Principal.jpg

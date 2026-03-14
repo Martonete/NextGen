@@ -6,7 +6,7 @@ namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Account creation UI panel. Extracted from Main.cs.
-/// Handles all account creation form logic, validation, and TCP connection for NACCNT.
+/// Handles all account creation form logic, validation, and TCP connection for CreateAccount.
 /// Styled with RpgTheme.
 /// </summary>
 public class AccountCreateScreen
@@ -28,7 +28,7 @@ public class AccountCreateScreen
     /// <summary>Timer for auto-switching back to login after successful creation.</summary>
     public double SuccessTimer { get; set; }
 
-    /// <summary>Callback: request TCP connection + send NACCNT(account, password, pin).</summary>
+    /// <summary>Callback: request TCP connection + send CreateAccount(account, password, pin).</summary>
     public Action<string, string, string>? OnCreateAccount;
 
     /// <summary>Callback: user pressed Back.</summary>
