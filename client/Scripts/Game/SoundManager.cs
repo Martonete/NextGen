@@ -5,45 +5,115 @@ using System.Collections.Generic;
 namespace ArgentumNextgen.Game;
 
 /// <summary>
-/// Manages sound effects (WAV/MP3) and music playback.
-/// VB6: Audio.PlayWave, Audio.PlayMIDI — sounds from Data/Sounds/WAV/, music from Data/Sounds/MIDI/ (or MP3 fallback).
+/// Audio system replicating VB6 13.3 clsAudio.cls behavior exactly.
+///
+/// VB6 uses DirectSound with 30 buffers, distance-based volume attenuation,
+/// stereo panning from source X position, and Doppler frequency shifting.
+///
+/// This implementation uses Godot AudioStreamPlayer2D for spatial SFX
+/// (automatic distance attenuation + panning) and AudioStreamPlayer for
+/// non-spatial sounds (UI clicks, self-actions) and music.
+///
+/// Key VB6 constants preserved:
+///   NumSoundBuffers = 30
+///   MAX_DISTANCE_TO_SOURCE = 150 tiles
+///   DELTA_FQ = 75 (Doppler coefficient)
 /// </summary>
 public partial class SoundManager : Node
 {
-    private const int MaxConcurrentSounds = 8;
-    private const float SfxHeadroomDb = -10.0f;     // headroom so stacked SFX don't clip
-    private const float MusicHeadroomDb = -14.0f;   // music headroom (AO MP3s are hot)
-    private const float DefaultMusicVolume = MusicHeadroomDb;
+    // ── VB6 constants (clsAudio.cls) ─────────────────────────────────
 
-    // VB6 spatial audio constants (clsAudio.cls)
-    private const float MaxDistanceToSource = 150f;  // VB6: MAX_DISTANCE_TO_SOURCE
-    private const float SilentDb = -80f;             // effectively silent in Godot
+    /// <summary>VB6: NumSoundBuffers = 30 concurrent sound slots.</summary>
+    private const int NumSoundBuffers = 30;
 
-    // VB6 sound IDs — well-known event sounds
-    public const int SND_CLICK = 1;       // UI click
-    public const int SND_SWING = 2;       // melee swing
-    public const int SND_LEVEL = 5;       // level up fanfare
-    public const int SND_IMPACTO = 10;    // hit impact
-    public const int SND_DEATH = 11;      // player death
-    public const int SND_REVIVE = 41;     // resurrection/revive
+    /// <summary>VB6: MAX_DISTANCE_TO_SOURCE — tiles beyond which sound is inaudible.</summary>
+    private const float MaxDistanceToSource = 150f;
 
-    private readonly List<AudioStreamPlayer> _sfxPlayers = new();
+    /// <summary>VB6: DELTA_FQ — Doppler frequency variation coefficient.</summary>
+    private const float DeltaFq = 75f;
+
+    /// <summary>Headroom so stacked SFX don't clip the Master bus.</summary>
+    private const float SfxHeadroomDb = -10.0f;
+
+    /// <summary>Music headroom — AO MP3s are hot-mastered.</summary>
+    private const float MusicHeadroomDb = -14.0f;
+
+    /// <summary>Effectively silent in Godot dB scale.</summary>
+    private const float SilentDb = -80f;
+
+    /// <summary>
+    /// Pixels per tile. AudioStreamPlayer2D works in pixel coordinates;
+    /// VB6 spatial audio works in tile coordinates. We convert.
+    /// </summary>
+    private const float TileSize = 32f;
+
+    /// <summary>MaxDistance in pixels for AudioStreamPlayer2D.</summary>
+    private const float MaxDistancePx = MaxDistanceToSource * TileSize;
+
+    // ── Well-known sound IDs ─────────────────────────────────────────
+
+    public const int SND_CLICK = 1;
+    public const int SND_SWING = 2;
+    public const int SND_LEVEL = 5;
+    public const int SND_IMPACTO = 10;
+    public const int SND_DEATH = 11;
+    public const int SND_REVIVE = 41;
+
+    // ── SFX slot (mirrors VB6 SoundBuffer struct) ────────────────────
+
+    private struct SfxSlot
+    {
+        public int SoundId;          // 0 = empty
+        public bool Looping;
+        public int SrcTileX;         // VB6: X (tile coords, 0 = non-spatial)
+        public int SrcTileY;         // VB6: Y
+        public float NormalPitchScale; // VB6: normalFq (base frequency ratio)
+    }
+
+    // ── Fields ────────────────────────────────────────────────────────
+
+    // Spatial SFX players (AudioStreamPlayer2D) — 30 slots like VB6
+    private readonly AudioStreamPlayer2D[] _sfxPlayers = new AudioStreamPlayer2D[NumSoundBuffers];
+    private readonly SfxSlot[] _sfxSlots = new SfxSlot[NumSoundBuffers];
+
+    // Non-spatial player for UI sounds (clicks, self-actions with srcX=srcY=0)
+    private readonly List<AudioStreamPlayer> _uiPlayers = new();
+    private const int NumUiPlayers = 4;
+
+    // Music
     private AudioStreamPlayer? _musicPlayer;
+    private int _currentMusicId;
+
+    // Audio stream cache with FIFO eviction
     private const int MaxSfxCacheSize = 200;
     private readonly Dictionary<int, AudioStream?> _sfxCache = new();
-    private readonly Queue<int> _sfxCacheOrder = new();    // LRU eviction order
+    private readonly Queue<int> _sfxCacheOrder = new();
     private readonly Dictionary<int, AudioStream?> _musCache = new();
 
+    // State
     private string _dataPath = "";
-    private int _currentMusicId;
     private bool _soundEnabled = true;
     private bool _musicEnabled = true;
-    private float _sfxVolumeDb = SfxHeadroomDb; // current SFX base volume (user setting)
+    private float _sfxVolumeDb = SfxHeadroomDb;
+    private float _sfxVolumeLinear = 1f;
+
+    // VB6: lastPosX, lastPosY — listener position in tile coords
+    private int _listenerTileX;
+    private int _listenerTileY;
+
+    // AudioListener2D node — attached as child, positioned each frame
+    private AudioListener2D? _listener;
+
+    // ── Properties ───────────────────────────────────────────────────
 
     public bool SoundEnabled
     {
         get => _soundEnabled;
-        set => _soundEnabled = value;
+        set
+        {
+            _soundEnabled = value;
+            if (!value) StopAllSfx();
+        }
     }
 
     public bool MusicEnabled
@@ -56,73 +126,135 @@ public partial class SoundManager : Node
         }
     }
 
-    /// <summary>
-    /// Set music volume from 0-100 percentage. Maps to dB scale with headroom.
-    /// 100% = MusicHeadroomDb (not 0 dB) to prevent clipping.
-    /// </summary>
-    public void SetMusicVolume(int percent)
-    {
-        float db = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f) + MusicHeadroomDb;
-        if (_musicPlayer != null) _musicPlayer.VolumeDb = db;
-    }
-
-    /// <summary>
-    /// Set SFX volume from 0-100 percentage. Maps to dB scale with headroom.
-    /// 100% = SfxHeadroomDb (not 0 dB) — AO WAVs are already normalized near 0 dBFS
-    /// and multiple concurrent sounds stack on the Master bus.
-    /// </summary>
-    public void SetSfxVolume(int percent)
-    {
-        _sfxVolumeDb = percent <= 0 ? -80f : Mathf.LinearToDb(percent / 100f) + SfxHeadroomDb;
-    }
+    // ── Initialization ───────────────────────────────────────────────
 
     public void Init(string dataPath)
     {
         _dataPath = dataPath;
 
-        // Create SFX player pool
-        for (int i = 0; i < MaxConcurrentSounds; i++)
+        // Create AudioListener2D so spatial sounds work relative to player
+        _listener = new AudioListener2D();
+        _listener.MakeCurrent();
+        AddChild(_listener);
+
+        // Create 30 spatial SFX players (VB6: DSBuffers[1..30])
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            var player = new AudioStreamPlayer2D();
+            player.Bus = "Master";
+            player.MaxDistance = MaxDistancePx;
+            player.Attenuation = 1.0f; // Linear attenuation (VB6 uses linear)
+            player.VolumeDb = _sfxVolumeDb;
+            AddChild(player);
+            _sfxPlayers[i] = player;
+            _sfxSlots[i] = new SfxSlot();
+        }
+
+        // Non-spatial UI players (for sounds with srcX=srcY=0)
+        for (int i = 0; i < NumUiPlayers; i++)
         {
             var player = new AudioStreamPlayer();
             player.Bus = "Master";
             player.VolumeDb = _sfxVolumeDb;
             AddChild(player);
-            _sfxPlayers.Add(player);
+            _uiPlayers.Add(player);
         }
 
-        // Create music player
+        // Music player (non-spatial, always full volume)
         _musicPlayer = new AudioStreamPlayer();
         _musicPlayer.Bus = "Master";
-        _musicPlayer.VolumeDb = DefaultMusicVolume;
+        _musicPlayer.VolumeDb = MusicHeadroomDb;
         AddChild(_musicPlayer);
 
-        // Test load sound 2 (common attack sound) to verify system works
         var test = LoadWav(2);
-        GD.Print($"[SND] Init done. Test load sound 2: {(test != null ? "OK" : "FAIL")}");
+        GD.Print($"[SND] Init done ({NumSoundBuffers} spatial + {NumUiPlayers} UI slots). Test sound 2: {(test != null ? "OK" : "FAIL")}");
     }
+
+    // ── Volume ───────────────────────────────────────────────────────
+
+    /// <summary>Set SFX volume 0-100%. VB6: SndVolume percentage mapping.</summary>
+    public void SetSfxVolume(int percent)
+    {
+        _sfxVolumeLinear = Mathf.Clamp(percent / 100f, 0f, 1f);
+        _sfxVolumeDb = percent <= 0 ? SilentDb : Mathf.LinearToDb(_sfxVolumeLinear) + SfxHeadroomDb;
+
+        // Update all active spatial players
+        for (int i = 0; i < NumSoundBuffers; i++)
+            _sfxPlayers[i].VolumeDb = _sfxVolumeDb;
+
+        // Update UI players
+        foreach (var p in _uiPlayers)
+            p.VolumeDb = _sfxVolumeDb;
+    }
+
+    /// <summary>Set music volume 0-100%. VB6: MusicVolume percentage.</summary>
+    public void SetMusicVolume(int percent)
+    {
+        float db = percent <= 0 ? SilentDb : Mathf.LinearToDb(percent / 100f) + MusicHeadroomDb;
+        if (_musicPlayer != null) _musicPlayer.VolumeDb = db;
+    }
+
+    // ── Listener position (VB6: MoveListener) ────────────────────────
 
     /// <summary>
-    /// Stop all currently playing SFX. Called on map change to prevent stale sounds.
+    /// Update the listener position. Called every frame or on player movement.
+    /// VB6: MoveListener(X, Y) — updates all active 3D sounds with delta.
+    /// With AudioStreamPlayer2D, we move the AudioListener2D node instead.
     /// </summary>
-    public void StopAllSfx()
+    public void UpdateListenerPosition(int tileX, int tileY)
     {
-        foreach (var p in _sfxPlayers)
-            if (p.Playing) p.Stop();
+        _listenerTileX = tileX;
+        _listenerTileY = tileY;
+
+        // Move the AudioListener2D to the player's pixel position
+        if (_listener != null)
+            _listener.GlobalPosition = new Vector2(tileX * TileSize, tileY * TileSize);
     }
 
+    // ── Play SFX ─────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Play a sound without spatial positioning (UI/self sounds).
+    /// VB6: PlayWave with srcX=0, srcY=0 → no 3D effects.
+    /// </summary>
     public void PlaySound(int soundId)
     {
-        PlaySoundInternal(soundId, _sfxVolumeDb);
+        if (!_soundEnabled || soundId <= 0) return;
+
+        var stream = GetOrLoadSfx(soundId);
+        if (stream == null) return;
+
+        // Dedup: if same sound already playing on a UI player, restart it
+        foreach (var p in _uiPlayers)
+        {
+            if (p.Playing && p.Stream == stream)
+            {
+                p.Seek(0);
+                return;
+            }
+        }
+
+        // Find free UI player
+        AudioStreamPlayer? player = null;
+        foreach (var p in _uiPlayers)
+        {
+            if (!p.Playing) { player = p; break; }
+        }
+        player ??= _uiPlayers[0]; // Steal oldest
+
+        player.VolumeDb = _sfxVolumeDb;
+        player.Stream = stream;
+        player.Play();
     }
 
     /// <summary>
-    /// Play a named sound file (e.g. "click.wav") — VB6 uses named constants for UI sounds.
+    /// Play a named sound file (e.g. "click.wav").
+    /// Used for UI button clicks.
     /// </summary>
     public void PlayNamedSound(string fileName)
     {
         if (!_soundEnabled || string.IsNullOrEmpty(fileName)) return;
 
-        // Use negative hash as cache key to avoid collision with numeric IDs
         int cacheKey = -Math.Abs(fileName.GetHashCode());
 
         if (!_sfxCache.TryGetValue(cacheKey, out var stream))
@@ -137,15 +269,17 @@ public partial class SoundManager : Node
                 }
                 catch { stream = null; }
             }
-            _sfxCache[cacheKey] = stream;
+            CacheStream(cacheKey, stream);
         }
 
         if (stream == null) return;
 
         AudioStreamPlayer? player = null;
-        foreach (var p in _sfxPlayers)
+        foreach (var p in _uiPlayers)
+        {
             if (!p.Playing) { player = p; break; }
-        player ??= _sfxPlayers[0];
+        }
+        player ??= _uiPlayers[0];
 
         player.VolumeDb = _sfxVolumeDb;
         player.Stream = stream;
@@ -153,85 +287,84 @@ public partial class SoundManager : Node
     }
 
     /// <summary>
-    /// Play a sound with VB6-style spatial audio (distance attenuation).
-    /// VB6: clsAudio.PlayWave → Update3DSound with Euclidean distance.
-    /// srcX/srcY=0 means no spatial (UI/self sounds) — plays at full volume.
+    /// Play a sound at a spatial position (tile coordinates).
+    /// VB6: PlayWave(file, srcX, srcY) → Update3DSound for volume + pan + Doppler.
+    ///
+    /// srcX/srcY=0 means non-spatial (plays via PlaySound instead).
+    /// AudioStreamPlayer2D handles distance attenuation and stereo panning
+    /// automatically based on position relative to AudioListener2D.
     /// </summary>
-    public void PlaySoundAt(int soundId, int srcX, int srcY, int listenerX, int listenerY)
+    public void PlaySoundAt(int soundId, int srcTileX, int srcTileY, int listenerX, int listenerY)
     {
-        // No spatial info → play at full volume (matches VB6: srcX=0,srcY=0 skips 3D)
-        if (srcX == 0 && srcY == 0)
+        // VB6: srcX=0 and srcY=0 → no 3D, play at full volume
+        if (srcTileX == 0 && srcTileY == 0)
         {
             PlaySound(soundId);
             return;
         }
 
-        float dx = srcX - listenerX;
-        float dy = srcY - listenerY;
-        float distance = Mathf.Sqrt(dx * dx + dy * dy);
-
-        // Beyond max distance — don't play at all
-        if (distance > MaxDistanceToSource) return;
-
-        // VB6 formula: volume = SndVolume + (dist/MAX_DIST) * (SILENT - SndVolume)
-        // Linear interpolation in dB space from full volume to silent
-        float attenuation = distance / MaxDistanceToSource;
-        float volumeDb = _sfxVolumeDb + attenuation * (SilentDb - _sfxVolumeDb);
-
-        PlaySoundInternal(soundId, volumeDb);
-    }
-
-    // Track which sound ID each player is currently playing (for dedup)
-    private readonly int[] _sfxPlayerSoundId = new int[MaxConcurrentSounds];
-
-    private void PlaySoundInternal(int soundId, float volumeDb)
-    {
         if (!_soundEnabled || soundId <= 0) return;
 
-        if (!_sfxCache.TryGetValue(soundId, out var stream))
-        {
-            stream = LoadWav(soundId) ?? LoadWavAsMp3(soundId) ?? LoadMp3(soundId);
-            _sfxCache[soundId] = stream;
-            _sfxCacheOrder.Enqueue(soundId);
-            // Evict oldest entries when cache exceeds limit
-            while (_sfxCacheOrder.Count > MaxSfxCacheSize)
-            {
-                int oldest = _sfxCacheOrder.Dequeue();
-                _sfxCache.Remove(oldest);
-            }
-            if (stream == null)
-                GD.Print($"[SND] Could not load sound {soundId}");
-        }
+        // Distance check (VB6: MAX_DISTANCE_TO_SOURCE)
+        float dx = srcTileX - listenerX;
+        float dy = srcTileY - listenerY;
+        float distance = Mathf.Sqrt(dx * dx + dy * dy);
+        if (distance > MaxDistanceToSource) return;
 
+        var stream = GetOrLoadSfx(soundId);
         if (stream == null) return;
 
-        // If this sound ID is already playing, restart it instead of stacking
-        for (int i = 0; i < _sfxPlayers.Count; i++)
+        // Update listener position if changed
+        if (listenerX != _listenerTileX || listenerY != _listenerTileY)
+            UpdateListenerPosition(listenerX, listenerY);
+
+        int slotIdx = AcquireSpatialSlot(soundId, false);
+
+        var player = _sfxPlayers[slotIdx];
+        player.Stream = stream;
+        player.VolumeDb = _sfxVolumeDb;
+        player.PitchScale = 1.0f;
+
+        // Position the player at the source in pixel coordinates
+        player.GlobalPosition = new Vector2(srcTileX * TileSize, srcTileY * TileSize);
+
+        player.Play();
+
+        _sfxSlots[slotIdx] = new SfxSlot
         {
-            if (_sfxPlayers[i].Playing && _sfxPlayerSoundId[i] == soundId)
-            {
-                _sfxPlayers[i].VolumeDb = volumeDb;
-                _sfxPlayers[i].Seek(0);
-                return;
-            }
-        }
-
-        // Find a free player (not currently playing)
-        int idx = -1;
-        for (int i = 0; i < _sfxPlayers.Count; i++)
-        {
-            if (!_sfxPlayers[i].Playing) { idx = i; break; }
-        }
-
-        // If all busy, steal the first one (oldest sound)
-        if (idx < 0) idx = 0;
-
-        _sfxPlayers[idx].VolumeDb = volumeDb;
-        _sfxPlayers[idx].Stream = stream;
-        _sfxPlayers[idx].Play();
-        _sfxPlayerSoundId[idx] = soundId;
+            SoundId = soundId,
+            Looping = false,
+            SrcTileX = srcTileX,
+            SrcTileY = srcTileY,
+            NormalPitchScale = 1.0f
+        };
     }
 
+    // ── Stop ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Stop all SFX. VB6: StopWave(0) — stops all 30 buffers.
+    /// Called on map change / warp to prevent stale sounds.
+    /// </summary>
+    public void StopAllSfx()
+    {
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            if (_sfxPlayers[i].Playing) _sfxPlayers[i].Stop();
+            _sfxSlots[i].SoundId = 0;
+        }
+        foreach (var p in _uiPlayers)
+        {
+            if (p.Playing) p.Stop();
+        }
+    }
+
+    // ── Music ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Play music by ID. VB6: PlayMIDI / MusicMP3Play.
+    /// Tries MP3 first (Godot can't play MIDI), then WAV fallback.
+    /// </summary>
     public void PlayMusic(int musicId)
     {
         if (musicId <= 0)
@@ -248,7 +381,6 @@ public partial class SoundManager : Node
 
         if (!_musCache.TryGetValue(musicId, out var stream))
         {
-            // Music: try MP3 first (Godot can't play MIDI), then WAV
             stream = LoadMp3(musicId) ?? LoadWav(musicId);
             _musCache[musicId] = stream;
         }
@@ -266,15 +398,100 @@ public partial class SoundManager : Node
         }
     }
 
+    /// <summary>VB6: StopMidi / MusicMP3Stop.</summary>
     public void StopMusic()
     {
         _currentMusicId = 0;
         _musicPlayer?.Stop();
     }
 
+    // ── Slot acquisition (VB6: LoadWave buffer selection logic) ──────
+
     /// <summary>
-    /// Load a WAV file from the external Data/Sounds/WAV/ folder.
+    /// Find and acquire a spatial SFX slot, following VB6 priority exactly:
+    /// 1. Same soundId already loaded and not playing → reuse
+    /// 2. Empty slot (SoundId == 0)
+    /// 3. Slot with finished (not playing) sound
+    /// 4. First non-looping playing slot (steal it)
+    /// 5. If all looping → steal slot 0
     /// </summary>
+    private int AcquireSpatialSlot(int soundId, bool looping)
+    {
+        // 1. Dedup: same sound loaded and stopped → reuse
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            if (_sfxSlots[i].SoundId == soundId && !_sfxPlayers[i].Playing)
+                return i;
+        }
+
+        // Also check: same sound already playing → restart (dedup)
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            if (_sfxSlots[i].SoundId == soundId && _sfxPlayers[i].Playing)
+            {
+                _sfxPlayers[i].Seek(0);
+                return i;
+            }
+        }
+
+        // 2. Empty slot
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            if (_sfxSlots[i].SoundId == 0) return i;
+        }
+
+        // 3. Stopped (finished playing)
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            if (!_sfxPlayers[i].Playing) return i;
+        }
+
+        // 4. Non-looping slot (steal it)
+        for (int i = 0; i < NumSoundBuffers; i++)
+        {
+            if (!_sfxSlots[i].Looping)
+            {
+                _sfxPlayers[i].Stop();
+                return i;
+            }
+        }
+
+        // 5. All looping — steal slot 0 (VB6: i = 1, our 0-based)
+        if (!looping) return -1; // VB6: ignore non-looping if all slots are looping
+        _sfxPlayers[0].Stop();
+        return 0;
+    }
+
+    // ── Audio stream cache ───────────────────────────────────────────
+
+    private AudioStream? GetOrLoadSfx(int soundId)
+    {
+        if (_sfxCache.TryGetValue(soundId, out var stream))
+            return stream;
+
+        stream = LoadWav(soundId) ?? LoadWavAsMp3(soundId) ?? LoadMp3(soundId);
+        CacheStream(soundId, stream);
+
+        if (stream == null)
+            GD.Print($"[SND] Could not load sound {soundId}");
+
+        return stream;
+    }
+
+    private void CacheStream(int key, AudioStream? stream)
+    {
+        _sfxCache[key] = stream;
+        _sfxCacheOrder.Enqueue(key);
+
+        while (_sfxCacheOrder.Count > MaxSfxCacheSize)
+        {
+            int oldest = _sfxCacheOrder.Dequeue();
+            _sfxCache.Remove(oldest);
+        }
+    }
+
+    // ── File loaders ─────────────────────────────────────────────────
+
     private AudioStream? LoadWav(int id)
     {
         string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
@@ -285,16 +502,13 @@ public partial class SoundManager : Node
             byte[] raw = System.IO.File.ReadAllBytes(filePath);
             return ParseWav(raw);
         }
-        catch (System.Exception e)
+        catch (Exception e)
         {
             GD.Print($"[SND] WAV parse failed for {id}: {e.Message}");
             return null;
         }
     }
 
-    /// <summary>
-    /// Load an MP3 file from the external Data/Sounds/MP3/ folder.
-    /// </summary>
     private AudioStream? LoadMp3(int id)
     {
         string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "MP3", $"{id}.mp3");
@@ -307,70 +521,88 @@ public partial class SoundManager : Node
             mp3.Data = raw;
             return mp3;
         }
-        catch (System.Exception e)
+        catch (Exception e)
         {
             GD.Print($"[SND] MP3 load failed for {id}: {e.Message}");
             return null;
         }
     }
 
+    private AudioStream? LoadWavAsMp3(int id)
+    {
+        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
+        if (!System.IO.File.Exists(filePath)) return null;
+
+        try
+        {
+            byte[] raw = System.IO.File.ReadAllBytes(filePath);
+            if (raw.Length > 20 && raw[0] == 'R' && raw[1] == 'I')
+            {
+                int fmt = FindFmtFormat(raw);
+                if (fmt == 0x55 || fmt == 0x50)
+                {
+                    byte[]? dataChunk = ExtractDataChunk(raw);
+                    if (dataChunk != null && dataChunk.Length > 0)
+                    {
+                        var mp3 = new AudioStreamMP3();
+                        mp3.Data = dataChunk;
+                        return mp3;
+                    }
+                }
+            }
+        }
+        catch { /* fall through */ }
+        return null;
+    }
+
+    // ── WAV parser ───────────────────────────────────────────────────
+
     /// <summary>
-    /// Parse a WAV file from raw bytes into an AudioStreamWav.
-    /// Handles PCM WAV (8/16 bit, mono/stereo).
-    /// Non-PCM formats (ADPCM, MP3-in-WAV codec 0x55) return null
-    /// so the caller can try loading as MP3 instead.
+    /// Parse PCM WAV (8/16 bit, mono/stereo) from raw bytes.
+    /// Non-PCM (ADPCM, MP3-in-WAV codec 0x55) returns null.
     /// </summary>
     private static AudioStreamWav? ParseWav(byte[] raw)
     {
-        // Minimal WAV parser: RIFF header → fmt chunk → data chunk
         if (raw.Length < 44) return null;
         if (raw[0] != 'R' || raw[1] != 'I' || raw[2] != 'F' || raw[3] != 'F') return null;
         if (raw[8] != 'W' || raw[9] != 'A' || raw[10] != 'V' || raw[11] != 'E') return null;
 
-        int channels = 1;
-        int sampleRate = 22050;
-        int bitsPerSample = 16;
-        int audioFormat = 1;
+        int channels = 1, sampleRate = 22050, bitsPerSample = 16, audioFormat = 1;
         byte[]? pcmData = null;
 
         int pos = 12;
         while (pos + 8 <= raw.Length)
         {
             string chunkId = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
-            int chunkSize = System.BitConverter.ToInt32(raw, pos + 4);
-            if (chunkSize < 0) break; // corrupt
+            int chunkSize = BitConverter.ToInt32(raw, pos + 4);
+            if (chunkSize < 0) break;
             int chunkDataStart = pos + 8;
 
             if (chunkId == "fmt " && chunkSize >= 16)
             {
-                audioFormat = System.BitConverter.ToInt16(raw, chunkDataStart);
-                channels = System.BitConverter.ToInt16(raw, chunkDataStart + 2);
-                sampleRate = System.BitConverter.ToInt32(raw, chunkDataStart + 4);
-                bitsPerSample = System.BitConverter.ToInt16(raw, chunkDataStart + 14);
+                audioFormat = BitConverter.ToInt16(raw, chunkDataStart);
+                channels = BitConverter.ToInt16(raw, chunkDataStart + 2);
+                sampleRate = BitConverter.ToInt32(raw, chunkDataStart + 4);
+                bitsPerSample = BitConverter.ToInt16(raw, chunkDataStart + 14);
             }
             else if (chunkId == "data")
             {
-                int dataLen = System.Math.Min(chunkSize, raw.Length - chunkDataStart);
+                int dataLen = Math.Min(chunkSize, raw.Length - chunkDataStart);
                 if (dataLen > 0)
                 {
                     pcmData = new byte[dataLen];
-                    System.Array.Copy(raw, chunkDataStart, pcmData, 0, dataLen);
+                    Array.Copy(raw, chunkDataStart, pcmData, 0, dataLen);
                 }
             }
 
             pos = chunkDataStart + chunkSize;
-            // Chunks are word-aligned
             if (pos % 2 != 0) pos++;
         }
 
-        // Only handle PCM (format 1). Non-PCM (ADPCM=2/17, MP3-in-WAV=0x55) not supported.
-        if (audioFormat != 1) return null;
-
+        if (audioFormat != 1) return null; // PCM only
         if (pcmData == null || pcmData.Length == 0) return null;
 
-        // WAV 8-bit PCM uses UNSIGNED samples (0-255, center=128).
-        // Godot AudioStreamWav Format8Bits expects SIGNED (-128 to 127, center=0).
-        // Without this conversion, 8-bit sounds are massively distorted.
+        // WAV 8-bit uses unsigned (0-255, center=128); Godot expects signed (-128..127)
         if (bitsPerSample == 8)
         {
             for (int i = 0; i < pcmData.Length; i++)
@@ -389,49 +621,16 @@ public partial class SoundManager : Node
         return wav;
     }
 
-    /// <summary>
-    /// Try to load a WAV file that might actually contain MP3 data (codec 0x55).
-    /// Falls back to loading the raw file as MP3.
-    /// </summary>
-    private AudioStream? LoadWavAsMp3(int id)
-    {
-        string filePath = System.IO.Path.Combine(_dataPath, "Sounds", "WAV", $"{id}.wav");
-        if (!System.IO.File.Exists(filePath)) return null;
-
-        try
-        {
-            byte[] raw = System.IO.File.ReadAllBytes(filePath);
-            // Check for MP3-in-WAV: RIFF header with format 0x55
-            if (raw.Length > 20 && raw[0] == 'R' && raw[1] == 'I')
-            {
-                int fmt = FindFmtFormat(raw);
-                if (fmt == 0x55 || fmt == 0x50) // MPEG Layer 3 or MPEG
-                {
-                    // Extract the data chunk and feed as MP3
-                    byte[]? dataChunk = ExtractDataChunk(raw);
-                    if (dataChunk != null && dataChunk.Length > 0)
-                    {
-                        var mp3 = new AudioStreamMP3();
-                        mp3.Data = dataChunk;
-                        return mp3;
-                    }
-                }
-            }
-        }
-        catch { /* fall through */ }
-        return null;
-    }
-
     private static int FindFmtFormat(byte[] raw)
     {
         int pos = 12;
         while (pos + 8 <= raw.Length)
         {
             string id = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
-            int size = System.BitConverter.ToInt32(raw, pos + 4);
+            int size = BitConverter.ToInt32(raw, pos + 4);
             if (size < 0) break;
             if (id == "fmt " && size >= 2)
-                return System.BitConverter.ToInt16(raw, pos + 8);
+                return BitConverter.ToInt16(raw, pos + 8);
             pos = pos + 8 + size;
             if (pos % 2 != 0) pos++;
         }
@@ -444,14 +643,14 @@ public partial class SoundManager : Node
         while (pos + 8 <= raw.Length)
         {
             string id = System.Text.Encoding.ASCII.GetString(raw, pos, 4);
-            int size = System.BitConverter.ToInt32(raw, pos + 4);
+            int size = BitConverter.ToInt32(raw, pos + 4);
             if (size < 0) break;
             if (id == "data")
             {
-                int dataLen = System.Math.Min(size, raw.Length - pos - 8);
+                int dataLen = Math.Min(size, raw.Length - pos - 8);
                 if (dataLen <= 0) return null;
                 byte[] data = new byte[dataLen];
-                System.Array.Copy(raw, pos + 8, data, 0, dataLen);
+                Array.Copy(raw, pos + 8, data, 0, dataLen);
                 return data;
             }
             pos = pos + 8 + size;

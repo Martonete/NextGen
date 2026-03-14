@@ -724,6 +724,9 @@ public partial class Main : Control
 			_packetHandler.HandleBinaryData(chunk);
 		}
 
+		// Update spatial audio listener position each frame
+		_soundManager?.UpdateListenerPosition(_state.UserPosX, _state.UserPosY);
+
 		// React to screen transitions driven by PacketHandler
 		if (_state.CurrentScreen != _lastScreen)
 		{
