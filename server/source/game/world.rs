@@ -1,12 +1,13 @@
 // World state — runtime map grids, character index management, and area visibility.
 //
-// Each map has a 100x100 tile grid tracking which user/NPC occupies each tile.
-// Area management uses the VB6 9x9 grid-based visibility system.
+// Grids are dynamically sized (not hardcoded to 100x100). Each grid stores
+// its own dimensions and zone configuration. The zone system provides O(1)
+// area user lookups for broadcast operations.
 
 use std::collections::HashMap;
 use crate::net::ConnectionId;
 
-// Map dimensions (VB6 standard)
+// Default map dimensions (VB6 standard — used when loading .map files)
 pub const MAP_WIDTH: usize = 100;
 pub const MAP_HEIGHT: usize = 100;
 
@@ -14,22 +15,12 @@ pub const MAP_HEIGHT: usize = 100;
 pub const X_WINDOW: i32 = 17;
 pub const Y_WINDOW: i32 = 13;
 
-// Border offsets (half viewport)
+// Border offsets (half viewport) — used for area queries and range checks
 pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 8
 pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 6
 
-// Zone grid for O(1) area user lookups (VB6 ModAreas.bas zone system)
-const ZONE_SIZE: i32 = 9;
-const ZONES_PER_AXIS: usize = 12; // ceil(100/9) = 12
-const TOTAL_ZONES: usize = ZONES_PER_AXIS * ZONES_PER_AXIS; // 144
-
-/// Convert tile position to zone index (0-based).
-#[inline]
-fn zone_index(x: i32, y: i32) -> usize {
-    let zx = ((x - 1) / ZONE_SIZE) as usize;
-    let zy = ((y - 1) / ZONE_SIZE) as usize;
-    zy.min(ZONES_PER_AXIS - 1) * ZONES_PER_AXIS + zx.min(ZONES_PER_AXIS - 1)
-}
+// Default zone size for area tracking
+const DEFAULT_ZONE_SIZE: i32 = 9;
 
 // Heading directions
 pub const HEADING_NORTH: i32 = 1;
@@ -57,54 +48,72 @@ pub struct TileRuntime {
     pub ground_item: GroundItem,         // Item on the ground (0 = none)
 }
 
-/// Runtime map grid — tracks positions for collision and area queries.
+/// Runtime map grid — dynamically sized, tracks positions and zone-based user lists.
 pub struct MapGrid {
-    pub tiles: Box<[[TileRuntime; MAP_WIDTH]; MAP_HEIGHT]>,
+    /// Flat tile array indexed as tiles[y * width + x] (0-based internally).
+    tiles: Vec<TileRuntime>,
+    /// Grid dimensions.
+    pub width: i32,
+    pub height: i32,
     pub num_users: i32,
-    /// Per-zone user lists for O(1) area lookups (144 zones per map).
-    /// Stores (conn_id, x, y) to enable viewport distance filtering without tile re-scan.
+
+    // Zone tracking for O(1) area user lookups
+    zone_size: i32,
+    zones_x: i32,
+    zones_y: i32,
+    /// Per-zone user lists: (conn_id, tile_x, tile_y) for distance filtering.
     zone_users: Vec<Vec<(ConnectionId, i32, i32)>>,
 }
 
 impl MapGrid {
-    pub fn new() -> Self {
+    /// Create a new grid with the given dimensions and zone size.
+    pub fn with_size(width: i32, height: i32, zone_size: i32) -> Self {
+        let zones_x = (width + zone_size - 1) / zone_size;
+        let zones_y = (height + zone_size - 1) / zone_size;
+        let total_zones = (zones_x * zones_y) as usize;
         Self {
-            tiles: Box::new(std::array::from_fn(|_| std::array::from_fn(|_| TileRuntime::default()))),
+            tiles: (0..(width * height) as usize).map(|_| TileRuntime::default()).collect(),
+            width,
+            height,
             num_users: 0,
-            zone_users: (0..TOTAL_ZONES).map(|_| Vec::new()).collect(),
+            zone_size,
+            zones_x,
+            zones_y,
+            zone_users: (0..total_zones).map(|_| Vec::new()).collect(),
         }
     }
 
-    /// Add a user to a zone's tracking list.
-    fn zone_add(&mut self, x: i32, y: i32, conn: ConnectionId) {
-        let idx = zone_index(x, y);
-        if !self.zone_users[idx].iter().any(|&(c, _, _)| c == conn) {
-            self.zone_users[idx].push((conn, x, y));
-        }
+    /// Create a grid with default 100x100 dimensions (VB6 compat).
+    pub fn new() -> Self {
+        Self::with_size(MAP_WIDTH as i32, MAP_HEIGHT as i32, DEFAULT_ZONE_SIZE)
     }
 
-    /// Remove a user from a zone's tracking list.
-    fn zone_remove(&mut self, x: i32, y: i32, conn: ConnectionId) {
-        let idx = zone_index(x, y);
-        self.zone_users[idx].retain(|&(c, _, _)| c != conn);
-    }
-
-    /// Get tile at (x, y). Coordinates are 1-based (VB6 style).
-    pub fn tile(&self, x: i32, y: i32) -> Option<&TileRuntime> {
-        if x >= 1 && x <= MAP_WIDTH as i32 && y >= 1 && y <= MAP_HEIGHT as i32 {
-            Some(&self.tiles[(y - 1) as usize][(x - 1) as usize])
+    /// Convert 1-based tile coords to flat index. Returns None if out of bounds.
+    #[inline]
+    fn tile_index(&self, x: i32, y: i32) -> Option<usize> {
+        if x >= 1 && x <= self.width && y >= 1 && y <= self.height {
+            Some(((y - 1) * self.width + (x - 1)) as usize)
         } else {
             None
         }
+    }
+
+    /// Convert 1-based tile coords to zone index.
+    #[inline]
+    fn zone_idx(&self, x: i32, y: i32) -> usize {
+        let zx = ((x - 1) / self.zone_size).min(self.zones_x - 1);
+        let zy = ((y - 1) / self.zone_size).min(self.zones_y - 1);
+        (zy * self.zones_x + zx) as usize
+    }
+
+    /// Get tile at (x, y). Coordinates are 1-based.
+    pub fn tile(&self, x: i32, y: i32) -> Option<&TileRuntime> {
+        self.tile_index(x, y).map(|i| &self.tiles[i])
     }
 
     /// Get mutable tile at (x, y). Coordinates are 1-based.
     pub fn tile_mut(&mut self, x: i32, y: i32) -> Option<&mut TileRuntime> {
-        if x >= 1 && x <= MAP_WIDTH as i32 && y >= 1 && y <= MAP_HEIGHT as i32 {
-            Some(&mut self.tiles[(y - 1) as usize][(x - 1) as usize])
-        } else {
-            None
-        }
+        self.tile_index(x, y).map(|i| &mut self.tiles[i])
     }
 
     /// Check if a tile is free for walking.
@@ -114,6 +123,52 @@ impl MapGrid {
         } else {
             false
         }
+    }
+
+    /// Add a user to a zone's tracking list.
+    fn zone_add(&mut self, x: i32, y: i32, conn: ConnectionId) {
+        let idx = self.zone_idx(x, y);
+        if !self.zone_users[idx].iter().any(|&(c, _, _)| c == conn) {
+            self.zone_users[idx].push((conn, x, y));
+        }
+    }
+
+    /// Remove a user from a zone's tracking list.
+    fn zone_remove(&mut self, x: i32, y: i32, conn: ConnectionId) {
+        let idx = self.zone_idx(x, y);
+        self.zone_users[idx].retain(|&(c, _, _)| c != conn);
+    }
+
+    /// Get all users within viewport range around a point.
+    /// Checks 3x3 zone neighborhood, filters by exact viewport distance.
+    pub fn get_nearby_users(&self, center_x: i32, center_y: i32) -> Vec<ConnectionId> {
+        let czx = (center_x - 1) / self.zone_size;
+        let czy = (center_y - 1) / self.zone_size;
+        let mut users = Vec::new();
+        for dy in -1..=1i32 {
+            for dx in -1..=1i32 {
+                let zx = czx + dx;
+                let zy = czy + dy;
+                if zx >= 0 && zx < self.zones_x && zy >= 0 && zy < self.zones_y {
+                    let idx = (zy * self.zones_x + zx) as usize;
+                    for &(conn, ux, uy) in &self.zone_users[idx] {
+                        if (ux - center_x).abs() <= MIN_X_BORDER
+                            && (uy - center_y).abs() <= MIN_Y_BORDER
+                        {
+                            users.push(conn);
+                        }
+                    }
+                }
+            }
+        }
+        users
+    }
+
+    /// Get all user connections on this grid.
+    pub fn get_all_users(&self) -> Vec<ConnectionId> {
+        self.zone_users.iter()
+            .flat_map(|zone| zone.iter().map(|&(conn, _, _)| conn))
+            .collect()
     }
 }
 
@@ -129,7 +184,7 @@ pub struct WorldState {
 impl WorldState {
     pub fn new(map_count: usize) -> Self {
         let mut grids = HashMap::new();
-        // Pre-create grids for all loaded maps
+        // Pre-create grids for all loaded maps (default 100x100)
         for i in 1..=map_count {
             grids.insert(i as i32, MapGrid::new());
         }
@@ -147,13 +202,11 @@ impl WorldState {
     }
 
     /// Ensure a grid exists for a reloaded map.
-    /// Static tile data lives in GameData.maps; this just ensures
-    /// the runtime grid (user/NPC occupancy) is present.
     pub fn reload_map(&mut self, map_num: usize, _maps: &[Option<crate::data::maps::GameMap>]) {
         self.grids.entry(map_num as i32).or_insert_with(MapGrid::new);
     }
 
-    /// Get grid for a map (creates if needed).
+    /// Get grid for a map.
     pub fn grid(&self, map: i32) -> Option<&MapGrid> {
         self.grids.get(&map)
     }
@@ -187,15 +240,14 @@ impl WorldState {
     }
 
     /// Check if position is legal for walking.
-    /// blocked_tiles comes from the static map data.
     pub fn is_legal_pos(&self, map: i32, x: i32, y: i32, blocked: bool) -> bool {
-        if !in_map_bounds(x, y) {
-            return false;
-        }
         if blocked {
             return false;
         }
         if let Some(grid) = self.grids.get(&map) {
+            if !in_map_bounds_for(x, y, grid.width, grid.height) {
+                return false;
+            }
             grid.is_tile_free(x, y)
         } else {
             false
@@ -203,17 +255,18 @@ impl WorldState {
     }
 }
 
-/// Check if position is within VB6 map border limits.
-/// VB6: MinXBorder = XMinMapSize + (XWindow \ 2) = 1 + 8 = 9
-///      MaxXBorder = XMaxMapSize - (XWindow \ 2) = 100 - 8 = 92
-///      MinYBorder = YMinMapSize + (YWindow \ 2) = 1 + 6 = 7
-///      MaxYBorder = YMaxMapSize - (YWindow \ 2) = 100 - 6 = 94
+/// Check if position is within walkable map border limits for a grid of given dimensions.
 pub fn in_map_bounds(x: i32, y: i32) -> bool {
-    const MIN_X: i32 = 1 + (X_WINDOW / 2); // 9
-    const MAX_X: i32 = MAP_WIDTH as i32 - (X_WINDOW / 2); // 92
-    const MIN_Y: i32 = 1 + (Y_WINDOW / 2); // 7
-    const MAX_Y: i32 = MAP_HEIGHT as i32 - (Y_WINDOW / 2); // 94
-    x >= MIN_X && x <= MAX_X && y >= MIN_Y && y <= MAX_Y
+    in_map_bounds_for(x, y, MAP_WIDTH as i32, MAP_HEIGHT as i32)
+}
+
+/// Check if position is within walkable border limits for any grid size.
+pub fn in_map_bounds_for(x: i32, y: i32, width: i32, height: i32) -> bool {
+    let min_x = 1 + (X_WINDOW / 2);
+    let max_x = width - (X_WINDOW / 2);
+    let min_y = 1 + (Y_WINDOW / 2);
+    let max_y = height - (Y_WINDOW / 2);
+    x >= min_x && x <= max_x && y >= min_y && y <= max_y
 }
 
 /// Convert heading to position offset.
@@ -227,44 +280,15 @@ pub fn heading_to_offset(heading: i32) -> (i32, i32) {
     }
 }
 
-/// Get all user connections within viewport range (±8 X, ±6 Y) around a point.
-/// Uses zone-based lookup (9 zones) then filters by exact viewport distance.
-/// This is O(users_in_9_zones) instead of the old O(221_tiles) scan.
+/// Get all user connections within viewport range around a point on a grid.
+/// Delegates to the grid's zone-based lookup with distance filtering.
 pub fn get_users_in_area(grid: &MapGrid, center_x: i32, center_y: i32) -> Vec<ConnectionId> {
-    let czx = ((center_x - 1) / ZONE_SIZE) as i32;
-    let czy = ((center_y - 1) / ZONE_SIZE) as i32;
-    let mut users = Vec::new();
-    for dy in -1..=1i32 {
-        for dx in -1..=1i32 {
-            let zx = czx + dx;
-            let zy = czy + dy;
-            if zx >= 0 && zx < ZONES_PER_AXIS as i32 && zy >= 0 && zy < ZONES_PER_AXIS as i32 {
-                let idx = zy as usize * ZONES_PER_AXIS + zx as usize;
-                for &(conn, ux, uy) in &grid.zone_users[idx] {
-                    // Filter by actual viewport distance (±8 X, ±6 Y)
-                    if (ux - center_x).abs() <= MIN_X_BORDER
-                        && (uy - center_y).abs() <= MIN_Y_BORDER
-                    {
-                        users.push(conn);
-                    }
-                }
-            }
-        }
-    }
-    users
+    grid.get_nearby_users(center_x, center_y)
 }
 
 /// Get all user connections on a specific map.
 pub fn get_users_on_map(grid: &MapGrid) -> Vec<ConnectionId> {
-    let mut users = Vec::new();
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
-            if let Some(conn) = grid.tiles[y][x].user_conn {
-                users.push(conn);
-            }
-        }
-    }
-    users
+    grid.get_all_users()
 }
 
 #[cfg(test)]
@@ -282,14 +306,20 @@ mod tests {
     #[test]
     fn tile_access_1based() {
         let grid = MapGrid::new();
-        // (1,1) should be valid
         assert!(grid.tile(1, 1).is_some());
-        // (100,100) should be valid
         assert!(grid.tile(100, 100).is_some());
-        // (0,0) should be invalid (1-based)
         assert!(grid.tile(0, 0).is_none());
-        // (101,1) should be invalid
         assert!(grid.tile(101, 1).is_none());
+    }
+
+    #[test]
+    fn custom_size_grid() {
+        let grid = MapGrid::with_size(200, 150, 16);
+        assert!(grid.tile(1, 1).is_some());
+        assert!(grid.tile(200, 150).is_some());
+        assert!(grid.tile(201, 1).is_none());
+        assert_eq!(grid.zones_x, 13); // ceil(200/16)
+        assert_eq!(grid.zones_y, 10); // ceil(150/16)
     }
 
     #[test]
@@ -306,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn area_query() {
+    fn area_query_zone_based() {
         let mut world = WorldState::new(1);
         let conn1: ConnectionId = 1;
         let conn2: ConnectionId = 2;
@@ -320,5 +350,31 @@ mod tests {
         assert!(nearby.contains(&conn1));
         assert!(nearby.contains(&conn2));
         assert!(!nearby.contains(&conn3));
+    }
+
+    #[test]
+    fn zone_tracking_consistency() {
+        let mut world = WorldState::new(1);
+        let conn: ConnectionId = 99;
+
+        // Place and verify zone contains user
+        world.place_user(1, 50, 50, conn);
+        let all = world.grid(1).unwrap().get_all_users();
+        assert!(all.contains(&conn));
+
+        // Remove and verify zone is clean
+        world.remove_user(1, 50, 50);
+        let all = world.grid(1).unwrap().get_all_users();
+        assert!(!all.contains(&conn));
+    }
+
+    #[test]
+    fn bounds_check_dynamic() {
+        assert!(in_map_bounds_for(9, 7, 100, 100));
+        assert!(!in_map_bounds_for(8, 7, 100, 100));
+        // Larger map
+        assert!(in_map_bounds_for(9, 7, 200, 200));
+        assert!(in_map_bounds_for(192, 194, 200, 200));
+        assert!(!in_map_bounds_for(193, 7, 200, 200));
     }
 }
