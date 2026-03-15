@@ -45,14 +45,14 @@ public partial class LoadingScreen : Control
         _background = new ColorRect();
         _background.Color = new Color(0, 0, 0, 1f);
         _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _background.Size = new Vector2(800, 600);
+        _background.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         _background.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_background);
 
         // Optional background image
         _bgImage = new TextureRect();
         _bgImage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _bgImage.Size = new Vector2(800, 600);
+        _bgImage.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         _bgImage.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
         _bgImage.MouseFilter = MouseFilterEnum.Ignore;
         _bgImage.Modulate = new Color(0.3f, 0.3f, 0.3f, 0.5f);

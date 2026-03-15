@@ -408,22 +408,11 @@ public class InputHandler
 
 	/// <summary>
 	/// Convert viewport pixel position to world tile coordinates.
-	/// Inverse of WorldRenderer.TileToScreen: px = (tileX-userX+HalfRenderX)*32.
-	/// At 800x600: tileX = userX + px/32 - 8 (unchanged from VB6).
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		// viewportPos is in design space (0-544, 0-416) from InputRouter.
-		// Scale to SubViewport pixel space, then calculate tile relative to center.
-		float scaleX = ResolutionManager.ViewportPixelW / 544f;
-		float scaleY = ResolutionManager.ViewportPixelH / 416f;
-		float svpX = viewportPos.X * scaleX;
-		float svpY = viewportPos.Y * scaleY;
-		// Character is at pixel center of SubViewport
-		float centerX = ResolutionManager.ViewportPixelW / 2f;
-		float centerY = ResolutionManager.ViewportPixelH / 2f;
-		int tileX = userX + (int)Math.Floor((svpX - centerX) / 32f);
-		int tileY = userY + (int)Math.Floor((svpY - centerY) / 32f);
+		int tileX = userX + (int)viewportPos.X / 32 - ResolutionManager.HalfTilesX;
+		int tileY = userY + (int)viewportPos.Y / 32 - ResolutionManager.HalfTilesY;
 		return (tileX, tileY);
 	}
 
@@ -453,8 +442,22 @@ public class InputHandler
 		}
 	}
 
+	/// <summary>
+	/// Check if a click position is inside the illuminated core viewport (17x13).
+	/// Clicks in the fog area (extra tiles at higher resolutions) are blocked.
+	/// </summary>
+	private bool IsInCoreViewport(Vector2 viewportPos)
+	{
+		// Core area is centered in the SubViewport
+		float coreLeft = (ResolutionManager.ViewportW - 544f) / 2f;
+		float coreTop = (ResolutionManager.ViewportH - 416f) / 2f;
+		return viewportPos.X >= coreLeft && viewportPos.X < coreLeft + 544
+			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + 416;
+	}
+
 	public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY));
@@ -462,6 +465,7 @@ public class InputHandler
 
 	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY));
@@ -469,6 +473,7 @@ public class InputHandler
 
 	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 		{

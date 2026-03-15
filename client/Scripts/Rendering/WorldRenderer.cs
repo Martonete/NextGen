@@ -41,16 +41,18 @@ public partial class WorldRenderer : Node2D
 	private DialogOverlayLayer? _dialogLayer;
 	private AdditiveParticleLayer? _additiveLayer;
 	private RoofLayer? _roofLayer;
-	private FogOverlayLayer? _fogLayer;
 	private WeatherRenderer? _weatherRenderer;
 	private FloatingTextLayer? _floatingTextLayer;
 
 	private const int TileSize = 32;
 
-	// Tile range from center to edge — delegates to ResolutionManager for dynamic resolution.
-	// At 800x600: HalfWindowTileWidth=8, HalfWindowTileHeight=6 (identical to VB6 original).
-	private static int HalfWindowTileWidth => ResolutionManager.HalfRenderX;
-	private static int HalfWindowTileHeight => ResolutionManager.HalfRenderY;
+	// Viewport dimensions — dynamic, read from ResolutionManager
+	private static int ViewportWidth => ResolutionManager.ViewportW;
+	private static int ViewportHeight => ResolutionManager.ViewportH;
+
+	// How many tiles from center to edge (visible range) — dynamic
+	private static int HalfWindowTileWidth => ResolutionManager.HalfTilesX;
+	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
 	// VB6: TileBufferSize = 9
 	private const int TileBufferSize = 9;
@@ -226,26 +228,24 @@ void fragment() {
 		_roofLayer.SetRenderer(this);
 		AddChild(_roofLayer);
 
-		// Fog overlay: z=4 — darkens extra tiles outside the core 17x13 area.
-		// Only visible when resolution > 800x600 (ExtraTilesX/Y > 0).
-		_fogLayer = new FogOverlayLayer();
-		_fogLayer.Name = "FogOverlay";
-		_fogLayer.ZIndex = 4;
-		AddChild(_fogLayer);
-
-		// Floating text layer: z=5 (above fog, below weather)
+		// Floating text layer: z=4 (above roof, below weather)
 		_floatingTextLayer = new FloatingTextLayer();
 		_floatingTextLayer.Name = "FloatingTextLayer";
-		_floatingTextLayer.ZIndex = 5;
+		_floatingTextLayer.ZIndex = 4;
 		_floatingTextLayer.Init(this, state);
 		AddChild(_floatingTextLayer);
 
-		// Weather layer: z=6 (topmost overlay — rain, lightning)
+		// Weather layer: z=5 (topmost overlay — rain, lightning)
 		_weatherRenderer = new WeatherRenderer();
 		_weatherRenderer.Name = "WeatherRenderer";
-		_weatherRenderer.ZIndex = 6;
+		_weatherRenderer.ZIndex = 5;
 		AddChild(_weatherRenderer);
 
+		// Fog overlay: z=6 (darkens extended viewport edges beyond core 17x13)
+		var fogOverlay = new FogOverlayLayer();
+		fogOverlay.Name = "FogOverlay";
+		fogOverlay.ZIndex = 6;
+		AddChild(fogOverlay);
 	}
 
 	/// <summary>
@@ -349,17 +349,13 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// Convert world tile to screen pixel position (top-left corner of the tile).
-	/// Uses HalfWindowTileWidth/Height from ResolutionManager for centering.
-	/// At 800x600: (tileX-userX+8)*32 = 256 for user's tile (unchanged from VB6).
+	/// Convert world tile to screen pixel position.
 	/// </summary>
 	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
 	{
-		// Use actual SubViewport pixel center for character centering.
-		// At 800x600: center = 272, 208. (tileX-userX)*32 + 272 = 272 for user tile. ✓
-		float px = (tileX - userX) * TileSize + ResolutionManager.ViewportPixelW / 2f + pixelOffsetX;
-		float py = (tileY - userY) * TileSize + ResolutionManager.ViewportPixelH / 2f + pixelOffsetY;
+		float px = (tileX - userX + HalfWindowTileWidth) * TileSize + pixelOffsetX;
+		float py = (tileY - userY + HalfWindowTileHeight) * TileSize + pixelOffsetY;
 		return new Vector2(px, py);
 	}
 

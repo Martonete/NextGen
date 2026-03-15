@@ -32,8 +32,8 @@ public partial class Main
 
         // === Inventory & Spells UI (VB6-exact pixel positions) ===
 
-        // Sidebar usable area: x=580→784 (204px). Content width=190px centered.
-        const int sideX = 577;  // centered start (shifted 10px left)
+        // Sidebar usable area: dynamic. Content width=190px centered.
+        int sideX = ResolutionManager.SidebarX + 17;  // 560+17=577 at 800x600
         const int contentW = 190;
         const int tabW = contentW / 2; // 95 each
 
@@ -118,25 +118,27 @@ public partial class Main
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
-        // === Bottom bar labels ===
-        _armorLabel = CreateStatLabel(55, 574, 100, 17, Colors.White, 7);
+        // === Bottom bar labels (dynamic Y from ResolutionManager) ===
+        int bbY = ResolutionManager.BottomBarY + 9;  // 565+9=574 at 800x600
+        _armorLabel = CreateStatLabel(55, bbY, 100, 17, Colors.White, 7);
         _gameUI.AddChild(_armorLabel);
-        _helmLabel = CreateStatLabel(170, 574, 90, 17, Colors.White, 7);
+        _helmLabel = CreateStatLabel(170, bbY, 90, 17, Colors.White, 7);
         _gameUI.AddChild(_helmLabel);
-        _shieldLabel = CreateStatLabel(310, 574, 95, 17, Colors.White, 7);
+        _shieldLabel = CreateStatLabel(310, bbY, 95, 17, Colors.White, 7);
         _gameUI.AddChild(_shieldLabel);
-        _weaponLabel = CreateStatLabel(435, 574, 90, 17, Colors.White, 7);
+        _weaponLabel = CreateStatLabel(435, bbY, 90, 17, Colors.White, 7);
         _gameUI.AddChild(_weaponLabel);
-        _agilidadLabel = CreateStatLabel(580, 405, 55, 14, new Color(1f, 1f, 0f), 9);
+        int sbStatX = ResolutionManager.SidebarX;
+        _agilidadLabel = CreateStatLabel(sbStatX + 20, 405, 55, 14, new Color(1f, 1f, 0f), 9);
         _gameUI.AddChild(_agilidadLabel);
-        var statSepLabel = CreateStatLabel(635, 405, 10, 14, new Color(0.5f, 0.5f, 0.5f), 9);
+        var statSepLabel = CreateStatLabel(sbStatX + 75, 405, 10, 14, new Color(0.5f, 0.5f, 0.5f), 9);
         statSepLabel.Text = "|";
         statSepLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _gameUI.AddChild(statSepLabel);
-        _fuerzaLabel = CreateStatLabel(645, 405, 50, 14, new Color(0, 1, 0), 9);
+        _fuerzaLabel = CreateStatLabel(sbStatX + 85, 405, 50, 14, new Color(0, 1, 0), 9);
         _gameUI.AddChild(_fuerzaLabel);
         // Reputation label removed (system disabled)
-        _fpsLabel = CreateStatLabel(682, 565, 93, 12, Colors.White, 7);
+        _fpsLabel = CreateStatLabel(sbStatX + 122, ResolutionManager.BottomBarY, 93, 12, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Macro status indicator
@@ -173,8 +175,10 @@ public partial class Main
 
     private void SetupSidebarButtons()
     {
+        int btnX = ResolutionManager.SidebarX + 122; // 560+122=682 at 800x600
+
         var mapaButton = RpgTheme.CreateRpgButton("Mapa", false, 10);
-        mapaButton.Position = new Vector2(682, 445);
+        mapaButton.Position = new Vector2(btnX, 445);
         mapaButton.Size = new Vector2(93, 20);
         _gameUI!.AddChild(mapaButton);
         mapaButton.Pressed += () =>
@@ -185,13 +189,13 @@ public partial class Main
         };
 
         var grupoButton = RpgTheme.CreateRpgButton("Grupo", false, 10);
-        grupoButton.Position = new Vector2(682, 466);
+        grupoButton.Position = new Vector2(btnX, 466);
         grupoButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(grupoButton);
         grupoButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); _partyPanel?.TogglePanel(); };
 
         var opcionesButton = RpgTheme.CreateRpgButton("Opciones", false, 10);
-        opcionesButton.Position = new Vector2(682, 487);
+        opcionesButton.Position = new Vector2(btnX, 487);
         opcionesButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
@@ -205,7 +209,7 @@ public partial class Main
         };
 
         var estadisticasButton = RpgTheme.CreateRpgButton("Stats", false, 10);
-        estadisticasButton.Position = new Vector2(682, 508);
+        estadisticasButton.Position = new Vector2(btnX, 508);
         estadisticasButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(estadisticasButton);
         estadisticasButton.Pressed += () =>
@@ -219,21 +223,21 @@ public partial class Main
         };
 
         var clanesButton = RpgTheme.CreateRpgButton("Clanes", false, 10);
-        clanesButton.Position = new Vector2(682, 529);
+        clanesButton.Position = new Vector2(btnX, 529);
         clanesButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(clanesButton);
         clanesButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnClanesButtonPressed(); };
 
         // Minimize button (arrow down = minimize) — above frame overlay
         var minimizeButton = RpgTheme.CreateMiniButton("Mini_arrow_bot.png", "Mini_arrow_bot.png", new Vector2(17, 17));
-        minimizeButton.Position = new Vector2(752, 4);
+        minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - 48, 4);
         minimizeButton.ZIndex = 51;
         _gameUI.AddChild(minimizeButton);
         minimizeButton.Pressed += () => _dialogManager?.OnMinimizePressed();
 
         // Close/Menu button — above frame overlay
         var closeMenuButton = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(17, 17));
-        closeMenuButton.Position = new Vector2(770, 4);
+        closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - 30, 4);
         closeMenuButton.ZIndex = 51;
         _gameUI.AddChild(closeMenuButton);
         closeMenuButton.Pressed += () =>
@@ -254,7 +258,9 @@ public partial class Main
     {
         if (_consoleLabel == null) return;
         bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
-        float right = minimapVisible ? 423f : 547f;
+        // Console right edge: full width to near sidebar, or shrink for minimap
+        float fullRight = ResolutionManager.ConsoleRight;
+        float right = minimapVisible ? fullRight - 124f : fullRight;
         _consoleLabel.OffsetRight = right;
         if (_chatInputNode != null)
             _chatInputNode.OffsetRight = right;
@@ -293,20 +299,26 @@ public partial class Main
         _charInfoPopup = AddPanel<CharInfoPopup>();
         _changePasswordPanel = AddPanel<ChangePasswordPanel>();
 
-        _macroPanel = AddPanel<MacroPanel>(new Vector2(8 + (544 - 280) / 2, 144 + (416 - 380) / 2));
+        int vpW = ResolutionManager.ViewportW;
+        int vpH = ResolutionManager.ViewportH;
+        int vpLeft = ResolutionManager.LeftMargin;
+        int vpTop = ResolutionManager.TopMargin;
+
+        _macroPanel = AddPanel<MacroPanel>(new Vector2(vpLeft + (vpW - 280) / 2, vpTop + (vpH - 380) / 2));
         _macroPanel.Init(_state, _dataPath);
 
-        _statsPanel = AddPanel<StatsPanel>(new Vector2(8 + (544 - 380) / 2, 20));
+        _statsPanel = AddPanel<StatsPanel>(new Vector2(vpLeft + (vpW - 380) / 2, 20));
         _statsPanel.Init(_state);
 
-        _npcDialogPanel = AddPanel<NpcDialogPanel>(new Vector2(8 + (544 - 300) / 2, 144 + 416 - 120 - 10));
+        _npcDialogPanel = AddPanel<NpcDialogPanel>(new Vector2(vpLeft + (vpW - 300) / 2, vpTop + vpH - 120 - 10));
         _npcDialogPanel.Init(_state);
 
-        _optionsPanel = AddPanel<OptionsPanel>(new Vector2(8 + (544 - 420) / 2, 20));
+        _optionsPanel = AddPanel<OptionsPanel>(new Vector2(vpLeft + (vpW - 420) / 2, 20));
         _optionsPanel.Init(_state, _state.Config, _dataPath);
         _optionsPanel.OnConfigApplied += ApplyConfigToSystems;
+        _optionsPanel.OnResolutionChanged += () => GetTree().ReloadCurrentScene();
 
-        _keyBindPanel = AddPanel<KeyBindPanel>(new Vector2(8 + (544 - 420) / 2, 144 + (416 - 500) / 2));
+        _keyBindPanel = AddPanel<KeyBindPanel>(new Vector2(vpLeft + (vpW - 420) / 2, vpTop + (vpH - 500) / 2));
         _keyBindPanel.Init(_state, _state.Keys, _dataPath);
 
         _optionsPanel.OnOpenKeyBinds += () =>
@@ -319,26 +331,26 @@ public partial class Main
             }
         };
 
-        _gmPanel = AddPanel<GmPanel>(new Vector2(8 + (544 - 500) / 2, 30));
+        _gmPanel = AddPanel<GmPanel>(new Vector2(vpLeft + (vpW - 500) / 2, 30));
         _gmPanel.Init(_state, null);
 
-        _spawnListPanel = AddPanel<SpawnListPanel>(new Vector2(8 + (544 - 320) / 2, 80));
+        _spawnListPanel = AddPanel<SpawnListPanel>(new Vector2(vpLeft + (vpW - 320) / 2, 80));
         _spawnListPanel.Init(_state, null);
         _gmPanel.OnOpenSpawnListRequested += () => _spawnListPanel?.Open();
 
-        _sosPanel = AddPanel<SosPanel>(new Vector2(8 + (544 - 360) / 2, 60));
+        _sosPanel = AddPanel<SosPanel>(new Vector2(vpLeft + (vpW - 360) / 2, 60));
         _sosPanel.Init(_state, null);
 
-        _motdEditorPanel = AddPanel<MotdEditorPanel>(new Vector2(8 + (544 - 380) / 2, 100));
+        _motdEditorPanel = AddPanel<MotdEditorPanel>(new Vector2(vpLeft + (vpW - 380) / 2, 100));
         _motdEditorPanel.Init(_state, null);
 
-        _guildAlignmentPanel = AddPanel<GuildAlignmentPanel>(new Vector2(8 + (544 - 300) / 2, 144 + (416 - 220) / 2));
+        _guildAlignmentPanel = AddPanel<GuildAlignmentPanel>(new Vector2(vpLeft + (vpW - 300) / 2, vpTop + (vpH - 220) / 2));
         _guildAlignmentPanel.Init(_state, null);
 
-        _peaceProposalPanel = AddPanel<PeaceProposalPanel>(new Vector2(8 + (544 - 340) / 2, 144 + (416 - 200) / 2));
+        _peaceProposalPanel = AddPanel<PeaceProposalPanel>(new Vector2(vpLeft + (vpW - 340) / 2, vpTop + (vpH - 200) / 2));
         _peaceProposalPanel.Init(_state, null);
 
-        _guildMemberPanel = AddPanel<GuildMemberPanel>(new Vector2(8 + (544 - 320) / 2, 100));
+        _guildMemberPanel = AddPanel<GuildMemberPanel>(new Vector2(vpLeft + (vpW - 320) / 2, 100));
         _guildMemberPanel.Init(_state, null);
 
         // Day/Night Cycle
@@ -416,8 +428,9 @@ public partial class Main
         _gameUI.AddChild(_contextMenu);
 
         // Minimap panel with styled border
+        int mmBorderX = ResolutionManager.ConsoleRight - 118; // minimap at right edge of console area
         var minimapBorder = new Panel();
-        minimapBorder.Position = new Vector2(429, 19);
+        minimapBorder.Position = new Vector2(mmBorderX, 19);
         minimapBorder.Size = new Vector2(118, 118);
         minimapBorder.MouseFilter = Control.MouseFilterEnum.Ignore;
         var mmStyle = new StyleBoxFlat();
@@ -430,7 +443,7 @@ public partial class Main
 
         _minimapPanel = new MinimapPanel();
         _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"));
-        _minimapPanel.Position = new Vector2(438, 28);
+        _minimapPanel.Position = new Vector2(mmBorderX + 9, 28);
         _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
         _gameUI.AddChild(_minimapPanel);
@@ -442,7 +455,7 @@ public partial class Main
 
         // Quest panel
         _questPanel = new QuestPanel();
-        _questPanel.Position = new Vector2(8 + (544 - 560) / 2, 50);
+        _questPanel.Position = new Vector2(ResolutionManager.LeftMargin + (ResolutionManager.ViewportW - 560) / 2, 50);
         _questPanel.Visible = false;
         _questPanel.ZIndex = RpgBaseForm.ZPanel;
         _gameUI.AddChild(_questPanel);
@@ -458,7 +471,7 @@ public partial class Main
         _blindOverlay = new ColorRect();
         _blindOverlay.Color = new Color(0, 0, 0, 0);
         _blindOverlay.Position = Vector2.Zero;
-        _blindOverlay.Size = new Vector2(800, 600);
+        _blindOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         _blindOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
         _blindOverlay.Visible = true;
         _blindOverlay.ZIndex = RpgBaseForm.ZBlind;

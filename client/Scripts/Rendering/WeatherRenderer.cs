@@ -20,9 +20,8 @@ public partial class WeatherRenderer : Node2D
     private const float RainWindSpeed = 120f;    // pixels/sec horizontal (diagonal)
     private const float RainDropLength = 12f;    // length of each rain line
     private const float RainDropWidth = 1.2f;
-    // Dynamic viewport dimensions from ResolutionManager
-    private static int ViewW => ResolutionManager.ViewportPixelW;
-    private static int ViewH => ResolutionManager.ViewportPixelH;
+    private static int ViewW => ResolutionManager.ViewportW;
+    private static int ViewH => ResolutionManager.ViewportH;
     // Spawn margin: drops spawn outside viewport so they enter from top/left
     private const float SpawnMarginX = 160f;
 

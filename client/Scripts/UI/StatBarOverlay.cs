@@ -1,4 +1,5 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
@@ -7,17 +8,17 @@ namespace ArgentumNextgen.UI;
 /// VB6 uses Image controls (HpSHP, MPShp, SPShp, AguaSP, COMIDASp, ExpBar) whose
 /// Width is modified proportionally to current/max ratio. We replicate this by
 /// drawing a clipped region of each bar image.
+/// Bar X positions are relative to ResolutionManager.SidebarX (560 at 800x600).
 /// </summary>
 public partial class StatBarOverlay : Control
 {
-    // Bar positions from VB6 13.3 frmMain (shpEnergia, shpMana, shpVida, shpHambre, shpSed)
-    // Order: Energia(STA), Mana, Vida(HP), Hambre, Sed
-    private static readonly Rect2 StaRect  = new(584, 443, 75, 12);
-    private static readonly Rect2 ManaRect = new(584, 467, 75, 12);
-    private static readonly Rect2 HpRect   = new(584, 488, 75, 12);
-    private static readonly Rect2 HamRect  = new(584, 511, 75, 12);
-    private static readonly Rect2 AguaRect = new(584, 534, 75, 12);   // Sed (thirst)
-    private static readonly Rect2 ExpRect  = new(565, 80, 202, 10);
+    // Bar positions computed from sidebar X. Offsets: 584 = 560+24, 565 = 560+5
+    private static Rect2 StaRect  => new(ResolutionManager.SidebarX + 24, 443, 75, 12);
+    private static Rect2 ManaRect => new(ResolutionManager.SidebarX + 24, 467, 75, 12);
+    private static Rect2 HpRect   => new(ResolutionManager.SidebarX + 24, 488, 75, 12);
+    private static Rect2 HamRect  => new(ResolutionManager.SidebarX + 24, 511, 75, 12);
+    private static Rect2 AguaRect => new(ResolutionManager.SidebarX + 24, 534, 75, 12);
+    private static Rect2 ExpRect  => new(ResolutionManager.SidebarX + 5, 80, 202, 10);
 
     private static readonly Color TextColor = new(1f, 1f, 1f);
 
