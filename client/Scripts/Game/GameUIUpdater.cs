@@ -46,7 +46,7 @@ public class GameUIUpdater
         Label expLabel, Label goldLabel, Label levelLabel, Label nameLabel,
         Label onlineLabel, Label coordsLabel,
         Label armorLabel, Label helmLabel, Label shieldLabel, Label weaponLabel,
-        Label fuerzaLabel, Label agilidadLabel, Label repLabel,
+        Label fuerzaLabel, Label agilidadLabel, Label? repLabel,
         Label fpsLabel, Label? macroStatusLabel,
         Control? btnCastiGM, StatBarOverlay? statBarOverlay)
     {
