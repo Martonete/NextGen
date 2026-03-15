@@ -12,13 +12,14 @@ namespace ArgentumNextgen.UI;
 /// </summary>
 public partial class StatBarOverlay : Control
 {
-    // Bar positions computed from sidebar X. Offsets: 584 = 560+24, 565 = 560+5
-    private static Rect2 StaRect  => new(ResolutionManager.SidebarX + 24, 443, 75, 12);
-    private static Rect2 ManaRect => new(ResolutionManager.SidebarX + 24, 467, 75, 12);
-    private static Rect2 HpRect   => new(ResolutionManager.SidebarX + 24, 488, 75, 12);
-    private static Rect2 HamRect  => new(ResolutionManager.SidebarX + 24, 511, 75, 12);
-    private static Rect2 AguaRect => new(ResolutionManager.SidebarX + 24, 534, 75, 12);
-    private static Rect2 ExpRect  => new(ResolutionManager.SidebarX + 5, 80, 202, 10);
+    // Bar positions computed from sidebar X, scaled by S(). Design-space offsets: 584=560+24, 565=560+5
+    private static int S(int v) => ResolutionManager.S(v);
+    private static Rect2 StaRect  => new(ResolutionManager.SidebarX + S(24), S(443), S(75), S(12));
+    private static Rect2 ManaRect => new(ResolutionManager.SidebarX + S(24), S(467), S(75), S(12));
+    private static Rect2 HpRect   => new(ResolutionManager.SidebarX + S(24), S(488), S(75), S(12));
+    private static Rect2 HamRect  => new(ResolutionManager.SidebarX + S(24), S(511), S(75), S(12));
+    private static Rect2 AguaRect => new(ResolutionManager.SidebarX + S(24), S(534), S(75), S(12));
+    private static Rect2 ExpRect  => new(ResolutionManager.SidebarX + S(5), S(80), S(202), S(10));
 
     private static readonly Color TextColor = new(1f, 1f, 1f);
 
@@ -46,7 +47,7 @@ public partial class StatBarOverlay : Control
     private int _exp, _expNext;
 
     private Font? _font;
-    private int _fontSize = 9; // VB6: Tahoma 6.75pt Bold (+1px)
+    private int FontSize => S(9); // VB6: Tahoma 6.75pt Bold (+1px), scaled
 
     /// <summary>Data path set by Main.cs before AddChild (so _Ready can find bar images).</summary>
     public string DataPath = "";
@@ -163,11 +164,11 @@ public partial class StatBarOverlay : Control
     private void DrawBarText(Rect2 rect, string text)
     {
         if (_font == null) return;
-        var textSize = _font.GetStringSize(text, HorizontalAlignment.Center, -1, _fontSize);
+        var textSize = _font.GetStringSize(text, HorizontalAlignment.Center, -1, FontSize);
         float textX = rect.Position.X + (rect.Size.X - textSize.X) / 2f;
-        float ascent = _font.GetAscent(_fontSize);
+        float ascent = _font.GetAscent(FontSize);
         float textY = rect.Position.Y + (rect.Size.Y + ascent) / 2f - 1f;
         var pos = new Vector2(textX, textY);
-        DrawString(_font, pos, text, HorizontalAlignment.Left, -1, _fontSize, TextColor);
+        DrawString(_font, pos, text, HorizontalAlignment.Left, -1, FontSize, TextColor);
     }
 }

@@ -21,6 +21,10 @@ public partial class GameHudFrame : Control
     // Saved references for runtime resize
     private TextureRect? _bgFrame;
     private TextureRect? _overlayTex;
+    private Panel? _consoleInset;
+    private ColorRect? _viewportInset;
+
+    private static int S(int v) => ResolutionManager.S(v);
 
     /// <summary>Resize the HUD frame to match current ResolutionManager dimensions.</summary>
     public void ResizeToWindow()
@@ -31,6 +35,19 @@ public partial class GameHudFrame : Control
         if (_bgFrame != null) _bgFrame.Size = new Vector2(winW, winH);
         if (FrameOverlay != null) FrameOverlay.Size = new Vector2(winW, winH);
         if (_overlayTex != null) _overlayTex.Size = new Vector2(winW, winH);
+
+        // Reposition dark insets
+        if (_consoleInset != null)
+        {
+            int consoleW = ResolutionManager.ConsoleRight - S(18);
+            _consoleInset.Position = new Vector2(S(18), S(14));
+            _consoleInset.Size = new Vector2(consoleW, S(128));
+        }
+        if (_viewportInset != null)
+        {
+            _viewportInset.Position = new Vector2(ResolutionManager.LeftMargin, ResolutionManager.TopMargin);
+            _viewportInset.Size = new Vector2(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+        }
     }
 
     public override void _Ready()
@@ -55,12 +72,14 @@ public partial class GameHudFrame : Control
         // === DARK INSETS — only where we need black behind content ===
 
         // Console area — semi-transparent with border (extends to near sidebar)
-        int consoleW = ResolutionManager.ConsoleRight - 18;
-        AddStyledInset(18, 14, consoleW, 128);
+        int consoleW = ResolutionManager.ConsoleRight - S(18);
+        _consoleInset = CreateStyledInset(S(18), S(14), consoleW, S(128));
+        AddChild(_consoleInset);
 
         // Game viewport — the world renders here
-        AddDarkInset(ResolutionManager.LeftMargin, ResolutionManager.TopMargin,
+        _viewportInset = CreateDarkInset(ResolutionManager.LeftMargin, ResolutionManager.TopMargin,
                      ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+        AddChild(_viewportInset);
 
         // === OVERLAY: big_bar_frame.png (borders only) on top of everything ===
         FrameOverlay = new Control();
@@ -79,17 +98,17 @@ public partial class GameHudFrame : Control
         FrameOverlay.AddChild(_overlayTex);
     }
 
-    private void AddDarkInset(float x, float y, float w, float h)
+    private static ColorRect CreateDarkInset(float x, float y, float w, float h)
     {
         var rect = new ColorRect();
         rect.Color = new Color(0f, 0f, 0f, 0.9f);
         rect.Position = new Vector2(x, y);
         rect.Size = new Vector2(w, h);
         rect.MouseFilter = MouseFilterEnum.Ignore;
-        AddChild(rect);
+        return rect;
     }
 
-    private void AddStyledInset(float x, float y, float w, float h)
+    private static Panel CreateStyledInset(float x, float y, float w, float h)
     {
         var panel = new Panel();
         panel.Position = new Vector2(x, y);
@@ -101,6 +120,6 @@ public partial class GameHudFrame : Control
         style.SetBorderWidthAll(1);
         style.SetCornerRadiusAll(2);
         panel.AddThemeStyleboxOverride("panel", style);
-        AddChild(panel);
+        return panel;
     }
 }

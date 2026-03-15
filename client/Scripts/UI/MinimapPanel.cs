@@ -13,12 +13,13 @@ namespace ArgentumNextgen.UI;
 /// </summary>
 public partial class MinimapPanel : Control
 {
-    private const int MapSize = 100;  // rendered size in pixels (fixed display size)
+    private const int DesignMapSize = 100;  // design-space size in pixels
+    private static int MapSize => ResolutionManager.S(DesignMapSize);
 
-    // Marker sizes (radius)
-    private const float SelfMarkerRadius = 2.5f;
-    private const float PlayerMarkerRadius = 1.5f;
-    private const float NpcMarkerRadius = 1.0f;
+    // Marker sizes (radius), scaled
+    private static float SelfMarkerRadius => ResolutionManager.Sf(2.5f);
+    private static float PlayerMarkerRadius => ResolutionManager.Sf(1.5f);
+    private static float NpcMarkerRadius => ResolutionManager.Sf(1.0f);
 
     // Marker colors
     private static readonly Color SelfColor = new(1f, 0f, 0f);        // Red
@@ -56,8 +57,9 @@ public partial class MinimapPanel : Control
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(MapSize, MapSize);
-        Size = new Vector2(MapSize, MapSize);
+        int sz = MapSize;
+        CustomMinimumSize = new Vector2(sz, sz);
+        Size = new Vector2(sz, sz);
         ClipContents = true;
         MouseFilter = MouseFilterEnum.Ignore;
     }

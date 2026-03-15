@@ -149,9 +149,21 @@ public partial class Main : Control
 		if (_blindOverlay != null)
 			_blindOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
-		// Console right edge
+		// Console + ChatInput offsets (scaled from design values)
 		if (_consoleLabel != null)
+		{
+			_consoleLabel.OffsetLeft = S(27);
+			_consoleLabel.OffsetTop = S(28);
+			_consoleLabel.OffsetBottom = S(115);
 			_consoleLabel.OffsetRight = ResolutionManager.ConsoleRight;
+		}
+		if (_chatInputNode != null)
+		{
+			_chatInputNode.OffsetLeft = S(22);
+			_chatInputNode.OffsetTop = S(118);
+			_chatInputNode.OffsetBottom = S(139);
+			_chatInputNode.OffsetRight = ResolutionManager.ConsoleRight;
+		}
 
 		// Re-center all game panels in the viewport area
 		CenterPanelsInViewport();
@@ -552,6 +564,11 @@ public partial class Main : Control
 		// Chat system
 		var console = GetNode<RichTextLabel>("GameUI/Console");
 		_consoleLabel = console;
+		// Set scaled offsets (design: left=27, top=28, bottom=115, right=ConsoleRight)
+		console.OffsetLeft = S(27);
+		console.OffsetTop = S(28);
+		console.OffsetBottom = S(115);
+		console.OffsetRight = ResolutionManager.ConsoleRight;
 		var consoleStyle = new StyleBoxEmpty();
 		consoleStyle.ContentMarginLeft = 2;
 		consoleStyle.ContentMarginRight = 2;
@@ -561,6 +578,11 @@ public partial class Main : Control
 
 		var chatInput = GetNode<LineEdit>("GameUI/ChatInput");
 		_chatInputNode = chatInput;
+		// Set scaled offsets (design: left=22, top=118, bottom=139, right=ConsoleRight)
+		chatInput.OffsetLeft = S(22);
+		chatInput.OffsetTop = S(118);
+		chatInput.OffsetBottom = S(139);
+		chatInput.OffsetRight = ResolutionManager.ConsoleRight;
 		chatInput.Visible = false;
 		chatInput.MaxLength = 160;
 		// RPG-styled input for chat
