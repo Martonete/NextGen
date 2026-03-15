@@ -76,6 +76,10 @@ public class Character
 	public float AuraAngleC;
 	public float NpcAuraAngle;
 
+	// FOV fade: smooth alpha transition when entering/leaving the core viewport
+	// 1.0 = fully visible (inside core), 0.0 = fully invisible (outside core)
+	public float FovAlpha = 1f;
+
 	// Debug helper
 	public bool _debugLogged;
 	public bool _equipDebugLogged;

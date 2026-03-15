@@ -6,7 +6,7 @@ namespace ArgentumNextgen.Rendering;
 /// <summary>
 /// Draws a smooth darkness overlay on tiles outside the core 17x13 viewport.
 /// Uses a precomputed gradient texture for smooth edges (no blocky tiles).
-/// Fully dark at the viewport edges, fully transparent at the core border.
+/// Radial gradient with ease-out curve — near-black at edges, transparent at core.
 /// Only active when resolution > 800x600.
 /// </summary>
 public partial class FogOverlayLayer : Node2D
@@ -37,12 +37,12 @@ public partial class FogOverlayLayer : Node2D
 
     /// <summary>
     /// Build a smooth radial fog texture. Fully transparent inside the core
-    /// 544x416 area, smooth gradient to MaxAlpha at the viewport edges.
+    /// 544x416 area, smooth ease-out gradient to MaxAlpha at the viewport edges.
     /// Built at 1/4 resolution — GPU bilinear filtering smooths it.
+    /// Uses radial (Euclidean) distance for natural circular falloff.
     /// </summary>
     private static ImageTexture BuildFogTexture(int vpW, int vpH)
     {
-        // Build at quarter resolution for performance
         int texW = vpW / 4;
         int texH = vpH / 4;
         int coreW = 544 / 4;  // 136
@@ -51,6 +51,10 @@ public partial class FogOverlayLayer : Node2D
         float centerY = texH / 2f;
         float halfCoreW = coreW / 2f;
         float halfCoreH = coreH / 2f;
+
+        // Fog zone dimensions (from core edge to viewport edge)
+        float fogZoneW = centerX - halfCoreW;
+        float fogZoneH = centerY - halfCoreH;
 
         var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
 
@@ -62,18 +66,15 @@ public partial class FogOverlayLayer : Node2D
                 float dx = System.Math.Max(0, System.Math.Abs(px - centerX) - halfCoreW);
                 float dy = System.Math.Max(0, System.Math.Abs(py - centerY) - halfCoreH);
 
-                // Fog zone width in texture pixels
-                float fogZoneW = centerX - halfCoreW;
-                float fogZoneH = centerY - halfCoreH;
-
-                // Normalized distance (0 at core edge, 1 at viewport edge)
+                // Normalized distance using radial (Euclidean) for smooth circular falloff
                 float fx = fogZoneW > 0 ? dx / fogZoneW : 0;
                 float fy = fogZoneH > 0 ? dy / fogZoneH : 0;
-                float f = System.Math.Max(fx, fy);
-                f = System.Math.Clamp(f, 0, 1);
+                float f = System.MathF.Sqrt(fx * fx + fy * fy);
+                f = System.Math.Clamp(f, 0f, 1f);
 
-                // Steep gradient: dark quickly, near-black at edges
-                float alpha = f * MaxAlpha;
+                // Ease-out curve: starts fast, slows near full darkness
+                // f² gives a more aggressive darkening near the core edge
+                float alpha = f * f * MaxAlpha;
                 img.SetPixel(px, py, new Color(0, 0, 0, alpha));
             }
         }
