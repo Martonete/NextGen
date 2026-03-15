@@ -231,7 +231,7 @@ const PF_MAX_STEPS: usize = 30;
 /// Uses 4-directional adjacency on a 100x100 grid.
 pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i32, ty: i32) -> Vec<(i32, i32)> {
     if sx == tx && sy == ty { return Vec::new(); }
-    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     if sx < 1 || sx > grid_w || sy < 1 || sy > grid_h { return Vec::new(); }
     if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h { return Vec::new(); }
 
@@ -375,7 +375,7 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
 
     for i in 0..MAX_PRETORIANOS_CLAN {
         let (px, py) = positions[i];
-        let (pret_w, pret_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+        let (pret_w, pret_h) = state.grid_dimensions(map);
         if px >= 1 && px <= pret_w && py >= 1 && py <= pret_h {
             if let Some(npc_idx) = state.spawn_npc(npc_types[i], map, px, py) {
                 state.pretoriano_clan.push(npc_idx);

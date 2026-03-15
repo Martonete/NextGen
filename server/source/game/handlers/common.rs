@@ -198,7 +198,7 @@ pub(super) fn find_free_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32
         return (x, y);
     }
 
-    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     for radius in 1i32..=10 {
         for dy in -radius..=radius {
             for dx in -radius..=radius {
@@ -249,7 +249,7 @@ pub(super) fn find_free_tile(state: &GameState, map: i32, x: i32, y: i32) -> (i3
 }
 
 pub(super) fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
-    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     for ring in 0..=12 {
         for ty in (y - ring)..=(y + ring) {
             for tx in (x - ring)..=(x + ring) {
@@ -264,7 +264,7 @@ pub(super) fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32
 }
 
 pub(super) fn zona_cura(state: &GameState, map: i32, px: i32, py: i32) -> bool {
-    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_x = (px - world::MIN_X_BORDER + 1).max(1);
     let max_x = (px + world::MIN_X_BORDER - 1).min(grid_w);
     let min_y = (py - world::MIN_Y_BORDER + 1).max(1);

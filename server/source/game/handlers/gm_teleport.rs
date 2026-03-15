@@ -264,7 +264,7 @@ pub(super) async fn handle_slash_ircerca(state: &mut GameState, conn_id: Connect
     };
 
     // Search outward from distance 2 to 5 for a legal free tile (VB6 pattern)
-    let (ircerca_w, ircerca_h) = state.world.grid(tmap).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (ircerca_w, ircerca_h) = state.grid_dimensions(tmap);
     for dist in 2..=5i32 {
         for ix in (tx - dist)..=(tx + dist) {
             for iy in (ty - dist)..=(ty + dist) {

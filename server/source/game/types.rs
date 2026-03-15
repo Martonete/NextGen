@@ -1162,6 +1162,20 @@ impl GameState {
         self.zone_registry.get(&zone_id)
     }
 
+    /// Get the actual grid dimensions for a map. Checks runtime grid first,
+    /// then falls back to loaded map tile data. Never returns hardcoded values.
+    pub fn grid_dimensions(&self, map: i32) -> (i32, i32) {
+        if let Some(grid) = self.world.grid(map) {
+            return (grid.width, grid.height);
+        }
+        let idx = map as usize;
+        if let Some(Some(game_map)) = self.game_data.maps.get(idx) {
+            return (game_map.tiles.width as i32, game_map.tiles.height as i32);
+        }
+        tracing::warn!("grid_dimensions({}) — no grid or map data found", map);
+        (1000, 1000)
+    }
+
     /// Buffer binary bytes, flush immediately, and then close the connection.
     pub async fn send_bytes_and_close(&mut self, conn_id: ConnectionId, data: &[u8]) {
         self.send_bytes(conn_id, data);

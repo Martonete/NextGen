@@ -85,7 +85,7 @@ pub(crate) async fn check_update_needed_npc(state: &mut GameState, npc_idx: usiz
     };
 
     // Clamp to map bounds
-    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_x = min_x.max(1);
     let min_y = min_y.max(1);
     let max_x = max_x.min(grid_w);
@@ -155,7 +155,7 @@ pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) 
 pub(super) fn find_nearest_player(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -208,7 +208,7 @@ pub(super) fn chase_heading(x: i32, y: i32, tx: i32, ty: i32) -> i32 {
 pub(super) fn find_nearest_criminal(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -243,7 +243,7 @@ pub(super) fn find_nearest_criminal(state: &GameState, map: i32, x: i32, y: i32)
 pub(super) fn find_nearest_citizen(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -278,7 +278,7 @@ pub(super) fn find_nearest_citizen(state: &GameState, map: i32, x: i32, y: i32) 
 pub(super) fn find_player_by_name(state: &GameState, map: i32, x: i32, y: i32, name: &str) -> Option<ConnectionId> {
     if name.is_empty() { return None; }
     let range = 15;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - range).max(1);
     let max_x = (x + range).min(gw);
     let min_y = (y - range).max(1);
@@ -307,7 +307,7 @@ pub(super) fn find_player_by_name(state: &GameState, map: i32, x: i32, y: i32, n
 pub(super) fn find_target_npc_in_vision(state: &GameState, map: i32, x: i32, y: i32, target_npc_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -334,7 +334,7 @@ pub(super) fn find_target_npc_in_vision(state: &GameState, map: i32, x: i32, y: 
 pub(super) fn find_nearest_hostile_npc(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -377,7 +377,7 @@ pub(super) fn is_pretoriano(movement: i32) -> bool {
 pub(super) fn find_wounded_pretoriano_ally(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -415,7 +415,7 @@ pub(super) fn find_wounded_pretoriano_ally(state: &GameState, map: i32, x: i32, 
 pub(super) fn find_paralyzed_pretoriano_ally(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
@@ -445,7 +445,7 @@ pub(super) fn find_paralyzed_pretoriano_ally(state: &GameState, map: i32, x: i32
 pub(super) fn has_pretoriano_allies(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> bool {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
-    let (gw, gh) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
     let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);

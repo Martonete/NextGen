@@ -255,8 +255,9 @@ impl WorldState {
     }
 }
 
-/// Check if position is within walkable map border limits.
-/// Uses default 100x100 if no grid is available (legacy compat).
+/// DEPRECATED: Uses hardcoded 100x100 defaults. Use in_map_bounds_grid() instead.
+/// Only kept for tests. Game logic should always use grid-aware bounds.
+#[allow(dead_code)]
 pub fn in_map_bounds(x: i32, y: i32) -> bool {
     in_map_bounds_for(x, y, MAP_WIDTH as i32, MAP_HEIGHT as i32)
 }

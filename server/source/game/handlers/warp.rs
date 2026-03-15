@@ -77,7 +77,7 @@ pub(crate) async fn check_update_needed_user(
     };
 
     // Clamp to map bounds
-    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_x = min_x.max(1);
     let min_y = min_y.max(1);
     let max_x = max_x.min(grid_w);
@@ -436,7 +436,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     if area_min_x > 0 || area_min_y > 0 {
         let amx = area_min_x.max(1);
         let amy = area_min_y.max(1);
-        let (old_grid_w, old_grid_h) = state.world.grid(old_map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+        let (old_grid_w, old_grid_h) = state.grid_dimensions(old_map);
         let axx = (area_min_x + 26).min(old_grid_w);
         let axy = (area_min_y + 26).min(old_grid_h);
         if let Some(grid) = state.world.grid(old_map) {
