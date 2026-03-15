@@ -133,8 +133,11 @@ public partial class Main
     private void EnterFullscreen()
     {
         var root = GetTree().Root;
+        // Set content scale to match the current resolution layout.
+        // This tells Godot to scale our WindowWidth x WindowHeight content to fill the screen.
+        root.ContentScaleSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+        root.ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
         root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
-        // 4:3 = Keep aspect (black bars), 16:9 = Ignore aspect (stretch to fill)
         root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
             ? Window.ContentScaleAspectEnum.Keep
             : Window.ContentScaleAspectEnum.Ignore;
@@ -147,6 +150,9 @@ public partial class Main
     private void ExitFullscreen()
     {
         var root = GetTree().Root;
+        // Disable content scaling — in windowed mode we use real pixels
+        root.ContentScaleSize = new Vector2I(0, 0);
+        root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
         root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
         root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);

@@ -14,6 +14,15 @@ public partial class Main : Control
 	private const string ServerHost = "127.0.0.1";
 	private const int ServerPort = 5028;
 
+	/// <summary>
+	/// Called via CallDeferred after resolution change. Reloads the scene
+	/// so all UI elements rebuild with new ResolutionManager positions.
+	/// </summary>
+	private void ReloadForResolution()
+	{
+		GetTree().ReloadCurrentScene();
+	}
+
 	private readonly GameData _gameData = new();
 	private readonly GameState _state = new();
 	private AoTcpClient? _tcp;
@@ -263,11 +272,14 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Wire SubViewport resizing to resolution changes
+		// Wire resolution change: resize SubViewport + schedule scene reload to reposition all UI
 		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
 		ResolutionManager.OnResolutionChanged = () =>
 		{
 			gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
+			// Schedule scene reload for next frame so all UI rebuilds with new positions.
+			// CallDeferred avoids doing it mid-frame which caused black screen.
+			CallDeferred(MethodName.ReloadForResolution);
 		};
 		// Apply initial SubViewport size
 		gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
