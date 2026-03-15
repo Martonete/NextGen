@@ -342,10 +342,8 @@ fn load_aomap_file(path: &Path) -> Result<MapTiles, String> {
     let _flags = read_i32(&mut cursor)
         .map_err(|e| format!("Failed to read .aomap flags: {}", e))?;
 
-    // Read padding (2 bytes reserved)
-    let mut _padding = [0u8; 2];
-    cursor.read_exact(&mut _padding)
-        .map_err(|e| format!("Failed to read .aomap padding: {}", e))?;
+    // Header is exactly 16 bytes: magic(6) + version(2) + width(2) + height(2) + flags(4)
+    // Tiles start immediately after — no padding.
 
     // Create tiles and read using shared ByFlags encoding
     let mut tiles = MapTiles::new(width, height);
