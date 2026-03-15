@@ -46,11 +46,11 @@ public static class ResolutionManager
 	public static int HalfRenderY => RenderTilesY / 2;
 	public static int HalfRenderTilesY => HalfRenderY; // alias
 
-	/// <summary>SubViewport pixel width (RenderTilesX * 32).</summary>
-	public static int ViewportPixelW => RenderTilesX * 32;
+	/// <summary>SubViewport pixel width — matches actual screen pixels of the container.</summary>
+	public static int ViewportPixelW { get; private set; } = 544;
 
-	/// <summary>SubViewport pixel height (RenderTilesY * 32).</summary>
-	public static int ViewportPixelH => RenderTilesY * 32;
+	/// <summary>SubViewport pixel height — matches actual screen pixels of the container.</summary>
+	public static int ViewportPixelH { get; private set; } = 416;
 
 	/// <summary>Fired after resolution values are recalculated.</summary>
 	public static Action? OnResolutionChanged;
@@ -74,11 +74,14 @@ public static class ResolutionManager
 			Math.Max(0, (screen.X - width) / 2),
 			Math.Max(0, (screen.Y - height) / 2)));
 
-		// The SubViewportContainer at 544x416 design space is scaled to actual pixels
+		// The SubViewportContainer at 544x416 design space is scaled to actual screen pixels.
+		// The SubViewport MUST match this exact pixel count for 1:1 mapping (no blur/stretch).
 		int actualW = (int)(544 * Scale);
 		int actualH = (int)(416 * Scale);
+		ViewportPixelW = actualW;
+		ViewportPixelH = actualH;
 
-		// How many 32px tiles fit in the scaled area (must be odd for centering)
+		// How many 32px tiles fit (odd for centering)
 		int totalTilesX = actualW / 32;
 		int totalTilesY = actualH / 32;
 		if (totalTilesX % 2 == 0) totalTilesX--;
@@ -91,7 +94,7 @@ public static class ResolutionManager
 
 		GD.Print($"[RES] Applied {width}x{height} Scale={Scale:F2} " +
 				 $"Tiles={RenderTilesX}x{RenderTilesY} Extra={ExtraTilesX},{ExtraTilesY} " +
-				 $"VP={ViewportPixelW}x{ViewportPixelH}");
+				 $"SVP={ViewportPixelW}x{ViewportPixelH}");
 
 		OnResolutionChanged?.Invoke();
 	}

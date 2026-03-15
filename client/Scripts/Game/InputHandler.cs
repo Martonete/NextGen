@@ -414,13 +414,16 @@ public class InputHandler
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
 		// viewportPos is in design space (0-544, 0-416) from InputRouter.
-		// Scale to SubViewport pixel space (which may be larger at higher resolutions).
+		// Scale to SubViewport pixel space, then calculate tile relative to center.
 		float scaleX = ResolutionManager.ViewportPixelW / 544f;
 		float scaleY = ResolutionManager.ViewportPixelH / 416f;
-		int svpX = (int)(viewportPos.X * scaleX);
-		int svpY = (int)(viewportPos.Y * scaleY);
-		int tileX = userX + svpX / 32 - ResolutionManager.HalfRenderX;
-		int tileY = userY + svpY / 32 - ResolutionManager.HalfRenderY;
+		float svpX = viewportPos.X * scaleX;
+		float svpY = viewportPos.Y * scaleY;
+		// Character is at pixel center of SubViewport
+		float centerX = ResolutionManager.ViewportPixelW / 2f;
+		float centerY = ResolutionManager.ViewportPixelH / 2f;
+		int tileX = userX + (int)Math.Floor((svpX - centerX) / 32f);
+		int tileY = userY + (int)Math.Floor((svpY - centerY) / 32f);
 		return (tileX, tileY);
 	}
 

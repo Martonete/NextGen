@@ -356,8 +356,10 @@ void fragment() {
 	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
 	{
-		float px = (tileX - userX + HalfWindowTileWidth) * TileSize + pixelOffsetX;
-		float py = (tileY - userY + HalfWindowTileHeight) * TileSize + pixelOffsetY;
+		// Use actual SubViewport pixel center for character centering.
+		// At 800x600: center = 272, 208. (tileX-userX)*32 + 272 = 272 for user tile. ✓
+		float px = (tileX - userX) * TileSize + ResolutionManager.ViewportPixelW / 2f + pixelOffsetX;
+		float py = (tileY - userY) * TileSize + ResolutionManager.ViewportPixelH / 2f + pixelOffsetY;
 		return new Vector2(px, py);
 	}
 
