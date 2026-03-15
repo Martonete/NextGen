@@ -185,8 +185,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
         if area_min_x > 0 || area_min_y > 0 {
             let amx = area_min_x.max(1);
             let amy = area_min_y.max(1);
-            let axx = (area_min_x + 26).min(100);
-            let axy = (area_min_y + 26).min(100);
+            let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+            let axx = (area_min_x + 26).min(grid_w);
+            let axy = (area_min_y + 26).min(grid_h);
             let mut targets: Vec<ConnectionId> = Vec::new();
             if let Some(grid) = state.world.grid(map) {
                 for sy in amy..=axy {

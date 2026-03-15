@@ -1256,6 +1256,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
 
         let offsets = [(0,0),(1,0),(0,1),(-1,0),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)];
         let mut off_idx = 0;
+        let (drop_grid_w, drop_grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
         for (obj_idx, amount) in items_to_drop {
             if let Some(obj) = state.game_data.objects.get((obj_idx - 1) as usize) {
                 let grh = obj.grh_index;
@@ -1265,7 +1266,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                     let (ox, oy) = offsets[idx];
                     let tx = x + ox as i32;
                     let ty = y + oy as i32;
-                    if tx < 1 || tx > 100 || ty < 1 || ty > 100 { continue; }
+                    if tx < 1 || tx > drop_grid_w || ty < 1 || ty > drop_grid_h { continue; }
                     let tile_free = state.world.grid(map)
                         .and_then(|g| g.tile(tx, ty))
                         .map(|t| t.ground_item.obj_index == 0)

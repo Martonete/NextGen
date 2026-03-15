@@ -634,10 +634,11 @@ pub(super) async fn handle_slash_massdest(state: &mut GameState, conn_id: Connec
         _ => return,
     };
 
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
     let min_y = (cy - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (cy + world::MIN_Y_BORDER - 1).min(100);
+    let max_y = (cy + world::MIN_Y_BORDER - 1).min(grid_h);
     let min_x = (cx - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (cx + world::MIN_X_BORDER - 1).min(100);
+    let max_x = (cx + world::MIN_X_BORDER - 1).min(grid_w);
 
     // Collect positions to clean (skip map fixtures)
     let mut to_clean: Vec<(i32, i32)> = Vec::new();

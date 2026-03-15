@@ -231,10 +231,11 @@ const PF_MAX_STEPS: usize = 30;
 /// Uses 4-directional adjacency on a 100x100 grid.
 pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i32, ty: i32) -> Vec<(i32, i32)> {
     if sx == tx && sy == ty { return Vec::new(); }
-    if sx < 1 || sx > 100 || sy < 1 || sy > 100 { return Vec::new(); }
-    if tx < 1 || tx > 100 || ty < 1 || ty > 100 { return Vec::new(); }
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+    if sx < 1 || sx > grid_w || sy < 1 || sy > grid_h { return Vec::new(); }
+    if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h { return Vec::new(); }
 
-    let mut visited = vec![vec![0u8; 102]; 102];
+    let mut visited = vec![vec![0u8; (grid_w + 2) as usize]; (grid_h + 2) as usize];
     let mut queue: std::collections::VecDeque<(i32, i32, usize)> = std::collections::VecDeque::new();
 
     visited[sy as usize][sx as usize] = 5;
@@ -256,7 +257,7 @@ pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i3
         for &(dx, dy, dir_code) in &dirs {
             let nx = cx + dx;
             let ny = cy + dy;
-            if nx < 1 || nx > 100 || ny < 1 || ny > 100 { continue; }
+            if nx < 1 || nx > grid_w || ny < 1 || ny > grid_h { continue; }
             if visited[ny as usize][nx as usize] != 0 { continue; }
 
             if state.is_tile_blocked(map, nx, ny) { continue; }
@@ -374,7 +375,8 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
 
     for i in 0..MAX_PRETORIANOS_CLAN {
         let (px, py) = positions[i];
-        if px >= 1 && px <= 100 && py >= 1 && py <= 100 {
+        let (pret_w, pret_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
+        if px >= 1 && px <= pret_w && py >= 1 && py <= pret_h {
             if let Some(npc_idx) = state.spawn_npc(npc_types[i], map, px, py) {
                 state.pretoriano_clan.push(npc_idx);
 

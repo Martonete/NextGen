@@ -96,9 +96,10 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
 
     // ========== CHARACTER DETECTION (VB6 lines 779-800) ==========
     // VB6 checks Y+1 FIRST, then Y for chars
+    let grid_height = state.world.grid(map).map(|g| g.height).unwrap_or(100);
     if found_char == 0 {
         for &check_y in &[y + 1, y] {
-            if check_y < 1 || check_y > 100 { continue; }
+            if check_y < 1 || check_y > grid_height { continue; }
             // Check for user
             if found_char == 0 {
                 let tile_user = state.world.grid(map)
@@ -426,7 +427,9 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // VB6 Acciones.bas: check Y+1 FIRST, then Y for characters.
     // Character heads extend upward — clicking on the head area (tile Y) finds the
     // character whose body is at tile Y+1. Only these two tiles are checked.
-    if tile_npc_idx == 0 && y + 1 <= 100 {
+    let rc_grid_height = state.world.grid(map).map(|g| g.height).unwrap_or(100);
+    let rc_grid_width = state.world.grid(map).map(|g| g.width).unwrap_or(100);
+    if tile_npc_idx == 0 && y + 1 <= rc_grid_height {
         if let Some(npc_on_y1) = state.world.grid(map).and_then(|g| g.tile(x, y + 1)).map(|t| t.npc_index) {
             if npc_on_y1 > 0 {
                 tile_npc_idx = npc_on_y1;
@@ -449,7 +452,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x-1: only for PuertaDoble or Porton doors
     for dx in [-1i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -464,7 +467,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x-2: only for Porton doors
     for dx in [-2i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -479,7 +482,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x+1: any door type
     for dx in [1i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -493,7 +496,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x+2: only for PuertaDoble or Porton doors (VB6 line 93-99)
     for dx in [2i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {

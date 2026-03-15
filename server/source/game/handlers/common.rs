@@ -198,13 +198,14 @@ pub(super) fn find_free_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32
         return (x, y);
     }
 
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
     for radius in 1i32..=10 {
         for dy in -radius..=radius {
             for dx in -radius..=radius {
                 if dx.abs() != radius && dy.abs() != radius { continue; }
                 let nx = x + dx;
                 let ny = y + dy;
-                if nx < 1 || nx > 100 || ny < 1 || ny > 100 { continue; }
+                if nx < 1 || nx > grid_w || ny < 1 || ny > grid_h { continue; }
                 let tile_blocked = state.is_tile_blocked(map, nx, ny);
                 if tile_blocked { continue; }
                 let tile_free = state.world.grid(map)
@@ -248,10 +249,11 @@ pub(super) fn find_free_tile(state: &GameState, map: i32, x: i32, y: i32) -> (i3
 }
 
 pub(super) fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
     for ring in 0..=12 {
         for ty in (y - ring)..=(y + ring) {
             for tx in (x - ring)..=(x + ring) {
-                if tx < 1 || tx > 100 || ty < 1 || ty > 100 { continue; }
+                if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h { continue; }
                 if !state.is_tile_blocked(map, tx, ty) {
                     return (tx, ty);
                 }
@@ -262,10 +264,11 @@ pub(super) fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32
 }
 
 pub(super) fn zona_cura(state: &GameState, map: i32, px: i32, py: i32) -> bool {
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
     let min_x = (px - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (px + world::MIN_X_BORDER - 1).min(100);
+    let max_x = (px + world::MIN_X_BORDER - 1).min(grid_w);
     let min_y = (py - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (py + world::MIN_Y_BORDER - 1).min(100);
+    let max_y = (py + world::MIN_Y_BORDER - 1).min(grid_h);
 
     if let Some(grid) = state.world.grid(map) {
         for cy in min_y..=max_y {
