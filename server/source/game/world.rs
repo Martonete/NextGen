@@ -255,13 +255,6 @@ impl WorldState {
     }
 }
 
-/// DEPRECATED: Uses hardcoded 100x100 defaults. Use in_map_bounds_grid() instead.
-/// Only kept for tests. Game logic should always use grid-aware bounds.
-#[allow(dead_code)]
-pub fn in_map_bounds(x: i32, y: i32) -> bool {
-    in_map_bounds_for(x, y, MAP_WIDTH as i32, MAP_HEIGHT as i32)
-}
-
 /// Check bounds using a specific grid's dimensions.
 pub fn in_map_bounds_grid(grid: &MapGrid, x: i32, y: i32) -> bool {
     in_map_bounds_for(x, y, grid.width, grid.height)
