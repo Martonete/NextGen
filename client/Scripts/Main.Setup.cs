@@ -21,9 +21,10 @@ public partial class Main
     private void SetupGamePanels()
     {
         // === HUD Frame (replaces Principal.jpg) ===
-        var hudFrame = new GameHudFrame();
-        hudFrame.ZIndex = 0;
-        _gameUI!.AddChild(hudFrame);
+        _hudFrame = new GameHudFrame();
+        _hudFrame.ZIndex = 0;
+        _gameUI!.AddChild(_hudFrame);
+        var hudFrame = _hudFrame;
         _gameUI.MoveChild(hudFrame, 0);
 
         // Frame overlay — draws big_bar.png borders on top of all HUD content

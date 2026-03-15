@@ -18,6 +18,21 @@ public partial class GameHudFrame : Control
     /// </summary>
     public Control? FrameOverlay { get; private set; }
 
+    // Saved references for runtime resize
+    private TextureRect? _bgFrame;
+    private TextureRect? _overlayTex;
+
+    /// <summary>Resize the HUD frame to match current ResolutionManager dimensions.</summary>
+    public void ResizeToWindow()
+    {
+        int winW = ResolutionManager.WindowWidth;
+        int winH = ResolutionManager.WindowHeight;
+        Size = new Vector2(winW, winH);
+        if (_bgFrame != null) _bgFrame.Size = new Vector2(winW, winH);
+        if (FrameOverlay != null) FrameOverlay.Size = new Vector2(winW, winH);
+        if (_overlayTex != null) _overlayTex.Size = new Vector2(winW, winH);
+    }
+
     public override void _Ready()
     {
         int winW = ResolutionManager.WindowWidth;
@@ -28,14 +43,14 @@ public partial class GameHudFrame : Control
         MouseFilter = MouseFilterEnum.Ignore;
 
         // === BACKGROUND: big_bar_bg.png (fills behind content) ===
-        var bgFrame = new TextureRect();
-        bgFrame.Texture = RpgTheme.GetTex("big_bar_bg.png");
-        bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        bgFrame.StretchMode = TextureRect.StretchModeEnum.Scale;
-        bgFrame.Position = Vector2.Zero;
-        bgFrame.Size = new Vector2(winW, winH);
-        bgFrame.MouseFilter = MouseFilterEnum.Ignore;
-        AddChild(bgFrame);
+        _bgFrame = new TextureRect();
+        _bgFrame.Texture = RpgTheme.GetTex("big_bar_bg.png");
+        _bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        _bgFrame.StretchMode = TextureRect.StretchModeEnum.Scale;
+        _bgFrame.Position = Vector2.Zero;
+        _bgFrame.Size = new Vector2(winW, winH);
+        _bgFrame.MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(_bgFrame);
 
         // === DARK INSETS — only where we need black behind content ===
 
@@ -54,14 +69,14 @@ public partial class GameHudFrame : Control
         FrameOverlay.MouseFilter = MouseFilterEnum.Ignore;
         FrameOverlay.ZIndex = 50;
 
-        var overlayTex = new TextureRect();
-        overlayTex.Texture = RpgTheme.GetTex("big_bar_frame.png");
-        overlayTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        overlayTex.StretchMode = TextureRect.StretchModeEnum.Scale;
-        overlayTex.Position = Vector2.Zero;
-        overlayTex.Size = new Vector2(winW, winH);
-        overlayTex.MouseFilter = MouseFilterEnum.Ignore;
-        FrameOverlay.AddChild(overlayTex);
+        _overlayTex = new TextureRect();
+        _overlayTex.Texture = RpgTheme.GetTex("big_bar_frame.png");
+        _overlayTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        _overlayTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+        _overlayTex.Position = Vector2.Zero;
+        _overlayTex.Size = new Vector2(winW, winH);
+        _overlayTex.MouseFilter = MouseFilterEnum.Ignore;
+        FrameOverlay.AddChild(_overlayTex);
     }
 
     private void AddDarkInset(float x, float y, float w, float h)

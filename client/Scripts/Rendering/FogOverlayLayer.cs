@@ -11,7 +11,7 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
-    private const float MaxAlpha = 0.75f;
+    private const float MaxAlpha = 0.92f;
     private ImageTexture? _fogTex;
     private int _cachedVpW, _cachedVpH;
 
@@ -72,8 +72,8 @@ public partial class FogOverlayLayer : Node2D
                 float f = System.Math.Max(fx, fy);
                 f = System.Math.Clamp(f, 0, 1);
 
-                // Smooth ease-in for natural darkness
-                float alpha = f * f * MaxAlpha;
+                // Steep gradient: dark quickly, near-black at edges
+                float alpha = f * MaxAlpha;
                 img.SetPixel(px, py, new Color(0, 0, 0, alpha));
             }
         }

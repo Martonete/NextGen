@@ -49,12 +49,9 @@ public partial class Main : Control
 		if (_sidebarBg != null)
 			_sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
-		// HUD frame
+		// HUD frame (big_bar_bg + big_bar_frame)
 		if (_hudFrame != null)
-		{
-			_hudFrame.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
-			_hudFrame.QueueRedraw();
-		}
+			_hudFrame.ResizeToWindow();
 
 		// Stat bar overlay
 		if (_statBarOverlay != null)
