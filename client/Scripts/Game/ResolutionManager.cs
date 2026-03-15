@@ -73,12 +73,20 @@ public static class ResolutionManager
 		WindowHeight = height;
 		Scale = width / (float)DesignWidth;
 
-		// Resize window and center on screen
+		// Resize OS window and center on screen
 		DisplayServer.WindowSetSize(new Vector2I(width, height));
-		var screenSize = DisplayServer.ScreenGetSize();
-		int posX = Math.Max(0, (screenSize.X - width) / 2);
-		int posY = Math.Max(0, (screenSize.Y - height) / 2);
-		DisplayServer.WindowSetPosition(new Vector2I(posX, posY));
+		CenterWindow(width, height);
+
+		// Resize the root viewport to match actual window size.
+		// Without this, Godot's internal viewport stays at 800x600 (from project.godot)
+		// and FULL_RECT anchored Controls only fill 800x600 inside the larger window.
+		var tree = Engine.GetMainLoop() as SceneTree;
+		if (tree?.Root != null)
+		{
+			tree.Root.Size = new Vector2I(width, height);
+			// Also set content scale so UI coordinate space matches pixel space
+			tree.Root.ContentScaleSize = new Vector2I(0, 0); // disable content scaling
+		}
 
 		// Calculate extra tiles at this resolution
 		// At 800x600 (scale=1.0): container=544x416, tiles=17x13, extra=0
@@ -102,5 +110,14 @@ public static class ResolutionManager
 				 $"container={containerW}x{containerH} viewport={ViewportPixelW}x{ViewportPixelH}");
 
 		OnResolutionChanged?.Invoke();
+	}
+
+	/// <summary>Center the window on the primary monitor.</summary>
+	private static void CenterWindow(int w, int h)
+	{
+		var screen = DisplayServer.ScreenGetSize();
+		int px = Math.Max(0, (screen.X - w) / 2);
+		int py = Math.Max(0, (screen.Y - h) / 2);
+		DisplayServer.WindowSetPosition(new Vector2I(px, py));
 	}
 }
