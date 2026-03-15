@@ -260,24 +260,28 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Hook SubViewport resize callback for dynamic resolution changes
+		// Setup SubViewport and container for dynamic resolution
 		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
-		ResolutionManager.OnSubViewportResize = (w, h) =>
-		{
-			gameViewport.Size = new Vector2I(w, h);
-			GD.Print($"[MAIN] SubViewport resized to {w}x{h}");
-		};
-		// Apply initial SubViewport size
-		gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
-
-		// Resize SubViewportContainer to match scaled design positions
 		var container = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
+
+		// Hook resolution change callback to resize SubViewport + container
+		ResolutionManager.OnResolutionChanged = () =>
+		{
+			gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
+			container.OffsetLeft = ResolutionManager.S(13);
+			container.OffsetTop = ResolutionManager.S(149);
+			container.OffsetRight = ResolutionManager.S(557);
+			container.OffsetBottom = ResolutionManager.S(565);
+			Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+			GD.Print($"[MAIN] Resolution changed: viewport={ResolutionManager.ViewportPixelW}x{ResolutionManager.ViewportPixelH}");
+		};
+
+		// Apply initial sizes
+		gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
 		container.OffsetLeft = ResolutionManager.S(13);
 		container.OffsetTop = ResolutionManager.S(149);
-		container.OffsetRight = ResolutionManager.S(557);  // 13 + 544
-		container.OffsetBottom = ResolutionManager.S(565);  // 149 + 416
-
-		// Resize root Control node to match window
+		container.OffsetRight = ResolutionManager.S(557);
+		container.OffsetBottom = ResolutionManager.S(565);
 		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
 		// Setup packet handler
