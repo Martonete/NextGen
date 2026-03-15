@@ -242,11 +242,11 @@ public partial class Main : Control
 		if (_state.Config.FpsLimit > 0)
 			Engine.MaxFps = _state.Config.FpsLimit;
 
-		// Apply dynamic resolution (computes extra tiles, resizes SubViewport later)
-		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
-
 		// Load key bindings (Teclas.ao)
 		_state.Keys = KeyBindings.Load(dataPath);
+
+		// Apply dynamic resolution (computes extra tiles, resizes window)
+		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
 
 		if (!_gameData.IsLoaded)
 		{
@@ -260,29 +260,14 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Setup SubViewport and container for dynamic resolution
+		// Resize SubViewport to render more tiles at higher resolutions.
+		// canvas_items stretch handles UI scaling — we only touch the SubViewport.
 		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
-		var container = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
-
-		// Hook resolution change callback to resize SubViewport + container
 		ResolutionManager.OnResolutionChanged = () =>
 		{
 			gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
-			container.OffsetLeft = ResolutionManager.S(13);
-			container.OffsetTop = ResolutionManager.S(149);
-			container.OffsetRight = ResolutionManager.S(557);
-			container.OffsetBottom = ResolutionManager.S(565);
-			Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
-			GD.Print($"[MAIN] Resolution changed: viewport={ResolutionManager.ViewportPixelW}x{ResolutionManager.ViewportPixelH}");
 		};
-
-		// Apply initial sizes
 		gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
-		container.OffsetLeft = ResolutionManager.S(13);
-		container.OffsetTop = ResolutionManager.S(149);
-		container.OffsetRight = ResolutionManager.S(557);
-		container.OffsetBottom = ResolutionManager.S(565);
-		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
 		// Setup packet handler
 		_packetHandler = new PacketHandler(_state);
@@ -367,13 +352,9 @@ public partial class Main : Control
 		// Grab Game UI nodes
 		_gameUI = GetNode<Control>("GameUI");
 
-		// Chat system — override .tscn positions with scaled values
+		// Chat system
 		var console = GetNode<RichTextLabel>("GameUI/Console");
 		_consoleLabel = console;
-		console.OffsetLeft = ResolutionManager.S(27);
-		console.OffsetTop = ResolutionManager.S(28);
-		console.OffsetRight = ResolutionManager.S(447);
-		console.OffsetBottom = ResolutionManager.S(115);
 		var consoleStyle = new StyleBoxEmpty();
 		consoleStyle.ContentMarginLeft = 2;
 		consoleStyle.ContentMarginRight = 2;
@@ -383,10 +364,6 @@ public partial class Main : Control
 
 		var chatInput = GetNode<LineEdit>("GameUI/ChatInput");
 		_chatInputNode = chatInput;
-		chatInput.OffsetLeft = ResolutionManager.S(22);
-		chatInput.OffsetTop = ResolutionManager.S(118);
-		chatInput.OffsetRight = ResolutionManager.S(531);
-		chatInput.OffsetBottom = ResolutionManager.S(139);
 		chatInput.Visible = false;
 		chatInput.MaxLength = 160;
 		// RPG-styled input for chat
@@ -425,23 +402,23 @@ public partial class Main : Control
 		// Background layer inserted after HudFrame so frames draw behind labels
 		var sidebarBg = new Control();
 		sidebarBg.MouseFilter = Control.MouseFilterEnum.Ignore;
-		sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		sidebarBg.Size = new Vector2(800, 600);
 		_gameUI.AddChild(sidebarBg);
 		_gameUI.MoveChild(sidebarBg, 1); // index 1 = after HudFrame(0), before scene labels
 
 		// Sidebar content area: shifted left toward minimap
-		int sbX = ResolutionManager.S(560);
-		int sbW = ResolutionManager.S(210);
+		const int sbX = 560;
+		const int sbW = 210;
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
 		var nameFrame = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
-		nameFrame.Position = new Vector2(sbX, ResolutionManager.S(17));
-		nameFrame.Size = new Vector2(sbW, ResolutionManager.S(42));
+		nameFrame.Position = new Vector2(sbX, 17);
+		nameFrame.Size = new Vector2(sbW, 42);
 		sidebarBg.AddChild(nameFrame);
 
 		// NameLabel: centered with padding inside frame
-		_nameLabel.Position = new Vector2(sbX + ResolutionManager.S(14), ResolutionManager.S(19));
-		_nameLabel.Size = new Vector2(sbW - ResolutionManager.S(28), ResolutionManager.S(38));
+		_nameLabel.Position = new Vector2(sbX + 14, 19);
+		_nameLabel.Size = new Vector2(sbW - 28, 38);
 		_nameLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_nameLabel.VerticalAlignment = VerticalAlignment.Center;
 		_nameLabel.ClipText = true;
@@ -455,8 +432,8 @@ public partial class Main : Control
 
 		// --- Level + Rep strip: info_window.png NinePatch ---
 		var levelFrame = RpgTheme.CreateNinePatch("info_window.png", new Vector4(12, 12, 12, 12));
-		levelFrame.Position = new Vector2(sbX + ResolutionManager.S(2), ResolutionManager.S(55));
-		levelFrame.Size = new Vector2(sbW - ResolutionManager.S(4), ResolutionManager.S(20));
+		levelFrame.Position = new Vector2(sbX + 2, 55);
+		levelFrame.Size = new Vector2(sbW - 4, 20);
 		sidebarBg.AddChild(levelFrame);
 
 		// Level badge: small rounded dark box with gold border
@@ -468,13 +445,13 @@ public partial class Main : Control
 		badgeStyle.SetBorderWidthAll(1);
 		badgeStyle.SetCornerRadiusAll(9);
 		levelBadge.AddThemeStyleboxOverride("panel", badgeStyle);
-		levelBadge.Position = new Vector2(sbX + ResolutionManager.S(6), ResolutionManager.S(57));
-		levelBadge.Size = new Vector2(ResolutionManager.S(30), ResolutionManager.S(16));
+		levelBadge.Position = new Vector2(sbX + 6, 57);
+		levelBadge.Size = new Vector2(30, 16);
 		sidebarBg.AddChild(levelBadge);
 
 		// LevelLabel: inside badge
-		_levelLabel.Position = new Vector2(sbX + ResolutionManager.S(6), ResolutionManager.S(57));
-		_levelLabel.Size = new Vector2(ResolutionManager.S(30), ResolutionManager.S(16));
+		_levelLabel.Position = new Vector2(sbX + 6, 57);
+		_levelLabel.Size = new Vector2(30, 16);
 		_levelLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_levelLabel.VerticalAlignment = VerticalAlignment.Center;
 		ApplyFont(_levelLabel, "Tahoma", 700);
@@ -483,13 +460,13 @@ public partial class Main : Control
 
 		// --- XP bar: xp_bar.png background + fill from StatBarOverlay ---
 		var xpBarBg = RpgTheme.CreateNinePatch("xp_bar.png", new Vector4(4, 4, 4, 4));
-		xpBarBg.Position = new Vector2(sbX + ResolutionManager.S(2), ResolutionManager.S(78));
-		xpBarBg.Size = new Vector2(sbW - ResolutionManager.S(4), ResolutionManager.S(14));
+		xpBarBg.Position = new Vector2(sbX + 2, 78);
+		xpBarBg.Size = new Vector2(sbW - 4, 14);
 		sidebarBg.AddChild(xpBarBg);
 
 		// ExpLabel: overlay centered on XP bar
-		_expLabel.Position = new Vector2(sbX + ResolutionManager.S(2), ResolutionManager.S(78));
-		_expLabel.Size = new Vector2(sbW - ResolutionManager.S(4), ResolutionManager.S(14));
+		_expLabel.Position = new Vector2(sbX + 2, 78);
+		_expLabel.Size = new Vector2(sbW - 4, 14);
 		_expLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_expLabel.VerticalAlignment = VerticalAlignment.Center;
 		ApplyFont(_expLabel, "Tahoma", 700);
@@ -504,27 +481,27 @@ public partial class Main : Control
 		goldIcon.Texture = RpgTheme.GetTex("Icons/greed.png");
 		goldIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		goldIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		goldIcon.Position = new Vector2(ResolutionManager.S(700), ResolutionManager.S(428));
-		goldIcon.Size = new Vector2(ResolutionManager.S(14), ResolutionManager.S(14));
+		goldIcon.Position = new Vector2(700, 428);
+		goldIcon.Size = new Vector2(14, 14);
 		goldIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(goldIcon);
 
-		_goldLabel.Position = new Vector2(ResolutionManager.S(715), ResolutionManager.S(430));
-		_goldLabel.Size = new Vector2(ResolutionManager.S(60), ResolutionManager.S(14));
+		_goldLabel.Position = new Vector2(715, 430);
+		_goldLabel.Size = new Vector2(60, 14);
 		_goldLabel.HorizontalAlignment = HorizontalAlignment.Left;
 		ApplyFont(_goldLabel, "Tahoma", 700);
 		_goldLabel.AddThemeFontSizeOverride("font_size", 8);
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
 		// Online label: below sidebar buttons, centered like FPS
-		_onlineLabel.Position = new Vector2(ResolutionManager.S(682), ResolutionManager.S(552));
-		_onlineLabel.Size = new Vector2(ResolutionManager.S(93), ResolutionManager.S(12));
+		_onlineLabel.Position = new Vector2(682, 552);
+		_onlineLabel.Size = new Vector2(93, 12);
 		_onlineLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_onlineLabel, "Tahoma", 700);
 		_onlineLabel.AddThemeFontSizeOverride("font_size", 7);
 
 		// Coords label
-		_coordsLabel.Position = new Vector2(ResolutionManager.S(580), ResolutionManager.S(560));
+		_coordsLabel.Position = new Vector2(580, 560);
 		ApplyFont(_coordsLabel, "Tahoma", 700);
 		_coordsLabel.AddThemeFontSizeOverride("font_size", 9);
 
@@ -532,7 +509,7 @@ public partial class Main : Control
 		_statBarOverlay = new StatBarOverlay();
 		_statBarOverlay.DataPath = dataPath;
 		_statBarOverlay.Position = Vector2.Zero;
-		_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		_statBarOverlay.Size = new Vector2(800, 600);
 		_statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(_statBarOverlay);
 

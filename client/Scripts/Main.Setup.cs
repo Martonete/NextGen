@@ -33,15 +33,15 @@ public partial class Main
         // === Inventory & Spells UI (VB6-exact pixel positions) ===
 
         // Sidebar usable area: x=580→784 (204px). Content width=190px centered.
-        int sideX = ResolutionManager.S(577);  // centered start (shifted 10px left)
-        int contentW = ResolutionManager.S(190);
-        int tabW = contentW / 2; // 95 each
+        const int sideX = 577;  // centered start (shifted 10px left)
+        const int contentW = 190;
+        const int tabW = contentW / 2; // 95 each
 
         // Tab buttons — centered in sidebar, with icons (+20% from original, expanded up and to sides)
-        int tabH = ResolutionManager.S(34);
-        int tabY = ResolutionManager.S(122);
-        int tabX = sideX - ResolutionManager.S(6);
-        int tabBtnW = (contentW + ResolutionManager.S(12)) / 2;
+        int tabH = 34;
+        int tabY = 122;
+        int tabX = sideX - 6;
+        int tabBtnW = (contentW + 12) / 2;
 
         _invTabButton = RpgTheme.CreateRpgButtonWithIcon("Inventario", "Inventory.png", false, 10, 16);
         _invTabButton.Position = new Vector2(tabX, tabY);
@@ -56,10 +56,10 @@ public partial class Main
         _spellTabButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnSpellTabPressed(); };
 
         // Inventory panel — centered (grid is 5col x 5row = 170px wide, center in 190)
-        int invX = sideX + (contentW - ResolutionManager.S(171)) / 2; // ~596
+        int invX = sideX + (contentW - 171) / 2; // ~596
         _inventoryPanel = new InventoryPanel();
-        _inventoryPanel.Position = new Vector2(invX, ResolutionManager.S(158));
-        _inventoryPanel.Size = new Vector2(ResolutionManager.S(171), ResolutionManager.S(174));
+        _inventoryPanel.Position = new Vector2(invX, 158);
+        _inventoryPanel.Size = new Vector2(171, 174);
         _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
@@ -68,8 +68,8 @@ public partial class Main
         _dydOffTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
         _dydOnTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
         _dydToggle = new TextureButton();
-        _dydToggle.Position = new Vector2(sideX - ResolutionManager.S(25), ResolutionManager.S(338));
-        _dydToggle.Size = new Vector2(ResolutionManager.S(21), ResolutionManager.S(21));
+        _dydToggle.Position = new Vector2(sideX - 25, 338);
+        _dydToggle.Size = new Vector2(21, 21);
         _dydToggle.StretchMode = TextureButton.StretchModeEnum.Scale;
         _dydToggle.TextureNormal = _dydOffTex;
         _dydToggle.MouseDefaultCursorShape = CursorShape.PointingHand;
@@ -82,67 +82,67 @@ public partial class Main
 
         // Spell panel — same width as inventory, centered
         _spellPanel = new SpellPanel();
-        _spellPanel.Position = new Vector2(sideX, ResolutionManager.S(158));
-        _spellPanel.Size = new Vector2(contentW, ResolutionManager.S(186));
+        _spellPanel.Position = new Vector2(sideX, 158);
+        _spellPanel.Size = new Vector2(contentW, 186);
         _spellPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _spellPanel.FocusMode = Control.FocusModeEnum.None;
         _spellPanel.Visible = false;
         _gameUI.AddChild(_spellPanel);
 
         // LANZAR + INFO — span full content width, centered
-        int halfBtn = contentW / 2 - ResolutionManager.S(2); // 93 each with 4px gap
+        int halfBtn = contentW / 2 - 2; // 93 each with 4px gap
         _lanzarButton = RpgTheme.CreateRpgButton("Lanzar", false, 12);
-        _lanzarButton.Position = new Vector2(sideX, ResolutionManager.S(348));
-        _lanzarButton.Size = new Vector2(halfBtn, ResolutionManager.S(28));
+        _lanzarButton.Position = new Vector2(sideX, 348);
+        _lanzarButton.Size = new Vector2(halfBtn, 28);
         _lanzarButton.Visible = false;
         _gameUI.AddChild(_lanzarButton);
         _lanzarButton.Pressed += OnLanzarPressed;
 
         _infoButton = RpgTheme.CreateRpgButton("Info", false, 12);
-        _infoButton.Position = new Vector2(sideX + halfBtn + ResolutionManager.S(4), ResolutionManager.S(348));
-        _infoButton.Size = new Vector2(halfBtn, ResolutionManager.S(28));
+        _infoButton.Position = new Vector2(sideX + halfBtn + 4, 348);
+        _infoButton.Size = new Vector2(halfBtn, 28);
         _infoButton.Visible = false;
         _gameUI.AddChild(_infoButton);
         _infoButton.Pressed += () => _spellPanel.InfoSelected();
 
         // Spell move arrows — right edge of content
-        _spellUpButton = RpgTheme.CreateMiniButton("Mini_arrow_top2.png", "Mini_arrow_top2_t.png", new Vector2(ResolutionManager.S(15), ResolutionManager.S(25)));
-        _spellUpButton.Position = new Vector2(sideX + contentW + ResolutionManager.S(2), ResolutionManager.S(200));
+        _spellUpButton = RpgTheme.CreateMiniButton("Mini_arrow_top2.png", "Mini_arrow_top2_t.png", new Vector2(15, 25));
+        _spellUpButton.Position = new Vector2(sideX + contentW + 2, 200);
         _spellUpButton.Visible = false;
         _gameUI.AddChild(_spellUpButton);
         _spellUpButton.Pressed += () => _spellPanel.MoveSpell(1);
 
-        _spellDownButton = RpgTheme.CreateMiniButton("Mini_arrow_bot2.png", "Mini_arrow_bot2_t.png", new Vector2(ResolutionManager.S(15), ResolutionManager.S(25)));
-        _spellDownButton.Position = new Vector2(sideX + contentW + ResolutionManager.S(2), ResolutionManager.S(230));
+        _spellDownButton = RpgTheme.CreateMiniButton("Mini_arrow_bot2.png", "Mini_arrow_bot2_t.png", new Vector2(15, 25));
+        _spellDownButton.Position = new Vector2(sideX + contentW + 2, 230);
         _spellDownButton.Visible = false;
         _gameUI.AddChild(_spellDownButton);
         _spellDownButton.Pressed += () => _spellPanel.MoveSpell(2);
 
         // === Bottom bar labels ===
-        _armorLabel = CreateStatLabel(ResolutionManager.S(55), ResolutionManager.S(574), ResolutionManager.S(100), ResolutionManager.S(17), Colors.White, 7);
+        _armorLabel = CreateStatLabel(55, 574, 100, 17, Colors.White, 7);
         _gameUI.AddChild(_armorLabel);
-        _helmLabel = CreateStatLabel(ResolutionManager.S(170), ResolutionManager.S(574), ResolutionManager.S(90), ResolutionManager.S(17), Colors.White, 7);
+        _helmLabel = CreateStatLabel(170, 574, 90, 17, Colors.White, 7);
         _gameUI.AddChild(_helmLabel);
-        _shieldLabel = CreateStatLabel(ResolutionManager.S(310), ResolutionManager.S(574), ResolutionManager.S(95), ResolutionManager.S(17), Colors.White, 7);
+        _shieldLabel = CreateStatLabel(310, 574, 95, 17, Colors.White, 7);
         _gameUI.AddChild(_shieldLabel);
-        _weaponLabel = CreateStatLabel(ResolutionManager.S(435), ResolutionManager.S(574), ResolutionManager.S(90), ResolutionManager.S(17), Colors.White, 7);
+        _weaponLabel = CreateStatLabel(435, 574, 90, 17, Colors.White, 7);
         _gameUI.AddChild(_weaponLabel);
-        _agilidadLabel = CreateStatLabel(ResolutionManager.S(580), ResolutionManager.S(405), ResolutionManager.S(55), ResolutionManager.S(14), new Color(1f, 1f, 0f), 9);
+        _agilidadLabel = CreateStatLabel(580, 405, 55, 14, new Color(1f, 1f, 0f), 9);
         _gameUI.AddChild(_agilidadLabel);
-        var statSepLabel = CreateStatLabel(ResolutionManager.S(635), ResolutionManager.S(405), ResolutionManager.S(10), ResolutionManager.S(14), new Color(0.5f, 0.5f, 0.5f), 9);
+        var statSepLabel = CreateStatLabel(635, 405, 10, 14, new Color(0.5f, 0.5f, 0.5f), 9);
         statSepLabel.Text = "|";
         statSepLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _gameUI.AddChild(statSepLabel);
-        _fuerzaLabel = CreateStatLabel(ResolutionManager.S(645), ResolutionManager.S(405), ResolutionManager.S(50), ResolutionManager.S(14), new Color(0, 1, 0), 9);
+        _fuerzaLabel = CreateStatLabel(645, 405, 50, 14, new Color(0, 1, 0), 9);
         _gameUI.AddChild(_fuerzaLabel);
         // Reputation label removed (system disabled)
-        _fpsLabel = CreateStatLabel(ResolutionManager.S(682), ResolutionManager.S(565), ResolutionManager.S(93), ResolutionManager.S(12), Colors.White, 7);
+        _fpsLabel = CreateStatLabel(682, 565, 93, 12, Colors.White, 7);
         _gameUI.AddChild(_fpsLabel);
 
         // Macro status indicator
         _macroStatusLabel = new Label();
-        _macroStatusLabel.Position = new Vector2(ResolutionManager.S(484), ResolutionManager.S(4));
-        _macroStatusLabel.Size = new Vector2(ResolutionManager.S(60), ResolutionManager.S(12));
+        _macroStatusLabel.Position = new Vector2(484, 4);
+        _macroStatusLabel.Size = new Vector2(60, 12);
         _macroStatusLabel.AddThemeColorOverride("font_color", new Color(0.3f, 1f, 0.3f));
         _macroStatusLabel.AddThemeFontSizeOverride("font_size", 7);
         ApplyFont(_macroStatusLabel, "Tahoma", 700);
@@ -174,8 +174,8 @@ public partial class Main
     private void SetupSidebarButtons()
     {
         var mapaButton = RpgTheme.CreateRpgButton("Mapa", false, 10);
-        mapaButton.Position = new Vector2(ResolutionManager.S(682), ResolutionManager.S(445));
-        mapaButton.Size = new Vector2(ResolutionManager.S(93), ResolutionManager.S(20));
+        mapaButton.Position = new Vector2(682, 445);
+        mapaButton.Size = new Vector2(93, 20);
         _gameUI!.AddChild(mapaButton);
         mapaButton.Pressed += () =>
         {
@@ -185,14 +185,14 @@ public partial class Main
         };
 
         var grupoButton = RpgTheme.CreateRpgButton("Grupo", false, 10);
-        grupoButton.Position = new Vector2(ResolutionManager.S(682), ResolutionManager.S(466));
-        grupoButton.Size = new Vector2(ResolutionManager.S(93), ResolutionManager.S(20));
+        grupoButton.Position = new Vector2(682, 466);
+        grupoButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(grupoButton);
         grupoButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); _partyPanel?.TogglePanel(); };
 
         var opcionesButton = RpgTheme.CreateRpgButton("Opciones", false, 10);
-        opcionesButton.Position = new Vector2(ResolutionManager.S(682), ResolutionManager.S(487));
-        opcionesButton.Size = new Vector2(ResolutionManager.S(93), ResolutionManager.S(20));
+        opcionesButton.Position = new Vector2(682, 487);
+        opcionesButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(opcionesButton);
         opcionesButton.Pressed += () =>
         {
@@ -205,8 +205,8 @@ public partial class Main
         };
 
         var estadisticasButton = RpgTheme.CreateRpgButton("Stats", false, 10);
-        estadisticasButton.Position = new Vector2(ResolutionManager.S(682), ResolutionManager.S(508));
-        estadisticasButton.Size = new Vector2(ResolutionManager.S(93), ResolutionManager.S(20));
+        estadisticasButton.Position = new Vector2(682, 508);
+        estadisticasButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(estadisticasButton);
         estadisticasButton.Pressed += () =>
         {
@@ -219,21 +219,21 @@ public partial class Main
         };
 
         var clanesButton = RpgTheme.CreateRpgButton("Clanes", false, 10);
-        clanesButton.Position = new Vector2(ResolutionManager.S(682), ResolutionManager.S(529));
-        clanesButton.Size = new Vector2(ResolutionManager.S(93), ResolutionManager.S(20));
+        clanesButton.Position = new Vector2(682, 529);
+        clanesButton.Size = new Vector2(93, 20);
         _gameUI.AddChild(clanesButton);
         clanesButton.Pressed += () => { _soundManager?.PlayNamedSound("click.wav"); OnClanesButtonPressed(); };
 
         // Minimize button (arrow down = minimize) — above frame overlay
-        var minimizeButton = RpgTheme.CreateMiniButton("Mini_arrow_bot.png", "Mini_arrow_bot.png", new Vector2(ResolutionManager.S(17), ResolutionManager.S(17)));
-        minimizeButton.Position = new Vector2(ResolutionManager.S(752), ResolutionManager.S(4));
+        var minimizeButton = RpgTheme.CreateMiniButton("Mini_arrow_bot.png", "Mini_arrow_bot.png", new Vector2(17, 17));
+        minimizeButton.Position = new Vector2(752, 4);
         minimizeButton.ZIndex = 51;
         _gameUI.AddChild(minimizeButton);
         minimizeButton.Pressed += () => _dialogManager?.OnMinimizePressed();
 
         // Close/Menu button — above frame overlay
-        var closeMenuButton = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(ResolutionManager.S(17), ResolutionManager.S(17)));
-        closeMenuButton.Position = new Vector2(ResolutionManager.S(770), ResolutionManager.S(4));
+        var closeMenuButton = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(17, 17));
+        closeMenuButton.Position = new Vector2(770, 4);
         closeMenuButton.ZIndex = 51;
         _gameUI.AddChild(closeMenuButton);
         closeMenuButton.Pressed += () =>
@@ -254,7 +254,7 @@ public partial class Main
     {
         if (_consoleLabel == null) return;
         bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
-        float right = minimapVisible ? ResolutionManager.Sf(423) : ResolutionManager.Sf(547);
+        float right = minimapVisible ? 423f : 547f;
         _consoleLabel.OffsetRight = right;
         if (_chatInputNode != null)
             _chatInputNode.OffsetRight = right;
@@ -275,38 +275,38 @@ public partial class Main
 
     private void CreateGamePanels()
     {
-        _commercePanel = AddPanel<CommercePanel>(new Vector2(ResolutionManager.S(57), ResolutionManager.S(109)));
-        _tradePanel = AddPanel<TradePanel>(new Vector2(ResolutionManager.S(70), ResolutionManager.S(142)));
+        _commercePanel = AddPanel<CommercePanel>(new Vector2(57, 109));
+        _tradePanel = AddPanel<TradePanel>(new Vector2(70, 142));
 
-        _bankPanel = AddPanel<BankPanel>(new Vector2(ResolutionManager.S(197), ResolutionManager.S(254)));
+        _bankPanel = AddPanel<BankPanel>(new Vector2(197, 254));
         _bankPanel.OnOpenVault += OnBankOpenVault;
 
-        _vaultPanel = AddPanel<VaultPanel>(new Vector2(ResolutionManager.S(55), ResolutionManager.S(88)));
-        _guildBankPanel = AddPanel<GuildBankPanel>(new Vector2(ResolutionManager.S(55), ResolutionManager.S(88)));
+        _vaultPanel = AddPanel<VaultPanel>(new Vector2(55, 88));
+        _guildBankPanel = AddPanel<GuildBankPanel>(new Vector2(55, 88));
         _craftPanel = AddPanel<CraftPanel>();
-        _guildPanel = AddPanel<GuildPanel>(new Vector2(ResolutionManager.S(60), ResolutionManager.S(100)));
-        _guildFoundationPanel = AddPanel<GuildFoundationPanel>(new Vector2(ResolutionManager.S(80), ResolutionManager.S(80)));
-        _forumPanel = AddPanel<ForumPanel>(new Vector2(ResolutionManager.S(20), ResolutionManager.S(80)));
-        _partyPanel = AddPanel<PartyPanel>(new Vector2(ResolutionManager.S(480), ResolutionManager.S(150)));
-        _travelPanel = AddPanel<TravelPanel>(new Vector2(ResolutionManager.S(55), ResolutionManager.S(177)));
-        _deathPanel = AddPanel<DeathPanel>(new Vector2(ResolutionManager.S(148), ResolutionManager.S(302)));
+        _guildPanel = AddPanel<GuildPanel>(new Vector2(60, 100));
+        _guildFoundationPanel = AddPanel<GuildFoundationPanel>(new Vector2(80, 80));
+        _forumPanel = AddPanel<ForumPanel>(new Vector2(20, 80));
+        _partyPanel = AddPanel<PartyPanel>(new Vector2(480, 150));
+        _travelPanel = AddPanel<TravelPanel>(new Vector2(55, 177));
+        _deathPanel = AddPanel<DeathPanel>(new Vector2(148, 302));
         _charInfoPopup = AddPanel<CharInfoPopup>();
         _changePasswordPanel = AddPanel<ChangePasswordPanel>();
 
-        _macroPanel = AddPanel<MacroPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(280)) / 2, ResolutionManager.S(144) + (ResolutionManager.S(416) - ResolutionManager.S(380)) / 2));
+        _macroPanel = AddPanel<MacroPanel>(new Vector2(8 + (544 - 280) / 2, 144 + (416 - 380) / 2));
         _macroPanel.Init(_state, _dataPath);
 
-        _statsPanel = AddPanel<StatsPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(380)) / 2, ResolutionManager.S(20)));
+        _statsPanel = AddPanel<StatsPanel>(new Vector2(8 + (544 - 380) / 2, 20));
         _statsPanel.Init(_state);
 
-        _npcDialogPanel = AddPanel<NpcDialogPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(300)) / 2, ResolutionManager.S(144) + ResolutionManager.S(416) - ResolutionManager.S(120) - ResolutionManager.S(10)));
+        _npcDialogPanel = AddPanel<NpcDialogPanel>(new Vector2(8 + (544 - 300) / 2, 144 + 416 - 120 - 10));
         _npcDialogPanel.Init(_state);
 
-        _optionsPanel = AddPanel<OptionsPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(420)) / 2, ResolutionManager.S(20)));
+        _optionsPanel = AddPanel<OptionsPanel>(new Vector2(8 + (544 - 420) / 2, 20));
         _optionsPanel.Init(_state, _state.Config, _dataPath);
         _optionsPanel.OnConfigApplied += ApplyConfigToSystems;
 
-        _keyBindPanel = AddPanel<KeyBindPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(420)) / 2, ResolutionManager.S(144) + (ResolutionManager.S(416) - ResolutionManager.S(500)) / 2));
+        _keyBindPanel = AddPanel<KeyBindPanel>(new Vector2(8 + (544 - 420) / 2, 144 + (416 - 500) / 2));
         _keyBindPanel.Init(_state, _state.Keys, _dataPath);
 
         _optionsPanel.OnOpenKeyBinds += () =>
@@ -319,26 +319,26 @@ public partial class Main
             }
         };
 
-        _gmPanel = AddPanel<GmPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(500)) / 2, ResolutionManager.S(30)));
+        _gmPanel = AddPanel<GmPanel>(new Vector2(8 + (544 - 500) / 2, 30));
         _gmPanel.Init(_state, null);
 
-        _spawnListPanel = AddPanel<SpawnListPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(320)) / 2, ResolutionManager.S(80)));
+        _spawnListPanel = AddPanel<SpawnListPanel>(new Vector2(8 + (544 - 320) / 2, 80));
         _spawnListPanel.Init(_state, null);
         _gmPanel.OnOpenSpawnListRequested += () => _spawnListPanel?.Open();
 
-        _sosPanel = AddPanel<SosPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(360)) / 2, ResolutionManager.S(60)));
+        _sosPanel = AddPanel<SosPanel>(new Vector2(8 + (544 - 360) / 2, 60));
         _sosPanel.Init(_state, null);
 
-        _motdEditorPanel = AddPanel<MotdEditorPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(380)) / 2, ResolutionManager.S(100)));
+        _motdEditorPanel = AddPanel<MotdEditorPanel>(new Vector2(8 + (544 - 380) / 2, 100));
         _motdEditorPanel.Init(_state, null);
 
-        _guildAlignmentPanel = AddPanel<GuildAlignmentPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(300)) / 2, ResolutionManager.S(144) + (ResolutionManager.S(416) - ResolutionManager.S(220)) / 2));
+        _guildAlignmentPanel = AddPanel<GuildAlignmentPanel>(new Vector2(8 + (544 - 300) / 2, 144 + (416 - 220) / 2));
         _guildAlignmentPanel.Init(_state, null);
 
-        _peaceProposalPanel = AddPanel<PeaceProposalPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(340)) / 2, ResolutionManager.S(144) + (ResolutionManager.S(416) - ResolutionManager.S(200)) / 2));
+        _peaceProposalPanel = AddPanel<PeaceProposalPanel>(new Vector2(8 + (544 - 340) / 2, 144 + (416 - 200) / 2));
         _peaceProposalPanel.Init(_state, null);
 
-        _guildMemberPanel = AddPanel<GuildMemberPanel>(new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(320)) / 2, ResolutionManager.S(100)));
+        _guildMemberPanel = AddPanel<GuildMemberPanel>(new Vector2(8 + (544 - 320) / 2, 100));
         _guildMemberPanel.Init(_state, null);
 
         // Day/Night Cycle
@@ -417,8 +417,8 @@ public partial class Main
 
         // Minimap panel with styled border
         var minimapBorder = new Panel();
-        minimapBorder.Position = new Vector2(ResolutionManager.S(429), ResolutionManager.S(19));
-        minimapBorder.Size = new Vector2(ResolutionManager.S(118), ResolutionManager.S(118));
+        minimapBorder.Position = new Vector2(429, 19);
+        minimapBorder.Size = new Vector2(118, 118);
         minimapBorder.MouseFilter = Control.MouseFilterEnum.Ignore;
         var mmStyle = new StyleBoxFlat();
         mmStyle.BgColor = new Color(0f, 0f, 0f, 0.55f);
@@ -430,8 +430,8 @@ public partial class Main
 
         _minimapPanel = new MinimapPanel();
         _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"));
-        _minimapPanel.Position = new Vector2(ResolutionManager.S(438), ResolutionManager.S(28));
-        _minimapPanel.Size = new Vector2(ResolutionManager.S(100), ResolutionManager.S(100));
+        _minimapPanel.Position = new Vector2(438, 28);
+        _minimapPanel.Size = new Vector2(100, 100);
         _minimapPanel.Visible = _state.Config.ShowMinimap;
         _gameUI.AddChild(_minimapPanel);
         minimapBorder.Visible = _state.Config.ShowMinimap;
@@ -442,14 +442,14 @@ public partial class Main
 
         // Quest panel
         _questPanel = new QuestPanel();
-        _questPanel.Position = new Vector2(ResolutionManager.S(8) + (ResolutionManager.S(544) - ResolutionManager.S(560)) / 2, ResolutionManager.S(50));
+        _questPanel.Position = new Vector2(8 + (544 - 560) / 2, 50);
         _questPanel.Visible = false;
         _questPanel.ZIndex = RpgBaseForm.ZPanel;
         _gameUI.AddChild(_questPanel);
 
         // Trainer/Pet panel
         _trainerPanel = new TrainerPanel();
-        _trainerPanel.Position = new Vector2(ResolutionManager.S(150), ResolutionManager.S(80));
+        _trainerPanel.Position = new Vector2(150, 80);
         _trainerPanel.Visible = false;
         _trainerPanel.ZIndex = RpgBaseForm.ZPanel;
         _gameUI.AddChild(_trainerPanel);
@@ -458,7 +458,7 @@ public partial class Main
         _blindOverlay = new ColorRect();
         _blindOverlay.Color = new Color(0, 0, 0, 0);
         _blindOverlay.Position = Vector2.Zero;
-        _blindOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+        _blindOverlay.Size = new Vector2(800, 600);
         _blindOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
         _blindOverlay.Visible = true;
         _blindOverlay.ZIndex = RpgBaseForm.ZBlind;
