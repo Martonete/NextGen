@@ -14,13 +14,62 @@ public partial class Main : Control
 	private const string ServerHost = "127.0.0.1";
 	private const int ServerPort = 5028;
 
+	// Saved references for runtime repositioning on resolution change
+	private SubViewportContainer? _viewportContainer;
+	private SubViewport? _gameViewport;
+	private Control? _sidebarBg;
+	private GameHudFrame? _hudFrame;
+
 	/// <summary>
-	/// Called via CallDeferred after resolution change. Reloads the scene
-	/// so all UI elements rebuild with new ResolutionManager positions.
+	/// Reposition ALL UI elements to match current ResolutionManager values.
+	/// Called on resolution change without reloading the scene.
 	/// </summary>
-	private void ReloadForResolution()
+	private void RepositionUI()
 	{
-		GetTree().ReloadCurrentScene();
+		int sbX = ResolutionManager.SidebarX;
+
+		// Root + GameUI
+		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		if (_gameUI != null) _gameUI.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// SubViewportContainer
+		if (_viewportContainer != null)
+		{
+			_viewportContainer.OffsetLeft = ResolutionManager.LeftMargin;
+			_viewportContainer.OffsetTop = ResolutionManager.TopMargin;
+			_viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
+			_viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+		}
+
+		// SubViewport
+		if (_gameViewport != null)
+			_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+
+		// Sidebar background
+		if (_sidebarBg != null)
+			_sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// HUD frame
+		if (_hudFrame != null)
+		{
+			_hudFrame.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+			_hudFrame.QueueRedraw();
+		}
+
+		// Stat bar overlay
+		if (_statBarOverlay != null)
+			_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// Sidebar labels (all relative to sbX)
+		if (_nameLabel != null) _nameLabel.Position = new Vector2(sbX + 14, _nameLabel.Position.Y);
+		if (_coordsLabel != null) _coordsLabel.Position = new Vector2(sbX + 20, ResolutionManager.BottomBarY - 5);
+
+		// Console right edge
+		if (_consoleLabel != null)
+			_consoleLabel.OffsetRight = ResolutionManager.ConsoleRight;
+
+		// Fog overlay needs redraw
+		_worldRenderer?.QueueRedraw();
 	}
 
 	private readonly GameData _gameData = new();
@@ -272,17 +321,15 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Wire resolution change: resize SubViewport + schedule scene reload to reposition all UI
-		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
-		ResolutionManager.OnResolutionChanged = () =>
-		{
-			gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
-			// Schedule scene reload for next frame so all UI rebuilds with new positions.
-			// CallDeferred avoids doing it mid-frame which caused black screen.
-			CallDeferred(MethodName.ReloadForResolution);
-		};
+		// Save references for runtime repositioning
+		_gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
+		_viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
+
+		// Wire resolution change: reposition all UI in-place (no scene reload)
+		ResolutionManager.OnResolutionChanged = () => RepositionUI();
+
 		// Apply initial SubViewport size
-		gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
+		_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
 
 		// Setup packet handler
 		_packetHandler = new PacketHandler(_state);
@@ -425,9 +472,10 @@ public partial class Main : Control
 
 		// === Redesigned top sidebar: Name frame + Level strip + XP bar ===
 		// Background layer inserted after HudFrame so frames draw behind labels
-		var sidebarBg = new Control();
-		sidebarBg.MouseFilter = Control.MouseFilterEnum.Ignore;
-		sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		_sidebarBg = new Control();
+		_sidebarBg.MouseFilter = Control.MouseFilterEnum.Ignore;
+		_sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		var sidebarBg = _sidebarBg;
 		_gameUI.AddChild(sidebarBg);
 		_gameUI.MoveChild(sidebarBg, 1); // index 1 = after HudFrame(0), before scene labels
 
