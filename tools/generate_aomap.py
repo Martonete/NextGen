@@ -220,6 +220,10 @@ def main():
                 oy = y - OFFSET_Y
                 if 0 <= ox < LEGACY_W and 0 <= oy < LEGACY_H:
                     inf = legacy_inf[oy * LEGACY_W + ox]
+                    # Strip exits pointing to maps that no longer exist
+                    if inf['exit'] is not None and inf['exit'][0] != 1:
+                        inf = dict(inf)  # copy
+                        inf['exit'] = None
                 else:
                     inf = make_empty_inf()
                 f.write(write_inf_tile_bytes(inf))
