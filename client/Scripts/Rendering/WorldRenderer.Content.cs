@@ -88,8 +88,8 @@ public partial class WorldRenderer
         // Arrow projectiles — draw after characters/trees so they appear on top
         if (_state.ActiveArrows.Count > 0)
         {
-            float originX = _frameUserX * TileSize - HalfWindowTileWidth * TileSize - _framePixelOffsetX;
-            float originY = _frameUserY * TileSize - HalfWindowTileHeight * TileSize - _framePixelOffsetY;
+            float originX = _frameUserX * TileSize - ResolutionManager.HalfRenderTilesX * TileSize - _framePixelOffsetX;
+            float originY = _frameUserY * TileSize - ResolutionManager.HalfRenderTilesY * TileSize - _framePixelOffsetY;
 
             for (int i = 0; i < _state.ActiveArrows.Count; i++)
             {
@@ -230,7 +230,8 @@ public partial class WorldRenderer
     private void DrawStatusLabelRight(CanvasItem canvas, string label, Color color)
     {
         if (_data?.Fonts?[1] == null) return;
-        float x = 544f - 10f - (label.Length * 8f); // approximate right-align
+        float vpW = ResolutionManager.RenderTilesX * 32f;
+        float x = vpW - 10f - (label.Length * 8f); // approximate right-align
         _data.Fonts[1]!.DrawText(canvas, (int)x, 7, label, color);
     }
 

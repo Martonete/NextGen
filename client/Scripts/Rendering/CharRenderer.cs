@@ -23,6 +23,35 @@ public static partial class CharRenderer
 	// Helmets are drawn at HeadOffset + OFFSET_HEAD (head uses just HeadOffset).
 	private const int OFFSET_HEAD = -34;
 
+	/// <summary>
+	/// Compute distance-based fade alpha for entities at the viewport boundary.
+	/// Inside the core 17x13 area: fully opaque (1.0).
+	/// Outside the core: fades linearly to 0 at the render boundary.
+	/// Returns alpha in [0, 1].
+	/// </summary>
+	private static float ComputeViewportFadeAlpha(int charPosX, int charPosY, int userX, int userY)
+	{
+		int extraX = ResolutionManager.ExtraTilesX;
+		int extraY = ResolutionManager.ExtraTilesY;
+		if (extraX <= 0 && extraY <= 0) return 1f;
+
+		float distFromCenterX = Math.Abs(charPosX - userX);
+		float distFromCenterY = Math.Abs(charPosY - userY);
+
+		// Core viewport: 8 tiles X, 6 tiles Y from center
+		const float fadeStartX = 8f;
+		const float fadeStartY = 6f;
+		float fadeEndX = fadeStartX + extraX;
+		float fadeEndY = fadeStartY + extraY;
+
+		float alphaX = distFromCenterX <= fadeStartX ? 1f :
+			1f - Math.Clamp((distFromCenterX - fadeStartX) / Math.Max(1, fadeEndX - fadeStartX), 0f, 1f);
+		float alphaY = distFromCenterY <= fadeStartY ? 1f :
+			1f - Math.Clamp((distFromCenterY - fadeStartY) / Math.Max(1, fadeEndY - fadeStartY), 0f, 1f);
+
+		return Math.Min(alphaX, alphaY);
+	}
+
 	public static void DrawCharacter(
 		Node2D canvas,
 		Character ch,
@@ -35,6 +64,12 @@ public static partial class CharRenderer
 		int charTileX = 0,
 		int charTileY = 0)
 	{
+		// Distance-based fade at viewport boundary (only when extra tiles are visible)
+		int userX = state?.UserPosX ?? 0;
+		int userY = state?.UserPosY ?? 0;
+		float entityAlpha = ComputeViewportFadeAlpha(ch.PosX, ch.PosY, userX, userY);
+		if (entityAlpha <= 0.01f) return; // fully invisible at edge, skip drawing
+
 		int heading = ch.Heading;
 		if (heading < 1 || heading > 4) heading = 3;
 
@@ -100,16 +135,19 @@ public static partial class CharRenderer
 			bool isNpc = ch.CharIndex != state.UserCharIndex && ch.NpcNumber > 0;
 			drawShadow = isNpc ? state.Config.ShowNpcShadows : state.Config.ShowShadows;
 		}
-		if (drawShadow && !ch.Invisible)
+		if (drawShadow && !ch.Invisible && entityAlpha > 0.3f)
 			DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
 		// Auras use additive blend (D3DBLEND_ONE/ONE). Draws are collected in
 		// WorldRenderer._Draw() and rendered by AuraAdditiveLayer ABOVE ContentLayer (z=1 > z=0).
 
 		// VB6: invisible self = pulsing transparency (TransparenciaBody 0-100)
+		// Combined with viewport edge fade alpha for smooth boundary transitions
 		Color? invisOverride = null;
 		if (ch.Invisible)
-			invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f);
+			invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f * entityAlpha);
+		else if (entityAlpha < 1f)
+			invisOverride = new Color(1, 1, 1, entityAlpha);
 
 		// Heading-dependent draw order (VB6: dibujarPersonaje)
 		DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,

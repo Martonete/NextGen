@@ -179,3 +179,23 @@ public partial class AdditiveParticleLayer : Node2D
         _renderer?.DrawPendingParticles(this);
     }
 }
+
+/// <summary>
+/// Child Node2D that draws the fog overlay after roof. Darkens tiles outside
+/// the core 17x13 viewport with a gradient to create an exploration fog effect.
+/// z_index=3 (same as roof, but added after so draws on top).
+/// </summary>
+public partial class FogOverlayLayer : Node2D
+{
+    private WorldRenderer? _renderer;
+
+    public void SetRenderer(WorldRenderer renderer)
+    {
+        _renderer = renderer;
+    }
+
+    public override void _Draw()
+    {
+        _renderer?.DrawFogOverlay(this);
+    }
+}

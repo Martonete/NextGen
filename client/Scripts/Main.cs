@@ -242,6 +242,9 @@ public partial class Main : Control
 		if (_state.Config.FpsLimit > 0)
 			Engine.MaxFps = _state.Config.FpsLimit;
 
+		// Apply dynamic resolution (computes extra tiles, resizes SubViewport later)
+		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
+
 		// Load key bindings (Teclas.ao)
 		_state.Keys = KeyBindings.Load(dataPath);
 
@@ -256,6 +259,13 @@ public partial class Main : Control
 		_worldRenderer.Init(_state, _gameData, _animator);
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
+
+		// Resize SubViewport to match dynamic resolution (render more tiles at higher res)
+		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
+		int svpW = ResolutionManager.RenderTilesX * 32;
+		int svpH = ResolutionManager.RenderTilesY * 32;
+		gameViewport.Size = new Vector2I(svpW, svpH);
+		GD.Print($"[MAIN] SubViewport resized to {svpW}x{svpH} for {ResolutionManager.RenderTilesX}x{ResolutionManager.RenderTilesY} tiles");
 
 		// Setup packet handler
 		_packetHandler = new PacketHandler(_state);

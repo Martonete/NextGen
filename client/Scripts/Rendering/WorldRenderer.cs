@@ -43,6 +43,7 @@ public partial class WorldRenderer : Node2D
 	private RoofLayer? _roofLayer;
 	private WeatherRenderer? _weatherRenderer;
 	private FloatingTextLayer? _floatingTextLayer;
+	private FogOverlayLayer? _fogLayer;
 
 	private const int TileSize = 32;
 
@@ -228,6 +229,14 @@ void fragment() {
 		_roofLayer.SetRenderer(this);
 		AddChild(_roofLayer);
 
+		// Fog overlay layer: z=3.5 (above roof, below floating text)
+		// Darkens tiles outside the core 17x13 area with a gradient
+		_fogLayer = new FogOverlayLayer();
+		_fogLayer.Name = "FogOverlay";
+		_fogLayer.ZIndex = 3; // Same z as roof, but added after so draws on top
+		_fogLayer.SetRenderer(this);
+		AddChild(_fogLayer);
+
 		// Floating text layer: z=4 (above roof, below weather)
 		_floatingTextLayer = new FloatingTextLayer();
 		_floatingTextLayer.Name = "FloatingTextLayer";
@@ -345,12 +354,14 @@ void fragment() {
 
 	/// <summary>
 	/// Convert world tile to screen pixel position.
+	/// Uses dynamic half-render tiles so extra tiles at higher resolutions
+	/// are positioned correctly within the enlarged SubViewport.
 	/// </summary>
 	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
 	{
-		float px = (tileX - userX + HalfWindowTileWidth) * TileSize + pixelOffsetX;
-		float py = (tileY - userY + HalfWindowTileHeight) * TileSize + pixelOffsetY;
+		float px = (tileX - userX + ResolutionManager.HalfRenderTilesX) * TileSize + pixelOffsetX;
+		float py = (tileY - userY + ResolutionManager.HalfRenderTilesY) * TileSize + pixelOffsetY;
 		return new Vector2(px, py);
 	}
 
@@ -385,11 +396,13 @@ void fragment() {
 		_framePixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
 		_framePixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
 
-		// Visible tile range
-		int screenMinX = _frameUserX - HalfWindowTileWidth;
-		int screenMaxX = _frameUserX + HalfWindowTileWidth;
-		int screenMinY = _frameUserY - HalfWindowTileHeight;
-		int screenMaxY = _frameUserY + HalfWindowTileHeight;
+		// Visible tile range (dynamic: uses full render area at current resolution)
+		int halfX = ResolutionManager.HalfRenderTilesX;
+		int halfY = ResolutionManager.HalfRenderTilesY;
+		int screenMinX = _frameUserX - halfX;
+		int screenMaxX = _frameUserX + halfX;
+		int screenMinY = _frameUserY - halfY;
+		int screenMaxY = _frameUserY + halfY;
 
 		// Extended bounds with tile buffer (clamped to map dimensions)
 		int mapW = _state.MapData.Width;
@@ -432,8 +445,8 @@ void fragment() {
 			}
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", true);
 			_lightmapMaterial?.SetShaderParameter("map_size_px", new Vector2(mapW * TileSize, mapH * TileSize));
-			float originX = (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX;
-			float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
+			float originX = (_frameUserX - halfX) * TileSize - _framePixelOffsetX;
+			float originY = (_frameUserY - halfY) * TileSize - _framePixelOffsetY;
 			_lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
 			Modulate = Colors.White;
 			// Parent is white → ContentLayer inherits white → full brightness. No correction needed.
@@ -635,6 +648,90 @@ void fragment() {
 		_dialogLayer?.QueueRedraw();
 		_additiveLayer?.QueueRedraw();
 		_roofLayer?.QueueRedraw();
+		_fogLayer?.QueueRedraw();
+	}
+
+	/// <summary>
+	/// Draw fog overlay: darkens tiles outside the core 17x13 viewport.
+	/// Creates a gradient from fully transparent at the core edge to
+	/// semi-opaque (alpha ~0.7) at the render area boundary.
+	/// Called by FogOverlayLayer._Draw().
+	/// </summary>
+	public void DrawFogOverlay(CanvasItem canvas)
+	{
+		int extraX = ResolutionManager.ExtraTilesX;
+		int extraY = ResolutionManager.ExtraTilesY;
+		if (extraX <= 0 && extraY <= 0) return;
+
+		int renderW = ResolutionManager.RenderTilesX * TileSize;
+		int renderH = ResolutionManager.RenderTilesY * TileSize;
+
+		// Core area bounds in pixels (centered in the render area)
+		int coreW = ResolutionManager.CoreTilesX * TileSize;
+		int coreH = ResolutionManager.CoreTilesY * TileSize;
+		int coreLeft = (renderW - coreW) / 2;
+		int coreTop = (renderH - coreH) / 2;
+		int coreRight = coreLeft + coreW;
+		int coreBottom = coreTop + coreH;
+
+		// Draw fog rings from core edge outward with increasing alpha.
+		// Each ring is one tile thick. Alpha increases linearly from 0 at
+		// core edge to MaxAlpha at the outermost ring.
+		int maxRings = Math.Max(extraX, extraY);
+		const float MaxAlpha = 0.7f;
+
+		for (int ring = 1; ring <= maxRings; ring++)
+		{
+			float alpha = MaxAlpha * ring / maxRings;
+			var fogColor = new Color(0f, 0f, 0f, alpha);
+
+			int ringPixelsX = Math.Min(ring, extraX) * TileSize;
+			int ringPixelsY = Math.Min(ring, extraY) * TileSize;
+			int prevPixelsX = Math.Min(ring - 1, extraX) * TileSize;
+			int prevPixelsY = Math.Min(ring - 1, extraY) * TileSize;
+
+			// Top strip
+			if (ring <= extraY)
+			{
+				float stripTop = coreTop - ringPixelsY;
+				float stripH = (float)TileSize;
+				((Node2D)canvas).DrawRect(
+					new Rect2(coreLeft - ringPixelsX, stripTop,
+							  coreW + ringPixelsX * 2, stripH), fogColor);
+			}
+
+			// Bottom strip
+			if (ring <= extraY)
+			{
+				float stripBottom = coreBottom + prevPixelsY;
+				float stripH = (float)TileSize;
+				((Node2D)canvas).DrawRect(
+					new Rect2(coreLeft - ringPixelsX, stripBottom,
+							  coreW + ringPixelsX * 2, stripH), fogColor);
+			}
+
+			// Left strip (between top and bottom strips of this ring)
+			if (ring <= extraX)
+			{
+				float stripLeft = coreLeft - ringPixelsX;
+				float stripW = (float)TileSize;
+				float stripTop = coreTop - prevPixelsY;
+				float stripH = coreH + prevPixelsY * 2;
+				((Node2D)canvas).DrawRect(
+					new Rect2(stripLeft, stripTop, stripW, stripH), fogColor);
+			}
+
+			// Right strip
+			if (ring <= extraX)
+			{
+				float stripRight = coreRight + prevPixelsX;
+				float stripW = (float)TileSize;
+				float stripTop = coreTop - prevPixelsY;
+				float stripH = coreH + prevPixelsY * 2;
+				((Node2D)canvas).DrawRect(
+					new Rect2(stripRight, stripTop, stripW, stripH), fogColor);
+			}
+		}
 	}
 
 	/// <summary>

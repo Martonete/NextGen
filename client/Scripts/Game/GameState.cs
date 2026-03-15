@@ -349,6 +349,9 @@ public class GameState
 	// Light system
 	public List<MapLight> MapLights = new();
 	public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
+	// TODO: TileLightColors could be chunked like ChunkedTiles to avoid allocating
+	// the full (W+1)*(H+1)*4 grid (~64MB for 1000x1000). The light system only writes
+	// to tiles near light sources, so most of the array is unused ambient color.
 	public Color[,,]? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
 	public bool LightsDirty;
 

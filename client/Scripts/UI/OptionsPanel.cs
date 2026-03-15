@@ -57,6 +57,8 @@ public partial class OptionsPanel : RpgBaseForm
     private Button? _chkFullscreen;
     private HBoxContainer? _aspectRow;
     private OptionButton? _optAspect;
+    private HBoxContainer? _resolutionRow;
+    private OptionButton? _optResolution;
 
     // ── Render tab controls ──
     private OptionButton? _optPerformance;
@@ -270,6 +272,13 @@ public partial class OptionsPanel : RpgBaseForm
         };
         leftCol.AddChild(fullscreenRow);
 
+        // Resolution dropdown (only visible if AllowResolutionChange is true)
+        _resolutionRow = RpgTheme.CreateRpgDropdownRow("Resolucion:",
+            new[] { "800x600", "1024x768", "1280x720", "1280x960", "1366x768", "1600x900", "1920x1080" }, 110);
+        _optResolution = GetDropdownFromRow(_resolutionRow);
+        _optResolution.ItemSelected += OnResolutionSelected;
+        leftCol.AddChild(_resolutionRow);
+
         _aspectRow = RpgTheme.CreateRpgDropdownRow("Aspecto:",
             new[] { "4:3", "16:9" }, 100);
         _optAspect = GetDropdownFromRow(_aspectRow);
@@ -482,6 +491,28 @@ public partial class OptionsPanel : RpgBaseForm
         OnConfigApplied?.Invoke();
     }
 
+    // ── Resolution presets ──────────────────────────────────
+
+    private static readonly (int w, int h)[] ResolutionPresets = new[]
+    {
+        (800, 600), (1024, 768), (1280, 720), (1280, 960),
+        (1366, 768), (1600, 900), (1920, 1080)
+    };
+
+    private void OnResolutionSelected(long index)
+    {
+        if (_loading || _config == null) return;
+        if (index < 0 || index >= ResolutionPresets.Length) return;
+
+        var (w, h) = ResolutionPresets[(int)index];
+        _config.ResolutionWidth = w;
+        _config.ResolutionHeight = h;
+        _config.Save(_dataPath);
+
+        ResolutionManager.ApplyResolution(w, h);
+        OnConfigApplied?.Invoke();
+    }
+
     // ── Tab switching ─────────────────────────────────────
 
     private void SetTab(int idx)
@@ -550,6 +581,22 @@ public partial class OptionsPanel : RpgBaseForm
         if (_aspectRow != null) _aspectRow.Visible = cfg.Fullscreen;
         if (_optAspect != null) _optAspect.Selected = cfg.AspectRatioMode;
 
+        // Resolution
+        if (_resolutionRow != null) _resolutionRow.Visible = cfg.AllowResolutionChange;
+        if (_optResolution != null)
+        {
+            int resSel = 0; // default 800x600
+            for (int i = 0; i < ResolutionPresets.Length; i++)
+            {
+                if (ResolutionPresets[i].w == cfg.ResolutionWidth && ResolutionPresets[i].h == cfg.ResolutionHeight)
+                {
+                    resSel = i;
+                    break;
+                }
+            }
+            _optResolution.Selected = resSel;
+        }
+
         // Render tab
         if (_optPerformance != null) _optPerformance.Selected = cfg.PerformanceLevel;
         LoadRenderChecks(cfg);
@@ -609,6 +656,14 @@ public partial class OptionsPanel : RpgBaseForm
         // Render tab — Display
         cfg.Fullscreen = IsChecked(_chkFullscreen);
         cfg.AspectRatioMode = _optAspect?.Selected ?? 0;
+
+        // Resolution
+        int resIdx = _optResolution?.Selected ?? 0;
+        if (resIdx >= 0 && resIdx < ResolutionPresets.Length)
+        {
+            cfg.ResolutionWidth = ResolutionPresets[resIdx].w;
+            cfg.ResolutionHeight = ResolutionPresets[resIdx].h;
+        }
 
         // Render tab
         cfg.PerformanceLevel = _optPerformance?.Selected ?? 2;
