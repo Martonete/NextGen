@@ -38,7 +38,7 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
     let x: i32 = parts[2].parse().unwrap_or(0);
     let y: i32 = parts[3].parse().unwrap_or(0);
 
-    if map < 1 || !crate::game::world::in_map_bounds(x, y) {
+    if map < 1 || state.world.grid(map).map(|g| !crate::game::world::in_map_bounds_grid(g, x, y)).unwrap_or(true) {
         return;
     }
 
@@ -99,7 +99,10 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    if !crate::game::world::in_map_bounds(tx, ty) {
+    let bounds_ok = state.world.grid(map)
+        .map(|g| crate::game::world::in_map_bounds_grid(g, tx, ty))
+        .unwrap_or(false);
+    if !bounds_ok {
         state.send_console(conn_id, "Coordenadas fuera de los limites del mapa.", font_index::INFO);
         return;
     }
@@ -131,7 +134,7 @@ pub(super) async fn handle_slash_go(state: &mut GameState, conn_id: ConnectionId
     let x: i32 = if parts.len() >= 3 { parts[1].parse().unwrap_or(50) } else { 50 };
     let y: i32 = if parts.len() >= 3 { parts[2].parse().unwrap_or(50) } else { 50 };
 
-    if map < 1 || !crate::game::world::in_map_bounds(x, y) {
+    if map < 1 || state.world.grid(map).map(|g| !crate::game::world::in_map_bounds_grid(g, x, y)).unwrap_or(true) {
         state.send_console(conn_id, "Mapa o coordenadas invalidas.", font_index::INFO);
         return;
     }

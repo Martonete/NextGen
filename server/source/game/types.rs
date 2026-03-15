@@ -886,8 +886,16 @@ impl GameState {
                 .or_insert_with(|| crate::game::zones::ZoneProperties::from_map_info(&map.info));
         }
 
-        // Count loaded maps to pre-allocate world grids
-        let map_count = game_data.maps.len();
+        // Create world grids sized to match each loaded map's dimensions
+        let mut world = WorldState::new(0); // empty, we'll add grids manually
+        for (i, map_opt) in game_data.maps.iter().enumerate() {
+            if let Some(map) = map_opt {
+                let w = map.tiles.width as i32;
+                let h = map.tiles.height as i32;
+                world.grids.insert(i as i32, crate::game::world::MapGrid::with_size(w, h, 9));
+                tracing::info!("Map {} grid: {}x{}", i, w, h);
+            }
+        }
 
         Self {
             config,
@@ -896,7 +904,7 @@ impl GameState {
             bans,
             notice,
             game_data,
-            world: WorldState::new(map_count),
+            world,
             users: HashMap::new(),
             writers: HashMap::new(),
             online_names: HashMap::new(),

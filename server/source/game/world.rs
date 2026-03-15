@@ -255,9 +255,15 @@ impl WorldState {
     }
 }
 
-/// Check if position is within walkable map border limits for a grid of given dimensions.
+/// Check if position is within walkable map border limits.
+/// Uses default 100x100 if no grid is available (legacy compat).
 pub fn in_map_bounds(x: i32, y: i32) -> bool {
     in_map_bounds_for(x, y, MAP_WIDTH as i32, MAP_HEIGHT as i32)
+}
+
+/// Check bounds using a specific grid's dimensions.
+pub fn in_map_bounds_grid(grid: &MapGrid, x: i32, y: i32) -> bool {
+    in_map_bounds_for(x, y, grid.width, grid.height)
 }
 
 /// Check if position is within walkable border limits for any grid size.

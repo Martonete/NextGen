@@ -1064,8 +1064,11 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
     let new_x = x + dx;
     let new_y = y + dy;
 
-    // Check bounds and blocked
-    if !world::in_map_bounds(new_x, new_y) {
+    // Check bounds using actual grid dimensions (not hardcoded 100)
+    let bounds_ok = state.world.grid(map)
+        .map(|g| world::in_map_bounds_grid(g, new_x, new_y))
+        .unwrap_or(false);
+    if !bounds_ok {
         return (false, None);
     }
 
@@ -1134,7 +1137,7 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
             let (ddx, ddy) = world::heading_to_offset(dir);
             let nx = new_x + ddx;
             let ny = new_y + ddy;
-            if !world::in_map_bounds(nx, ny) { continue; }
+            if !state.world.grid(map).map(|g| world::in_map_bounds_grid(g, nx, ny)).unwrap_or(false) { continue; }
             if state.is_tile_blocked(map, nx, ny) { continue; }
             let free = state.world.grid(map)
                 .map(|g| g.is_tile_free(nx, ny))

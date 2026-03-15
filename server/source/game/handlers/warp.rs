@@ -363,7 +363,7 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
         let (dx, dy) = world::heading_to_offset(dir);
         let nx = x + dx;
         let ny = y + dy;
-        if !world::in_map_bounds(nx, ny) { continue; }
+        if !state.world.grid(map).map(|g| world::in_map_bounds_grid(g, nx, ny)).unwrap_or(false) { continue; }
         if state.is_tile_blocked(map, nx, ny) { continue; }
         let tile_free = state.world.grid(map)
             .map(|g| g.is_tile_free(nx, ny))
