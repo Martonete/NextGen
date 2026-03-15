@@ -463,7 +463,13 @@ public partial class Main : Control
 		_viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
 
 		// Wire resolution change: reposition all UI in-place (no scene reload)
-		ResolutionManager.OnResolutionChanged = () => RepositionUI();
+		// In fullscreen, update ContentScaleSize so the new layout fills the screen.
+		ResolutionManager.OnResolutionChanged = () =>
+		{
+			RepositionUI();
+			if (_state.Config.Fullscreen)
+				EnterFullscreen();
+		};
 
 		// Apply initial SubViewport size
 		_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);

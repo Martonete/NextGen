@@ -124,12 +124,17 @@ public static class ResolutionManager
         BottomBarY = TopMargin + ViewportH;
         ConsoleRight = SidebarX - sidebarGap - S(10);
 
-        // Resize window
-        DisplayServer.WindowSetSize(new Vector2I(width, height));
-        var screen = DisplayServer.ScreenGetSize();
-        DisplayServer.WindowSetPosition(new Vector2I(
-            Math.Max(0, (screen.X - width) / 2),
-            Math.Max(0, (screen.Y - height) / 2)));
+        // Resize window (only in windowed mode — fullscreen is handled by the caller)
+        bool isFullscreen = DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen
+                         || DisplayServer.WindowGetMode() == DisplayServer.WindowMode.ExclusiveFullscreen;
+        if (!isFullscreen)
+        {
+            DisplayServer.WindowSetSize(new Vector2I(width, height));
+            var screen = DisplayServer.ScreenGetSize();
+            DisplayServer.WindowSetPosition(new Vector2I(
+                Math.Max(0, (screen.X - width) / 2),
+                Math.Max(0, (screen.Y - height) / 2)));
+        }
 
         GD.Print($"[RES] {width}x{height} UIScale={UIScale:F2} " +
                  $"viewport={ViewportW}x{ViewportH} tiles={TilesX}x{TilesY} " +
