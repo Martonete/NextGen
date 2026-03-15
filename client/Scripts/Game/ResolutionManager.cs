@@ -40,9 +40,11 @@ public static class ResolutionManager
 
 	/// <summary>Half render width in tiles (for centering).</summary>
 	public static int HalfRenderX => RenderTilesX / 2;
+	public static int HalfRenderTilesX => HalfRenderX; // alias
 
 	/// <summary>Half render height in tiles (for centering).</summary>
 	public static int HalfRenderY => RenderTilesY / 2;
+	public static int HalfRenderTilesY => HalfRenderY; // alias
 
 	/// <summary>SubViewport pixel width (RenderTilesX * 32).</summary>
 	public static int ViewportPixelW => RenderTilesX * 32;
