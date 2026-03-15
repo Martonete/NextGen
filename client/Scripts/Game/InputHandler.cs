@@ -408,14 +408,13 @@ public class InputHandler
 
 	/// <summary>
 	/// Convert viewport pixel position to world tile coordinates.
+	/// Inverse of WorldRenderer.TileToScreen: px = (tileX-userX+HalfRenderX)*32.
+	/// At 800x600: tileX = userX + px/32 - 8 (unchanged from VB6).
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		// Match TileToScreen centering: use half viewport pixel size
-		int centerX = ResolutionManager.ViewportPixelW / 2;
-		int centerY = ResolutionManager.ViewportPixelH / 2;
-		int tileX = userX + ((int)viewportPos.X - centerX) / 32;
-		int tileY = userY + ((int)viewportPos.Y - centerY) / 32;
+		int tileX = userX + (int)viewportPos.X / 32 - ResolutionManager.HalfRenderX;
+		int tileY = userY + (int)viewportPos.Y / 32 - ResolutionManager.HalfRenderY;
 		return (tileX, tileY);
 	}
 

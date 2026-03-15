@@ -299,10 +299,14 @@ public class InputRouter
         float clickX = mb.Position.X - 13;
         float clickY = mb.Position.Y - 149;
 
-        // Only handle clicks within the game viewport area
+        // Only handle clicks within the game viewport area (design-space container bounds)
         if (clickX < 0 || clickX >= 544 || clickY < 0 || clickY >= 416) return;
 
-        var viewPos = new Vector2(clickX, clickY);
+        // Scale from design-space container coords to SubViewport pixel coords.
+        // At 800x600: scale = 1.0 (544/544, 416/416). At higher res: scale > 1.
+        float scaleX = ResolutionManager.ViewportPixelW / 544f;
+        float scaleY = ResolutionManager.ViewportPixelH / 416f;
+        var viewPos = new Vector2(clickX * scaleX, clickY * scaleY);
 
         // Close context menu on any left-click in viewport
         if (mb.Pressed && mb.ButtonIndex == MouseButton.Left && _contextMenu != null && _contextMenu.IsOpen)

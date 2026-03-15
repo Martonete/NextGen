@@ -41,19 +41,16 @@ public partial class WorldRenderer : Node2D
 	private DialogOverlayLayer? _dialogLayer;
 	private AdditiveParticleLayer? _additiveLayer;
 	private RoofLayer? _roofLayer;
+	private FogOverlayLayer? _fogLayer;
 	private WeatherRenderer? _weatherRenderer;
 	private FloatingTextLayer? _floatingTextLayer;
-	private FogOverlayLayer? _fogLayer;
 
 	private const int TileSize = 32;
 
-	// VB6 viewport: 544x416 px (MainViewPic ScaleWidth/ScaleHeight)
-	private const int ViewportWidth = 544;
-	private const int ViewportHeight = 416;
-
-	// How many tiles from center to edge (visible range)
-	private const int HalfWindowTileWidth = 8;
-	private const int HalfWindowTileHeight = 6;
+	// Tile range from center to edge — delegates to ResolutionManager for dynamic resolution.
+	// At 800x600: HalfWindowTileWidth=8, HalfWindowTileHeight=6 (identical to VB6 original).
+	private static int HalfWindowTileWidth => ResolutionManager.HalfRenderX;
+	private static int HalfWindowTileHeight => ResolutionManager.HalfRenderY;
 
 	// VB6: TileBufferSize = 9
 	private const int TileBufferSize = 9;
@@ -229,25 +226,24 @@ void fragment() {
 		_roofLayer.SetRenderer(this);
 		AddChild(_roofLayer);
 
-		// Fog overlay layer: z=3.5 (above roof, below floating text)
-		// Darkens tiles outside the core 17x13 area with a gradient
+		// Fog overlay: z=4 — darkens extra tiles outside the core 17x13 area.
+		// Only visible when resolution > 800x600 (ExtraTilesX/Y > 0).
 		_fogLayer = new FogOverlayLayer();
 		_fogLayer.Name = "FogOverlay";
-		_fogLayer.ZIndex = 3; // Same z as roof, but added after so draws on top
-		_fogLayer.SetRenderer(this);
+		_fogLayer.ZIndex = 4;
 		AddChild(_fogLayer);
 
-		// Floating text layer: z=4 (above roof, below weather)
+		// Floating text layer: z=5 (above fog, below weather)
 		_floatingTextLayer = new FloatingTextLayer();
 		_floatingTextLayer.Name = "FloatingTextLayer";
-		_floatingTextLayer.ZIndex = 4;
+		_floatingTextLayer.ZIndex = 5;
 		_floatingTextLayer.Init(this, state);
 		AddChild(_floatingTextLayer);
 
-		// Weather layer: z=5 (topmost overlay — rain, lightning)
+		// Weather layer: z=6 (topmost overlay — rain, lightning)
 		_weatherRenderer = new WeatherRenderer();
 		_weatherRenderer.Name = "WeatherRenderer";
-		_weatherRenderer.ZIndex = 5;
+		_weatherRenderer.ZIndex = 6;
 		AddChild(_weatherRenderer);
 
 	}
@@ -353,19 +349,15 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// Convert world tile to screen pixel position.
-	/// Uses dynamic half-render tiles so extra tiles at higher resolutions
-	/// are positioned correctly within the enlarged SubViewport.
+	/// Convert world tile to screen pixel position (top-left corner of the tile).
+	/// Uses HalfWindowTileWidth/Height from ResolutionManager for centering.
+	/// At 800x600: (tileX-userX+8)*32 = 256 for user's tile (unchanged from VB6).
 	/// </summary>
 	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
 	{
-		// Center character in the SubViewport by using half the viewport pixel size.
-		// This ensures uniform expansion in all 4 directions.
-		float centerOffsetX = ResolutionManager.ViewportPixelW / 2f;
-		float centerOffsetY = ResolutionManager.ViewportPixelH / 2f;
-		float px = (tileX - userX) * TileSize + centerOffsetX + pixelOffsetX;
-		float py = (tileY - userY) * TileSize + centerOffsetY + pixelOffsetY;
+		float px = (tileX - userX + HalfWindowTileWidth) * TileSize + pixelOffsetX;
+		float py = (tileY - userY + HalfWindowTileHeight) * TileSize + pixelOffsetY;
 		return new Vector2(px, py);
 	}
 
@@ -400,13 +392,11 @@ void fragment() {
 		_framePixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
 		_framePixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
 
-		// Visible tile range (dynamic: uses full render area at current resolution)
-		int halfX = ResolutionManager.HalfRenderTilesX;
-		int halfY = ResolutionManager.HalfRenderTilesY;
-		int screenMinX = _frameUserX - halfX;
-		int screenMaxX = _frameUserX + halfX;
-		int screenMinY = _frameUserY - halfY;
-		int screenMaxY = _frameUserY + halfY;
+		// Visible tile range
+		int screenMinX = _frameUserX - HalfWindowTileWidth;
+		int screenMaxX = _frameUserX + HalfWindowTileWidth;
+		int screenMinY = _frameUserY - HalfWindowTileHeight;
+		int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
 		// Extended bounds with tile buffer (clamped to map dimensions)
 		int mapW = _state.MapData.Width;
@@ -449,8 +439,8 @@ void fragment() {
 			}
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", true);
 			_lightmapMaterial?.SetShaderParameter("map_size_px", new Vector2(mapW * TileSize, mapH * TileSize));
-			float originX = (_frameUserX - halfX) * TileSize - _framePixelOffsetX;
-			float originY = (_frameUserY - halfY) * TileSize - _framePixelOffsetY;
+			float originX = (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX;
+			float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
 			_lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
 			Modulate = Colors.White;
 			// Parent is white → ContentLayer inherits white → full brightness. No correction needed.
@@ -652,84 +642,6 @@ void fragment() {
 		_dialogLayer?.QueueRedraw();
 		_additiveLayer?.QueueRedraw();
 		_roofLayer?.QueueRedraw();
-		_fogLayer?.QueueRedraw();
-	}
-
-	// Cached fog gradient texture (rebuilt when resolution changes)
-	private ImageTexture? _fogTexture;
-	private int _fogCachedRenderX;
-	private int _fogCachedRenderY;
-
-	/// <summary>
-	/// Draw fog overlay: smooth radial gradient darkening tiles outside the
-	/// core 17x13 viewport. Fully transparent in the center, fading to black
-	/// at the edges. Uses a precomputed gradient texture for smooth blending.
-	/// Called by FogOverlayLayer._Draw().
-	/// </summary>
-	public void DrawFogOverlay(CanvasItem canvas)
-	{
-		int extraX = ResolutionManager.ExtraTilesX;
-		int extraY = ResolutionManager.ExtraTilesY;
-		if (extraX <= 0 && extraY <= 0) return;
-
-		int renderW = ResolutionManager.RenderTilesX * TileSize;
-		int renderH = ResolutionManager.RenderTilesY * TileSize;
-
-		// Rebuild gradient texture if resolution changed
-		if (_fogTexture == null || _fogCachedRenderX != ResolutionManager.RenderTilesX
-			|| _fogCachedRenderY != ResolutionManager.RenderTilesY)
-		{
-			_fogTexture = BuildFogTexture(renderW, renderH, extraX, extraY);
-			_fogCachedRenderX = ResolutionManager.RenderTilesX;
-			_fogCachedRenderY = ResolutionManager.RenderTilesY;
-		}
-
-		// Draw the gradient texture covering the entire render area
-		((Node2D)canvas).DrawTextureRect(_fogTexture, new Rect2(0, 0, renderW, renderH), false);
-	}
-
-	/// <summary>
-	/// Build a smooth radial gradient fog texture. Transparent in the core area,
-	/// fading to black at the edges with smooth interpolation.
-	/// </summary>
-	private static ImageTexture BuildFogTexture(int w, int h, int extraTilesX, int extraTilesY)
-	{
-		// Build at 1/4 resolution for performance, GPU upscales with bilinear filtering
-		int texW = w / 4;
-		int texH = h / 4;
-		var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
-
-		float centerX = texW / 2f;
-		float centerY = texH / 2f;
-		// Core area in texture pixels (17x13 tiles)
-		float coreHalfW = (ResolutionManager.CoreTilesX * TileSize / 2f) / 4f;
-		float coreHalfH = (ResolutionManager.CoreTilesY * TileSize / 2f) / 4f;
-		// Fog zone in texture pixels
-		float fogZoneW = (extraTilesX * TileSize) / 4f;
-		float fogZoneH = (extraTilesY * TileSize) / 4f;
-
-		const float MaxAlpha = 0.75f;
-
-		for (int py = 0; py < texH; py++)
-		{
-			for (int px = 0; px < texW; px++)
-			{
-				// Distance from core edge (0 = inside core, 1 = at render boundary)
-				float dx = Math.Max(0, Math.Abs(px - centerX) - coreHalfW);
-				float dy = Math.Max(0, Math.Abs(py - centerY) - coreHalfH);
-				float fx = fogZoneW > 0 ? dx / fogZoneW : 0;
-				float fy = fogZoneH > 0 ? dy / fogZoneH : 0;
-				float f = Math.Max(fx, fy);
-				f = Math.Clamp(f, 0, 1);
-
-				// Smooth easing (ease-in curve for natural darkness transition)
-				float alpha = f * f * MaxAlpha;
-				img.SetPixel(px, py, new Color(0, 0, 0, alpha));
-			}
-		}
-
-		var tex = ImageTexture.CreateFromImage(img);
-		return tex;
 	}
 
 	/// <summary>

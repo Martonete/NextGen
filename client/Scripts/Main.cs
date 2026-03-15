@@ -242,11 +242,11 @@ public partial class Main : Control
 		if (_state.Config.FpsLimit > 0)
 			Engine.MaxFps = _state.Config.FpsLimit;
 
+		// Apply dynamic resolution (window size + tile calculation)
+		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
+
 		// Load key bindings (Teclas.ao)
 		_state.Keys = KeyBindings.Load(dataPath);
-
-		// Apply dynamic resolution (computes extra tiles, resizes window)
-		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
 
 		if (!_gameData.IsLoaded)
 		{
@@ -260,13 +260,13 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Resize SubViewport to render more tiles at higher resolutions.
-		// canvas_items stretch handles UI scaling — we only touch the SubViewport.
+		// Wire SubViewport resizing to resolution changes
 		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
 		ResolutionManager.OnResolutionChanged = () =>
 		{
 			gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
 		};
+		// Apply initial SubViewport size
 		gameViewport.Size = new Vector2I(ResolutionManager.ViewportPixelW, ResolutionManager.ViewportPixelH);
 
 		// Setup packet handler

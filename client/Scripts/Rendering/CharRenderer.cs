@@ -127,6 +127,13 @@ public static partial class CharRenderer
 		// Water reflections are now drawn by WorldRenderer (PASS 1.5) between
 		// Layer 1 and Layer 2, so they clip naturally to water tiles.
 
+		// Resolution-based fade: characters outside core 17x13 fade out toward the render boundary.
+		// Computed as a multiplier (1.0 inside core, fading to 0 at edge).
+		float resFade = ComputeResolutionFade(charTileX, charTileY, state);
+
+		// Skip drawing entirely if character is fully faded out
+		if (resFade <= 0.01f) return;
+
 		// Shadow: diagonal projection (light from lower-left → shadow upper-right)
 		// Single body shadow only — no separate head (avoids doubling artifacts)
 		bool drawShadow = state != null; // No shadows in preview (state=null)
@@ -148,6 +155,16 @@ public static partial class CharRenderer
 			invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f * entityAlpha);
 		else if (entityAlpha < 1f)
 			invisOverride = new Color(1, 1, 1, entityAlpha);
+
+		// Apply resolution fade as additional alpha modulation
+		if (resFade < 1.0f)
+		{
+			if (invisOverride != null)
+				invisOverride = new Color(invisOverride.Value.R, invisOverride.Value.G, invisOverride.Value.B,
+										  invisOverride.Value.A * resFade);
+			else
+				invisOverride = new Color(1, 1, 1, resFade);
+		}
 
 		// Heading-dependent draw order (VB6: dibujarPersonaje)
 		DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
@@ -172,6 +189,42 @@ public static partial class CharRenderer
 
 		// Dialog bubble — queued to overlay layer (above all characters/NPCs)
 		DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs, worldRenderer);
+	}
+
+	/// <summary>
+	/// Compute fade alpha for characters based on distance from core viewport center.
+	/// Inside the core 17x13 area: returns 1.0. Outside: fades linearly to 0 at the render edge.
+	/// Only active when resolution > 800x600 (ExtraTilesX/Y > 0).
+	/// </summary>
+	private static float ComputeResolutionFade(int charTileX, int charTileY, GameState? state)
+	{
+		int extraX = ResolutionManager.ExtraTilesX;
+		int extraY = ResolutionManager.ExtraTilesY;
+		if (extraX <= 0 && extraY <= 0) return 1.0f;
+		if (state == null) return 1.0f;
+
+		int userX = state.UserPosX - state.AddToUserPosX;
+		int userY = state.UserPosY - state.AddToUserPosY;
+
+		// Distance from user in tiles
+		int dx = Math.Abs(charTileX - userX);
+		int dy = Math.Abs(charTileY - userY);
+
+		// Core area half-dimensions (8, 6)
+		int coreHalfX = ResolutionManager.CoreHalfX;
+		int coreHalfY = ResolutionManager.CoreHalfY;
+
+		// If inside core area, full opacity
+		if (dx <= coreHalfX && dy <= coreHalfY) return 1.0f;
+
+		// How far outside the core area (0 = at edge, 1 = at render boundary)
+		float fx = dx > coreHalfX ? (float)(dx - coreHalfX) / Math.Max(1, extraX) : 0f;
+		float fy = dy > coreHalfY ? (float)(dy - coreHalfY) / Math.Max(1, extraY) : 0f;
+		float dist = MathF.Sqrt(fx * fx + fy * fy);
+		dist = Math.Clamp(dist, 0f, 1f);
+
+		// Linear fade: 1 at core edge, 0 at render boundary
+		return 1.0f - dist;
 	}
 
 	/// <summary>

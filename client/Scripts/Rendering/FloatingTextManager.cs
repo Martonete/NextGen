@@ -138,12 +138,11 @@ public partial class FloatingTextLayer : Node2D
                 continue;
 
             // Calculate screen position (same math as WorldRenderer TileToScreen)
-            // TileToScreen: px = (tileX - userX + HalfTilesX) * TileSize + pixelOffset
-            // HalfTilesX=8, HalfTilesY=6, TileSize=32, pixelOffset = -ScreenOffset
+            // TileToScreen: px = (tileX - userX + HalfRenderX) * TileSize + pixelOffset
             int dx = ch.PosX - userX;
             int dy = ch.PosY - userY;
-            float screenX = (dx + 8) * 32f + (float)System.Math.Round(ch.MoveOffsetX) - camOffX;
-            float screenY = (dy + 6) * 32f + (float)System.Math.Round(ch.MoveOffsetY) - camOffY;
+            float screenX = (dx + ResolutionManager.HalfRenderX) * 32f + (float)System.Math.Round(ch.MoveOffsetX) - camOffX;
+            float screenY = (dy + ResolutionManager.HalfRenderY) * 32f + (float)System.Math.Round(ch.MoveOffsetY) - camOffY;
 
             // Position above head (approximate head offset)
             float headY = screenY - 45f;
