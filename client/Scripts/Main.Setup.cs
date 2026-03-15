@@ -61,7 +61,8 @@ public partial class Main
         int invX = sideX + (contentW - S(171)) / 2;
         _inventoryPanel = new InventoryPanel();
         _inventoryPanel.Position = new Vector2(invX, S(158));
-        _inventoryPanel.Size = new Vector2(S(171), S(174));
+        _inventoryPanel.Size = new Vector2(171, 174);
+        _inventoryPanel.Scale = new Vector2(ResolutionManager.UIScale, ResolutionManager.UIScale);
         _inventoryPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _inventoryPanel.FocusMode = Control.FocusModeEnum.None;
         _gameUI.AddChild(_inventoryPanel);
@@ -85,7 +86,8 @@ public partial class Main
         // Spell panel — same width as inventory, centered
         _spellPanel = new SpellPanel();
         _spellPanel.Position = new Vector2(sideX, S(158));
-        _spellPanel.Size = new Vector2(contentW, S(186));
+        _spellPanel.Size = new Vector2(190, 186);
+        _spellPanel.Scale = new Vector2(ResolutionManager.UIScale, ResolutionManager.UIScale);
         _spellPanel.MouseFilter = Control.MouseFilterEnum.Stop;
         _spellPanel.FocusMode = Control.FocusModeEnum.None;
         _spellPanel.Visible = false;

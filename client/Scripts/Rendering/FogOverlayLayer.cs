@@ -12,7 +12,7 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
-    private const float MaxAlpha = 0.25f;
+    private const float MaxAlpha = 0.05f;
     // Transition width in design pixels (~1 tile = 32px, at 1/4 res = 8 texels)
     private const float TransitionPx = 32f;
     private ImageTexture? _fogTex;
