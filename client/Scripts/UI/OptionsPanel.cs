@@ -509,8 +509,10 @@ public partial class OptionsPanel : RpgBaseForm
         _config.ResolutionHeight = h;
         _config.Save(_dataPath);
 
+        // Apply new window size first, then reload scene so ALL UI
+        // rebuilds with the new ResolutionManager.Scale value
         ResolutionManager.ApplyResolution(w, h);
-        OnConfigApplied?.Invoke();
+        GetTree().ReloadCurrentScene();
     }
 
     // ── Tab switching ─────────────────────────────────────
