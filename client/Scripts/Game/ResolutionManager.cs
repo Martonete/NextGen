@@ -4,74 +4,92 @@ using Godot;
 namespace ArgentumNextgen.Game;
 
 /// <summary>
-/// Manages dynamic resolution for the game client.
-/// Computes viewport size (tile-aligned), sidebar/bottom bar positions,
-/// and console width based on the current window dimensions.
-/// At 800x600 everything is pixel-identical to the original VB6 layout.
+/// Manages dynamic resolution. UI elements scale proportionally via UIScale.
+/// The game viewport fills the remaining space with tile-aligned dimensions.
+/// At 800x600: UIScale=1.0, everything pixel-identical to original.
 /// </summary>
 public static class ResolutionManager
 {
-    // Fixed layout constants (pixels)
-    public const int LeftMargin = 13;
-    public const int TopMargin = 149;
-    public const int SidebarWidth = 240;
-    public const int BottomBarHeight = 35;
-    public const int SidebarGap = 3; // gap between viewport right edge and sidebar
-
-    // Design defaults (800x600)
+    // Design constants (800x600 base)
     public const int DesignWidth = 800;
     public const int DesignHeight = 600;
+    public const int DesignLeftMargin = 13;
+    public const int DesignTopMargin = 149;
+    public const int DesignSidebarWidth = 240;
+    public const int DesignBottomBarHeight = 35;
+    public const int DesignSidebarGap = 3;
     public const int DesignViewportW = 544; // 17*32
     public const int DesignViewportH = 416; // 13*32
-    public const int DesignSidebarX = 560;  // 13 + 544 + 3
     public const int CoreHalfX = 8;
     public const int CoreHalfY = 6;
     public const int TileSize = 32;
 
-    // Current computed values
+    // ── UIScale: scales ALL UI elements (sidebar, labels, fonts, margins) ──
+    // Based on height ratio for balanced growth (height is the tighter constraint)
+    public static float UIScale { get; private set; } = 1.0f;
+
+    /// <summary>Scale a design-space pixel value by UIScale.</summary>
+    public static int S(int designValue) => (int)(designValue * UIScale);
+    public static float Sf(float designValue) => designValue * UIScale;
+
+    // ── Computed layout values (in actual pixels) ──
     public static int WindowWidth { get; private set; } = DesignWidth;
     public static int WindowHeight { get; private set; } = DesignHeight;
+
+    // Scaled margins
+    public static int LeftMargin { get; private set; } = DesignLeftMargin;
+    public static int TopMargin { get; private set; } = DesignTopMargin;
+    public static int ActualSidebarWidth { get; private set; } = DesignSidebarWidth;
+    public static int ActualBottomBarHeight { get; private set; } = DesignBottomBarHeight;
+
+    // Viewport (tile-aligned, fills remaining space)
     public static int ViewportW { get; private set; } = DesignViewportW;
     public static int ViewportH { get; private set; } = DesignViewportH;
-    public static int ViewportPixelW => ViewportW;  // alias
-    public static int ViewportPixelH => ViewportH;  // alias
+    public static int ViewportPixelW => ViewportW;
+    public static int ViewportPixelH => ViewportH;
     public static int TilesX { get; private set; } = 17;
     public static int TilesY { get; private set; } = 13;
-    public static int RenderTilesX => TilesX;       // alias
-    public static int RenderTilesY => TilesY;       // alias
+    public static int RenderTilesX => TilesX;
+    public static int RenderTilesY => TilesY;
     public static int HalfTilesX { get; private set; } = CoreHalfX;
     public static int HalfTilesY { get; private set; } = CoreHalfY;
-    public static int HalfRenderTilesX => HalfTilesX; // alias
-    public static int HalfRenderTilesY => HalfTilesY; // alias
-    public static int HalfRenderX => HalfTilesX;      // alias
-    public static int HalfRenderY => HalfTilesY;      // alias
+    public static int HalfRenderTilesX => HalfTilesX;
+    public static int HalfRenderTilesY => HalfTilesY;
+    public static int HalfRenderX => HalfTilesX;
+    public static int HalfRenderY => HalfTilesY;
     public static int ExtraTilesX { get; private set; } = 0;
     public static int ExtraTilesY { get; private set; } = 0;
 
-    // UI anchor positions (computed from viewport)
-    public static int SidebarX { get; private set; } = DesignSidebarX;
+    // UI anchor positions
+    public static int SidebarX { get; private set; } = 560;
     public static int BottomBarY { get; private set; } = 565;
     public static int ConsoleRight { get; private set; } = 547;
 
-    /// <summary>Fires after ApplyResolution completes.</summary>
     public static Action? OnResolutionChanged;
 
-    /// <summary>
-    /// Compute layout metrics for a given window size and resize the OS window.
-    /// </summary>
     public static void ApplyResolution(int width, int height)
     {
         WindowWidth = width;
         WindowHeight = height;
 
-        // Calculate viewport size (fill space between margins, tile-aligned)
-        int availW = width - SidebarWidth - LeftMargin - SidebarGap;
-        int availH = height - TopMargin - BottomBarHeight;
+        // UIScale based on height (more balanced than width for AO's layout)
+        UIScale = height / (float)DesignHeight;
+
+        // Scale margins and sidebar
+        LeftMargin = S(DesignLeftMargin);
+        TopMargin = S(DesignTopMargin);
+        ActualSidebarWidth = S(DesignSidebarWidth);
+        ActualBottomBarHeight = S(DesignBottomBarHeight);
+        int sidebarGap = S(DesignSidebarGap);
+
+        // Viewport fills remaining space, tile-aligned
+        int availW = width - ActualSidebarWidth - LeftMargin - sidebarGap;
+        int availH = height - TopMargin - ActualBottomBarHeight;
         TilesX = availW / TileSize;
         TilesY = availH / TileSize;
-        if (TilesX % 2 == 0) TilesX--; // must be odd for center tile
+        if (TilesX % 2 == 0) TilesX--;
         if (TilesY % 2 == 0) TilesY--;
-        TilesX = Math.Max(17, TilesX); // minimum = design size
+        TilesX = Math.Max(17, TilesX);
         TilesY = Math.Max(13, TilesY);
 
         ViewportW = TilesX * TileSize;
@@ -81,10 +99,10 @@ public static class ResolutionManager
         ExtraTilesX = (TilesX - 17) / 2;
         ExtraTilesY = (TilesY - 13) / 2;
 
-        // Calculate anchor positions
-        SidebarX = LeftMargin + ViewportW + SidebarGap;
+        // Anchor positions
+        SidebarX = LeftMargin + ViewportW + sidebarGap;
         BottomBarY = TopMargin + ViewportH;
-        ConsoleRight = SidebarX - SidebarGap - 10;
+        ConsoleRight = SidebarX - sidebarGap - S(10);
 
         // Resize window
         DisplayServer.WindowSetSize(new Vector2I(width, height));
@@ -93,15 +111,13 @@ public static class ResolutionManager
             Math.Max(0, (screen.X - width) / 2),
             Math.Max(0, (screen.Y - height) / 2)));
 
-        GD.Print($"[RES] Applied {width}x{height}: viewport={ViewportW}x{ViewportH} " +
-                 $"tiles={TilesX}x{TilesY} sidebar@{SidebarX} bottomBar@{BottomBarY}");
+        GD.Print($"[RES] {width}x{height} UIScale={UIScale:F2} " +
+                 $"viewport={ViewportW}x{ViewportH} tiles={TilesX}x{TilesY} " +
+                 $"sidebar={ActualSidebarWidth}px@{SidebarX} extra={ExtraTilesX},{ExtraTilesY}");
 
         OnResolutionChanged?.Invoke();
     }
 
-    /// <summary>
-    /// Available resolution presets. Each entry is (width, height, label).
-    /// </summary>
     public static readonly (int w, int h, string label)[] Presets = new[]
     {
         (800, 600, "800x600"),

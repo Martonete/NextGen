@@ -20,13 +20,31 @@ public partial class Main : Control
 	private Control? _sidebarBg;
 	private GameHudFrame? _hudFrame;
 
+	// Saved references for runtime repositioning of sidebar elements
+	private NinePatchRect? _nameFrame;
+	private NinePatchRect? _levelFrame;
+	private Panel? _levelBadge;
+	private NinePatchRect? _xpBarBg;
+	private TextureRect? _goldIcon;
+	// Sidebar buttons saved for repositioning
+	private TextureButton? _mapaButton;
+	private TextureButton? _grupoButton;
+	private TextureButton? _opcionesButton;
+	private TextureButton? _estadisticasButton;
+	private TextureButton? _clanesButton;
+	private TextureButton? _minimizeButton;
+	private TextureButton? _closeMenuButton;
+	private Label? _statSepLabel;
+
 	/// <summary>
 	/// Reposition ALL UI elements to match current ResolutionManager values.
 	/// Called on resolution change without reloading the scene.
 	/// </summary>
 	private void RepositionUI()
 	{
+		int S(int v) => ResolutionManager.S(v);
 		int sbX = ResolutionManager.SidebarX;
+		int sbW = S(210);
 
 		// Root + GameUI
 		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
@@ -57,16 +75,75 @@ public partial class Main : Control
 		if (_statBarOverlay != null)
 			_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
-		// Sidebar labels (all relative to sbX)
-		if (_nameLabel != null) _nameLabel.Position = new Vector2(sbX + 14, _nameLabel.Position.Y);
-		if (_coordsLabel != null) _coordsLabel.Position = new Vector2(sbX + 20, ResolutionManager.BottomBarY - 5);
+		// --- Sidebar internal elements ---
+		// Name frame
+		if (_nameFrame != null) { _nameFrame.Position = new Vector2(sbX, S(17)); _nameFrame.Size = new Vector2(sbW, S(42)); }
+		// NameLabel
+		if (_nameLabel != null) { _nameLabel.Position = new Vector2(sbX + S(14), S(19)); _nameLabel.Size = new Vector2(sbW - S(28), S(38)); _nameLabel.AddThemeFontSizeOverride("font_size", S(11)); }
+		// Level frame
+		if (_levelFrame != null) { _levelFrame.Position = new Vector2(sbX + S(2), S(55)); _levelFrame.Size = new Vector2(sbW - S(4), S(20)); }
+		// Level badge
+		if (_levelBadge != null) { _levelBadge.Position = new Vector2(sbX + S(6), S(57)); _levelBadge.Size = new Vector2(S(30), S(16)); }
+		// LevelLabel
+		if (_levelLabel != null) { _levelLabel.Position = new Vector2(sbX + S(6), S(57)); _levelLabel.Size = new Vector2(S(30), S(16)); _levelLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		// XP bar
+		if (_xpBarBg != null) { _xpBarBg.Position = new Vector2(sbX + S(2), S(78)); _xpBarBg.Size = new Vector2(sbW - S(4), S(14)); }
+		// ExpLabel
+		if (_expLabel != null) { _expLabel.Position = new Vector2(sbX + S(2), S(78)); _expLabel.Size = new Vector2(sbW - S(4), S(14)); _expLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// Gold icon + label
+		if (_goldIcon != null) { _goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137)); _goldIcon.Size = new Vector2(S(14), S(14)); }
+		if (_goldLabel != null) { _goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135)); _goldLabel.Size = new Vector2(S(60), S(14)); _goldLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// Online label
+		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(sbX + S(122), ResolutionManager.BottomBarY - S(13)); _onlineLabel.Size = new Vector2(S(93), S(12)); _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		// Coords label
+		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(5)); _coordsLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 
 		// Console right edge
 		if (_consoleLabel != null)
 			_consoleLabel.OffsetRight = ResolutionManager.ConsoleRight;
 
+		// Re-center all game panels in the viewport area
+		CenterPanelsInViewport();
+
 		// Fog overlay needs redraw
 		_worldRenderer?.QueueRedraw();
+	}
+
+	/// <summary>
+	/// Re-center all game panels within the current viewport area.
+	/// </summary>
+	private void CenterPanelsInViewport()
+	{
+		int vpL = ResolutionManager.LeftMargin;
+		int vpT = ResolutionManager.TopMargin;
+		int vpW = ResolutionManager.ViewportW;
+		int vpH = ResolutionManager.ViewportH;
+
+		void Center(Control? panel)
+		{
+			if (panel == null) return;
+			float px = vpL + (vpW - panel.Size.X) / 2f;
+			float py = vpT + (vpH - panel.Size.Y) / 2f;
+			panel.Position = new Vector2(Math.Max(vpL, px), Math.Max(vpT, py));
+		}
+
+		Center(_commercePanel);
+		Center(_tradePanel);
+		Center(_bankPanel);
+		Center(_vaultPanel);
+		Center(_guildBankPanel);
+		Center(_craftPanel);
+		Center(_guildPanel);
+		Center(_guildFoundationPanel);
+		Center(_forumPanel);
+		Center(_partyPanel);
+		Center(_travelPanel);
+		Center(_deathPanel);
+		Center(_macroPanel);
+		Center(_statsPanel);
+		Center(_optionsPanel);
+		Center(_keyBindPanel);
+		Center(_questPanel);
 	}
 
 	private readonly GameData _gameData = new();
@@ -478,22 +555,24 @@ public partial class Main : Control
 
 		// Sidebar content area: dynamic based on resolution
 		int sbX = ResolutionManager.SidebarX;
-		const int sbW = 210;
+		int S(int v) => ResolutionManager.S(v);
+		int sbW = S(210);
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
 		var nameFrame = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
-		nameFrame.Position = new Vector2(sbX, 17);
-		nameFrame.Size = new Vector2(sbW, 42);
+		nameFrame.Position = new Vector2(sbX, S(17));
+		nameFrame.Size = new Vector2(sbW, S(42));
 		sidebarBg.AddChild(nameFrame);
+		_nameFrame = nameFrame;
 
 		// NameLabel: centered with padding inside frame
-		_nameLabel.Position = new Vector2(sbX + 14, 19);
-		_nameLabel.Size = new Vector2(sbW - 28, 38);
+		_nameLabel.Position = new Vector2(sbX + S(14), S(19));
+		_nameLabel.Size = new Vector2(sbW - S(28), S(38));
 		_nameLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_nameLabel.VerticalAlignment = VerticalAlignment.Center;
 		_nameLabel.ClipText = true;
 		ApplyFont(_nameLabel, "Tahoma", 700);
-		_nameLabel.AddThemeFontSizeOverride("font_size", 11);
+		_nameLabel.AddThemeFontSizeOverride("font_size", S(11));
 		_nameLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f, 1f));
 		_nameLabel.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 1f));
 		_nameLabel.AddThemeConstantOverride("shadow_offset_x", 1);
@@ -502,9 +581,10 @@ public partial class Main : Control
 
 		// --- Level + Rep strip: info_window.png NinePatch ---
 		var levelFrame = RpgTheme.CreateNinePatch("info_window.png", new Vector4(12, 12, 12, 12));
-		levelFrame.Position = new Vector2(sbX + 2, 55);
-		levelFrame.Size = new Vector2(sbW - 4, 20);
+		levelFrame.Position = new Vector2(sbX + S(2), S(55));
+		levelFrame.Size = new Vector2(sbW - S(4), S(20));
 		sidebarBg.AddChild(levelFrame);
+		_levelFrame = levelFrame;
 
 		// Level badge: small rounded dark box with gold border
 		var levelBadge = new Panel();
@@ -513,67 +593,70 @@ public partial class Main : Control
 		badgeStyle.BgColor = new Color(0.06f, 0.05f, 0.04f, 0.95f);
 		badgeStyle.BorderColor = new Color(0.72f, 0.56f, 0.22f, 0.9f);
 		badgeStyle.SetBorderWidthAll(1);
-		badgeStyle.SetCornerRadiusAll(9);
+		badgeStyle.SetCornerRadiusAll(S(9));
 		levelBadge.AddThemeStyleboxOverride("panel", badgeStyle);
-		levelBadge.Position = new Vector2(sbX + 6, 57);
-		levelBadge.Size = new Vector2(30, 16);
+		levelBadge.Position = new Vector2(sbX + S(6), S(57));
+		levelBadge.Size = new Vector2(S(30), S(16));
 		sidebarBg.AddChild(levelBadge);
+		_levelBadge = levelBadge;
 
 		// LevelLabel: inside badge
-		_levelLabel.Position = new Vector2(sbX + 6, 57);
-		_levelLabel.Size = new Vector2(30, 16);
+		_levelLabel.Position = new Vector2(sbX + S(6), S(57));
+		_levelLabel.Size = new Vector2(S(30), S(16));
 		_levelLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_levelLabel.VerticalAlignment = VerticalAlignment.Center;
 		ApplyFont(_levelLabel, "Tahoma", 700);
-		_levelLabel.AddThemeFontSizeOverride("font_size", 9);
+		_levelLabel.AddThemeFontSizeOverride("font_size", S(9));
 		_levelLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.82f, 0.4f));
 
 		// --- XP bar: xp_bar.png background + fill from StatBarOverlay ---
 		var xpBarBg = RpgTheme.CreateNinePatch("xp_bar.png", new Vector4(4, 4, 4, 4));
-		xpBarBg.Position = new Vector2(sbX + 2, 78);
-		xpBarBg.Size = new Vector2(sbW - 4, 14);
+		xpBarBg.Position = new Vector2(sbX + S(2), S(78));
+		xpBarBg.Size = new Vector2(sbW - S(4), S(14));
 		sidebarBg.AddChild(xpBarBg);
+		_xpBarBg = xpBarBg;
 
 		// ExpLabel: overlay centered on XP bar
-		_expLabel.Position = new Vector2(sbX + 2, 78);
-		_expLabel.Size = new Vector2(sbW - 4, 14);
+		_expLabel.Position = new Vector2(sbX + S(2), S(78));
+		_expLabel.Size = new Vector2(sbW - S(4), S(14));
 		_expLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_expLabel.VerticalAlignment = VerticalAlignment.Center;
 		ApplyFont(_expLabel, "Tahoma", 700);
-		_expLabel.AddThemeFontSizeOverride("font_size", 8);
+		_expLabel.AddThemeFontSizeOverride("font_size", S(8));
 		_expLabel.AddThemeColorOverride("font_color", Colors.White);
 		_expLabel.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 0.8f));
 		_expLabel.AddThemeConstantOverride("shadow_offset_x", 1);
 		_expLabel.AddThemeConstantOverride("shadow_offset_y", 1);
 
-		// Gold icon + label: centered above sidebar buttons (buttons at X=682, W=93)
+		// Gold icon + label: positioned relative to BottomBarY
 		var goldIcon = new TextureRect();
 		goldIcon.Texture = RpgTheme.GetTex("Icons/greed.png");
 		goldIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		goldIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		goldIcon.Position = new Vector2(sbX + 140, 428);
-		goldIcon.Size = new Vector2(14, 14);
+		goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137));
+		goldIcon.Size = new Vector2(S(14), S(14));
 		goldIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(goldIcon);
+		_goldIcon = goldIcon;
 
-		_goldLabel.Position = new Vector2(sbX + 155, 430);
-		_goldLabel.Size = new Vector2(60, 14);
+		_goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135));
+		_goldLabel.Size = new Vector2(S(60), S(14));
 		_goldLabel.HorizontalAlignment = HorizontalAlignment.Left;
 		ApplyFont(_goldLabel, "Tahoma", 700);
-		_goldLabel.AddThemeFontSizeOverride("font_size", 8);
+		_goldLabel.AddThemeFontSizeOverride("font_size", S(8));
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
-		// Online label: below sidebar buttons, centered like FPS
-		_onlineLabel.Position = new Vector2(sbX + 122, 552);
-		_onlineLabel.Size = new Vector2(93, 12);
+		// Online label: below sidebar buttons, relative to BottomBarY
+		_onlineLabel.Position = new Vector2(sbX + S(122), ResolutionManager.BottomBarY - S(13));
+		_onlineLabel.Size = new Vector2(S(93), S(12));
 		_onlineLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_onlineLabel, "Tahoma", 700);
-		_onlineLabel.AddThemeFontSizeOverride("font_size", 7);
+		_onlineLabel.AddThemeFontSizeOverride("font_size", S(7));
 
 		// Coords label
-		_coordsLabel.Position = new Vector2(sbX + 20, ResolutionManager.BottomBarY - 5);
+		_coordsLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(5));
 		ApplyFont(_coordsLabel, "Tahoma", 700);
-		_coordsLabel.AddThemeFontSizeOverride("font_size", 9);
+		_coordsLabel.AddThemeFontSizeOverride("font_size", S(9));
 
 		// Custom stat bar overlay — draws colored fill rects at VB6 positions
 		_statBarOverlay = new StatBarOverlay();
