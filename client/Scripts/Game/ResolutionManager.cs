@@ -33,20 +33,28 @@ public static class ResolutionManager
     public static int WindowHeight { get; private set; } = DesignHeight;
     public static int ViewportW { get; private set; } = DesignViewportW;
     public static int ViewportH { get; private set; } = DesignViewportH;
+    public static int ViewportPixelW => ViewportW;  // alias
+    public static int ViewportPixelH => ViewportH;  // alias
     public static int TilesX { get; private set; } = 17;
     public static int TilesY { get; private set; } = 13;
+    public static int RenderTilesX => TilesX;       // alias
+    public static int RenderTilesY => TilesY;       // alias
     public static int HalfTilesX { get; private set; } = CoreHalfX;
     public static int HalfTilesY { get; private set; } = CoreHalfY;
+    public static int HalfRenderTilesX => HalfTilesX; // alias
+    public static int HalfRenderTilesY => HalfTilesY; // alias
+    public static int HalfRenderX => HalfTilesX;      // alias
+    public static int HalfRenderY => HalfTilesY;      // alias
     public static int ExtraTilesX { get; private set; } = 0;
     public static int ExtraTilesY { get; private set; } = 0;
 
     // UI anchor positions (computed from viewport)
     public static int SidebarX { get; private set; } = DesignSidebarX;
-    public static int BottomBarY { get; private set; } = 565; // 149 + 416
-    public static int ConsoleRight { get; private set; } = 547; // SidebarX - SidebarGap - 10
+    public static int BottomBarY { get; private set; } = 565;
+    public static int ConsoleRight { get; private set; } = 547;
 
-    /// <summary>Fires after ApplyResolution completes. UI elements should reposition.</summary>
-    public static event Action? OnResolutionChanged;
+    /// <summary>Fires after ApplyResolution completes.</summary>
+    public static Action? OnResolutionChanged;
 
     /// <summary>
     /// Compute layout metrics for a given window size and resize the OS window.

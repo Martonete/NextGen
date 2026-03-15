@@ -365,9 +365,6 @@ public partial class Main : Control
 		viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
 		viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.ViewportH;
 
-		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
-		gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
-
 		// Chat system
 		var console = GetNode<RichTextLabel>("GameUI/Console");
 		_consoleLabel = console;

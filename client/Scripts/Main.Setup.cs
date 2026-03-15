@@ -35,7 +35,6 @@ public partial class Main
         // Sidebar usable area: dynamic. Content width=190px centered.
         int sideX = ResolutionManager.SidebarX + 17;  // 560+17=577 at 800x600
         const int contentW = 190;
-        const int tabW = contentW / 2; // 95 each
 
         // Tab buttons — centered in sidebar, with icons (+20% from original, expanded up and to sides)
         int tabH = 34;

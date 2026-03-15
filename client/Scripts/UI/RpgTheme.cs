@@ -259,7 +259,7 @@ public static class RpgTheme
             }
             _texCache[filename] = tex!;
         }
-        return tex;
+        return tex!;
     }
 
     private static ImageTexture GetScaledTex(string filename, Vector2I targetSize)
