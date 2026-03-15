@@ -411,8 +411,10 @@ public class InputHandler
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		int tileX = userX + (int)viewportPos.X / 32 - 8;
-		int tileY = userY + (int)viewportPos.Y / 32 - 6;
+		int halfX = ResolutionManager.HalfRenderTilesX;
+		int halfY = ResolutionManager.HalfRenderTilesY;
+		int tileX = userX + (int)viewportPos.X / 32 - halfX;
+		int tileY = userY + (int)viewportPos.Y / 32 - halfY;
 		return (tileX, tileY);
 	}
 

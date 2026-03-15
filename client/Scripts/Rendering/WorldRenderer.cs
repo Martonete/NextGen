@@ -651,10 +651,15 @@ void fragment() {
 		_fogLayer?.QueueRedraw();
 	}
 
+	// Cached fog gradient texture (rebuilt when resolution changes)
+	private ImageTexture? _fogTexture;
+	private int _fogCachedRenderX;
+	private int _fogCachedRenderY;
+
 	/// <summary>
-	/// Draw fog overlay: darkens tiles outside the core 17x13 viewport.
-	/// Creates a gradient from fully transparent at the core edge to
-	/// semi-opaque (alpha ~0.7) at the render area boundary.
+	/// Draw fog overlay: smooth radial gradient darkening tiles outside the
+	/// core 17x13 viewport. Fully transparent in the center, fading to black
+	/// at the edges. Uses a precomputed gradient texture for smooth blending.
 	/// Called by FogOverlayLayer._Draw().
 	/// </summary>
 	public void DrawFogOverlay(CanvasItem canvas)
@@ -666,72 +671,61 @@ void fragment() {
 		int renderW = ResolutionManager.RenderTilesX * TileSize;
 		int renderH = ResolutionManager.RenderTilesY * TileSize;
 
-		// Core area bounds in pixels (centered in the render area)
-		int coreW = ResolutionManager.CoreTilesX * TileSize;
-		int coreH = ResolutionManager.CoreTilesY * TileSize;
-		int coreLeft = (renderW - coreW) / 2;
-		int coreTop = (renderH - coreH) / 2;
-		int coreRight = coreLeft + coreW;
-		int coreBottom = coreTop + coreH;
-
-		// Draw fog rings from core edge outward with increasing alpha.
-		// Each ring is one tile thick. Alpha increases linearly from 0 at
-		// core edge to MaxAlpha at the outermost ring.
-		int maxRings = Math.Max(extraX, extraY);
-		const float MaxAlpha = 0.7f;
-
-		for (int ring = 1; ring <= maxRings; ring++)
+		// Rebuild gradient texture if resolution changed
+		if (_fogTexture == null || _fogCachedRenderX != ResolutionManager.RenderTilesX
+			|| _fogCachedRenderY != ResolutionManager.RenderTilesY)
 		{
-			float alpha = MaxAlpha * ring / maxRings;
-			var fogColor = new Color(0f, 0f, 0f, alpha);
+			_fogTexture = BuildFogTexture(renderW, renderH, extraX, extraY);
+			_fogCachedRenderX = ResolutionManager.RenderTilesX;
+			_fogCachedRenderY = ResolutionManager.RenderTilesY;
+		}
 
-			int ringPixelsX = Math.Min(ring, extraX) * TileSize;
-			int ringPixelsY = Math.Min(ring, extraY) * TileSize;
-			int prevPixelsX = Math.Min(ring - 1, extraX) * TileSize;
-			int prevPixelsY = Math.Min(ring - 1, extraY) * TileSize;
+		// Draw the gradient texture covering the entire render area
+		((Node2D)canvas).DrawTextureRect(_fogTexture, new Rect2(0, 0, renderW, renderH), false);
+	}
 
-			// Top strip
-			if (ring <= extraY)
+	/// <summary>
+	/// Build a smooth radial gradient fog texture. Transparent in the core area,
+	/// fading to black at the edges with smooth interpolation.
+	/// </summary>
+	private static ImageTexture BuildFogTexture(int w, int h, int extraTilesX, int extraTilesY)
+	{
+		// Build at 1/4 resolution for performance, GPU upscales with bilinear filtering
+		int texW = w / 4;
+		int texH = h / 4;
+		var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
+
+		float centerX = texW / 2f;
+		float centerY = texH / 2f;
+		// Core area in texture pixels (17x13 tiles)
+		float coreHalfW = (ResolutionManager.CoreTilesX * TileSize / 2f) / 4f;
+		float coreHalfH = (ResolutionManager.CoreTilesY * TileSize / 2f) / 4f;
+		// Fog zone in texture pixels
+		float fogZoneW = (extraTilesX * TileSize) / 4f;
+		float fogZoneH = (extraTilesY * TileSize) / 4f;
+
+		const float MaxAlpha = 0.75f;
+
+		for (int py = 0; py < texH; py++)
+		{
+			for (int px = 0; px < texW; px++)
 			{
-				float stripTop = coreTop - ringPixelsY;
-				float stripH = (float)TileSize;
-				((Node2D)canvas).DrawRect(
-					new Rect2(coreLeft - ringPixelsX, stripTop,
-							  coreW + ringPixelsX * 2, stripH), fogColor);
-			}
+				// Distance from core edge (0 = inside core, 1 = at render boundary)
+				float dx = Math.Max(0, Math.Abs(px - centerX) - coreHalfW);
+				float dy = Math.Max(0, Math.Abs(py - centerY) - coreHalfH);
+				float fx = fogZoneW > 0 ? dx / fogZoneW : 0;
+				float fy = fogZoneH > 0 ? dy / fogZoneH : 0;
+				float f = Math.Max(fx, fy);
+				f = Math.Clamp(f, 0, 1);
 
-			// Bottom strip
-			if (ring <= extraY)
-			{
-				float stripBottom = coreBottom + prevPixelsY;
-				float stripH = (float)TileSize;
-				((Node2D)canvas).DrawRect(
-					new Rect2(coreLeft - ringPixelsX, stripBottom,
-							  coreW + ringPixelsX * 2, stripH), fogColor);
-			}
-
-			// Left strip (between top and bottom strips of this ring)
-			if (ring <= extraX)
-			{
-				float stripLeft = coreLeft - ringPixelsX;
-				float stripW = (float)TileSize;
-				float stripTop = coreTop - prevPixelsY;
-				float stripH = coreH + prevPixelsY * 2;
-				((Node2D)canvas).DrawRect(
-					new Rect2(stripLeft, stripTop, stripW, stripH), fogColor);
-			}
-
-			// Right strip
-			if (ring <= extraX)
-			{
-				float stripRight = coreRight + prevPixelsX;
-				float stripW = (float)TileSize;
-				float stripTop = coreTop - prevPixelsY;
-				float stripH = coreH + prevPixelsY * 2;
-				((Node2D)canvas).DrawRect(
-					new Rect2(stripRight, stripTop, stripW, stripH), fogColor);
+				// Smooth easing (ease-in curve for natural darkness transition)
+				float alpha = f * f * MaxAlpha;
+				img.SetPixel(px, py, new Color(0, 0, 0, alpha));
 			}
 		}
+
+		var tex = ImageTexture.CreateFromImage(img);
+		return tex;
 	}
 
 	/// <summary>

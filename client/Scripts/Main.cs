@@ -260,12 +260,15 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Resize SubViewport to match dynamic resolution (render more tiles at higher res)
+		// Hook SubViewport resize callback for dynamic resolution changes
 		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
-		int svpW = ResolutionManager.RenderTilesX * 32;
-		int svpH = ResolutionManager.RenderTilesY * 32;
-		gameViewport.Size = new Vector2I(svpW, svpH);
-		GD.Print($"[MAIN] SubViewport resized to {svpW}x{svpH} for {ResolutionManager.RenderTilesX}x{ResolutionManager.RenderTilesY} tiles");
+		ResolutionManager.OnSubViewportResize = (w, h) =>
+		{
+			gameViewport.Size = new Vector2I(w, h);
+			GD.Print($"[MAIN] SubViewport resized to {w}x{h}");
+		};
+		// Apply initial SubViewport size
+		gameViewport.Size = new Vector2I(ResolutionManager.RenderTilesX * 32, ResolutionManager.RenderTilesY * 32);
 
 		// Setup packet handler
 		_packetHandler = new PacketHandler(_state);

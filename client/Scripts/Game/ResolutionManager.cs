@@ -16,14 +16,14 @@ public static class ResolutionManager
 	public const int DesignHeight = 600;
 
 	// Design viewport (game render area in design space)
-	public const int DesignViewportX = 13;   // SubViewportContainer X
-	public const int DesignViewportY = 149;  // SubViewportContainer Y
 	public const int DesignViewportW = 544;  // 17 tiles * 32
 	public const int DesignViewportH = 416;  // 13 tiles * 32
 
 	// Core visible tile area (server-synced, never changes)
-	public const int CoreTilesX = 17; // same as VB6
+	public const int CoreTilesX = 17;
 	public const int CoreTilesY = 13;
+	public const int CoreHalfX = 8;  // (17-1)/2
+	public const int CoreHalfY = 6;  // (13-1)/2
 
 	public static float ScaleFactor { get; private set; } = 1.0f;
 
@@ -36,19 +36,20 @@ public static class ResolutionManager
 	public static int RenderTilesY => CoreTilesY + ExtraTilesY * 2;
 
 	// Half render tiles from center (used by WorldRenderer for frame bounds)
-	public static int HalfRenderTilesX => (RenderTilesX - 1) / 2;
-	public static int HalfRenderTilesY => (RenderTilesY - 1) / 2;
+	public static int HalfRenderTilesX => CoreHalfX + ExtraTilesX;
+	public static int HalfRenderTilesY => CoreHalfY + ExtraTilesY;
+
+	// Callback to resize SubViewport when resolution changes
+	public static Action<int, int>? OnSubViewportResize;
 
 	/// <summary>
 	/// Apply a new resolution: resize the window, compute scale factor,
-	/// and calculate how many extra tiles are visible.
+	/// calculate extra tiles, and resize the SubViewport.
 	/// </summary>
 	public static void ApplyResolution(int width, int height)
 	{
 		// Set window size and center on screen
-		var windowSize = new Vector2I(width, height);
-		DisplayServer.WindowSetSize(windowSize);
-
+		DisplayServer.WindowSetSize(new Vector2I(width, height));
 		var screenSize = DisplayServer.ScreenGetSize();
 		int posX = Math.Max(0, (screenSize.X - width) / 2);
 		int posY = Math.Max(0, (screenSize.Y - height) / 2);
@@ -56,23 +57,27 @@ public static class ResolutionManager
 
 		ScaleFactor = width / (float)DesignWidth;
 
-		// Calculate extra tiles visible at this resolution.
-		// The SubViewportContainer scales proportionally with the window.
-		// At 800x600: viewport = 544x416 = 17x13 tiles
-		// At 1600x1200 (2x): viewport area = 1088x832 pixels = 34x26 tiles
+		// At 800x600 (scale=1.0): viewport = 544x416 = exactly 17x13 tiles → 0 extra
+		// At 1920x1080 (scale=2.4): viewport = 1305x998 pixels → ~40x31 tiles → 12x9 extra
 		float vpPixelsW = DesignViewportW * ScaleFactor;
 		float vpPixelsH = DesignViewportH * ScaleFactor;
-		int totalTilesX = (int)(vpPixelsW / 32) + 1;
-		int totalTilesY = (int)(vpPixelsH / 32) + 1;
+		int totalTilesX = (int)(vpPixelsW / 32);
+		int totalTilesY = (int)(vpPixelsH / 32);
 
-		// Ensure total tiles are odd (so there's a center tile)
-		if (totalTilesX % 2 == 0) totalTilesX++;
-		if (totalTilesY % 2 == 0) totalTilesY++;
+		// Ensure odd (center tile)
+		if (totalTilesX % 2 == 0) totalTilesX--;
+		if (totalTilesY % 2 == 0) totalTilesY--;
 
+		// At 800x600: totalTilesX = 544/32 = 17, extra = (17-17)/2 = 0 ✓
 		ExtraTilesX = Math.Max(0, (totalTilesX - CoreTilesX) / 2);
 		ExtraTilesY = Math.Max(0, (totalTilesY - CoreTilesY) / 2);
 
 		GD.Print($"[RESOLUTION] Applied {width}x{height} (scale={ScaleFactor:F2}) " +
 				 $"extra={ExtraTilesX}x{ExtraTilesY} render={RenderTilesX}x{RenderTilesY}");
+
+		// Resize SubViewport to render the correct number of tiles
+		int svpW = RenderTilesX * 32;
+		int svpH = RenderTilesY * 32;
+		OnSubViewportResize?.Invoke(svpW, svpH);
 	}
 }
