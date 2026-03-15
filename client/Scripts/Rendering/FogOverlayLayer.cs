@@ -4,21 +4,16 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Rendering;
 
 /// <summary>
-/// Draws a gradient fog overlay on the extended viewport area (tiles beyond the core 17x13).
-/// Only active when the resolution is larger than 800x600.
-/// Creates a smooth darkness gradient at the viewport edges so the extra visible area
-/// fades naturally into darkness rather than having a hard cut.
+/// Draws a smooth darkness overlay on tiles outside the core 17x13 viewport.
+/// Uses a precomputed gradient texture for smooth edges (no blocky tiles).
+/// Fully dark at the viewport edges, fully transparent at the core border.
+/// Only active when resolution > 800x600.
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
-    // Fog darkness at the very edge of the viewport (0=transparent, 1=opaque black)
-    private const float MaxFogAlpha = 0.65f;
-
-    public override void _Ready()
-    {
-        // Only need to draw once (resolution requires scene reload to change)
-        QueueRedraw();
-    }
+    private const float MaxAlpha = 0.75f;
+    private ImageTexture? _fogTex;
+    private int _cachedVpW, _cachedVpH;
 
     public override void _Draw()
     {
@@ -28,66 +23,61 @@ public partial class FogOverlayLayer : Node2D
 
         int vpW = ResolutionManager.ViewportW;
         int vpH = ResolutionManager.ViewportH;
-        int coreW = 17 * 32; // 544
-        int coreH = 13 * 32; // 416
 
-        // Core area starts at the center of the viewport
-        int coreLeft = (vpW - coreW) / 2;
-        int coreTop = (vpH - coreH) / 2;
-        int coreRight = coreLeft + coreW;
-        int coreBottom = coreTop + coreH;
-
-        // Draw fog strips along each edge with gradient
-        int tileSize = 32;
-
-        // Left fog (columns from 0 to coreLeft)
-        if (coreLeft > 0)
+        // Rebuild texture if viewport changed
+        if (_fogTex == null || _cachedVpW != vpW || _cachedVpH != vpH)
         {
-            for (int x = 0; x < coreLeft; x += tileSize)
+            _fogTex = BuildFogTexture(vpW, vpH);
+            _cachedVpW = vpW;
+            _cachedVpH = vpH;
+        }
+
+        DrawTextureRect(_fogTex, new Rect2(0, 0, vpW, vpH), false);
+    }
+
+    /// <summary>
+    /// Build a smooth radial fog texture. Fully transparent inside the core
+    /// 544x416 area, smooth gradient to MaxAlpha at the viewport edges.
+    /// Built at 1/4 resolution — GPU bilinear filtering smooths it.
+    /// </summary>
+    private static ImageTexture BuildFogTexture(int vpW, int vpH)
+    {
+        // Build at quarter resolution for performance
+        int texW = vpW / 4;
+        int texH = vpH / 4;
+        int coreW = 544 / 4;  // 136
+        int coreH = 416 / 4;  // 104
+        float centerX = texW / 2f;
+        float centerY = texH / 2f;
+        float halfCoreW = coreW / 2f;
+        float halfCoreH = coreH / 2f;
+
+        var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
+
+        for (int py = 0; py < texH; py++)
+        {
+            for (int px = 0; px < texW; px++)
             {
-                float dist = (float)(coreLeft - x) / coreLeft;
-                float alpha = dist * MaxFogAlpha;
-                int w = System.Math.Min(tileSize, coreLeft - x);
-                DrawRect(new Rect2(x, 0, w, vpH), new Color(0, 0, 0, alpha));
+                // Distance from the core edge (0 = inside core, >0 = outside)
+                float dx = System.Math.Max(0, System.Math.Abs(px - centerX) - halfCoreW);
+                float dy = System.Math.Max(0, System.Math.Abs(py - centerY) - halfCoreH);
+
+                // Fog zone width in texture pixels
+                float fogZoneW = centerX - halfCoreW;
+                float fogZoneH = centerY - halfCoreH;
+
+                // Normalized distance (0 at core edge, 1 at viewport edge)
+                float fx = fogZoneW > 0 ? dx / fogZoneW : 0;
+                float fy = fogZoneH > 0 ? dy / fogZoneH : 0;
+                float f = System.Math.Max(fx, fy);
+                f = System.Math.Clamp(f, 0, 1);
+
+                // Smooth ease-in for natural darkness
+                float alpha = f * f * MaxAlpha;
+                img.SetPixel(px, py, new Color(0, 0, 0, alpha));
             }
         }
 
-        // Right fog (columns from coreRight to vpW)
-        if (coreRight < vpW)
-        {
-            int fogW = vpW - coreRight;
-            for (int x = coreRight; x < vpW; x += tileSize)
-            {
-                float dist = (float)(x - coreRight + tileSize) / fogW;
-                float alpha = dist * MaxFogAlpha;
-                int w = System.Math.Min(tileSize, vpW - x);
-                DrawRect(new Rect2(x, 0, w, vpH), new Color(0, 0, 0, alpha));
-            }
-        }
-
-        // Top fog (rows from 0 to coreTop, only in the core X range to avoid double-fog corners)
-        if (coreTop > 0)
-        {
-            for (int y = 0; y < coreTop; y += tileSize)
-            {
-                float dist = (float)(coreTop - y) / coreTop;
-                float alpha = dist * MaxFogAlpha;
-                int h = System.Math.Min(tileSize, coreTop - y);
-                DrawRect(new Rect2(coreLeft, y, coreW, h), new Color(0, 0, 0, alpha));
-            }
-        }
-
-        // Bottom fog (rows from coreBottom to vpH, only in core X range)
-        if (coreBottom < vpH)
-        {
-            int fogH = vpH - coreBottom;
-            for (int y = coreBottom; y < vpH; y += tileSize)
-            {
-                float dist = (float)(y - coreBottom + tileSize) / fogH;
-                float alpha = dist * MaxFogAlpha;
-                int h = System.Math.Min(tileSize, vpH - y);
-                DrawRect(new Rect2(coreLeft, y, coreW, h), new Color(0, 0, 0, alpha));
-            }
-        }
+        return ImageTexture.CreateFromImage(img);
     }
 }

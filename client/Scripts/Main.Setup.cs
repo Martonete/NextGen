@@ -315,7 +315,6 @@ public partial class Main
         _optionsPanel = AddPanel<OptionsPanel>(new Vector2(vpLeft + (vpW - 420) / 2, 20));
         _optionsPanel.Init(_state, _state.Config, _dataPath);
         _optionsPanel.OnConfigApplied += ApplyConfigToSystems;
-        _optionsPanel.OnResolutionChanged += () => GetTree().ReloadCurrentScene();
 
         _keyBindPanel = AddPanel<KeyBindPanel>(new Vector2(vpLeft + (vpW - 420) / 2, vpTop + (vpH - 500) / 2));
         _keyBindPanel.Init(_state, _state.Keys, _dataPath);
