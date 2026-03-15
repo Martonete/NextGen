@@ -360,8 +360,12 @@ void fragment() {
 	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
 	{
-		float px = (tileX - userX + ResolutionManager.HalfRenderTilesX) * TileSize + pixelOffsetX;
-		float py = (tileY - userY + ResolutionManager.HalfRenderTilesY) * TileSize + pixelOffsetY;
+		// Center character in the SubViewport by using half the viewport pixel size.
+		// This ensures uniform expansion in all 4 directions.
+		float centerOffsetX = ResolutionManager.ViewportPixelW / 2f;
+		float centerOffsetY = ResolutionManager.ViewportPixelH / 2f;
+		float px = (tileX - userX) * TileSize + centerOffsetX + pixelOffsetX;
+		float py = (tileY - userY) * TileSize + centerOffsetY + pixelOffsetY;
 		return new Vector2(px, py);
 	}
 

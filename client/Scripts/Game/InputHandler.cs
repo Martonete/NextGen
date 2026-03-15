@@ -411,10 +411,11 @@ public class InputHandler
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		int halfX = ResolutionManager.HalfRenderTilesX;
-		int halfY = ResolutionManager.HalfRenderTilesY;
-		int tileX = userX + (int)viewportPos.X / 32 - halfX;
-		int tileY = userY + (int)viewportPos.Y / 32 - halfY;
+		// Match TileToScreen centering: use half viewport pixel size
+		int centerX = ResolutionManager.ViewportPixelW / 2;
+		int centerY = ResolutionManager.ViewportPixelH / 2;
+		int tileX = userX + ((int)viewportPos.X - centerX) / 32;
+		int tileY = userY + ((int)viewportPos.Y - centerY) / 32;
 		return (tileX, tileY);
 	}
 
