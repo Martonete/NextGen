@@ -221,12 +221,37 @@ public partial class MinimapPanel : Control
             DrawCircle(new Vector2(px, py), PlayerMarkerRadius, color);
         }
 
-        // Draw self
+        // Draw self as directional arrow based on heading
         {
             float px = (_state.UserPosX - 1 - minX) * scaleX;
             float py = (_state.UserPosY - 1 - minY) * scaleY;
-            DrawCircle(new Vector2(px, py), SelfMarkerRadius + 1f, new Color(0, 0, 0, 0.6f));
-            DrawCircle(new Vector2(px, py), SelfMarkerRadius, SelfColor);
+            var center = new Vector2(px, py);
+
+            // Heading: 1=N, 2=E, 3=S, 4=W → rotation angle in radians
+            float angle = _state.UserHeading switch
+            {
+                1 => -Mathf.Pi / 2f,  // North (up)
+                2 => 0f,               // East (right)
+                3 => Mathf.Pi / 2f,   // South (down)
+                4 => Mathf.Pi,         // West (left)
+                _ => Mathf.Pi / 2f,
+            };
+
+            // Arrow: 3 points (tip, left wing, right wing)
+            float size = SelfMarkerRadius + 2f;
+            var tip = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * size;
+            var left = new Vector2(Mathf.Cos(angle + 2.5f), Mathf.Sin(angle + 2.5f)) * size * 0.7f;
+            var right = new Vector2(Mathf.Cos(angle - 2.5f), Mathf.Sin(angle - 2.5f)) * size * 0.7f;
+
+            // Shadow
+            var shadow = new Color(0, 0, 0, 0.6f);
+            var shadowOff = new Vector2(0.5f, 0.5f);
+            DrawLine(center + left + shadowOff, center + tip + shadowOff, shadow, 1.5f);
+            DrawLine(center + right + shadowOff, center + tip + shadowOff, shadow, 1.5f);
+            DrawLine(center + left + shadowOff, center + right + shadowOff, shadow, 1.5f);
+
+            // Arrow fill
+            DrawColoredPolygon(new Vector2[] { center + tip, center + left, center + right }, SelfColor);
         }
     }
 
