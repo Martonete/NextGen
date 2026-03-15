@@ -41,18 +41,16 @@ public partial class WorldRenderer : Node2D
 	private DialogOverlayLayer? _dialogLayer;
 	private AdditiveParticleLayer? _additiveLayer;
 	private RoofLayer? _roofLayer;
+	private FogOverlayLayer? _fogLayer;
 	private WeatherRenderer? _weatherRenderer;
 	private FloatingTextLayer? _floatingTextLayer;
 
 	private const int TileSize = 32;
 
-	// VB6 viewport: 544x416 px (MainViewPic ScaleWidth/ScaleHeight)
-	private const int ViewportWidth = 544;
-	private const int ViewportHeight = 416;
-
-	// How many tiles from center to edge (visible range)
-	private const int HalfWindowTileWidth = 8;
-	private const int HalfWindowTileHeight = 6;
+	// Tile range from center to edge — delegates to ResolutionManager for dynamic resolution.
+	// At 800x600: HalfWindowTileWidth=8, HalfWindowTileHeight=6 (identical to VB6 original).
+	private static int HalfWindowTileWidth => ResolutionManager.HalfRenderX;
+	private static int HalfWindowTileHeight => ResolutionManager.HalfRenderY;
 
 	// VB6: TileBufferSize = 9
 	private const int TileBufferSize = 9;
@@ -228,17 +226,24 @@ void fragment() {
 		_roofLayer.SetRenderer(this);
 		AddChild(_roofLayer);
 
-		// Floating text layer: z=4 (above roof, below weather)
+		// Fog overlay: z=4 — darkens extra tiles outside the core 17x13 area.
+		// Only visible when resolution > 800x600 (ExtraTilesX/Y > 0).
+		_fogLayer = new FogOverlayLayer();
+		_fogLayer.Name = "FogOverlay";
+		_fogLayer.ZIndex = 4;
+		AddChild(_fogLayer);
+
+		// Floating text layer: z=5 (above fog, below weather)
 		_floatingTextLayer = new FloatingTextLayer();
 		_floatingTextLayer.Name = "FloatingTextLayer";
-		_floatingTextLayer.ZIndex = 4;
+		_floatingTextLayer.ZIndex = 5;
 		_floatingTextLayer.Init(this, state);
 		AddChild(_floatingTextLayer);
 
-		// Weather layer: z=5 (topmost overlay — rain, lightning)
+		// Weather layer: z=6 (topmost overlay — rain, lightning)
 		_weatherRenderer = new WeatherRenderer();
 		_weatherRenderer.Name = "WeatherRenderer";
-		_weatherRenderer.ZIndex = 5;
+		_weatherRenderer.ZIndex = 6;
 		AddChild(_weatherRenderer);
 
 	}
@@ -344,7 +349,9 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// Convert world tile to screen pixel position.
+	/// Convert world tile to screen pixel position (top-left corner of the tile).
+	/// Uses HalfWindowTileWidth/Height from ResolutionManager for centering.
+	/// At 800x600: (tileX-userX+8)*32 = 256 for user's tile (unchanged from VB6).
 	/// </summary>
 	private static Vector2 TileToScreen(int tileX, int tileY, int userX, int userY,
 										 float pixelOffsetX, float pixelOffsetY)
