@@ -413,8 +413,14 @@ public class InputHandler
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		int tileX = userX + (int)viewportPos.X / 32 - ResolutionManager.HalfRenderX;
-		int tileY = userY + (int)viewportPos.Y / 32 - ResolutionManager.HalfRenderY;
+		// viewportPos is in design space (0-544, 0-416) from InputRouter.
+		// Scale to SubViewport pixel space (which may be larger at higher resolutions).
+		float scaleX = ResolutionManager.ViewportPixelW / 544f;
+		float scaleY = ResolutionManager.ViewportPixelH / 416f;
+		int svpX = (int)(viewportPos.X * scaleX);
+		int svpY = (int)(viewportPos.Y * scaleY);
+		int tileX = userX + svpX / 32 - ResolutionManager.HalfRenderX;
+		int tileY = userY + svpY / 32 - ResolutionManager.HalfRenderY;
 		return (tileX, tileY);
 	}
 
