@@ -89,6 +89,26 @@ public static class ResolutionManager
         TilesY = availH / TileSize;
         if (TilesX % 2 == 0) TilesX--;
         if (TilesY % 2 == 0) TilesY--;
+
+        // Shrink margins slightly to fit +2 tiles when leftover is close to 2 tiles
+        int leftoverH = availH - TilesY * TileSize;
+        int extraNeededH = 2 * TileSize - leftoverH;
+        int minTopMargin = S(128); // console area minimum (~128 design px)
+        if (extraNeededH > 0 && TopMargin - extraNeededH >= minTopMargin)
+        {
+            TilesY += 2;
+            TopMargin -= extraNeededH;
+        }
+
+        int leftoverW = availW - TilesX * TileSize;
+        int extraNeededW = 2 * TileSize - leftoverW;
+        int minLeftMargin = Math.Max(4, S(4));
+        if (extraNeededW > 0 && LeftMargin - extraNeededW >= minLeftMargin)
+        {
+            TilesX += 2;
+            LeftMargin -= extraNeededW;
+        }
+
         TilesX = Math.Max(17, TilesX);
         TilesY = Math.Max(13, TilesY);
 
