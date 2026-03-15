@@ -276,7 +276,7 @@ pub(super) async fn handle_slash_limpiar(state: &mut GameState, conn_id: Connect
                     tile.ground_item = world::GroundItem::default();
                 }
                 // Send BO (object delete) to everyone on that map
-                let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+                let bo_pkt = binary_packets::write_object_delete(x as i16, y as i16);
                 state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt);
                 cleaned += 1;
             }
@@ -393,8 +393,7 @@ pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: Connection
     let map_idx = map as usize;
     // Toggle blocked state and capture result
     let toggle_result = if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            let tile = &mut game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
             tile.blocked = !tile.blocked;
             Some(tile.blocked)
         } else {
@@ -408,7 +407,7 @@ pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: Connection
         let blocked_val = if is_blocked { 1 } else { 0 };
 
         // Broadcast BQ packet to everyone on the map
-        let bq_pkt = binary_packets::write_block_position(x as u8, y as u8, is_blocked);
+        let bq_pkt = binary_packets::write_block_position(x as i16, y as i16, is_blocked);
         state.send_data_bytes(SendTarget::ToMap(map), &bq_pkt);
 
         let status = if is_blocked { "bloqueado" } else { "desbloqueado" };
@@ -619,7 +618,7 @@ pub(super) async fn handle_slash_dest(state: &mut GameState, conn_id: Connection
     }
 
     // Send BO packet to notify clients
-    let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+    let bo_pkt = binary_packets::write_object_delete(x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt);
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
@@ -659,7 +658,7 @@ pub(super) async fn handle_slash_massdest(state: &mut GameState, conn_id: Connec
         if let Some(tile) = grid.tile_mut(x, y) {
             tile.ground_item = world::GroundItem::default();
         }
-        let bo_pkt = binary_packets::write_object_delete(x as u8, y as u8);
+        let bo_pkt = binary_packets::write_object_delete(x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToMap(map), &bo_pkt);
     }
 
@@ -719,7 +718,7 @@ pub(super) async fn handle_slash_haceritem(state: &mut GameState, conn_id: Conne
 
     // Send HO packet to show item visually
     if grh > 0 {
-        let ho_pkt = binary_packets::write_object_create(x as u8, y as u8, grh as i16);
+        let ho_pkt = binary_packets::write_object_create(x as i16, y as i16, grh as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
     }
 

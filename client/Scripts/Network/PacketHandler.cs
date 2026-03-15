@@ -37,7 +37,7 @@ public partial class PacketHandler
 
     /// Callback to play a spatial sound effect at world coordinates.
     /// Args: (soundId, srcX, srcY) — VB6: Audio.PlayWave(wav, srcX, srcY)
-    public Action<int, byte, byte>? OnPlaySoundAt;
+    public Action<int, int, int>? OnPlaySoundAt;
 
     /// Callback to play music (MIDI/MP3).
     public Action<int>? OnPlayMusic;

@@ -17,7 +17,7 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
     let (char_idx, x, y, map, heading, area_min_x, area_min_y) = data;
 
     // VB6 movement packet: *charindex,x,y → binary CharacterMove
-    let pkt = binary_packets::write_character_move(char_idx as i16, x as u8, y as u8);
+    let pkt = binary_packets::write_character_move(char_idx as i16, x as i16, y as i16);
 
     // Send to all players in viewport range (17x13 tiles) — replaces the old
     // 27x27 tile scan (729 tiles) with the standard area broadcast (221 tiles).
@@ -29,9 +29,9 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
 
 /// Send packets for a ghost push (position update to ghost + movement broadcast to area).
 pub(crate) async fn send_ghost_push(state: &mut GameState, push: crate::game::handlers::npcs::GhostPush) {
-    let pu_pkt = binary_packets::write_pos_update(push.new_x as u8, push.new_y as u8);
+    let pu_pkt = binary_packets::write_pos_update(push.new_x as i16, push.new_y as i16);
     state.send_bytes(push.ghost_conn, &pu_pkt);
-    let move_pkt = binary_packets::write_character_move(push.ghost_char_index as i16, push.new_x as u8, push.new_y as u8);
+    let move_pkt = binary_packets::write_character_move(push.ghost_char_index as i16, push.new_x as i16, push.new_y as i16);
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: push.ghost_conn, map: push.map, x: push.new_x, y: push.new_y },
         &move_pkt,
@@ -497,7 +497,7 @@ pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
     };
 
     // Impact sound
-    let snd_pkt = binary_packets::write_play_wave(10, a_x as u8, a_y as u8);
+    let snd_pkt = binary_packets::write_play_wave(10, a_x as i16, a_y as i16);
     state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt);
 
     if target_dead {

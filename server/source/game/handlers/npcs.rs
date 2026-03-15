@@ -80,7 +80,7 @@ pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: Conne
                             .map(|o| o.grh_index)
                             .unwrap_or(0);
                         if grh > 0 {
-                            ho_packets.push(binary_packets::write_object_create(gx as u8, gy as u8, grh as i16));
+                            ho_packets.push(binary_packets::write_object_create(gx as i16, gy as i16, grh as i16));
                         }
                     }
                 }
@@ -245,7 +245,7 @@ pub(super) async fn user_attack_npc(
     }
 
     if !hit {
-        let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(2, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
         state.send_bytes(conn_id, &pkt);
@@ -358,16 +358,16 @@ pub(super) async fn user_attack_npc(
         .map(|n| (n.snd1, n.snd2))
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd1 as u8, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(npc_snd1 as u8, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     }
-    let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
+    let snd = binary_packets::write_play_wave(10, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     if npc_snd2 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd2 as u8, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(npc_snd2 as u8, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     } else {
-        let snd = binary_packets::write_play_wave(12, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(12, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     }
 
@@ -496,7 +496,7 @@ pub(super) async fn npc_die(
 
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
-        let snd_pkt = binary_packets::write_play_wave(snd3 as u8, x as u8, y as u8);
+        let snd_pkt = binary_packets::write_play_wave(snd3 as u8, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt);
     }
 
@@ -594,7 +594,7 @@ async fn drop_gold_on_floor(state: &mut GameState, map: i32, x: i32, y: i32, tot
         };
 
         if is_new && grh_index > 0 {
-            let pkt = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+            let pkt = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
 
@@ -645,7 +645,7 @@ pub(super) async fn npc_drop_items(
             }
             let grh = state.get_object(*obj_index).map(|o| o.grh_index).unwrap_or(0);
             if grh > 0 {
-                let ho_pkt = binary_packets::write_object_create(drop_x as u8, drop_y as u8, grh as i16);
+                let ho_pkt = binary_packets::write_object_create(drop_x as i16, drop_y as i16, grh as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x: npc_x, y: npc_y }, &ho_pkt);
             }
             clean_world_add_item(state, map, drop_x, drop_y, 10, *obj_index);
@@ -695,7 +695,7 @@ pub(super) async fn npc_drop_items(
 
         let grh = state.get_object(obj_index).map(|o| o.grh_index).unwrap_or(0);
         if grh > 0 {
-            let ho_pkt = binary_packets::write_object_create(drop_x as u8, drop_y as u8, grh as i16);
+            let ho_pkt = binary_packets::write_object_create(drop_x as i16, drop_y as i16, grh as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x: npc_x, y: npc_y }, &ho_pkt);
         }
 
@@ -772,7 +772,7 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
 
             if rechazo {
                 // Shield blocks — VB6: SND_ESCUDO + messages + skill up
-                let snd = binary_packets::write_play_wave(37, nx as u8, ny as u8);
+                let snd = binary_packets::write_play_wave(37, nx as i16, ny as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
                 let pkt = binary_packets::write_multi_msg_simple(
                     crate::protocol::packets::MultiMessageID::BlockedWithShieldUser);
@@ -790,7 +790,7 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         }
 
         // Miss — VB6: SND_SWING to area + N1
-        let snd = binary_packets::write_play_wave(2, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(2, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCSwing);
         state.send_bytes(target_conn, &pkt);
@@ -862,18 +862,18 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         .map(|n| (n.snd1, n.snd2))
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd1 as u8, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(npc_snd1 as u8, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     }
     // SND_IMPACTO to area on hit
-    let snd = binary_packets::write_play_wave(10, nx as u8, ny as u8);
+    let snd = binary_packets::write_play_wave(10, nx as i16, ny as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     // Victim sound: Snd2 if defined, else SND_IMPACTO2 (12)
     if npc_snd2 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd2 as u8, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(npc_snd2 as u8, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     } else {
-        let snd = binary_packets::write_play_wave(12, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(12, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     }
 
@@ -956,7 +956,7 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &fx);
     }
     if spell.wav > 0 {
-        let snd = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(spell.wav as u8, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     }
 
@@ -1067,6 +1067,18 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
     // Check bounds and blocked
     if !world::in_map_bounds(new_x, new_y) {
         return (false, None);
+    }
+
+    // Zone boundary: NPC can't wander beyond configured radius from spawn
+    let (orig_x, orig_y) = state.get_npc(npc_idx)
+        .map(|n| (n.orig_x, n.orig_y)).unwrap_or((0, 0));
+    if let Some(zone) = state.get_zone(map) {
+        if zone.npc_wander_radius > 0 {
+            let dist = (new_x - orig_x).abs().max((new_y - orig_y).abs());
+            if dist > zone.npc_wander_radius {
+                return (false, None);
+            }
+        }
     }
     if state.is_tile_blocked(map, new_x, new_y) {
         return (false, None);

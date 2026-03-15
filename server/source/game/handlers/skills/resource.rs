@@ -52,7 +52,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     }
 
     // Play sound to area
-    let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as u8, uy as u8);
+    let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as i16, uy as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
@@ -113,8 +113,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let tile_obj = state.game_data.maps.get(map as usize)
         .and_then(|m| m.as_ref())
         .and_then(|m| {
-            if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+            if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                 if tile.obj.obj_index > 0 {
                     state.get_object(tile.obj.obj_index as i32).map(|o| o.obj_type)
                 } else {
@@ -155,7 +154,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     }
 
     // Play sound
-    let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as u8, uy as u8);
+    let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as i16, uy as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
@@ -223,8 +222,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
             state.game_data.maps.get(map as usize)
                 .and_then(|m| m.as_ref())
                 .and_then(|m| {
-                    if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                        let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+                    if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                         if tile.obj.obj_index > 0 {
                             state.get_object(tile.obj.obj_index as i32).cloned()
                         } else {
@@ -257,7 +255,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     }
 
     // Play sound
-    let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as u8, uy as u8);
+    let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as i16, uy as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll

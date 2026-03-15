@@ -444,14 +444,14 @@ public class InputHandler
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-			_tcp.SendPacket(ClientPackets.WriteLeftClick((byte)tileX, (byte)tileY));
+			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY));
 	}
 
 	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-			_tcp.SendPacket(ClientPackets.WriteRightClick((byte)tileX, (byte)tileY));
+			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY));
 	}
 
 	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
@@ -459,7 +459,7 @@ public class InputHandler
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
 		{
-			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((byte)tileX, (byte)tileY, (byte)_state.UsingSkill));
+			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill));
 			_state.UsingSkill = 0;
 		}
 	}

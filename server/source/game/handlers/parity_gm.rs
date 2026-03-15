@@ -326,7 +326,9 @@ pub(super) async fn handle_slash_trigger(state: &mut GameState, conn_id: Connect
                 7 => crate::data::maps::Trigger::NoElevation,
                 _ => crate::data::maps::Trigger::None,
             };
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].trigger = trigger;
+            if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+                tile.trigger = trigger;
+            }
         }
     }
 

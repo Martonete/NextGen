@@ -127,12 +127,12 @@ pub fn write_cosmetic_surgery(raza: u8, genero: u8) -> Vec<u8> {
 // ── Particle / Light ──────────────────────────────────────
 
 /// ID 243: Create particle (PCF).
-pub fn write_particle_create(particle_group: i16, x: u8, y: u8, layer: u8) -> Vec<u8> {
+pub fn write_particle_create(particle_group: i16, x: i16, y: i16, layer: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ParticleCreate.to_byte());
     pkt.write_integer(particle_group);
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_byte(layer);
     pkt.into_bytes()
 }
@@ -149,11 +149,11 @@ pub fn write_char_particle_create(char_index: i16, particle_stream_id: i16) -> V
 }
 
 /// ID 244: Create light (PCL).
-pub fn write_light_create(x: u8, y: u8, range: u8, r: u8, g: u8, b: u8) -> Vec<u8> {
+pub fn write_light_create(x: i16, y: i16, range: u8, r: u8, g: u8, b: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::LightCreate.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_byte(range);
     pkt.write_byte(r);
     pkt.write_byte(g);

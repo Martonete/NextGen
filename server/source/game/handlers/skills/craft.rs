@@ -39,8 +39,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     let is_anvil = is_anvil || state.game_data.maps.get(map as usize)
         .and_then(|m| m.as_ref())
         .map(|m| {
-            if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+            if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                 if tile.obj.obj_index > 0 {
                     state.get_object(tile.obj.obj_index as i32)
                         .map(|o| o.obj_type == ObjType::Anvil)
@@ -549,7 +548,7 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-    let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as u8, y as u8);
+    let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
     state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
@@ -615,7 +614,7 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-    let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as u8, y as u8);
+    let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
     state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
@@ -712,7 +711,7 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
 
             // Get campfire GRH for visual
             let grh = state.get_object(FOGATA_OBJ).map(|o| o.grh_index).unwrap_or(0);
-            let ho_pkt = binary_packets::write_object_create(x as u8, y as u8, grh as i16);
+            let ho_pkt = binary_packets::write_object_create(x as i16, y as i16, grh as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
 
             // Add to cleanup list (temporary — VB6 uses garbage collector)

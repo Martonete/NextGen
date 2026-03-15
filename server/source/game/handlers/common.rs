@@ -34,8 +34,8 @@ pub(super) fn same_clan(state: &GameState, a: ConnectionId, b: ConnectionId) -> 
 pub(super) fn get_map_tile_trigger(state: &GameState, map: i32, x: i32, y: i32) -> Trigger {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].trigger;
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.trigger;
         }
     }
     Trigger::None
@@ -44,8 +44,8 @@ pub(super) fn get_map_tile_trigger(state: &GameState, map: i32, x: i32, y: i32) 
 pub(super) fn get_map_tile_obj(state: &GameState, map: i32, x: i32, y: i32) -> i32 {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index as i32;
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.obj.obj_index as i32;
         }
     }
     0
@@ -54,8 +54,8 @@ pub(super) fn get_map_tile_obj(state: &GameState, map: i32, x: i32, y: i32) -> i
 pub(super) fn get_map_tile_particle(state: &GameState, map: i32, x: i32, y: i32) -> i16 {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].particle_group_index;
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.particle_group_index;
         }
     }
     0
@@ -64,8 +64,8 @@ pub(super) fn get_map_tile_particle(state: &GameState, map: i32, x: i32, y: i32)
 pub(super) fn set_map_tile_obj(state: &mut GameState, map: i32, x: i32, y: i32, new_obj: i16) {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index = new_obj;
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+            tile.obj.obj_index = new_obj;
         }
     }
 }
@@ -73,8 +73,8 @@ pub(super) fn set_map_tile_obj(state: &mut GameState, map: i32, x: i32, y: i32, 
 pub(super) fn set_map_tile_blocked(state: &mut GameState, map: i32, x: i32, y: i32, blocked: bool) {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].blocked = blocked;
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+            tile.blocked = blocked;
         }
     }
 }
@@ -970,7 +970,7 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as i16, y as i16));
         send_stats_hp(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
     } else if hp_low {
@@ -983,7 +983,7 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as i16, y as i16));
         send_stats_hp(state, conn_id).await;
     }
 

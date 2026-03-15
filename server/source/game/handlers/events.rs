@@ -183,9 +183,10 @@ fn hay_obj_area(state: &GameState, map: i32, cx: i32, cy: i32, obj_index: i16) -
 
     for y in (cy - RANGE_Y)..=(cy + RANGE_Y) {
         for x in (cx - RANGE_X)..=(cx + RANGE_X) {
-            if x < 1 || x > 100 || y < 1 || y > 100 { continue; }
-            if game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index == obj_index {
-                return true;
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+                if tile.obj.obj_index == obj_index {
+                    return true;
+                }
             }
         }
     }

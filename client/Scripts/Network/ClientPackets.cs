@@ -145,19 +145,32 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    public static byte[] WriteLeftClick(byte x, byte y)
+    public static byte[] WriteLeftClick(short x, short y)
     {
-        return new byte[] { ClientPacketId.LeftClick, x, y };
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.LeftClick);
+        bq.WriteInteger(x);
+        bq.WriteInteger(y);
+        return bq.ToArray();
     }
 
-    public static byte[] WriteRightClick(byte x, byte y)
+    public static byte[] WriteRightClick(short x, short y)
     {
-        return new byte[] { ClientPacketId.RightClick, x, y };
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.RightClick);
+        bq.WriteInteger(x);
+        bq.WriteInteger(y);
+        return bq.ToArray();
     }
 
-    public static byte[] WriteWorkLeftClick(byte x, byte y, byte skill)
+    public static byte[] WriteWorkLeftClick(short x, short y, byte skill)
     {
-        return new byte[] { ClientPacketId.WorkLeftClick, x, y, skill };
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.WorkLeftClick);
+        bq.WriteInteger(x);
+        bq.WriteInteger(y);
+        bq.WriteByte(skill);
+        return bq.ToArray();
     }
 
     // ── Chat ───────────────────────────────────────────────────

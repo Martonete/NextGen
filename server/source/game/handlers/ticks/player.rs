@@ -270,9 +270,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
             let on_lava = state.game_data.maps.get(pos_map as usize)
                 .and_then(|m| m.as_ref())
                 .and_then(|m| {
-                    if pos_x > 0 && pos_x <= 100 && pos_y > 0 && pos_y <= 100 {
-                        Some(m.tiles[(pos_y - 1) as usize][(pos_x - 1) as usize].graphic[0])
-                    } else { None }
+                    m.tiles.get((pos_x - 1) as usize, (pos_y - 1) as usize)
+                        .map(|t| t.graphic[0])
                 })
                 .map(|g| g >= 5837 && g <= 5852)
                 .unwrap_or(false);

@@ -483,7 +483,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         .and_then(|t| t.user_conn);
 
     // Play attack sound/animation to area
-    let swing_pkt = binary_packets::write_play_wave(2, x as u8, y as u8);
+    let swing_pkt = binary_packets::write_play_wave(2, x as i16, y as i16);
     state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
         &swing_pkt,
@@ -629,7 +629,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 if rechazo {
                     // Shield block — VB6: SND_ESCUDO + messages
                     let (vx, vy) = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
-                    let snd = binary_packets::write_play_wave(37, vx as u8, vy as u8); // SND_ESCUDO
+                    let snd = binary_packets::write_play_wave(37, vx as i16, vy as i16); // SND_ESCUDO
                     state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd);
 
                     let pkt_atk = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldOther);
@@ -650,7 +650,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // Miss
-            let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
+            let snd = binary_packets::write_play_wave(2, x as i16, y as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
             let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
             state.send_bytes(victim_id, &pkt);
@@ -672,7 +672,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // HIT — VB6: UsuarioAtacaUsuario flow after UsuarioImpacto = True
 
         // VB6: SND_IMPACTO to area
-        let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(10, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
         // VB6: Blood FX on victim (if not navigating)
@@ -725,7 +725,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         let pkt = binary_packets::write_paralize_ok(para_secs);
                         state.send_bytes(victim_id, &pkt);
                         if let Some(u) = state.users.get(&victim_id) {
-                            let pu = binary_packets::write_pos_update(u.pos_x as u8, u.pos_y as u8);
+                            let pu = binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
                             state.send_bytes(victim_id, &pu);
                         }
                         state.send_console(conn_id, &format!("Has paralizado a {}!", victim_name), font_index::FIGHT);
@@ -1278,7 +1278,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                                 tile.ground_item.amount = amount;
                             }
                         }
-                        let ho_pkt = binary_packets::write_object_create(tx as u8, ty as u8, grh as i16);
+                        let ho_pkt = binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
                         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
                         off_idx = (idx + 1) % offsets.len();
                         placed = true;

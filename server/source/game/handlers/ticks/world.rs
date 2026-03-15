@@ -346,7 +346,7 @@ pub async fn tick_clean_world(state: &mut GameState) {
                     tile.ground_item.amount = 0;
                 }
                 // Broadcast BO (remove object from ground) to area
-                let pkt = binary_packets::write_object_delete(x as u8, y as u8);
+                let pkt = binary_packets::write_object_delete(x as i16, y as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
             }
 
