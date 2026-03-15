@@ -4,14 +4,17 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Rendering;
 
 /// <summary>
-/// Draws a smooth darkness overlay on tiles outside the core 17x13 viewport.
-/// Uses a precomputed gradient texture for smooth edges (no blocky tiles).
-/// Radial gradient with ease-out curve — near-black at edges, transparent at core.
+/// Draws darkness over tiles outside the core 17x13 viewport.
+/// The entire extra zone is solid dark (MaxAlpha). Only a thin ~1 tile
+/// transition strip at the core boundary fades from transparent to dark,
+/// creating a clean edge effect without revealing the tiles behind.
 /// Only active when resolution > 800x600.
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
     private const float MaxAlpha = 0.92f;
+    // Transition width in design pixels (~1 tile = 32px, at 1/4 res = 8 texels)
+    private const float TransitionPx = 32f;
     private ImageTexture? _fogTex;
     private int _cachedVpW, _cachedVpH;
 
@@ -24,7 +27,6 @@ public partial class FogOverlayLayer : Node2D
         int vpW = ResolutionManager.ViewportW;
         int vpH = ResolutionManager.ViewportH;
 
-        // Rebuild texture if viewport changed
         if (_fogTex == null || _cachedVpW != vpW || _cachedVpH != vpH)
         {
             _fogTex = BuildFogTexture(vpW, vpH);
@@ -36,10 +38,8 @@ public partial class FogOverlayLayer : Node2D
     }
 
     /// <summary>
-    /// Build a smooth radial fog texture. Fully transparent inside the core
-    /// 544x416 area, smooth ease-out gradient to MaxAlpha at the viewport edges.
-    /// Built at 1/4 resolution — GPU bilinear filtering smooths it.
-    /// Uses radial (Euclidean) distance for natural circular falloff.
+    /// Build fog texture: transparent inside core, thin gradient at core edge,
+    /// then flat MaxAlpha everywhere else. Built at 1/4 resolution.
     /// </summary>
     private static ImageTexture BuildFogTexture(int vpW, int vpH)
     {
@@ -51,10 +51,8 @@ public partial class FogOverlayLayer : Node2D
         float centerY = texH / 2f;
         float halfCoreW = coreW / 2f;
         float halfCoreH = coreH / 2f;
-
-        // Fog zone dimensions (from core edge to viewport edge)
-        float fogZoneW = centerX - halfCoreW;
-        float fogZoneH = centerY - halfCoreH;
+        // Transition width in texture pixels (1/4 of design pixels)
+        float transition = TransitionPx / 4f;
 
         var img = Image.CreateEmpty(texW, texH, false, Image.Format.Rgba8);
 
@@ -65,16 +63,28 @@ public partial class FogOverlayLayer : Node2D
                 // Distance from the core edge (0 = inside core, >0 = outside)
                 float dx = System.Math.Max(0, System.Math.Abs(px - centerX) - halfCoreW);
                 float dy = System.Math.Max(0, System.Math.Abs(py - centerY) - halfCoreH);
+                float dist = System.Math.Max(dx, dy);
 
-                // Normalized distance using radial (Euclidean) for smooth circular falloff
-                float fx = fogZoneW > 0 ? dx / fogZoneW : 0;
-                float fy = fogZoneH > 0 ? dy / fogZoneH : 0;
-                float f = System.MathF.Sqrt(fx * fx + fy * fy);
-                f = System.Math.Clamp(f, 0f, 1f);
+                float alpha;
+                if (dist <= 0f)
+                {
+                    // Inside core: fully transparent
+                    alpha = 0f;
+                }
+                else if (dist < transition)
+                {
+                    // Transition strip: smooth ramp from 0 → MaxAlpha
+                    float t = dist / transition;
+                    // Smooth-step for clean transition
+                    t = t * t * (3f - 2f * t);
+                    alpha = t * MaxAlpha;
+                }
+                else
+                {
+                    // Beyond transition: solid dark
+                    alpha = MaxAlpha;
+                }
 
-                // Ease-out curve: starts fast, slows near full darkness
-                // f² gives a more aggressive darkening near the core edge
-                float alpha = f * f * MaxAlpha;
                 img.SetPixel(px, py, new Color(0, 0, 0, alpha));
             }
         }
