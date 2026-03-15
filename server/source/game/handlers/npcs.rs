@@ -34,10 +34,11 @@ use crate::game::constants::*;
 
 /// Send CC packets for all NPCs in the area around (x, y) on map to a specific user.
 pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32) {
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
     let min_y = (y - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (y + world::MIN_Y_BORDER - 1).min(world::MAP_HEIGHT as i32);
+    let max_y = (y + world::MIN_Y_BORDER - 1).min(grid_h);
     let min_x = (x - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (x + world::MIN_X_BORDER - 1).min(world::MAP_WIDTH as i32);
+    let max_x = (x + world::MIN_X_BORDER - 1).min(grid_w);
 
     // Collect NPC CCs first to avoid borrow issues
     let mut npc_ccs: Vec<Vec<u8>> = Vec::new();
@@ -64,10 +65,11 @@ pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: Connection
 
 /// Send ground item visuals (HO) in the area to a user.
 pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32) {
+    let (grid_w, grid_h) = state.world.grid(map).map(|g| (g.width, g.height)).unwrap_or((100, 100));
     let min_y = (y - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (y + world::MIN_Y_BORDER - 1).min(world::MAP_HEIGHT as i32);
+    let max_y = (y + world::MIN_Y_BORDER - 1).min(grid_h);
     let min_x = (x - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (x + world::MIN_X_BORDER - 1).min(world::MAP_WIDTH as i32);
+    let max_x = (x + world::MIN_X_BORDER - 1).min(grid_w);
 
     let mut ho_packets: Vec<Vec<u8>> = Vec::new();
     if let Some(grid) = state.world.grid(map) {
