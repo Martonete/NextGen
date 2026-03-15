@@ -411,8 +411,8 @@ public class InputHandler
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		int tileX = userX + (int)viewportPos.X / 32 - 8;
-		int tileY = userY + (int)viewportPos.Y / 32 - 6;
+		int tileX = userX + (int)viewportPos.X / 32 - ResolutionManager.HalfTilesX;
+		int tileY = userY + (int)viewportPos.Y / 32 - ResolutionManager.HalfTilesY;
 		return (tileX, tileY);
 	}
 
@@ -442,8 +442,22 @@ public class InputHandler
 		}
 	}
 
+	/// <summary>
+	/// Check if a click position is inside the illuminated core viewport (17x13).
+	/// Clicks in the fog area (extra tiles at higher resolutions) are blocked.
+	/// </summary>
+	private bool IsInCoreViewport(Vector2 viewportPos)
+	{
+		// Core area is centered in the SubViewport
+		float coreLeft = (ResolutionManager.ViewportW - 544f) / 2f;
+		float coreTop = (ResolutionManager.ViewportH - 416f) / 2f;
+		return viewportPos.X >= coreLeft && viewportPos.X < coreLeft + 544
+			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + 416;
+	}
+
 	public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY));
@@ -451,6 +465,7 @@ public class InputHandler
 
 	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY));
@@ -458,6 +473,7 @@ public class InputHandler
 
 	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 		{

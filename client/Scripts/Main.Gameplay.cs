@@ -142,7 +142,7 @@ public partial class Main
     }
 
     /// <summary>
-    /// Exit fullscreen to windowed 800×600, centered.
+    /// Exit fullscreen to windowed mode at configured resolution, centered.
     /// </summary>
     private void ExitFullscreen()
     {
@@ -151,7 +151,7 @@ public partial class Main
         root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-        var winSize = new Vector2I(800, 600);
+        var winSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         DisplayServer.WindowSetSize(winSize);
         var screenSize = DisplayServer.ScreenGetSize();
         DisplayServer.WindowSetPosition(new Vector2I(

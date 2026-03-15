@@ -104,7 +104,7 @@ public partial class TutorialPanel : Control
         _overlay = new ColorRect();
         _overlay.Color = new Color(0, 0, 0, 0.5f);
         _overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _overlay.Size = new Vector2(800, 600);
+        _overlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         _overlay.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_overlay);
 

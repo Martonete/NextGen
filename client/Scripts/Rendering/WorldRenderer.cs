@@ -46,13 +46,13 @@ public partial class WorldRenderer : Node2D
 
 	private const int TileSize = 32;
 
-	// VB6 viewport: 544x416 px (MainViewPic ScaleWidth/ScaleHeight)
-	private const int ViewportWidth = 544;
-	private const int ViewportHeight = 416;
+	// Viewport dimensions — dynamic, read from ResolutionManager
+	private static int ViewportWidth => ResolutionManager.ViewportW;
+	private static int ViewportHeight => ResolutionManager.ViewportH;
 
-	// How many tiles from center to edge (visible range)
-	private const int HalfWindowTileWidth = 8;
-	private const int HalfWindowTileHeight = 6;
+	// How many tiles from center to edge (visible range) — dynamic
+	private static int HalfWindowTileWidth => ResolutionManager.HalfTilesX;
+	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
 	// VB6: TileBufferSize = 9
 	private const int TileBufferSize = 9;
@@ -241,6 +241,11 @@ void fragment() {
 		_weatherRenderer.ZIndex = 5;
 		AddChild(_weatherRenderer);
 
+		// Fog overlay: z=6 (darkens extended viewport edges beyond core 17x13)
+		var fogOverlay = new FogOverlayLayer();
+		fogOverlay.Name = "FogOverlay";
+		fogOverlay.ZIndex = 6;
+		AddChild(fogOverlay);
 	}
 
 	/// <summary>

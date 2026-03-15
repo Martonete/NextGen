@@ -66,6 +66,8 @@ public class GameConfig
 	// ── Display ──────────────────────────────────────────
 	public bool Fullscreen;                 // false=windowed, true=fullscreen
 	public int AspectRatioMode = 0;         // 0=4:3 (keep ratio, black bars), 1=16:9 (stretch to fill)
+	public int ResolutionWidth = 800;       // Window width (default 800)
+	public int ResolutionHeight = 600;      // Window height (default 600)
 
 	/// <summary>True if Options.ao existed on disk when loaded (used to skip startup dialog).</summary>
 	[System.NonSerialized] public bool LoadedFromFile;
@@ -129,6 +131,8 @@ public class GameConfig
 
 		Fullscreen = other.Fullscreen;
 		AspectRatioMode = other.AspectRatioMode;
+		ResolutionWidth = other.ResolutionWidth;
+		ResolutionHeight = other.ResolutionHeight;
 	}
 
 	// ── Persistence ───────────────────────────────────────
@@ -229,6 +233,8 @@ public class GameConfig
 					// Display
 					case "Fullscreen": cfg.Fullscreen = val == "1"; break;
 					case "AspectRatioMode": if (int.TryParse(val, out int arm)) cfg.AspectRatioMode = Math.Clamp(arm, 0, 1); break;
+					case "ResolutionWidth": if (int.TryParse(val, out int rw)) cfg.ResolutionWidth = Math.Clamp(rw, 800, 3840); break;
+					case "ResolutionHeight": if (int.TryParse(val, out int rh)) cfg.ResolutionHeight = Math.Clamp(rh, 600, 2160); break;
 				}
 			}
 
@@ -310,6 +316,8 @@ public class GameConfig
 			// Display
 			sb.AppendLine($"Fullscreen={(Fullscreen ? "1" : "0")}");
 			sb.AppendLine($"AspectRatioMode={AspectRatioMode}");
+			sb.AppendLine($"ResolutionWidth={ResolutionWidth}");
+			sb.AppendLine($"ResolutionHeight={ResolutionHeight}");
 
 			File.WriteAllText(path, sb.ToString());
 			GD.Print($"[CFG] Saved options to {path}");

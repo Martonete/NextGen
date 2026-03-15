@@ -57,6 +57,8 @@ public partial class OptionsPanel : RpgBaseForm
     private Button? _chkFullscreen;
     private HBoxContainer? _aspectRow;
     private OptionButton? _optAspect;
+    private HBoxContainer? _resolutionRow;
+    private OptionButton? _optResolution;
 
     // ── Render tab controls ──
     private OptionButton? _optPerformance;
@@ -276,6 +278,15 @@ public partial class OptionsPanel : RpgBaseForm
         _optAspect.ItemSelected += _ => ApplyImmediate();
         leftCol.AddChild(_aspectRow);
 
+        // Resolution preset dropdown
+        var resLabels = new string[ResolutionManager.Presets.Length];
+        for (int i = 0; i < ResolutionManager.Presets.Length; i++)
+            resLabels[i] = ResolutionManager.Presets[i].label;
+        _resolutionRow = RpgTheme.CreateRpgDropdownRow("Resolucion:", resLabels, 120);
+        _optResolution = GetDropdownFromRow(_resolutionRow);
+        _optResolution.ItemSelected += OnResolutionSelected;
+        leftCol.AddChild(_resolutionRow);
+
         _fpsRow = RpgTheme.CreateRpgDropdownRow("FPS:",
             new[] { "60", "120", "144", "165", "240", "Sin limite" }, 100);
         _optFpsLimit = GetDropdownFromRow(_fpsRow);
@@ -463,6 +474,27 @@ public partial class OptionsPanel : RpgBaseForm
         OnConfigApplied?.Invoke();
     }
 
+    // ── Resolution change ─────────────────────────────────
+
+    /// <summary>Callback for resolution change requiring scene reload.</summary>
+    public event System.Action? OnResolutionChanged;
+
+    private void OnResolutionSelected(long index)
+    {
+        if (_loading || _config == null) return;
+        int idx = (int)index;
+        if (idx < 0 || idx >= ResolutionManager.Presets.Length) return;
+
+        var (w, h, _) = ResolutionManager.Presets[idx];
+        _config.ResolutionWidth = w;
+        _config.ResolutionHeight = h;
+        _config.Save(_dataPath);
+
+        // Apply new resolution and reload scene to rebuild all UI positions
+        ResolutionManager.ApplyResolution(w, h);
+        OnResolutionChanged?.Invoke();
+    }
+
     // ── Performance preset ────────────────────────────────
 
     private void OnPerformanceSelected(long index)
@@ -550,6 +582,22 @@ public partial class OptionsPanel : RpgBaseForm
         if (_aspectRow != null) _aspectRow.Visible = cfg.Fullscreen;
         if (_optAspect != null) _optAspect.Selected = cfg.AspectRatioMode;
 
+        // Resolution preset
+        if (_optResolution != null)
+        {
+            int resSel = 0;
+            for (int i = 0; i < ResolutionManager.Presets.Length; i++)
+            {
+                if (ResolutionManager.Presets[i].w == cfg.ResolutionWidth &&
+                    ResolutionManager.Presets[i].h == cfg.ResolutionHeight)
+                {
+                    resSel = i;
+                    break;
+                }
+            }
+            _optResolution.Selected = resSel;
+        }
+
         // Render tab
         if (_optPerformance != null) _optPerformance.Selected = cfg.PerformanceLevel;
         LoadRenderChecks(cfg);
@@ -609,6 +657,7 @@ public partial class OptionsPanel : RpgBaseForm
         // Render tab — Display
         cfg.Fullscreen = IsChecked(_chkFullscreen);
         cfg.AspectRatioMode = _optAspect?.Selected ?? 0;
+        // Resolution is saved directly in OnResolutionSelected (requires scene reload)
 
         // Render tab
         cfg.PerformanceLevel = _optPerformance?.Selected ?? 2;

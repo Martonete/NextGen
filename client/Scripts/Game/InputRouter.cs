@@ -294,13 +294,12 @@ public class InputRouter
     private void HandleMouseClick(InputEventMouseButton mb, Viewport viewport)
     {
         // Translate click position relative to the game viewport.
-        // VB6: MainViewLeft=13, MainViewTop=149 (MainViewPic position on frmMain).
-        // Scene: SubViewportContainer offset_left=13, offset_top=149.
-        float clickX = mb.Position.X - 13;
-        float clickY = mb.Position.Y - 149;
+        // SubViewportContainer is at (LeftMargin, TopMargin).
+        float clickX = mb.Position.X - ResolutionManager.LeftMargin;
+        float clickY = mb.Position.Y - ResolutionManager.TopMargin;
 
         // Only handle clicks within the game viewport area
-        if (clickX < 0 || clickX >= 544 || clickY < 0 || clickY >= 416) return;
+        if (clickX < 0 || clickX >= ResolutionManager.ViewportW || clickY < 0 || clickY >= ResolutionManager.ViewportH) return;
 
         var viewPos = new Vector2(clickX, clickY);
 

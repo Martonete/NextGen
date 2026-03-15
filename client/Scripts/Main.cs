@@ -236,6 +236,9 @@ public partial class Main : Control
 		// Load user configuration (Options.ao)
 		_state.Config = GameConfig.Load(dataPath);
 		_state.ShowNames = _state.Config.ShowNames;
+		// Apply resolution BEFORE anything else touches viewport/UI
+		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
+
 		// Apply V-Sync
 		DisplayServer.WindowSetVsyncMode(
 			_state.Config.VsyncEnabled ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
@@ -340,6 +343,19 @@ public partial class Main : Control
 		// Grab Game UI nodes
 		_gameUI = GetNode<Control>("GameUI");
 
+		// === Apply dynamic resolution to viewport/UI ===
+		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		_gameUI.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		var viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
+		viewportContainer.OffsetLeft = ResolutionManager.LeftMargin;
+		viewportContainer.OffsetTop = ResolutionManager.TopMargin;
+		viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
+		viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+
+		var gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
+		gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+
 		// Chat system
 		var console = GetNode<RichTextLabel>("GameUI/Console");
 		_consoleLabel = console;
@@ -390,12 +406,12 @@ public partial class Main : Control
 		// Background layer inserted after HudFrame so frames draw behind labels
 		var sidebarBg = new Control();
 		sidebarBg.MouseFilter = Control.MouseFilterEnum.Ignore;
-		sidebarBg.Size = new Vector2(800, 600);
+		sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		_gameUI.AddChild(sidebarBg);
 		_gameUI.MoveChild(sidebarBg, 1); // index 1 = after HudFrame(0), before scene labels
 
-		// Sidebar content area: shifted left toward minimap
-		const int sbX = 560;
+		// Sidebar content area: dynamic based on resolution
+		int sbX = ResolutionManager.SidebarX;
 		const int sbW = 210;
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
@@ -469,12 +485,12 @@ public partial class Main : Control
 		goldIcon.Texture = RpgTheme.GetTex("Icons/greed.png");
 		goldIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		goldIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		goldIcon.Position = new Vector2(700, 428);
+		goldIcon.Position = new Vector2(sbX + 140, 428);
 		goldIcon.Size = new Vector2(14, 14);
 		goldIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(goldIcon);
 
-		_goldLabel.Position = new Vector2(715, 430);
+		_goldLabel.Position = new Vector2(sbX + 155, 430);
 		_goldLabel.Size = new Vector2(60, 14);
 		_goldLabel.HorizontalAlignment = HorizontalAlignment.Left;
 		ApplyFont(_goldLabel, "Tahoma", 700);
@@ -482,14 +498,14 @@ public partial class Main : Control
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
 		// Online label: below sidebar buttons, centered like FPS
-		_onlineLabel.Position = new Vector2(682, 552);
+		_onlineLabel.Position = new Vector2(sbX + 122, 552);
 		_onlineLabel.Size = new Vector2(93, 12);
 		_onlineLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_onlineLabel, "Tahoma", 700);
 		_onlineLabel.AddThemeFontSizeOverride("font_size", 7);
 
 		// Coords label
-		_coordsLabel.Position = new Vector2(580, 560);
+		_coordsLabel.Position = new Vector2(sbX + 20, ResolutionManager.BottomBarY - 5);
 		ApplyFont(_coordsLabel, "Tahoma", 700);
 		_coordsLabel.AddThemeFontSizeOverride("font_size", 9);
 
@@ -497,7 +513,7 @@ public partial class Main : Control
 		_statBarOverlay = new StatBarOverlay();
 		_statBarOverlay.DataPath = dataPath;
 		_statBarOverlay.Position = Vector2.Zero;
-		_statBarOverlay.Size = new Vector2(800, 600);
+		_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		_statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(_statBarOverlay);
 

@@ -1,10 +1,11 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Draws the game HUD frame using RpgTheme assets.
-/// big_bar.png stretched as the ENTIRE 800x600 frame.
+/// big_bar.png stretched to the current window size.
 /// Dark insets ONLY where we need black backgrounds (console, viewport).
 /// Sidebar content (labels, buttons, stat bars) sits directly on big_bar.
 /// An overlay copy of big_bar.png draws ON TOP of everything (high ZIndex)
@@ -19,8 +20,11 @@ public partial class GameHudFrame : Control
 
     public override void _Ready()
     {
+        int winW = ResolutionManager.WindowWidth;
+        int winH = ResolutionManager.WindowHeight;
+
         Position = Vector2.Zero;
-        Size = new Vector2(800, 600);
+        Size = new Vector2(winW, winH);
         MouseFilter = MouseFilterEnum.Ignore;
 
         // === BACKGROUND: big_bar_bg.png (fills behind content) ===
@@ -29,22 +33,24 @@ public partial class GameHudFrame : Control
         bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
         bgFrame.StretchMode = TextureRect.StretchModeEnum.Scale;
         bgFrame.Position = Vector2.Zero;
-        bgFrame.Size = new Vector2(800, 600);
+        bgFrame.Size = new Vector2(winW, winH);
         bgFrame.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(bgFrame);
 
         // === DARK INSETS — only where we need black behind content ===
 
-        // Console area — semi-transparent with border (extended up for minimap breathing room)
-        AddStyledInset(18, 14, 536, 128);
+        // Console area — semi-transparent with border (extends to near sidebar)
+        int consoleW = ResolutionManager.ConsoleRight - 18;
+        AddStyledInset(18, 14, consoleW, 128);
 
-        // Game viewport — the world renders here (13,149 to 557,565)
-        AddDarkInset(13, 149, 544, 416);
+        // Game viewport — the world renders here
+        AddDarkInset(ResolutionManager.LeftMargin, ResolutionManager.TopMargin,
+                     ResolutionManager.ViewportW, ResolutionManager.ViewportH);
 
         // === OVERLAY: big_bar_frame.png (borders only) on top of everything ===
         FrameOverlay = new Control();
         FrameOverlay.Position = Vector2.Zero;
-        FrameOverlay.Size = new Vector2(800, 600);
+        FrameOverlay.Size = new Vector2(winW, winH);
         FrameOverlay.MouseFilter = MouseFilterEnum.Ignore;
         FrameOverlay.ZIndex = 50;
 
@@ -53,7 +59,7 @@ public partial class GameHudFrame : Control
         overlayTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
         overlayTex.StretchMode = TextureRect.StretchModeEnum.Scale;
         overlayTex.Position = Vector2.Zero;
-        overlayTex.Size = new Vector2(800, 600);
+        overlayTex.Size = new Vector2(winW, winH);
         overlayTex.MouseFilter = MouseFilterEnum.Ignore;
         FrameOverlay.AddChild(overlayTex);
     }
