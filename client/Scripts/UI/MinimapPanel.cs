@@ -32,10 +32,7 @@ public partial class MinimapPanel : Control
     private GameData? _data;
     private ImageTexture? _terrainTexture;
     private int _lastRenderedMap = -1;
-    // Viewport tracking — minimap re-renders when player moves enough
-    private int _lastCenterX = -1;
-    private int _lastCenterY = -1;
-    private const int ViewRadius = 50; // render 100x100 area (±50 tiles from player)
+    private const int ViewRadius = 50; // display ±50 tiles around player
 
     // Cache of source images by file number (avoids reloading PNGs per tile)
     private readonly Dictionary<int, Image?> _imageCache = new();
@@ -134,106 +131,58 @@ public partial class MinimapPanel : Control
     }
 
     /// <summary>
-    /// Rebuild terrain texture for a 100x100 tile area centered on the player.
-    /// Only samples chunks near the player — does not iterate the full map.
-    /// Re-renders when the player moves more than 10 tiles from last center.
+    /// Build the full terrain texture once per map load. Each pixel = 1 tile.
+    /// Uses Get() so no chunks are allocated for empty areas.
+    /// The _Draw method then shows a 100x100 slice centered on the player.
     /// </summary>
     private void RebuildTerrainTexture()
     {
         if (_state?.MapData == null) return;
 
-        int cx = _state.UserPosX;
-        int cy = _state.UserPosY;
+        _lastRenderedMap = _state.CurrentMap;
+        _imageCache.Clear();
+
         int mapW = _state.MapData.Width;
         int mapH = _state.MapData.Height;
+        var mapImg = Image.CreateEmpty(mapW, mapH, false, Image.Format.Rgba8);
 
-        // Small maps (<=100): render full map as before
-        if (mapW <= 100 && mapH <= 100)
-        {
-            _lastRenderedMap = _state.CurrentMap;
-            _lastCenterX = cx;
-            _lastCenterY = cy;
-            _imageCache.Clear();
-
-            var fullImg = Image.CreateEmpty(mapW, mapH, false, Image.Format.Rgba8);
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
-                {
-                    var tile = _state.MapData.Tiles.Get(x, y);
-                    fullImg.SetPixel(x - 1, y - 1, SampleGrhColor(tile.Layer1));
-                }
-            _terrainTexture = ImageTexture.CreateFromImage(fullImg);
-            return;
-        }
-
-        // Large maps: render 100x100 viewport around player
-        _lastRenderedMap = _state.CurrentMap;
-        _lastCenterX = cx;
-        _lastCenterY = cy;
-
-        int minX = Math.Max(1, cx - ViewRadius);
-        int minY = Math.Max(1, cy - ViewRadius);
-        int maxX = Math.Min(mapW, cx + ViewRadius - 1);
-        int maxY = Math.Min(mapH, cy + ViewRadius - 1);
-        int renderW = maxX - minX + 1;
-        int renderH = maxY - minY + 1;
-
-        var mapImg = Image.CreateEmpty(renderW, renderH, false, Image.Format.Rgba8);
-        for (int y = minY; y <= maxY; y++)
-            for (int x = minX; x <= maxX; x++)
+        for (int y = 1; y <= mapH; y++)
+            for (int x = 1; x <= mapW; x++)
             {
                 var tile = _state.MapData.Tiles.Get(x, y);
-                mapImg.SetPixel(x - minX, y - minY, SampleGrhColor(tile.Layer1));
+                mapImg.SetPixel(x - 1, y - 1, SampleGrhColor(tile.Layer1));
             }
-        _terrainTexture = ImageTexture.CreateFromImage(mapImg);
-    }
 
-    /// <summary>Check if the minimap needs re-rendering (map changed or player moved 10+ tiles).</summary>
-    private bool NeedsRebuild()
-    {
-        if (_state == null) return false;
-        if (_state.CurrentMap != _lastRenderedMap || _terrainTexture == null) return true;
-        int dx = Math.Abs(_state.UserPosX - _lastCenterX);
-        int dy = Math.Abs(_state.UserPosY - _lastCenterY);
-        return dx >= 10 || dy >= 10;
+        _terrainTexture = ImageTexture.CreateFromImage(mapImg);
     }
 
     public override void _Draw()
     {
         if (_state == null) return;
 
-        // Rebuild terrain when map changes or player moved 10+ tiles
-        if (NeedsRebuild())
+        // Build full terrain texture once per map
+        if (_state.CurrentMap != _lastRenderedMap || _terrainTexture == null)
             RebuildTerrainTexture();
 
-        // Draw terrain texture stretched to 100x100 display
-        if (_terrainTexture != null)
-            DrawTextureRect(_terrainTexture, new Rect2(0, 0, MapSize, MapSize), false);
-
-        // Calculate viewport bounds for marker positioning
         int mapW = _state.MapData?.Width ?? 100;
         int mapH = _state.MapData?.Height ?? 100;
-        int minX, minY, renderW, renderH;
 
-        if (mapW <= 100 && mapH <= 100)
+        // Calculate the 100x100 viewport slice centered on the player
+        int viewW = Math.Min(mapW, ViewRadius * 2);
+        int viewH = Math.Min(mapH, ViewRadius * 2);
+        int minX = Math.Clamp(_state.UserPosX - ViewRadius, 0, Math.Max(0, mapW - viewW));
+        int minY = Math.Clamp(_state.UserPosY - ViewRadius, 0, Math.Max(0, mapH - viewH));
+
+        // Draw the slice of the full texture — source rect moves with the player
+        if (_terrainTexture != null)
         {
-            // Small map: full map in minimap
-            minX = 1; minY = 1;
-            renderW = mapW; renderH = mapH;
-        }
-        else
-        {
-            // Large map: viewport centered on player
-            minX = Math.Max(1, _lastCenterX - ViewRadius);
-            minY = Math.Max(1, _lastCenterY - ViewRadius);
-            int maxX = Math.Min(mapW, _lastCenterX + ViewRadius - 1);
-            int maxY = Math.Min(mapH, _lastCenterY + ViewRadius - 1);
-            renderW = maxX - minX + 1;
-            renderH = maxY - minY + 1;
+            var srcRect = new Rect2(minX, minY, viewW, viewH);
+            DrawTextureRectRegion(_terrainTexture, new Rect2(0, 0, MapSize, MapSize), srcRect);
         }
 
-        float scaleX = MapSize / (float)renderW;
-        float scaleY = MapSize / (float)renderH;
+        // Scale: viewport tile coords → 100px display
+        float scaleX = MapSize / (float)viewW;
+        float scaleY = MapSize / (float)viewH;
 
         // Draw NPCs
         foreach (var kv in _state.Characters)
@@ -242,8 +191,8 @@ public partial class MinimapPanel : Control
             if (ch.CharIndex == _state.UserCharIndex) continue;
             if (ch.NpcNumber <= 0) continue;
 
-            float px = (ch.PosX - minX) * scaleX;
-            float py = (ch.PosY - minY) * scaleY;
+            float px = (ch.PosX - 1 - minX) * scaleX;
+            float py = (ch.PosY - 1 - minY) * scaleY;
             if (px < 0 || px > MapSize || py < 0 || py > MapSize) continue;
             DrawCircle(new Vector2(px, py), NpcMarkerRadius, ch.Criminal ? NpcHostileColor : NpcFriendlyColor);
         }
@@ -256,8 +205,8 @@ public partial class MinimapPanel : Control
             if (ch.CharIndex == _state.UserCharIndex) continue;
             if (ch.NpcNumber > 0) continue;
 
-            float px = (ch.PosX - minX) * scaleX;
-            float py = (ch.PosY - minY) * scaleY;
+            float px = (ch.PosX - 1 - minX) * scaleX;
+            float py = (ch.PosY - 1 - minY) * scaleY;
             if (px < 0 || px > MapSize || py < 0 || py > MapSize) continue;
 
             string baseName = ExtractBaseName(ch.Name);
@@ -272,10 +221,10 @@ public partial class MinimapPanel : Control
             DrawCircle(new Vector2(px, py), PlayerMarkerRadius, color);
         }
 
-        // Draw self (always centered for large maps)
+        // Draw self
         {
-            float px = (_state.UserPosX - minX) * scaleX;
-            float py = (_state.UserPosY - minY) * scaleY;
+            float px = (_state.UserPosX - 1 - minX) * scaleX;
+            float py = (_state.UserPosY - 1 - minY) * scaleY;
             DrawCircle(new Vector2(px, py), SelfMarkerRadius + 1f, new Color(0, 0, 0, 0.6f));
             DrawCircle(new Vector2(px, py), SelfMarkerRadius, SelfColor);
         }
