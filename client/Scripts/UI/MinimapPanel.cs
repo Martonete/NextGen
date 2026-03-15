@@ -148,7 +148,7 @@ public partial class MinimapPanel : Control
         {
             for (int x = 1; x <= tileW; x++)
             {
-                var tile = _state.MapData.Tiles[x, y];
+                var tile = _state.MapData.Tiles.Get(x, y);
                 Color c = SampleGrhColor(tile.Layer1);
                 mapImg.SetPixel(x - 1, y - 1, c);
             }

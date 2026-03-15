@@ -1,8 +1,8 @@
 // World state — runtime map grids, character index management, and area visibility.
 //
-// Grids are dynamically sized (not hardcoded to 100x100). Each grid stores
-// its own dimensions and zone configuration. The zone system provides O(1)
-// area user lookups for broadcast operations.
+// Grids use chunk-based tile storage (100x100 chunks) for memory efficiency.
+// Only chunks that are actually written to get allocated. The zone system
+// provides O(1) area user lookups for broadcast operations.
 
 use std::collections::HashMap;
 use crate::net::ConnectionId;
@@ -21,6 +21,9 @@ pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 6
 
 // Default zone size for area tracking
 const DEFAULT_ZONE_SIZE: i32 = 9;
+
+// Chunk dimensions (tiles per chunk side)
+const CHUNK_SIZE: i32 = 100;
 
 // Heading directions
 pub const HEADING_NORTH: i32 = 1;
@@ -48,10 +51,38 @@ pub struct TileRuntime {
     pub ground_item: GroundItem,         // Item on the ground (0 = none)
 }
 
-/// Runtime map grid — dynamically sized, tracks positions and zone-based user lists.
+/// A 100x100 chunk of tiles, allocated on demand.
+struct RuntimeChunk {
+    tiles: Vec<TileRuntime>, // CHUNK_SIZE * CHUNK_SIZE = 10,000 entries
+}
+
+impl RuntimeChunk {
+    fn new() -> Self {
+        let count = (CHUNK_SIZE * CHUNK_SIZE) as usize;
+        Self {
+            tiles: (0..count).map(|_| TileRuntime::default()).collect(),
+        }
+    }
+}
+
+/// Convert 1-based tile coords to chunk coordinates.
+#[inline]
+fn chunk_coords(x: i32, y: i32) -> (i32, i32) {
+    ((x - 1) / CHUNK_SIZE, (y - 1) / CHUNK_SIZE)
+}
+
+/// Convert 1-based tile coords to a local index within a chunk.
+#[inline]
+fn local_index(x: i32, y: i32) -> usize {
+    let lx = ((x - 1) % CHUNK_SIZE) as usize;
+    let ly = ((y - 1) % CHUNK_SIZE) as usize;
+    ly * CHUNK_SIZE as usize + lx
+}
+
+/// Runtime map grid — chunk-based storage, tracks positions and zone-based user lists.
 pub struct MapGrid {
-    /// Flat tile array indexed as tiles[y * width + x] (0-based internally).
-    tiles: Vec<TileRuntime>,
+    /// Chunk map: (chunk_x, chunk_y) -> RuntimeChunk. Allocated on demand.
+    chunks: HashMap<(i32, i32), RuntimeChunk>,
     /// Grid dimensions.
     pub width: i32,
     pub height: i32,
@@ -67,12 +98,13 @@ pub struct MapGrid {
 
 impl MapGrid {
     /// Create a new grid with the given dimensions and zone size.
+    /// Chunks are NOT pre-allocated — they are created on demand when tiles are written.
     pub fn with_size(width: i32, height: i32, zone_size: i32) -> Self {
         let zones_x = (width + zone_size - 1) / zone_size;
         let zones_y = (height + zone_size - 1) / zone_size;
         let total_zones = (zones_x * zones_y) as usize;
         Self {
-            tiles: (0..(width * height) as usize).map(|_| TileRuntime::default()).collect(),
+            chunks: HashMap::new(),
             width,
             height,
             num_users: 0,
@@ -84,18 +116,23 @@ impl MapGrid {
     }
 
     /// Create a grid with default 100x100 dimensions (VB6 compat).
+    /// Pre-allocates the single (0,0) chunk for legacy compatibility.
     pub fn new() -> Self {
-        Self::with_size(MAP_WIDTH as i32, MAP_HEIGHT as i32, DEFAULT_ZONE_SIZE)
+        let mut grid = Self::with_size(MAP_WIDTH as i32, MAP_HEIGHT as i32, DEFAULT_ZONE_SIZE);
+        // Pre-create the single chunk so all 100x100 tiles are immediately readable
+        grid.chunks.insert((0, 0), RuntimeChunk::new());
+        grid
     }
 
-    /// Convert 1-based tile coords to flat index. Returns None if out of bounds.
-    #[inline]
-    fn tile_index(&self, x: i32, y: i32) -> Option<usize> {
-        if x >= 1 && x <= self.width && y >= 1 && y <= self.height {
-            Some(((y - 1) * self.width + (x - 1)) as usize)
-        } else {
-            None
-        }
+    /// Ensure the chunk containing (x, y) exists. Creates it if missing.
+    pub fn ensure_chunk(&mut self, x: i32, y: i32) {
+        let (cx, cy) = chunk_coords(x, y);
+        self.chunks.entry((cx, cy)).or_insert_with(RuntimeChunk::new);
+    }
+
+    /// Return the number of currently loaded chunks.
+    pub fn loaded_chunk_count(&self) -> usize {
+        self.chunks.len()
     }
 
     /// Convert 1-based tile coords to zone index.
@@ -107,13 +144,26 @@ impl MapGrid {
     }
 
     /// Get tile at (x, y). Coordinates are 1-based.
+    /// Returns None if out of bounds or if the chunk hasn't been allocated yet.
     pub fn tile(&self, x: i32, y: i32) -> Option<&TileRuntime> {
-        self.tile_index(x, y).map(|i| &self.tiles[i])
+        if x < 1 || x > self.width || y < 1 || y > self.height {
+            return None;
+        }
+        let (cx, cy) = chunk_coords(x, y);
+        self.chunks.get(&(cx, cy)).map(|chunk| &chunk.tiles[local_index(x, y)])
     }
 
     /// Get mutable tile at (x, y). Coordinates are 1-based.
+    /// Auto-creates the chunk if it doesn't exist (callers expect to always be able to write).
+    /// Returns None only if out of bounds.
     pub fn tile_mut(&mut self, x: i32, y: i32) -> Option<&mut TileRuntime> {
-        self.tile_index(x, y).map(|i| &mut self.tiles[i])
+        if x < 1 || x > self.width || y < 1 || y > self.height {
+            return None;
+        }
+        let (cx, cy) = chunk_coords(x, y);
+        let chunk = self.chunks.entry((cx, cy)).or_insert_with(RuntimeChunk::new);
+        let idx = local_index(x, y);
+        Some(&mut chunk.tiles[idx])
     }
 
     /// Check if a tile is free for walking.
@@ -315,11 +365,65 @@ mod tests {
     #[test]
     fn custom_size_grid() {
         let grid = MapGrid::with_size(200, 150, 16);
-        assert!(grid.tile(1, 1).is_some());
-        assert!(grid.tile(200, 150).is_some());
-        assert!(grid.tile(201, 1).is_none());
+        // with_size does NOT pre-allocate chunks, so tile() returns None
+        // for unallocated chunks. Use tile_mut to auto-allocate.
+        assert!(grid.tile(1, 1).is_none()); // chunk not allocated yet
+        assert!(grid.tile(201, 1).is_none()); // out of bounds
+
+        // Verify zone dimensions
         assert_eq!(grid.zones_x, 13); // ceil(200/16)
         assert_eq!(grid.zones_y, 10); // ceil(150/16)
+
+        // tile_mut auto-allocates chunks
+        let mut grid = grid;
+        assert!(grid.tile_mut(1, 1).is_some());
+        assert!(grid.tile(1, 1).is_some()); // now readable
+        assert!(grid.tile_mut(200, 150).is_some());
+        assert!(grid.tile(200, 150).is_some());
+        assert!(grid.tile_mut(201, 1).is_none()); // still out of bounds
+    }
+
+    #[test]
+    fn chunk_lazy_allocation() {
+        let mut grid = MapGrid::with_size(300, 300, 9);
+        assert_eq!(grid.loaded_chunk_count(), 0);
+
+        // Writing to (1,1) creates chunk (0,0)
+        grid.tile_mut(1, 1);
+        assert_eq!(grid.loaded_chunk_count(), 1);
+
+        // Writing to (101,1) creates chunk (1,0)
+        grid.tile_mut(101, 1);
+        assert_eq!(grid.loaded_chunk_count(), 2);
+
+        // Writing to (50,50) reuses chunk (0,0) — no new chunk
+        grid.tile_mut(50, 50);
+        assert_eq!(grid.loaded_chunk_count(), 2);
+
+        // Reading from unallocated chunk returns None
+        assert!(grid.tile(201, 201).is_none());
+        assert_eq!(grid.loaded_chunk_count(), 2);
+    }
+
+    #[test]
+    fn ensure_chunk_creates_on_demand() {
+        let mut grid = MapGrid::with_size(500, 500, 9);
+        assert_eq!(grid.loaded_chunk_count(), 0);
+
+        grid.ensure_chunk(250, 250);
+        assert_eq!(grid.loaded_chunk_count(), 1);
+
+        // Now readable
+        assert!(grid.tile(250, 250).is_some());
+    }
+
+    #[test]
+    fn new_grid_has_one_chunk() {
+        let grid = MapGrid::new();
+        assert_eq!(grid.loaded_chunk_count(), 1);
+        // All 100x100 tiles accessible
+        assert!(grid.tile(1, 1).is_some());
+        assert!(grid.tile(100, 100).is_some());
     }
 
     #[test]

@@ -17,6 +17,7 @@
 //
 // All integers are little-endian (VB6 standard).
 
+use std::collections::HashMap;
 use std::io::{self, Read, Cursor};
 use std::path::Path;
 use crate::config::IniFile;
@@ -94,9 +95,14 @@ pub struct MapTile {
     pub original_obj_index: i16,
 }
 
-/// Dynamic-size tile grid. Supports variable map dimensions (legacy 100x100 and extended .aomap).
+/// Chunk size for tile storage. Each chunk holds CHUNK_SIZE x CHUNK_SIZE tiles.
+const CHUNK_SIZE: usize = 100;
+
+/// Dynamic-size tile grid using chunk-based storage.
+/// Chunks are 100x100 tiles, keyed by (chunk_x, chunk_y).
+/// Supports variable map dimensions (legacy 100x100 and extended .aomap).
 pub struct MapTiles {
-    data: Vec<MapTile>,
+    chunks: HashMap<(usize, usize), Vec<MapTile>>,
     pub width: usize,
     pub height: usize,
 }
@@ -104,15 +110,39 @@ pub struct MapTiles {
 impl MapTiles {
     pub fn new(width: usize, height: usize) -> Self {
         Self {
-            data: vec![MapTile::default(); width * height],
+            chunks: HashMap::new(),
             width,
             height,
         }
     }
 
+    /// Returns a reference to the tile at (x, y).
+    /// For in-bounds coordinates where the chunk is not yet loaded, returns a static default tile.
+    /// Returns None only for out-of-bounds coordinates.
     pub fn get(&self, x: usize, y: usize) -> Option<&MapTile> {
         if x < self.width && y < self.height {
-            Some(&self.data[y * self.width + x])
+            let chunk_key = (x / CHUNK_SIZE, y / CHUNK_SIZE);
+            let local_idx = (y % CHUNK_SIZE) * CHUNK_SIZE + (x % CHUNK_SIZE);
+            match self.chunks.get(&chunk_key) {
+                Some(chunk) => Some(&chunk[local_idx]),
+                None => {
+                    static DEFAULT_TILE: MapTile = MapTile {
+                        blocked: false,
+                        graphic: [0; 4],
+                        trigger: Trigger::None,
+                        particle_group_index: 0,
+                        range_light: 0,
+                        rgb_light: [0; 3],
+                        tile_exit: None,
+                        npc_index: 0,
+                        obj: TileObj { obj_index: 0, amount: 0 },
+                        user_index: 0,
+                        original_blocked: false,
+                        original_obj_index: 0,
+                    };
+                    Some(&DEFAULT_TILE)
+                }
+            }
         } else {
             None
         }
@@ -120,7 +150,11 @@ impl MapTiles {
 
     pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut MapTile> {
         if x < self.width && y < self.height {
-            Some(&mut self.data[y * self.width + x])
+            let chunk_key = (x / CHUNK_SIZE, y / CHUNK_SIZE);
+            let local_idx = (y % CHUNK_SIZE) * CHUNK_SIZE + (x % CHUNK_SIZE);
+            let chunk = self.chunks.entry(chunk_key)
+                .or_insert_with(|| vec![MapTile::default(); CHUNK_SIZE * CHUNK_SIZE]);
+            Some(&mut chunk[local_idx])
         } else {
             None
         }

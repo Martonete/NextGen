@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using Godot;
@@ -300,9 +301,78 @@ public static class MapLoader
     }
 }
 
+/// <summary>
+/// Chunk-based tile storage. Tiles are grouped into 100x100 chunks
+/// that are lazily allocated on first access, keeping memory proportional
+/// to the area actually used instead of Width*Height.
+/// The indexer accepts 1-based coordinates so callers work exactly like
+/// the old MapTile[,] 2D array.
+/// </summary>
+public class ChunkedTiles
+{
+    private const int ChunkSize = 100;
+    private readonly Dictionary<(int, int), MapTile[]> _chunks = new();
+
+    /// <summary>
+    /// Decompose 1-based tile coordinates into chunk key + flat local index.
+    /// </summary>
+    private static (int cx, int cy, int local) Resolve(int x, int y)
+    {
+        int cx = (x - 1) / ChunkSize;
+        int cy = (y - 1) / ChunkSize;
+        int lx = (x - 1) % ChunkSize;
+        int ly = (y - 1) % ChunkSize;
+        return (cx, cy, ly * ChunkSize + lx);
+    }
+
+    /// <summary>
+    /// Indexer — transparently resolves chunks.
+    /// Auto-creates the chunk on first access (needed during map loading).
+    /// Returns by ref so callers can do <c>ref var tile = ref tiles[x, y];</c>.
+    /// </summary>
+    public ref MapTile this[int x, int y]
+    {
+        get
+        {
+            var (cx, cy, local) = Resolve(x, y);
+            var key = (cx, cy);
+            if (!_chunks.TryGetValue(key, out var chunk))
+            {
+                chunk = new MapTile[ChunkSize * ChunkSize];
+                _chunks[key] = chunk;
+            }
+            return ref chunk[local];
+        }
+    }
+
+    /// <summary>
+    /// Read-only tile access — returns default MapTile if chunk not loaded.
+    /// Does NOT create chunks. Use this for read-only operations like minimap.
+    /// </summary>
+    public MapTile Get(int x, int y)
+    {
+        var (cx, cy, local) = Resolve(x, y);
+        if (_chunks.TryGetValue((cx, cy), out var chunk))
+            return chunk[local];
+        return default;
+    }
+
+    /// <summary>
+    /// Check whether the chunk containing the given tile has been loaded.
+    /// </summary>
+    public bool Has(int x, int y)
+    {
+        var (cx, cy, _) = Resolve(x, y);
+        return _chunks.ContainsKey((cx, cy));
+    }
+
+    /// <summary>Number of chunks currently allocated.</summary>
+    public int LoadedChunks => _chunks.Count;
+}
+
 public class MapData
 {
-    public MapTile[,] Tiles;
+    public ChunkedTiles Tiles;
     public int Width;
     public int Height;
 
@@ -310,7 +380,7 @@ public class MapData
     {
         Width = width;
         Height = height;
-        Tiles = new MapTile[width + 1, height + 1]; // 1-indexed
+        Tiles = new ChunkedTiles();
     }
 }
 
