@@ -33,11 +33,11 @@ public class InputHandler
 	private const int WaterGrhMin = 1505;
 	private const int WaterGrhMax = 1520;
 
-	// VB6 map borders (InMapBounds)
-	private const int MinXBorder = 9;
-	private const int MaxXBorder = 92;
-	private const int MinYBorder = 7;
-	private const int MaxYBorder = 94;
+	// VB6 map borders (InMapBounds) — offset from map edges
+	private const int BorderMarginLeft = 9;
+	private const int BorderMarginRight = 8;
+	private const int BorderMarginTop = 7;
+	private const int BorderMarginBottom = 6;
 
 	// VB6 attack cooldown: tAt = 1000ms
 	private const float AttackCooldownMs = 1000f;
@@ -378,7 +378,9 @@ public class InputHandler
 	/// </summary>
 	private bool LegalPos(int x, int y)
 	{
-		if (x < MinXBorder || x > MaxXBorder || y < MinYBorder || y > MaxYBorder)
+		int maxX = (_state.MapData?.Width ?? 100) - BorderMarginRight;
+		int maxY = (_state.MapData?.Height ?? 100) - BorderMarginBottom;
+		if (x < BorderMarginLeft || x > maxX || y < BorderMarginTop || y > maxY)
 			return false;
 
 		if (_state.MapData == null) return true;
@@ -443,21 +445,21 @@ public class InputHandler
 	public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY));
 	}
 
 	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY));
 	}
 
 	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+		if (IsInMapBounds(tileX, tileY))
 		{
 			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill));
 			_state.UsingSkill = 0;
@@ -467,8 +469,17 @@ public class InputHandler
 	public void HandleGmTeleport(Vector2 viewportPos, int userX, int userY, int currentMap)
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {currentMap} {tileX} {tileY}"));
+	}
+
+	/// <summary>
+	/// Check if tile coordinates are within the current map bounds (1..Width, 1..Height).
+	/// </summary>
+	private bool IsInMapBounds(int x, int y)
+	{
+		if (_state.MapData == null) return x >= 1 && x <= 100 && y >= 1 && y <= 100;
+		return x >= 1 && x <= _state.MapData.Width && y >= 1 && y <= _state.MapData.Height;
 	}
 
 	/// <summary>

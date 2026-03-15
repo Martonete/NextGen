@@ -107,6 +107,7 @@ public partial class WorldRenderer : Node2D
 shader_type canvas_item;
 uniform sampler2D lightmap : filter_linear, repeat_disable;
 uniform vec2 world_origin;
+uniform vec2 map_size_px;
 uniform bool use_lightmap;
 varying vec2 v_world_px;
 
@@ -116,7 +117,7 @@ void vertex() {
 
 void fragment() {
 	if (use_lightmap) {
-		vec2 uv = (v_world_px - 32.0) / 3200.0;
+		vec2 uv = (v_world_px - 32.0) / map_size_px;
 		vec3 light = texture(lightmap, uv).rgb;
 		COLOR.rgb *= light;
 	}
@@ -139,10 +140,12 @@ void fragment() {
 		shader.Code = LightmapShaderCode;
 		_lightmapMaterial = new ShaderMaterial();
 		_lightmapMaterial.Shader = shader;
+		// Initial lightmap size — will be rebuilt when map loads
 		_lightmapTexture = ImageTexture.CreateFromImage(
 			Image.CreateEmpty(101, 101, false, Image.Format.Rgb8));
 		_lightmapMaterial.SetShaderParameter("lightmap", _lightmapTexture);
 		_lightmapMaterial.SetShaderParameter("use_lightmap", false);
+		_lightmapMaterial.SetShaderParameter("map_size_px", new Vector2(3200f, 3200f));
 
 		// Apply lightmap shader to terrain layers (self, mask, L2, roof)
 		Material = _lightmapMaterial;
@@ -286,7 +289,7 @@ void fragment() {
 
 		int ux = _state.UserPosX;
 		int uy = _state.UserPosY;
-		if (ux < 1 || ux > 100 || uy < 1 || uy > 100) return;
+		if (ux < 1 || ux > _state.MapData.Width || uy < 1 || uy > _state.MapData.Height) return;
 
 		short trigger = _state.MapData.Tiles[ux, uy].Trigger;
 		bool underRoof = trigger == 1 || trigger == 2 || trigger == 4;
@@ -388,17 +391,19 @@ void fragment() {
 		int screenMinY = _frameUserY - HalfWindowTileHeight;
 		int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
-		// Extended bounds with tile buffer
+		// Extended bounds with tile buffer (clamped to map dimensions)
+		int mapW = _state.MapData.Width;
+		int mapH = _state.MapData.Height;
 		_frameMinX = Math.Max(1, screenMinX - TileBufferSize);
-		_frameMaxX = Math.Min(100, screenMaxX + TileBufferSize);
+		_frameMaxX = Math.Min(mapW, screenMaxX + TileBufferSize);
 		_frameMinY = Math.Max(1, screenMinY - TileBufferSize);
-		_frameMaxY = Math.Min(100, screenMaxY + TileBufferSize);
+		_frameMaxY = Math.Min(mapH, screenMaxY + TileBufferSize);
 
 		// L1 bounds (visible +2 margin) — used by mask layer too
 		_frameL1MinX = Math.Max(1, screenMinX - 2);
-		_frameL1MaxX = Math.Min(100, screenMaxX + 2);
+		_frameL1MaxX = Math.Min(mapW, screenMaxX + 2);
 		_frameL1MinY = Math.Max(1, screenMinY - 2);
-		_frameL1MaxY = Math.Min(100, screenMaxY + 2);
+		_frameL1MaxY = Math.Min(mapH, screenMaxY + 2);
 
 		_frameHasLights = (_state.Config?.ShowLights ?? true)
 						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
@@ -410,11 +415,23 @@ void fragment() {
 		{
 			if (_lightmapDirty && _state.TileLightColors != null)
 			{
-				var img = LightSystem.BuildLightmapImage(_state.TileLightColors);
-				_lightmapTexture?.Update(img);
+				var img = LightSystem.BuildLightmapImage(_state.TileLightColors, mapW, mapH);
+				// Recreate texture if dimensions changed, otherwise update in-place
+				if (_lightmapTexture == null
+					|| _lightmapTexture.GetWidth() != img.GetWidth()
+					|| _lightmapTexture.GetHeight() != img.GetHeight())
+				{
+					_lightmapTexture = ImageTexture.CreateFromImage(img);
+					_lightmapMaterial?.SetShaderParameter("lightmap", _lightmapTexture);
+				}
+				else
+				{
+					_lightmapTexture.Update(img);
+				}
 				_lightmapDirty = false;
 			}
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", true);
+			_lightmapMaterial?.SetShaderParameter("map_size_px", new Vector2(mapW * TileSize, mapH * TileSize));
 			float originX = (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX;
 			float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
 			_lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
@@ -475,13 +492,13 @@ void fragment() {
 				// has water (L1 GRH 1505-1520). Checking 3 rows allows the reflection
 				// to smoothly fade out as the character walks away from water.
 				// NonWaterMaskLayer ensures reflections only show on water tiles.
-				if (ch.PosY < 1 || ch.PosY > 97) continue;
+				if (ch.PosY < 1 || ch.PosY > mapH - 3) continue;
 				bool hasNearbyWater = false;
 				int checkRangeX = ch.Mounted ? 3 : 2;
-				for (int cy = ch.PosY + 1; cy <= Math.Min(100, ch.PosY + 5) && !hasNearbyWater; cy++)
+				for (int cy = ch.PosY + 1; cy <= Math.Min(mapH, ch.PosY + 5) && !hasNearbyWater; cy++)
 				{
 					for (int cx = Math.Max(1, ch.PosX - checkRangeX);
-						 cx <= Math.Min(100, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
+						 cx <= Math.Min(mapW, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
 					{
 						ref var wt = ref _state.MapData.Tiles[cx, cy];
 						if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520)
@@ -649,7 +666,7 @@ void fragment() {
 	/// </summary>
 	public static bool IsWater(MapData? mapData, int x, int y)
 	{
-		if (mapData == null || x < 1 || x > 100 || y < 1 || y > 100) return false;
+		if (mapData == null || x < 1 || x > mapData.Width || y < 1 || y > mapData.Height) return false;
 		ref var tile = ref mapData.Tiles[x, y];
 		int g = tile.Layer1;
 		bool isWater = (g >= 1505 && g <= 1520)

@@ -522,9 +522,9 @@ public partial class Main
     {
         if (state.MapData == null) return;
         var map = state.MapData;
-        for (int y = 1; y <= 100; y++)
+        for (int y = 1; y <= map.Height; y++)
         {
-            for (int x = 1; x <= 100; x++)
+            for (int x = 1; x <= map.Width; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
                 if (tile.ParticleGroup > 0)

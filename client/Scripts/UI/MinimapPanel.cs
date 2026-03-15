@@ -13,8 +13,7 @@ namespace ArgentumNextgen.UI;
 /// </summary>
 public partial class MinimapPanel : Control
 {
-    private const int TileGrid = 100; // AO maps are 100x100
-    private const int MapSize = 100;  // rendered size in pixels (1:1 with tiles)
+    private const int MapSize = 100;  // rendered size in pixels (fixed display size)
 
     // Marker sizes (radius)
     private const float SelfMarkerRadius = 2.5f;
@@ -131,7 +130,8 @@ public partial class MinimapPanel : Control
     }
 
     /// <summary>
-    /// Rebuild the 100x100 terrain texture by sampling each tile's Layer1 color.
+    /// Rebuild terrain texture by sampling each tile's Layer1 color.
+    /// For maps larger than 100x100, the texture is scaled down to fit MapSize.
     /// </summary>
     private void RebuildTerrainTexture()
     {
@@ -140,11 +140,13 @@ public partial class MinimapPanel : Control
         _lastRenderedMap = _state.CurrentMap;
         _imageCache.Clear(); // clear source image cache for new map
 
-        var mapImg = Image.CreateEmpty(TileGrid, TileGrid, false, Image.Format.Rgba8);
+        int tileW = _state.MapData.Width;
+        int tileH = _state.MapData.Height;
+        var mapImg = Image.CreateEmpty(tileW, tileH, false, Image.Format.Rgba8);
 
-        for (int y = 1; y <= TileGrid; y++)
+        for (int y = 1; y <= tileH; y++)
         {
-            for (int x = 1; x <= TileGrid; x++)
+            for (int x = 1; x <= tileW; x++)
             {
                 var tile = _state.MapData.Tiles[x, y];
                 Color c = SampleGrhColor(tile.Layer1);
@@ -167,8 +169,12 @@ public partial class MinimapPanel : Control
         if (_terrainTexture != null)
             DrawTextureRect(_terrainTexture, new Rect2(0, 0, MapSize, MapSize), false);
 
-        // Scale: tile coords (1-100) → pixel coords
-        float scale = MapSize / (float)TileGrid; // = 1.0
+        // Scale: tile coords → pixel coords (supports maps of any size)
+        int tileW = _state.MapData?.Width ?? 100;
+        int tileH = _state.MapData?.Height ?? 100;
+        float scaleX = MapSize / (float)tileW;
+        float scaleY = MapSize / (float)tileH;
+        float scale = Math.Min(scaleX, scaleY);
 
         // Draw NPCs (below players)
         foreach (var kv in _state.Characters)

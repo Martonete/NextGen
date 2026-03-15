@@ -411,7 +411,7 @@ public partial class PacketHandler
             int x = ParseInt(parts[0]);
             int y = ParseInt(parts[1]);
             int blocked = ParseInt(parts[2]);
-            if (_state.MapData != null && x >= 1 && x <= 100 && y >= 1 && y <= 100)
+            if (_state.MapData != null && x >= 1 && x <= _state.MapData.Width && y >= 1 && y <= _state.MapData.Height)
             {
                 _state.MapData.Tiles[x, y].Blocked = blocked != 0;
             }
