@@ -257,7 +257,7 @@ public static class RpgTheme
                 else
                     GD.PrintErr($"[RpgTheme] FAILED to load: {resPath} (err={err})");
             }
-            _texCache[filename] = tex;
+            _texCache[filename] = tex!;
         }
         return tex;
     }
