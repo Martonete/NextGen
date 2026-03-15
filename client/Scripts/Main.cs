@@ -98,6 +98,57 @@ public partial class Main : Control
 		// Coords label
 		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(5)); _coordsLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 
+		// --- Sidebar buttons (relative to BottomBarY) ---
+		int btnX = sbX + S(122);
+		int btn0Y = ResolutionManager.BottomBarY - S(120);
+		int btnStep = S(21);
+		if (_mapaButton != null) { _mapaButton.Position = new Vector2(btnX, btn0Y); _mapaButton.Size = new Vector2(S(93), S(20)); }
+		if (_grupoButton != null) { _grupoButton.Position = new Vector2(btnX, btn0Y + btnStep); _grupoButton.Size = new Vector2(S(93), S(20)); }
+		if (_opcionesButton != null) { _opcionesButton.Position = new Vector2(btnX, btn0Y + btnStep * 2); _opcionesButton.Size = new Vector2(S(93), S(20)); }
+		if (_estadisticasButton != null) { _estadisticasButton.Position = new Vector2(btnX, btn0Y + btnStep * 3); _estadisticasButton.Size = new Vector2(S(93), S(20)); }
+		if (_clanesButton != null) { _clanesButton.Position = new Vector2(btnX, btn0Y + btnStep * 4); _clanesButton.Size = new Vector2(S(93), S(20)); }
+
+		// Minimize/Close buttons
+		if (_minimizeButton != null) _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4));
+		if (_closeMenuButton != null) _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4));
+
+		// --- Inventory/Spell panel area ---
+		int sideX = sbX + S(17);
+		int contentW = S(190);
+		int tabX = sideX - S(6);
+		int tabBtnW = (contentW + S(12)) / 2;
+		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); }
+		if (_spellTabButton != null) { _spellTabButton.Position = new Vector2(tabX + tabBtnW, S(122)); _spellTabButton.Size = new Vector2(tabBtnW, S(34)); }
+		int invX = sideX + (contentW - S(171)) / 2;
+		if (_inventoryPanel != null) { _inventoryPanel.Position = new Vector2(invX, S(158)); _inventoryPanel.Size = new Vector2(S(171), S(174)); }
+		if (_spellPanel != null) { _spellPanel.Position = new Vector2(sideX, S(158)); _spellPanel.Size = new Vector2(contentW, S(186)); }
+		if (_dydToggle != null) { _dydToggle.Position = new Vector2(sideX - S(25), S(338)); _dydToggle.Size = new Vector2(S(21), S(21)); }
+		int halfBtn = contentW / 2 - S(2);
+		if (_lanzarButton != null) { _lanzarButton.Position = new Vector2(sideX, S(348)); _lanzarButton.Size = new Vector2(halfBtn, S(28)); }
+		if (_infoButton != null) { _infoButton.Position = new Vector2(sideX + halfBtn + S(4), S(348)); _infoButton.Size = new Vector2(halfBtn, S(28)); }
+		if (_spellUpButton != null) _spellUpButton.Position = new Vector2(sideX + contentW + S(2), S(200));
+		if (_spellDownButton != null) _spellDownButton.Position = new Vector2(sideX + contentW + S(2), S(230));
+
+		// --- Stat labels ---
+		int bbY = ResolutionManager.BottomBarY + S(9);
+		if (_armorLabel != null) { _armorLabel.Position = new Vector2(S(55), bbY); _armorLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_helmLabel != null) { _helmLabel.Position = new Vector2(S(170), bbY); _helmLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_shieldLabel != null) { _shieldLabel.Position = new Vector2(S(310), bbY); _shieldLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_weaponLabel != null) { _weaponLabel.Position = new Vector2(S(435), bbY); _weaponLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(160)); _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		if (_statSepLabel != null) _statSepLabel.Position = new Vector2(sbX + S(75), ResolutionManager.BottomBarY - S(160));
+		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sbX + S(85), ResolutionManager.BottomBarY - S(160)); _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX + S(122), ResolutionManager.BottomBarY); _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+
+		// --- Minimap ---
+		int mmBorderX = ResolutionManager.ConsoleRight - S(118);
+		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(S(118), S(118)); }
+		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
+
+		// Blind overlay
+		if (_blindOverlay != null)
+			_blindOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
 		// Console right edge
 		if (_consoleLabel != null)
 			_consoleLabel.OffsetRight = ResolutionManager.ConsoleRight;
