@@ -393,8 +393,7 @@ pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: Connection
     let map_idx = map as usize;
     // Toggle blocked state and capture result
     let toggle_result = if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            let tile = &mut game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
             tile.blocked = !tile.blocked;
             Some(tile.blocked)
         } else {

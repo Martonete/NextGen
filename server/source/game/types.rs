@@ -1239,8 +1239,8 @@ impl GameState {
     pub fn is_tile_blocked(&self, map: i32, x: i32, y: i32) -> bool {
         let map_idx = map as usize;
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
-            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-                game_map.tiles[(y - 1) as usize][(x - 1) as usize].blocked
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+                tile.blocked
             } else {
                 true
             }
@@ -1253,8 +1253,7 @@ impl GameState {
     pub fn hay_agua(&self, map: i32, x: i32, y: i32) -> bool {
         let map_idx = map as usize;
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
-            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-                let tile = &game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
                 let g = tile.graphic[0];
                 let is_water = (g >= 1505 && g <= 1520)
                     || (g >= 5665 && g <= 5680)
@@ -1304,8 +1303,7 @@ impl GameState {
     pub fn get_tile_exit(&self, map: i32, x: i32, y: i32) -> Option<(i32, i32, i32)> {
         let map_idx = map as usize;
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
-            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-                let tile = &game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
                 if let Some(ref exit) = tile.tile_exit {
                     return Some((exit.map as i32, exit.x as i32, exit.y as i32));
                 }
@@ -1357,9 +1355,9 @@ impl GameState {
         let mut spawns: Vec<(usize, i32, i32, i32)> = Vec::new();
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
             if let Some(game_map) = maybe_map {
-                for y in 0..100 {
-                    for x in 0..100 {
-                        let npc_idx = game_map.tiles[y][x].npc_index;
+                for y in 0..game_map.tiles.height {
+                    for x in 0..game_map.tiles.width {
+                        let npc_idx = game_map.tiles.get(x, y).map(|t| t.npc_index).unwrap_or(0);
                         if npc_idx > 0 {
                             spawns.push((npc_idx as usize, map_idx as i32, (x + 1) as i32, (y + 1) as i32));
                         }
@@ -1384,9 +1382,9 @@ impl GameState {
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
             if let Some(game_map) = maybe_map {
                 let map_num = map_idx as i32;
-                for y in 0..100usize {
-                    for x in 0..100usize {
-                        let obj = &game_map.tiles[y][x].obj;
+                for y in 0..game_map.tiles.height {
+                    for x in 0..game_map.tiles.width {
+                        let obj = match game_map.tiles.get(x, y) { Some(t) => &t.obj, None => continue };
                         if obj.obj_index > 0 {
                             let tile_x = (x + 1) as i32;
                             let tile_y = (y + 1) as i32;

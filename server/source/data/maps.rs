@@ -1,8 +1,12 @@
 // Map loader — maps/MapaN.map (binary), MapaN.inf (binary), MapaN.dat (INI)
 //
-// Binary .map format:
+// Binary .map format (legacy):
 //   Header: 273 bytes (MapVersion(2) + Desc(255) + CRC(4) + MagicWord(4) + Reserved(8))
 //   Tiles: 100x100 grid, variable-length per tile using ByFlags bitfield.
+//
+// Binary .aomap format (extended):
+//   Header: 16 bytes (Magic(6) + Version(2) + Width(2) + Height(2) + Flags(4))
+//   Tiles: Width × Height grid, same ByFlags encoding as .map
 //
 // Binary .inf format:
 //   Header: 10 bytes (5 reserved Integers)
@@ -90,6 +94,39 @@ pub struct MapTile {
     pub original_obj_index: i16,
 }
 
+/// Dynamic-size tile grid. Supports variable map dimensions (legacy 100x100 and extended .aomap).
+pub struct MapTiles {
+    data: Vec<MapTile>,
+    pub width: usize,
+    pub height: usize,
+}
+
+impl MapTiles {
+    pub fn new(width: usize, height: usize) -> Self {
+        Self {
+            data: vec![MapTile::default(); width * height],
+            width,
+            height,
+        }
+    }
+
+    pub fn get(&self, x: usize, y: usize) -> Option<&MapTile> {
+        if x < self.width && y < self.height {
+            Some(&self.data[y * self.width + x])
+        } else {
+            None
+        }
+    }
+
+    pub fn get_mut(&mut self, x: usize, y: usize) -> Option<&mut MapTile> {
+        if x < self.width && y < self.height {
+            Some(&mut self.data[y * self.width + x])
+        } else {
+            None
+        }
+    }
+}
+
 /// Map metadata from .dat INI file.
 #[derive(Debug, Clone)]
 pub struct MapInfo {
@@ -141,7 +178,7 @@ impl Default for MapInfo {
 /// A complete loaded map.
 pub struct GameMap {
     pub info: MapInfo,
-    pub tiles: Box<[[MapTile; MAP_WIDTH]; MAP_HEIGHT]>,
+    pub tiles: MapTiles,
 }
 
 /// Helper to read a little-endian i16 from a cursor.
@@ -149,6 +186,13 @@ fn read_i16(cursor: &mut Cursor<&[u8]>) -> io::Result<i16> {
     let mut buf = [0u8; 2];
     cursor.read_exact(&mut buf)?;
     Ok(i16::from_le_bytes(buf))
+}
+
+/// Helper to read a little-endian u16 from a cursor.
+fn read_u16(cursor: &mut Cursor<&[u8]>) -> io::Result<u16> {
+    let mut buf = [0u8; 2];
+    cursor.read_exact(&mut buf)?;
+    Ok(u16::from_le_bytes(buf))
 }
 
 /// Helper to read a little-endian i32 from a cursor.
@@ -165,8 +209,74 @@ fn read_u8(cursor: &mut Cursor<&[u8]>) -> io::Result<u8> {
     Ok(buf[0])
 }
 
-/// Load .map binary file (tile graphics and properties).
-fn load_map_file(path: &Path, tiles: &mut [[MapTile; MAP_WIDTH]; MAP_HEIGHT]) -> Result<(), String> {
+/// Read tiles from cursor using the ByFlags encoding shared by .map and .aomap formats.
+fn read_map_tiles(cursor: &mut Cursor<&[u8]>, tiles: &mut MapTiles) -> Result<(), String> {
+    for y in 0..tiles.height {
+        for x in 0..tiles.width {
+            let by_flags = read_u8(cursor)
+                .map_err(|e| format!("Failed to read tile ({},{}) flags: {}", x + 1, y + 1, e))?;
+
+            let tile = tiles.get_mut(x, y)
+                .ok_or_else(|| format!("Tile ({},{}) out of bounds", x + 1, y + 1))?;
+
+            // Bit 0: Blocked
+            tile.blocked = (by_flags & 0x01) != 0;
+
+            // Graphic[1] always present
+            tile.graphic[0] = read_i16(cursor)
+                .map_err(|e| format!("Tile ({},{}) graphic[1]: {}", x + 1, y + 1, e))?;
+
+            // Bit 1: Graphic[2]
+            if (by_flags & 0x02) != 0 {
+                tile.graphic[1] = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) graphic[2]: {}", x + 1, y + 1, e))?;
+            }
+
+            // Bit 2: Graphic[3]
+            if (by_flags & 0x04) != 0 {
+                tile.graphic[2] = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) graphic[3]: {}", x + 1, y + 1, e))?;
+            }
+
+            // Bit 3: Graphic[4]
+            if (by_flags & 0x08) != 0 {
+                tile.graphic[3] = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) graphic[4]: {}", x + 1, y + 1, e))?;
+            }
+
+            // Bit 4: Trigger
+            if (by_flags & 0x10) != 0 {
+                let trigger_val = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) trigger: {}", x + 1, y + 1, e))?;
+                tile.trigger = Trigger::from_i16(trigger_val);
+            }
+
+            // Bit 5: Particle group index
+            if (by_flags & 0x20) != 0 {
+                tile.particle_group_index = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) particle: {}", x + 1, y + 1, e))?;
+            }
+
+            // Bit 6: Range light + RGB (8 bytes total)
+            if (by_flags & 0x40) != 0 {
+                tile.range_light = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) range_light: {}", x + 1, y + 1, e))?;
+                tile.rgb_light[0] = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) rgb_r: {}", x + 1, y + 1, e))?;
+                tile.rgb_light[1] = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) rgb_g: {}", x + 1, y + 1, e))?;
+                tile.rgb_light[2] = read_i16(cursor)
+                    .map_err(|e| format!("Tile ({},{}) rgb_b: {}", x + 1, y + 1, e))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Load legacy .map binary file (tile graphics and properties).
+/// Header: 273 bytes, fixed 100x100 grid.
+fn load_map_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
     let data = std::fs::read(path)
         .map_err(|e| format!("Failed to read .map: {}", e))?;
 
@@ -178,71 +288,74 @@ fn load_map_file(path: &Path, tiles: &mut [[MapTile; MAP_WIDTH]; MAP_HEIGHT]) ->
     cursor.read_exact(&mut header)
         .map_err(|e| format!("Failed to read .map header: {}", e))?;
 
-    // Read tiles: Y from 1-100, X from 1-100 (0-indexed in our array)
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
-            let by_flags = read_u8(&mut cursor)
-                .map_err(|e| format!("Failed to read tile ({},{}) flags: {}", x + 1, y + 1, e))?;
+    read_map_tiles(&mut cursor, tiles)
+}
 
-            let tile = &mut tiles[y][x];
+/// Load .aomap binary file (extended format with dimensions in header).
+/// Header (16 bytes):
+///   Magic: "AOMAP\0" (6 bytes)
+///   Version: u16 LE (1)
+///   Width: u16 LE
+///   Height: u16 LE
+///   Flags: u32 LE (reserved)
+///   Padding: 2 bytes (reserved)
+/// Tiles: Width x Height, same ByFlags encoding as legacy .map
+fn load_aomap_file(path: &Path) -> Result<MapTiles, String> {
+    let data = std::fs::read(path)
+        .map_err(|e| format!("Failed to read .aomap: {}", e))?;
 
-            // Bit 0: Blocked
-            tile.blocked = (by_flags & 0x01) != 0;
-
-            // Graphic[1] always present
-            tile.graphic[0] = read_i16(&mut cursor)
-                .map_err(|e| format!("Tile ({},{}) graphic[1]: {}", x + 1, y + 1, e))?;
-
-            // Bit 1: Graphic[2]
-            if (by_flags & 0x02) != 0 {
-                tile.graphic[1] = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) graphic[2]: {}", x + 1, y + 1, e))?;
-            }
-
-            // Bit 2: Graphic[3]
-            if (by_flags & 0x04) != 0 {
-                tile.graphic[2] = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) graphic[3]: {}", x + 1, y + 1, e))?;
-            }
-
-            // Bit 3: Graphic[4]
-            if (by_flags & 0x08) != 0 {
-                tile.graphic[3] = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) graphic[4]: {}", x + 1, y + 1, e))?;
-            }
-
-            // Bit 4: Trigger
-            if (by_flags & 0x10) != 0 {
-                let trigger_val = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) trigger: {}", x + 1, y + 1, e))?;
-                tile.trigger = Trigger::from_i16(trigger_val);
-            }
-
-            // Bit 5: Particle group index
-            if (by_flags & 0x20) != 0 {
-                tile.particle_group_index = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) particle: {}", x + 1, y + 1, e))?;
-            }
-
-            // Bit 6: Range light + RGB (8 bytes total)
-            if (by_flags & 0x40) != 0 {
-                tile.range_light = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) range_light: {}", x + 1, y + 1, e))?;
-                tile.rgb_light[0] = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) rgb_r: {}", x + 1, y + 1, e))?;
-                tile.rgb_light[1] = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) rgb_g: {}", x + 1, y + 1, e))?;
-                tile.rgb_light[2] = read_i16(&mut cursor)
-                    .map_err(|e| format!("Tile ({},{}) rgb_b: {}", x + 1, y + 1, e))?;
-            }
-        }
+    if data.len() < 16 {
+        return Err("Invalid .aomap file: too short for header".into());
     }
 
-    Ok(())
+    let mut cursor = Cursor::new(data.as_slice());
+
+    // Read and validate magic: "AOMAP\0" (6 bytes)
+    let mut magic = [0u8; 6];
+    cursor.read_exact(&mut magic)
+        .map_err(|e| format!("Failed to read .aomap magic: {}", e))?;
+    if &magic != b"AOMAP\0" {
+        return Err(format!("Invalid .aomap magic: expected AOMAP\\0, got {:?}", magic));
+    }
+
+    // Read version (must be 1)
+    let version = read_u16(&mut cursor)
+        .map_err(|e| format!("Failed to read .aomap version: {}", e))?;
+    if version != 1 {
+        return Err(format!("Unsupported .aomap version: {} (expected 1)", version));
+    }
+
+    // Read dimensions
+    let width = read_u16(&mut cursor)
+        .map_err(|e| format!("Failed to read .aomap width: {}", e))? as usize;
+    let height = read_u16(&mut cursor)
+        .map_err(|e| format!("Failed to read .aomap height: {}", e))? as usize;
+
+    if width == 0 || height == 0 {
+        return Err(format!("Invalid .aomap dimensions: {}x{}", width, height));
+    }
+    if width > 10000 || height > 10000 {
+        return Err(format!("Unreasonable .aomap dimensions: {}x{}", width, height));
+    }
+
+    // Read flags (reserved, ignored for now)
+    let _flags = read_i32(&mut cursor)
+        .map_err(|e| format!("Failed to read .aomap flags: {}", e))?;
+
+    // Read padding (2 bytes reserved)
+    let mut _padding = [0u8; 2];
+    cursor.read_exact(&mut _padding)
+        .map_err(|e| format!("Failed to read .aomap padding: {}", e))?;
+
+    // Create tiles and read using shared ByFlags encoding
+    let mut tiles = MapTiles::new(width, height);
+    read_map_tiles(&mut cursor, &mut tiles)?;
+
+    Ok(tiles)
 }
 
 /// Load .inf binary file (exits, NPCs, objects on tiles).
-fn load_inf_file(path: &Path, tiles: &mut [[MapTile; MAP_WIDTH]; MAP_HEIGHT]) -> Result<(), String> {
+fn load_inf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
     let data = std::fs::read(path)
         .map_err(|e| format!("Failed to read .inf: {}", e))?;
 
@@ -254,12 +367,13 @@ fn load_inf_file(path: &Path, tiles: &mut [[MapTile; MAP_WIDTH]; MAP_HEIGHT]) ->
         .map_err(|e| format!("Failed to read .inf header: {}", e))?;
 
     // Read tiles in same order as .map
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
+    for y in 0..tiles.height {
+        for x in 0..tiles.width {
             let by_flags = read_u8(&mut cursor)
                 .map_err(|e| format!("Failed to read inf tile ({},{}) flags: {}", x + 1, y + 1, e))?;
 
-            let tile = &mut tiles[y][x];
+            let tile = tiles.get_mut(x, y)
+                .ok_or_else(|| format!("Inf tile ({},{}) out of bounds", x + 1, y + 1))?;
 
             // Bit 0: TileExit (6 bytes: Map, X, Y)
             if (by_flags & 0x01) != 0 {
@@ -335,16 +449,6 @@ fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
     }
 }
 
-/// Default tiles array (heap-allocated to avoid stack overflow).
-fn new_tiles() -> Box<[[MapTile; MAP_WIDTH]; MAP_HEIGHT]> {
-    // Use vec + unsafe to avoid stack overflow from large array initialization
-    let flat: Vec<MapTile> = (0..MAP_WIDTH * MAP_HEIGHT).map(|_| MapTile::default()).collect();
-    let boxed_slice = flat.into_boxed_slice();
-    // SAFETY: MapTile is repr(Rust), we know the size matches
-    let ptr = Box::into_raw(boxed_slice) as *mut [[MapTile; MAP_WIDTH]; MAP_HEIGHT];
-    unsafe { Box::from_raw(ptr) }
-}
-
 /// Resolve a map file path with case-insensitive extension.
 /// Tries .ext, .Ext, .EXT variants since Linux is case-sensitive.
 fn resolve_map_path(maps_dir: &Path, name: &str, extensions: &[&str]) -> std::path::PathBuf {
@@ -356,29 +460,39 @@ fn resolve_map_path(maps_dir: &Path, name: &str, extensions: &[&str]) -> std::pa
     maps_dir.join(format!("{}.{}", name, extensions[0]))
 }
 
-/// Load a single map (all 3 files: .map, .inf, .dat).
+/// Load a single map (all 3 files: .map/.aomap, .inf, .dat).
 pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     let maps_dir = base.join("maps");
     let name = format!("Mapa{}", map_num);
-    let map_file = resolve_map_path(&maps_dir, &name, &["map", "Map", "MAP"]);
+
+    // Check for .aomap first (extended format with variable dimensions)
+    let aomap_file = maps_dir.join(format!("{}.aomap", name));
+    let mut tiles = if aomap_file.exists() {
+        load_aomap_file(&aomap_file)?
+    } else {
+        // Fallback to legacy .map format (fixed 100x100)
+        let map_file = resolve_map_path(&maps_dir, &name, &["map", "Map", "MAP"]);
+        let mut tiles = MapTiles::new(MAP_WIDTH, MAP_HEIGHT);
+        load_map_file(&map_file, &mut tiles)?;
+        tiles
+    };
+
+    // Load .inf overlay (exits, NPCs, objects)
     let inf_file = resolve_map_path(&maps_dir, &name, &["inf", "Inf", "INF"]);
-    let dat_file = resolve_map_path(&maps_dir, &name, &["dat", "dat", "DAT"]);
-
-    let mut tiles = new_tiles();
-
-    // Load binary tile data
-    load_map_file(&map_file, &mut tiles)?;
     load_inf_file(&inf_file, &mut tiles)?;
 
     // Snapshot original state for door persistence detection
-    for y in 0..MAP_HEIGHT {
-        for x in 0..MAP_WIDTH {
-            tiles[y][x].original_blocked = tiles[y][x].blocked;
-            tiles[y][x].original_obj_index = tiles[y][x].obj.obj_index;
+    for y in 0..tiles.height {
+        for x in 0..tiles.width {
+            if let Some(tile) = tiles.get_mut(x, y) {
+                tile.original_blocked = tile.blocked;
+                tile.original_obj_index = tile.obj.obj_index;
+            }
         }
     }
 
     // Load metadata
+    let dat_file = resolve_map_path(&maps_dir, &name, &["dat", "dat", "DAT"]);
     let info = load_map_dat(&dat_file, map_num);
 
     Ok(GameMap { info, tiles })
@@ -406,8 +520,11 @@ pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
     for i in 1..=num_maps {
         let maps_dir = base.join("maps");
         let name = format!("Mapa{}", i);
+
+        // Check for either .aomap or legacy .map
+        let aomap_file = maps_dir.join(format!("{}.aomap", name));
         let map_file = resolve_map_path(&maps_dir, &name, &["map", "Map", "MAP"]);
-        if !map_file.exists() {
+        if !aomap_file.exists() && !map_file.exists() {
             maps.push(None);
             continue;
         }
@@ -429,10 +546,12 @@ pub fn load_all_maps(base: &Path) -> Result<Vec<Option<GameMap>>, String> {
     let mut total_exits = 0;
     for map_opt in &maps {
         if let Some(gm) = map_opt {
-            for row in gm.tiles.iter() {
-                for tile in row.iter() {
-                    if tile.tile_exit.is_some() {
-                        total_exits += 1;
+            for y in 0..gm.tiles.height {
+                for x in 0..gm.tiles.width {
+                    if let Some(tile) = gm.tiles.get(x, y) {
+                        if tile.tile_exit.is_some() {
+                            total_exits += 1;
+                        }
                     }
                 }
             }
@@ -461,11 +580,13 @@ mod tests {
 
         // Check that some tiles have graphics
         let mut has_graphic = false;
-        for y in 0..MAP_HEIGHT {
-            for x in 0..MAP_WIDTH {
-                if map.tiles[y][x].graphic[0] != 0 {
-                    has_graphic = true;
-                    break;
+        for y in 0..map.tiles.height {
+            for x in 0..map.tiles.width {
+                if let Some(tile) = map.tiles.get(x, y) {
+                    if tile.graphic[0] != 0 {
+                        has_graphic = true;
+                        break;
+                    }
                 }
             }
             if has_graphic { break; }
@@ -486,5 +607,27 @@ mod tests {
         assert_eq!(info.num, 1);
         assert!(!info.name.is_empty());
         assert!(info.r > 0, "RGB should have default values");
+    }
+
+    #[test]
+    fn map_tiles_basic_operations() {
+        let mut tiles = MapTiles::new(10, 5);
+        assert_eq!(tiles.width, 10);
+        assert_eq!(tiles.height, 5);
+
+        // Valid access
+        assert!(tiles.get(0, 0).is_some());
+        assert!(tiles.get(9, 4).is_some());
+
+        // Out of bounds
+        assert!(tiles.get(10, 0).is_none());
+        assert!(tiles.get(0, 5).is_none());
+
+        // Mutable access
+        if let Some(tile) = tiles.get_mut(3, 2) {
+            tile.blocked = true;
+        }
+        assert!(tiles.get(3, 2).unwrap().blocked);
+        assert!(!tiles.get(3, 1).unwrap().blocked);
     }
 }

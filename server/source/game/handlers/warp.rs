@@ -135,8 +135,7 @@ pub(crate) async fn check_update_needed_user(
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
         for sx in min_x..=max_x {
             for sy in min_y..=max_y {
-                if sx >= 1 && sx <= 100 && sy >= 1 && sy <= 100 {
-                    let tile = &game_map.tiles[(sy - 1) as usize][(sx - 1) as usize];
+                if let Some(tile) = game_map.tiles.get((sx - 1) as usize, (sy - 1) as usize) {
                     if tile.particle_group_index > 0 {
                         new_particles.push((tile.particle_group_index, sx, sy));
                     }
@@ -156,9 +155,9 @@ pub(crate) async fn check_update_needed_user(
                             // This ensures correct blocked state regardless of what .map file says
                             if obj.obj_type == crate::data::objects::ObjType::Door {
                                 let blocked_at = |ty: i32, tx: i32| -> bool {
-                                    if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                                        game_map.tiles[(ty - 1) as usize][(tx - 1) as usize].blocked
-                                    } else { false }
+                                    game_map.tiles.get((tx - 1) as usize, (ty - 1) as usize)
+                                        .map(|t| t.blocked)
+                                        .unwrap_or(false)
                                 };
 
                                 // Always send BQ for door tile + x-1 (single door minimum)

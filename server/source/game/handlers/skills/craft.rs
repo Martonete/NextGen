@@ -39,8 +39,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     let is_anvil = is_anvil || state.game_data.maps.get(map as usize)
         .and_then(|m| m.as_ref())
         .map(|m| {
-            if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+            if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                 if tile.obj.obj_index > 0 {
                     state.get_object(tile.obj.obj_index as i32)
                         .map(|o| o.obj_type == ObjType::Anvil)
