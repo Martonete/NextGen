@@ -228,7 +228,10 @@ public partial class MinimapPanel : Control
             var center = new Vector2(px, py);
 
             // Heading: 1=N, 2=E, 3=S, 4=W → rotation angle in radians
-            float angle = _state.UserHeading switch
+            int heading = 3; // default south
+            if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
+                heading = selfCh.Heading;
+            float angle = heading switch
             {
                 1 => -Mathf.Pi / 2f,  // North (up)
                 2 => 0f,               // East (right)

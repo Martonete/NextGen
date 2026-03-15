@@ -95,30 +95,37 @@ public partial class MapViewport : Control
         int mapW = Map.Width;
         int mapH = Map.Height;
 
+        // Viewport culling: only draw tiles visible on screen
+        float invZoom = 1f / Math.Max(State.Zoom, 0.01f);
+        int minX = Math.Max(1, (int)((-State.CameraOffset.X * invZoom) / TileSize));
+        int minY = Math.Max(1, (int)((-State.CameraOffset.Y * invZoom) / TileSize));
+        int maxX = Math.Min(mapW, minX + (int)(Size.X * invZoom / TileSize) + 2);
+        int maxY = Math.Min(mapH, minY + (int)(Size.Y * invZoom / TileSize) + 2);
+
         // Layer 1: Ground
         if (State.ShowLayer1)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
                     DrawTileGrh(Map.Tiles[x, y].Layer1, x, y);
 
         // Layer 2: Mask
         if (State.ShowLayer2)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
                     if (Map.Tiles[x, y].Layer2 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true);
 
         // Layer 3: Objects/trees
         if (State.ShowLayer3)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
                     if (Map.Tiles[x, y].Layer3 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true);
 
         // Objects on map
         if (State.ShowObjects && ObjGrhs != null)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
                 {
                     int objIdx = Map.Tiles[x, y].ObjIndex;
                     if (objIdx > 0 && objIdx < ObjGrhs.Length && ObjGrhs[objIdx] > 0)
@@ -127,8 +134,8 @@ public partial class MapViewport : Control
 
         // NPCs on map
         if (State.ShowNpcs && NpcBodies != null && NpcBodyGrhs != null)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
                 {
                     int npcIdx = Map.Tiles[x, y].NpcIndex;
                     if (npcIdx <= 0 || npcIdx >= NpcBodies.Length) continue;
@@ -157,8 +164,8 @@ public partial class MapViewport : Control
 
         // Layer 4: Roof
         if (State.ShowLayer4)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = minY; y <= maxY; y++)
+                for (int x = minX; x <= maxX; x++)
                     if (Map.Tiles[x, y].Layer4 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
                             modulate: new Color(1, 1, 1, 0.7f));
@@ -551,23 +558,30 @@ public partial class MapViewport : Control
     {
         if (State == null || Map == null) return;
 
+        // Viewport culling bounds (same as tile rendering)
+        float invZoom = 1f / Math.Max(State.Zoom, 0.01f);
+        int ovMinX = Math.Max(1, (int)((-State.CameraOffset.X * invZoom) / TileSize));
+        int ovMinY = Math.Max(1, (int)((-State.CameraOffset.Y * invZoom) / TileSize));
+        int ovMaxX = Math.Min(mapW, ovMinX + (int)(Size.X * invZoom / TileSize) + 2);
+        int ovMaxY = Math.Min(mapH, ovMinY + (int)(Size.Y * invZoom / TileSize) + 2);
+
         // ── Grid (subtle minor + brighter major every 10th line) ──
         if (State.ShowGrid)
         {
             var minorColor = new Color(1f, 1f, 1f, 0.04f);
             var majorColor = new Color(1f, 1f, 1f, 0.12f);
-            for (int y = 1; y <= mapH + 1; y++)
+            for (int y = ovMinY; y <= ovMaxY + 1; y++)
             {
                 bool isMajor = (y - 1) % 10 == 0;
-                DrawLine(new Vector2(1 * TileSize, y * TileSize),
-                         new Vector2((mapW + 1) * TileSize, y * TileSize),
+                DrawLine(new Vector2(ovMinX * TileSize, y * TileSize),
+                         new Vector2((ovMaxX + 1) * TileSize, y * TileSize),
                          isMajor ? majorColor : minorColor, isMajor ? 1f : 0.5f);
             }
-            for (int x = 1; x <= mapW + 1; x++)
+            for (int x = ovMinX; x <= ovMaxX + 1; x++)
             {
                 bool isMajor = (x - 1) % 10 == 0;
-                DrawLine(new Vector2(x * TileSize, 1 * TileSize),
-                         new Vector2(x * TileSize, (mapH + 1) * TileSize),
+                DrawLine(new Vector2(x * TileSize, ovMinY * TileSize),
+                         new Vector2(x * TileSize, (ovMaxY + 1) * TileSize),
                          isMajor ? majorColor : minorColor, isMajor ? 1f : 0.5f);
             }
         }
@@ -578,8 +592,8 @@ public partial class MapViewport : Control
             var hatchColor = new Color(1f, 0.15f, 0.15f, 0.4f);
             var hatchBg = new Color(1f, 0f, 0f, 0.08f);
             float hatchSpacing = 6f;
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].Blocked)
                     {
                         float bx = x * TileSize;
@@ -608,8 +622,8 @@ public partial class MapViewport : Control
 
         // ── Exits (pill badge) ──
         if (State.ShowExits)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasExit)
                     {
                         float ex = x * TileSize;
@@ -632,8 +646,8 @@ public partial class MapViewport : Control
 
         // ── Lights ──
         if (State.ShowLights)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasLight)
                     {
                         ref var tile = ref Map.Tiles[x, y];
@@ -652,8 +666,8 @@ public partial class MapViewport : Control
 
         // ── Particle indicators (diamond + pill) ──
         if (State.ShowParticles)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].ParticleGroup > 0)
                     {
                         var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
@@ -678,8 +692,8 @@ public partial class MapViewport : Control
 
         // ── NPC indicators (badge with dot) ──
         if (State.ShowNpcs)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasNpc)
                     {
                         int npcNum = Map.Tiles[x, y].NpcIndex;
@@ -697,8 +711,8 @@ public partial class MapViewport : Control
 
         // ── Object indicators (small square badge) ──
         if (State.ShowObjects)
-            for (int y = 1; y <= mapH; y++)
-                for (int x = 1; x <= mapW; x++)
+            for (int y = ovMinY; y <= ovMaxY; y++)
+                for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasObject)
                     {
                         var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
@@ -717,8 +731,8 @@ public partial class MapViewport : Control
                     }
 
         // ── Triggers (subtle fill + pill label) ──
-        for (int y = 1; y <= mapH; y++)
-            for (int x = 1; x <= mapW; x++)
+        for (int y = ovMinY; y <= ovMaxY; y++)
+            for (int x = ovMinX; x <= ovMaxX; x++)
                 if (Map.Tiles[x, y].Trigger > 0)
                 {
                     short trig = Map.Tiles[x, y].Trigger;
