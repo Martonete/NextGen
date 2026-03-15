@@ -704,7 +704,7 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 1: Map setup (VB6 lines 1552-1555) ---
     state.send_bytes(conn_id, &binary_packets::write_change_map(map as i16, 0, r as u8, g as u8, b as u8));
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8));
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
     state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
     state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
 
@@ -841,7 +841,7 @@ pub(crate) async fn connect_user(
             state.send_bytes(conn_id, &own_cd);
         }
         // PU (position update — tells client where to center camera)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(x as u8, y as u8));
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
 

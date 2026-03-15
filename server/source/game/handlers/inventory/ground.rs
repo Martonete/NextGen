@@ -60,7 +60,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
             }
         }
         // Broadcast BO (erase object) to area
-        let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
+        let pkt_bo = binary_packets::write_object_delete(x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo);
 
         // Add directly to gold counter (VB6: Stats.GLD += Amount)
@@ -111,7 +111,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     }
 
     // Broadcast BO (erase object) to area
-    let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
+    let pkt_bo = binary_packets::write_object_delete(x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo);
 
     // Add to inventory
@@ -390,7 +390,7 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 
     // Broadcast HO (show object) to area if new item on tile
     if is_new && grh_index > 0 {
-        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+        let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
     }
 
@@ -462,7 +462,7 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
         };
 
         if is_new && grh_index > 0 {
-            let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+            let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
         }
 

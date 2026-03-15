@@ -384,7 +384,7 @@ pub(super) async fn handle_actualizar(state: &mut GameState, conn_id: Connection
     } else {
         return;
     };
-    let pkt = binary_packets::write_pos_update(px as u8, py as u8);
+    let pkt = binary_packets::write_pos_update(px as i16, py as i16);
     state.send_bytes(conn_id, &pkt);
 }
 

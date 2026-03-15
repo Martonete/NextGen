@@ -174,7 +174,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             let snd_id = if obj_data.obj_type == ObjType::UseOnce { 7 } else { 46 };
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
-            let pkt_wave = binary_packets::write_play_wave(snd_id as u8, snd_x as u8, snd_y as u8);
+            let pkt_wave = binary_packets::write_play_wave(snd_id as u8, snd_x as i16, snd_y as i16);
             state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave);
 
             // Consume one
@@ -213,7 +213,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // VB6: SND_BEBER (46)
             let (snd_map, snd_x, snd_y) = state.users.get(&conn_id)
                 .map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0, 0, 0));
-            let pkt_wave = binary_packets::write_play_wave(46, snd_x as u8, snd_y as u8);
+            let pkt_wave = binary_packets::write_play_wave(46, snd_x as i16, snd_y as i16);
             state.send_data_bytes(SendTarget::ToArea { map: snd_map, x: snd_x, y: snd_y }, &pkt_wave);
             send_inventory_slot(state, conn_id, idx).await;
             send_hunger_thirst(state, conn_id).await;
@@ -411,7 +411,7 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 _ => return,
             };
             if wav > 0 {
-                let pkt_wave = binary_packets::write_play_wave(wav as u8, x as u8, y as u8);
+                let pkt_wave = binary_packets::write_play_wave(wav as u8, x as i16, y as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
             }
             state.send_console(conn_id, "Tocas una melodia", font_index::INFO);

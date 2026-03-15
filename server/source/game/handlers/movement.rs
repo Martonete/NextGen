@@ -29,7 +29,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
         // Force client back to server position (prevents ghost movement on client)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8));
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
         return;
     }
 
@@ -123,7 +123,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
 
         // Reject movement — send position correction
         // Walk rejected — don't log (too frequent)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8));
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
         return;
     }
 
@@ -177,7 +177,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // When invisible, still send movement to same-clan members.
     let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
     {
-        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
+        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as i16, new_y as i16);
         let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
             Some(u) => (u.area_min_x, u.area_min_y),
             None => (0, 0),
@@ -269,7 +269,7 @@ pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: Connec
 pub(super) async fn handle_request_pos(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.logged {
-            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as u8, user.pos_y as u8));
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as i16, user.pos_y as i16));
         }
     }
 }

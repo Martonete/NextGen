@@ -970,7 +970,7 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as i16, y as i16));
         send_stats_hp(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
     } else if hp_low {
@@ -983,7 +983,7 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as i16, y as i16));
         send_stats_hp(state, conn_id).await;
     }
 

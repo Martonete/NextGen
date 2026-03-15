@@ -56,20 +56,20 @@ pub fn write_change_map(map_num: i16, map_version: i16, r: u8, g: u8, b: u8) -> 
 }
 
 /// ID 22: Position update.
-pub fn write_pos_update(x: u8, y: u8) -> Vec<u8> {
+pub fn write_pos_update(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::PosUpdate.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
 /// ID 41: Area changed.
-pub fn write_area_changed(x: u8, y: u8) -> Vec<u8> {
+pub fn write_area_changed(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::AreaChanged.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
@@ -78,7 +78,7 @@ pub fn write_area_changed(x: u8, y: u8) -> Vec<u8> {
 /// ID 29: Character create (appears in view).
 pub fn write_character_create(
     char_index: i16, body: i16, head: i16, heading: u8,
-    x: u8, y: u8, weapon: i16, shield: i16, helmet: i16,
+    x: i16, y: i16, weapon: i16, shield: i16, helmet: i16,
     fx_index: i16, fx_loops: i16, name: &str,
     nick_color: u8, privileges: u8,
 ) -> Vec<u8> {
@@ -88,8 +88,8 @@ pub fn write_character_create(
     pkt.write_integer(body);
     pkt.write_integer(head);
     pkt.write_byte(heading);
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_integer(weapon);
     pkt.write_integer(shield);
     pkt.write_integer(helmet);
@@ -110,12 +110,12 @@ pub fn write_character_remove(char_index: i16) -> Vec<u8> {
 }
 
 /// ID 31: Character move.
-pub fn write_character_move(char_index: i16, x: u8, y: u8) -> Vec<u8> {
+pub fn write_character_move(char_index: i16, x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CharacterMove.to_byte());
     pkt.write_integer(char_index);
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
@@ -162,30 +162,30 @@ pub fn write_create_fx(char_index: i16, fx_index: i16, fx_loops: i16) -> Vec<u8>
 // ── Objects on ground ──────────────────────────────────────
 
 /// ID 35: Object create on ground.
-pub fn write_object_create(x: u8, y: u8, grh_index: i16) -> Vec<u8> {
+pub fn write_object_create(x: i16, y: i16, grh_index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectCreate.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_integer(grh_index);
     pkt.into_bytes()
 }
 
 /// ID 36: Object delete from ground.
-pub fn write_object_delete(x: u8, y: u8) -> Vec<u8> {
+pub fn write_object_delete(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectDelete.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
 /// ID 37: Block position update.
-pub fn write_block_position(x: u8, y: u8, blocked: bool) -> Vec<u8> {
+pub fn write_block_position(x: i16, y: i16, blocked: bool) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::BlockPosition.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_boolean(blocked);
     pkt.into_bytes()
 }

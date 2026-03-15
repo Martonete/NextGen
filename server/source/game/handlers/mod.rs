@@ -332,20 +332,20 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::LeftClick => {
-            let x = bq.read_byte().unwrap_or(0);
-            let y = bq.read_byte().unwrap_or(0);
+            let x = bq.read_integer().unwrap_or(0);
+            let y = bq.read_integer().unwrap_or(0);
             let text = format!("LC{},{}", x, y);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::RightClick => {
-            let x = bq.read_byte().unwrap_or(0);
-            let y = bq.read_byte().unwrap_or(0);
+            let x = bq.read_integer().unwrap_or(0);
+            let y = bq.read_integer().unwrap_or(0);
             let text = format!("RC{},{}", x, y);
             handle_packet(state, conn_id, &text).await;
         }
         ClientPacketID::WorkLeftClick => {
-            let x = bq.read_byte().unwrap_or(0);
-            let y = bq.read_byte().unwrap_or(0);
+            let x = bq.read_integer().unwrap_or(0);
+            let y = bq.read_integer().unwrap_or(0);
             let skill = bq.read_byte().unwrap_or(0);
             let text = format!("WLC{},{},{}", x, y, skill);
             handle_packet(state, conn_id, &text).await;

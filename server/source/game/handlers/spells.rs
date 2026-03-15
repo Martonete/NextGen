@@ -526,7 +526,7 @@ pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: Conne
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
     }
     if spell.wav > 0 {
-        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
+        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
     }
 
@@ -569,7 +569,7 @@ pub(super) async fn send_spell_info_npc(state: &mut GameState, caster_id: Connec
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
     }
     if spell.wav > 0 {
-        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
+        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
     }
 
@@ -1003,7 +1003,7 @@ pub(super) async fn apply_spell_status(
         state.send_bytes(target_id, &pkt);
         // PU forces client position to server-known position (prevents ghost movement)
         if let Some(u) = state.users.get(&target_id) {
-            let pu = binary_packets::write_pos_update(u.pos_x as u8, u.pos_y as u8);
+            let pu = binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
             state.send_bytes(target_id, &pu);
         }
     }
@@ -1380,7 +1380,7 @@ pub(super) async fn apply_spell_teleport(
     // Send map change packets
     let cm_pkt = binary_packets::write_change_map(dest_map as i16, 0, r as u8, g as u8, b as u8);
     state.send_bytes(caster_id, &cm_pkt);
-    let pu_pkt = binary_packets::write_pos_update(dest_x as u8, dest_y as u8);
+    let pu_pkt = binary_packets::write_pos_update(dest_x as i16, dest_y as i16);
     state.send_bytes(caster_id, &pu_pkt);
     let midi_pkt = binary_packets::write_play_midi(music as u8);
     state.send_bytes(caster_id, &midi_pkt);

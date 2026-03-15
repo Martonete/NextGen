@@ -302,7 +302,7 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
             let map = user.pos_map;
             let x = user.pos_x;
             let y = user.pos_y;
-            let snd_pkt = binary_packets::write_play_wave(3, x as u8, y as u8); // SND_WARP = 3
+            let snd_pkt = binary_packets::write_play_wave(3, x as i16, y as i16); // SND_WARP = 3
             let fx_pkt = binary_packets::write_create_fx(char_idx as i16, 1, 0); // FXWARP = 1
             // Send to area (others see it) AND directly to self (ensure self always gets it)
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt);

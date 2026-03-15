@@ -1056,7 +1056,7 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spe
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
             if spell.wav > 0 {
-                let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
+                let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as i16, ny as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
 

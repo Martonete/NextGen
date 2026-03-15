@@ -94,12 +94,12 @@ pub fn write_play_midi(midi_index: u8) -> Vec<u8> {
 }
 
 /// ID 39: Play wave (sound effect).
-pub fn write_play_wave(wave_index: u8, x: u8, y: u8) -> Vec<u8> {
+pub fn write_play_wave(wave_index: u8, x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::PlayWave.to_byte());
     pkt.write_byte(wave_index);
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 

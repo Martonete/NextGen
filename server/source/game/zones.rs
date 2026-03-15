@@ -102,6 +102,10 @@ pub struct ZoneProperties {
     pub persist_ground_items: bool,
     /// Level range restriction (min, max). None = no restriction.
     pub level_range: Option<(i32, i32)>,
+
+    /// Max distance NPCs can wander from their spawn point (Chebyshev).
+    /// 0 = unlimited (default for legacy maps). Used to keep NPCs in their zone.
+    pub npc_wander_radius: i32,
 }
 
 impl Default for ZoneProperties {
@@ -124,6 +128,7 @@ impl Default for ZoneProperties {
             grid_height: 100,
             persist_ground_items: false,
             level_range: None,
+            npc_wander_radius: 0, // 0 = unlimited
         }
     }
 }
@@ -156,6 +161,7 @@ impl ZoneProperties {
             grid_height: 100,
             persist_ground_items: info.backup,
             level_range: None,
+            npc_wander_radius: 0,
         }
     }
 }
@@ -269,6 +275,7 @@ pub fn load_zone_overrides(base_path: &Path) -> ZoneRegistry {
             grid_height: get_int("GridHeight", 100),
             persist_ground_items: get_bool("Backup"),
             level_range,
+            npc_wander_radius: get_int("NpcWanderRadius", 0),
         };
 
         tracing::info!("Zone {} ({}) loaded: type={:?}, {}x{}", zone_id, props.name, props.zone_type, props.grid_width, props.grid_height);

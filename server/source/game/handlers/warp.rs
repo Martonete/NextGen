@@ -90,7 +90,7 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Send AreaChanged packet — tells client to erase out-of-range entities
-    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as u8, pos_y as u8));
+    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as i16, pos_y as i16));
 
     // Build our CC (binary) for sending to newly visible users
     let my_cc = match state.users.get(&conn_id) {
@@ -232,22 +232,22 @@ pub(crate) async fn check_update_needed_user(
 
     // Send ground items (HO = ObjectCreate packet) — VB6 ModAreas.bas line 264
     for (grh, ix, iy) in new_items {
-        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as u8, iy as u8, grh as i16));
+        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as i16, iy as i16, grh as i16));
     }
 
     // Send door BQ packets (BlockPosition) — VB6 ModAreas.bas lines 273-300
     for (bx, by, blocked) in new_door_bqs {
-        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as u8, by as u8, blocked));
+        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as i16, by as i16, blocked));
     }
 
     // Send particle effects (PCF) — VB6 ModAreas.bas line 255
     for (pg, px, py) in new_particles {
-        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as u8, py as u8, 0));
+        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as i16, py as i16, 0));
     }
 
     // Send lighting effects (PCL) — VB6 ModAreas.bas line 259
     for (lx, ly, range, r, g, b) in new_lights {
-        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as u8, ly as u8, range as u8, r as u8, g as u8, b as u8));
+        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as i16, ly as i16, range as u8, r as u8, g as u8, b as u8));
     }
 }
 
@@ -392,10 +392,10 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
     }
 
     // Send position update to ghost (PU) and movement broadcast to area
-    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as u8, push_y as u8));
+    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as i16, push_y as i16));
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: ghost_conn, map, x: push_x, y: push_y },
-        &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as u8, push_y as u8),
+        &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as i16, push_y as i16),
     );
 }
 
@@ -573,7 +573,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     }
 
     // 9. PU (position update — tells client where to center camera)
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8));
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as i16, final_y as i16));
 
     // 10. Send area visibility (CA + strip CCs/NPCs/items)
     make_user_visible(state, conn_id).await;
@@ -628,7 +628,7 @@ pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if !invisible {
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as i16, y as i16));
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0));
     }
 }

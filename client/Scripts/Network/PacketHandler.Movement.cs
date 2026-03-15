@@ -68,8 +68,8 @@ public partial class PacketHandler
 
     private void HandleBinPosUpdate(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
 
         _state.UserPosX = x;
         _state.UserPosY = y;
@@ -98,8 +98,8 @@ public partial class PacketHandler
 
     private void HandleBinAreaChanged(ByteQueue bq)
     {
-        byte playerX = bq.ReadByte();
-        byte playerY = bq.ReadByte();
+        int playerX = bq.ReadInteger();
+        int playerY = bq.ReadInteger();
 
         // VB6: CambioDeArea 9x9 grid zones
         int minLimX = (playerX / 9 - 1) * 9;
@@ -150,8 +150,8 @@ public partial class PacketHandler
         short body = bq.ReadInteger();
         short head = bq.ReadInteger();
         byte heading = bq.ReadByte();
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         short weapon = bq.ReadInteger();
         short shield = bq.ReadInteger();
         short helmet = bq.ReadInteger();
@@ -232,8 +232,8 @@ public partial class PacketHandler
     private void HandleBinCharacterMove(ByteQueue bq)
     {
         short charIndex = bq.ReadInteger();
-        byte newX = bq.ReadByte();
-        byte newY = bq.ReadByte();
+        int newX = bq.ReadInteger();
+        int newY = bq.ReadInteger();
 
         if (!_state.Characters.TryGetValue(charIndex, out var ch))
             return;
@@ -332,8 +332,8 @@ public partial class PacketHandler
 
     private void HandleBinObjectCreate(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         short grhIndex = bq.ReadInteger();
         _state.GroundObjects[(x, y)] = grhIndex;
     }
@@ -341,16 +341,16 @@ public partial class PacketHandler
 
     private void HandleBinObjectDelete(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         _state.GroundObjects.Remove((x, y));
     }
 
 
     private void HandleBinBlockPosition(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         bool blocked = bq.ReadBoolean();
         if (_state.MapData != null && x >= 1 && x <= 100 && y >= 1 && y <= 100)
         {
@@ -374,8 +374,8 @@ public partial class PacketHandler
     private void HandleBinPlayWave(ByteQueue bq)
     {
         byte waveIndex = bq.ReadByte();
-        byte srcX = bq.ReadByte();
-        byte srcY = bq.ReadByte();
+        int srcX = bq.ReadInteger();
+        int srcY = bq.ReadInteger();
         if (waveIndex > 0)
             OnPlaySoundAt?.Invoke(waveIndex, srcX, srcY);
     }
@@ -800,8 +800,8 @@ public partial class PacketHandler
     private void HandleBinParticleCreate(ByteQueue bq)
     {
         short particleGroup = bq.ReadInteger();
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         byte layer = bq.ReadByte();
         ParticleSystem.CreateMapStream(_state, particleGroup, x, y);
     }
@@ -818,8 +818,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinLightCreate(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         byte range = bq.ReadByte();
         byte r = bq.ReadByte();
         byte g = bq.ReadByte();
