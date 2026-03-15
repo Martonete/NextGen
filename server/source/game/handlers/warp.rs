@@ -409,6 +409,12 @@ pub(crate) async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_
 }
 
 pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32, exact: bool) {
+    // Validate target map exists — if not, reject with error
+    if state.world.grid(new_map).is_none() {
+        state.send_console(conn_id, &format!("Mapa {} no existe.", new_map), crate::protocol::font_index::INFO);
+        return;
+    }
+
     let old_data = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y),
         None => return,

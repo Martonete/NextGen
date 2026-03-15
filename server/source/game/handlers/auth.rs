@@ -378,10 +378,18 @@ pub(crate) async fn connect_user(
         return;
     }
 
-    // Determine position
-    let map = if char_data.map > 0 { char_data.map } else { state.config.start_map };
-    let x = if char_data.x > 0 { char_data.x } else { state.config.start_x };
-    let y = if char_data.y > 0 { char_data.y } else { state.config.start_y };
+    // Determine position — fallback to start pos if map doesn't exist
+    let (map, x, y) = {
+        let saved_map = if char_data.map > 0 { char_data.map } else { state.config.start_map };
+        let saved_x = if char_data.x > 0 { char_data.x } else { state.config.start_x };
+        let saved_y = if char_data.y > 0 { char_data.y } else { state.config.start_y };
+        if state.world.grid(saved_map).is_some() {
+            (saved_map, saved_x, saved_y)
+        } else {
+            tracing::warn!("Map {} does not exist, sending {} to start position", saved_map, char_name);
+            (state.config.start_map, state.config.start_x, state.config.start_y)
+        }
+    };
 
     // Allocate a char index for the client rendering
     let char_index = state.world.alloc_char_index();
