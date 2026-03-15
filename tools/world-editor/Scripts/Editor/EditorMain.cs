@@ -859,130 +859,16 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Start background texture preload (non-blocking, N per frame)
-        StartTexturePreload();
-    }
-
-    private void StartTexturePreload()
-    {
-        if (_textures == null || _grhs == null) return;
-
-        _preloadIter = _textures.PreloadAll(_grhs);
-        _preloadPhase = 1;
-
-        // Create full-screen loading overlay (blocks interaction, centered content)
-        _preloadOverlay = new Panel();
-        _preloadOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _preloadOverlay.MouseFilter = MouseFilterEnum.Stop; // block all clicks
-        _preloadOverlay.ZIndex = 100; // above everything
-        _preloadOverlay.FocusMode = FocusModeEnum.All; // capture keyboard focus
-        var overlayStyle = new StyleBoxFlat
-        {
-            BgColor = new Color(0.1f, 0.1f, 0.12f, 0.92f),
-        };
-        _preloadOverlay.AddThemeStyleboxOverride("panel", overlayStyle);
-
-        // Center container for content
-        var center = new CenterContainer();
-        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _preloadOverlay.AddChild(center);
-
-        var vbox = new VBoxContainer();
-        vbox.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.CustomMinimumSize = new Vector2(320, 80);
-        center.AddChild(vbox);
-
-        _preloadLabel = new Label { Text = "Cargando texturas..." };
-        _preloadLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _preloadLabel.AddThemeFontSizeOverride("font_size", 13);
-        _preloadLabel.AddThemeColorOverride("font_color", Colors.White);
-        vbox.AddChild(_preloadLabel);
-
-        _preloadBar = new ProgressBar();
-        _preloadBar.CustomMinimumSize = new Vector2(300, 18);
-        _preloadBar.ShowPercentage = true;
-        vbox.AddChild(_preloadBar);
-
-        AddChild(_preloadOverlay);
-        _preloadOverlay.GrabFocus(); // block keyboard shortcuts during preload
+        // Textures load on demand via TextureManager.GetTexture() — no startup preload needed.
+        // Preview thumbnails in the palette are also generated on demand.
+        _preloadPhase = 0;
+        SetStatus("Editor listo — texturas se cargan bajo demanda");
     }
 
     private void TickTexturePreload()
     {
-        if (_preloadPhase == 0) return;
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        if (_preloadPhase == 1 && _preloadIter != null && _textures != null)
-        {
-            // Phase 1: load texture files from disk
-            bool done = _textures.TickPreload(_preloadIter, 8.0);
-
-            if (done)
-            {
-                _preloadIter.Dispose();
-                _preloadIter = null;
-
-                // Start phase 2: preview generation
-                _previewPreloadIter = _palette?.PreloadAllPreviews();
-                if (_previewPreloadIter != null)
-                {
-                    _preloadPhase = 2;
-                }
-                else
-                {
-                    FinishPreload();
-                    return;
-                }
-            }
-
-            // Update progress UI — phase 1
-            if (_preloadBar != null && _textures.PreloadTotal > 0)
-            {
-                float pct = (float)_textures.PreloadDone / _textures.PreloadTotal * 100f;
-                _preloadBar.Value = pct;
-            }
-            if (_preloadLabel != null)
-                _preloadLabel.Text = $"Cargando texturas... {_textures.PreloadDone}/{_textures.PreloadTotal}";
-        }
-        else if (_preloadPhase == 2 && _previewPreloadIter != null)
-        {
-            // Phase 2: generate preview thumbnails (time-budgeted)
-            double budgetMs = 8.0;
-            int total = _palette?.PreviewPreloadTotal ?? 1;
-            int count = 0;
-
-            while (sw.Elapsed.TotalMilliseconds < budgetMs)
-            {
-                if (!_previewPreloadIter.MoveNext())
-                {
-                    _previewPreloadIter.Dispose();
-                    _previewPreloadIter = null;
-                    FinishPreload();
-                    return;
-                }
-                count = _previewPreloadIter.Current;
-            }
-
-            // Update progress UI — phase 2
-            if (_preloadBar != null && total > 0)
-            {
-                float pct = (float)count / total * 100f;
-                _preloadBar.Value = pct;
-            }
-            if (_preloadLabel != null)
-                _preloadLabel.Text = $"Generando previews... {count}/{total}";
-        }
-    }
-
-    private void FinishPreload()
-    {
-        _preloadPhase = 0;
-        _preloadOverlay?.QueueFree();
-        _preloadOverlay = null;
-        _preloadLabel = null;
-        _preloadBar = null;
-        SetStatus("Texturas y previews precargados");
+        // No-op: textures now load on demand via TextureManager.GetTexture().
+        // Kept for compatibility with the _preloadPhase field.
     }
 
     private void SyncViewportData()
@@ -1682,10 +1568,10 @@ public partial class EditorMain : Control
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
-                case Key.Key1: _state.ActiveLayer = 1; break;
-                case Key.Key2: _state.ActiveLayer = 2; break;
-                case Key.Key3: _state.ActiveLayer = 3; break;
-                case Key.Key4: _state.ActiveLayer = 4; break;
+                case Key.Key1: _state.ActiveLayer = 1; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key2: _state.ActiveLayer = 2; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key3: _state.ActiveLayer = 3; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key4: _state.ActiveLayer = 4; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
                 case Key.Delete:
                     DeleteSelection();
                     break;

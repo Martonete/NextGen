@@ -109,13 +109,17 @@ public class EditorState
         MapDir = mapDir;
         if (!Directory.Exists(mapDir)) return;
 
-        foreach (var file in Directory.GetFiles(mapDir, "Mapa*.map"))
+        // Scan both .map (legacy) and .aomap (new format)
+        foreach (var pattern in new[] { "Mapa*.map", "Mapa*.aomap" })
         {
-            string name = Path.GetFileNameWithoutExtension(file);
-            if (name.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase))
+            foreach (var file in Directory.GetFiles(mapDir, pattern))
             {
-                if (int.TryParse(name.Substring(4), out int num) && num > 0)
-                    AvailableMaps.Add(num);
+                string name = Path.GetFileNameWithoutExtension(file);
+                if (name.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(name.Substring(4), out int num) && num > 0)
+                        AvailableMaps.Add(num);
+                }
             }
         }
     }
