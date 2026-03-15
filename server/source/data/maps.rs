@@ -405,6 +405,61 @@ fn load_inf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
     Ok(())
 }
 
+/// Load .aoinf binary file (extended format with dimensions in header).
+/// Same header format as .aomap: Magic("AOINF\0") + version + width + height + flags.
+fn load_aoinf_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
+    let data = std::fs::read(path)
+        .map_err(|e| format!("Failed to read .aoinf: {}", e))?;
+
+    if data.len() < 16 {
+        return Err("Invalid .aoinf file: too short for header".into());
+    }
+
+    let mut cursor = Cursor::new(data.as_slice());
+
+    // Read and validate header
+    let mut magic = [0u8; 6];
+    cursor.read_exact(&mut magic).map_err(|e| format!(".aoinf magic: {}", e))?;
+    if &magic != b"AOINF\0" {
+        return Err("Invalid .aoinf file: bad magic".into());
+    }
+    let _version = read_u16(&mut cursor).map_err(|e| format!(".aoinf version: {}", e))?;
+    let width = read_u16(&mut cursor).map_err(|e| format!(".aoinf width: {}", e))? as usize;
+    let height = read_u16(&mut cursor).map_err(|e| format!(".aoinf height: {}", e))? as usize;
+    let _flags = read_i32(&mut cursor).map_err(|e| format!(".aoinf flags: {}", e))?;
+
+    if width != tiles.width || height != tiles.height {
+        return Err(format!(".aoinf dimensions {}x{} don't match map {}x{}", width, height, tiles.width, tiles.height));
+    }
+
+    // Read tiles (same format as legacy .inf but using the extended dimensions)
+    for y in 0..height {
+        for x in 0..width {
+            let by_flags = read_u8(&mut cursor)
+                .map_err(|e| format!("aoinf tile ({},{}) flags: {}", x + 1, y + 1, e))?;
+
+            let tile = tiles.get_mut(x, y)
+                .ok_or_else(|| format!("aoinf tile ({},{}) out of bounds", x + 1, y + 1))?;
+
+            if (by_flags & 0x01) != 0 {
+                let map = read_i16(&mut cursor).map_err(|e| format!("aoinf exit: {}", e))?;
+                let ex = read_i16(&mut cursor).map_err(|e| format!("aoinf exit x: {}", e))?;
+                let ey = read_i16(&mut cursor).map_err(|e| format!("aoinf exit y: {}", e))?;
+                tile.tile_exit = Some(WorldPos { map, x: ex, y: ey });
+            }
+            if (by_flags & 0x02) != 0 {
+                tile.npc_index = read_i16(&mut cursor).map_err(|e| format!("aoinf npc: {}", e))?;
+            }
+            if (by_flags & 0x04) != 0 {
+                tile.obj.obj_index = read_i16(&mut cursor).map_err(|e| format!("aoinf obj: {}", e))?;
+                tile.obj.amount = read_i16(&mut cursor).map_err(|e| format!("aoinf amt: {}", e))?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Load .dat metadata INI file for a map.
 fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
     let ini = match IniFile::load(path) {
@@ -477,9 +532,14 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
         tiles
     };
 
-    // Load .inf overlay (exits, NPCs, objects)
-    let inf_file = resolve_map_path(&maps_dir, &name, &["inf", "Inf", "INF"]);
-    load_inf_file(&inf_file, &mut tiles)?;
+    // Load .aoinf first (extended format), fallback to legacy .inf
+    let aoinf_file = maps_dir.join(format!("{}.aoinf", name));
+    if aoinf_file.exists() {
+        load_aoinf_file(&aoinf_file, &mut tiles)?;
+    } else {
+        let inf_file = resolve_map_path(&maps_dir, &name, &["inf", "Inf", "INF"]);
+        load_inf_file(&inf_file, &mut tiles)?;
+    }
 
     // Snapshot original state for door persistence detection
     for y in 0..tiles.height {
