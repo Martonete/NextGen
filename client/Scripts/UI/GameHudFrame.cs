@@ -1,4 +1,5 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
@@ -20,7 +21,7 @@ public partial class GameHudFrame : Control
     public override void _Ready()
     {
         Position = Vector2.Zero;
-        Size = new Vector2(800, 600);
+        Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         MouseFilter = MouseFilterEnum.Ignore;
 
         // === BACKGROUND: big_bar_bg.png (fills behind content) ===
@@ -29,22 +30,22 @@ public partial class GameHudFrame : Control
         bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
         bgFrame.StretchMode = TextureRect.StretchModeEnum.Scale;
         bgFrame.Position = Vector2.Zero;
-        bgFrame.Size = new Vector2(800, 600);
+        bgFrame.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         bgFrame.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(bgFrame);
 
         // === DARK INSETS — only where we need black behind content ===
 
         // Console area — semi-transparent with border (extended up for minimap breathing room)
-        AddStyledInset(18, 14, 536, 128);
+        AddStyledInset(ResolutionManager.S(18), ResolutionManager.S(14), ResolutionManager.S(536), ResolutionManager.S(128));
 
         // Game viewport — the world renders here (13,149 to 557,565)
-        AddDarkInset(13, 149, 544, 416);
+        AddDarkInset(ResolutionManager.S(13), ResolutionManager.S(149), ResolutionManager.S(544), ResolutionManager.S(416));
 
         // === OVERLAY: big_bar_frame.png (borders only) on top of everything ===
         FrameOverlay = new Control();
         FrameOverlay.Position = Vector2.Zero;
-        FrameOverlay.Size = new Vector2(800, 600);
+        FrameOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         FrameOverlay.MouseFilter = MouseFilterEnum.Ignore;
         FrameOverlay.ZIndex = 50;
 
@@ -53,7 +54,7 @@ public partial class GameHudFrame : Control
         overlayTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
         overlayTex.StretchMode = TextureRect.StretchModeEnum.Scale;
         overlayTex.Position = Vector2.Zero;
-        overlayTex.Size = new Vector2(800, 600);
+        overlayTex.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         overlayTex.MouseFilter = MouseFilterEnum.Ignore;
         FrameOverlay.AddChild(overlayTex);
     }

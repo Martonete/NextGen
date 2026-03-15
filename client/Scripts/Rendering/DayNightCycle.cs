@@ -69,8 +69,8 @@ public partial class DayNightCycle : ColorRect
     public override void _Ready()
     {
         // Cover the game viewport area (8,144) to (552,560)
-        Position = new Vector2(8, 144);
-        Size = new Vector2(544, 416);
+        Position = new Vector2(ResolutionManager.S(8), ResolutionManager.S(144));
+        Size = new Vector2(ResolutionManager.S(544), ResolutionManager.S(416));
         Color = new Color(0, 0, 0, 0);
         MouseFilter = MouseFilterEnum.Ignore;
     }

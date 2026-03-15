@@ -1,4 +1,5 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
@@ -12,12 +13,20 @@ public partial class StatBarOverlay : Control
 {
     // Bar positions from VB6 13.3 frmMain (shpEnergia, shpMana, shpVida, shpHambre, shpSed)
     // Order: Energia(STA), Mana, Vida(HP), Hambre, Sed
-    private static readonly Rect2 StaRect  = new(584, 443, 75, 12);
-    private static readonly Rect2 ManaRect = new(584, 467, 75, 12);
-    private static readonly Rect2 HpRect   = new(584, 488, 75, 12);
-    private static readonly Rect2 HamRect  = new(584, 511, 75, 12);
-    private static readonly Rect2 AguaRect = new(584, 534, 75, 12);   // Sed (thirst)
-    private static readonly Rect2 ExpRect  = new(565, 80, 202, 10);
+    // Design-space values scaled at draw time via ScaledRect()
+    private const float StaX = 584, StaY = 443, StaW = 75, StaH = 12;
+    private const float ManaX = 584, ManaY = 467, ManaW = 75, ManaH = 12;
+    private const float HpX = 584, HpY = 488, HpW = 75, HpH = 12;
+    private const float HamX = 584, HamY = 511, HamW = 75, HamH = 12;
+    private const float AguaX = 584, AguaY = 534, AguaW = 75, AguaH = 12;
+    private const float ExpX2 = 565, ExpY2 = 80, ExpW2 = 202, ExpH2 = 10;
+
+    private static Rect2 StaRect  => new(ResolutionManager.S(StaX), ResolutionManager.S(StaY), ResolutionManager.S(StaW), ResolutionManager.S(StaH));
+    private static Rect2 ManaRect => new(ResolutionManager.S(ManaX), ResolutionManager.S(ManaY), ResolutionManager.S(ManaW), ResolutionManager.S(ManaH));
+    private static Rect2 HpRect   => new(ResolutionManager.S(HpX), ResolutionManager.S(HpY), ResolutionManager.S(HpW), ResolutionManager.S(HpH));
+    private static Rect2 HamRect  => new(ResolutionManager.S(HamX), ResolutionManager.S(HamY), ResolutionManager.S(HamW), ResolutionManager.S(HamH));
+    private static Rect2 AguaRect => new(ResolutionManager.S(AguaX), ResolutionManager.S(AguaY), ResolutionManager.S(AguaW), ResolutionManager.S(AguaH));
+    private static Rect2 ExpRect  => new(ResolutionManager.S(ExpX2), ResolutionManager.S(ExpY2), ResolutionManager.S(ExpW2), ResolutionManager.S(ExpH2));
 
     private static readonly Color TextColor = new(1f, 1f, 1f);
 
@@ -52,6 +61,8 @@ public partial class StatBarOverlay : Control
 
     public override void _Ready()
     {
+        Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
         var sysFont = new SystemFont();
         sysFont.FontNames = new string[] { "Tahoma" };
         sysFont.FontWeight = 700;
