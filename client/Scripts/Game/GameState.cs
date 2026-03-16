@@ -110,7 +110,7 @@ public class GameState
 	public bool UserMounted;
 	public bool UserStopped;
 	public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
-	public bool ItemSafety = true; // VB6: ISItem — client-side drop prevention (toggled with numpad *)
+	public bool ItemSafety; // Unused — item drop safety removed (13.3 parity)
 	public bool SeguroResu;     // VB6: SeguroResu — resurrection safety
 	public bool Resting;        // VB6: Descansar toggle (DOK)
 	// Drop quantity dialog state

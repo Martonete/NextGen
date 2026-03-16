@@ -58,6 +58,9 @@ public class InputHandler
 	/// <summary>Callback invoked when the player presses the music toggle key.</summary>
 	public Action? OnToggleMusic;
 
+	/// <summary>Callback to play a sound at position (soundId, tileX, tileY).</summary>
+	public Action<int, int, int>? OnPlaySoundAt;
+
 	public InputHandler(AoTcpClient tcp, GameState state, KeyBindings keys, Viewport viewport)
 	{
 		_tcp = tcp;
@@ -74,8 +77,10 @@ public class InputHandler
 		if (_state.AnyFormOpen) return;
 
 		// Block if a GUI text field has focus (e.g. LineEdit in any panel)
+		// When BlockWalkOnChat is disabled, only block non-movement input (handled below)
 		var focused = _viewport.GuiGetFocusOwner();
-		if (focused is LineEdit) return;
+		bool lineEditFocused = focused is LineEdit;
+		if (lineEditFocused && _state.Config.BlockWalkOnChat) return;
 
 		float deltaMs = (float)delta * 1000f;
 
@@ -109,6 +114,10 @@ public class InputHandler
 			}
 			else if (!_state.UserMoving && _state.PendingMoves < 2)
 			{
+				// When BlockWalkOnChat is enabled, block all movement while chatting
+				bool blockMovement = _state.ChatActive && _state.Config.BlockWalkOnChat;
+				if (!blockMovement)
+				{
 				// Arrow keys: always available (hardcoded, not rebindable — VB6 same)
 				if (Input.IsKeyPressed(Key.Up))
 					TryMove(1); // North
@@ -130,11 +139,13 @@ public class InputHandler
 					else if (_keys.IsActionPressed(GameAction.MoveLeft))
 						TryMove(4);
 				}
+				}
 			}
 		}
 
 		// Everything below is blocked when chat is active (letter keys would type into chat)
 		if (_state.ChatActive) return;
+		if (lineEditFocused) return;
 
 		// Attack is handled in HandleInputEvent() on key RELEASE (VB6 Form_KeyUp parity)
 
@@ -170,28 +181,17 @@ public class InputHandler
 		// Drop item from selected inventory slot
 		else if (_keys.IsActionPressed(GameAction.Drop))
 		{
-			if (_state.ItemSafety)
+			int slot = _state.SelectedInvSlot;
+			if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
 			{
-				_state.ChatMessages.Enqueue(new ChatMessage
+				if (_state.Inventory[slot].Amount == 1)
 				{
-					Text = "Desactiva el seguro de items primero.",
-					Color = "FF0000"
-				});
-			}
-			else
-			{
-				int slot = _state.SelectedInvSlot;
-				if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+					_tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
+				}
+				else if (_state.Inventory[slot].Amount > 1)
 				{
-					if (_state.Inventory[slot].Amount == 1)
-					{
-						_tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
-					}
-					else if (_state.Inventory[slot].Amount > 1)
-					{
-						_state.DropDialogSlot = slot;
-						_state.DropDialogOpen = true;
-					}
+					_state.DropDialogSlot = slot;
+					_state.DropDialogOpen = true;
 				}
 			}
 			_keyCooldown = KeyCooldownMs;
@@ -261,19 +261,6 @@ public class InputHandler
 		else if (_keys.IsActionPressed(GameAction.ResSafety) || Input.IsKeyPressed(Key.KpSubtract))
 		{
 			_tcp.SendPacket(ClientPackets.WriteTalk("/SEGR"));
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Item safety toggle (VB6: ISItem)
-		else if (_keys.IsActionPressed(GameAction.ItemSafety))
-		{
-			_state.ItemSafety = !_state.ItemSafety;
-			_state.ChatMessages.Enqueue(new ChatMessage
-			{
-				Text = _state.ItemSafety
-					? ">>SEGURO DE ITEMS ACTIVADO<<"
-					: ">>SEGURO DE ITEMS DESACTIVADO<<",
-				Color = _state.ItemSafety ? "00FF00" : "FF0000"
-			});
 			_keyCooldown = KeyCooldownMs;
 		}
 		// Macro keys: 1-9, 0 (hardcoded — these are always number keys, not rebindable)
@@ -360,6 +347,23 @@ public class InputHandler
 			_state.UserMoving = true;
 			_state.ScreenOffsetX = 0;
 			_state.ScreenOffsetY = 0;
+
+			// VB6: DoPasosFx — footstep sound for own character
+			// VB6: no sound for priv 1,2,3,5,25 (admin types)
+			if (!ch.Dead && ch.Privileges != 1 && ch.Privileges != 2
+				&& ch.Privileges != 3 && ch.Privileges != 5 && ch.Privileges != 25)
+			{
+				if (_state.UserNavigating)
+				{
+					OnPlaySoundAt?.Invoke(SoundManager.SND_NAVEGANDO, newX, newY);
+				}
+				else
+				{
+					ch.FootToggle = !ch.FootToggle;
+					int sndId = ch.FootToggle ? SoundManager.SND_PASOS1 : SoundManager.SND_PASOS2;
+					OnPlaySoundAt?.Invoke(sndId, newX, newY);
+				}
+			}
 		}
 		else
 		{
