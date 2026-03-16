@@ -148,6 +148,7 @@ pub struct NpcState {
     // Pet/summon owner
     pub maestro_user: Option<crate::net::ConnectionId>,
     pub counter_perdio_npc: i32,  // VB6: Contadores.TiemPerdique — pet inactivity timer (450 ticks = 18s at 40ms)
+    pub tiempo_existencia_ms: i64, // VB6: Contadores.TiempoExistencia — elemental lifetime in ms (0 = no expiry)
 
     // Area tracking (9x9 zone visibility — VB6 ModAreas.bas)
     pub area_id: i32,
@@ -255,6 +256,7 @@ impl NpcState {
             aura: data.aura,
             maestro_user: None,
             counter_perdio_npc: 0,
+            tiempo_existencia_ms: 0,
             area_id: 0,
             area_min_x: 0,
             area_min_y: 0,

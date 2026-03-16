@@ -51,15 +51,31 @@ pub async fn tick_npc_ai(state: &mut GameState) {
         let is_paralyzed = state.get_npc(npc_idx).map(|n| n.paralyzed).unwrap_or(false);
         if is_paralyzed { continue; }
 
+        // VB6: Elemental lifetime countdown (TiempoExistencia)
+        // AI tick runs every 100ms. Decrement and kill when expired.
+        {
+            let lifetime = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms).unwrap_or(0);
+            if lifetime > 0 {
+                if let Some(n) = state.get_npc_mut(npc_idx) {
+                    n.tiempo_existencia_ms -= 100; // 100ms per tick
+                }
+                let expired = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms <= 0).unwrap_or(false);
+                if expired {
+                    npc_die(state, npc_idx, false).await;
+                    continue;
+                }
+            }
+        }
+
         let npc_data = match state.get_npc(npc_idx) {
             Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target,
                         n.lanza_spells, n.spells.clone(), n.npc_type, n.attacked_by.clone(),
-                        n.min_hp, n.max_hp, n.alineacion, n.ataca_doble),
+                        n.min_hp, n.max_hp, n.alineacion, n.ataca_doble, n.npc_number),
             None => continue,
         };
         let (movement, hostile, can_attack, map, x, y, target,
              lanza_spells, spells, npc_type, attacked_by,
-             cur_hp, max_hp, alineacion, ataca_doble) = npc_data;
+             cur_hp, max_hp, alineacion, ataca_doble, npc_number) = npc_data;
 
         // Skip NPCs on maps with no users (VB6 optimization)
         let map_users = state.map_user_counts.get(&map).copied().unwrap_or(0);
@@ -470,6 +486,45 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                     if let Some((mx, my, master_target_npc)) = master_pos {
                         let dist = (x - mx).abs() + (y - my).abs();
+
+                        // Water elemental (NPC #92): heal owner when HP < max
+                        if npc_number == npc::ELEMENTAL_AGUA as usize && can_attack {
+                            let needs_heal = state.users.get(&master_conn)
+                                .map(|u| u.min_hp > 0 && u.min_hp < u.max_hp)
+                                .unwrap_or(false);
+                            if needs_heal {
+                                let heal = rand_range(12, 35); // Spell #5 equivalent
+                                if let Some(user) = state.users.get_mut(&master_conn) {
+                                    user.min_hp = (user.min_hp + heal).min(user.max_hp);
+                                }
+                                send_stats_hp(state, master_conn).await;
+                                // Send heal FX + sound to area
+                                let target_ci = state.users.get(&master_conn).map(|u| u.char_index.0).unwrap_or(0);
+                                let fx = binary_packets::write_create_fx(target_ci as i16, 8, 0); // FX 8 = heal
+                                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx);
+                                let snd = binary_packets::write_play_wave(46, mx as i16, my as i16); // SND_BEBER
+                                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
+                                // Consume attack turn
+                                if let Some(n) = state.get_npc_mut(npc_idx) { n.can_attack = false; }
+                            }
+                        }
+
+                        // Fire/Earth elementals: cast spells on nearby hostile users
+                        if npc_number != npc::ELEMENTAL_AGUA as usize
+                            && can_attack && lanza_spells > 0 && !spells.is_empty()
+                        {
+                            // Look for a hostile user near the elemental (within melee range)
+                            if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
+                                // Check target is hostile (not the owner)
+                                let is_hostile = target_conn != master_conn;
+                                if is_hostile {
+                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
+                                    let spell_id = spells[spell_idx];
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    if let Some(n) = state.get_npc_mut(npc_idx) { n.can_attack = false; }
+                                }
+                            }
+                        }
 
                         // Priority: pet's own target (from check_pets) > master's target
                         let effective_target = if pet_target_npc > 0 {

@@ -1197,6 +1197,8 @@ pub(super) async fn apply_spell_buffs(
 /// Apply invocation spell — spawn NPCs as pets.
 /// VB6: HechizoInvocacion (modHechizos.bas). Max 3 pets, singleton elementals.
 const MAX_MASCOTAS: i32 = 3;
+/// VB6: IntervaloInvocacion = 1001 ticks at 50ms = ~50 seconds
+const ELEMENTAL_LIFETIME_MS: i64 = 50_000;
 
 pub(super) async fn apply_spell_invocation(
     state: &mut GameState,
@@ -1229,25 +1231,61 @@ pub(super) async fn apply_spell_invocation(
         return;
     }
 
-    // VB6: Elemental singleton checks — can only have one of each type
+    // VB6: Elemental singleton — if already summoned, warp it to caster + reset lifetime
     {
         use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
-        if let Some(user) = state.users.get(&caster_id) {
-            match npc_num {
-                ELEMENTAL_AGUA if user.ele_de_agua => {
-                    state.send_msg_id(caster_id, 23, ""); // Ya tienes un Elemental de Agua
-                    return;
+        let already_has = match state.users.get(&caster_id) {
+            Some(user) => match npc_num {
+                ELEMENTAL_AGUA => user.ele_de_agua,
+                ELEMENTAL_FUEGO => user.ele_de_fuego,
+                ELEMENTAL_TIERRA => user.ele_de_tierra,
+                _ => false,
+            },
+            None => false,
+        };
+        if already_has {
+            // Find the existing elemental and warp it to caster
+            let existing_idx = state.users.get(&caster_id)
+                .and_then(|u| {
+                    for slot in 0..3 {
+                        if u.mascotas_type[slot] == npc_num && u.mascotas_index[slot] > 0 {
+                            return Some(u.mascotas_index[slot]);
+                        }
+                    }
+                    None
+                });
+            if let Some(npc_idx) = existing_idx {
+                // Remove from old tile
+                let old_data = state.get_npc(npc_idx).map(|n| (n.char_index, n.map, n.x, n.y));
+                if let Some((ci, old_map, old_x, old_y)) = old_data {
+                    let grid = state.world.grid_mut(old_map);
+                    if let Some(tile) = grid.tile_mut(old_x, old_y) {
+                        if tile.npc_index == npc_idx as i32 { tile.npc_index = 0; }
+                    }
+                    let remove_pkt = binary_packets::write_character_remove(ci.0 as i16);
+                    state.send_data_bytes(SendTarget::ToArea { map: old_map, x: old_x, y: old_y }, &remove_pkt);
                 }
-                ELEMENTAL_FUEGO if user.ele_de_fuego => {
-                    state.send_msg_id(caster_id, 24, ""); // Ya tienes un Elemental de Fuego
-                    return;
+                // Set new position + reset lifetime
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.map = map;
+                    npc.x = x;
+                    npc.y = y;
+                    npc.tiempo_existencia_ms = ELEMENTAL_LIFETIME_MS;
+                    npc.target = None;
+                    npc.target_npc = 0;
                 }
-                ELEMENTAL_TIERRA if user.ele_de_tierra => {
-                    state.send_msg_id(caster_id, 22, ""); // Ya tienes un Elemental de Tierra
-                    return;
+                // Place on new tile
+                let grid = state.world.grid_mut(map);
+                if let Some(tile) = grid.tile_mut(x, y) {
+                    tile.npc_index = npc_idx as i32;
                 }
-                _ => {}
+                // Broadcast creation at new position
+                let cc_pkt = state.get_npc(npc_idx).map(|n| n.build_cc_binary());
+                if let Some(pkt) = cc_pkt {
+                    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
+                }
             }
+            return;
         }
     }
 
@@ -1280,9 +1318,13 @@ pub(super) async fn apply_spell_invocation(
                 }
             }
 
-            // Set NPC owner
+            // Set NPC owner + lifetime for elementals
             if let Some(npc) = state.get_npc_mut(npc_idx) {
                 npc.maestro_user = Some(caster_id);
+                use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
+                if npc_num == ELEMENTAL_AGUA || npc_num == ELEMENTAL_FUEGO || npc_num == ELEMENTAL_TIERRA {
+                    npc.tiempo_existencia_ms = ELEMENTAL_LIFETIME_MS;
+                }
             }
 
             // Broadcast NPC creation using its CC packet
