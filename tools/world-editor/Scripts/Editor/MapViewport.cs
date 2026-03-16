@@ -102,37 +102,54 @@ public partial class MapViewport : Control
         int maxX = Math.Min(mapW, minX + (int)(Size.X * invZoom / TileSize) + 2);
         int maxY = Math.Min(mapH, minY + (int)(Size.Y * invZoom / TileSize) + 2);
 
+        // LOD: at low zoom levels, skip tiles to keep draw calls under budget.
+        // Each tile at zoom 0.02 is ~0.64px — drawing every tile wastes GPU.
+        // Step=1 up to ~200 visible tiles per axis, then increase step.
+        int visibleTilesX = maxX - minX;
+        int visibleTilesY = maxY - minY;
+        int maxVisPerAxis = 200;
+        int step = 1;
+        if (visibleTilesX > maxVisPerAxis || visibleTilesY > maxVisPerAxis)
+            step = Math.Max(visibleTilesX, visibleTilesY) / maxVisPerAxis + 1;
+
+        // Align minX/minY to step grid for stable sampling during pan
+        if (step > 1)
+        {
+            minX = (minX / step) * step;
+            minY = (minY / step) * step;
+        }
+
         // Layer 1: Ground
         if (State.ShowLayer1)
-            for (int y = minY; y <= maxY; y++)
-                for (int x = minX; x <= maxX; x++)
+            for (int y = minY; y <= maxY; y += step)
+                for (int x = minX; x <= maxX; x += step)
                     DrawTileGrh(Map.Tiles[x, y].Layer1, x, y);
 
         // Layer 2: Mask
         if (State.ShowLayer2)
-            for (int y = minY; y <= maxY; y++)
-                for (int x = minX; x <= maxX; x++)
+            for (int y = minY; y <= maxY; y += step)
+                for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer2 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer2, x, y, center: true);
 
         // Layer 3: Objects/trees
         if (State.ShowLayer3)
-            for (int y = minY; y <= maxY; y++)
-                for (int x = minX; x <= maxX; x++)
+            for (int y = minY; y <= maxY; y += step)
+                for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer3 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer3, x, y, center: true);
 
         // Objects on map
         if (State.ShowObjects && ObjGrhs != null)
-            for (int y = minY; y <= maxY; y++)
-                for (int x = minX; x <= maxX; x++)
+            for (int y = minY; y <= maxY; y += step)
+                for (int x = minX; x <= maxX; x += step)
                 {
                     int objIdx = Map.Tiles[x, y].ObjIndex;
                     if (objIdx > 0 && objIdx < ObjGrhs.Length && ObjGrhs[objIdx] > 0)
                         DrawTileGrh(ObjGrhs[objIdx], x, y, center: true);
                 }
 
-        // NPCs on map
+        // NPCs on map — always draw all (sparse, no LOD skip)
         if (State.ShowNpcs && NpcBodies != null && NpcBodyGrhs != null)
             for (int y = minY; y <= maxY; y++)
                 for (int x = minX; x <= maxX; x++)
@@ -164,8 +181,8 @@ public partial class MapViewport : Control
 
         // Layer 4: Roof
         if (State.ShowLayer4)
-            for (int y = minY; y <= maxY; y++)
-                for (int x = minX; x <= maxX; x++)
+            for (int y = minY; y <= maxY; y += step)
+                for (int x = minX; x <= maxX; x += step)
                     if (Map.Tiles[x, y].Layer4 != 0)
                         DrawTileGrh(Map.Tiles[x, y].Layer4, x, y, center: true,
                             modulate: new Color(1, 1, 1, 0.7f));
@@ -565,8 +582,12 @@ public partial class MapViewport : Control
         int ovMaxX = Math.Min(mapW, ovMinX + (int)(Size.X * invZoom / TileSize) + 2);
         int ovMaxY = Math.Min(mapH, ovMinY + (int)(Size.Y * invZoom / TileSize) + 2);
 
+        // Skip detailed overlays at low zoom — too many draw calls, not visible anyway
+        int overlayTiles = (ovMaxX - ovMinX) * (ovMaxY - ovMinY);
+        bool skipDetailedOverlays = overlayTiles > 40000; // ~200x200
+
         // ── Grid (subtle minor + brighter major every 10th line) ──
-        if (State.ShowGrid)
+        if (State.ShowGrid && !skipDetailedOverlays)
         {
             var minorColor = new Color(1f, 1f, 1f, 0.04f);
             var majorColor = new Color(1f, 1f, 1f, 0.12f);
@@ -586,8 +607,8 @@ public partial class MapViewport : Control
             }
         }
 
-        // ── Blocked tiles (diagonal hatched pattern) ──
-        if (State.ShowBlocked)
+        // ── Blocked tiles (diagonal hatched pattern) — skip at low zoom ──
+        if (State.ShowBlocked && !skipDetailedOverlays)
         {
             var hatchColor = new Color(1f, 0.15f, 0.15f, 0.4f);
             var hatchBg = new Color(1f, 0f, 0f, 0.08f);
@@ -621,7 +642,7 @@ public partial class MapViewport : Control
         }
 
         // ── Exits (pill badge) ──
-        if (State.ShowExits)
+        if (State.ShowExits && !skipDetailedOverlays)
             for (int y = ovMinY; y <= ovMaxY; y++)
                 for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasExit)
@@ -645,7 +666,7 @@ public partial class MapViewport : Control
                     }
 
         // ── Lights ──
-        if (State.ShowLights)
+        if (State.ShowLights && !skipDetailedOverlays)
             for (int y = ovMinY; y <= ovMaxY; y++)
                 for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].HasLight)
@@ -665,7 +686,7 @@ public partial class MapViewport : Control
                     }
 
         // ── Particle indicators (diamond + pill) ──
-        if (State.ShowParticles)
+        if (State.ShowParticles && !skipDetailedOverlays)
             for (int y = ovMinY; y <= ovMaxY; y++)
                 for (int x = ovMinX; x <= ovMaxX; x++)
                     if (Map.Tiles[x, y].ParticleGroup > 0)
