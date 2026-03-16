@@ -1100,43 +1100,41 @@ public partial class Main : Control
 	private void UpdateArrowProjectiles(float delta) => _gameUIUpdater?.UpdateArrowProjectiles(delta);
 
 
+	/// <summary>
+	/// Window drag runs in _UnhandledInput so GUI buttons get priority.
+	/// Only fires for events that no Control consumed.
+	/// </summary>
+	public override void _UnhandledInput(InputEvent @event)
+	{
+		if (!_startupPreloadDone) return;
+		if (!_state.Config.DragWindowEnabled) return;
+		if (DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Windowed) return;
+
+		if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+		{
+			if (mb.Pressed)
+			{
+				_windowDragging = true;
+				_windowDragStart = DisplayServer.MouseGetPosition();
+			}
+			else
+			{
+				_windowDragging = false;
+			}
+		}
+		else if (@event is InputEventMouseMotion && _windowDragging)
+		{
+			var mouseNow = DisplayServer.MouseGetPosition();
+			var delta = mouseNow - _windowDragStart;
+			DisplayServer.WindowSetPosition(DisplayServer.WindowGetPosition() + delta);
+			_windowDragStart = mouseNow;
+		}
+	}
+
 	public override void _Input(InputEvent @event)
 	{
 		// Block all input during startup preload
 		if (!_startupPreloadDone) return;
-
-		// Borderless window drag: click+drag moves the window
-		// Skip if mouse is over an interactive control (Button, Slider, LineEdit, etc.)
-		if (_state.Config.DragWindowEnabled
-			&& DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Windowed)
-		{
-			if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
-			{
-				if (mb.Pressed)
-				{
-					var hovered = GetViewport().GuiGetHoveredControl();
-					bool overInteractive = hovered is BaseButton or Godot.Range or LineEdit
-						or TextEdit or InventoryPanel or SpellPanel
-						or SubViewportContainer;
-					if (!overInteractive)
-					{
-						_windowDragging = true;
-						_windowDragStart = DisplayServer.MouseGetPosition();
-					}
-				}
-				else
-				{
-					_windowDragging = false;
-				}
-			}
-			else if (@event is InputEventMouseMotion && _windowDragging)
-			{
-				var mouseNow = DisplayServer.MouseGetPosition();
-				var delta = mouseNow - _windowDragStart;
-				DisplayServer.WindowSetPosition(DisplayServer.WindowGetPosition() + delta);
-				_windowDragStart = mouseNow;
-			}
-		}
 
 		// Escape on login -> quit game
 		if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo
