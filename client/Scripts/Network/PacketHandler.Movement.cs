@@ -26,7 +26,7 @@ public partial class PacketHandler
         _state.MapColorG = mapG;
         _state.MapColorB = mapB;
 
-        // Save self aura state before clearing (charIndex changes between maps)
+        // Save self aura + FX state before clearing (charIndex changes between maps)
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var self))
             _savedSelfAuras = self;
 
@@ -188,11 +188,11 @@ public partial class PacketHandler
 
         ch.Dead = IsDeadHead(head);
 
-        // Apply FX if present
+        // Apply FX if present (VB6: loops 0 = play once, treat as 1)
         if (fxIndex > 0)
         {
             ch.ActiveFxSlots[0] = fxIndex;
-            ch.FxLoops[0] = fxLoops >= 999 ? -1 : fxLoops;
+            ch.FxLoops[0] = fxLoops >= 999 ? -1 : Math.Max(fxLoops, 1);
             ch.FxFrameCounter[0] = 0;
         }
 
@@ -220,6 +220,17 @@ public partial class PacketHandler
             ch.NpcAura = auraSource.NpcAura;        ch.NpcAuraAngle = auraSource.NpcAuraAngle;
             ch.Levitating = auraSource.Levitating;
             ch.Navigating = auraSource.Navigating;
+
+            // Preserve active FX across map changes (warp FX should keep playing)
+            for (int i = 0; i < 3; i++)
+            {
+                if (auraSource.ActiveFxSlots[i] > 0)
+                {
+                    ch.ActiveFxSlots[i] = auraSource.ActiveFxSlots[i];
+                    ch.FxLoops[i] = auraSource.FxLoops[i];
+                    ch.FxFrameCounter[i] = auraSource.FxFrameCounter[i];
+                }
+            }
         }
 
         _state.Characters[charIndex] = ch;

@@ -158,19 +158,22 @@ public partial class PacketHandler
             return;
         }
 
+        // VB6: loops >= 999 = infinite, loops 0 = play once (treat as 1)
+        int loops = fxLoops >= 999 ? -1 : Math.Max(fxLoops, 1);
+
         for (int i = 0; i < 3; i++)
         {
             if (ch.ActiveFxSlots[i] == 0)
             {
                 ch.ActiveFxSlots[i] = fxIndex;
-                ch.FxLoops[i] = fxLoops >= 999 ? -1 : fxLoops;
+                ch.FxLoops[i] = loops;
                 ch.FxFrameCounter[i] = 0;
                 return;
             }
         }
 
         ch.ActiveFxSlots[0] = fxIndex;
-        ch.FxLoops[0] = fxLoops >= 999 ? -1 : fxLoops;
+        ch.FxLoops[0] = loops;
         ch.FxFrameCounter[0] = 0;
     }
 
