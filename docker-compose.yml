@@ -41,11 +41,19 @@ services:
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
       PGADMIN_LISTEN_PORT: 5050
       PGADMIN_SERVER_JSON_FILE: /pgadmin4/servers.json
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: "False"
+      PGADMIN_CONFIG_SERVER_MODE: "True"
     ports:
       - "5050:5050"
     volumes:
       - pgadmin_data:/var/lib/pgadmin
       - ./pgadmin-servers.json:/pgadmin4/servers.json:ro
+    entrypoint: >
+      /bin/sh -c "
+      echo 'postgres:5432:ao_server:ao:${POSTGRES_PASSWORD:-ao_secret}' > /tmp/pgpassfile &&
+      chmod 600 /tmp/pgpassfile &&
+      /entrypoint.sh
+      "
     restart: unless-stopped
 
 volumes:
