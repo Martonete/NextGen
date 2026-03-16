@@ -8,7 +8,7 @@
       "MaintenanceDB": "ao_server",
       "Username": "ao",
       "SSLMode": "prefer",
-      "PassFile": "/tmp/pgpassfile"
+      "PassFile": "/var/lib/pgadmin/.pgpass"
     }
   }
 }
