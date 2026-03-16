@@ -1106,7 +1106,7 @@ public partial class Main : Control
 		if (!_startupPreloadDone) return;
 
 		// Borderless window drag: click+drag moves the window
-		// Only activate if the click is NOT on a UI control (buttons, panels, etc.)
+		// Skip if mouse is over an interactive control (Button, Slider, LineEdit, etc.)
 		if (_state.Config.DragWindowEnabled
 			&& DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Windowed)
 		{
@@ -1114,10 +1114,10 @@ public partial class Main : Control
 			{
 				if (mb.Pressed)
 				{
-					// Don't start drag if a GUI control is under the mouse
-					var guiFocus = GetViewport().GuiGetFocusOwner();
-					bool overGui = GetViewport().GuiGetHoveredControl() != null;
-					if (!overGui)
+					var hovered = GetViewport().GuiGetHoveredControl();
+					bool overInteractive = hovered is BaseButton or Range or LineEdit
+						or TextEdit or InventoryPanel or SpellPanel;
+					if (!overInteractive)
 					{
 						_windowDragging = true;
 						_windowDragStart = DisplayServer.MouseGetPosition();
