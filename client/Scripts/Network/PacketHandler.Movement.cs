@@ -192,7 +192,7 @@ public partial class PacketHandler
         if (fxIndex > 0)
         {
             ch.ActiveFxSlots[0] = fxIndex;
-            ch.FxLoops[0] = fxLoops >= 999 ? -1 : Math.Max(fxLoops, 1);
+            ch.FxLoops[0] = fxLoops >= 999 ? -1 : Math.Max((int)fxLoops, 1);
             ch.FxFrameCounter[0] = 0;
         }
 

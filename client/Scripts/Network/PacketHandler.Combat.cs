@@ -159,7 +159,7 @@ public partial class PacketHandler
         }
 
         // VB6: loops >= 999 = infinite, loops 0 = play once (treat as 1)
-        int loops = fxLoops >= 999 ? -1 : Math.Max(fxLoops, 1);
+        int loops = fxLoops >= 999 ? -1 : Math.Max((int)fxLoops, 1);
 
         for (int i = 0; i < 3; i++)
         {
