@@ -58,7 +58,10 @@ public partial class SoundManager : Node
     public const int SND_LEVEL = 5;
     public const int SND_IMPACTO = 10;
     public const int SND_DEATH = 11;
+    public const int SND_PASOS1 = 23;     // VB6: footstep left
+    public const int SND_PASOS2 = 24;     // VB6: footstep right
     public const int SND_REVIVE = 41;
+    public const int SND_NAVEGANDO = 50;  // VB6: swimming/water navigation
 
     // ── SFX slot (mirrors VB6 SoundBuffer struct) ────────────────────
 
@@ -225,17 +228,7 @@ public partial class SoundManager : Node
         var stream = GetOrLoadSfx(soundId);
         if (stream == null) return;
 
-        // Dedup: if same sound already playing on a UI player, restart it
-        foreach (var p in _uiPlayers)
-        {
-            if (p.Playing && p.Stream == stream)
-            {
-                p.Seek(0);
-                return;
-            }
-        }
-
-        // Find free UI player
+        // Find free UI player (no dedup — VB6 allows overlapping same sound)
         AudioStreamPlayer? player = null;
         foreach (var p in _uiPlayers)
         {
@@ -418,21 +411,13 @@ public partial class SoundManager : Node
     /// </summary>
     private int AcquireSpatialSlot(int soundId, bool looping)
     {
-        // 1. Dedup: same sound loaded and stopped → reuse
+        // VB6 parity: reuse slot only if same sound is loaded AND stopped.
+        // If it's still playing, fall through to find a NEW slot so multiple
+        // instances of the same sound can overlap (e.g. rapid potion use).
         for (int i = 0; i < NumSoundBuffers; i++)
         {
             if (_sfxSlots[i].SoundId == soundId && !_sfxPlayers[i].Playing)
                 return i;
-        }
-
-        // Also check: same sound already playing → restart (dedup)
-        for (int i = 0; i < NumSoundBuffers; i++)
-        {
-            if (_sfxSlots[i].SoundId == soundId && _sfxPlayers[i].Playing)
-            {
-                _sfxPlayers[i].Seek(0);
-                return i;
-            }
         }
 
         // 2. Empty slot

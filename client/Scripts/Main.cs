@@ -530,6 +530,8 @@ public partial class Main : Control
 			}
 			_inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
 			if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
+			_inputHandler.OnPlaySoundAt = (id, x, y) =>
+				_soundManager?.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
 			_inputHandler.OnToggleMusic = () =>
 			{
 				_state.Config.MusicEnabled = !_state.Config.MusicEnabled;

@@ -203,7 +203,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/SALIR" {
         handle_slash_salir(state, conn_id).await;
     } else if cmd_upper == "/MEDITAR" {
-        handle_slash_meditar(state, conn_id).await;
+        super::ticks::handle_meditate(state, conn_id).await;
     } else if cmd_upper == "/DESCANSAR" {
         handle_slash_descansar(state, conn_id).await;
     } else if cmd_upper == "/SEG" {

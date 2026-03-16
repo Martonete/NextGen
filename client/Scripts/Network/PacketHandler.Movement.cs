@@ -252,6 +252,14 @@ public partial class PacketHandler
 
         ClearMeditationFx(ch);
 
+        // VB6: DoPasosFx — play footstep sounds for other characters
+        // Only if not dead and not admin (priv 1,2,3,5,25)
+        if (!ch.Dead && ch.Privileges != 1 && ch.Privileges != 2
+            && ch.Privileges != 3 && ch.Privileges != 5 && ch.Privileges != 25)
+        {
+            DoPasosFx(ch);
+        }
+
         int dx = newX - ch.PosX;
         int dy = newY - ch.PosY;
 
@@ -267,6 +275,24 @@ public partial class PacketHandler
         ch.PosX = newX;
         ch.PosY = newY;
         ch.Moving = true;
+    }
+
+    /// <summary>
+    /// VB6: DoPasosFx — alternates between SND_PASOS1 (23) and SND_PASOS2 (24).
+    /// If user is navigating, plays SND_NAVEGANDO (50) instead.
+    /// </summary>
+    private void DoPasosFx(Character ch)
+    {
+        if (_state.UserNavigating)
+        {
+            OnPlaySoundAt?.Invoke(SoundManager.SND_NAVEGANDO, ch.PosX, ch.PosY);
+        }
+        else
+        {
+            ch.FootToggle = !ch.FootToggle;
+            int sndId = ch.FootToggle ? SoundManager.SND_PASOS1 : SoundManager.SND_PASOS2;
+            OnPlaySoundAt?.Invoke(sndId, ch.PosX, ch.PosY);
+        }
     }
 
 

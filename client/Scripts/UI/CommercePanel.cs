@@ -135,6 +135,17 @@ public partial class CommercePanel : RpgBaseForm
         ShowForm();
     }
 
+    public override void HideForm()
+    {
+        // Send close packet so the server knows commerce ended
+        if (_state != null && _state.Comerciando)
+        {
+            _tcp?.SendPacket(ClientPackets.WriteCommerceClose());
+            _state.Comerciando = false;
+        }
+        base.HideForm();
+    }
+
     public void CloseShop()
     {
         HideForm();

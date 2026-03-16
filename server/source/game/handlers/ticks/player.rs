@@ -50,12 +50,39 @@ pub(crate) fn meditation_fx_for_level(level: i32) -> i16 {
     else { FXMEDITARXXGRANDE }
 }
 
-/// ME — Toggle meditation on/off.
+/// ME / /MEDITAR — Toggle meditation on/off.
+/// VB6 parity: Protocol.bas HandleMeditate (lines 5507-5579).
 pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
+    use crate::game::types::privilege_level;
+
     let user = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => u,
+        Some(u) if u.logged => u,
         _ => return,
     };
+
+    // VB6: dead check — "¡¡Estás muerto!!"
+    if user.dead {
+        state.send_msg_id(conn_id, 3, "");
+        return;
+    }
+
+    // VB6: MaxMAN == 0 — "Sólo las clases mágicas conocen el arte de la meditación."
+    if user.max_mana == 0 {
+        state.send_msg_id(conn_id, 4, "");
+        return;
+    }
+
+    // VB6: GMs get instant full mana, no actual meditation
+    if user.privileges > privilege_level::USER {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            let max = user.max_mana;
+            user.min_mana = max;
+        }
+        state.send_msg_id(conn_id, 393, ""); // Maná restaurado
+        send_stats_mana(state, conn_id).await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
+        return;
+    }
 
     let meditating = user.meditating;
     let char_index = user.char_index;
@@ -64,33 +91,35 @@ pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
     let y = user.pos_y;
     let level = user.level;
 
+    // VB6: WriteMeditateToggle before toggling
+    state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
+
     if meditating {
-        // Stop meditation — clear FX
+        // Stop meditation — VB6: "Dejas de meditar."
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        state.send_msg_id(conn_id, 205, ""); // Dejas de meditar
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
+        state.send_msg_id(conn_id, 205, "");
         let fx_clear = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear);
     } else {
-        // Check if mana is already full
+        // Don't start meditation if mana is already full
         if user.min_mana >= user.max_mana {
-            state.send_msg_id(conn_id, 393, ""); // Mana restaurado
+            state.send_msg_id(conn_id, 829, ""); // Has terminado de meditar
             return;
         }
 
+        // Start meditation — VB6: toggle flag, set 2-second warmup, show FX
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = true;
-            user.meditation_start_tick = 50; // VB6: 2-second concentration delay (2000ms / 40ms = 50 ticks)
+            user.meditation_start_tick = 50; // 2000ms / 40ms = 50 ticks
         }
 
-        // VB6: meditation FX scales by level (5 tiers), 999 loops = forever
+        state.send_msg_id(conn_id, 394, ""); // Comenzas a meditar
+
         let med_fx = meditation_fx_for_level(level);
         let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, med_fx, 999);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt);
-
-        state.send_msg_id(conn_id, 394, ""); // Comenzas a meditar
     }
 }
 

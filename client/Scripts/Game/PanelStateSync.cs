@@ -359,6 +359,37 @@ public class PanelStateSync
             _state.ShowTutorial = false;
             _tutorialPanel?.Open();
         }
+
+        // Safety net: if AnyFormOpen is true but no panel is actually visible,
+        // reset all flags to prevent permanent input freeze.
+        if (_state.AnyFormOpen)
+        {
+            bool anyVisible =
+                (_commercePanel != null && _commercePanel.Visible)
+                || (_tradePanel != null && _tradePanel.Visible)
+                || (_bankPanel != null && _bankPanel.Visible)
+                || (_vaultPanel != null && _vaultPanel.Visible)
+                || (_travelPanel != null && _travelPanel.Visible)
+                || (_optionsPanel != null && _optionsPanel.Visible)
+                || _state.EscapeMenuOpen
+                || _state.MacroPanelOpen
+                || _state.KeyBindPanelOpen
+                || _state.DropDialogOpen
+                || _state.StatsPanelOpen;
+
+            if (!anyVisible)
+            {
+                GD.PrintErr("[PanelStateSync] AnyFormOpen=true but no panel visible — resetting stale flags");
+                _state.Comerciando = false;
+                _state.Trading = false;
+                _state.Banqueando = false;
+                _state.BovedaAbierta = false;
+                _state.ShowTravelPanel = false;
+                _lastComerciando = false;
+                _lastTrading = false;
+                _lastBanqueando = false;
+            }
+        }
     }
 
     /// <summary>Close all panels (called on disconnect).</summary>

@@ -52,6 +52,7 @@ public partial class OptionsPanel : RpgBaseForm
     private Button? _chkMouseDClick;
     private Button? _chkMouseRClick;
     private Button? _chkMouseContext;
+    private Button? _chkBlockWalkOnChat;
 
     // ── Render tab controls (Display) ──
     private Button? _chkFullscreen;
@@ -239,6 +240,12 @@ public partial class OptionsPanel : RpgBaseForm
 
         ctrlCols.AddChild(ctrlRight);
         vbox.AddChild(ctrlCols);
+
+        // Walk-blocking option
+        var walkBlockRow = RpgTheme.CreateRpgCheckboxRow("Bloquear caminata al escribir");
+        _chkBlockWalkOnChat = GetCheckboxFromRow(walkBlockRow);
+        _chkBlockWalkOnChat.Toggled += _ => ApplyImmediate();
+        vbox.AddChild(walkBlockRow);
 
         return vbox;
     }
@@ -576,6 +583,7 @@ public partial class OptionsPanel : RpgBaseForm
         SetCheck(_chkMouseDClick, cfg.MouseDoubleClick);
         SetCheck(_chkMouseRClick, cfg.MouseRightClick);
         SetCheck(_chkMouseContext, cfg.MouseContextMenu);
+        SetCheck(_chkBlockWalkOnChat, cfg.BlockWalkOnChat);
 
         // Render tab — Display
         SetCheck(_chkFullscreen, cfg.Fullscreen);
@@ -653,6 +661,7 @@ public partial class OptionsPanel : RpgBaseForm
         cfg.MouseDoubleClick = IsChecked(_chkMouseDClick);
         cfg.MouseRightClick = IsChecked(_chkMouseRClick);
         cfg.MouseContextMenu = IsChecked(_chkMouseContext);
+        cfg.BlockWalkOnChat = IsChecked(_chkBlockWalkOnChat);
 
         // Render tab — Display
         cfg.Fullscreen = IsChecked(_chkFullscreen);

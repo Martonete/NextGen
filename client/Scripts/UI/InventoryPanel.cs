@@ -313,18 +313,19 @@ public partial class InventoryPanel : Control
             {
                 if (slot >= 0 && slot < TotalSlots && _state.Inventory[slot].ObjIndex > 0)
                 {
-                    _selectedSlot = slot;
-                    _state.SelectedInvSlot = slot;
-                    int objType = _state.Inventory[slot].ObjType;
-                    // Server-side equippable types (inventory.rs): Weapon=2, Armor=3,
-                    // Shield=16, Helmet=17, Tool/Ring=18, Instrument=26, Arrow=32
-                    bool isEquipable = objType == 2 || objType == 3 || objType == 16
-                                    || objType == 17 || objType == 18 || objType == 26
-                                    || objType == 32;
-                    if (isEquipable)
-                        _tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
-                    else
+                    if (mb.DoubleClick)
+                    {
+                        // Double right-click = use item (same as double left-click)
+                        _selectedSlot = slot;
+                        _state.SelectedInvSlot = slot;
                         _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
+                    }
+                    else
+                    {
+                        // Single right-click = select only (same as single left-click)
+                        _selectedSlot = slot;
+                        _state.SelectedInvSlot = slot;
+                    }
                 }
             }
 

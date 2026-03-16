@@ -490,7 +490,8 @@ public partial class EditorMain : Control
             Title = "Abrir Mapa",
             Size = new Vector2I(600, 400),
         };
-        _openDialog.AddFilter("*.map", "Mapa AO");
+        _openDialog.AddFilter("*.aomap", "Mapa AO (nuevo)");
+        _openDialog.AddFilter("*.map", "Mapa AO (legacy)");
         _openDialog.FileSelected += OnMapFileSelected;
         AddChild(_openDialog);
 
@@ -1017,10 +1018,11 @@ public partial class EditorMain : Control
     private void LoadMapByNumber(int mapNumber)
     {
         if (string.IsNullOrEmpty(_state.MapDir)) return;
+        string aomapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.aomap");
         string mapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.map");
-        if (!File.Exists(mapFile))
+        if (!File.Exists(aomapFile) && !File.Exists(mapFile))
         {
-            SetStatus($"Mapa{mapNumber}.map no existe en {_state.MapDir}");
+            SetStatus($"Mapa{mapNumber} no existe en {_state.MapDir}");
             return;
         }
 
@@ -1031,7 +1033,7 @@ public partial class EditorMain : Control
         UpdateViewport();
         UpdateNavBar();
         if (_mapNumSpin != null) _mapNumSpin.Value = mapNumber;
-        SetStatus($"Mapa {mapNumber} cargado — {_map.Name}");
+        SetStatus($"Mapa {mapNumber} cargado ({_map.Width}x{_map.Height}) — {_map.Name}");
     }
 
     private void OnMapFileSelected(string path)

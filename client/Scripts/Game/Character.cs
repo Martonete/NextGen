@@ -30,6 +30,9 @@ public class Character
 	// Only advances when Moving=true. Reset to 0 on move start.
 	public float WalkFrame;
 
+	// VB6: .pie — alternates between left/right foot for step sounds
+	public bool FootToggle;
+
 	// Status
 	public bool Dead;
 	public bool Invisible;
