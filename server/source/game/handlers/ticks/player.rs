@@ -55,47 +55,45 @@ pub(crate) fn meditation_fx_for_level(level: i32) -> i16 {
 pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
     use crate::game::types::privilege_level;
 
-    let user = match state.users.get(&conn_id) {
-        Some(u) if u.logged => u,
-        _ => return,
-    };
+    // Extract all needed fields upfront to avoid holding an immutable borrow on state.
+    let (dead, max_mana, min_mana, privileges, meditating, char_index, map, x, y, level) =
+        match state.users.get(&conn_id) {
+            Some(u) if u.logged => (
+                u.dead, u.max_mana, u.min_mana, u.privileges, u.meditating,
+                u.char_index, u.pos_map, u.pos_x, u.pos_y, u.level,
+            ),
+            _ => return,
+        };
 
-    // VB6: dead check — "¡¡Estás muerto!!"
-    if user.dead {
+    // VB6: dead check
+    if dead {
         state.send_msg_id(conn_id, 3, "");
         return;
     }
 
-    // VB6: MaxMAN == 0 — "Sólo las clases mágicas conocen el arte de la meditación."
-    if user.max_mana == 0 {
+    // VB6: MaxMAN == 0 — non-magic class
+    if max_mana == 0 {
         state.send_msg_id(conn_id, 4, "");
         return;
     }
 
     // VB6: GMs get instant full mana, no actual meditation
-    if user.privileges > privilege_level::USER {
+    if privileges > privilege_level::USER {
         if let Some(user) = state.users.get_mut(&conn_id) {
             let max = user.max_mana;
             user.min_mana = max;
         }
-        state.send_msg_id(conn_id, 393, ""); // Maná restaurado
+        state.send_msg_id(conn_id, 393, "");
         send_stats_mana(state, conn_id).await;
         state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
         return;
     }
 
-    let meditating = user.meditating;
-    let char_index = user.char_index;
-    let map = user.pos_map;
-    let x = user.pos_x;
-    let y = user.pos_y;
-    let level = user.level;
-
     // VB6: WriteMeditateToggle before toggling
     state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
 
     if meditating {
-        // Stop meditation — VB6: "Dejas de meditar."
+        // Stop meditation
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
@@ -104,12 +102,12 @@ pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear);
     } else {
         // Don't start meditation if mana is already full
-        if user.min_mana >= user.max_mana {
-            state.send_msg_id(conn_id, 829, ""); // Has terminado de meditar
+        if min_mana >= max_mana {
+            state.send_msg_id(conn_id, 829, "");
             return;
         }
 
-        // Start meditation — VB6: toggle flag, set 2-second warmup, show FX
+        // Start meditation
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = true;
             user.meditation_start_tick = 50; // 2000ms / 40ms = 50 ticks
