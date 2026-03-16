@@ -505,9 +505,16 @@ public partial class OptionsPanel : RpgBaseForm
         _config.ResolutionHeight = h;
         _config.Save(_dataPath);
 
-        // Apply new resolution and reload scene to rebuild all UI positions
+        // Apply new resolution and reposition all UI
         ResolutionManager.ApplyResolution(w, h);
         OnResolutionChanged?.Invoke();
+
+        // Re-center this panel for the new resolution
+        if (Visible)
+        {
+            var vpSize = GetViewportRect().Size;
+            Position = (vpSize - Size) / 2.0f;
+        }
     }
 
     // ── Performance preset ────────────────────────────────
