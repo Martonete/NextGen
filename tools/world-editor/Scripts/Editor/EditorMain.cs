@@ -576,6 +576,7 @@ public partial class EditorMain : Control
         {
             _sidebarTabs.Position = new Vector2(0, contentTop);
             _sidebarTabs.Size = new Vector2(PaletteWidth, paletteH);
+            _sidebarTabs.ZIndex = 2;
         }
 
         if (_tileInfoPanel != null)
