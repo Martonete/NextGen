@@ -1116,7 +1116,8 @@ public partial class Main : Control
 				{
 					var hovered = GetViewport().GuiGetHoveredControl();
 					bool overInteractive = hovered is BaseButton or Godot.Range or LineEdit
-						or TextEdit or InventoryPanel or SpellPanel;
+						or TextEdit or InventoryPanel or SpellPanel
+						or SubViewportContainer;
 					if (!overInteractive)
 					{
 						_windowDragging = true;
