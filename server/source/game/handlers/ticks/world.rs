@@ -107,11 +107,22 @@ pub async fn tick_intervals(state: &mut GameState) {
         if !still_invisible {
             state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
             if !navigating {
+                // Send CC+CD only to non-clanmates (they had CharacterRemove and need
+                // the full character recreated). Clanmates already have the character
+                // so they just need SetInvisible(false) — avoids animation reset.
                 let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
-                let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
+                let cd = build_cd_binary(state.users.get(&conn_id).unwrap());
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
+                let area_users = state.get_area_users(map, x, y, conn_id);
+                for other_id in area_users {
+                    if same_clan(state, conn_id, other_id) {
+                        state.send_bytes(other_id, &nover);
+                    } else {
+                        state.send_bytes(other_id, &cc);
+                        state.send_bytes(other_id, &cd);
+                    }
+                }
+                // Tell self we're visible again (no CC needed — preserves animation)
                 state.send_bytes(conn_id, &nover);
             }
         }

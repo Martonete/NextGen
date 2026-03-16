@@ -440,14 +440,24 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             user.invisible = false;
             user.counter_invisible = 0;
         }
+        // Send CC+CD only to non-clanmates (they had CharacterRemove).
+        // Clanmates get SetInvisible(false) — avoids animation reset/tosqueo.
+        let ci = char_index.0 as i16;
+        let nover = binary_packets::write_set_invisible(ci, false, 0);
         if let Some(u) = state.users.get(&conn_id) {
             let cc = u.build_cc_binary();
             let cd = build_cd_binary(u);
             let (px, py) = (u.pos_x, u.pos_y);
-            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc);
-            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd);
+            let area_users = state.get_area_users(map, px, py, conn_id);
+            for other_id in area_users {
+                if same_clan(state, conn_id, other_id) {
+                    state.send_bytes(other_id, &nover);
+                } else {
+                    state.send_bytes(other_id, &cc);
+                    state.send_bytes(other_id, &cd);
+                }
+            }
         }
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_bytes(conn_id, &nover);
         state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
     }

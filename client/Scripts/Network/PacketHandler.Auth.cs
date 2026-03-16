@@ -192,13 +192,25 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
         {
             ch.Invisible = invisible;
-            // Start from max alpha (135) fading down for a smooth entrance
-            ch.TransparenciaBody = invisible ? 53f : 0f;
-            ch.Llegoalatransp = invisible;
-            // Countdown timer (0 = permanent/GM, >0 = spell seconds remaining)
-            ch.InvisibleCountdown = invisible ? durationSecs : 0;
-            ch.InvisibleMaxCountdown = invisible ? durationSecs : 0;
-            ch.InvisibleCountdownTimer = 0f;
+            if (invisible)
+            {
+                // Start pulsing from max alpha fading down
+                ch.TransparenciaBody = 53f;
+                ch.Llegoalatransp = true;
+                ch.InvisibleCountdown = durationSecs;
+                ch.InvisibleMaxCountdown = durationSecs;
+                ch.InvisibleCountdownTimer = 0f;
+            }
+            else
+            {
+                // Becoming visible — reset transparency but preserve movement state
+                // (MoveOffsetX/Y, Moving, WalkFrame stay untouched to avoid animation tosqueo)
+                ch.TransparenciaBody = 0f;
+                ch.Llegoalatransp = false;
+                ch.InvisibleCountdown = 0;
+                ch.InvisibleMaxCountdown = 0;
+                ch.InvisibleCountdownTimer = 0f;
+            }
         }
     }
 
