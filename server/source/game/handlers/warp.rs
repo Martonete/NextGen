@@ -49,6 +49,7 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Calculate the new visibility strip based on heading (VB6 ModAreas lines 158-198)
+    // This strip is for characters/NPCs (standard 27x27 area system).
     let (min_x, max_x, min_y, max_y, new_min_x, new_min_y) = if heading == 255 {
         // USER_NUEVO (login/warp): full 27x27 area
         let nmin_y = (pos_y / 9 - 1) * 9;
@@ -83,6 +84,17 @@ pub(crate) async fn check_update_needed_user(
     let max_x = max_x.min(grid_w);
     let max_y = max_y.min(grid_h);
 
+    // Extended bounds for objects/particles/lights — covers expanded viewport (up to 1920x1080).
+    // Always sends the full extended area centered on the player. This only fires on zone
+    // crossings (every ~9 tiles), and ObjectCreate packets are idempotent (duplicates are
+    // harmless), so the simplicity/correctness tradeoff is worth the minimal extra bandwidth.
+    let obj_half_w = world::OBJ_X_BORDER;
+    let obj_half_h = world::OBJ_Y_BORDER;
+    let obj_min_x = (pos_x - obj_half_w).max(1);
+    let obj_min_y = (pos_y - obj_half_h).max(1);
+    let obj_max_x = (pos_x + obj_half_w).min(grid_w);
+    let obj_max_y = (pos_y + obj_half_h).min(grid_h);
+
     // Update user's area tracking
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.area_id = new_area_id;
@@ -99,14 +111,10 @@ pub(crate) async fn check_update_needed_user(
         None => return,
     };
 
-    // Collect users, NPCs, ground items, particles, and lights in the new strip
-    // (collect first to avoid borrow conflicts)
+    // Collect users and NPCs in the STANDARD strip (27x27 area system).
+    // Characters/NPCs use standard visibility — client FOV fade handles the rest.
     let mut new_users: Vec<ConnectionId> = Vec::new();
     let mut new_npcs: Vec<usize> = Vec::new();
-    let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
-    let mut new_door_bqs: Vec<(i32, i32, bool)> = Vec::new(); // (x, y, blocked) for door tiles
-    let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
-    let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
 
     if let Some(grid) = state.world.grid(map) {
         for sx in min_x..=max_x {
@@ -120,8 +128,25 @@ pub(crate) async fn check_update_needed_user(
                     if tile.npc_index > 0 {
                         new_npcs.push(tile.npc_index as usize);
                     }
+                }
+            }
+        }
+    }
+
+    // Collect ground items, particles, lights, and doors in the EXTENDED area.
+    // This covers the expanded viewport (up to 1920x1080) so objects like doors,
+    // trees, and ground items are visible in the fog zone beyond the core viewport.
+    let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
+    let mut new_door_bqs: Vec<(i32, i32, bool)> = Vec::new(); // (x, y, blocked) for door tiles
+    let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
+    let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
+
+    // Runtime ground items (dropped by players, spawned by server)
+    if let Some(grid) = state.world.grid(map) {
+        for sx in obj_min_x..=obj_max_x {
+            for sy in obj_min_y..=obj_max_y {
+                if let Some(tile) = grid.tile(sx, sy) {
                     if tile.ground_item.obj_index > 0 {
-                        // Look up GRH for the object
                         if let Some(obj) = state.get_object(tile.ground_item.obj_index) {
                             new_items.push((obj.grh_index, sx, sy));
                         }
@@ -131,11 +156,11 @@ pub(crate) async fn check_update_needed_user(
         }
     }
 
-    // Collect particles, lights, and static .inf objects from static map data
+    // Static .inf objects (doors, furniture), particles, and lights from map data
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        for sx in min_x..=max_x {
-            for sy in min_y..=max_y {
+        for sx in obj_min_x..=obj_max_x {
+            for sy in obj_min_y..=obj_max_y {
                 if let Some(tile) = game_map.tiles.get((sx - 1) as usize, (sy - 1) as usize) {
                     if tile.particle_group_index > 0 {
                         new_particles.push((tile.particle_group_index, sx, sy));

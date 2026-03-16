@@ -19,6 +19,12 @@ pub const Y_WINDOW: i32 = 13;
 pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 8
 pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 6
 
+// Extended visibility for objects (doors, ground items, particles, lights).
+// Covers up to 1920x1080 (45x27 tiles → half = 22x13) with margin.
+// Characters/NPCs still use MIN_X/Y_BORDER — they fade via client FOV system.
+pub const OBJ_X_BORDER: i32 = 23;
+pub const OBJ_Y_BORDER: i32 = 14;
+
 // Default zone size for area tracking
 const DEFAULT_ZONE_SIZE: i32 = 9;
 

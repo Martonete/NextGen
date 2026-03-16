@@ -101,7 +101,7 @@ public partial class PacketHandler
         int playerX = bq.ReadInteger();
         int playerY = bq.ReadInteger();
 
-        // VB6: CambioDeArea 9x9 grid zones
+        // VB6: CambioDeArea 9x9 grid zones — standard bounds for characters
         int minLimX = (playerX / 9 - 1) * 9;
         int maxLimX = minLimX + 26;
         int minLimY = (playerY / 9 - 1) * 9;
@@ -113,6 +113,7 @@ public partial class PacketHandler
         int visMinY = playerY - HalfH - VisMargin;
         int visMaxY = playerY + HalfH + VisMargin;
 
+        // Characters use standard 27x27 area bounds
         var toRemove = new System.Collections.Generic.List<int>();
         foreach (var kvp in _state.Characters)
         {
@@ -128,11 +129,19 @@ public partial class PacketHandler
         foreach (int key in toRemove)
             _state.Characters.Remove(key);
 
+        // Objects use EXTENDED bounds matching server's OBJ_X/Y_BORDER (23x14 half-range).
+        // This keeps objects visible in the expanded viewport beyond the core 17x13.
+        const int ObjHalfW = 23, ObjHalfH = 14;
+        int objMinX = playerX - ObjHalfW;
+        int objMaxX = playerX + ObjHalfW;
+        int objMinY = playerY - ObjHalfH;
+        int objMaxY = playerY + ObjHalfH;
+
         var objToRemove = new System.Collections.Generic.List<(int, int)>();
         foreach (var kvp in _state.GroundObjects)
         {
-            if (kvp.Key.Item1 < minLimX || kvp.Key.Item1 > maxLimX ||
-                kvp.Key.Item2 < minLimY || kvp.Key.Item2 > maxLimY)
+            if (kvp.Key.Item1 < objMinX || kvp.Key.Item1 > objMaxX ||
+                kvp.Key.Item2 < objMinY || kvp.Key.Item2 > objMaxY)
                 objToRemove.Add(kvp.Key);
         }
         foreach (var key in objToRemove)
