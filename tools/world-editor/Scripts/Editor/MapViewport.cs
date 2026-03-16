@@ -1093,7 +1093,7 @@ public partial class MapViewport : Control
             if (mb.ButtonIndex == MouseButton.WheelUp)
                 State.Zoom = Math.Min(State.Zoom * 1.15f, 4f);
             else
-                State.Zoom = Math.Max(State.Zoom / 1.15f, 0.15f);
+                State.Zoom = Math.Max(State.Zoom / 1.15f, 0.02f);
 
             var localPos = ToPanel(mb.Position);
             float zoomRatio = State.Zoom / oldZoom;
