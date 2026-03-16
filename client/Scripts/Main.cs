@@ -1117,18 +1117,24 @@ public partial class Main : Control
 			{
 				if (mb.Pressed)
 				{
-					// Only start drag if click is NOT inside the game viewport or sidebar buttons
+					// Block drag on viewport (game clicks). Allow drag on sidebar
+					// empty space but not on interactive controls (buttons, etc.).
 					float cx = mb.Position.X;
 					float cy = mb.Position.Y;
 					bool inViewport = cx >= ResolutionManager.LeftMargin
 						&& cx < ResolutionManager.LeftMargin + ResolutionManager.ViewportW
 						&& cy >= ResolutionManager.TopMargin
 						&& cy < ResolutionManager.TopMargin + ResolutionManager.ViewportH;
-					bool inSidebar = cx >= ResolutionManager.SidebarX;
-					if (!inViewport && !inSidebar)
+					if (!inViewport)
 					{
-						_windowDragging = true;
-						_windowDragStart = DisplayServer.MouseGetPosition();
+						var hovered = GetViewport().GuiGetHoveredControl();
+						bool onButton = hovered is BaseButton or Godot.Range
+							or LineEdit or TextEdit or InventoryPanel or SpellPanel;
+						if (!onButton)
+						{
+							_windowDragging = true;
+							_windowDragStart = DisplayServer.MouseGetPosition();
+						}
 					}
 				}
 				else
