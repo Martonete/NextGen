@@ -61,7 +61,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 }
                 let expired = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms <= 0).unwrap_or(false);
                 if expired {
-                    npc_die(state, npc_idx, false).await;
+                    npc_die(state, npc_idx, 0, 0, 0, 0).await;
                     continue;
                 }
             }
