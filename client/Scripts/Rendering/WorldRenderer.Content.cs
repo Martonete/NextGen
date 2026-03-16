@@ -36,8 +36,10 @@ public partial class WorldRenderer
                     float objAlpha = 1f;
                     if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(objGrh))
                     {
-                        float dx = Math.Abs(x - _frameUserX);
-                        float dy = Math.Abs(y - _frameUserY);
+                        float smoothUX = _frameUserX + _state.ScreenOffsetX / 32f;
+                        float smoothUY = _frameUserY + _state.ScreenOffsetY / 32f;
+                        float dx = Math.Abs(x - smoothUX);
+                        float dy = Math.Abs(y - smoothUY);
                         const float innerX = 3f, innerY = 2f;
                         const float outerX = 5f, outerY = 7f;
                         float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
@@ -73,9 +75,12 @@ public partial class WorldRenderer
                     if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
                     {
                         // Smooth distance-based transparency near player to prevent flicker.
-                        // Inner zone: full transparency. Outer 1-tile ring: smooth fade.
-                        float dx = Math.Abs(x - _frameUserX);
-                        float dy = Math.Abs(y - _frameUserY);
+                        // Use sub-tile precision: ScreenOffset gives fractional position
+                        // during smooth scrolling, preventing 1-tile jumps in the fade zone.
+                        float smoothUserX = _frameUserX + _state.ScreenOffsetX / 32f;
+                        float smoothUserY = _frameUserY + _state.ScreenOffsetY / 32f;
+                        float dx = Math.Abs(x - smoothUserX);
+                        float dy = Math.Abs(y - smoothUserY);
                         // Inner rectangle where trees are transparent
                         const float innerX = 3f, innerY = 2f;
                         // Outer rectangle where trees are fully opaque
