@@ -35,7 +35,7 @@ public partial class TextureEditPopup : Window
 
         var bg = new PanelContainer();
         bg.AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 0, 0));
-        bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        bg.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         AddChild(bg);
 
         var margin = new MarginContainer();
@@ -68,7 +68,7 @@ public partial class TextureEditPopup : Window
         catRow.AddThemeConstantOverride("separation", 4);
         _categoryOption = new OptionButton();
         _categoryOption.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        _categoryOption.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _categoryOption.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         int selectedIdx = 0;
         for (int i = 0; i < Catalog.CategoryOrder.Count; i++)
         {
@@ -95,7 +95,7 @@ public partial class TextureEditPopup : Window
 
         var wCol = new VBoxContainer();
         wCol.AddThemeConstantOverride("separation", 2);
-        wCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        wCol.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         wCol.AddChild(EditorTheme.SectionLabel("Ancho (tiles)"));
         _widthSpin = EditorTheme.MakeSpinBox(0, 32, 1, TargetRef.TileWidth);
         wCol.AddChild(_widthSpin);
@@ -103,7 +103,7 @@ public partial class TextureEditPopup : Window
 
         var hCol = new VBoxContainer();
         hCol.AddThemeConstantOverride("separation", 2);
-        hCol.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        hCol.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         hCol.AddChild(EditorTheme.SectionLabel("Alto (tiles)"));
         _heightSpin = EditorTheme.MakeSpinBox(0, 32, 1, TargetRef.TileHeight);
         hCol.AddChild(_heightSpin);
@@ -112,7 +112,7 @@ public partial class TextureEditPopup : Window
         vbox.AddChild(sizeRow);
 
         // Spacer
-        var spacer = new Control { SizeFlagsVertical = SizeFlags.ExpandFill };
+        var spacer = new Control { SizeFlagsVertical = Control.SizeFlags.ExpandFill };
         vbox.AddChild(spacer);
 
         // Buttons

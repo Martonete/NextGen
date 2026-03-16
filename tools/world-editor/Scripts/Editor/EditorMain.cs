@@ -93,12 +93,9 @@ public partial class EditorMain : Control
     private Action? _pendingAfterSaveCheck;
 
     // Texture preload
-    private IEnumerator<int>? _preloadIter;
     private Label? _preloadLabel;
     private ProgressBar? _preloadBar;
     private Panel? _preloadOverlay;
-    // Preload phases: 1=textures, 2=previews. Time-budgeted (8ms/frame).
-    private IEnumerator<int>? _previewPreloadIter;
     private int _preloadPhase; // 0=idle, 1=textures, 2=previews
 
     private const float PaletteWidth = 280;

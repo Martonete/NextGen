@@ -169,7 +169,7 @@ public partial class ZonePanel : VBoxContainer
         var chk = new CheckBox { Text = text };
         chk.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
         chk.AddThemeColorOverride("font_color", EditorTheme.TEXT_SECONDARY);
-        chk.Toggled += onChange;
+        chk.Toggled += (bool on) => onChange(on);
         return chk;
     }
 
