@@ -33,19 +33,20 @@ public partial class WorldRenderer
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
                 {
                     const float objBright = 220f / 255f;
-                    bool objNearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
-                                       && IsTree(objGrh)
-                                       && y > (_frameUserY - 2) && y < (_frameUserY + 7)
-                                       && x > (_frameUserX - 4) && x < (_frameUserX + 4);
-                    if (objNearPlayer)
+                    float objAlpha = 1f;
+                    if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(objGrh))
                     {
+                        float dx = Math.Abs(x - _frameUserX);
+                        float dy = Math.Abs(y - _frameUserY);
+                        const float innerX = 3f, innerY = 2f;
+                        const float outerX = 5f, outerY = 7f;
+                        float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
+                        float ty = dy <= innerY ? 0f : dy >= outerY ? 1f : (dy - innerY) / (outerY - innerY);
+                        float t = Math.Max(tx, ty);
                         float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, treeAlpha));
+                        objAlpha = treeAlpha + (1f - treeAlpha) * t;
                     }
-                    else
-                    {
-                        DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 1f));
-                    }
+                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, objAlpha));
                 }
 
                 // Characters/NPCs at this tile
@@ -68,19 +69,24 @@ public partial class WorldRenderer
                 if (tile.Layer3 > 0)
                 {
                     const float treeBright = 220f / 255f;
-                    bool nearPlayer = (_state.Config?.TreeRoofTransparency ?? true)
-                                   && IsTree(tile.Layer3)
-                                   && y > (_frameUserY - 2) && y < (_frameUserY + 7)
-                                   && x > (_frameUserX - 4) && x < (_frameUserX + 4);
-                    if (nearPlayer)
+                    float l3Alpha = 1f;
+                    if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
                     {
+                        // Smooth distance-based transparency near player to prevent flicker.
+                        // Inner zone: full transparency. Outer 1-tile ring: smooth fade.
+                        float dx = Math.Abs(x - _frameUserX);
+                        float dy = Math.Abs(y - _frameUserY);
+                        // Inner rectangle where trees are transparent
+                        const float innerX = 3f, innerY = 2f;
+                        // Outer rectangle where trees are fully opaque
+                        const float outerX = 5f, outerY = 7f;
+                        float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
+                        float ty = dy <= innerY ? 0f : dy >= outerY ? 1f : (dy - innerY) / (outerY - innerY);
+                        float t = Math.Max(tx, ty);
                         float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, treeAlpha));
+                        l3Alpha = treeAlpha + (1f - treeAlpha) * t;
                     }
-                    else
-                    {
-                        DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, 1f));
-                    }
+                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, l3Alpha));
                 }
             }
         }
