@@ -204,54 +204,56 @@ public partial class OptionsPanel : RpgBaseForm
 
         vbox.AddChild(RpgTheme.CreateSeparator());
 
-        // -- Controls section (merged from Controles tab) --
+        // -- Controls section --
         var ctrlCols = RpgTheme.CreateRow(RpgTheme.SpacingXl);
 
+        // Left column: Funciones (mouse options + walk/drag toggles)
         var ctrlLeft = RpgTheme.CreateColumn();
         ctrlLeft.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        ctrlLeft.AddChild(RpgTheme.CreateTitleLabel("Teclas", 15));
-        _btnKeyConfig = RpgTheme.CreateRpgButton("Configurar Teclas", false, 13);
-        _btnKeyConfig.CustomMinimumSize = new Vector2(0, 34);
-        _btnKeyConfig.Pressed += () => OnOpenKeyBinds?.Invoke();
-        ctrlLeft.AddChild(_btnKeyConfig);
+        ctrlLeft.AddChild(RpgTheme.CreateTitleLabel("Funciones", 15));
+
+        var dclickRow = RpgTheme.CreateRpgCheckboxRow("Doble click interactuar");
+        _chkMouseDClick = GetCheckboxFromRow(dclickRow);
+        _chkMouseDClick.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(dclickRow);
+
+        var rclickRow = RpgTheme.CreateRpgCheckboxRow("Usar click derecho como doble click");
+        _chkMouseRClick = GetCheckboxFromRow(rclickRow);
+        _chkMouseRClick.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(rclickRow);
+
+        var contextRow = RpgTheme.CreateRpgCheckboxRow("Menu contextual");
+        _chkMouseContext = GetCheckboxFromRow(contextRow);
+        _chkMouseContext.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(contextRow);
+
+        var walkBlockRow = RpgTheme.CreateRpgCheckboxRow("Bloquear caminata al escribir");
+        _chkBlockWalkOnChat = GetCheckboxFromRow(walkBlockRow);
+        _chkBlockWalkOnChat.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(walkBlockRow);
+
+        var dragWindowRow = RpgTheme.CreateRpgCheckboxRow("Mover la pantalla en modo ventana");
+        _chkDragWindow = GetCheckboxFromRow(dragWindowRow);
+        _chkDragWindow.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(dragWindowRow);
+
         ctrlCols.AddChild(ctrlLeft);
 
         var ctrlSep = new VSeparator();
         ctrlSep.AddThemeConstantOverride("separation", 4);
         ctrlCols.AddChild(ctrlSep);
 
+        // Right column: Teclas
         var ctrlRight = RpgTheme.CreateColumn();
         ctrlRight.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        ctrlRight.AddChild(RpgTheme.CreateTitleLabel("Raton", 15));
-
-        var dclickRow = RpgTheme.CreateRpgCheckboxRow("Doble click interactuar");
-        _chkMouseDClick = GetCheckboxFromRow(dclickRow);
-        _chkMouseDClick.Toggled += _ => ApplyImmediate();
-        ctrlRight.AddChild(dclickRow);
-
-        var rclickRow = RpgTheme.CreateRpgCheckboxRow("Usar click derecho como doble click");
-        _chkMouseRClick = GetCheckboxFromRow(rclickRow);
-        _chkMouseRClick.Toggled += _ => ApplyImmediate();
-        ctrlRight.AddChild(rclickRow);
-
-        var contextRow = RpgTheme.CreateRpgCheckboxRow("Menu contextual");
-        _chkMouseContext = GetCheckboxFromRow(contextRow);
-        _chkMouseContext.Toggled += _ => ApplyImmediate();
-        ctrlRight.AddChild(contextRow);
+        ctrlRight.AddChild(RpgTheme.CreateTitleLabel("Teclas", 15));
+        _btnKeyConfig = RpgTheme.CreateRpgButton("Configurar Teclas", false, 13);
+        _btnKeyConfig.CustomMinimumSize = new Vector2(0, 34);
+        _btnKeyConfig.Pressed += () => OnOpenKeyBinds?.Invoke();
+        ctrlRight.AddChild(_btnKeyConfig);
 
         ctrlCols.AddChild(ctrlRight);
         vbox.AddChild(ctrlCols);
-
-        // Walk-blocking option
-        var walkBlockRow = RpgTheme.CreateRpgCheckboxRow("Bloquear caminata al escribir");
-        _chkBlockWalkOnChat = GetCheckboxFromRow(walkBlockRow);
-        _chkBlockWalkOnChat.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(walkBlockRow);
-
-        var dragWindowRow = RpgTheme.CreateRpgCheckboxRow("Mover la pantalla en modo ventana");
-        _chkDragWindow = GetCheckboxFromRow(dragWindowRow);
-        _chkDragWindow.Toggled += _ => ApplyImmediate();
-        vbox.AddChild(dragWindowRow);
 
         return vbox;
     }
