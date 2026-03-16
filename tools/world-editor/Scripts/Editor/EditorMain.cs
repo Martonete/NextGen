@@ -700,24 +700,44 @@ public partial class EditorMain : Control
 
     private void TryAutoDetectDataPath()
     {
-        // Try relative paths from the editor project
-        string[] candidates = {
-            "../../client/Data",
-            "../../../client/Data",
-            Path.Combine(OS.GetUserDataDir(), "Data"),
-        };
+        // Build candidate list from multiple base directories to handle
+        // different working directories and project layouts.
+        var candidates = new System.Collections.Generic.List<string>();
+
+        // Relative to current working directory
+        candidates.Add("../../client/Data");
+        candidates.Add("../../../client/Data");
+        candidates.Add("client/Data");
+
+        // Relative to the project.godot file (res:// → filesystem path)
+        string resPath = ProjectSettings.GlobalizePath("res://");
+        candidates.Add(Path.Combine(resPath, "../../client/Data"));
+        candidates.Add(Path.Combine(resPath, "../../../client/Data"));
+
+        // Relative to the executable
+        string exeDir = OS.GetExecutablePath().GetBaseDir();
+        candidates.Add(Path.Combine(exeDir, "../../client/Data"));
+        candidates.Add(Path.Combine(exeDir, "../../../client/Data"));
+        candidates.Add(Path.Combine(exeDir, "Data"));
+
+        // User data fallback
+        candidates.Add(Path.Combine(OS.GetUserDataDir(), "Data"));
 
         foreach (var candidate in candidates)
         {
-            string full = Path.GetFullPath(candidate);
-            if (Directory.Exists(full) && File.Exists(Path.Combine(full, "INIT", "Graficos.ind")))
+            try
             {
-                LoadDataPath(full);
-                return;
+                string full = Path.GetFullPath(candidate);
+                if (Directory.Exists(full) && File.Exists(Path.Combine(full, "INIT", "Graficos.ind")))
+                {
+                    LoadDataPath(full);
+                    return;
+                }
             }
+            catch { /* invalid path, skip */ }
         }
 
-        SetStatus("Data/ no encontrada. Archivo > Configurar Ruta de Datos");
+        SetStatus("Data/ no encontrada. Archivo > Configurar Ruta Cliente (Data/)...");
     }
 
     private void LoadDataPath(string dataPath)
