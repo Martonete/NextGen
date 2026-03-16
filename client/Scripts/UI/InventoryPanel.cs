@@ -401,6 +401,12 @@ public partial class InventoryPanel : Control
 
     private void UpdateTooltip(int slot)
     {
+        if (!(_state?.Config?.ShowItemTooltip ?? true))
+        {
+            if (TooltipLabel != null) TooltipLabel.Text = "";
+            RichTooltip?.Hide();
+            return;
+        }
         if (slot >= 0 && slot < TotalSlots)
         {
             var inv = _state!.Inventory[slot];

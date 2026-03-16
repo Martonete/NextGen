@@ -64,6 +64,7 @@ public class GameConfig
 	public bool MouseContextMenu = true;    // VB6: MouseActions_Activate
 	public bool BlockWalkOnChat = true;     // Block movement while chat input is open
 	public bool DragWindowEnabled = true;   // Allow dragging the borderless window
+	public bool ShowItemTooltip = true;     // Show tooltip on inventory hover
 
 	// ── Display ──────────────────────────────────────────
 	public bool Fullscreen;                 // false=windowed, true=fullscreen
@@ -132,6 +133,7 @@ public class GameConfig
 		MouseContextMenu = other.MouseContextMenu;
 		BlockWalkOnChat = other.BlockWalkOnChat;
 		DragWindowEnabled = other.DragWindowEnabled;
+		ShowItemTooltip = other.ShowItemTooltip;
 
 		Fullscreen = other.Fullscreen;
 		AspectRatioMode = other.AspectRatioMode;
@@ -235,6 +237,7 @@ public class GameConfig
 					case "MouseContextMenu": cfg.MouseContextMenu = val == "1"; break;
 					case "BlockWalkOnChat": cfg.BlockWalkOnChat = val == "1"; break;
 					case "DragWindowEnabled": cfg.DragWindowEnabled = val == "1"; break;
+					case "ShowItemTooltip": cfg.ShowItemTooltip = val == "1"; break;
 
 					// Display
 					case "Fullscreen": cfg.Fullscreen = val == "1"; break;
@@ -320,6 +323,7 @@ public class GameConfig
 			sb.AppendLine($"MouseContextMenu={(MouseContextMenu ? "1" : "0")}");
 			sb.AppendLine($"BlockWalkOnChat={(BlockWalkOnChat ? "1" : "0")}");
 			sb.AppendLine($"DragWindowEnabled={(DragWindowEnabled ? "1" : "0")}");
+			sb.AppendLine($"ShowItemTooltip={(ShowItemTooltip ? "1" : "0")}");
 
 			// Display
 			sb.AppendLine($"Fullscreen={(Fullscreen ? "1" : "0")}");

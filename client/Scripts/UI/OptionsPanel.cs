@@ -54,6 +54,7 @@ public partial class OptionsPanel : RpgBaseForm
     private Button? _chkMouseContext;
     private Button? _chkBlockWalkOnChat;
     private Button? _chkDragWindow;
+    private Button? _chkItemTooltip;
 
     // ── Render tab controls (Display) ──
     private Button? _chkFullscreen;
@@ -236,6 +237,11 @@ public partial class OptionsPanel : RpgBaseForm
         _chkDragWindow = GetCheckboxFromRow(dragWindowRow);
         _chkDragWindow.Toggled += _ => ApplyImmediate();
         ctrlLeft.AddChild(dragWindowRow);
+
+        var tooltipRow = RpgTheme.CreateRpgCheckboxRow("Tooltip de objetos en inventario");
+        _chkItemTooltip = GetCheckboxFromRow(tooltipRow);
+        _chkItemTooltip.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(tooltipRow);
 
         ctrlCols.AddChild(ctrlLeft);
 
@@ -600,6 +606,7 @@ public partial class OptionsPanel : RpgBaseForm
         SetCheck(_chkMouseContext, cfg.MouseContextMenu);
         SetCheck(_chkBlockWalkOnChat, cfg.BlockWalkOnChat);
         SetCheck(_chkDragWindow, cfg.DragWindowEnabled);
+        SetCheck(_chkItemTooltip, cfg.ShowItemTooltip);
 
         // Render tab — Display
         SetCheck(_chkFullscreen, cfg.Fullscreen);
@@ -679,6 +686,7 @@ public partial class OptionsPanel : RpgBaseForm
         cfg.MouseContextMenu = IsChecked(_chkMouseContext);
         cfg.BlockWalkOnChat = IsChecked(_chkBlockWalkOnChat);
         cfg.DragWindowEnabled = IsChecked(_chkDragWindow);
+        cfg.ShowItemTooltip = IsChecked(_chkItemTooltip);
 
         // Render tab — Display
         cfg.Fullscreen = IsChecked(_chkFullscreen);
