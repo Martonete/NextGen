@@ -221,6 +221,10 @@ public partial class Main : Control
 	private LightSystem _lightSystem = new();
 	private SoundManager? _soundManager;
 
+	// Borderless window drag state
+	private bool _windowDragging;
+	private Vector2I _windowDragStart;
+
 	private bool _connecting;
 
 
@@ -1100,6 +1104,31 @@ public partial class Main : Control
 	{
 		// Block all input during startup preload
 		if (!_startupPreloadDone) return;
+
+		// Borderless window drag: click+drag moves the window
+		if (_state.Config.DragWindowEnabled
+			&& DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Windowed)
+		{
+			if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+			{
+				if (mb.Pressed)
+				{
+					_windowDragging = true;
+					_windowDragStart = DisplayServer.MouseGetPosition();
+				}
+				else
+				{
+					_windowDragging = false;
+				}
+			}
+			else if (@event is InputEventMouseMotion && _windowDragging)
+			{
+				var mouseNow = DisplayServer.MouseGetPosition();
+				var delta = mouseNow - _windowDragStart;
+				DisplayServer.WindowSetPosition(DisplayServer.WindowGetPosition() + delta);
+				_windowDragStart = mouseNow;
+			}
+		}
 
 		// Escape on login -> quit game
 		if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo

@@ -141,6 +141,7 @@ public partial class Main
         root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
             ? Window.ContentScaleAspectEnum.Keep
             : Window.ContentScaleAspectEnum.Ignore;
+        DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
     }
 
@@ -156,6 +157,8 @@ public partial class Main
         root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
         root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+        // Borderless window — we have our own minimize/close buttons
+        DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, true);
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
         var winSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         DisplayServer.WindowSetSize(winSize);

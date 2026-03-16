@@ -53,6 +53,7 @@ public partial class OptionsPanel : RpgBaseForm
     private Button? _chkMouseRClick;
     private Button? _chkMouseContext;
     private Button? _chkBlockWalkOnChat;
+    private Button? _chkDragWindow;
 
     // ── Render tab controls (Display) ──
     private Button? _chkFullscreen;
@@ -246,6 +247,11 @@ public partial class OptionsPanel : RpgBaseForm
         _chkBlockWalkOnChat = GetCheckboxFromRow(walkBlockRow);
         _chkBlockWalkOnChat.Toggled += _ => ApplyImmediate();
         vbox.AddChild(walkBlockRow);
+
+        var dragWindowRow = RpgTheme.CreateRpgCheckboxRow("Mover la pantalla en modo ventana");
+        _chkDragWindow = GetCheckboxFromRow(dragWindowRow);
+        _chkDragWindow.Toggled += _ => ApplyImmediate();
+        vbox.AddChild(dragWindowRow);
 
         return vbox;
     }
@@ -584,6 +590,7 @@ public partial class OptionsPanel : RpgBaseForm
         SetCheck(_chkMouseRClick, cfg.MouseRightClick);
         SetCheck(_chkMouseContext, cfg.MouseContextMenu);
         SetCheck(_chkBlockWalkOnChat, cfg.BlockWalkOnChat);
+        SetCheck(_chkDragWindow, cfg.DragWindowEnabled);
 
         // Render tab — Display
         SetCheck(_chkFullscreen, cfg.Fullscreen);
@@ -662,6 +669,7 @@ public partial class OptionsPanel : RpgBaseForm
         cfg.MouseRightClick = IsChecked(_chkMouseRClick);
         cfg.MouseContextMenu = IsChecked(_chkMouseContext);
         cfg.BlockWalkOnChat = IsChecked(_chkBlockWalkOnChat);
+        cfg.DragWindowEnabled = IsChecked(_chkDragWindow);
 
         // Render tab — Display
         cfg.Fullscreen = IsChecked(_chkFullscreen);

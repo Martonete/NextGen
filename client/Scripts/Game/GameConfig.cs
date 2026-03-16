@@ -63,6 +63,7 @@ public class GameConfig
 	public bool MouseRightClick = true;     // VB6: MouseActions_RClick
 	public bool MouseContextMenu = true;    // VB6: MouseActions_Activate
 	public bool BlockWalkOnChat = true;     // Block movement while chat input is open
+	public bool DragWindowEnabled = true;   // Allow dragging the borderless window
 
 	// ── Display ──────────────────────────────────────────
 	public bool Fullscreen;                 // false=windowed, true=fullscreen
@@ -130,6 +131,7 @@ public class GameConfig
 		MouseRightClick = other.MouseRightClick;
 		MouseContextMenu = other.MouseContextMenu;
 		BlockWalkOnChat = other.BlockWalkOnChat;
+		DragWindowEnabled = other.DragWindowEnabled;
 
 		Fullscreen = other.Fullscreen;
 		AspectRatioMode = other.AspectRatioMode;
@@ -232,6 +234,7 @@ public class GameConfig
 					case "MouseRightClick": cfg.MouseRightClick = val == "1"; break;
 					case "MouseContextMenu": cfg.MouseContextMenu = val == "1"; break;
 					case "BlockWalkOnChat": cfg.BlockWalkOnChat = val == "1"; break;
+					case "DragWindowEnabled": cfg.DragWindowEnabled = val == "1"; break;
 
 					// Display
 					case "Fullscreen": cfg.Fullscreen = val == "1"; break;
@@ -316,6 +319,7 @@ public class GameConfig
 			sb.AppendLine($"MouseRightClick={(MouseRightClick ? "1" : "0")}");
 			sb.AppendLine($"MouseContextMenu={(MouseContextMenu ? "1" : "0")}");
 			sb.AppendLine($"BlockWalkOnChat={(BlockWalkOnChat ? "1" : "0")}");
+			sb.AppendLine($"DragWindowEnabled={(DragWindowEnabled ? "1" : "0")}");
 
 			// Display
 			sb.AppendLine($"Fullscreen={(Fullscreen ? "1" : "0")}");
