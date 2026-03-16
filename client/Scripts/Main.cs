@@ -1115,7 +1115,7 @@ public partial class Main : Control
 				if (mb.Pressed)
 				{
 					var hovered = GetViewport().GuiGetHoveredControl();
-					bool overInteractive = hovered is BaseButton or Range or LineEdit
+					bool overInteractive = hovered is BaseButton or Godot.Range or LineEdit
 						or TextEdit or InventoryPanel or SpellPanel;
 					if (!overInteractive)
 					{
