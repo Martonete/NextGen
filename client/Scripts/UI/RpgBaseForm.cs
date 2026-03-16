@@ -220,8 +220,23 @@ public partial class RpgBaseForm : Control
     {
         Visible = true;
         Modulate = new Color(1, 1, 1, _globalFormAlpha);
-        var vpSize = GetViewportRect().Size;
-        Position = (vpSize - Size) / 2.0f;
+        // Forms inside a CanvasLayer render in screen coordinates (unaffected by
+        // ContentScale), so use the real window size for centering. Forms inside
+        // GameUI use viewport size (affected by ContentScale).
+        bool inCanvasLayer = false;
+        Node? p = GetParent();
+        while (p != null) { if (p is CanvasLayer) { inCanvasLayer = true; break; } p = p.GetParent(); }
+        Vector2 areaSize;
+        if (inCanvasLayer)
+        {
+            var ws = DisplayServer.WindowGetSize();
+            areaSize = new Vector2(ws.X, ws.Y);
+        }
+        else
+        {
+            areaSize = GetViewportRect().Size;
+        }
+        Position = (areaSize - Size) / 2.0f;
         MoveToFront();
     }
 

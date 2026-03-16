@@ -55,6 +55,7 @@ public partial class Main
                 _accountCreateScreen!.Panel!.Visible = true;
                 _gameUI!.Visible = false;
                 _accountCreateScreen?.ResetForm();
+                CenterPanelOnScreen(_accountCreateScreen!.Panel!);
                 break;
 
             case Screen.CharCreate:
@@ -64,6 +65,7 @@ public partial class Main
                 _accountCreateScreen!.Panel!.Visible = false;
                 _gameUI!.Visible = false;
                 _charCreateScreen?.ResetForm();
+                CenterPanelOnScreen(_charCreateScreen!.Panel!);
                 break;
 
             case Screen.Game:
@@ -123,6 +125,15 @@ public partial class Main
                 GD.Print("[MAIN] Entered game world");
                 break;
         }
+    }
+
+    /// <summary>
+    /// Center a Control on the real screen (for panels inside CanvasLayer).
+    /// </summary>
+    private static void CenterPanelOnScreen(Control panel)
+    {
+        var ws = DisplayServer.WindowGetSize();
+        panel.Position = (new Vector2(ws.X, ws.Y) - panel.Size) / 2f;
     }
 
     /// <summary>
