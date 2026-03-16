@@ -107,11 +107,15 @@ public partial class PacketHandler
         int minLimY = (playerY / 9 - 1) * 9;
         int maxLimY = minLimY + 26;
 
-        const int HalfW = 8, HalfH = 6, VisMargin = 3;
-        int visMinX = playerX - HalfW - VisMargin;
-        int visMaxX = playerX + HalfW + VisMargin;
-        int visMinY = playerY - HalfH - VisMargin;
-        int visMaxY = playerY + HalfH + VisMargin;
+        // Grace zone covers the full extended viewport so characters that are
+        // visible in the fog area (higher resolutions) don't get removed and
+        // re-created, which would cause a flash (FovAlpha resets to 1.0).
+        int visHalfX = Math.Max(ResolutionManager.HalfTilesX, 8) + 2;
+        int visHalfY = Math.Max(ResolutionManager.HalfTilesY, 6) + 2;
+        int visMinX = playerX - visHalfX;
+        int visMaxX = playerX + visHalfX;
+        int visMinY = playerY - visHalfY;
+        int visMaxY = playerY + visHalfY;
 
         // Characters use standard 27x27 area bounds
         var toRemove = new System.Collections.Generic.List<int>();
@@ -129,9 +133,14 @@ public partial class PacketHandler
         foreach (int key in toRemove)
             _state.Characters.Remove(key);
 
-        // Objects use EXTENDED bounds matching server's OBJ_X/Y_BORDER (23x14 half-range).
-        // This keeps objects visible in the expanded viewport beyond the core 17x13.
-        const int ObjHalfW = 23, ObjHalfH = 14;
+        // Objects use EXTENDED bounds with a grace margin beyond the server's
+        // OBJ_X/Y_BORDER (23x14). The margin prevents flickering: the server
+        // sends AreaChanged + ObjectCreate in the same batch, but AreaChanged
+        // processes first. Without margin, objects at the edge get removed then
+        // immediately re-created, causing a 1-frame gap (flicker).
+        // Grace of +9 (one full zone) ensures we never remove objects the server
+        // is about to re-send in the same packet batch.
+        const int ObjHalfW = 23 + 9, ObjHalfH = 14 + 9;
         int objMinX = playerX - ObjHalfW;
         int objMaxX = playerX + ObjHalfW;
         int objMinY = playerY - ObjHalfH;
@@ -231,6 +240,15 @@ public partial class PacketHandler
                     ch.FxFrameCounter[i] = auraSource.FxFrameCounter[i];
                 }
             }
+        }
+
+        // Start characters outside core viewport at FovAlpha=0 to prevent flash
+        if (charIndex != _state.UserCharIndex
+            && ResolutionManager.ExtraTilesX > 0
+            && (Math.Abs(x - _state.UserPosX) > ResolutionManager.CoreHalfX
+                || Math.Abs(y - _state.UserPosY) > ResolutionManager.CoreHalfY))
+        {
+            ch.FovAlpha = 0f;
         }
 
         _state.Characters[charIndex] = ch;
