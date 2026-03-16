@@ -569,6 +569,9 @@ public partial class Main : Control
 		_gameUI.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 
 		var viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
+		// MouseFilter.Pass so buttons on top of the viewport area can receive clicks.
+		// Game viewport clicks are handled via _Input → HandleMouseClick, not GUI system.
+		viewportContainer.MouseFilter = Control.MouseFilterEnum.Pass;
 		viewportContainer.OffsetLeft = ResolutionManager.LeftMargin;
 		viewportContainer.OffsetTop = ResolutionManager.TopMargin;
 		viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
@@ -1100,41 +1103,47 @@ public partial class Main : Control
 	private void UpdateArrowProjectiles(float delta) => _gameUIUpdater?.UpdateArrowProjectiles(delta);
 
 
-	/// <summary>
-	/// Window drag runs in _UnhandledInput so GUI buttons get priority.
-	/// Only fires for events that no Control consumed.
-	/// </summary>
-	public override void _UnhandledInput(InputEvent @event)
-	{
-		if (!_startupPreloadDone) return;
-		if (!_state.Config.DragWindowEnabled) return;
-		if (DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Windowed) return;
-
-		if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
-		{
-			if (mb.Pressed)
-			{
-				_windowDragging = true;
-				_windowDragStart = DisplayServer.MouseGetPosition();
-			}
-			else
-			{
-				_windowDragging = false;
-			}
-		}
-		else if (@event is InputEventMouseMotion && _windowDragging)
-		{
-			var mouseNow = DisplayServer.MouseGetPosition();
-			var delta = mouseNow - _windowDragStart;
-			DisplayServer.WindowSetPosition(DisplayServer.WindowGetPosition() + delta);
-			_windowDragStart = mouseNow;
-		}
-	}
-
 	public override void _Input(InputEvent @event)
 	{
 		// Block all input during startup preload
 		if (!_startupPreloadDone) return;
+
+		// Borderless window drag: click+drag on non-interactive areas moves the window.
+		// Uses position-based check instead of GuiGetHoveredControl (which is unreliable).
+		if (_state.Config.DragWindowEnabled
+			&& DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Windowed)
+		{
+			if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+			{
+				if (mb.Pressed)
+				{
+					// Only start drag if click is NOT inside the game viewport or sidebar buttons
+					float cx = mb.Position.X;
+					float cy = mb.Position.Y;
+					bool inViewport = cx >= ResolutionManager.LeftMargin
+						&& cx < ResolutionManager.LeftMargin + ResolutionManager.ViewportW
+						&& cy >= ResolutionManager.TopMargin
+						&& cy < ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+					bool inSidebar = cx >= ResolutionManager.SidebarX;
+					if (!inViewport && !inSidebar)
+					{
+						_windowDragging = true;
+						_windowDragStart = DisplayServer.MouseGetPosition();
+					}
+				}
+				else
+				{
+					_windowDragging = false;
+				}
+			}
+			else if (@event is InputEventMouseMotion && _windowDragging)
+			{
+				var mouseNow = DisplayServer.MouseGetPosition();
+				var delta = mouseNow - _windowDragStart;
+				DisplayServer.WindowSetPosition(DisplayServer.WindowGetPosition() + delta);
+				_windowDragStart = mouseNow;
+			}
+		}
 
 		// Escape on login -> quit game
 		if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo
