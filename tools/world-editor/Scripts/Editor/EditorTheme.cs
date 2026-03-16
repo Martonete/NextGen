@@ -1040,6 +1040,16 @@ public static class EditorTheme
         if (lower.Contains("redo") || lower.Contains("rehacer")) return "redo";
         return "pencil"; // final fallback
     }
+
+    /// <summary>Returns a color for zone type labels in the zone panel list.</summary>
+    public static Color GetZoneBorderColor(string zoneType) => zoneType switch
+    {
+        "Safe" => new Color(0.2f, 0.8f, 0.2f),
+        "PvP" or "CombatZone" => new Color(0.9f, 0.2f, 0.2f),
+        "Indoor" => new Color(0.6f, 0.6f, 0.9f),
+        "AntiBlock" => new Color(0.9f, 0.7f, 0.2f),
+        _ => new Color(0.7f, 0.7f, 0.7f),
+    };
 }
 
 // ══════════════════════════════════════════════════════════════════════

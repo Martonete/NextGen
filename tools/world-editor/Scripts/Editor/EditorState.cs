@@ -55,6 +55,10 @@ public class EditorState
     // Selected NPC from palette (for quick-place with NPC tool)
     public int SelectedNpcNumber;
 
+    // Zone system (editor metadata for sub-regions)
+    public List<MapZone> Zones { get; } = new();
+    public int SelectedZoneIndex = -1;
+
     // Pick tool state
     public readonly PickState Pick = new();
 
@@ -211,6 +215,20 @@ public class PendingPlacement
         Tiles = null;
         MoveSnapshot = null;
     }
+}
+
+/// Zone metadata for sub-regions within a map (editor-only, serialized in .dat).
+public class MapZone
+{
+    public string Name = "";
+    public string Type = "Normal";
+    public int X1 = 1, Y1 = 1, X2 = 100, Y2 = 100;
+    public int NpcWanderRadius;
+    public bool NoMagic;
+    public bool NoInvis;
+    public bool NoResurrect;
+    public bool NoHide;
+    public bool NoSummon;
 }
 
 public enum EditorTool
