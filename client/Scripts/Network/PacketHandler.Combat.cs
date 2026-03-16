@@ -122,10 +122,11 @@ public partial class PacketHandler
     private void HandleBinLevelUp(ByteQueue bq)
     {
         short skillPoints = bq.ReadInteger();
-        _state.FreeSkillPoints = skillPoints;
+        // VB6: SkillPts = SkillPts + Pts — accumulate, don't overwrite
+        _state.FreeSkillPoints += skillPoints;
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = $"Has subido de nivel! Tienes {skillPoints} puntos de habilidad.",
+            Text = $"Has subido de nivel! Has ganado {skillPoints} skillpoints.",
             Color = "00FF00"
         });
         // Play level-up fanfare sound

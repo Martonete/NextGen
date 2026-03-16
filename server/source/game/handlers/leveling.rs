@@ -113,15 +113,14 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         }
 
         // VB6: If .Stats.ELV = 1 Then Pts = 10 Else Pts = Pts + 5
+        let pts = if level == 1 { 10 } else { 5 };
         if let Some(user) = state.users.get_mut(&conn_id) {
-            if level == 1 {
-                user.skill_pts_libres += 10;
-            } else {
-                user.skill_pts_libres += 5;
-            }
+            user.skill_pts_libres += pts;
         }
 
-        // Send updated stats
+        // Send LevelUp packet with skill points (VB6: WriteLevelUp → client accumulates)
+        state.send_bytes(conn_id, &binary_packets::write_level_up(pts as i16));
+        // Send updated level
         state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8));
         send_stats_hp(state, conn_id).await;
         send_stats_mana(state, conn_id).await;
@@ -132,11 +131,15 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         info!("[LEVEL] '{}' reached level {} (HP+{}, MANA+{}, STA+{}, HIT+{})",
             name, new_level, hp_gain, mana_gain, sta_gain, hit_gain);
 
-        // 13.3: Level 50 — announcement + skill points (one-time)
+        // 13.3: Level 50 — announcement + 50 bonus skill points (one-time)
         if new_level == 50 {
             state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535);
             state.send_msg_id(conn_id, 57, "50");
-            // TODO: AgregarPuntos(50) — add 50 free skill points
+            // VB6: AgregarPuntos(50) — 50 bonus free skill points at level 50
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.skill_pts_libres += 50;
+            }
+            state.send_bytes(conn_id, &binary_packets::write_level_up(50));
         }
 
         // Continue looping in case of multi-level jumps
