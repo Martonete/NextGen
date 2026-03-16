@@ -434,9 +434,9 @@ pub(super) async fn user_attack_npc(
     let npc_dead = state.get_npc(npc_idx).map(|n| n.min_hp <= 0).unwrap_or(false);
 
     // Per-hit EXP (VB6: CalcularDarExp — gives proportional exp on EVERY hit, not just on death)
+    // VB6: ExpaDar = CLng(ElDaño * (GiveEXP / MaxHp)) — NO multiplier per hit
     if npc_give_exp > 0 && npc_max_hp > 0 {
-        let exp_mult = state.multiplicador_exp;
-        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
+        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64) as i64;
 
         // Level cap check
         let can_level = state.users.get(&conn_id)

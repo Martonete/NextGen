@@ -39,7 +39,7 @@ const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
 const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s (resting, we use 1s min)
 const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
 const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
-const POISON_INTERVAL: i32 = 50;    // VB6: IntervaloVeneno=500 ticks (~50s)
+const POISON_INTERVAL: i32 = 25;    // VB6: IntervaloVeneno=500 ticks × 50ms = 25s
 const COLD_LAVA_INTERVAL: i32 = 2;  // VB6: IntervaloFrio=15 ticks (~2s at 1s tick)
 
 pub(crate) fn meditation_fx_for_level(level: i32) -> i16 {
