@@ -466,7 +466,7 @@ public partial class OptionsPanel : RpgBaseForm
 
         _state.OptionsPanelOpen = true;
         ShowForm();
-        SetTab(0);
+        SetTab(_activeTab);
     }
 
     public override void HideForm()
