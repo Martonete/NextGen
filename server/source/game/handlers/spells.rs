@@ -1105,6 +1105,18 @@ pub(super) async fn apply_spell_status(
             send_stats_hp(state, target_id).await;
             state.send_msg_id(target_id, 749, &caster_name);
 
+            // VB6: +500 Noble rep if target is not criminal and not self-res
+            if caster_id != target_id {
+                let target_criminal = state.users.get(&target_id).map(|u| u.criminal).unwrap_or(false);
+                if !target_criminal {
+                    const MAX_REP: i32 = 500_000;
+                    if let Some(caster) = state.users.get_mut(&caster_id) {
+                        caster.rep_noble = (caster.rep_noble + 500).min(MAX_REP);
+                    }
+                    state.send_console(caster_id, "Los Dioses te sonrien, has ganado 500 puntos de nobleza!", font_index::INFO);
+                }
+            }
+
             // Caster pays HP cost — VB6 13.3: hp * (1 - target_level * 0.015)
             // Allow HP to reach 0 (caster can die from resurrection cost)
             if let Some(caster) = state.users.get_mut(&caster_id) {

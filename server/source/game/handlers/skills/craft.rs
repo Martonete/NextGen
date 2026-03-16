@@ -500,6 +500,13 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
 }
 
 pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    // VB6: must have MARTILLO_HERRERO or MARTILLO_HERRERO_NEWBIE equipped
+    let weapon_idx = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    if weapon_idx != MARTILLO_HERRERO && weapon_idx != MARTILLO_HERRERO_NEWBIE {
+        state.send_console(conn_id, "Necesitas un martillo de herrero equipado.", font_index::INFO);
+        return;
+    }
+
     let payload = strip_opcode(data, 3);
     let obj_index: i32 = match payload.trim().parse() {
         Ok(v) if v >= 1 => v,
@@ -577,9 +584,9 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     // VB6: Validate item is in ObjCarpintero list
     if !state.game_data.crafting.is_carpenter_item(obj_index) { return; }
 
-    // Check equipped carpentry tool (VB6: SERRUCHO_CARPINTERO must be equipped)
+    // VB6: SERRUCHO_CARPINTERO or SERRUCHO_CARPINTERO_NEWBIE must be equipped
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
-    if weapon != SERRUCHO_CARPINTERO {
+    if weapon != SERRUCHO_CARPINTERO && weapon != SERRUCHO_CARPINTERO_NEWBIE {
         state.send_console(conn_id, "Necesitas un serrucho de carpintero", font_index::INFO);
         return;
     }
