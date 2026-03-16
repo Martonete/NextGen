@@ -198,9 +198,27 @@ public partial class InventoryPanel : Control
                     DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0f, 0f, 0f, 0.4f));
                 }
 
-                // VB6: Draw_GrhIndex at (X, Y-1) for normal items
-                var iconPos = new Vector2(x, y - 1);
-                CharRenderer.DrawGrh(this, _data, invSlot.GrhIndex, 0, iconPos);
+                // Draw item icon at native 32x32 size, centered in slot.
+                // The panel has UIScale applied via Control.Scale, which stretches
+                // sprites and makes them pixelated. We counteract by applying
+                // inverse scale around the icon draw, keeping it crisp.
+                float uiScale = ResolutionManager.UIScale;
+                if (uiScale > 1.001f)
+                {
+                    float inv = 1f / uiScale;
+                    // Center: slot center in scaled space → draw at native size
+                    float cx = x + SlotSize / 2f;
+                    float cy = y - 1 + SlotSize / 2f;
+                    DrawSetTransform(new Vector2(cx, cy), 0f, new Vector2(inv, inv));
+                    var iconPos = new Vector2(-16f, -16f); // half of 32x32
+                    CharRenderer.DrawGrh(this, _data, invSlot.GrhIndex, 0, iconPos);
+                    DrawSetTransform(Vector2.Zero); // reset
+                }
+                else
+                {
+                    var iconPos = new Vector2(x, y - 1);
+                    CharRenderer.DrawGrh(this, _data, invSlot.GrhIndex, 0, iconPos);
+                }
 
                 // VB6: Engine_Text_Draw X-1, Y+3, amount, white
                 if (invSlot.Amount > 0 && font != null)
@@ -227,9 +245,20 @@ public partial class InventoryPanel : Control
             var srcItem = _state.Inventory[_dragSourceSlot];
             if (srcItem.GrhIndex > 0)
             {
-                // Center the icon on cursor
-                var ghostPos = _dragMousePos - new Vector2(SlotSize / 2f, SlotSize / 2f);
-                CharRenderer.DrawGrh(this, _data, srcItem.GrhIndex, 0, ghostPos);
+                // Center the icon on cursor at native 32x32
+                float gs = ResolutionManager.UIScale;
+                if (gs > 1.001f)
+                {
+                    float ginv = 1f / gs;
+                    DrawSetTransform(_dragMousePos, 0f, new Vector2(ginv, ginv));
+                    CharRenderer.DrawGrh(this, _data, srcItem.GrhIndex, 0, new Vector2(-16f, -16f));
+                    DrawSetTransform(Vector2.Zero);
+                }
+                else
+                {
+                    var ghostPos = _dragMousePos - new Vector2(SlotSize / 2f, SlotSize / 2f);
+                    CharRenderer.DrawGrh(this, _data, srcItem.GrhIndex, 0, ghostPos);
+                }
             }
         }
     }
