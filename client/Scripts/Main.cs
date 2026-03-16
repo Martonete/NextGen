@@ -1182,6 +1182,25 @@ public partial class Main : Control
 			return;
 		}
 
+		// F12: toggle fullscreen — works on ALL screens
+		if (@event is InputEventKey f12Key && f12Key.Pressed && !f12Key.Echo
+			&& f12Key.Keycode == Key.F12)
+		{
+			bool goFullscreen = DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen;
+			if (goFullscreen) EnterFullscreen(); else ExitFullscreen();
+			_state.Config.Fullscreen = goFullscreen;
+			_state.Config.Save(_dataPath);
+			GetViewport().SetInputAsHandled();
+			// Re-center any visible form after fullscreen toggle
+			if (_loginForm != null && _loginForm.Visible) _loginForm.ShowForm();
+			if (_charSelectForm != null && _charSelectForm.Visible) _charSelectForm.ShowForm();
+			if (_charCreateScreen?.Panel != null && _charCreateScreen.Panel.Visible)
+				CenterPanelOnScreen(_charCreateScreen.Panel);
+			if (_accountCreateScreen?.Panel != null && _accountCreateScreen.Panel.Visible)
+				CenterPanelOnScreen(_accountCreateScreen.Panel);
+			return;
+		}
+
 		if (_state.CurrentScreen != Screen.Game) return;
 
 		// Delegate game-screen input to InputRouter
