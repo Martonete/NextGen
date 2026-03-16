@@ -271,8 +271,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
                             }
-                            // Melee ALWAYS happens after spell
-                            npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6: Water elemental (#92) does NOT melee users (AI_NPC.bas:451)
+                            if npc_number != npc::ELEMENTAL_AGUA as usize {
+                                npc_attack_user(state, npc_idx, target_conn).await;
+                            }
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
@@ -487,44 +489,14 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     if let Some((mx, my, master_target_npc)) = master_pos {
                         let dist = (x - mx).abs() + (y - my).abs();
 
-                        // Water elemental (NPC #92): heal owner when HP < max
-                        if npc_number == npc::ELEMENTAL_AGUA as usize && can_attack {
-                            let needs_heal = state.users.get(&master_conn)
-                                .map(|u| u.min_hp > 0 && u.min_hp < u.max_hp)
-                                .unwrap_or(false);
-                            if needs_heal {
-                                let heal = rand_range(12, 35); // Spell #5 equivalent
-                                if let Some(user) = state.users.get_mut(&master_conn) {
-                                    user.min_hp = (user.min_hp + heal).min(user.max_hp);
-                                }
-                                send_stats_hp(state, master_conn).await;
-                                // Send heal FX + sound to area
-                                let target_ci = state.users.get(&master_conn).map(|u| u.char_index.0).unwrap_or(0);
-                                let fx = binary_packets::write_create_fx(target_ci as i16, 8, 0); // FX 8 = heal
-                                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx);
-                                let snd = binary_packets::write_play_wave(46, mx as i16, my as i16); // SND_BEBER
-                                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
-                                // Consume attack turn
-                                if let Some(n) = state.get_npc_mut(npc_idx) { n.can_attack = false; }
-                            }
-                        }
+                        // VB6: Water elemental (#92) does NOT attack users (line 451/489 AI_NPC.bas)
+                        // and has LanzaSpells=0. It's a tank that only attacks assigned NPC targets.
+                        // No healing behavior exists in VB6 13.3.
 
-                        // Fire/Earth elementals: cast spells on nearby hostile users
-                        if npc_number != npc::ELEMENTAL_AGUA as usize
-                            && can_attack && lanza_spells > 0 && !spells.is_empty()
-                        {
-                            // Look for a hostile user near the elemental (within melee range)
-                            if let Some(target_conn) = find_adjacent_player(state, map, x, y) {
-                                // Check target is hostile (not the owner)
-                                let is_hostile = target_conn != master_conn;
-                                if is_hostile {
-                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                    let spell_id = spells[spell_idx];
-                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                                    if let Some(n) = state.get_npc_mut(npc_idx) { n.can_attack = false; }
-                                }
-                            }
-                        }
+                        // VB6: Elementals do NOT proactively cast spells while following.
+                        // Spell casting only happens in AI_DEFENSE mode (triggered when
+                        // the elemental or its owner is attacked). That mode is handled
+                        // separately in the AI_DEFENSE/AI_HOSTILE_CHASE branches.
 
                         // Priority: pet's own target (from check_pets) > master's target
                         let effective_target = if pet_target_npc > 0 {
