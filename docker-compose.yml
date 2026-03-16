@@ -51,7 +51,6 @@ services:
     entrypoint: >
       /bin/sh -c "
       echo 'postgres:5432:*:ao:${POSTGRES_PASSWORD:-ao_secret}' > /tmp/pgpassfile &&
-      chown 5050:5050 /tmp/pgpassfile &&
       chmod 600 /tmp/pgpassfile &&
       /entrypoint.sh
       "
