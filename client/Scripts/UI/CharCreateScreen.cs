@@ -82,10 +82,11 @@ public class CharCreateScreen
         _charCreatePanel = new Control();
         _charCreatePanel.Size = new Vector2(420, 560);
         _charCreatePanel.CustomMinimumSize = new Vector2(420, 560);
-        _charCreatePanel.Position = new Vector2(190, 20);
         _charCreatePanel.Visible = false;
         _charCreatePanel.ClipContents = true;
         _charCreatePanel.MouseFilter = Control.MouseFilterEnum.Stop;
+        float fs = RpgBaseForm.FormScale;
+        _charCreatePanel.Scale = new Vector2(fs, fs);
 
         // V2 background: big_bar stretched
         var bg = new TextureRect();
@@ -247,10 +248,11 @@ public class CharCreateScreen
         _deleteConfirmDialog = new Control();
         _deleteConfirmDialog.Size = new Vector2(320, 200);
         _deleteConfirmDialog.CustomMinimumSize = new Vector2(320, 200);
-        _deleteConfirmDialog.Position = new Vector2(240, 200);
         _deleteConfirmDialog.Visible = false;
         _deleteConfirmDialog.ZIndex = 100;
         _deleteConfirmDialog.MouseFilter = Control.MouseFilterEnum.Stop;
+        float dfs = RpgBaseForm.FormScale;
+        _deleteConfirmDialog.Scale = new Vector2(dfs, dfs);
 
         // V2 background
         var bgTex = new TextureRect();

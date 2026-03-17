@@ -60,7 +60,7 @@ public partial class WorldRenderer : Node2D
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
 	private float _roofAlpha = 255f;
 	private const float RoofFadeSpeed = 400f; // units per second (255→20 in ~0.6s)
-	private const float RoofMinAlpha = 20f; // never fully invisible — keeps a faint ghost
+	private const float RoofMinAlpha = 45f; // ~18% opacity — visible ghost of the roof
 
 	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
 	// Tiles without L4 have regionId = 0. Built once per map load.
