@@ -35,13 +35,10 @@ public partial class Main
 
         // === Inventory & Spells UI (VB6-exact pixel positions, scaled) ===
 
-        // Sidebar usable area: center contentW within the design sidebar width (sbW),
-        // which itself is centered in the real sidebar space.
+        // Sidebar usable area: center contentW directly in the real sidebar space.
         int contentW = S(190);
-        int sbW = S(210);
         int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
-        int sbX = ResolutionManager.SidebarX + (sidebarRealW - sbW) / 2;
-        int sideX = sbX + (sbW - contentW) / 2;
+        int sideX = ResolutionManager.SidebarX + (sidebarRealW - contentW) / 2;
 
         // Tab buttons — centered in sidebar, with icons (+20% from original, expanded up and to sides)
         int tabH = S(34);
