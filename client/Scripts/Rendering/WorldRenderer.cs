@@ -60,6 +60,7 @@ public partial class WorldRenderer : Node2D
 	// VB6: bTechoAB — roof alpha (per-region fade)
 	private float _roofAlpha = 255f;
 	private const float RoofFadeRate = 6f;
+	private const float RoofMinAlpha = 20f; // never fully invisible — keeps a faint ghost
 
 	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
 	// Tiles without L4 have regionId = 0. Built once per map load.
@@ -170,10 +171,10 @@ void fragment() {
 	private static readonly (int dx, int dy)[] _floodDirs = { (1, 0), (-1, 0), (0, 1), (0, -1) };
 
 	/// <summary>
-	/// Pre-compute connected roof regions based on trigger tiles (1/2/4 = "under roof").
-	/// BFS flood-fill groups adjacent trigger tiles into regions, then expands each region
-	/// to include neighboring L4 tiles (roof graphics may sit on non-trigger tiles).
-	/// Called once per map load. O(mapW * mapH).
+	/// Pre-compute connected roof regions based on trigger tiles (1/2/4) AND Layer4 tiles.
+	/// BFS flood-fill expands through any tile that has a roof trigger OR a roof graphic (L4).
+	/// This ensures a house with triggers on interior tiles and L4 on border/exterior tiles
+	/// all belong to the same region. Called once per map load. O(mapW * mapH).
 	/// </summary>
 	public void BuildRoofRegions()
 	{
@@ -185,15 +186,17 @@ void fragment() {
 		int nextRegion = 0;
 		var queue = new Queue<(int x, int y)>();
 
-		// Pass 1: flood-fill connected trigger tiles (1/2/4) into regions
 		for (int y = 1; y <= h; y++)
 		{
 			for (int x = 1; x <= w; x++)
 			{
 				if (_roofRegionMap[x, y] != 0) continue;
-				short trigger = _state.MapData.Tiles[x, y].Trigger;
-				if (trigger != 1 && trigger != 2 && trigger != 4) continue;
+				ref var tile = ref _state.MapData.Tiles[x, y];
+				bool isTrigger = tile.Trigger == 1 || tile.Trigger == 2 || tile.Trigger == 4;
+				bool hasL4 = tile.Layer4 > 0;
+				if (!isTrigger && !hasL4) continue;
 
+				// New region — BFS flood fill through triggers AND L4 tiles
 				nextRegion++;
 				queue.Enqueue((x, y));
 				_roofRegionMap[x, y] = nextRegion;
@@ -206,33 +209,12 @@ void fragment() {
 						int nx = cx + dx, ny = cy + dy;
 						if (nx < 1 || nx > w || ny < 1 || ny > h) continue;
 						if (_roofRegionMap[nx, ny] != 0) continue;
-						short nt = _state.MapData.Tiles[nx, ny].Trigger;
-						if (nt != 1 && nt != 2 && nt != 4) continue;
+						ref var nt = ref _state.MapData.Tiles[nx, ny];
+						bool nTrigger = nt.Trigger == 1 || nt.Trigger == 2 || nt.Trigger == 4;
+						bool nL4 = nt.Layer4 > 0;
+						if (!nTrigger && !nL4) continue;
 						_roofRegionMap[nx, ny] = nextRegion;
 						queue.Enqueue((nx, ny));
-					}
-				}
-			}
-		}
-
-		// Pass 2: L4 tiles not on a trigger get the region of an adjacent trigger tile.
-		// This ensures roof graphics that sit outside the trigger area still belong to the region.
-		for (int y = 1; y <= h; y++)
-		{
-			for (int x = 1; x <= w; x++)
-			{
-				if (_roofRegionMap[x, y] != 0) continue; // already assigned
-				if (_state.MapData.Tiles[x, y].Layer4 <= 0) continue; // no roof graphic
-
-				// Check neighbors for an assigned region
-				foreach (var (dx, dy) in _floodDirs)
-				{
-					int nx = x + dx, ny = y + dy;
-					if (nx < 1 || nx > w || ny < 1 || ny > h) continue;
-					if (_roofRegionMap[nx, ny] > 0)
-					{
-						_roofRegionMap[x, y] = _roofRegionMap[nx, ny];
-						break;
 					}
 				}
 			}
@@ -419,11 +401,11 @@ void fragment() {
 		if (_activeRoofRegion != prevRegion && _activeRoofRegion > 0)
 			_roofAlpha = 255f;
 
-		// Fade control: inside a region → fade out, outside → fade in
+		// Fade control: inside a region → fade out to min alpha, outside → fade back in
 		if (_activeRoofRegion > 0)
 		{
 			_roofAlpha -= RoofFadeRate;
-			if (_roofAlpha < 0) _roofAlpha = 0;
+			if (_roofAlpha < RoofMinAlpha) _roofAlpha = RoofMinAlpha;
 		}
 		else
 		{
