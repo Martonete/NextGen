@@ -288,8 +288,9 @@ public partial class Main
         if (_consoleLabel == null) return;
         bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
         // Console right edge: full width when minimap hidden, shrink when visible
+        // Gap S(5) between console text and minimap border (5px@800, ~10px@1920)
         float fullRight = ResolutionManager.ConsoleRight;
-        float right = minimapVisible ? fullRight - ResolutionManager.S(124) : fullRight;
+        float right = minimapVisible ? fullRight - ResolutionManager.S(118) - ResolutionManager.S(5) : fullRight;
         _consoleLabel.OffsetRight = right;
         if (_chatInputNode != null)
             _chatInputNode.OffsetRight = right;
@@ -458,7 +459,7 @@ public partial class Main
         _gameUI.AddChild(_contextMenu);
 
         // Minimap panel with styled border — inside console area, top-right corner
-        int mmBorderX = ResolutionManager.ConsoleRight - S(120);
+        int mmBorderX = ResolutionManager.ConsoleRight - S(118);
         var minimapBorder = new Panel();
         minimapBorder.Position = new Vector2(mmBorderX, S(19));
         minimapBorder.Size = new Vector2(S(118), S(118));

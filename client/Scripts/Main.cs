@@ -154,8 +154,10 @@ public partial class Main : Control
 		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX, S(549) + S(28)); _fpsLabel.Size = new Vector2(sbW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
 		// --- Minimap (inside console area, top-right corner) ---
-		int mmBorderX = ResolutionManager.ConsoleRight - S(124);
-		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(S(118), S(118)); }
+		// Position: right-aligned to ConsoleRight, with S(5) gap from console text
+		int mmBorderW = S(118);
+		int mmBorderX = ResolutionManager.ConsoleRight - mmBorderW;
+		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(mmBorderW, S(118)); }
 		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
 
 		// Blind overlay
