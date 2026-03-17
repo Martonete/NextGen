@@ -135,11 +135,11 @@ public static class MapLoader
                 ref var tile = ref mapData.Tiles[x, y];
 
                 tile.Blocked = (byFlags & 1) != 0;
-                tile.Layer1 = reader.ReadInt16();
+                tile.Layer1 = reader.ReadInt32();
 
-                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt16() : (short)0;
-                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadInt16() : (short)0;
-                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadInt16() : (short)0;
+                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt32() : 0;
+                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadInt32() : 0;
+                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadInt32() : 0;
                 tile.Trigger = (byFlags & 16) != 0 ? reader.ReadInt16() : (short)0;
                 tile.ParticleGroup = (byFlags & 32) != 0 ? reader.ReadInt16() : (short)0;
 
@@ -231,10 +231,10 @@ public static class MapLoader
                 ref var tile = ref mapData.Tiles[x, y];
 
                 tile.Blocked = (byFlags & 1) != 0;
-                tile.Layer1 = reader.ReadInt16();
-                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt16() : (short)0;
-                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadInt16() : (short)0;
-                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadInt16() : (short)0;
+                tile.Layer1 = reader.ReadInt32();
+                tile.Layer2 = (byFlags & 2) != 0 ? reader.ReadInt32() : 0;
+                tile.Layer3 = (byFlags & 4) != 0 ? reader.ReadInt32() : 0;
+                tile.Layer4 = (byFlags & 8) != 0 ? reader.ReadInt32() : 0;
                 tile.Trigger = (byFlags & 16) != 0 ? reader.ReadInt16() : (short)0;
                 tile.ParticleGroup = (byFlags & 32) != 0 ? reader.ReadInt16() : (short)0;
 
@@ -492,7 +492,7 @@ public static class MapLoader
 
     private static void SaveDatFile(string path, MapData mapData)
     {
-        string section = $"Mapa{mapData.MapNumber}";
+        string section = $"MAPA{mapData.MapNumber}";
         var lines = new System.Collections.Generic.List<string>
         {
             $"[{section}]",

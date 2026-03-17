@@ -76,7 +76,7 @@ pub struct TileObj {
 pub struct MapTile {
     // From .map file
     pub blocked: bool,
-    pub graphic: [i16; 4],          // 4 graphic layers
+    pub graphic: [i32; 4],          // 4 graphic layers (int32 to support 100k+ GRH indices)
     pub trigger: Trigger,
     pub particle_group_index: i16,
     pub range_light: i16,
@@ -257,24 +257,24 @@ fn read_map_tiles(cursor: &mut Cursor<&[u8]>, tiles: &mut MapTiles) -> Result<()
             tile.blocked = (by_flags & 0x01) != 0;
 
             // Graphic[1] always present
-            tile.graphic[0] = read_i16(cursor)
+            tile.graphic[0] = read_i32(cursor)
                 .map_err(|e| format!("Tile ({},{}) graphic[1]: {}", x + 1, y + 1, e))?;
 
             // Bit 1: Graphic[2]
             if (by_flags & 0x02) != 0 {
-                tile.graphic[1] = read_i16(cursor)
+                tile.graphic[1] = read_i32(cursor)
                     .map_err(|e| format!("Tile ({},{}) graphic[2]: {}", x + 1, y + 1, e))?;
             }
 
             // Bit 2: Graphic[3]
             if (by_flags & 0x04) != 0 {
-                tile.graphic[2] = read_i16(cursor)
+                tile.graphic[2] = read_i32(cursor)
                     .map_err(|e| format!("Tile ({},{}) graphic[3]: {}", x + 1, y + 1, e))?;
             }
 
             // Bit 3: Graphic[4]
             if (by_flags & 0x08) != 0 {
-                tile.graphic[3] = read_i16(cursor)
+                tile.graphic[3] = read_i32(cursor)
                     .map_err(|e| format!("Tile ({},{}) graphic[4]: {}", x + 1, y + 1, e))?;
             }
 

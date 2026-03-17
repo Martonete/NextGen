@@ -66,12 +66,12 @@ public static class MapLoader
                 throw new InvalidDataException($"Invalid .aomap magic in {path}");
         }
 
-        ushort version = reader.ReadUInt16();
+        ushort version = reader.ReadInt32();
         if (version != 1)
             throw new InvalidDataException($"Unsupported .aomap version {version} in {path}");
 
-        ushort width = reader.ReadUInt16();
-        ushort height = reader.ReadUInt16();
+        ushort width = reader.ReadInt32();
+        ushort height = reader.ReadInt32();
         uint flags = reader.ReadUInt32(); // reserved, skip
 
         var mapData = new MapData(width, height);
@@ -90,20 +90,20 @@ public static class MapLoader
                 tile.Blocked = (byFlags & 1) != 0;
 
                 // Layer 1 always present
-                tile.Layer1 = reader.ReadUInt16();
+                tile.Layer1 = reader.ReadInt32();
 
                 if ((byFlags & 2) != 0)
-                    tile.Layer2 = reader.ReadUInt16();
+                    tile.Layer2 = reader.ReadInt32();
                 else
                     tile.Layer2 = 0;
 
                 if ((byFlags & 4) != 0)
-                    tile.Layer3 = reader.ReadUInt16();
+                    tile.Layer3 = reader.ReadInt32();
                 else
                     tile.Layer3 = 0;
 
                 if ((byFlags & 8) != 0)
-                    tile.Layer4 = reader.ReadUInt16();
+                    tile.Layer4 = reader.ReadInt32();
                 else
                     tile.Layer4 = 0;
 
@@ -143,12 +143,12 @@ public static class MapLoader
                 throw new InvalidDataException($"Invalid .aoinf magic in {path}");
         }
 
-        ushort version = reader.ReadUInt16();
+        ushort version = reader.ReadInt32();
         if (version != 1)
             throw new InvalidDataException($"Unsupported .aoinf version {version} in {path}");
 
-        ushort width = reader.ReadUInt16();
-        ushort height = reader.ReadUInt16();
+        ushort width = reader.ReadInt32();
+        ushort height = reader.ReadInt32();
         uint flags = reader.ReadUInt32(); // reserved, skip
 
         // Validate dimensions match the map
@@ -214,23 +214,23 @@ public static class MapLoader
                 tile.Blocked = (byFlags & 1) != 0;
 
                 // Layer 1 always present
-                tile.Layer1 = reader.ReadUInt16();
+                tile.Layer1 = reader.ReadInt32();
 
                 // Layer 2
                 if ((byFlags & 2) != 0)
-                    tile.Layer2 = reader.ReadUInt16();
+                    tile.Layer2 = reader.ReadInt32();
                 else
                     tile.Layer2 = 0;
 
                 // Layer 3
                 if ((byFlags & 4) != 0)
-                    tile.Layer3 = reader.ReadUInt16();
+                    tile.Layer3 = reader.ReadInt32();
                 else
                     tile.Layer3 = 0;
 
                 // Layer 4
                 if ((byFlags & 8) != 0)
-                    tile.Layer4 = reader.ReadUInt16();
+                    tile.Layer4 = reader.ReadInt32();
                 else
                     tile.Layer4 = 0;
 

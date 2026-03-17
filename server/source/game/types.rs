@@ -1279,7 +1279,8 @@ impl GameState {
                 let g = tile.graphic[0];
                 let is_water = (g >= 1505 && g <= 1520)
                     || (g >= 5665 && g <= 5680)
-                    || (g >= 13547 && g <= 13562);
+                    || (g >= 13547 && g <= 13562)
+                    || (g >= 44520 && g <= 44711);
                 is_water && tile.graphic[1] == 0
             } else {
                 false
