@@ -812,8 +812,8 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     }
 
     // Damage + armor absorption (VB6: NpcDaño — combined armor+shield single roll)
-    // VB6 combines MinDef/MaxDef from armor and shield, then does ONE RandomNumber() call
-    let body_part = rand_range(1, 6);
+    // VB6: Lugar = RandomNumber(bCabeza, bTorso) → 1=head, 2=torso
+    let body_part = rand_range(1, 2);
     let raw_damage = rand_range(npc_min_hit.max(1), npc_max_hit.max(1));
     let absorption = {
         let user = state.users.get(&target_conn);
@@ -843,7 +843,24 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         }
         if combined_max > 0 { rand_range(combined_min, combined_max) } else { 0 }
     };
-    let damage = (raw_damage - absorption).max(1);
+
+    // VB6: Boat defense — if user is sailing, boat absorbs damage too
+    let boat_defense = {
+        let mut def = 0;
+        if let Some(u) = state.users.get(&target_conn) {
+            if u.navigating && u.barco_slot > 0 && u.barco_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+                let boat_idx = u.inventory[u.barco_slot - 1].obj_index;
+                if let Some(obj) = state.game_data.objects.get(boat_idx as usize) {
+                    if obj.max_def > 0 {
+                        def = rand_range(obj.min_def.max(0), obj.max_def.max(1));
+                    }
+                }
+            }
+        }
+        def
+    };
+
+    let damage = (raw_damage - absorption - boat_defense).max(1);
 
     // Apply damage
     if let Some(user) = state.users.get_mut(&target_conn) {
@@ -851,9 +868,6 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     }
     let n2_pkt = binary_packets::write_multi_npc_hit_user(body_part as u8, damage as i16);
     state.send_bytes(target_conn, &n2_pkt);
-
-    // VB6: floating yellow damage number above user (N| vbYellow°-<damage>°charIndex)
-    state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("-{}", damage), u_char_index.0 as i16, 65535);
 
     // Blood FX on player (VB6: FXSANGRE = 14)
     let fx_pkt = binary_packets::write_create_fx(u_char_index.0 as i16, 14, 0);
@@ -1197,7 +1211,8 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
 }
 
 /// VB6: CheckPets — When an NPC attacks a user, the user's pets react by targeting that NPC.
-/// Water Elemental (NPC 92) is excluded from auto-aggression when check_elementals=true.
+/// VB6: CheckElementales=True (default) → ALL pets respond.
+///       CheckElementales=False → exclude FUEGO (93) and TIERRA (94).
 pub(super) fn check_pets(state: &mut GameState, attacker_npc_idx: usize, victim_conn: ConnectionId, check_elementals: bool) {
     let pets = match state.users.get(&victim_conn) {
         Some(u) => u.mascotas_index,
@@ -1214,8 +1229,9 @@ pub(super) fn check_pets(state: &mut GameState, attacker_npc_idx: usize, victim_
         };
         let (pet_number, existing_target) = pet_data;
 
-        // VB6: Water Elemental excluded from auto-aggression when check_elementals=true
-        if check_elementals && pet_number == npc::ELEMENTAL_AGUA {
+        // VB6: If CheckElementales=False, skip FUEGO (93) and TIERRA (94)
+        // (CheckElementales OR (Numero <> FUEGO AND Numero <> TIERRA))
+        if !check_elementals && (pet_number == npc::ELEMENTAL_FUEGO || pet_number == npc::ELEMENTAL_TIERRA) {
             continue;
         }
 

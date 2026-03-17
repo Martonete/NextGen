@@ -485,15 +485,27 @@ pub(super) fn restore_old_movement(state: &mut GameState, npc_idx: usize) {
 /// NPC vs NPC combat (VB6: NpcAtacaNpc — used by pets attacking target NPCs).
 pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, target_idx: usize) {
     let attacker_data = match state.get_npc(attacker_idx) {
-        Some(n) if n.is_alive() => (n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.maestro_user),
+        Some(n) if n.is_alive() => (n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.maestro_user, n.poder_ataque),
         _ => return,
     };
-    let (a_min_hit, a_max_hit, _a_char, a_map, a_x, a_y, a_master) = attacker_data;
+    let (a_min_hit, a_max_hit, _a_char, a_map, a_x, a_y, a_master, a_poder_ataque) = attacker_data;
 
-    let target_alive = state.get_npc(target_idx).map(|n| n.is_alive()).unwrap_or(false);
-    if !target_alive { return; }
+    let target_data = match state.get_npc(target_idx) {
+        Some(n) if n.is_alive() => (n.poder_evasion,),
+        _ => return,
+    };
+    let (t_poder_evasion,) = target_data;
 
-    // Simple damage — no armor for NPC vs NPC
+    // VB6: NpcImpactoNpc — hit/miss roll
+    let prob_exito = ((50.0 + (a_poder_ataque - t_poder_evasion) as f64 * 0.4) as i32).clamp(10, 90);
+    if rand_range(1, 100) > prob_exito {
+        // Miss — play swing sound
+        let snd_pkt = binary_packets::write_play_wave(2, a_x as i16, a_y as i16);
+        state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt);
+        return;
+    }
+
+    // VB6: NpcDañoNpc — damage (no armor for NPC vs NPC)
     let damage = rand_range(a_min_hit.max(1), a_max_hit.max(1));
 
     let target_dead = {
