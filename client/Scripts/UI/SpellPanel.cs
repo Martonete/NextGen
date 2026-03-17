@@ -36,6 +36,8 @@ public partial class SpellPanel : Control
         _state = state;
         _data = data;
         _tcp = tcp;
+        // Pixel-perfect bitmap font scaling (no bilinear blur)
+        TextureFilter = TextureFilterEnum.Nearest;
     }
 
     // Accumulated time for auto-scroll while dragging outside bounds

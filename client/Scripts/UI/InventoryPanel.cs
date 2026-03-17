@@ -73,6 +73,8 @@ public partial class InventoryPanel : Control
         _state = state;
         _data = data;
         _tcp = tcp;
+        // Pixel-perfect bitmap font/icon scaling (no bilinear blur)
+        TextureFilter = TextureFilterEnum.Nearest;
     }
 
     public override void _Process(double delta)
