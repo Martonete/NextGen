@@ -29,9 +29,7 @@ public class InputHandler
 		4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
 	};
 
-	// Water tile GRH range (VB6: Layer1 1505-1520 with no Layer2 = water)
-	private const int WaterGrhMin = 1505;
-	private const int WaterGrhMax = 1520;
+	// Water tile detection delegated to WorldRenderer.IsWaterGrh()
 
 	// VB6 map borders (InMapBounds) — offset from map edges
 	private const int BorderMarginLeft = 9;
@@ -400,7 +398,7 @@ public class InputHandler
 				return false;
 		}
 
-		bool isWater = tile.Layer1 >= WaterGrhMin && tile.Layer1 <= WaterGrhMax && tile.Layer2 == 0;
+		bool isWater = ArgentumNextgen.Rendering.WorldRenderer.IsWaterGrh(tile.Layer1) && tile.Layer2 == 0;
 		if (!_state.UserNavigating && isWater)
 			return false;
 		if (_state.UserNavigating && !isWater)

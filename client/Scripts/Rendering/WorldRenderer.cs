@@ -98,7 +98,7 @@ public partial class WorldRenderer : Node2D
 	private bool _frameAnyReflection;
 
 	// Pre-computed water tile map — built on map load, avoids per-frame GRH range checks.
-	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in water range 1505-1520.
+	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
 
 	// Per-frame camera data (computed in _Draw, used by child layer callbacks)
@@ -159,7 +159,7 @@ void fragment() {
 			for (int x = 1; x <= w; x++)
 			{
 				int g = _state.MapData.Tiles[x, y].Layer1;
-				_waterMap[x, y] = g >= 1505 && g <= 1520;
+				_waterMap[x, y] = IsWaterGrh(g);
 			}
 		}
 	}
@@ -589,7 +589,7 @@ void fragment() {
 			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
 			{
 				ref var tile = ref _state.MapData.Tiles[x, y];
-				if (tile.Layer1 < 1505 || tile.Layer1 > 1520) continue; // only water
+				if (!IsWaterGrh(tile.Layer1)) continue; // only water
 
 				Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
 				DrawTileGrh(tile.Layer1, pos, center: false);
@@ -799,17 +799,24 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// VB6 HayAgua(): checks if a tile is water (3 graphic ranges and Layer2 == 0).
+	/// Check if a GRH index is a water graphic (any of the known water tile ranges).
+	/// </summary>
+	public static bool IsWaterGrh(int g)
+	{
+		return (g >= 1505 && g <= 1520)
+			|| (g >= 5665 && g <= 5680)
+			|| (g >= 13547 && g <= 13562)
+			|| (g >= 44520 && g <= 44711);
+	}
+
+	/// <summary>
+	/// VB6 HayAgua(): checks if a tile is water (known water GRH ranges and Layer2 == 0).
 	/// </summary>
 	public static bool IsWater(MapData? mapData, int x, int y)
 	{
 		if (mapData == null || x < 1 || x > mapData.Width || y < 1 || y > mapData.Height) return false;
 		ref var tile = ref mapData.Tiles[x, y];
-		int g = tile.Layer1;
-		bool isWater = (g >= 1505 && g <= 1520)
-			|| (g >= 5665 && g <= 5680)
-			|| (g >= 13547 && g <= 13562);
-		return isWater && tile.Layer2 <= 0;
+		return IsWaterGrh(tile.Layer1) && tile.Layer2 <= 0;
 	}
 
 	/// <summary>

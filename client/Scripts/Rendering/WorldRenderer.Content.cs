@@ -334,7 +334,7 @@ public partial class WorldRenderer
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
-                if (tile.Layer1 >= 1505 && tile.Layer1 <= 1520) continue; // skip water
+                if (IsWaterGrh(tile.Layer1)) continue; // skip water
 
                 Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
                                             _framePixelOffsetX, _framePixelOffsetY);
