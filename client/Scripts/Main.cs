@@ -98,17 +98,21 @@ public partial class Main : Control
 		// Gold icon + label
 		if (_goldIcon != null) { _goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137)); _goldIcon.Size = new Vector2(S(14), S(14)); }
 		if (_goldLabel != null) { _goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135)); _goldLabel.Size = new Vector2(S(60), S(14)); _goldLabel.AddThemeFontSizeOverride("font_size", S(8)); }
-		// Coords label (map name + coords) — left aligned
-		// Map name + coords — centered below stat bars (agua bar ends at ~S(546))
-		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX, S(549)); _coordsLabel.Size = new Vector2(sbW, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center; _coordsLabel.AddThemeFontSizeOverride("font_size", S(8)); }
-		// Online + FPS — right side below coords
-		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5)); _onlineLabel.Size = new Vector2(sbW / 2 - S(4), S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Right; _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-
 		// --- Sidebar buttons (relative to BottomBarY) ---
 		int btnX = sbX + S(122);
 		int btn0Y = ResolutionManager.BottomBarY - S(120);
 		int btnStep = S(21);
 		int btnFontSize = S(10);
+		int btnW = S(93);
+
+		// Coords label (map name + coords) — centered below stat bars (left half of sidebar)
+		int coordsW = S(120);
+		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX, S(549)); _coordsLabel.Size = new Vector2(coordsW, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center; _coordsLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// Online + FPS — centered below Clanes button
+		int clanesBottomY = btn0Y + btnStep * 4 + S(22);
+		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(btnX, clanesBottomY); _onlineLabel.Size = new Vector2(btnW, S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Center; _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(btnX, clanesBottomY + S(12)); _fpsLabel.Size = new Vector2(btnW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+
 		if (_mapaButton != null) { _mapaButton.Position = new Vector2(btnX, btn0Y); _mapaButton.Size = new Vector2(S(93), S(20)); _mapaButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
 		if (_grupoButton != null) { _grupoButton.Position = new Vector2(btnX, btn0Y + btnStep); _grupoButton.Size = new Vector2(S(93), S(20)); _grupoButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
 		if (_opcionesButton != null) { _opcionesButton.Position = new Vector2(btnX, btn0Y + btnStep * 2); _opcionesButton.Size = new Vector2(S(93), S(20)); _opcionesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
@@ -150,9 +154,6 @@ public partial class Main : Control
 		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sideX, statRowY); _agilidadLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		if (_statSepLabel != null) { _statSepLabel.Position = new Vector2(sideX + statRowW / 2 - S(5), statRowY); _statSepLabel.Size = new Vector2(S(10), S(14)); }
 		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sideX + statRowW / 2 + S(5), statRowY); _fuerzaLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		// FPS label — below coords label
-		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX, S(549) + S(28)); _fpsLabel.Size = new Vector2(sbW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-
 		// --- Minimap (inside console area, top-right corner) ---
 		// Position: right-aligned to ConsoleRight, with S(5) gap from console text
 		int mmBorderW = S(118);
