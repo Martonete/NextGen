@@ -133,7 +133,7 @@ public partial class Main
     private static void CenterPanelOnScreen(Control panel)
     {
         var ws = DisplayServer.WindowGetSize();
-        panel.Position = (new Vector2(ws.X, ws.Y) - panel.Size) / 2f;
+        panel.Position = (new Vector2(ws.X, ws.Y) - panel.Size * panel.Scale) / 2f;
     }
 
     /// <summary>

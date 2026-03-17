@@ -48,11 +48,12 @@ public class AccountCreateScreen
         _panel = new Control();
         _panel.Size = new Vector2(400, 480);
         _panel.CustomMinimumSize = new Vector2(400, 480);
-        _panel.Position = new Vector2(200, 60);
         _panel.Visible = false;
         _panel.ZIndex = 1;
         _panel.ClipContents = true;
         _panel.MouseFilter = Control.MouseFilterEnum.Stop;
+        float fs = RpgBaseForm.FormScale;
+        _panel.Scale = new Vector2(fs, fs);
 
         // V2 background: big_bar stretched
         var bg = new TextureRect();

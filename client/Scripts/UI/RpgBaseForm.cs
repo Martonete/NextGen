@@ -69,11 +69,18 @@ public partial class RpgBaseForm : Control
         }
     }
 
+    /// <summary>Scale factor for pre-game forms (login, char select).
+    /// Grows slower than UIScale to avoid oversized windows.</summary>
+    public static float FormScale => 1f + (ResolutionManager.UIScale - 1f) * 0.5f;
+
     private void BuildForm()
     {
         Visible = false;
         CustomMinimumSize = FormSize;
         Size = FormSize;
+        // Scale the entire form proportionally (fonts, inputs, buttons all scale together)
+        float s = FormScale;
+        Scale = new Vector2(s, s);
         ClipContents = true;
         MouseFilter = MouseFilterEnum.Stop;
 
@@ -236,7 +243,7 @@ public partial class RpgBaseForm : Control
         {
             areaSize = GetViewportRect().Size;
         }
-        Position = (areaSize - Size) / 2.0f;
+        Position = (areaSize - Size * Scale) / 2.0f;
         MoveToFront();
     }
 
