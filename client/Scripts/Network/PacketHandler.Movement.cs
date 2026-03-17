@@ -90,9 +90,6 @@ public partial class PacketHandler
         _state.AddToUserPosY = 0;
         _state.UserMoving = false;
         _state.PendingMoves = 0;
-
-        // Stop stale area sounds from the previous position (warp within same map)
-        OnStopSfx?.Invoke();
     }
 
 

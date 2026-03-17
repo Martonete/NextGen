@@ -447,8 +447,8 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     };
     let (old_map, old_x, old_y, char_index, area_min_x, area_min_y) = old_data;
 
-    // 1. BKW — fade to black (VB6 line 2262)
-    state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
+    // VB6 13.3: WarpUserChar does NOT send PauseToggle (no fade to black).
+    // Only FileIO (world save) and server shutdown use PauseToggle.
 
     // 2. QDL + BP — remove dialog and character from the full 27×27 area.
     // VB6 ToPCArea uses the 27×27 zone group, not just the viewport (±8x, ±6y).
@@ -644,8 +644,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
-    // 13. BKW — fade back in (VB6 end of WarpUserChar)
-    state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
+    // VB6 13.3: No PauseToggle at end either — warp is instant.
 
     // 14. Warp pets to new map (VB6: WarpMascotas)
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
