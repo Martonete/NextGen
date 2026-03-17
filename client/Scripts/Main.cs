@@ -114,9 +114,9 @@ public partial class Main : Control
 		if (_minimizeButton != null) _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4));
 		if (_closeMenuButton != null) _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4));
 
-		// --- Inventory/Spell panel area (centered in sidebar) ---
+		// --- Inventory/Spell panel area (centered within sbW) ---
 		int contentW = S(190);
-		int sideX = sbX + (sidebarRealW - contentW) / 2;
+		int sideX = sbX + (sbW - contentW) / 2;
 		int tabX = sideX - S(6);
 		int tabBtnW = (contentW + S(12)) / 2;
 		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); }
