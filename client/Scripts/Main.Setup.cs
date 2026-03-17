@@ -281,14 +281,15 @@ public partial class Main
     private void UpdateConsoleWidth()
     {
         if (_consoleLabel == null) return;
-        // Console extends to ConsoleRight (SidebarX - gap).
-        // Minimap is inside the sidebar now, so console width doesn't change.
-        float right = ResolutionManager.ConsoleRight;
+        bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
+        // Console right edge: full width when minimap hidden, shrink when visible
+        float fullRight = ResolutionManager.ConsoleRight;
+        float right = minimapVisible ? fullRight - ResolutionManager.S(124) : fullRight;
         _consoleLabel.OffsetRight = right;
         if (_chatInputNode != null)
             _chatInputNode.OffsetRight = right;
         if (_minimapBorder != null)
-            _minimapBorder.Visible = _minimapPanel != null && _minimapPanel.Visible;
+            _minimapBorder.Visible = minimapVisible;
     }
 
     /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned, above minimap).</summary>
@@ -451,9 +452,8 @@ public partial class Main
         _contextMenu.ZIndex = RpgBaseForm.ZContextMenu;
         _gameUI.AddChild(_contextMenu);
 
-        // Minimap panel with styled border — anchored to left edge of sidebar
-        int mmExtraSpace = Math.Max(0, (ResolutionManager.WindowWidth - ResolutionManager.SidebarX) - ResolutionManager.S(240));
-        int mmBorderX = ResolutionManager.SidebarX + mmExtraSpace / 2;
+        // Minimap panel with styled border — inside console area, top-right corner
+        int mmBorderX = ResolutionManager.ConsoleRight - S(118);
         var minimapBorder = new Panel();
         minimapBorder.Position = new Vector2(mmBorderX, S(19));
         minimapBorder.Size = new Vector2(S(118), S(118));

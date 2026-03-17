@@ -147,9 +147,8 @@ public partial class Main : Control
 		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sbX + S(85), ResolutionManager.BottomBarY - S(160)); _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX, ResolutionManager.BottomBarY); _fpsLabel.Size = new Vector2(sbW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
-		// --- Minimap ---
-		// Minimap anchored to left edge of sidebar (not eating into console)
-		int mmBorderX = ResolutionManager.SidebarX + extraSidebar / 2;
+		// --- Minimap (inside console area, top-right corner) ---
+		int mmBorderX = ResolutionManager.ConsoleRight - S(118);
 		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(S(118), S(118)); }
 		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
 
