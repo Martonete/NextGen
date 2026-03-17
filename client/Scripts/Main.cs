@@ -99,8 +99,9 @@ public partial class Main : Control
 		if (_goldIcon != null) { _goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137)); _goldIcon.Size = new Vector2(S(14), S(14)); }
 		if (_goldLabel != null) { _goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135)); _goldLabel.Size = new Vector2(S(60), S(14)); _goldLabel.AddThemeFontSizeOverride("font_size", S(8)); }
 		// Coords label (map name + coords) — left aligned
-		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX + S(4), ResolutionManager.BottomBarY - S(5)); _coordsLabel.Size = new Vector2(sbW / 2, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Left; _coordsLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		// Online label — right aligned
+		// Map name + coords — centered below stat bars (agua bar ends at ~S(546))
+		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX, S(549)); _coordsLabel.Size = new Vector2(sbW, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center; _coordsLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// Online + FPS — right side below coords
 		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5)); _onlineLabel.Size = new Vector2(sbW / 2 - S(4), S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Right; _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
 		// --- Sidebar buttons (relative to BottomBarY) ---
@@ -750,12 +751,12 @@ public partial class Main : Control
 		_goldLabel.AddThemeFontSizeOverride("font_size", S(8));
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
-		// Coords label (map name + coords) — left side
-		_coordsLabel.Position = new Vector2(sbX + S(4), ResolutionManager.BottomBarY - S(5));
-		_coordsLabel.Size = new Vector2(sbW / 2, S(28));
-		_coordsLabel.HorizontalAlignment = HorizontalAlignment.Left;
+		// Map name + coords — centered below stat bars
+		_coordsLabel.Position = new Vector2(sbX, S(549));
+		_coordsLabel.Size = new Vector2(sbW, S(28));
+		_coordsLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_coordsLabel, "Tahoma", 700);
-		_coordsLabel.AddThemeFontSizeOverride("font_size", S(9));
+		_coordsLabel.AddThemeFontSizeOverride("font_size", S(8));
 
 		// Online label — right side
 		_onlineLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5));
