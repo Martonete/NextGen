@@ -458,7 +458,7 @@ public partial class Main
         _gameUI.AddChild(_contextMenu);
 
         // Minimap panel with styled border — inside console area, top-right corner
-        int mmBorderX = ResolutionManager.ConsoleRight - S(124) + S(4);
+        int mmBorderX = ResolutionManager.SidebarX - S(122);
         var minimapBorder = new Panel();
         minimapBorder.Position = new Vector2(mmBorderX, S(19));
         minimapBorder.Size = new Vector2(S(118), S(118));

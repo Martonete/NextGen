@@ -14,7 +14,8 @@ namespace ArgentumNextgen.UI;
 public partial class SpellPanel : Control
 {
     private const int MaxSpells = 20;
-    private const int LineHeight = 16;
+    private const int DesignLineHeight = 16;
+    private static int LineHeight => ResolutionManager.S(DesignLineHeight);
     private const int VisibleLines = 11;
 
     private GameState? _state;
@@ -31,13 +32,20 @@ public partial class SpellPanel : Control
     // Rich tooltip panel (set by Main.cs)
     public TooltipPanel? RichTooltip;
 
+    private Font? _ttfFont;
+    private int _ttfFontSize;
+
     public void Init(GameState state, GameData data, AoTcpClient tcp)
     {
         _state = state;
         _data = data;
         _tcp = tcp;
-        // Pixel-perfect bitmap font scaling (no bilinear blur)
-        TextureFilter = TextureFilterEnum.Nearest;
+
+        // Load TTF font for crisp text at any resolution (bitmap fonts pixelate when scaled)
+        string fontPath = System.IO.Path.Combine("Data", "Fonts", "LiberationSans-Bold.ttf");
+        if (System.IO.File.Exists(fontPath))
+            _ttfFont = ResourceLoader.Load<Font>($"res://{fontPath}");
+        _ttfFontSize = ResolutionManager.S(11);
     }
 
     // Accumulated time for auto-scroll while dragging outside bounds
@@ -103,8 +111,9 @@ public partial class SpellPanel : Control
 
         if (_state == null || _data == null) return;
 
-        var font = _data.Fonts?[1];
-        if (font == null) return;
+        // Use TTF font if available, fallback to bitmap
+        var bitmapFont = _data.Fonts?[1];
+        bool useTtf = _ttfFont != null;
 
         int y = 2;
         for (int i = 0; i < VisibleLines; i++)
@@ -127,26 +136,34 @@ public partial class SpellPanel : Control
                     new Color(1f, 1f, 1f, 0.1f));
             }
 
-            // Spell name — VB6 hlst shows plain name, no numbered prefix
-            if (spell.SpellId > 0)
+            // Spell name
+            string text = spell.SpellId > 0 ? spell.Name : "(vacio)";
+            Color color = spell.SpellId > 0 ? Colors.White : new Color(0.4f, 0.4f, 0.4f);
+
+            if (useTtf)
             {
-                font.DrawText(this, 4, (int)lineY + 1, spell.Name, Colors.White);
+                DrawString(_ttfFont!, new Vector2(4, lineY + LineHeight - 3), text, HorizontalAlignment.Left, -1, _ttfFontSize, color);
             }
-            else
+            else if (bitmapFont != null)
             {
-                font.DrawText(this, 4, (int)lineY + 1, "(vacio)",
-                    new Color(0.4f, 0.4f, 0.4f));
+                bitmapFont.DrawText(this, 4, (int)lineY + 1, text, color);
             }
         }
 
         // Scroll indicators
         if (_scrollOffset > 0)
         {
-            font.DrawText(this, (int)Size.X - 16, 2, "^", Colors.Yellow);
+            if (useTtf)
+                DrawString(_ttfFont!, new Vector2(Size.X - 16, y + LineHeight - 3), "▲", HorizontalAlignment.Left, -1, _ttfFontSize, Colors.Yellow);
+            else
+                bitmapFont?.DrawText(this, (int)Size.X - 16, 2, "^", Colors.Yellow);
         }
         if (_scrollOffset + VisibleLines < MaxSpells)
         {
-            font.DrawText(this, (int)Size.X - 16, (int)Size.Y - font.CharHeight - 2, "v", Colors.Yellow);
+            if (useTtf)
+                DrawString(_ttfFont!, new Vector2(Size.X - 16, Size.Y - 3), "▼", HorizontalAlignment.Left, -1, _ttfFontSize, Colors.Yellow);
+            else if (bitmapFont != null)
+                bitmapFont.DrawText(this, (int)Size.X - 16, (int)Size.Y - bitmapFont.CharHeight - 2, "v", Colors.Yellow);
         }
     }
 
