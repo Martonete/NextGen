@@ -39,7 +39,7 @@ public partial class Main
         int contentW = S(190);
         int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
         int designSidebarW = S(240);
-        int designOffset = S(17);
+        int designOffset = S(10);
         int extraSpace = Math.Max(0, sidebarRealW - designSidebarW);
         int sideX = ResolutionManager.SidebarX + designOffset + extraSpace / 2;
 
