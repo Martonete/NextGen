@@ -709,8 +709,6 @@ void fragment() {
 		// Collect roof draws — per-region fade: only the player's roof region fades out
 		{
 			float fadeA = _roofAlpha / 255f; // 0=hidden, 1=visible
-			int mapW = _state.MapData.Width;
-			int mapH = _state.MapData.Height;
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
