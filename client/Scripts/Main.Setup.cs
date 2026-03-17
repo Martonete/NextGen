@@ -147,7 +147,8 @@ public partial class Main
         _fuerzaLabel = CreateStatLabel(sbStatX + S(85), ResolutionManager.BottomBarY - S(160), S(50), S(14), new Color(0, 1, 0), S(9));
         _gameUI.AddChild(_fuerzaLabel);
         // Reputation label removed (system disabled)
-        _fpsLabel = CreateStatLabel(sbStatX + S(122), ResolutionManager.BottomBarY, S(93), S(12), Colors.White, S(7));
+        _fpsLabel = CreateStatLabel(sbStatX, ResolutionManager.BottomBarY, sbW, S(12), Colors.White, S(7));
+        _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _gameUI.AddChild(_fpsLabel);
 
         // Macro status indicator
@@ -279,10 +280,9 @@ public partial class Main
     private void UpdateConsoleWidth()
     {
         if (_consoleLabel == null) return;
-        bool minimapVisible = _minimapPanel != null && _minimapPanel.Visible;
-        // Console right edge: full width to near sidebar, or shrink for minimap
-        float fullRight = ResolutionManager.ConsoleRight;
-        float right = minimapVisible ? fullRight - ResolutionManager.S(124) : fullRight;
+        // Console extends to ConsoleRight (SidebarX - gap).
+        // Minimap is inside the sidebar now, so console width doesn't change.
+        float right = ResolutionManager.ConsoleRight;
         _consoleLabel.OffsetRight = right;
         if (_chatInputNode != null)
             _chatInputNode.OffsetRight = right;
@@ -450,8 +450,8 @@ public partial class Main
         _contextMenu.ZIndex = RpgBaseForm.ZContextMenu;
         _gameUI.AddChild(_contextMenu);
 
-        // Minimap panel with styled border
-        int mmBorderX = ResolutionManager.ConsoleRight - S(118); // minimap at right edge of console area
+        // Minimap panel with styled border — anchored to left edge of sidebar
+        int mmBorderX = ResolutionManager.SidebarX + extraSpace / 2;
         var minimapBorder = new Panel();
         minimapBorder.Position = new Vector2(mmBorderX, S(19));
         minimapBorder.Size = new Vector2(S(118), S(118));

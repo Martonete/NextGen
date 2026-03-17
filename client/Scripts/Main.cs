@@ -99,9 +99,9 @@ public partial class Main : Control
 		if (_goldIcon != null) { _goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137)); _goldIcon.Size = new Vector2(S(14), S(14)); }
 		if (_goldLabel != null) { _goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135)); _goldLabel.Size = new Vector2(S(60), S(14)); _goldLabel.AddThemeFontSizeOverride("font_size", S(8)); }
 		// Online label
-		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(sbX + S(122), ResolutionManager.BottomBarY - S(13)); _onlineLabel.Size = new Vector2(S(93), S(12)); _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(sbX, ResolutionManager.BottomBarY - S(13)); _onlineLabel.Size = new Vector2(sbW, S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Center; _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 		// Coords label
-		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(5)); _coordsLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX, ResolutionManager.BottomBarY - S(5)); _coordsLabel.Size = new Vector2(sbW, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center; _coordsLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 
 		// --- Sidebar buttons (relative to BottomBarY) ---
 		int btnX = sbX + S(122);
@@ -145,10 +145,11 @@ public partial class Main : Control
 		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(160)); _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		if (_statSepLabel != null) _statSepLabel.Position = new Vector2(sbX + S(75), ResolutionManager.BottomBarY - S(160));
 		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sbX + S(85), ResolutionManager.BottomBarY - S(160)); _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX + S(122), ResolutionManager.BottomBarY); _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX, ResolutionManager.BottomBarY); _fpsLabel.Size = new Vector2(sbW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
 		// --- Minimap ---
-		int mmBorderX = ResolutionManager.ConsoleRight - S(118);
+		// Minimap anchored to left edge of sidebar (not eating into console)
+		int mmBorderX = ResolutionManager.SidebarX + extraSidebar / 2;
 		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(S(118), S(118)); }
 		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
 
@@ -746,15 +747,17 @@ public partial class Main : Control
 		_goldLabel.AddThemeFontSizeOverride("font_size", S(8));
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
-		// Online label: below sidebar buttons, relative to BottomBarY
-		_onlineLabel.Position = new Vector2(sbX + S(122), ResolutionManager.BottomBarY - S(13));
-		_onlineLabel.Size = new Vector2(S(93), S(12));
+		// Online label: centered in sidebar, relative to BottomBarY
+		_onlineLabel.Position = new Vector2(sbX, ResolutionManager.BottomBarY - S(13));
+		_onlineLabel.Size = new Vector2(sbW, S(12));
 		_onlineLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_onlineLabel, "Tahoma", 700);
 		_onlineLabel.AddThemeFontSizeOverride("font_size", S(7));
 
-		// Coords label
-		_coordsLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(5));
+		// Coords label: centered in sidebar
+		_coordsLabel.Position = new Vector2(sbX, ResolutionManager.BottomBarY - S(5));
+		_coordsLabel.Size = new Vector2(sbW, S(28));
+		_coordsLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_coordsLabel, "Tahoma", 700);
 		_coordsLabel.AddThemeFontSizeOverride("font_size", S(9));
 
