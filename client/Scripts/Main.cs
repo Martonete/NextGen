@@ -473,9 +473,11 @@ public partial class Main : Control
 		// In fullscreen, update ContentScaleSize so the new layout fills the screen.
 		ResolutionManager.OnResolutionChanged = () =>
 		{
-			RepositionUI();
 			if (_state.Config.Fullscreen)
 				EnterFullscreen();
+			else
+				ExitFullscreen();
+			RepositionUI();
 		};
 
 		// Apply initial SubViewport size
