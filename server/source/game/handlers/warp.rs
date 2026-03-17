@@ -559,23 +559,27 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     // 6. Place on new grid
     state.world.place_user(new_map, final_x, final_y, conn_id);
 
-    // 7. Send map change packets (only if map changed, but we send always for safety)
-    let map_idx = new_map as usize;
-    let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        (
-            game_map.info.r,
-            game_map.info.g,
-            game_map.info.b,
-            game_map.info.music,
-            game_map.info.name.clone(),
-        )
-    } else {
-        (200, 200, 200, 0, format!("Mapa {}", new_map))
-    };
+    // 7. Send map change packets ONLY if map actually changed.
+    // Same-map warps skip this — avoids reloading the entire map file on client.
+    let map_changed = old_map != new_map;
+    if map_changed {
+        let map_idx = new_map as usize;
+        let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+            (
+                game_map.info.r,
+                game_map.info.g,
+                game_map.info.b,
+                game_map.info.music,
+                game_map.info.name.clone(),
+            )
+        } else {
+            (200, 200, 200, 0, format!("Mapa {}", new_map))
+        };
 
-    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8));
-    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
-    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
+        state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8));
+        state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
+        state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
+    }
 
     // 8. Send IP (self char index) + own CC + [CD so client renders self at new position
     let (ci, own_cc, own_cd) = match state.users.get(&conn_id) {
