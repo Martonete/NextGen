@@ -83,7 +83,7 @@ public class InputHandler
 		if (lineEditFocused && _state.Config.BlockWalkOnChat) return;
 
 		float deltaMs = (float)delta * 1000f;
-		long nowMs = Environment.TickCount64;
+		long nowMs = System.Environment.TickCount64;
 
 		// Advance refresh timer (still delta-based, non-critical)
 		if (_refreshTimer > 0) _refreshTimer -= deltaMs;
@@ -107,7 +107,7 @@ public class InputHandler
 		if (!_state.UserParalyzed)
 		{
 			// Time-based PT correction cooldown (blocks moves after server rejected one)
-			if (System.Environment.TickCount64 < _state.PtCooldownUntilMs)
+			if (System.System.Environment.TickCount64 < _state.PtCooldownUntilMs)
 			{
 				// Still in cooldown — skip movement
 			}
@@ -428,7 +428,7 @@ public class InputHandler
 		if (!_state.IsLogged || _state.Paused) return;
 		if (_state.AnyFormOpen) return;
 		if (_state.ChatActive) return;
-		long nowMs = Environment.TickCount64;
+		long nowMs = System.Environment.TickCount64;
 
 		if (@event is InputEventKey keyEvent && !keyEvent.Pressed && !keyEvent.Echo)
 		{

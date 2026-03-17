@@ -269,7 +269,7 @@ public partial class SoundManager : Node
         }
         else
         {
-            _lastAccessTime[cacheKey] = Environment.TickCount64;
+            _lastAccessTime[cacheKey] = System.Environment.TickCount64;
         }
 
         if (stream == null) return;
@@ -382,7 +382,7 @@ public partial class SoundManager : Node
         }
         else
         {
-            _musLastAccessTime[musicId] = Environment.TickCount64;
+            _musLastAccessTime[musicId] = System.Environment.TickCount64;
         }
 
         if (stream == null)
@@ -460,7 +460,7 @@ public partial class SoundManager : Node
     {
         if (_sfxCache.TryGetValue(soundId, out var stream))
         {
-            _lastAccessTime[soundId] = Environment.TickCount64;
+            _lastAccessTime[soundId] = System.Environment.TickCount64;
             return stream;
         }
 
@@ -493,7 +493,7 @@ public partial class SoundManager : Node
         }
 
         _sfxCache[key] = stream;
-        _lastAccessTime[key] = Environment.TickCount64;
+        _lastAccessTime[key] = System.Environment.TickCount64;
     }
 
     private void CacheMusicStream(int key, AudioStream? stream)
@@ -516,7 +516,7 @@ public partial class SoundManager : Node
         }
 
         _musCache[key] = stream;
-        _musLastAccessTime[key] = Environment.TickCount64;
+        _musLastAccessTime[key] = System.Environment.TickCount64;
     }
 
     // ── File loaders ─────────────────────────────────────────────────
