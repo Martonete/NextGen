@@ -108,11 +108,12 @@ public partial class Main : Control
 		int btnX = sbX + S(122);
 		int btn0Y = ResolutionManager.BottomBarY - S(120);
 		int btnStep = S(21);
-		if (_mapaButton != null) { _mapaButton.Position = new Vector2(btnX, btn0Y); _mapaButton.Size = new Vector2(S(93), S(20)); }
-		if (_grupoButton != null) { _grupoButton.Position = new Vector2(btnX, btn0Y + btnStep); _grupoButton.Size = new Vector2(S(93), S(20)); }
-		if (_opcionesButton != null) { _opcionesButton.Position = new Vector2(btnX, btn0Y + btnStep * 2); _opcionesButton.Size = new Vector2(S(93), S(20)); }
-		if (_estadisticasButton != null) { _estadisticasButton.Position = new Vector2(btnX, btn0Y + btnStep * 3); _estadisticasButton.Size = new Vector2(S(93), S(20)); }
-		if (_clanesButton != null) { _clanesButton.Position = new Vector2(btnX, btn0Y + btnStep * 4); _clanesButton.Size = new Vector2(S(93), S(20)); }
+		int btnFontSize = S(10);
+		if (_mapaButton != null) { _mapaButton.Position = new Vector2(btnX, btn0Y); _mapaButton.Size = new Vector2(S(93), S(20)); _mapaButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_grupoButton != null) { _grupoButton.Position = new Vector2(btnX, btn0Y + btnStep); _grupoButton.Size = new Vector2(S(93), S(20)); _grupoButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_opcionesButton != null) { _opcionesButton.Position = new Vector2(btnX, btn0Y + btnStep * 2); _opcionesButton.Size = new Vector2(S(93), S(20)); _opcionesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_estadisticasButton != null) { _estadisticasButton.Position = new Vector2(btnX, btn0Y + btnStep * 3); _estadisticasButton.Size = new Vector2(S(93), S(20)); _estadisticasButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_clanesButton != null) { _clanesButton.Position = new Vector2(btnX, btn0Y + btnStep * 4); _clanesButton.Size = new Vector2(S(93), S(20)); _clanesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
 
 		// Minimize/Close buttons
 		if (_minimizeButton != null) _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4));
@@ -124,16 +125,16 @@ public partial class Main : Control
 		int sideX = ResolutionManager.SidebarX + designOffset + extraSidebar / 2;
 		int tabX = sideX - S(6);
 		int tabBtnW = (contentW + S(12)) / 2;
-		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); }
-		if (_spellTabButton != null) { _spellTabButton.Position = new Vector2(tabX + tabBtnW, S(122)); _spellTabButton.Size = new Vector2(tabBtnW, S(34)); }
+		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); _invTabButton.AddThemeFontSizeOverride("font_size", S(10)); }
+		if (_spellTabButton != null) { _spellTabButton.Position = new Vector2(tabX + tabBtnW, S(122)); _spellTabButton.Size = new Vector2(tabBtnW, S(34)); _spellTabButton.AddThemeFontSizeOverride("font_size", S(10)); }
 		int invX = sideX + (contentW - S(171)) / 2;
 		float uiScale = ResolutionManager.UIScale;
 		if (_inventoryPanel != null) { _inventoryPanel.Position = new Vector2(invX, S(158)); _inventoryPanel.Size = new Vector2(171, 174); _inventoryPanel.Scale = new Vector2(uiScale, uiScale); }
 		if (_spellPanel != null) { _spellPanel.Position = new Vector2(sideX, S(158)); _spellPanel.Size = new Vector2(190, 186); _spellPanel.Scale = new Vector2(uiScale, uiScale); }
 		if (_dydToggle != null) { _dydToggle.Position = new Vector2(sideX - S(25), S(338)); _dydToggle.Size = new Vector2(S(21), S(21)); }
 		int halfBtn = contentW / 2 - S(2);
-		if (_lanzarButton != null) { _lanzarButton.Position = new Vector2(sideX, S(348)); _lanzarButton.Size = new Vector2(halfBtn, S(28)); }
-		if (_infoButton != null) { _infoButton.Position = new Vector2(sideX + halfBtn + S(4), S(348)); _infoButton.Size = new Vector2(halfBtn, S(28)); }
+		if (_lanzarButton != null) { _lanzarButton.Position = new Vector2(sideX, S(348)); _lanzarButton.Size = new Vector2(halfBtn, S(28)); _lanzarButton.AddThemeFontSizeOverride("font_size", S(10)); }
+		if (_infoButton != null) { _infoButton.Position = new Vector2(sideX + halfBtn + S(4), S(348)); _infoButton.Size = new Vector2(halfBtn, S(28)); _infoButton.AddThemeFontSizeOverride("font_size", S(10)); }
 		if (_spellUpButton != null) _spellUpButton.Position = new Vector2(sideX + contentW + S(2), S(200));
 		if (_spellDownButton != null) _spellDownButton.Position = new Vector2(sideX + contentW + S(2), S(230));
 
