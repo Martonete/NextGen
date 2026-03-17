@@ -65,7 +65,8 @@ public partial class WorldRenderer : Node2D
 	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
 	// Tiles without L4 have regionId = 0. Built once per map load.
 	private int[,]? _roofRegionMap;
-	private int _activeRoofRegion; // region the player is currently inside (0 = outdoors)
+	private int _activeRoofRegion;  // region the player is currently inside (0 = outdoors)
+	private int _fadingRoofRegion;  // region currently being faded (persists during fade-out)
 
 	// Delta time in ms for current frame (set in _Process, used in _Draw)
 	private float _deltaMs;
@@ -391,27 +392,40 @@ void fragment() {
 		if (ux < 1 || ux > w || uy < 1 || uy > h) return;
 
 		// Determine which roof region the player is inside (0 = none)
-		int prevRegion = _activeRoofRegion;
 		if (_roofRegionMap != null)
 			_activeRoofRegion = _roofRegionMap[ux, uy];
 		else
 			_activeRoofRegion = 0;
 
-		// Reset fade when entering a new region
-		if (_activeRoofRegion != prevRegion && _activeRoofRegion > 0)
-			_roofAlpha = 255f;
+		// Track which region to apply fade to
+		if (_activeRoofRegion > 0)
+		{
+			if (_fadingRoofRegion != _activeRoofRegion)
+			{
+				// Entered a new/different region — start fade-out from full opacity
+				_fadingRoofRegion = _activeRoofRegion;
+				_roofAlpha = 255f;
+			}
+		}
+		// When outside: keep _fadingRoofRegion so the fade-in transition applies to it
 
 		// Fade control: delta-time based (frame-rate independent)
 		float fadeDelta = RoofFadeSpeed * (_deltaMs / 1000f);
 		if (_activeRoofRegion > 0)
 		{
+			// Inside a roof region → fade out to min alpha
 			_roofAlpha -= fadeDelta;
 			if (_roofAlpha < RoofMinAlpha) _roofAlpha = RoofMinAlpha;
 		}
-		else
+		else if (_fadingRoofRegion > 0)
 		{
+			// Outside but a region is still fading back in
 			_roofAlpha += fadeDelta;
-			if (_roofAlpha > 255) _roofAlpha = 255;
+			if (_roofAlpha >= 255f)
+			{
+				_roofAlpha = 255f;
+				_fadingRoofRegion = 0; // fade-in complete, clear
+			}
 		}
 	}
 
@@ -717,9 +731,9 @@ void fragment() {
 			}
 		}
 
-		// Collect roof draws — per-region fade: only the player's roof region fades out
+		// Collect roof draws — per-region fade using _fadingRoofRegion (persists during fade-out AND fade-in)
 		{
-			float fadeA = _roofAlpha / 255f; // 0=hidden, 1=visible
+			float fadeA = _roofAlpha / 255f;
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
@@ -728,11 +742,11 @@ void fragment() {
 					ref var tile = ref _state.MapData.Tiles[x, y];
 					if (tile.Layer4 <= 0) continue;
 
-					// Determine alpha: tiles in the player's active region fade, others stay opaque
+					// Determine alpha: tiles in the fading region get fade, others stay opaque
 					float alpha;
-					if (_activeRoofRegion > 0 && _roofRegionMap != null
+					if (_fadingRoofRegion > 0 && _roofRegionMap != null
 						&& x >= 1 && x <= mapW && y >= 1 && y <= mapH
-						&& _roofRegionMap[x, y] == _activeRoofRegion)
+						&& _roofRegionMap[x, y] == _fadingRoofRegion)
 					{
 						alpha = fadeA; // fading region
 					}
