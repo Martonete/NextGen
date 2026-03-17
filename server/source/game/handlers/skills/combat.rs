@@ -98,28 +98,39 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         if num_pets >= 3 {
             state.send_console(conn_id, "No puedes tener más mascotas!", font_index::INFO);
         } else {
-            // Assign pet to user
-            if let Some(npc) = state.get_npc_mut(npc_idx) {
-                npc.maestro_user = Some(conn_id);
-                npc.hostile = false;
-                npc.target = None;
-            }
-            if let Some(u) = state.users.get_mut(&conn_id) {
-                u.nro_mascotas = u.nro_mascotas + 1;
-                // Store in pet slots
-                for i in 0..3 {
-                    if u.mascotas_index[i] == 0 {
-                        u.mascotas_index[i] = npc_idx;
-                        u.mascotas_type[i] = npc_number as i32;
-                        break;
+            // VB6: PuedeDomarMascota — max 2 of same NPC type
+            let pet_indices = state.users.get(&conn_id)
+                .map(|u| u.mascotas_index)
+                .unwrap_or([0; 3]);
+            let same_type_count = pet_indices.iter()
+                .filter(|&&idx| idx > 0 && state.get_npc(idx).map(|n| n.npc_number == npc_number).unwrap_or(false))
+                .count();
+            if same_type_count >= 2 {
+                state.send_console(conn_id, "Ya tienes demasiadas mascotas de ese tipo.", font_index::INFO);
+            } else {
+                // Assign pet to user
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.maestro_user = Some(conn_id);
+                    npc.hostile = false;
+                    npc.target = None;
+                }
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.nro_mascotas = u.nro_mascotas + 1;
+                    // Store in pet slots
+                    for i in 0..3 {
+                        if u.mascotas_index[i] == 0 {
+                            u.mascotas_index[i] = npc_idx;
+                            u.mascotas_type[i] = npc_number as i32;
+                            break;
+                        }
                     }
                 }
-            }
-            state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO);
+                state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO);
 
-            // VB6: SubirSkill on success
-            if let Some(u) = state.users.get_mut(&conn_id) {
-                try_level_skill_with_hit(u, 17, true); // Domar = index 17
+                // VB6: SubirSkill on success
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    try_level_skill_with_hit(u, 17, true); // Domar = index 17
+                }
             }
         }
     } else {

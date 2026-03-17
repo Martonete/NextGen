@@ -1109,7 +1109,7 @@ pub(super) async fn apply_spell_status(
             if caster_id != target_id {
                 let target_criminal = state.users.get(&target_id).map(|u| u.criminal).unwrap_or(false);
                 if !target_criminal {
-                    const MAX_REP: i32 = 500_000;
+                    const MAX_REP: i32 = 6_000_000;
                     if let Some(caster) = state.users.get_mut(&caster_id) {
                         caster.rep_noble = (caster.rep_noble + 500).min(MAX_REP);
                     }

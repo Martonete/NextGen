@@ -1201,6 +1201,34 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         }
     }
 
+    // VB6: Restore attributes if TomoPocion (Modulo_UsUaRiOs.bas:1558-1563)
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        if u.tomo_pocion {
+            u.attributes = u.attributes_backup;
+            u.tomo_pocion = false;
+            u.duracion_efecto = 0;
+        }
+    }
+
+    // VB6: Kill all pets on death (Modulo_UsUaRiOs.bas:1576-1585)
+    let pets = state.users.get(&conn_id).map(|u| u.mascotas_index).unwrap_or([0; 3]);
+    for i in 0..3 {
+        let pet_idx = pets[i];
+        if pet_idx > 0 {
+            // Kill pet NPC — send removal to area first
+            if let Some(n) = state.get_npc(pet_idx) {
+                let bp = binary_packets::write_character_remove(n.char_index.0 as i16);
+                state.send_data_bytes(SendTarget::ToArea { map: n.map, x: n.x, y: n.y }, &bp);
+            }
+            state.kill_npc(pet_idx);
+        }
+    }
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.mascotas_index = [0; 3];
+        u.mascotas_type = [0; 3];
+        u.nro_mascotas = 0;
+    }
+
     // Deequip all items and drop inventory
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.equip.weapon = 0;

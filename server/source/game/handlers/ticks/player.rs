@@ -200,10 +200,16 @@ pub async fn tick_player_passive(state: &mut GameState) {
         if min_sta < max_sta && min_ham > 0 && min_agua > 0 && !desnudo {
             if cnt_sta >= sta_interval {
                 let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(1.0) as i32;
-                let regen = rand_range(1, five_pct);
+                // VB6: Resting interval is 5 ticks (0.5s) vs 10 ticks (1s) standing.
+                // Since our tick is 1s, compensate by giving 2x regen when resting.
+                let regen_rolls = if resting { 2 } else { 1 };
+                let mut total_regen = 0;
+                for _ in 0..regen_rolls {
+                    total_regen += rand_range(1, five_pct);
+                }
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.counter_stamina = 0;
-                    u.min_sta = (u.min_sta + regen).min(u.max_sta);
+                    u.min_sta = (u.min_sta + total_regen).min(u.max_sta);
                 }
                 send_stats_sta(state, conn_id).await;
             } else {
