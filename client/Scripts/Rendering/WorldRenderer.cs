@@ -57,9 +57,9 @@ public partial class WorldRenderer : Node2D
 	// VB6: TileBufferSize = 9
 	private const int TileBufferSize = 9;
 
-	// VB6: bTechoAB — roof alpha (per-region fade)
+	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
 	private float _roofAlpha = 255f;
-	private const float RoofFadeRate = 6f;
+	private const float RoofFadeSpeed = 400f; // units per second (255→20 in ~0.6s)
 	private const float RoofMinAlpha = 20f; // never fully invisible — keeps a faint ghost
 
 	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
@@ -398,22 +398,19 @@ void fragment() {
 			_activeRoofRegion = 0;
 
 		// Reset fade when entering a new region
-		if (_activeRoofRegion != prevRegion)
-		{
-			if (_activeRoofRegion > 0)
-				_roofAlpha = 255f;
-			GD.Print($"[ROOF] Region changed: {prevRegion} → {_activeRoofRegion} at ({ux},{uy}) trigger={_state.MapData.Tiles[ux,uy].Trigger} L4={_state.MapData.Tiles[ux,uy].Layer4}");
-		}
+		if (_activeRoofRegion != prevRegion && _activeRoofRegion > 0)
+			_roofAlpha = 255f;
 
-		// Fade control: inside a region → fade out to min alpha, outside → fade back in
+		// Fade control: delta-time based (frame-rate independent)
+		float fadeDelta = RoofFadeSpeed * (_deltaMs / 1000f);
 		if (_activeRoofRegion > 0)
 		{
-			_roofAlpha -= RoofFadeRate;
+			_roofAlpha -= fadeDelta;
 			if (_roofAlpha < RoofMinAlpha) _roofAlpha = RoofMinAlpha;
 		}
 		else
 		{
-			_roofAlpha += RoofFadeRate;
+			_roofAlpha += fadeDelta;
 			if (_roofAlpha > 255) _roofAlpha = 255;
 		}
 	}
