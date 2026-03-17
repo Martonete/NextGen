@@ -777,13 +777,28 @@ void fragment() {
 	/// <summary>
 	/// Draw a tile GRH on this WorldRenderer's canvas (for terrain passes).
 	/// </summary>
+	private bool _waterDebugDone;
 	private void DrawTileGrh(int grhIndex, Vector2 pos, bool center = false, Color? modulate = null)
 	{
 		if (_data == null || _animator == null) return;
 		if (grhIndex <= 0 || grhIndex >= _data.Grhs.Length) return;
 
-		int frame = _animator.GetCurrentFrame(grhIndex, _data);
-		CharRenderer.DrawGrh(this, _data, grhIndex, frame, pos, center, modulate);
+		// One-time debug for new water GRHs
+		if (!_waterDebugDone && grhIndex >= 44520 && grhIndex <= 44711)
+		{
+			_waterDebugDone = true;
+			var grh = _data.Grhs[grhIndex];
+			int frame = _animator.GetCurrentFrame(grhIndex, _data);
+			var resolved = _data.ResolveGrh(grhIndex, frame);
+			var tex = resolved != null ? _data.Textures?.GetTexture(resolved.FileNum) : null;
+			GD.Print($"[WATER-DBG] grh={grhIndex} nframes={grh.NumFrames} frame={frame} " +
+				$"resolved: file={resolved?.FileNum} sx={resolved?.SX} sy={resolved?.SY} " +
+				$"pw={resolved?.PixelWidth} ph={resolved?.PixelHeight} " +
+				$"tex={tex?.GetWidth()}x{tex?.GetHeight()}");
+		}
+
+		int frame2 = _animator.GetCurrentFrame(grhIndex, _data);
+		CharRenderer.DrawGrh(this, _data, grhIndex, frame2, pos, center, modulate);
 	}
 
 	/// <summary>
