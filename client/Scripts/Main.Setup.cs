@@ -147,7 +147,8 @@ public partial class Main
         _fuerzaLabel = CreateStatLabel(sbStatX + S(85), ResolutionManager.BottomBarY - S(160), S(50), S(14), new Color(0, 1, 0), S(9));
         _gameUI.AddChild(_fuerzaLabel);
         // Reputation label removed (system disabled)
-        _fpsLabel = CreateStatLabel(sbStatX, ResolutionManager.BottomBarY, sbW, S(12), Colors.White, S(7));
+        int fpsW = S(210);
+        _fpsLabel = CreateStatLabel(sbStatX, ResolutionManager.BottomBarY, fpsW, S(12), Colors.White, S(7));
         _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _gameUI.AddChild(_fpsLabel);
 
@@ -287,7 +288,7 @@ public partial class Main
         if (_chatInputNode != null)
             _chatInputNode.OffsetRight = right;
         if (_minimapBorder != null)
-            _minimapBorder.Visible = minimapVisible;
+            _minimapBorder.Visible = _minimapPanel != null && _minimapPanel.Visible;
     }
 
     /// <summary>Add a panel to _gameUI with standard defaults (hidden, positioned, above minimap).</summary>
@@ -451,7 +452,8 @@ public partial class Main
         _gameUI.AddChild(_contextMenu);
 
         // Minimap panel with styled border — anchored to left edge of sidebar
-        int mmBorderX = ResolutionManager.SidebarX + extraSpace / 2;
+        int mmExtraSpace = Math.Max(0, (ResolutionManager.WindowWidth - ResolutionManager.SidebarX) - ResolutionManager.S(240));
+        int mmBorderX = ResolutionManager.SidebarX + mmExtraSpace / 2;
         var minimapBorder = new Panel();
         minimapBorder.Position = new Vector2(mmBorderX, S(19));
         minimapBorder.Size = new Vector2(S(118), S(118));
