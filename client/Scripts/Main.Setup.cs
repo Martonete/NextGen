@@ -136,15 +136,20 @@ public partial class Main
         _gameUI.AddChild(_shieldLabel);
         _weaponLabel = CreateStatLabel(S(435), bbY, S(90), S(17), Colors.White, S(7));
         _gameUI.AddChild(_weaponLabel);
-        int sbStatX = ResolutionManager.SidebarX;
-        _agilidadLabel = CreateStatLabel(sbStatX + S(20), ResolutionManager.BottomBarY - S(160), S(55), S(14), new Color(1f, 1f, 0f), S(9));
+        // Agilidad | Fuerza — centered as a single row in the sidebar
+        int statRowW = S(190);
+        int statRowX = sideX;
+        int statRowY = ResolutionManager.BottomBarY - S(160);
+        _agilidadLabel = CreateStatLabel(statRowX, statRowY, statRowW / 2 - S(5), S(14), new Color(1f, 1f, 0f), S(9));
+        _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right;
         _gameUI.AddChild(_agilidadLabel);
-        var statSepLabel = CreateStatLabel(sbStatX + S(75), ResolutionManager.BottomBarY - S(160), S(10), S(14), new Color(0.5f, 0.5f, 0.5f), S(9));
+        var statSepLabel = CreateStatLabel(statRowX + statRowW / 2 - S(5), statRowY, S(10), S(14), new Color(0.5f, 0.5f, 0.5f), S(9));
         statSepLabel.Text = "|";
         statSepLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _gameUI.AddChild(statSepLabel);
         _statSepLabel = statSepLabel;
-        _fuerzaLabel = CreateStatLabel(sbStatX + S(85), ResolutionManager.BottomBarY - S(160), S(50), S(14), new Color(0, 1, 0), S(9));
+        _fuerzaLabel = CreateStatLabel(statRowX + statRowW / 2 + S(5), statRowY, statRowW / 2 - S(5), S(14), new Color(0, 1, 0), S(9));
+        _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left;
         _gameUI.AddChild(_fuerzaLabel);
         // Reputation label removed (system disabled)
         int fpsW = S(210);

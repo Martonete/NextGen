@@ -142,9 +142,12 @@ public partial class Main : Control
 		if (_helmLabel != null) { _helmLabel.Position = new Vector2(S(170), bbY); _helmLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 		if (_shieldLabel != null) { _shieldLabel.Position = new Vector2(S(310), bbY); _shieldLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 		if (_weaponLabel != null) { _weaponLabel.Position = new Vector2(S(435), bbY); _weaponLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sbX + S(20), ResolutionManager.BottomBarY - S(160)); _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		if (_statSepLabel != null) _statSepLabel.Position = new Vector2(sbX + S(75), ResolutionManager.BottomBarY - S(160));
-		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sbX + S(85), ResolutionManager.BottomBarY - S(160)); _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		// Agilidad | Fuerza — centered row
+		int statRowW = S(190);
+		int statRowY = ResolutionManager.BottomBarY - S(160);
+		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sideX, statRowY); _agilidadLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		if (_statSepLabel != null) { _statSepLabel.Position = new Vector2(sideX + statRowW / 2 - S(5), statRowY); _statSepLabel.Size = new Vector2(S(10), S(14)); }
+		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sideX + statRowW / 2 + S(5), statRowY); _fuerzaLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		// FPS label — right aligned, below onlines
 		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5) + S(12)); _fpsLabel.Size = new Vector2(sbW / 2 - S(4), S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Right; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
