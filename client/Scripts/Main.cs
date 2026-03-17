@@ -158,15 +158,15 @@ public partial class Main : Control
 			_consoleLabel.OffsetLeft = S(27);
 			_consoleLabel.OffsetTop = S(28);
 			_consoleLabel.OffsetBottom = S(115);
-			_consoleLabel.OffsetRight = ResolutionManager.ConsoleRight;
 		}
 		if (_chatInputNode != null)
 		{
 			_chatInputNode.OffsetLeft = S(22);
 			_chatInputNode.OffsetTop = S(118);
 			_chatInputNode.OffsetBottom = S(139);
-			_chatInputNode.OffsetRight = ResolutionManager.ConsoleRight;
 		}
+		// Right edge depends on minimap visibility
+		UpdateConsoleWidth();
 
 		// Re-center all game panels in the viewport area
 		CenterPanelsInViewport();
