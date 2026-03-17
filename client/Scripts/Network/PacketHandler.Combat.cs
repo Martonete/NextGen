@@ -161,6 +161,18 @@ public partial class PacketHandler
         // VB6: loops >= 999 = infinite, loops 0 = play once (treat as 1)
         int loops = fxLoops >= 999 ? -1 : Math.Max((int)fxLoops, 1);
 
+        // If same FX already active, restart it in its existing slot (no duplicates)
+        for (int i = 0; i < 3; i++)
+        {
+            if (ch.ActiveFxSlots[i] == fxIndex)
+            {
+                ch.FxLoops[i] = loops;
+                ch.FxFrameCounter[i] = 0;
+                return;
+            }
+        }
+
+        // Find empty slot for a new different FX
         for (int i = 0; i < 3; i++)
         {
             if (ch.ActiveFxSlots[i] == 0)
@@ -172,6 +184,7 @@ public partial class PacketHandler
             }
         }
 
+        // All slots full — replace slot 0
         ch.ActiveFxSlots[0] = fxIndex;
         ch.FxLoops[0] = loops;
         ch.FxFrameCounter[0] = 0;
