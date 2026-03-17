@@ -107,7 +107,7 @@ public class InputHandler
 		if (!_state.UserParalyzed)
 		{
 			// Time-based PT correction cooldown (blocks moves after server rejected one)
-			if (System.System.Environment.TickCount64 < _state.PtCooldownUntilMs)
+			if (System.Environment.TickCount64 < _state.PtCooldownUntilMs)
 			{
 				// Still in cooldown — skip movement
 			}
