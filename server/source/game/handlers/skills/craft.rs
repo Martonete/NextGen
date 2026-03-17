@@ -62,7 +62,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     // Send buildable items lists (VB6 13.3 binary format)
     let (skill_herreria, class) = state.users.get(&conn_id)
         .map(|u| (u.skills[15], u.class))
-        .unwrap_or((0, PlayerClass::Warrior)); // Herreria = 15 (1-based 16)
+        .unwrap_or((0, PlayerClass::Guerrero)); // Herreria = 15 (1-based 16)
     let effective_skill = (skill_herreria as f32 / mod_herreria(class)) as i32;
 
     let mut weapons = Vec::new();
@@ -112,7 +112,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
 pub(crate) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId) {
     let (skill_carpinteria, class) = state.users.get(&conn_id)
         .map(|u| (u.skills[14], u.class))
-        .unwrap_or((0, PlayerClass::Warrior)); // Carpinteria=14 (1-based 15)
+        .unwrap_or((0, PlayerClass::Guerrero)); // Carpinteria=14 (1-based 15)
     let effective_skill = (skill_carpinteria as f32 / mod_carpinteria(class)) as i32;
 
     let mut items = Vec::new();
@@ -172,7 +172,7 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
     // VB6 13.3: Check mining skill with class modifier (ModFundicion)
     let (skill_mineria, class) = state.users.get(&conn_id)
         .map(|u| (u.skills[13], u.class))
-        .unwrap_or((0, PlayerClass::Warrior)); // Mineria=13 (1-based 14)
+        .unwrap_or((0, PlayerClass::Guerrero)); // Mineria=13 (1-based 14)
     let effective_skill = (skill_mineria as f32 / mod_fundicion(class)) as i32;
 
     // VB6: ObjData(mineral).MinSkill <= Skills(Mineria) / ModFundicion(clase)
@@ -288,7 +288,7 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
     // Check Herrería skill (VB6: skill / ModHerreria)
     let (user_skill, class) = state.users.get(&conn_id)
         .map(|u| (u.skills[15], u.class))
-        .unwrap_or((0, PlayerClass::Warrior)); // SK16 = Herreria
+        .unwrap_or((0, PlayerClass::Guerrero)); // SK16 = Herreria
     let effective_skill = (user_skill as f32 / mod_herreria(class)) as i32;
     if effective_skill < sk_needed {
         state.send_console(conn_id, &format!("Necesitas {} de herrería para fundir esto.", sk_needed), font_index::INFO);
@@ -422,7 +422,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         // Herrería path: weapons, shields, helmets, armor (VB6: skill / ModHerreria)
         let (user_skill, class) = state.users.get(&conn_id)
             .map(|u| (u.skills[15], u.class))
-            .unwrap_or((0, PlayerClass::Warrior));
+            .unwrap_or((0, PlayerClass::Guerrero));
         let effective_skill = (user_skill as f32 / mod_herreria(class)) as i32;
         if effective_skill < up_sk_herreria {
             state.send_console(conn_id, &format!("Necesitas {} de herrería.", up_sk_herreria), font_index::INFO);
@@ -456,7 +456,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         // Carpintería path: arrows, weapons (wood), boats (VB6: skill / ModCarpinteria)
         let (user_skill, class) = state.users.get(&conn_id)
             .map(|u| (u.skills[14], u.class))
-            .unwrap_or((0, PlayerClass::Warrior));
+            .unwrap_or((0, PlayerClass::Guerrero));
         let effective_skill = (user_skill as f32 / mod_carpinteria(class)) as i32;
         if effective_skill < up_sk_carpinteria {
             state.send_console(conn_id, &format!("Necesitas {} de carpintería.", up_sk_carpinteria), font_index::INFO);
@@ -555,7 +555,7 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     // Check skill (VB6: skill / ModHerreria)
     let (skill, class) = state.users.get(&conn_id)
         .map(|u| (u.skills[15], u.class))
-        .unwrap_or((0, PlayerClass::Warrior)); // Herreria=15 (1-based 16)
+        .unwrap_or((0, PlayerClass::Guerrero)); // Herreria=15 (1-based 16)
     let effective_skill = (skill as f32 / mod_herreria(class)) as i32;
     if effective_skill < obj.sk_herreria {
         state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO);
@@ -626,7 +626,7 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     // Check skill (VB6: skill / ModCarpinteria)
     let (skill, class) = state.users.get(&conn_id)
         .map(|u| (u.skills[14], u.class))
-        .unwrap_or((0, PlayerClass::Warrior)); // Carpinteria=14 (1-based 15)
+        .unwrap_or((0, PlayerClass::Guerrero)); // Carpinteria=14 (1-based 15)
     let effective_skill = (skill as f32 / mod_carpinteria(class)) as i32;
     if effective_skill < obj.sk_carpinteria {
         state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO);
