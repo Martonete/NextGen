@@ -43,8 +43,10 @@ public partial class Main : Control
 	private void RepositionUI()
 	{
 		int S(int v) => ResolutionManager.S(v);
-		int sbX = ResolutionManager.SidebarX;
 		int sbW = S(210);
+		// Center sidebar content in the real sidebar space
+		int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
+		int sbX = ResolutionManager.SidebarX + (sidebarRealW - sbW) / 2;
 
 		// Root + GameUI
 		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
@@ -112,9 +114,10 @@ public partial class Main : Control
 		if (_minimizeButton != null) _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4));
 		if (_closeMenuButton != null) _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4));
 
-		// --- Inventory/Spell panel area ---
-		int sideX = sbX + S(17);
+		// --- Inventory/Spell panel area (centered in sidebar) ---
 		int contentW = S(190);
+		int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
+		int sideX = sbX + (sidebarRealW - contentW) / 2;
 		int tabX = sideX - S(6);
 		int tabBtnW = (contentW + S(12)) / 2;
 		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); }
@@ -642,10 +645,11 @@ public partial class Main : Control
 		_gameUI.AddChild(sidebarBg);
 		_gameUI.MoveChild(sidebarBg, 1); // index 1 = after HudFrame(0), before scene labels
 
-		// Sidebar content area: dynamic based on resolution
-		int sbX = ResolutionManager.SidebarX;
+		// Sidebar content area: centered in real sidebar space
 		int S(int v) => ResolutionManager.S(v);
 		int sbW = S(210);
+		int sidebarRealW2 = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
+		int sbX = ResolutionManager.SidebarX + (sidebarRealW2 - sbW) / 2;
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
 		var nameFrame = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
