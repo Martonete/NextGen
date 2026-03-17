@@ -90,20 +90,20 @@ public static class MapLoader
                 tile.Blocked = (byFlags & 1) != 0;
 
                 // Layer 1 always present
-                tile.Layer1 = reader.ReadInt16();
+                tile.Layer1 = reader.ReadUInt16();
 
                 if ((byFlags & 2) != 0)
-                    tile.Layer2 = reader.ReadInt16();
+                    tile.Layer2 = reader.ReadUInt16();
                 else
                     tile.Layer2 = 0;
 
                 if ((byFlags & 4) != 0)
-                    tile.Layer3 = reader.ReadInt16();
+                    tile.Layer3 = reader.ReadUInt16();
                 else
                     tile.Layer3 = 0;
 
                 if ((byFlags & 8) != 0)
-                    tile.Layer4 = reader.ReadInt16();
+                    tile.Layer4 = reader.ReadUInt16();
                 else
                     tile.Layer4 = 0;
 
@@ -214,23 +214,23 @@ public static class MapLoader
                 tile.Blocked = (byFlags & 1) != 0;
 
                 // Layer 1 always present
-                tile.Layer1 = reader.ReadInt16();
+                tile.Layer1 = reader.ReadUInt16();
 
                 // Layer 2
                 if ((byFlags & 2) != 0)
-                    tile.Layer2 = reader.ReadInt16();
+                    tile.Layer2 = reader.ReadUInt16();
                 else
                     tile.Layer2 = 0;
 
                 // Layer 3
                 if ((byFlags & 4) != 0)
-                    tile.Layer3 = reader.ReadInt16();
+                    tile.Layer3 = reader.ReadUInt16();
                 else
                     tile.Layer3 = 0;
 
                 // Layer 4
                 if ((byFlags & 8) != 0)
-                    tile.Layer4 = reader.ReadInt16();
+                    tile.Layer4 = reader.ReadUInt16();
                 else
                     tile.Layer4 = 0;
 
@@ -387,10 +387,10 @@ public class MapData
 public struct MapTile
 {
     public bool Blocked;
-    public short Layer1;  // GRH index
-    public short Layer2;
-    public short Layer3;
-    public short Layer4;
+    public int Layer1;  // GRH index (read as UInt16 to support indices > 32767)
+    public int Layer2;
+    public int Layer3;
+    public int Layer4;
     public short Trigger;
     public short ParticleGroup;
     public short LightRange;

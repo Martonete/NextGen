@@ -55,7 +55,7 @@ public partial class PacketHandler
         string name = bq.ReadString();
         short amount = bq.ReadInteger();
         float value = bq.ReadSingle();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
         short objIndex = bq.ReadInteger();
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
@@ -125,7 +125,7 @@ public partial class PacketHandler
         byte offerSlot = bq.ReadByte();
         short objIndex = bq.ReadInteger();
         int amount = bq.ReadLong();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();

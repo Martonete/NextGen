@@ -20,7 +20,7 @@ public partial class PacketHandler
         string name = bq.ReadString();
         short amount = bq.ReadInteger();
         bool equipped = bq.ReadBoolean();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();
@@ -94,7 +94,7 @@ public partial class PacketHandler
         string name = bq.ReadString();
         short amount = bq.ReadInteger();
         bool equipped = bq.ReadBoolean();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();

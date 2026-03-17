@@ -399,7 +399,7 @@ public partial class PacketHandler
     {
         int x = bq.ReadInteger();
         int y = bq.ReadInteger();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
         _state.GroundObjects[(x, y)] = grhIndex;
     }
 
@@ -603,7 +603,7 @@ public partial class PacketHandler
     {
         short srcIndex = bq.ReadInteger();
         short tgtIndex = bq.ReadInteger();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
 
         // Create visual arrow projectile (same as text FLECHI handler)
         if (_state.Characters.TryGetValue(srcIndex, out var srcCh) &&

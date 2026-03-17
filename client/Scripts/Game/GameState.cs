@@ -476,7 +476,7 @@ public class TradeOfferSlot
 {
 	public short ObjIndex;
 	public int Amount;
-	public short GrhIndex;
+	public int GrhIndex;
 	public byte ObjType;
 	public short MaxHit, MinHit, MaxDef, MinDef;
 	public int Value;

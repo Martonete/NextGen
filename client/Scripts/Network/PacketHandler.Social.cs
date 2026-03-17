@@ -267,7 +267,7 @@ public partial class PacketHandler
         short objIdx = bq.ReadInteger();
         string name = bq.ReadString();
         short amount = bq.ReadInteger();
-        short grh = bq.ReadInteger();
+        int grh = (ushort)bq.ReadInteger();
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();

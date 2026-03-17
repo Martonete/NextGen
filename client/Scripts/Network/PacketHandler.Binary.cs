@@ -242,7 +242,7 @@ public partial class PacketHandler
                 _state.UserDumb = true;
                 break;
             case ServerPacketId.ShowSignal: // 58
-                { string text = bq.ReadString(); short grh = bq.ReadInteger(); GD.Print($"[PKT] ShowSignal: {text} grh={grh}"); }
+                { string text = bq.ReadString(); int grh = (ushort)bq.ReadInteger(); GD.Print($"[PKT] ShowSignal: {text} grh={grh}"); }
                 break;
             case ServerPacketId.DiceRoll: // 59
                 HandleBinDiceRoll(bq);
