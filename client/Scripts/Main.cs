@@ -1128,12 +1128,18 @@ public partial class Main : Control
 						&& cx < ResolutionManager.LeftMargin + ResolutionManager.ViewportW
 						&& cy >= ResolutionManager.TopMargin
 						&& cy < ResolutionManager.TopMargin + ResolutionManager.ViewportH;
-					if (!inViewport)
+					if (!inViewport && !_state.AnyFormOpen)
 					{
 						var hovered = GetViewport().GuiGetHoveredControl();
-						bool onButton = hovered is BaseButton or Godot.Range
+						bool onControl = hovered is BaseButton or Godot.Range
 							or LineEdit or TextEdit or InventoryPanel or SpellPanel;
-						if (!onButton)
+						// Also block if hovered control is inside an RpgBaseForm
+						if (!onControl && hovered != null)
+						{
+							var p = hovered.GetParent();
+							while (p != null) { if (p is UI.RpgBaseForm) { onControl = true; break; } p = p.GetParent(); }
+						}
+						if (!onControl)
 						{
 							_windowDragging = true;
 							_windowDragStart = DisplayServer.MouseGetPosition();
