@@ -277,7 +277,10 @@ public partial class Main
         _state.CurrentScreen = Screen.Login;
         HandleScreenChange(Screen.Login);
         _lastScreen = Screen.Login;
-        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = message;
+        // Prefer server error message (e.g. "Password incorrecto") over generic disconnect
+        string displayMsg = !string.IsNullOrEmpty(_state.LoginError) ? _state.LoginError : message;
+        _state.LoginError = "";
+        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
         if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
 
         // VB6: frmConnect.MousePointer = 1 (normal cursor)
