@@ -237,6 +237,9 @@ public partial class Main
     {
         GD.Print($"[MAIN] Disconnect: {message}");
 
+        // Save server error before reset clears it
+        string serverError = _state.LoginError;
+
         // Clean up TCP resources (VB6: Socket1.Disconnect + Socket1.Cleanup)
         _tcp?.Dispose();
         _tcp = null;
@@ -278,8 +281,7 @@ public partial class Main
         HandleScreenChange(Screen.Login);
         _lastScreen = Screen.Login;
         // Prefer server error message (e.g. "Password incorrecto") over generic disconnect
-        string displayMsg = !string.IsNullOrEmpty(_state.LoginError) ? _state.LoginError : message;
-        _state.LoginError = "";
+        string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
         if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
         if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
 
