@@ -152,7 +152,7 @@ public partial class Main : Control
 		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5) + S(12)); _fpsLabel.Size = new Vector2(sbW / 2 - S(4), S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Right; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
 		// --- Minimap (inside console area, top-right corner) ---
-		int mmBorderX = ResolutionManager.ConsoleRight - S(118);
+		int mmBorderX = ResolutionManager.ConsoleRight - S(124);
 		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(S(118), S(118)); }
 		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
 
