@@ -37,10 +37,10 @@ public partial class Main
 
         // Sidebar usable area: design offset at base res, center extra space at higher res
         int contentW = S(190);
-        int sbW = S(210);
         int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
+        int designSidebarW = S(240);
         int designOffset = S(17);
-        int extraSpace = Math.Max(0, sidebarRealW - sbW);
+        int extraSpace = Math.Max(0, sidebarRealW - designSidebarW);
         int sideX = ResolutionManager.SidebarX + designOffset + extraSpace / 2;
 
         // Tab buttons — centered in sidebar, with icons (+20% from original, expanded up and to sides)

@@ -44,10 +44,11 @@ public partial class Main : Control
 	{
 		int S(int v) => ResolutionManager.S(v);
 		int sbW = S(210);
-		// At base res (800x600), sbX = SidebarX (pixel-perfect VB6 match).
-		// At higher res, distribute extra sidebar space evenly.
+		// Extra space = real sidebar minus design sidebar (scaled).
+		// At 800x600: extra=0. At higher res: extra > 0 → distribute evenly.
 		int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
-		int extraSidebar = Math.Max(0, sidebarRealW - sbW);
+		int designSidebarW = S(240); // DesignSidebarWidth scaled
+		int extraSidebar = Math.Max(0, sidebarRealW - designSidebarW);
 		int sbX = ResolutionManager.SidebarX + extraSidebar / 2;
 
 		// Root + GameUI
@@ -117,11 +118,9 @@ public partial class Main : Control
 		if (_closeMenuButton != null) _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4));
 
 		// --- Inventory/Spell panel area ---
-		// Use design offset at base res, distribute extra space at higher res
 		int contentW = S(190);
-		int designOffset = S(17); // VB6: 17px from SidebarX
-		int extraSpace = Math.Max(0, sidebarRealW - sbW);
-		int sideX = ResolutionManager.SidebarX + designOffset + extraSpace / 2;
+		int designOffset = S(17);
+		int sideX = ResolutionManager.SidebarX + designOffset + extraSidebar / 2;
 		int tabX = sideX - S(6);
 		int tabBtnW = (contentW + S(12)) / 2;
 		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); }
@@ -655,8 +654,9 @@ public partial class Main : Control
 		int S(int v) => ResolutionManager.S(v);
 		int sbW = S(210);
 		int sidebarRealW2 = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
-		int extraSidebar2 = Math.Max(0, sidebarRealW2 - sbW);
-		int sbX = ResolutionManager.SidebarX + extraSidebar2 / 2;
+		int designSbW2 = S(240);
+		int extraSb2 = Math.Max(0, sidebarRealW2 - designSbW2);
+		int sbX = ResolutionManager.SidebarX + extraSb2 / 2;
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
 		var nameFrame = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
