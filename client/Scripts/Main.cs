@@ -44,9 +44,11 @@ public partial class Main : Control
 	{
 		int S(int v) => ResolutionManager.S(v);
 		int sbW = S(210);
-		// Center sidebar content in the real sidebar space
+		// At base res (800x600), sbX = SidebarX (pixel-perfect VB6 match).
+		// At higher res, distribute extra sidebar space evenly.
 		int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
-		int sbX = ResolutionManager.SidebarX + (sidebarRealW - sbW) / 2;
+		int extraSidebar = Math.Max(0, sidebarRealW - sbW);
+		int sbX = ResolutionManager.SidebarX + extraSidebar / 2;
 
 		// Root + GameUI
 		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
@@ -114,9 +116,12 @@ public partial class Main : Control
 		if (_minimizeButton != null) _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4));
 		if (_closeMenuButton != null) _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4));
 
-		// --- Inventory/Spell panel area (centered in real sidebar) ---
+		// --- Inventory/Spell panel area ---
+		// Use design offset at base res, distribute extra space at higher res
 		int contentW = S(190);
-		int sideX = ResolutionManager.SidebarX + (sidebarRealW - contentW) / 2;
+		int designOffset = S(17); // VB6: 17px from SidebarX
+		int extraSpace = Math.Max(0, sidebarRealW - sbW);
+		int sideX = ResolutionManager.SidebarX + designOffset + extraSpace / 2;
 		int tabX = sideX - S(6);
 		int tabBtnW = (contentW + S(12)) / 2;
 		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); }
@@ -646,11 +651,12 @@ public partial class Main : Control
 		_gameUI.AddChild(sidebarBg);
 		_gameUI.MoveChild(sidebarBg, 1); // index 1 = after HudFrame(0), before scene labels
 
-		// Sidebar content area: centered in real sidebar space
+		// Sidebar content area: design position at base res, center extra at higher res
 		int S(int v) => ResolutionManager.S(v);
 		int sbW = S(210);
 		int sidebarRealW2 = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
-		int sbX = ResolutionManager.SidebarX + (sidebarRealW2 - sbW) / 2;
+		int extraSidebar2 = Math.Max(0, sidebarRealW2 - sbW);
+		int sbX = ResolutionManager.SidebarX + extraSidebar2 / 2;
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
 		var nameFrame = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
