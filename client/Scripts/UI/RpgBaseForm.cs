@@ -1,4 +1,5 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
