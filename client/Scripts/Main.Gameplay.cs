@@ -536,8 +536,9 @@ public partial class Main
             // Load particles and lights embedded in tile data (byFlags bits 5/6)
             LoadTileParticlesAndLights(_state);
 
-            // Pre-compute water tile map for O(1) reflection lookups
+            // Pre-compute spatial maps for O(1) lookups during rendering
             _worldRenderer?.RebuildWaterMap();
+            _worldRenderer?.BuildRoofRegions();
 
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }

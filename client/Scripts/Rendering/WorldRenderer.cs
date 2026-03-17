@@ -57,9 +57,14 @@ public partial class WorldRenderer : Node2D
 	// VB6: TileBufferSize = 9
 	private const int TileBufferSize = 9;
 
-	// VB6: bTechoAB — roof alpha
+	// VB6: bTechoAB — roof alpha (per-region fade)
 	private float _roofAlpha = 255f;
 	private const float RoofFadeRate = 6f;
+
+	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
+	// Tiles without L4 have regionId = 0. Built once per map load.
+	private int[,]? _roofRegionMap;
+	private int _activeRoofRegion; // region the player is currently inside (0 = outdoors)
 
 	// Delta time in ms for current frame (set in _Process, used in _Draw)
 	private float _deltaMs;
@@ -153,6 +158,57 @@ void fragment() {
 			{
 				int g = _state.MapData.Tiles[x, y].Layer1;
 				_waterMap[x, y] = g >= 1505 && g <= 1520;
+			}
+		}
+	}
+
+	/// <summary>
+	/// Pre-compute connected roof regions from Layer4 tiles.
+	/// Uses flood-fill (BFS) to assign a regionId to each connected group of L4 tiles.
+	/// Called once per map load. O(mapW * mapH).
+	/// </summary>
+	private static readonly (int dx, int dy)[] _floodDirs = { (1, 0), (-1, 0), (0, 1), (0, -1) };
+
+	/// <summary>
+	/// Pre-compute connected roof regions from Layer4 tiles.
+	/// Uses flood-fill (BFS) to assign a regionId to each connected group of L4 tiles.
+	/// Called once per map load. O(mapW * mapH).
+	/// </summary>
+	public void BuildRoofRegions()
+	{
+		if (_state?.MapData == null) { _roofRegionMap = null; return; }
+		int w = _state.MapData.Width;
+		int h = _state.MapData.Height;
+		_roofRegionMap = new int[w + 1, h + 1]; // 1-based, all 0 by default
+		_activeRoofRegion = 0;
+		int nextRegion = 0;
+		var queue = new Queue<(int x, int y)>();
+
+		for (int y = 1; y <= h; y++)
+		{
+			for (int x = 1; x <= w; x++)
+			{
+				if (_roofRegionMap[x, y] != 0) continue;
+				if (_state.MapData.Tiles[x, y].Layer4 <= 0) continue;
+
+				// New region — BFS flood fill
+				nextRegion++;
+				queue.Enqueue((x, y));
+				_roofRegionMap[x, y] = nextRegion;
+
+				while (queue.Count > 0)
+				{
+					var (cx, cy) = queue.Dequeue();
+					foreach (var (dx, dy) in _floodDirs)
+					{
+						int nx = cx + dx, ny = cy + dy;
+						if (nx < 1 || nx > w || ny < 1 || ny > h) continue;
+						if (_roofRegionMap[nx, ny] != 0) continue;
+						if (_state.MapData.Tiles[nx, ny].Layer4 <= 0) continue;
+						_roofRegionMap[nx, ny] = nextRegion;
+						queue.Enqueue((nx, ny));
+					}
+				}
 			}
 		}
 	}
@@ -322,8 +378,17 @@ void fragment() {
 
 		int ux = _state.UserPosX;
 		int uy = _state.UserPosY;
-		if (ux < 1 || ux > _state.MapData.Width || uy < 1 || uy > _state.MapData.Height) return;
+		int w = _state.MapData.Width;
+		int h = _state.MapData.Height;
+		if (ux < 1 || ux > w || uy < 1 || uy > h) return;
 
+		// Determine which roof region the player is inside (0 = none)
+		if (_roofRegionMap != null && ux <= w && uy <= h)
+			_activeRoofRegion = _roofRegionMap[ux, uy];
+		else
+			_activeRoofRegion = 0;
+
+		// Fade control: under a roof → fade out, otherwise fade in
 		short trigger = _state.MapData.Tiles[ux, uy].Trigger;
 		bool underRoof = trigger == 1 || trigger == 2 || trigger == 4;
 
@@ -641,10 +706,11 @@ void fragment() {
 			}
 		}
 
-		// Collect roof draws — shader handles light, only need alpha for fade
-		if (_roofAlpha > 0)
+		// Collect roof draws — per-region fade: only the player's roof region fades out
 		{
-			float roofA = _roofAlpha / 255f;
+			float fadeA = _roofAlpha / 255f; // 0=hidden, 1=visible
+			int mapW = _state.MapData.Width;
+			int mapH = _state.MapData.Height;
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
@@ -653,8 +719,22 @@ void fragment() {
 					ref var tile = ref _state.MapData.Tiles[x, y];
 					if (tile.Layer4 <= 0) continue;
 
+					// Determine alpha: tiles in the player's active region fade, others stay opaque
+					float alpha;
+					if (_activeRoofRegion > 0 && _roofRegionMap != null
+						&& x >= 1 && x <= mapW && y >= 1 && y <= mapH
+						&& _roofRegionMap[x, y] == _activeRoofRegion)
+					{
+						alpha = fadeA; // fading region
+					}
+					else
+					{
+						alpha = 1f; // other roofs always visible
+					}
+					if (alpha <= 0f) continue; // fully hidden, skip draw
+
 					Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-					_pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
+					_pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, alpha)));
 				}
 			}
 		}
