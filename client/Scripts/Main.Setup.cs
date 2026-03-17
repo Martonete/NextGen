@@ -153,7 +153,7 @@ public partial class Main
         _gameUI.AddChild(_fuerzaLabel);
         // Reputation label removed (system disabled)
         int fpsW = S(210);
-        _fpsLabel = CreateStatLabel(sbStatX, ResolutionManager.BottomBarY, fpsW, S(12), Colors.White, S(7));
+        _fpsLabel = CreateStatLabel(sideX, ResolutionManager.BottomBarY, fpsW, S(12), Colors.White, S(7));
         _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _gameUI.AddChild(_fpsLabel);
 
