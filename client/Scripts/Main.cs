@@ -116,7 +116,6 @@ public partial class Main : Control
 
 		// --- Inventory/Spell panel area (centered in sidebar) ---
 		int contentW = S(190);
-		int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
 		int sideX = sbX + (sidebarRealW - contentW) / 2;
 		int tabX = sideX - S(6);
 		int tabBtnW = (contentW + S(12)) / 2;
