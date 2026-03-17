@@ -14,8 +14,7 @@ namespace ArgentumNextgen.UI;
 public partial class SpellPanel : Control
 {
     private const int MaxSpells = 20;
-    private const int DesignLineHeight = 16;
-    private static int LineHeight => ResolutionManager.S(DesignLineHeight);
+    private const int LineHeight = 16;
     private const int VisibleLines = 11;
 
     private GameState? _state;
@@ -45,7 +44,7 @@ public partial class SpellPanel : Control
         string fontPath = System.IO.Path.Combine("Data", "Fonts", "LiberationSans-Bold.ttf");
         if (System.IO.File.Exists(fontPath))
             _ttfFont = ResourceLoader.Load<Font>($"res://{fontPath}");
-        _ttfFontSize = ResolutionManager.S(11);
+        _ttfFontSize = 12;
     }
 
     // Accumulated time for auto-scroll while dragging outside bounds

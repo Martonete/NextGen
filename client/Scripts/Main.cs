@@ -149,8 +149,8 @@ public partial class Main : Control
 		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sideX, statRowY); _agilidadLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
 		if (_statSepLabel != null) { _statSepLabel.Position = new Vector2(sideX + statRowW / 2 - S(5), statRowY); _statSepLabel.Size = new Vector2(S(10), S(14)); }
 		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sideX + statRowW / 2 + S(5), statRowY); _fuerzaLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
-		// FPS label — right aligned, below onlines
-		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5) + S(12)); _fpsLabel.Size = new Vector2(sbW / 2 - S(4), S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Right; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		// FPS label — below coords label
+		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(sbX, S(549) + S(28)); _fpsLabel.Size = new Vector2(sbW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
 		// --- Minimap (inside console area, top-right corner) ---
 		int mmBorderX = ResolutionManager.ConsoleRight - S(124);
