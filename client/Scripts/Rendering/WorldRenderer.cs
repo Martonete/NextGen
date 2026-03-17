@@ -398,8 +398,12 @@ void fragment() {
 			_activeRoofRegion = 0;
 
 		// Reset fade when entering a new region
-		if (_activeRoofRegion != prevRegion && _activeRoofRegion > 0)
-			_roofAlpha = 255f;
+		if (_activeRoofRegion != prevRegion)
+		{
+			if (_activeRoofRegion > 0)
+				_roofAlpha = 255f;
+			GD.Print($"[ROOF] Region changed: {prevRegion} → {_activeRoofRegion} at ({ux},{uy}) trigger={_state.MapData.Tiles[ux,uy].Trigger} L4={_state.MapData.Tiles[ux,uy].Layer4}");
+		}
 
 		// Fade control: inside a region → fade out to min alpha, outside → fade back in
 		if (_activeRoofRegion > 0)
