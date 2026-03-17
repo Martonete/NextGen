@@ -39,9 +39,9 @@ public class InputHandler
 	private const int BorderMarginTop = 7;
 	private const int BorderMarginBottom = 6;
 
-	// VB6 attack cooldown: tAt = 1000ms
-	private const float AttackCooldownMs = 1000f;
-	private float _attackTimer;
+	// VB6 attack cooldown: tAt = 1000ms (timestamp-based, frame-rate independent)
+	private const long AttackCooldownMs = 1000;
+	private long _attackUntilMs;
 
 	// VB6 position refresh cooldown
 	private float _refreshTimer;
@@ -49,8 +49,8 @@ public class InputHandler
 
 	// Generic key repeat cooldown (VB6 CheckKeys runs at ~32ms tick rate)
 	// Prevent rapid-fire sends when holding a key at 60fps.
-	private const float KeyCooldownMs = 300f;
-	private float _keyCooldown;
+	private const long KeyCooldownMs = 300;
+	private long _keyCooldownUntilMs;
 
 	// Track Ctrl state for release detection (both left and right Ctrl)
 	private bool _ctrlWasPressed;
@@ -83,11 +83,10 @@ public class InputHandler
 		if (lineEditFocused && _state.Config.BlockWalkOnChat) return;
 
 		float deltaMs = (float)delta * 1000f;
+		long nowMs = Environment.TickCount64;
 
-		// Advance cooldown timers
-		if (_attackTimer > 0) _attackTimer -= deltaMs;
+		// Advance refresh timer (still delta-based, non-critical)
 		if (_refreshTimer > 0) _refreshTimer -= deltaMs;
-		if (_keyCooldown > 0) _keyCooldown -= deltaMs;
 
 		// Detect Ctrl release by polling (supports both left and right Ctrl reliably)
 		if (_keys.GetKey(GameAction.Attack) == Key.Ctrl)
@@ -95,10 +94,10 @@ public class InputHandler
 			bool ctrlNow = Input.IsKeyPressed(Key.Ctrl);
 			if (_ctrlWasPressed && !ctrlNow && !_state.ChatActive)
 			{
-				if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
+				if (nowMs >= _attackUntilMs && !_state.Resting && !_state.Meditating && !_state.Dead)
 				{
 					_tcp.SendPacket(ClientPackets.WriteAttack());
-					_attackTimer = AttackCooldownMs;
+					_attackUntilMs = nowMs + AttackCooldownMs;
 				}
 			}
 			_ctrlWasPressed = ctrlNow;
@@ -107,10 +106,10 @@ public class InputHandler
 		// VB6: paralyzed users can attack and cast spells, only movement is blocked
 		if (!_state.UserParalyzed)
 		{
-			// Decrement PT correction cooldown (blocks moves after server rejected one)
-			if (_state.PtCooldownFrames > 0)
+			// Time-based PT correction cooldown (blocks moves after server rejected one)
+			if (System.Environment.TickCount64 < _state.PtCooldownUntilMs)
 			{
-				_state.PtCooldownFrames--;
+				// Still in cooldown — skip movement
 			}
 			else if (!_state.UserMoving && _state.PendingMoves < 2)
 			{
@@ -150,13 +149,13 @@ public class InputHandler
 		// Attack is handled in HandleInputEvent() on key RELEASE (VB6 Form_KeyUp parity)
 
 		// All action keys below share a cooldown to prevent rapid-fire when held.
-		if (_keyCooldown > 0) return;
+		if (nowMs < _keyCooldownUntilMs) return;
 
 		// Pick up item (VB6: AG)
 		if (_keys.IsActionPressed(GameAction.PickUp))
 		{
 			_tcp.SendPacket(ClientPackets.WritePickUp());
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Use item from selected inventory slot
 		else if (_keys.IsActionPressed(GameAction.UseItem))
@@ -165,7 +164,7 @@ public class InputHandler
 			if (slot >= 0 && slot < 25)
 			{
 				_tcp.SendPacket(ClientPackets.WriteUseItem((byte)(slot + 1)));
-				_keyCooldown = KeyCooldownMs;
+				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 			}
 		}
 		// Equip item from selected inventory slot
@@ -175,7 +174,7 @@ public class InputHandler
 			if (slot >= 0 && slot < 25)
 			{
 				_tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
-				_keyCooldown = KeyCooldownMs;
+				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 			}
 		}
 		// Drop item from selected inventory slot
@@ -194,32 +193,32 @@ public class InputHandler
 					_state.DropDialogOpen = true;
 				}
 			}
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Toggle names display (client-side only)
 		else if (_keys.IsActionPressed(GameAction.ShowNames))
 		{
 			_state.ShowNames = !_state.ShowNames;
 			_state.Config.ShowNames = _state.ShowNames;
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Toggle music
 		else if (_keys.IsActionPressed(GameAction.ToggleMusic))
 		{
 			OnToggleMusic?.Invoke();
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Steal (VB6: UK12 — eSkill.Robar)
 		else if (_keys.IsActionPressed(GameAction.Steal))
 		{
 			_tcp.SendPacket(ClientPackets.WriteUseSkill(12));
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Hide/Stealth (VB6: UK9 — eSkill.Ocultarse)
 		else if (_keys.IsActionPressed(GameAction.Hide))
 		{
 			_tcp.SendPacket(ClientPackets.WriteUseSkill(8));
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Refresh position (VB6: RPU)
 		else if (_keys.IsActionPressed(GameAction.RefreshPos))
@@ -229,7 +228,7 @@ public class InputHandler
 				_tcp.SendPacket(ClientPackets.WriteRequestPos());
 				_refreshTimer = RefreshCooldownMs;
 			}
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Screenshot
 		else if (_keys.IsActionPressed(GameAction.Screenshot))
@@ -243,25 +242,25 @@ public class InputHandler
 					Color = "00FF00"
 				});
 			}
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Meditate (VB6: /MEDITAR)
 		else if (_keys.IsActionPressed(GameAction.Meditate))
 		{
 			_tcp.SendPacket(ClientPackets.WriteMeditate());
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// PvP safety toggle (VB6: /SEG)
 		else if (_keys.IsActionPressed(GameAction.SafetyToggle))
 		{
 			_tcp.SendPacket(ClientPackets.WriteSafeToggle());
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Resurrection safety toggle (VB6: /SEGR) — accepts both keyboard minus and numpad minus
 		else if (_keys.IsActionPressed(GameAction.ResSafety) || Input.IsKeyPressed(Key.KpSubtract))
 		{
 			_tcp.SendPacket(ClientPackets.WriteTalk("/SEGR"));
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Macro keys: 1-9, 0 (hardcoded — these are always number keys, not rebindable)
 		else if (!_state.MacroPanelOpen)
@@ -281,7 +280,7 @@ public class InputHandler
 			if (macroIdx >= 0)
 			{
 				ExecuteMacro(macroIdx);
-				_keyCooldown = KeyCooldownMs;
+				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 			}
 		}
 	}
@@ -429,6 +428,7 @@ public class InputHandler
 		if (!_state.IsLogged || _state.Paused) return;
 		if (_state.AnyFormOpen) return;
 		if (_state.ChatActive) return;
+		long nowMs = Environment.TickCount64;
 
 		if (@event is InputEventKey keyEvent && !keyEvent.Pressed && !keyEvent.Echo)
 		{
@@ -437,10 +437,10 @@ public class InputHandler
 			var key = keyEvent.Keycode;
 			if (key == _keys.GetKey(GameAction.Attack) || key == Key.Space)
 			{
-				if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
+				if (nowMs >= _attackUntilMs && !_state.Resting && !_state.Meditating && !_state.Dead)
 				{
 					_tcp.SendPacket(ClientPackets.WriteAttack());
-					_attackTimer = AttackCooldownMs;
+					_attackUntilMs = nowMs + AttackCooldownMs;
 				}
 			}
 		}

@@ -13,15 +13,15 @@ public partial class PacketHandler
 
     private void HandleBulkStats(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 15);
         if (parts.Length >= 10)
         {
-            _state.MaxHp = ParseInt(parts[0]);
-            _state.MinHp = ParseInt(parts[1]);
-            _state.MaxMana = ParseInt(parts[2]);
-            _state.MinMana = ParseInt(parts[3]);
-            _state.MaxSta = ParseInt(parts[4]);
-            _state.MinSta = ParseInt(parts[5]);
+            _state.MaxHp = Math.Max(1, ParseInt(parts[0]));
+            _state.MinHp = Math.Max(0, ParseInt(parts[1]));
+            _state.MaxMana = Math.Max(1, ParseInt(parts[2]));
+            _state.MinMana = Math.Max(0, ParseInt(parts[3]));
+            _state.MaxSta = Math.Max(1, ParseInt(parts[4]));
+            _state.MinSta = Math.Max(0, ParseInt(parts[5]));
             _state.Gold = ParseInt(parts[6]);
             _state.Level = ParseInt(parts[7]);
             _state.ExpNext = ParseInt(parts[8]);
@@ -36,31 +36,31 @@ public partial class PacketHandler
 
     private void HandleHpStats(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
-            _state.MaxHp = ParseInt(parts[0]);
-            _state.MinHp = ParseInt(parts[1]);
+            _state.MaxHp = Math.Max(1, ParseInt(parts[0]));
+            _state.MinHp = Math.Max(0, ParseInt(parts[1]));
         }
     }
 
     private void HandleManaStats(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
-            _state.MaxMana = ParseInt(parts[0]);
-            _state.MinMana = ParseInt(parts[1]);
+            _state.MaxMana = Math.Max(1, ParseInt(parts[0]));
+            _state.MinMana = Math.Max(0, ParseInt(parts[1]));
         }
     }
 
     private void HandleStaStats(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
-            _state.MaxSta = ParseInt(parts[0]);
-            _state.MinSta = ParseInt(parts[1]);
+            _state.MaxSta = Math.Max(1, ParseInt(parts[0]));
+            _state.MinSta = Math.Max(0, ParseInt(parts[1]));
         }
     }
 
@@ -71,7 +71,7 @@ public partial class PacketHandler
 
     private void HandleExp(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             _state.ExpNext = ParseInt(parts[0]);
@@ -81,7 +81,7 @@ public partial class PacketHandler
 
     private void HandleHungerThirst(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 5);
         if (parts.Length >= 4)
         {
             _state.MaxAgua = ParseInt(parts[0]);
@@ -106,7 +106,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleEquipmentStats(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 21);
         if (parts.Length < 20) return;
 
         _state.AttackMin = ParseInt(parts[0]);
@@ -135,7 +135,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandlePvpDamageReceived(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int bodyPart = ParseInt(parts[0]);
@@ -156,7 +156,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandlePvpDamageDealt(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int bodyPart = ParseInt(parts[0]);
@@ -216,7 +216,7 @@ public partial class PacketHandler
 
     private void HandleNpcDamageReceived(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int bodyPart = ParseInt(parts[0]);
@@ -291,7 +291,7 @@ public partial class PacketHandler
 
     private void HandleAddCharPreview(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 12);
         if (parts.Length >= 11)
         {
             var preview = new CharacterPreview

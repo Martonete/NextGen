@@ -159,10 +159,13 @@ public class ParticleSystem
     /// <summary>
     /// Create a map-attached particle stream at the given tile position.
     /// </summary>
-    public static ParticleStream CreateMapStream(GameState state, int defIndex, int mapX, int mapY)
+    public static ParticleStream? CreateMapStream(GameState state, int defIndex, int mapX, int mapY)
     {
         if (defIndex < 1 || defIndex >= state.ParticleDefs.Length)
-            return null!;
+        {
+            GD.PrintErr($"[PARTICLE] CreateMapStream: invalid defIndex {defIndex} (max {state.ParticleDefs.Length - 1})");
+            return null;
+        }
 
         var def = state.ParticleDefs[defIndex];
         var stream = new ParticleStream
@@ -186,10 +189,13 @@ public class ParticleSystem
     /// <summary>
     /// Create a character-attached particle stream.
     /// </summary>
-    public static ParticleStream CreateCharStream(GameState state, int defIndex, int charIndex)
+    public static ParticleStream? CreateCharStream(GameState state, int defIndex, int charIndex)
     {
         if (defIndex < 1 || defIndex >= state.ParticleDefs.Length)
-            return null!;
+        {
+            GD.PrintErr($"[PARTICLE] CreateCharStream: invalid defIndex {defIndex} (max {state.ParticleDefs.Length - 1})");
+            return null;
+        }
 
         var def = state.ParticleDefs[defIndex];
         var stream = new ParticleStream

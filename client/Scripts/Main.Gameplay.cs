@@ -339,7 +339,7 @@ public partial class Main
         _state.AddToUserPosY = 0;
         _state.ScreenOffsetX = 0;
         _state.ScreenOffsetY = 0;
-        _state.PtCooldownFrames = 0;
+        _state.PtCooldownUntilMs = 0;
         _state.PendingMoves = 0;
 
         // Characters & objects
@@ -531,9 +531,13 @@ public partial class Main
         {
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
+            _gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
 
             // Load particles and lights embedded in tile data (byFlags bits 5/6)
             LoadTileParticlesAndLights(_state);
+
+            // Pre-compute water tile map for O(1) reflection lookups
+            _worldRenderer?.RebuildWaterMap();
 
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }

@@ -14,7 +14,7 @@ public partial class PacketHandler
     private void HandleConsoleMessage(string data)
     {
         // VB6 format: ||<TextID>@<param1>@<param2>@...
-        var parts = data.Split('@');
+        var parts = data.Split('@', 10);
 
         if (parts.Length >= 1 && int.TryParse(parts[0], out int textId)
             && textId > 0 && textId < _state.TextMessages.Length)
@@ -47,7 +47,7 @@ public partial class PacketHandler
     private void HandleTalk(string data)
     {
         // T|<color>°<text>°<charindex>  (° = ASCII 176)
-        var parts = data.Split((char)176);
+        var parts = data.Split((char)176, 4);
         if (parts.Length < 2) return;
 
         string color = "FFFFFF";
@@ -80,7 +80,7 @@ public partial class PacketHandler
 
     private void HandleYell(string data)
     {
-        var parts = data.Split((char)176);
+        var parts = data.Split((char)176, 4);
 
         if (parts.Length >= 2)
         {
@@ -113,7 +113,7 @@ public partial class PacketHandler
         }
         else
         {
-            var tildeParts = data.Split('~');
+            var tildeParts = data.Split('~', 5);
             string text = tildeParts[0];
             string color = "45BE9C";
             if (tildeParts.Length >= 4)
@@ -129,7 +129,7 @@ public partial class PacketHandler
 
     private void HandleWhisper(string data)
     {
-        var parts = data.Split('~');
+        var parts = data.Split('~', 5);
         if (parts.Length >= 4)
         {
             int r = ParseInt(parts[1]);
@@ -147,7 +147,7 @@ public partial class PacketHandler
 
     private void HandleGuildChat(string data)
     {
-        var tildeParts = data.Split('~');
+        var tildeParts = data.Split('~', 5);
         string text = tildeParts[0];
         string color = "00FF00";
         if (tildeParts.Length >= 4)
@@ -162,7 +162,7 @@ public partial class PacketHandler
 
     private void HandleClanChat(string data)
     {
-        var tildeParts = data.Split('~');
+        var tildeParts = data.Split('~', 5);
         string text = tildeParts[0];
         string color = "FFFF00";
         if (tildeParts.Length >= 4)
@@ -184,7 +184,7 @@ public partial class PacketHandler
 
     private void HandleAdminResponse(string data)
     {
-        var parts = data.Split('*');
+        var parts = data.Split('*', 3);
         string text = parts.Length >= 2 ? $"[{parts[1]}] {parts[0]}" : data;
         _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "00FFFF" });
     }
@@ -196,7 +196,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleCharFx(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length < 3) return;
 
         int charIdx = ParseInt(parts[0]);
@@ -238,7 +238,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleCharParticle(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length < 2) return;
 
         int charIdx = ParseInt(parts[0]);
@@ -288,7 +288,7 @@ public partial class PacketHandler
 
     private void HandleArrow(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int shooter = ParseInt(parts[0]);

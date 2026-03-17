@@ -17,8 +17,8 @@ public partial class PacketHandler
     {
         short maxSta = bq.ReadInteger();
         short minSta = bq.ReadInteger();
-        _state.MaxSta = maxSta;
-        _state.MinSta = minSta;
+        _state.MaxSta = Math.Max((short)1, maxSta);
+        _state.MinSta = Math.Max((short)0, minSta);
     }
 
 
@@ -26,8 +26,8 @@ public partial class PacketHandler
     {
         short maxMana = bq.ReadInteger();
         short minMana = bq.ReadInteger();
-        _state.MaxMana = maxMana;
-        _state.MinMana = minMana;
+        _state.MaxMana = Math.Max((short)1, maxMana);
+        _state.MinMana = Math.Max((short)0, minMana);
     }
 
 
@@ -36,8 +36,8 @@ public partial class PacketHandler
         short maxHp = bq.ReadInteger();
         short minHp = bq.ReadInteger();
         int oldHp = _state.MinHp;
-        _state.MaxHp = maxHp;
-        _state.MinHp = minHp;
+        _state.MaxHp = Math.Max((short)1, maxHp);
+        _state.MinHp = Math.Max((short)0, minHp);
 
         // Detect healing: HP increased and we already had HP data (oldHp > 0)
         int delta = minHp - oldHp;
@@ -57,12 +57,12 @@ public partial class PacketHandler
 
     private void HandleBinUpdateUserStats(ByteQueue bq)
     {
-        _state.MaxHp = bq.ReadInteger();
-        _state.MinHp = bq.ReadInteger();
-        _state.MaxMana = bq.ReadInteger();
-        _state.MinMana = bq.ReadInteger();
-        _state.MaxSta = bq.ReadInteger();
-        _state.MinSta = bq.ReadInteger();
+        _state.MaxHp = Math.Max((short)1, bq.ReadInteger());
+        _state.MinHp = Math.Max((short)0, bq.ReadInteger());
+        _state.MaxMana = Math.Max((short)1, bq.ReadInteger());
+        _state.MinMana = Math.Max((short)0, bq.ReadInteger());
+        _state.MaxSta = Math.Max((short)1, bq.ReadInteger());
+        _state.MinSta = Math.Max((short)0, bq.ReadInteger());
         _state.Gold = bq.ReadLong();
         _state.Level = bq.ReadByte();
         _state.ExpNext = bq.ReadLong();
@@ -345,6 +345,8 @@ public partial class PacketHandler
     {
         _state.Dead = true;
         _state.ShowDeathPanel = true;
+        _state.SpellMacro.Stop(); // Cancel spell macro on death
+        _state.WorkMacro.Stop();  // Cancel work macro on death
         _state.ChatMessages.Enqueue(new ChatMessage { Text = "¡Has muerto!", Color = "FF0000", Type = ChatType.Combat });
         OnPlaySound?.Invoke(SoundManager.SND_DEATH);
         GD.Print("[GAME] Player died — Dead (binary)");
@@ -510,7 +512,8 @@ public partial class PacketHandler
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has regresado a tu hogar.", Color = "00FF00" });
                 break;
             default:
-                GD.Print($"[PKT] MultiMessage unknown sub-type={subType}");
+                GD.PrintErr($"[PKT] MultiMessage unknown sub-type={subType}, stream may be corrupted");
+                StreamCorrupted = true;
                 break;
         }
     }

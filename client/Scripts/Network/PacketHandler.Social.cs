@@ -80,7 +80,7 @@ public partial class PacketHandler
         short msgId = bq.ReadInteger();
         string args = bq.ReadString();
 
-        if (msgId > 0 && msgId < _state.TextMessages.Length)
+        if (msgId >= 0 && msgId < _state.TextMessages.Length)
         {
             var tmpl = _state.TextMessages[msgId];
             string text = tmpl.Text;

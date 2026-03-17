@@ -88,11 +88,13 @@ public partial class SoundManager : Node
     private AudioStreamPlayer? _musicPlayer;
     private int _currentMusicId;
 
-    // Audio stream cache with FIFO eviction
-    private const int MaxSfxCacheSize = 200;
+    // Audio stream cache with LRU eviction
+    private const int MaxCachedSounds = 200;
+    private const int MaxCachedMusic = 20;
     private readonly Dictionary<int, AudioStream?> _sfxCache = new();
-    private readonly Queue<int> _sfxCacheOrder = new();
+    private readonly Dictionary<int, long> _lastAccessTime = new();
     private readonly Dictionary<int, AudioStream?> _musCache = new();
+    private readonly Dictionary<int, long> _musLastAccessTime = new();
 
     // State
     private string _dataPath = "";
@@ -265,6 +267,10 @@ public partial class SoundManager : Node
             }
             CacheStream(cacheKey, stream);
         }
+        else
+        {
+            _lastAccessTime[cacheKey] = Environment.TickCount64;
+        }
 
         if (stream == null) return;
 
@@ -307,10 +313,6 @@ public partial class SoundManager : Node
 
         var stream = GetOrLoadSfx(soundId);
         if (stream == null) return;
-
-        // Update listener position if changed
-        if (listenerX != _listenerTileX || listenerY != _listenerTileY)
-            UpdateListenerPosition(listenerX, listenerY);
 
         int slotIdx = AcquireSpatialSlot(soundId, false);
 
@@ -376,7 +378,11 @@ public partial class SoundManager : Node
         if (!_musCache.TryGetValue(musicId, out var stream))
         {
             stream = LoadMp3(musicId) ?? LoadWav(musicId);
-            _musCache[musicId] = stream;
+            CacheMusicStream(musicId, stream);
+        }
+        else
+        {
+            _musLastAccessTime[musicId] = Environment.TickCount64;
         }
 
         if (stream == null)
@@ -453,7 +459,10 @@ public partial class SoundManager : Node
     private AudioStream? GetOrLoadSfx(int soundId)
     {
         if (_sfxCache.TryGetValue(soundId, out var stream))
+        {
+            _lastAccessTime[soundId] = Environment.TickCount64;
             return stream;
+        }
 
         stream = LoadWav(soundId) ?? LoadWavAsMp3(soundId) ?? LoadMp3(soundId);
         CacheStream(soundId, stream);
@@ -466,14 +475,48 @@ public partial class SoundManager : Node
 
     private void CacheStream(int key, AudioStream? stream)
     {
-        _sfxCache[key] = stream;
-        _sfxCacheOrder.Enqueue(key);
-
-        while (_sfxCacheOrder.Count > MaxSfxCacheSize)
+        // Evict least-recently-accessed entry when cache is full
+        if (!_sfxCache.ContainsKey(key) && _sfxCache.Count >= MaxCachedSounds)
         {
-            int oldest = _sfxCacheOrder.Dequeue();
-            _sfxCache.Remove(oldest);
+            int lruKey = key;
+            long lruTime = long.MaxValue;
+            foreach (var kvp in _lastAccessTime)
+            {
+                if (kvp.Value < lruTime)
+                {
+                    lruTime = kvp.Value;
+                    lruKey = kvp.Key;
+                }
+            }
+            _sfxCache.Remove(lruKey);
+            _lastAccessTime.Remove(lruKey);
         }
+
+        _sfxCache[key] = stream;
+        _lastAccessTime[key] = Environment.TickCount64;
+    }
+
+    private void CacheMusicStream(int key, AudioStream? stream)
+    {
+        // Evict least-recently-accessed entry when cache is full
+        if (!_musCache.ContainsKey(key) && _musCache.Count >= MaxCachedMusic)
+        {
+            int lruKey = key;
+            long lruTime = long.MaxValue;
+            foreach (var kvp in _musLastAccessTime)
+            {
+                if (kvp.Value < lruTime)
+                {
+                    lruTime = kvp.Value;
+                    lruKey = kvp.Key;
+                }
+            }
+            _musCache.Remove(lruKey);
+            _musLastAccessTime.Remove(lruKey);
+        }
+
+        _musCache[key] = stream;
+        _musLastAccessTime[key] = Environment.TickCount64;
     }
 
     // ── File loaders ─────────────────────────────────────────────────

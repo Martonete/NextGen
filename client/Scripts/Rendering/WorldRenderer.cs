@@ -90,6 +90,10 @@ public partial class WorldRenderer : Node2D
 	// Whether any reflection was drawn this frame (used by PASS 1b mask)
 	private bool _frameAnyReflection;
 
+	// Pre-computed water tile map — built on map load, avoids per-frame GRH range checks.
+	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in water range 1505-1520.
+	private bool[,]? _waterMap;
+
 	// Per-frame camera data (computed in _Draw, used by child layer callbacks)
 	private int _frameUserX, _frameUserY;
 	private float _framePixelOffsetX, _framePixelOffsetY;
@@ -128,6 +132,30 @@ void fragment() {
 	/// Called by Main after RecalculateLights() to trigger lightmap texture rebuild.
 	/// </summary>
 	public void MarkLightmapDirty() => _lightmapDirty = true;
+
+	/// <summary>
+	/// Rebuild the pre-computed water tile map from current MapData.
+	/// Called by Main after loading a new map.
+	/// </summary>
+	public void RebuildWaterMap()
+	{
+		if (_state?.MapData == null)
+		{
+			_waterMap = null;
+			return;
+		}
+		int w = _state.MapData.Width;
+		int h = _state.MapData.Height;
+		_waterMap = new bool[w + 1, h + 1];
+		for (int y = 1; y <= h; y++)
+		{
+			for (int x = 1; x <= w; x++)
+			{
+				int g = _state.MapData.Tiles[x, y].Layer1;
+				_waterMap[x, y] = g >= 1505 && g <= 1520;
+			}
+		}
+	}
 
 	public void Init(GameState state, GameData data, GrhAnimator animator)
 	{
@@ -494,10 +522,12 @@ void fragment() {
 				if (ch.Invisible) continue;
 
 				// Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
-				// has water (L1 GRH 1505-1520). Checking 3 rows allows the reflection
+				// has water. Uses pre-computed _waterMap for O(1) lookups instead of
+				// per-frame GRH range checks. Checking 3 rows allows the reflection
 				// to smoothly fade out as the character walks away from water.
 				// NonWaterMaskLayer ensures reflections only show on water tiles.
 				if (ch.PosY < 1 || ch.PosY > mapH - 3) continue;
+				if (_waterMap == null) continue;
 				bool hasNearbyWater = false;
 				int checkRangeX = ch.Mounted ? 3 : 2;
 				for (int cy = ch.PosY + 1; cy <= Math.Min(mapH, ch.PosY + 5) && !hasNearbyWater; cy++)
@@ -505,8 +535,7 @@ void fragment() {
 					for (int cx = Math.Max(1, ch.PosX - checkRangeX);
 						 cx <= Math.Min(mapW, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
 					{
-						ref var wt = ref _state.MapData.Tiles[cx, cy];
-						if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520)
+						if (_waterMap[cx, cy])
 							hasNearbyWater = true;
 					}
 				}

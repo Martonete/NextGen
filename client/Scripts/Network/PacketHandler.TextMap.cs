@@ -21,7 +21,7 @@ public partial class PacketHandler
     private void HandleChangeMap(string data)
     {
         // CM<map>,<r>,<g>,<b>
-        var parts = data.Split(',');
+        var parts = data.Split(',', 5);
         if (parts.Length >= 4)
         {
             _state.CurrentMap = ParseInt(parts[0]);
@@ -73,7 +73,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleAmbientColor(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             _state.MapColorR = ParseInt(parts[0]);
@@ -87,7 +87,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleParticleCreate(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int defIdx = ParseInt(parts[0]);
@@ -102,7 +102,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleLightCreate(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 7);
         if (parts.Length >= 6)
         {
             var light = new MapLight
@@ -123,7 +123,7 @@ public partial class PacketHandler
     private void HandlePlayerPosition(string data)
     {
         // PU<x>,<y> — authoritative position set (e.g. after warp/teleport)
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int x = ParseInt(parts[0]);
@@ -153,7 +153,7 @@ public partial class PacketHandler
     private void HandlePositionRejection(string data)
     {
         // PT<x>,<y> — server rejected movement, snap back to correct position
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int x = ParseInt(parts[0]);
@@ -186,7 +186,7 @@ public partial class PacketHandler
             _state.UserMoving = false;
 
             _state.PendingMoves = 0;
-            _state.PtCooldownFrames = 3;
+            _state.PtCooldownUntilMs = System.Environment.TickCount64 + 150; // ~3 frames at 60fps
         }
     }
 
@@ -199,7 +199,7 @@ public partial class PacketHandler
     private void HandleCreateChar(string data)
     {
         // CC<body>,<head>,<heading>,<charindex>,<x>,<y>,<weapon>,<shield>,<casco>,<name>,<status>,<privs>
-        var parts = data.Split(',');
+        var parts = data.Split(',', 16);
         if (parts.Length < 12) return;
 
         int charIndex = ParseInt(parts[3]);
@@ -240,7 +240,7 @@ public partial class PacketHandler
     private void HandleChangeChar(string data)
     {
         // VB6 CP format: CP<charindex>,<body>,<head>,<heading>,<weapon>,<shield>,<fx>,<loops>,<casco>
-        var parts = data.Split(',');
+        var parts = data.Split(',', 10);
         if (parts.Length < 4) return;
 
         int idx = ParseInt(parts[0]);
@@ -292,7 +292,7 @@ public partial class PacketHandler
     private void HandleMoveChar(string data)
     {
         // +<charindex>,<x>,<y>
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length < 3) return;
 
         int idx = ParseInt(parts[0]);
@@ -382,7 +382,7 @@ public partial class PacketHandler
 
     private void HandleGroundObject(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int grh = ParseInt(parts[0]);
@@ -394,7 +394,7 @@ public partial class PacketHandler
 
     private void HandleRemoveObject(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int x = ParseInt(parts[0]);
@@ -405,7 +405,7 @@ public partial class PacketHandler
 
     private void HandleBlockUpdate(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int x = ParseInt(parts[0]);
@@ -424,7 +424,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleCharAppearance(string data, char field)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length < 2) return;
 
         int idx = ParseInt(parts[0]);
@@ -448,7 +448,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleCharData(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 9);
         if (parts.Length < 2) return;
 
         int idx = ParseInt(parts[0]);
@@ -474,7 +474,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleUserMount(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length < 2) return;
 
         int idx = ParseInt(parts[0]);
@@ -492,7 +492,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleMountFly(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length < 2) return;
 
         int idx = ParseInt(parts[0]);
@@ -507,7 +507,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleAuraUpdate(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 7);
         if (parts.Length < 6) return;
 
         int idx = ParseInt(parts[0]);
@@ -525,7 +525,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleCharVisibility(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int charIdx = ParseInt(parts[0]);
@@ -544,7 +544,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleCharNavigation(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int charIdx = ParseInt(parts[0]);

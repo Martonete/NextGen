@@ -341,7 +341,7 @@ public class InputRouter
         if (!mb.Pressed)
         {
             // Skip the release after a double-click or shift+click
-            if (_dblClickHandled && mb.ButtonIndex == MouseButton.Left)
+            if (_dblClickHandled)
             {
                 _dblClickHandled = false;
                 return;

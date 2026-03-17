@@ -9,6 +9,7 @@ namespace ArgentumNextgen.Rendering;
 /// transition strip at the core boundary fades from transparent to dark,
 /// creating a clean edge effect without revealing the tiles behind.
 /// Only active when resolution > 800x600.
+/// Fog texture is rebuilt only on resolution change (event-driven), not per-frame.
 /// </summary>
 public partial class FogOverlayLayer : Node2D
 {
@@ -18,23 +19,45 @@ public partial class FogOverlayLayer : Node2D
     private ImageTexture? _fogTex;
     private int _cachedVpW, _cachedVpH;
 
+    public override void _Ready()
+    {
+        // Build initial fog texture
+        RebuildFogTexture();
+        // Subscribe to resolution changes for event-driven rebuilds
+        ResolutionManager.OnResolutionChanged += RebuildFogTexture;
+    }
+
+    public override void _ExitTree()
+    {
+        ResolutionManager.OnResolutionChanged -= RebuildFogTexture;
+    }
+
+    /// <summary>
+    /// Rebuild the fog texture for the current viewport size.
+    /// Called on initialization and whenever resolution changes.
+    /// </summary>
+    public void RebuildFogTexture()
+    {
+        int vpW = ResolutionManager.ViewportW;
+        int vpH = ResolutionManager.ViewportH;
+        if (vpW != _cachedVpW || vpH != _cachedVpH || _fogTex == null)
+        {
+            _fogTex = BuildFogTexture(vpW, vpH);
+            _cachedVpW = vpW;
+            _cachedVpH = vpH;
+        }
+        QueueRedraw();
+    }
+
     public override void _Draw()
     {
         int extraX = ResolutionManager.ExtraTilesX;
         int extraY = ResolutionManager.ExtraTilesY;
         if (extraX <= 0 && extraY <= 0) return;
 
-        int vpW = ResolutionManager.ViewportW;
-        int vpH = ResolutionManager.ViewportH;
+        if (_fogTex == null) return;
 
-        if (_fogTex == null || _cachedVpW != vpW || _cachedVpH != vpH)
-        {
-            _fogTex = BuildFogTexture(vpW, vpH);
-            _cachedVpW = vpW;
-            _cachedVpH = vpH;
-        }
-
-        DrawTextureRect(_fogTex, new Rect2(0, 0, vpW, vpH), false);
+        DrawTextureRect(_fogTex, new Rect2(0, 0, _cachedVpW, _cachedVpH), false);
     }
 
     /// <summary>

@@ -128,8 +128,11 @@ public partial class FloatingTextLayer : Node2D
 
         int userX = _state.UserPosX;
         int userY = _state.UserPosY;
-        float camOffX = _state.ScreenOffsetX;
-        float camOffY = _state.ScreenOffsetY;
+        // Camera pixel offset — NEGATED because ScreenOffset grows in the movement
+        // direction, but tiles must shift in the OPPOSITE direction on screen.
+        // Must match WorldRenderer._framePixelOffsetX/Y exactly.
+        float pixelOffsetX = (float)System.Math.Round(-_state.ScreenOffsetX);
+        float pixelOffsetY = (float)System.Math.Round(-_state.ScreenOffsetY);
 
         foreach (var ft in _texts)
         {
@@ -139,11 +142,8 @@ public partial class FloatingTextLayer : Node2D
 
             // Calculate screen position (same math as WorldRenderer TileToScreen)
             // TileToScreen: px = (tileX - userX + HalfTilesX) * TileSize + pixelOffset
-            // HalfTilesX=8, HalfTilesY=6, TileSize=32, pixelOffset = -ScreenOffset
-            int dx = ch.PosX - userX;
-            int dy = ch.PosY - userY;
-            float screenX = (dx + ResolutionManager.HalfTilesX) * 32f + (float)System.Math.Round(ch.MoveOffsetX) - camOffX;
-            float screenY = (dy + ResolutionManager.HalfTilesY) * 32f + (float)System.Math.Round(ch.MoveOffsetY) - camOffY;
+            float screenX = (ch.PosX - userX + ResolutionManager.HalfTilesX) * 32f + pixelOffsetX + (float)System.Math.Round(ch.MoveOffsetX);
+            float screenY = (ch.PosY - userY + ResolutionManager.HalfTilesY) * 32f + pixelOffsetY + (float)System.Math.Round(ch.MoveOffsetY);
 
             // Position above head (approximate head offset)
             float headY = screenY - 45f;

@@ -55,6 +55,9 @@ public partial class PacketHandler
         4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
     };
 
+    /// Set when an unknown binary opcode is encountered — stream is unrecoverable.
+    public bool StreamCorrupted { get; private set; }
+
     /// Receive buffer for accumulating partial binary packets across TCP reads.
     private byte[] _recvBuf = new byte[65536];
     private int _recvStart;
@@ -65,6 +68,11 @@ public partial class PacketHandler
 
     /// Saved self-character aura state across map changes.
     private Character? _savedSelfAuras;
+
+    /// Flag: when true, the next ChangeBankSlot call will clear the bank first.
+    /// Set by HandleBinBankInit after each full bank load completes, so the next
+    /// bank open starts with a clean slate. Defaults to true for the first open.
+    private bool _bankLoadPending = true;
 
     public PacketHandler(GameState state)
     {
@@ -114,7 +122,7 @@ public partial class PacketHandler
         RecvAppend(data);
 
         int safetyLimit = 500;
-        while (_recvLen > 0 && safetyLimit-- > 0)
+        while (_recvLen > 0 && safetyLimit-- > 0 && !StreamCorrupted)
         {
             byte opcode = _recvBuf[_recvStart];
 
@@ -126,6 +134,7 @@ public partial class PacketHandler
                 int totalLen = 1 + 2 + textLen;
 
                 if (_recvLen < totalLen) break;
+                if (_recvStart + 3 + textLen > _recvBuf.Length) break;
 
                 string text = System.Text.Encoding.Latin1.GetString(
                     _recvBuf, _recvStart + 3, textLen);

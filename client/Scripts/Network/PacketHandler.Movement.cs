@@ -26,6 +26,10 @@ public partial class PacketHandler
         _state.MapColorG = mapG;
         _state.MapColorB = mapB;
 
+        // Cancel macros on map change/teleport
+        _state.SpellMacro.Stop();
+        _state.WorkMacro.Stop();
+
         // Save self aura + FX state before clearing (charIndex changes between maps)
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var self))
             _savedSelfAuras = self;

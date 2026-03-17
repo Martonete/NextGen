@@ -116,22 +116,35 @@ public class AoFont
     ///
     /// Godot's DrawTextureRectRegion modulate does the exact same multiplication,
     /// so keeping original pixel values gives pixel-perfect VB6 matching.
+    ///
+    /// Uses fast byte-buffer processing instead of per-pixel Get/SetPixel.
     /// </summary>
     private static void ApplyColorKey(Image image)
     {
-        int w = image.GetWidth();
-        int h = image.GetHeight();
-        for (int y = 0; y < h; y++)
+        const byte BlackThreshold = 1; // VB6: exact black (0,0,0) → ~1/255 ≈ 0.004f
+
+        if (image.GetFormat() != Image.Format.Rgba8)
+            image.Convert(Image.Format.Rgba8);
+
+        byte[] data = image.GetData();
+        int len = data.Length;
+        bool modified = false;
+
+        for (int i = 0; i < len; i += 4)
         {
-            for (int x = 0; x < w; x++)
+            if (data[i] <= BlackThreshold &&
+                data[i + 1] <= BlackThreshold &&
+                data[i + 2] <= BlackThreshold)
             {
-                Color c = image.GetPixel(x, y);
-                // VB6 color key 0xFF000000: only exact black becomes transparent
-                if (c.R < 0.004f && c.G < 0.004f && c.B < 0.004f)
-                {
-                    image.SetPixel(x, y, new Color(0, 0, 0, 0));
-                }
+                data[i + 3] = 0;
+                modified = true;
             }
+        }
+
+        if (modified)
+        {
+            image.SetData(image.GetWidth(), image.GetHeight(),
+                false, Image.Format.Rgba8, data);
         }
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -11,6 +12,22 @@ namespace ArgentumNextgen.Network;
 /// </summary>
 public partial class PacketHandler
 {
+    // Known opcodes from ServerPacketId — populated once via reflection.
+    // Opcodes in this set but not in the switch are "unimplemented" (skip gracefully).
+    // Opcodes NOT in this set are truly unknown (stream corrupted).
+    private static readonly bool[] _knownOpcodes = BuildKnownOpcodes();
+
+    private static bool[] BuildKnownOpcodes()
+    {
+        var known = new bool[256];
+        foreach (var field in typeof(ServerPacketId).GetFields(BindingFlags.Public | BindingFlags.Static))
+        {
+            if (field.FieldType == typeof(byte))
+                known[(byte)field.GetValue(null)!] = true;
+        }
+        return known;
+    }
+
     /// <summary>
     /// Dispatch a native binary packet by opcode.
     /// Throws InvalidOperationException if not enough bytes (partial packet — caller rolls back).
@@ -50,6 +67,7 @@ public partial class PacketHandler
                 _state.BovedaAbierta = false;
                 break;
             case ServerPacketId.CommerceInit: // 8
+                if (_state.Trading) _state.Trading = false; // mutual exclusion
                 _state.Comerciando = true;
                 break;
             case ServerPacketId.BankInit: // 9
@@ -587,6 +605,7 @@ public partial class PacketHandler
                 HandleBinChangeNpcInvSlot(bq);
                 break;
             case ServerPacketId.InitCommerceLegacy: // 173
+                if (_state.Trading) _state.Trading = false; // mutual exclusion
                 _state.Comerciando = true;
                 break;
             case ServerPacketId.TransactionOK: // 174
@@ -818,10 +837,12 @@ public partial class PacketHandler
                 break;
 
             default:
-                // Unknown opcode — fatal for this packet stream since we don't know
-                // the packet length. Log and skip this single byte, hoping to resync.
-                GD.PrintErr($"[PKT] Unknown binary opcode={opcode}, skipping byte");
-                break;
+                if (_knownOpcodes[opcode])
+                    GD.PrintErr($"[PKT] Unimplemented binary opcode={opcode}, payload unknown — disconnecting");
+                else
+                    GD.PrintErr($"[PKT] Unknown binary opcode={opcode}, stream corrupted — disconnecting");
+                StreamCorrupted = true;
+                return;
         }
     }
 }

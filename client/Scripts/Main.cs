@@ -480,7 +480,7 @@ public partial class Main : Control
 
 		// Wire resolution change: reposition all UI in-place (no scene reload)
 		// In fullscreen, update ContentScaleSize so the new layout fills the screen.
-		ResolutionManager.OnResolutionChanged = () =>
+		ResolutionManager.OnResolutionChanged += () =>
 		{
 			if (_state.Config.Fullscreen)
 				EnterFullscreen();
@@ -991,6 +991,11 @@ public partial class Main : Control
 		foreach (byte[] chunk in dataChunks)
 		{
 			_packetHandler.HandleBinaryData(chunk);
+			if (_packetHandler.StreamCorrupted)
+			{
+				HandleDisconnect("Stream corrupted (unknown opcode) — disconnected.");
+				return;
+			}
 		}
 
 		// Update spatial audio listener position each frame

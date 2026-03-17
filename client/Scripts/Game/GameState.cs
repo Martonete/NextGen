@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 using ArgentumNextgen.Data;
@@ -158,7 +159,7 @@ public class GameState
 	// PT correction cooldown: blocks new moves for N frames after a position rejection.
 	// Prevents the client from immediately re-sending moves that the server will reject
 	// (e.g., NPC on tile that client can't see), which accumulates desync.
-	public int PtCooldownFrames;
+	public long PtCooldownUntilMs;
 
 	// Pending moves counter: tracks unconfirmed client-predicted moves.
 	// Caps how far ahead the client can predict (max 2 tiles).
@@ -349,10 +350,7 @@ public class GameState
 	// Light system
 	public List<MapLight> MapLights = new();
 	public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
-	// TODO: TileLightColors could be chunked like ChunkedTiles to avoid allocating
-	// the full (W+1)*(H+1)*4 grid (~64MB for 1000x1000). The light system only writes
-	// to tiles near light sources, so most of the array is unused ambient color.
-	public Color[,,]? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
+	public ChunkedLightColors? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
 	public bool LightsDirty;
 
 	// Chat message queue — drained by Main.cs each frame (capped to prevent unbounded growth)
@@ -569,6 +567,7 @@ public class ArrowProjectile
 	public float TargetX, TargetY; // destination pixel
 	public float Speed = 8f;  // pixels per frame
 	public bool Active = true;
+	public float LifetimeMs;  // accumulated lifetime for timeout
 }
 
 /// A craftable item entry (blacksmith weapons/armors, carpenter items).
@@ -604,6 +603,80 @@ public class PetInfo
 	public int NpcType;      // NPC type number
 	public string Name = ""; // Creature name
 	public int HpPercent = 100;
+}
+
+/// <summary>
+/// Chunk-based light color storage. Light colors are grouped into 100x100 chunks
+/// that are lazily allocated on first access, keeping memory proportional
+/// to lit areas instead of the full map Width*Height*4.
+/// Accepts 1-based tile coordinates matching ChunkedTiles convention.
+/// Each tile has 4 corner colors (indices 0-3).
+/// </summary>
+public class ChunkedLightColors
+{
+	private const int ChunkSize = 100;
+	private const int CornersPerTile = 4;
+	private readonly Dictionary<(int, int), Color[]> _chunks = new();
+	private Color _defaultColor = Colors.White;
+
+	/// <summary>Set the default color returned for unloaded chunks.</summary>
+	public void SetDefaultColor(Color color) => _defaultColor = color;
+
+	/// <summary>Decompose 1-based tile coordinates into chunk key + flat local index.</summary>
+	private static (int cx, int cy, int local) Resolve(int x, int y)
+	{
+		int cx = (x - 1) / ChunkSize;
+		int cy = (y - 1) / ChunkSize;
+		int lx = (x - 1) % ChunkSize;
+		int ly = (y - 1) % ChunkSize;
+		return (cx, cy, (ly * ChunkSize + lx) * CornersPerTile);
+	}
+
+	/// <summary>
+	/// Get a corner color. Returns the default color if chunk is not allocated.
+	/// Does NOT create chunks — use for read-only access.
+	/// </summary>
+	public Color Get(int x, int y, int corner)
+	{
+		var (cx, cy, local) = Resolve(x, y);
+		if (_chunks.TryGetValue((cx, cy), out var chunk))
+			return chunk[local + corner];
+		return _defaultColor;
+	}
+
+	/// <summary>
+	/// Set a corner color. Lazily allocates the chunk on first write,
+	/// filling all values with the default color.
+	/// </summary>
+	public void Set(int x, int y, int corner, Color value)
+	{
+		var (cx, cy, local) = Resolve(x, y);
+		var key = (cx, cy);
+		if (!_chunks.TryGetValue(key, out var chunk))
+		{
+			chunk = new Color[ChunkSize * ChunkSize * CornersPerTile];
+			Array.Fill(chunk, _defaultColor);
+			_chunks[key] = chunk;
+		}
+		chunk[local + corner] = value;
+	}
+
+	/// <summary>
+	/// Reset all chunks to the default color. Called before recalculating lights.
+	/// Only resets chunks that have been allocated (touched by lights).
+	/// </summary>
+	public void ResetAll(Color ambient)
+	{
+		_defaultColor = ambient;
+		foreach (var chunk in _chunks.Values)
+			Array.Fill(chunk, ambient);
+	}
+
+	/// <summary>Check whether any chunks are allocated.</summary>
+	public bool HasData => _chunks.Count > 0;
+
+	/// <summary>Number of chunks currently allocated.</summary>
+	public int LoadedChunks => _chunks.Count;
 }
 
 /// Character info data from FullCharInfo (ID 245) packet.

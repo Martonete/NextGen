@@ -154,6 +154,9 @@ public class GameUIUpdater
             var a = _state.ActiveArrows[i];
             if (!a.Active) { _state.ActiveArrows.RemoveAt(i); continue; }
 
+            a.LifetimeMs += delta * 1000f;
+            if (a.LifetimeMs > 3000f) { _state.ActiveArrows.RemoveAt(i); continue; }
+
             // Update target position from live character data (target may be moving)
             if (_state.Characters.TryGetValue((short)a.TargetCharIndex, out var tgt))
             {

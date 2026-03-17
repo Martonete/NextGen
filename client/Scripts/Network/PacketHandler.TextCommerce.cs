@@ -16,7 +16,7 @@ public partial class PacketHandler
     private void HandleInventorySlot(string data)
     {
         // CSI<slot>,<objidx>,<name>,<amt>,<equipped>,<grh>,<type>,<maxhit>,<minhit>,<maxdef>,<valor>
-        var parts = data.Split(',');
+        var parts = data.Split(',', 12);
         if (parts.Length < 2) return;
 
         int slot = ParseInt(parts[0]);
@@ -47,7 +47,7 @@ public partial class PacketHandler
 
     private void HandleSpellSlot(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 4);
         if (parts.Length >= 3)
         {
             int slot = ParseInt(parts[0]);
@@ -64,7 +64,7 @@ public partial class PacketHandler
 
     private void HandleHideSpell(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int slot = ParseInt(parts[0]);
@@ -84,7 +84,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandlePartialInvAmount(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int slot = ParseInt(parts[0]);
@@ -105,7 +105,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandlePartialInvEquip(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 3);
         if (parts.Length >= 2)
         {
             int slot = ParseInt(parts[0]);
@@ -128,7 +128,7 @@ public partial class PacketHandler
 
     private void HandleBankSlot(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 10);
         if (parts.Length < 9) return;
 
         int slotNum = ParseInt(parts[0]);
@@ -153,6 +153,8 @@ public partial class PacketHandler
     private void HandleInitBanco()
     {
         _state.Banqueando = true;
+        // Mark that the next bank open should clear stale data before populating
+        _bankLoadPending = true;
         GD.Print($"[PKT] INITBANCO: Bank opened ({_state.BankItemCount} items, gold={_state.BankGold})");
     }
 
@@ -185,7 +187,7 @@ public partial class PacketHandler
 
     private void HandleNpcItem(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 11);
         if (parts.Length < 10) return;
 
         int idx = _state.NpcShopCount;
@@ -209,7 +211,7 @@ public partial class PacketHandler
 
     private void HandleNpcSlotUpdate(string data)
     {
-        var parts = data.Split(',');
+        var parts = data.Split(',', 12);
         if (parts.Length < 11) return;
 
         int targetSlot = ParseInt(parts[0]);
@@ -233,6 +235,7 @@ public partial class PacketHandler
 
     private void HandleInitCom()
     {
+        if (_state.Trading) _state.Trading = false; // mutual exclusion
         _state.Comerciando = true;
         GD.Print($"[PKT] INITCOM: NPC shop opened ({_state.NpcShopCount} items)");
     }
@@ -252,6 +255,7 @@ public partial class PacketHandler
 
     private void HandleTradeInit()
     {
+        if (_state.Comerciando) _state.Comerciando = false; // mutual exclusion
         _state.Trading = true;
         GD.Print("[PKT] ICO: Trade initiated");
     }

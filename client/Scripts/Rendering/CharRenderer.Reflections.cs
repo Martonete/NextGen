@@ -11,6 +11,40 @@ namespace ArgentumNextgen.Rendering;
 public static partial class CharRenderer
 {
     /// <summary>
+    /// Compute the mirror adjustment for reflections based on character body type.
+    /// Mounted characters use body GRH height, boats get a fixed offset,
+    /// tall races (human/elf/dark elf) get -2px, short races get 0.
+    /// </summary>
+    private static float CalculateMirrorAdj(Character ch, Vector2 headOffset, int heading, GameData data)
+    {
+        if (ch.Mounted)
+        {
+            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
+            {
+                var body = data.Bodies[ch.Body];
+                int bodyGrh = (heading >= 1 && heading <= 4) ? body.Walk[heading] : 0;
+                if (bodyGrh > 0)
+                {
+                    var resolved = data.ResolveGrh(bodyGrh, 0);
+                    if (resolved != null && resolved.PixelHeight > TileSize)
+                    {
+                        float extraH = resolved.PixelHeight - TileSize;
+                        return -(extraH * 0.15f);
+                    }
+                }
+            }
+            return 0f;
+        }
+        if (ch.Head <= 0) // no head: boat
+            return -2f;
+        float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
+        if (absHo >= 28f) // tall races (human/elf/dark elf)
+            return -2f;
+        // short races (bajos): 0 — already good
+        return 0f;
+    }
+
+    /// <summary>
     /// Water reflection: flip the canvas Y around the character's feet, then draw
     /// using the exact same functions as the normal character. No hardcoded offsets.
     /// DrawSetTransform(scale.Y=-1) mirrors all subsequent draw calls automatically.
@@ -22,36 +56,7 @@ public static partial class CharRenderer
         // Mirror axis: character's feet (sprite bottom = pos.Y + TileSize).
         // Tall sprites (mounts) have transparent padding at the bottom,
         // so we pull the mirror line up proportionally to the extra height.
-        float mirrorAdj = 0f;
-        if (ch.Mounted)
-        {
-            // Resolve body GRH to get actual pixel height
-            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-            {
-                var body = data.Bodies[ch.Body];
-                int bodyGrh = (heading >= 1 && heading <= 4) ? body.Walk[heading] : 0;
-                if (bodyGrh > 0)
-                {
-                    var resolved = data.ResolveGrh(bodyGrh, 0);
-                    if (resolved != null && resolved.PixelHeight > TileSize)
-                    {
-                        // The taller the sprite, the more transparent padding at bottom.
-                        // Pull mirror up by ~15% of the extra height.
-                        float extraH = resolved.PixelHeight - TileSize;
-                        mirrorAdj = -(extraH * 0.15f);
-                    }
-                }
-            }
-        }
-        else if (ch.Head <= 0) // no head: boat
-            mirrorAdj = -2f;
-        else
-        {
-            float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-            if (absHo >= 28f) // tall races (human/elf/dark elf)
-                mirrorAdj = -2f;
-            // short races (bajos): 0 — already good
-        }
+        float mirrorAdj = CalculateMirrorAdj(ch, headOffset, heading, data);
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
         // Set Y-flip transform: any draw at Y appears at (2*mirrorY - Y)
@@ -87,32 +92,7 @@ public static partial class CharRenderer
         if (!hasAnyFx) return;
 
         // Compute mirrorY — same logic as DrawReflection
-        float mirrorAdj = 0f;
-        if (ch.Mounted)
-        {
-            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-            {
-                var body = data.Bodies[ch.Body];
-                int bodyGrh = (heading >= 1 && heading <= 4) ? body.Walk[heading] : 0;
-                if (bodyGrh > 0)
-                {
-                    var resolved = data.ResolveGrh(bodyGrh, 0);
-                    if (resolved != null && resolved.PixelHeight > TileSize)
-                    {
-                        float extraH = resolved.PixelHeight - TileSize;
-                        mirrorAdj = -(extraH * 0.15f);
-                    }
-                }
-            }
-        }
-        else if (ch.Head <= 0)
-            mirrorAdj = -2f;
-        else
-        {
-            float absHo = -headOffset.Y > 1f ? -headOffset.Y : 1f;
-            if (absHo >= 28f)
-                mirrorAdj = -2f;
-        }
+        float mirrorAdj = CalculateMirrorAdj(ch, headOffset, heading, data);
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 
         // Reflection alpha for FX (same as equipment reflection)
@@ -166,23 +146,10 @@ public static partial class CharRenderer
         if (data.Auras == null || data.Auras.Length <= 1) return;
 
         // Compute mirrorAdj matching DrawReflection so aura aligns with body
-        float mirrorAdj = 0f;
-        if (ch.Mounted)
-        {
-            if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-            {
-                var body = data.Bodies[ch.Body];
-                int heading = ch.Heading >= 1 && ch.Heading <= 4 ? ch.Heading : 3;
-                int bodyGrh = body.Walk[heading];
-                if (bodyGrh > 0)
-                {
-                    var resolved = data.ResolveGrh(bodyGrh, 0);
-                    if (resolved != null && resolved.PixelHeight > TileSize)
-                        mirrorAdj = -((resolved.PixelHeight - TileSize) * 0.15f);
-                }
-            }
-        }
-        else
+        int heading = ch.Heading >= 1 && ch.Heading <= 4 ? ch.Heading : 3;
+        float mirrorAdj = CalculateMirrorAdj(ch, headOffset, heading, data);
+        // Auras use a slightly larger offset for all non-mounted races
+        if (!ch.Mounted)
             mirrorAdj = -4f; // all races: pull mirror 4px closer to body
         float mirrorY = pos.Y + TileSize - 2f + mirrorAdj;
 

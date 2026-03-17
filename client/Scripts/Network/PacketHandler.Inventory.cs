@@ -102,9 +102,12 @@ public partial class PacketHandler
         short minDef = bq.ReadInteger();
         float value = bq.ReadSingle();
 
-        // Reset bank when first slot arrives (server sends all 40 slots before BankInit)
-        if (slot == 1)
+        // Clear bank on first slot of a fresh bank load (flag set by HandleBinBankInit).
+        // This replaces the fragile "reset on slot==1" heuristic which would wipe the
+        // bank if slot 1 was individually updated during gameplay.
+        if (_bankLoadPending)
         {
+            _bankLoadPending = false;
             for (int i = 0; i < _state.BankItems.Length; i++)
                 _state.BankItems[i] = new BankItem();
             _state.BankItemCount = 0;

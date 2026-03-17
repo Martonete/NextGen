@@ -18,6 +18,8 @@ public partial class PacketHandler
         int bankGold = bq.ReadLong();
         _state.BankGold = bankGold;
         _state.Banqueando = true;
+        // Mark that the next bank open should clear stale data before populating
+        _bankLoadPending = true;
         GD.Print($"[PKT] BankInit (binary): gold={bankGold}");
     }
 
@@ -25,6 +27,7 @@ public partial class PacketHandler
     private void HandleBinUserCommerceInit(ByteQueue bq)
     {
         string otherName = bq.ReadString();
+        if (_state.Comerciando) _state.Comerciando = false; // mutual exclusion
         _state.Trading = true;
         _state.TradePartnerName = otherName;
         _state.TradeJustOpened = true;
@@ -326,6 +329,7 @@ public partial class PacketHandler
     private void HandleBinTradeInitLegacy(ByteQueue bq)
     {
         string partnerName = bq.ReadString();
+        if (_state.Comerciando) _state.Comerciando = false; // mutual exclusion
         _state.Trading = true;
         _state.TradePartnerName = partnerName;
         _state.TradeJustOpened = true;
