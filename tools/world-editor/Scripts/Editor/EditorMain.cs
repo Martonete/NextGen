@@ -1166,13 +1166,24 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Synchronous preload: load ALL textures before editor is usable
+        // Synchronous preload: load ALL textures + previews before editor is usable
         if (_textures != null && _grhs != null)
         {
-            var iter = _textures.PreloadAll(_grhs);
+            // Phase 1: load all PNG textures into cache
+            var texIter = _textures.PreloadAll(_grhs);
             GD.Print($"[Editor] Preloading {_textures.PreloadTotal} textures...");
-            while (iter.MoveNext()) { } // load all textures synchronously
-            GD.Print($"[Editor] Preload complete: {_textures.PreloadDone} textures cached");
+            while (texIter.MoveNext()) { }
+            GD.Print($"[Editor] Texture preload complete: {_textures.PreloadDone} cached");
+
+            // Phase 2: generate all palette preview thumbnails
+            if (_palette != null)
+            {
+                var prevIter = _palette.PreloadAllPreviews();
+                GD.Print("[Editor] Generating palette previews...");
+                int prevCount = 0;
+                while (prevIter.MoveNext()) prevCount++;
+                GD.Print($"[Editor] Preview generation complete: {prevCount} previews");
+            }
         }
         _preloadPhase = 0;
         if (_preloadOverlay != null) _preloadOverlay.Visible = false;
