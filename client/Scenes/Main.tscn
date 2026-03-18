@@ -13,6 +13,7 @@ script = ExtResource("1")
 
 [node name="UILayer" type="CanvasLayer" parent="."]
 layer = 10
+follow_viewport_enabled = true
 
 [node name="GameUI" type="Control" parent="."]
 visible = false
