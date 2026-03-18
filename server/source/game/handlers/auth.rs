@@ -57,14 +57,12 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
     }
 
     if !is_valid_name(&account_name) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre invalido."));
-        close_connection(state, conn_id).await;
-        return;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido."));
+        return; // Don't disconnect — let client retry
     }
 
     if !accounts::account_exists(&state.pool, &account_name).await {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe."));
-        close_connection(state, conn_id).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("La cuenta no existe. Verificá el nombre e intentá nuevamente."));
         return;
     }
 
@@ -72,15 +70,13 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
         Ok(acc) => acc,
         Err(e) => {
             warn!("[AUTH] Failed to load account '{}': {}", account_name, e);
-            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error al leer la cuenta."));
-            close_connection(state, conn_id).await;
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Error interno al leer la cuenta. Intentá nuevamente."));
             return;
         }
     };
 
     if !password::verify_password(&password, &account.password_hash) {
-        state.send_bytes(conn_id, &binary_packets::write_error_msg("Password incorrecto."));
-        close_connection(state, conn_id).await;
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Contraseña incorrecta. Verificá e intentá nuevamente."));
         return;
     }
 
