@@ -30,13 +30,11 @@ public partial class WorldRenderer
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects — skip draw entirely if tile also has L3
-                // (two overlapping centered sprites cause shadow flicker during scroll)
-                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
-                    && tile.Layer3 <= 0)
-                {
-                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
-                }
+                // DEBUG: ground objects completely disabled to test flicker
+                // if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
+                // {
+                //     DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
+                // }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
                 if (x >= _frameCharMinX && x <= _frameCharMaxX && y >= _frameCharMinY && y <= _frameCharMaxY)
