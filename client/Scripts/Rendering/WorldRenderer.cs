@@ -575,17 +575,11 @@ void fragment() {
 		{
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", false);
 			UpdateAmbientLight();
-			// Parent Modulate = map ambient → ContentLayer inherits dark tint.
-			// Cancel it with inverse SelfModulate so characters draw at full brightness.
+			// Content layer inherits parent's ambient tint — no compensation.
+			// Characters/trees/objects all tint equally with the ambient color.
 			if (_contentLayer != null)
 			{
-				float r = _state.MapColorR / 255f;
-				float g = _state.MapColorG / 255f;
-				float b = _state.MapColorB / 255f;
-				_contentLayer.SelfModulate = new Color(
-					r > 0.01f ? 1f / r : 1f,
-					g > 0.01f ? 1f / g : 1f,
-					b > 0.01f ? 1f / b : 1f, 1f);
+				_contentLayer.SelfModulate = Colors.White;
 			}
 		}
 
