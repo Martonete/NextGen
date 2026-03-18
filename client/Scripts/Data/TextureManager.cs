@@ -19,9 +19,7 @@ public class TextureManager
     private const int MaxCacheSize = 4096;
 
     // Black color key threshold: pixels with R,G,B all <= this value become transparent.
-    // Higher value (18) also removes dark shadow pixels from indexed PNGs that cause
-    // flicker in windowed mode due to Windows compositor antialiasing.
-    private const byte BlackThreshold = 18;
+    private const byte BlackThreshold = 3;
 
     // Preload progress (poll from UI)
     public int PreloadTotal { get; private set; }

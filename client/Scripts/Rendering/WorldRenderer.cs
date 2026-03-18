@@ -370,9 +370,15 @@ void fragment() {
 	/// </summary>
 	private void UpdateAmbientLight()
 	{
-		// Force full brightness — ambient tinting disabled to eliminate tree shadow flicker.
-		// Day/night and map ambient should be handled differently (per-tile, not global Modulate).
-		Modulate = Colors.White;
+		if (!(_state!.Config?.ShowDayNight ?? true))
+		{
+			Modulate = Colors.White;
+			return;
+		}
+		float r = _state.MapColorR / 255f;
+		float g = _state.MapColorG / 255f;
+		float b = _state.MapColorB / 255f;
+		Modulate = new Color(r, g, b, 1f);
 	}
 
 	private void UpdateRoofFade()
@@ -529,7 +535,8 @@ void fragment() {
 		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
 		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
 
-		_frameHasLights = false; // DEBUG: force lights off to test tree flicker
+		_frameHasLights = (_state.Config?.ShowLights ?? true)
+						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
 		// GPU lightmap: when lights active, the shader handles ambient + light tinting
 		// on terrain layers. Modulate = white so shader is the sole color source.
@@ -566,11 +573,17 @@ void fragment() {
 		{
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", false);
 			UpdateAmbientLight();
-			// Content layer inherits parent's ambient tint — no compensation.
-			// Characters/trees/objects all tint equally with the ambient color.
+			// Parent Modulate = map ambient → ContentLayer inherits dark tint.
+			// Cancel it with inverse SelfModulate so characters draw at full brightness.
 			if (_contentLayer != null)
 			{
-				_contentLayer.SelfModulate = Colors.White;
+				float r = _state.MapColorR / 255f;
+				float g = _state.MapColorG / 255f;
+				float b = _state.MapColorB / 255f;
+				_contentLayer.SelfModulate = new Color(
+					r > 0.01f ? 1f / r : 1f,
+					g > 0.01f ? 1f / g : 1f,
+					b > 0.01f ? 1f / b : 1f, 1f);
 			}
 		}
 

@@ -30,11 +30,13 @@ public partial class WorldRenderer
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // DEBUG: ground objects completely disabled to test flicker
-                // if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
-                // {
-                //     DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
-                // }
+                // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
+                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
+                    && objGrh != tile.Layer3)
+                {
+                    const float objBright = 220f / 255f;
+                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 1f));
+                }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
                 if (x >= _frameCharMinX && x <= _frameCharMaxX && y >= _frameCharMinY && y <= _frameCharMaxY)
@@ -54,10 +56,26 @@ public partial class WorldRenderer
                     }
                 }
 
-                // Layer 3 (trees/objects) — no modulate, no transparency
+                // Layer 3 (trees/objects) — dimmed slightly, with proximity transparency for trees
                 if (tile.Layer3 > 0)
                 {
-                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true);
+                    const float treeBright = 220f / 255f;
+                    float l3Alpha = 1f;
+                    if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
+                    {
+                        float smoothUserX = _frameUserX + _state.ScreenOffsetX / 32f;
+                        float smoothUserY = _frameUserY + _state.ScreenOffsetY / 32f;
+                        float dx = Math.Abs(x - smoothUserX);
+                        float dy = Math.Abs(y - smoothUserY);
+                        const float innerX = 3f, innerY = 2f;
+                        const float outerX = 5f, outerY = 7f;
+                        float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
+                        float ty = dy <= innerY ? 0f : dy >= outerY ? 1f : (dy - innerY) / (outerY - innerY);
+                        float t = Math.Max(tx, ty);
+                        float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
+                        l3Alpha = treeAlpha + (1f - treeAlpha) * t;
+                    }
+                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, l3Alpha));
                 }
             }
         }
@@ -316,7 +334,6 @@ public partial class WorldRenderer
     /// </summary>
     public void DrawLayer2(CanvasItem canvas)
     {
-        return; // DEBUG: L2 disabled
         if (_state?.MapData == null || _data == null || _animator == null) return;
 
         for (int y = _frameMinY; y <= _frameMaxY; y++)
