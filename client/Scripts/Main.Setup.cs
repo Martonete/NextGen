@@ -187,6 +187,9 @@ public partial class Main
 
         // Dialog manager, panel sync, input router
         SetupSubsystems();
+
+        // Apply consistent layout — same code path as resolution change
+        RepositionUI();
     }
 
     private void SetupSidebarButtons()
