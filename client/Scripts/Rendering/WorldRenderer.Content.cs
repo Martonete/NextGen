@@ -30,8 +30,9 @@ public partial class WorldRenderer
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects — slightly dimmed (220/255) to blend with environment
-                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0)
+                // Ground objects — skip if same GRH already exists in L3 (prevents z-fighting flicker)
+                if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
+                    && objGrh != tile.Layer3)
                 {
                     const float objBright = 220f / 255f;
                     float objAlpha = 1f;
