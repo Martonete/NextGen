@@ -768,7 +768,7 @@ public partial class EditorMain : Control
         return null;
     }
 
-    private bool _dataLoaded;
+    private static bool _dataLoaded;
 
     private void TryAutoDetectDataPath()
     {
