@@ -120,8 +120,8 @@ public partial class Main : Control
 		if (_clanesButton != null) { _clanesButton.Position = new Vector2(btnX, btn0Y + btnStep * 4); _clanesButton.Size = new Vector2(S(93), S(20)); _clanesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
 
 		// Minimize/Close buttons
-		if (_minimizeButton != null) _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4));
-		if (_closeMenuButton != null) _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4));
+		if (_minimizeButton != null) { _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4)); _minimizeButton.Size = new Vector2(S(17), S(17)); }
+		if (_closeMenuButton != null) { _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4)); _closeMenuButton.Size = new Vector2(S(17), S(17)); }
 
 		// --- Inventory/Spell panel area ---
 		int contentW = S(190);
@@ -144,10 +144,10 @@ public partial class Main : Control
 
 		// --- Stat labels ---
 		int bbY = ResolutionManager.BottomBarY + S(9);
-		if (_armorLabel != null) { _armorLabel.Position = new Vector2(S(55), bbY); _armorLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-		if (_helmLabel != null) { _helmLabel.Position = new Vector2(S(170), bbY); _helmLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-		if (_shieldLabel != null) { _shieldLabel.Position = new Vector2(S(310), bbY); _shieldLabel.AddThemeFontSizeOverride("font_size", S(7)); }
-		if (_weaponLabel != null) { _weaponLabel.Position = new Vector2(S(435), bbY); _weaponLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_armorLabel != null) { _armorLabel.Position = new Vector2(S(55), bbY); _armorLabel.Size = new Vector2(S(100), S(17)); _armorLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_helmLabel != null) { _helmLabel.Position = new Vector2(S(170), bbY); _helmLabel.Size = new Vector2(S(90), S(17)); _helmLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_shieldLabel != null) { _shieldLabel.Position = new Vector2(S(310), bbY); _shieldLabel.Size = new Vector2(S(95), S(17)); _shieldLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_weaponLabel != null) { _weaponLabel.Position = new Vector2(S(435), bbY); _weaponLabel.Size = new Vector2(S(90), S(17)); _weaponLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 		// Agilidad | Fuerza — centered row
 		int statRowW = S(190);
 		int statRowY = ResolutionManager.BottomBarY - S(160);
@@ -160,6 +160,9 @@ public partial class Main : Control
 		int mmBorderX = ResolutionManager.ConsoleRight - mmBorderW;
 		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(mmBorderW, S(118)); }
 		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
+
+		// Macro status label
+		if (_macroStatusLabel != null) { _macroStatusLabel.Position = new Vector2(S(484), S(4)); _macroStatusLabel.Size = new Vector2(S(60), S(12)); _macroStatusLabel.AddThemeFontSizeOverride("font_size", S(7)); }
 
 		// Blind overlay
 		if (_blindOverlay != null)
