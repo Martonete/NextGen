@@ -765,22 +765,143 @@ public partial class EditorMain : Control
             catch { /* invalid path, skip */ }
         }
 
-        SetStatus("Data/ no encontrada. Seleccione la carpeta Data/...");
-        // Show loading screen with prompt and auto-open folder dialog
-        if (_loadingLabel != null) _loadingLabel.Text = "Seleccione la carpeta Data/ del cliente...";
-        if (_loadingTitle != null) _loadingTitle.Text = "World Editor";
+        SetStatus("Data/ no encontrada. Configure las rutas.");
+        // Hide loading bar, show setup form instead
         if (_loadingBar != null) _loadingBar.Visible = false;
+        if (_loadingLabel != null) _loadingLabel.Visible = false;
+        if (_loadingTitle != null) _loadingTitle.Visible = false;
         if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
         _loadingFadeAlpha = 1f;
         _preloadPhase = 0;
-        // Deferred so the UI renders before the dialog opens
-        CallDeferred(MethodName.OpenDataPathDialog);
+        CallDeferred(MethodName.ShowSetupForm);
     }
 
-    private void OpenDataPathDialog()
+    // ── Setup form (shown when data paths not found) ──
+    private Window? _setupWindow;
+    private LineEdit? _setupClientPath;
+    private LineEdit? _setupServerPath;
+
+    private void ShowSetupForm()
     {
-        if (_dataPathDialog == null) return;
-        _dataPathDialog.PopupCentered(new Vector2I(700, 500));
+        if (_setupWindow != null) { _setupWindow.Show(); return; }
+
+        _setupWindow = new Window();
+        _setupWindow.Title = "Configuración Inicial";
+        _setupWindow.Size = new Vector2I(500, 260);
+        _setupWindow.Exclusive = true;
+        _setupWindow.Unresizable = true;
+        _setupWindow.CloseRequested += () => _setupWindow.Hide();
+
+        var panel = new PanelContainer();
+        panel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        panel.AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL));
+        _setupWindow.AddChild(panel);
+
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_top", 16);
+        margin.AddThemeConstantOverride("margin_left", 20);
+        margin.AddThemeConstantOverride("margin_right", 20);
+        margin.AddThemeConstantOverride("margin_bottom", 16);
+        panel.AddChild(margin);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 10);
+        margin.AddChild(vbox);
+
+        vbox.AddChild(EditorTheme.Heading("Configurar Rutas"));
+
+        // Client path
+        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Cliente"));
+        var clientRow = new HBoxContainer();
+        clientRow.AddThemeConstantOverride("separation", 6);
+        _setupClientPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/client" };
+        _setupClientPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        clientRow.AddChild(_setupClientPath);
+        var clientBrowse = EditorTheme.MakeButton("...");
+        clientBrowse.Pressed += () =>
+        {
+            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta Data/ del cliente" };
+            dlg.DirSelected += (path) => { _setupClientPath.Text = path; dlg.QueueFree(); };
+            dlg.Canceled += () => dlg.QueueFree();
+            _setupWindow.AddChild(dlg);
+            dlg.PopupCentered(new Vector2I(600, 400));
+        };
+        clientRow.AddChild(clientBrowse);
+        vbox.AddChild(clientRow);
+
+        // Server path
+        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Server"));
+        var serverRow = new HBoxContainer();
+        serverRow.AddThemeConstantOverride("separation", 6);
+        _setupServerPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/server" };
+        _setupServerPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        serverRow.AddChild(_setupServerPath);
+        var serverBrowse = EditorTheme.MakeButton("...");
+        serverBrowse.Pressed += () =>
+        {
+            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta dat/ del server" };
+            dlg.DirSelected += (path) => { _setupServerPath.Text = path; dlg.QueueFree(); };
+            dlg.Canceled += () => dlg.QueueFree();
+            _setupWindow.AddChild(dlg);
+            dlg.PopupCentered(new Vector2I(600, 400));
+        };
+        serverRow.AddChild(serverBrowse);
+        vbox.AddChild(serverRow);
+
+        // Buttons
+        var btnRow = new HBoxContainer();
+        btnRow.AddThemeConstantOverride("separation", 10);
+        btnRow.Alignment = BoxContainer.AlignmentMode.End;
+        var applyBtn = EditorTheme.PrimaryButton("Aplicar");
+        applyBtn.Pressed += OnSetupApply;
+        btnRow.AddChild(applyBtn);
+        var closeBtn = EditorTheme.MakeButton("Cerrar");
+        closeBtn.Pressed += () => _setupWindow.Hide();
+        btnRow.AddChild(closeBtn);
+        vbox.AddChild(btnRow);
+
+        AddChild(_setupWindow);
+        _setupWindow.PopupCentered();
+    }
+
+    private void OnSetupApply()
+    {
+        string clientPath = _setupClientPath?.Text.Trim() ?? "";
+        string serverPath = _setupServerPath?.Text.Trim() ?? "";
+
+        if (clientPath.Length == 0 || !Directory.Exists(clientPath))
+        {
+            SetStatus("La carpeta del cliente no existe.");
+            return;
+        }
+
+        // Resolve Data/ subfolder automatically
+        string dataPath = clientPath;
+        string dataSubDir = Path.Combine(clientPath, "Data");
+        if (Directory.Exists(dataSubDir))
+            dataPath = dataSubDir;
+
+        // Verify required files exist
+        string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
+        if (!File.Exists(graficosInd))
+        {
+            SetStatus($"No se encontró Graficos.ind en {dataPath}/INIT/");
+            return;
+        }
+
+        if (_setupWindow != null) _setupWindow.Hide();
+        // Restore loading screen elements
+        if (_loadingBar != null) _loadingBar.Visible = true;
+        if (_loadingLabel != null) _loadingLabel.Visible = true;
+        if (_loadingTitle != null) _loadingTitle.Visible = true;
+        LoadDataPath(dataPath);
+
+        // Server path — resolve dat/ subfolder
+        if (serverPath.Length > 0 && Directory.Exists(serverPath))
+        {
+            string datSub = Path.Combine(serverPath, "dat");
+            _serverMapDir = Directory.Exists(datSub) ? datSub : serverPath;
+        }
     }
 
     private void LoadDataPath(string dataPath)
@@ -812,6 +933,8 @@ public partial class EditorMain : Control
         if (!File.Exists(graficosInd))
         {
             SetStatus($"ERROR: {graficosInd} no encontrado");
+            _preloadPhase = 0;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
             return;
         }
 
