@@ -228,17 +228,15 @@ public partial class RpgBaseForm : Control
     {
         Visible = true;
         Modulate = new Color(1, 1, 1, _globalFormAlpha);
-        // Forms inside a CanvasLayer render in screen coordinates (unaffected by
-        // ContentScale), so use the real window size for centering. Forms inside
-        // GameUI use viewport size (affected by ContentScale).
-        bool inCanvasLayer = false;
-        Node? p = GetParent();
-        while (p != null) { if (p is CanvasLayer) { inCanvasLayer = true; break; } p = p.GetParent(); }
+        // Use the logical coordinate space for centering.
+        // When ContentScaleMode is active (fullscreen), ContentScaleSize defines
+        // the logical space that ALL canvas items render in (including CanvasLayer).
+        // When in windowed mode (ContentScaleSize=0), use the viewport rect.
         Vector2 areaSize;
-        if (inCanvasLayer)
+        var root = GetTree()?.Root;
+        if (root != null && root.ContentScaleSize != Vector2I.Zero)
         {
-            var ws = DisplayServer.WindowGetSize();
-            areaSize = new Vector2(ws.X, ws.Y);
+            areaSize = (Vector2)root.ContentScaleSize;
         }
         else
         {
