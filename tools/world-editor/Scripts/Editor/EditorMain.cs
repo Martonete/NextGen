@@ -847,7 +847,7 @@ public partial class EditorMain : Control
         _setupWindow = new Window();
         _setupWindow.Title = "Configuración Inicial";
         _setupWindow.Size = new Vector2I(500, 260);
-        _setupWindow.Exclusive = true;
+        _setupWindow.Exclusive = false;
         _setupWindow.Unresizable = true;
         _setupWindow.CloseRequested += () => _setupWindow.Hide();
 
@@ -1111,23 +1111,10 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Start texture preload — blocks editor interaction until complete
-        if (_textures != null && _grhs != null)
-        {
-            _preloadPhase = 1;
-            _texturePreloadIter = _textures.PreloadAll(_grhs);
-            _loadingFadingOut = false;
-            _loadingFadeAlpha = 1f;
-            if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
-            GD.Print($"[Editor] Starting preload: {_textures.PreloadTotal} textures from {_grhs.Length} GRHs");
-            SetStatus("Cargando texturas...");
-        }
-        else
-        {
-            // No data loaded — skip preload, hide loading screen
-            _preloadPhase = 0;
-            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-        }
+        // Textures load on demand — no blocking preload needed
+        _preloadPhase = 0;
+        if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+        SetStatus(_textures != null ? "Editor listo" : "Sin datos cargados");
     }
 
     private void TickTexturePreload()
