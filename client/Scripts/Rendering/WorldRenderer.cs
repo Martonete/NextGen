@@ -536,8 +536,7 @@ void fragment() {
 		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
 		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
 
-		_frameHasLights = (_state.Config?.ShowLights ?? true)
-						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
+		_frameHasLights = false; // DEBUG: force lights off to test tree flicker
 
 		// GPU lightmap: when lights active, the shader handles ambient + light tinting
 		// on terrain layers. Modulate = white so shader is the sole color source.
