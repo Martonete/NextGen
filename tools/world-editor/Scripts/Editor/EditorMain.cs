@@ -110,8 +110,14 @@ public partial class EditorMain : Control
     private const float SidebarBorderWidth = 1;
     private const float RightSidebarWidth = 200;
 
+    private bool _readyCalled;
+
     public override void _Ready()
     {
+        // Guard: _Ready must run exactly once (Godot C# can re-fire on assembly hot-reload)
+        if (_readyCalled) return;
+        _readyCalled = true;
+
         // Wire dirty tracking
         _undo.Changed += () => _state.MarkDirty();
         _state.DirtyChanged += OnDirtyChanged;
@@ -768,7 +774,7 @@ public partial class EditorMain : Control
         return null;
     }
 
-    private static bool _dataLoaded;
+    private bool _dataLoaded;
 
     private void TryAutoDetectDataPath()
     {
@@ -957,6 +963,7 @@ public partial class EditorMain : Control
         if (_loadingBar != null) _loadingBar.Visible = true;
         if (_loadingLabel != null) _loadingLabel.Visible = true;
         if (_loadingTitle != null) _loadingTitle.Visible = true;
+        _dataLoaded = false; // User explicitly applying new paths — allow reload
         LoadDataPath(dataPath);
 
         // Server path — resolve dat/ subfolder
@@ -974,7 +981,14 @@ public partial class EditorMain : Control
 
     private void LoadDataPath(string dataPath)
     {
+        // Prevent duplicate loads — data should load exactly once
+        if (_dataLoaded)
+        {
+            GD.Print($"[Editor] LoadDataPath SKIPPED (already loaded): {dataPath}");
+            return;
+        }
         GD.Print($"[Editor] LoadDataPath: {dataPath}");
+        _dataLoaded = true; // Set early to prevent re-entrant calls
         _dataPath = dataPath;
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
@@ -1003,6 +1017,7 @@ public partial class EditorMain : Control
         {
             GD.PrintErr($"[Editor] Graficos.ind NOT FOUND at: {graficosInd}");
             SetStatus($"ERROR: {graficosInd} no encontrado");
+            _dataLoaded = false; // Allow retry on failure
             _preloadPhase = 0;
             if (_preloadOverlay != null) _preloadOverlay.Visible = false;
             return;
@@ -1118,8 +1133,7 @@ public partial class EditorMain : Control
         // Textures load on demand — no blocking preload needed
         _preloadPhase = 0;
         if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-        _dataLoaded = _textures != null && _grhs != null;
-        SetStatus(_dataLoaded ? "Editor listo" : "Sin datos cargados");
+        SetStatus("Editor listo");
     }
 
     private void TickTexturePreload()
@@ -1441,7 +1455,11 @@ public partial class EditorMain : Control
         SetStatus($"Mapa {_map.MapNumber} guardado en {dir}{dualMsg}");
     }
 
-    private void OnDataPathSelected(string path) => LoadDataPath(path);
+    private void OnDataPathSelected(string path)
+    {
+        _dataLoaded = false; // User explicitly chose a new path — allow reload
+        LoadDataPath(path);
+    }
 
     private void OnServerPathSelected(string path)
     {
