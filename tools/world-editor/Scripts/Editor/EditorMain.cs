@@ -421,6 +421,14 @@ public partial class EditorMain : Control
         _rightFillButton.Pressed += () => _viewport?.FillSelection();
         _rightSelectionSection.AddChild(_rightFillButton);
 
+        var blockAllBtn = EditorTheme.MakeButton("Bloquear todos los tiles");
+        blockAllBtn.Pressed += () => BlockSelection(true);
+        _rightSelectionSection.AddChild(blockAllBtn);
+
+        var unblockAllBtn = EditorTheme.MakeButton("Desbloquear todos los tiles");
+        unblockAllBtn.Pressed += () => BlockSelection(false);
+        _rightSelectionSection.AddChild(unblockAllBtn);
+
         _rightDeselectButton = EditorTheme.MakeButton("Deseleccionar");
         _rightDeselectButton.Pressed += () => { _state.ClearSelection(); _viewport?.QueueRedraw(); };
         _rightSelectionSection.AddChild(_rightDeselectButton);
@@ -1983,6 +1991,22 @@ public partial class EditorMain : Control
             bool active = _state.ActiveTool == ToolBarOrder[i];
             _toolBarButtons[i].ButtonPressed = active;
         }
+    }
+
+    private void BlockSelection(bool blocked)
+    {
+        if (_map == null || !_state.HasSelection) return;
+        _undo.BeginBatch(blocked ? "Block Selection" : "Unblock Selection");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                _map.Tiles[x, y].Blocked = blocked;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+        _viewport?.QueueRedraw();
     }
 
     private void OnDirtyChanged(bool isDirty)
