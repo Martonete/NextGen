@@ -671,6 +671,7 @@ public partial class EditorMain : Control
     private void BuildLoadingScreen()
     {
         _preloadOverlay = new Panel();
+        _preloadOverlay.Visible = false;
         _preloadOverlay.ZIndex = 100;
         var style = new StyleBoxFlat();
         style.BgColor = new Color(0.08f, 0.08f, 0.10f, 1f);
