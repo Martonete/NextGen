@@ -229,6 +229,8 @@ void fragment() {
 		_state = state;
 		_data = data;
 		_animator = animator;
+		// Pixel-perfect rendering — prevents sub-pixel seams on tile edges
+		TextureFilter = TextureFilterEnum.Nearest;
 
 		// Create lightmap shader + material (shared across terrain layers)
 		var shader = new Shader();
