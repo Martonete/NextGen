@@ -346,21 +346,22 @@ public partial class InventoryPanel : Control
                 {
                     if (mb.DoubleClick)
                     {
-                        // Double right-click = use item (same as double left-click)
                         _selectedSlot = slot;
                         _state.SelectedInvSlot = slot;
                         _tcp.SendPacket(ClientPackets.WriteUseItemClick((byte)(slot + 1)));
                     }
                     else
                     {
-                        // Single right-click = select only (same as single left-click)
                         _selectedSlot = slot;
                         _state.SelectedInvSlot = slot;
                     }
+                    AcceptEvent();
                 }
             }
 
-            AcceptEvent();
+            // Only consume the event if we actually handled a valid slot interaction
+            if (mb.ButtonIndex == MouseButton.Left && slot >= 0 && slot < TotalSlots)
+                AcceptEvent();
         }
         else if (@event is InputEventKey key && key.Pressed && !key.Echo)
         {

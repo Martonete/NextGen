@@ -208,23 +208,26 @@ public partial class SpellPanel : Control
                     {
                         _selectedSlot = slot;
                         _dragging = true;
+                        AcceptEvent();
                     }
+                    // If click missed all slots, don't consume — let buttons below receive it
                 }
                 else
                 {
-                    _dragging = false;
+                    if (_dragging)
+                    {
+                        _dragging = false;
+                        AcceptEvent();
+                    }
                 }
-                AcceptEvent();
             }
             else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelUp)
             {
-                if (_scrollOffset > 0) _scrollOffset--;
-                AcceptEvent();
+                if (_scrollOffset > 0) { _scrollOffset--; AcceptEvent(); }
             }
             else if (mb.Pressed && mb.ButtonIndex == MouseButton.WheelDown)
             {
-                if (_scrollOffset + VisibleLines < MaxSpells) _scrollOffset++;
-                AcceptEvent();
+                if (_scrollOffset + VisibleLines < MaxSpells) { _scrollOffset++; AcceptEvent(); }
             }
         }
     }
