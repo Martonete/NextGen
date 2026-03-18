@@ -765,7 +765,22 @@ public partial class EditorMain : Control
             catch { /* invalid path, skip */ }
         }
 
-        SetStatus("Data/ no encontrada. Archivo > Configurar Ruta Cliente (Data/)...");
+        SetStatus("Data/ no encontrada. Seleccione la carpeta Data/...");
+        // Show loading screen with prompt and auto-open folder dialog
+        if (_loadingLabel != null) _loadingLabel.Text = "Seleccione la carpeta Data/ del cliente...";
+        if (_loadingTitle != null) _loadingTitle.Text = "World Editor";
+        if (_loadingBar != null) _loadingBar.Visible = false;
+        if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+        _loadingFadeAlpha = 1f;
+        _preloadPhase = 0;
+        // Deferred so the UI renders before the dialog opens
+        CallDeferred(MethodName.OpenDataPathDialog);
+    }
+
+    private void OpenDataPathDialog()
+    {
+        if (_dataPathDialog == null) return;
+        _dataPathDialog.PopupCentered(new Vector2I(700, 500));
     }
 
     private void LoadDataPath(string dataPath)
@@ -907,12 +922,21 @@ public partial class EditorMain : Control
             CreateNewMap(1);
 
         // Start texture preload — blocks editor interaction until complete
-        _preloadPhase = 1;
-        _texturePreloadIter = _textures!.PreloadAll(_grhs!);
-        _loadingFadingOut = false;
-        _loadingFadeAlpha = 1f;
-        if (_preloadOverlay != null) _preloadOverlay.Visible = true;
-        SetStatus("Cargando texturas...");
+        if (_textures != null && _grhs != null)
+        {
+            _preloadPhase = 1;
+            _texturePreloadIter = _textures.PreloadAll(_grhs);
+            _loadingFadingOut = false;
+            _loadingFadeAlpha = 1f;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = true;
+            SetStatus("Cargando texturas...");
+        }
+        else
+        {
+            // No data loaded — skip preload, hide loading screen
+            _preloadPhase = 0;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+        }
     }
 
     private void TickTexturePreload()
