@@ -370,16 +370,9 @@ void fragment() {
 	/// </summary>
 	private void UpdateAmbientLight()
 	{
-		// When day/night is disabled, force full brightness
-		if (!(_state!.Config?.ShowDayNight ?? true))
-		{
-			Modulate = Colors.White;
-			return;
-		}
-		float r = _state.MapColorR / 255f;
-		float g = _state.MapColorG / 255f;
-		float b = _state.MapColorB / 255f;
-		Modulate = new Color(r, g, b, 1f);
+		// Force full brightness — ambient tinting disabled to eliminate tree shadow flicker.
+		// Day/night and map ambient should be handled differently (per-tile, not global Modulate).
+		Modulate = Colors.White;
 	}
 
 	private void UpdateRoofFade()
