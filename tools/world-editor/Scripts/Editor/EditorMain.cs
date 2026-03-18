@@ -1488,6 +1488,16 @@ public partial class EditorMain : Control
         if (_map == null) return;
         string dir = Path.GetDirectoryName(path) ?? _state.MapDir;
         _state.MapDir = dir;
+
+        // Extract map number from filename (e.g. "Mapa1.map" → 1)
+        string filename = Path.GetFileNameWithoutExtension(path);
+        if (filename.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(filename.Substring(4), out int parsedNum) && parsedNum > 0)
+        {
+            _map.MapNumber = parsedNum;
+            _state.CurrentMapNumber = parsedNum;
+        }
+
         MapLoader.Save(dir, _map);
 
         // Dual-save: client gets .map only, server gets all 3
