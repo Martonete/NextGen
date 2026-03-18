@@ -361,7 +361,6 @@ void fragment() {
 		if (_state?.MapData == null) return;
 		_deltaMs = (float)delta * 1000f;
 		UpdateRoofFade();
-		UpdateAmbientLight();
 		QueueRedraw();
 	}
 
