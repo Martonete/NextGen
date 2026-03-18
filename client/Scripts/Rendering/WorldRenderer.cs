@@ -54,8 +54,9 @@ public partial class WorldRenderer : Node2D
 	private static int HalfWindowTileWidth => ResolutionManager.HalfTilesX;
 	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
-	// VB6: TileBufferSize = 9
-	private const int TileBufferSize = 9;
+	// Buffer beyond visible area for large sprites (trees, buildings in L3).
+	// VB6 used 9, but large GRHs (4-6 tiles tall) need more margin to avoid pop-in.
+	private const int TileBufferSize = 13;
 
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
 	private float _roofAlpha = 255f;
