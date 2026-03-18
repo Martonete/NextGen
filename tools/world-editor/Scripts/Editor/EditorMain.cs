@@ -930,7 +930,7 @@ public partial class EditorMain : Control
             {
                 _preloadPhase = 2;
                 _texturePreloadIter = null;
-                _previewPreloadIter = _tilePalette?.PreloadAllPreviews();
+                _previewPreloadIter = _palette?.PreloadAllPreviews();
                 if (_loadingLabel != null) _loadingLabel.Text = "Generando previews...";
             }
         }
