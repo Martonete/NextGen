@@ -316,6 +316,7 @@ public partial class WorldRenderer
     /// </summary>
     public void DrawLayer2(CanvasItem canvas)
     {
+        return; // DEBUG: L2 disabled
         if (_state?.MapData == null || _data == null || _animator == null) return;
 
         for (int y = _frameMinY; y <= _frameMaxY; y++)
