@@ -726,30 +726,86 @@ public partial class EditorMain : Control
 
     #region Data Loading
 
+    private const string ConfigFileName = "editor_config.ini";
+
+    private string GetConfigPath()
+    {
+        // Save config next to project.godot (or exe)
+        string resPath = ProjectSettings.GlobalizePath("res://");
+        return Path.Combine(resPath, ConfigFileName);
+    }
+
+    private void SaveConfig()
+    {
+        try
+        {
+            var lines = new List<string>
+            {
+                $"client_data={_dataPath}",
+                $"server_maps={_serverMapDir}",
+                $"server_dat={_serverDatDir}"
+            };
+            File.WriteAllLines(GetConfigPath(), lines);
+            GD.Print($"[Editor] Config saved: {GetConfigPath()}");
+        }
+        catch (Exception ex) { GD.PrintErr($"[Editor] Failed to save config: {ex.Message}"); }
+    }
+
+    private string? LoadConfigValue(string key)
+    {
+        try
+        {
+            string cfgPath = GetConfigPath();
+            if (!File.Exists(cfgPath)) return null;
+            foreach (string line in File.ReadAllLines(cfgPath))
+            {
+                int eq = line.IndexOf('=');
+                if (eq > 0 && line[..eq] == key)
+                    return line[(eq + 1)..];
+            }
+        }
+        catch { }
+        return null;
+    }
+
     private void TryAutoDetectDataPath()
     {
-        // Build candidate list from multiple base directories to handle
-        // different working directories and project layouts.
-        var candidates = new System.Collections.Generic.List<string>();
+        // 1. Try saved config first
+        string? savedPath = LoadConfigValue("client_data");
+        if (savedPath != null && Directory.Exists(savedPath) && File.Exists(Path.Combine(savedPath, "INIT", "Graficos.ind")))
+        {
+            GD.Print($"[Editor] Using saved config: {savedPath}");
+            string? savedServerMaps = LoadConfigValue("server_maps");
+            if (savedServerMaps != null && Directory.Exists(savedServerMaps))
+                _serverMapDir = savedServerMaps;
+            string? savedServerDat = LoadConfigValue("server_dat");
+            if (savedServerDat != null && Directory.Exists(savedServerDat))
+                _serverDatDir = savedServerDat;
+            LoadDataPath(savedPath);
+            return;
+        }
 
-        // Relative to current working directory
-        candidates.Add("../../client/Data");
-        candidates.Add("../../../client/Data");
-        candidates.Add("client/Data");
-
-        // Relative to the project.godot file (res:// → filesystem path)
+        // 2. Auto-detect from multiple base directories
+        var candidates = new List<string>();
         string resPath = ProjectSettings.GlobalizePath("res://");
+        string exeDir = OS.GetExecutablePath().GetBaseDir();
+        string cwd = Directory.GetCurrentDirectory();
+
+        // From res:// (tools/world-editor/)
         candidates.Add(Path.Combine(resPath, "../../client/Data"));
         candidates.Add(Path.Combine(resPath, "../../../client/Data"));
-
-        // Relative to the executable
-        string exeDir = OS.GetExecutablePath().GetBaseDir();
+        // From cwd
+        candidates.Add(Path.Combine(cwd, "../../client/Data"));
+        candidates.Add(Path.Combine(cwd, "../../../client/Data"));
+        candidates.Add(Path.Combine(cwd, "client/Data"));
+        // From exe
         candidates.Add(Path.Combine(exeDir, "../../client/Data"));
         candidates.Add(Path.Combine(exeDir, "../../../client/Data"));
         candidates.Add(Path.Combine(exeDir, "Data"));
-
-        // User data fallback
+        // User data
         candidates.Add(Path.Combine(OS.GetUserDataDir(), "Data"));
+
+        GD.Print($"[Editor] Auto-detect: res={resPath} cwd={cwd} exe={exeDir}");
 
         foreach (var candidate in candidates)
         {
@@ -758,13 +814,16 @@ public partial class EditorMain : Control
                 string full = Path.GetFullPath(candidate);
                 if (Directory.Exists(full) && File.Exists(Path.Combine(full, "INIT", "Graficos.ind")))
                 {
+                    GD.Print($"[Editor] Auto-detected Data path: {full}");
                     LoadDataPath(full);
+                    SaveConfig();
                     return;
                 }
             }
-            catch { /* invalid path, skip */ }
+            catch { }
         }
 
+        GD.Print("[Editor] Auto-detect failed, showing setup form");
         SetStatus("Data/ no encontrada. Configure las rutas.");
         // Hide loading bar, show setup form instead
         if (_loadingBar != null) _loadingBar.Visible = false;
@@ -900,8 +959,13 @@ public partial class EditorMain : Control
         if (serverPath.Length > 0 && Directory.Exists(serverPath))
         {
             string datSub = Path.Combine(serverPath, "dat");
-            _serverMapDir = Directory.Exists(datSub) ? datSub : serverPath;
+            _serverDatDir = Directory.Exists(datSub) ? datSub : serverPath;
+            string mapsSub = Path.Combine(serverPath, "maps");
+            if (Directory.Exists(mapsSub)) _serverMapDir = mapsSub;
         }
+
+        // Persist paths for next launch
+        SaveConfig();
     }
 
     private void LoadDataPath(string dataPath)
