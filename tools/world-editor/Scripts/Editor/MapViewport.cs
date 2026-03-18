@@ -296,7 +296,7 @@ public partial class MapViewport : Control
         if (!Map.InBounds(hoverX, hoverY)) return;
 
         int layer = State.ActiveLayer;
-        short tileGrh = layer switch
+        int tileGrh = layer switch
         {
             1 => Map.Tiles[hoverX, hoverY].Layer1,
             2 => Map.Tiles[hoverX, hoverY].Layer2,
@@ -1091,7 +1091,7 @@ public partial class MapViewport : Control
                 if (!Map.InBounds(tx, ty)) continue;
                 var before = Map.Tiles[tx, ty];
                 int grhIdx = texRef.GrhIndex + (py * tw) + px;
-                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)grhIdx);
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
                 Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
             }
         Undo?.EndBatch();
@@ -1603,7 +1603,7 @@ public partial class MapViewport : Control
                 int grhIdx = GetMosaicGrh(State.SelectedTexture, tx, ty);
 
                 var before = Map.Tiles[tx, ty];
-                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)grhIdx);
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)grhIdx);
                 Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
             }
             else if (State.EyedropGrh > 0)
@@ -1615,7 +1615,7 @@ public partial class MapViewport : Control
                 _paintedThisStroke.Add(key);
 
                 var before = Map.Tiles[tx, ty];
-                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (short)State.EyedropGrh);
+                SetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer, (int)State.EyedropGrh);
                 Undo?.RecordTileChange(tx, ty, before, Map.Tiles[tx, ty]);
             }
         }
@@ -1647,7 +1647,7 @@ public partial class MapViewport : Control
         QueueRedraw();
     }
 
-    private void SetLayerGrh(ref MapTile tile, int layer, short grhIdx)
+    private void SetLayerGrh(ref MapTile tile, int layer, int grhIdx)
     {
         switch (layer)
         {
@@ -1658,7 +1658,7 @@ public partial class MapViewport : Control
         }
     }
 
-    private short GetLayerGrh(ref MapTile tile, int layer)
+    private int GetLayerGrh(ref MapTile tile, int layer)
     {
         return layer switch
         {
@@ -1672,7 +1672,7 @@ public partial class MapViewport : Control
         if (Map == null || State == null || !Map.InBounds(tx, ty)) return;
 
         // Capture the GRH from the active layer
-        short grh = GetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer);
+        int grh = GetLayerGrh(ref Map.Tiles[tx, ty], State.ActiveLayer);
 
         // If active layer is empty, try layers top-down (4→1)
         if (grh == 0)
@@ -1698,15 +1698,15 @@ public partial class MapViewport : Control
         if (!Map.InBounds(startX, startY)) return;
 
         int layer = State.ActiveLayer;
-        short targetGrh = GetLayerGrh(ref Map.Tiles[startX, startY], layer);
+        int targetGrh = GetLayerGrh(ref Map.Tiles[startX, startY], layer);
 
         // Determine fill source (mosaic-aware or single GRH)
         var texRef = State.SelectedTexture;
-        short singleFillGrh = 0;
+        int singleFillGrh = 0;
         if (texRef == null)
         {
             if (State.EyedropGrh > 0)
-                singleFillGrh = (short)State.EyedropGrh;
+                singleFillGrh = (int)State.EyedropGrh;
             else
                 return;
             if (targetGrh == singleFillGrh) return;
@@ -1715,7 +1715,7 @@ public partial class MapViewport : Control
         {
             // Check no-op: would the start tile get the same GRH?
             int startFillGrh = GetMosaicGrh(texRef, startX, startY);
-            if (targetGrh == (short)startFillGrh) return;
+            if (targetGrh == startFillGrh) return;
         }
 
         Undo?.BeginBatch("Fill");
@@ -1735,11 +1735,11 @@ public partial class MapViewport : Control
             if (GetLayerGrh(ref Map.Tiles[x, y], layer) != targetGrh) continue;
 
             var before = Map.Tiles[x, y];
-            short fillGrh;
+            int fillGrh;
             if (texRef != null)
             {
                 // Mosaic with user offset
-                fillGrh = (short)GetMosaicGrh(texRef, x, y);
+                fillGrh = GetMosaicGrh(texRef, x, y);
             }
             else
             {
