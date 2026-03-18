@@ -30,9 +30,10 @@ public partial class WorldRenderer
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
+                // Ground objects — skip draw entirely if tile also has L3
+                // (two overlapping centered sprites cause shadow flicker during scroll)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
-                    && objGrh != tile.Layer3)
+                    && tile.Layer3 <= 0)
                 {
                     DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
                 }
