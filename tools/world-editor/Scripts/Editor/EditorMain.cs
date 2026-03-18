@@ -91,11 +91,17 @@ public partial class EditorMain : Control
     private ConfirmationDialog? _unsavedDialog;
     private Action? _pendingAfterSaveCheck;
 
-    // Texture preload
-    private Label? _preloadLabel;
-    private ProgressBar? _preloadBar;
+    // Texture preload loading screen
+    private ColorRect? _loadingBg;
+    private Label? _loadingTitle;
+    private Label? _loadingLabel;
+    private ProgressBar? _loadingBar;
     private Panel? _preloadOverlay;
-    private int _preloadPhase; // 0=idle, 1=textures, 2=previews
+    private int _preloadPhase; // 0=idle, 1=textures, 2=previews, 3=done
+    private IEnumerator<int>? _texturePreloadIter;
+    private IEnumerator<int>? _previewPreloadIter;
+    private float _loadingFadeAlpha = 1f;
+    private bool _loadingFadingOut;
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
@@ -112,6 +118,7 @@ public partial class EditorMain : Control
         _state.ExitFollowRequested += OnExitFollow;
 
         BuildUI();
+        BuildLoadingScreen();
         TryAutoDetectDataPath();
     }
 
@@ -570,12 +577,8 @@ public partial class EditorMain : Control
             _statusOuter.Size = new Vector2(win.X, StatusHeight);
         }
 
-        // Preload overlay — covers entire window to block all interaction
-        if (_preloadOverlay != null)
-        {
-            _preloadOverlay.Position = Vector2.Zero;
-            _preloadOverlay.Size = win;
-        }
+        // Loading screen overlay
+        LayoutLoadingScreen();
     }
 
     private void BuildMapPropsDialog()
@@ -657,6 +660,68 @@ public partial class EditorMain : Control
         };
         _unsavedDialog.Canceled += () => { _pendingAfterSaveCheck = null; };
         AddChild(_unsavedDialog);
+    }
+
+    private void BuildLoadingScreen()
+    {
+        _preloadOverlay = new Panel();
+        _preloadOverlay.ZIndex = 100;
+        var style = new StyleBoxFlat();
+        style.BgColor = new Color(0.08f, 0.08f, 0.10f, 1f);
+        _preloadOverlay.AddThemeStyleboxOverride("panel", style);
+        AddChild(_preloadOverlay);
+
+        _loadingBg = new ColorRect();
+        _loadingBg.Color = new Color(0.08f, 0.08f, 0.10f, 1f);
+        _loadingBg.MouseFilter = MouseFilterEnum.Stop;
+        _preloadOverlay.AddChild(_loadingBg);
+
+        _loadingTitle = new Label();
+        _loadingTitle.Text = "World Editor";
+        _loadingTitle.HorizontalAlignment = HorizontalAlignment.Center;
+        _loadingTitle.AddThemeFontSizeOverride("font_size", 24);
+        _loadingTitle.AddThemeColorOverride("font_color", EditorTheme.TEXT_PRIMARY);
+        _preloadOverlay.AddChild(_loadingTitle);
+
+        _loadingLabel = new Label();
+        _loadingLabel.Text = "Cargando texturas...";
+        _loadingLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _loadingLabel.AddThemeFontSizeOverride("font_size", 12);
+        _loadingLabel.AddThemeColorOverride("font_color", EditorTheme.TEXT_SECONDARY);
+        _preloadOverlay.AddChild(_loadingLabel);
+
+        _loadingBar = new ProgressBar();
+        _loadingBar.MinValue = 0;
+        _loadingBar.MaxValue = 100;
+        _loadingBar.Value = 0;
+        _loadingBar.ShowPercentage = false;
+        var barBg = new StyleBoxFlat();
+        barBg.BgColor = new Color(0.15f, 0.15f, 0.20f);
+        barBg.SetCornerRadiusAll(4);
+        _loadingBar.AddThemeStyleboxOverride("background", barBg);
+        var barFill = new StyleBoxFlat();
+        barFill.BgColor = EditorTheme.ACCENT;
+        barFill.SetCornerRadiusAll(4);
+        _loadingBar.AddThemeStyleboxOverride("fill", barFill);
+        _preloadOverlay.AddChild(_loadingBar);
+    }
+
+    private void LayoutLoadingScreen()
+    {
+        if (_preloadOverlay == null) return;
+        var win = GetViewportRect().Size;
+        _preloadOverlay.Position = Vector2.Zero;
+        _preloadOverlay.Size = win;
+        if (_loadingBg != null) { _loadingBg.Position = Vector2.Zero; _loadingBg.Size = win; }
+
+        float barW = 400;
+        float barH = 20;
+        float cx = (win.X - barW) / 2;
+        float cy = win.Y / 2;
+
+        if (_loadingTitle != null) { _loadingTitle.Position = new Vector2(cx, cy - 80); _loadingTitle.Size = new Vector2(barW, 30); }
+        if (_loadingLabel != null) { _loadingLabel.Position = new Vector2(cx, cy - 20); _loadingLabel.Size = new Vector2(barW, 24); }
+        if (_loadingBar != null) { _loadingBar.Position = new Vector2(cx, cy + 20); _loadingBar.Size = new Vector2(barW, barH); }
     }
 
     #region Data Loading
@@ -841,16 +906,72 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Textures load on demand via TextureManager.GetTexture() — no startup preload needed.
-        // Preview thumbnails in the palette are also generated on demand.
-        _preloadPhase = 0;
-        SetStatus("Editor listo — texturas se cargan bajo demanda");
+        // Start texture preload — blocks editor interaction until complete
+        _preloadPhase = 1;
+        _texturePreloadIter = _textures!.PreloadAll(_grhs!);
+        _loadingFadingOut = false;
+        _loadingFadeAlpha = 1f;
+        if (_preloadOverlay != null) _preloadOverlay.Visible = true;
+        SetStatus("Cargando texturas...");
     }
 
     private void TickTexturePreload()
     {
-        // No-op: textures now load on demand via TextureManager.GetTexture().
-        // Kept for compatibility with the _preloadPhase field.
+        if (_preloadPhase == 1 && _texturePreloadIter != null && _textures != null)
+        {
+            bool done = _textures.TickPreload(_texturePreloadIter, 12.0);
+            float progress = _textures.PreloadTotal > 0
+                ? (float)_textures.PreloadDone / _textures.PreloadTotal : 1f;
+            if (_loadingBar != null) _loadingBar.Value = progress * 80f; // 0-80% for textures
+            if (_loadingLabel != null)
+                _loadingLabel.Text = $"Cargando texturas... ({_textures.PreloadDone}/{_textures.PreloadTotal})";
+
+            if (done)
+            {
+                _preloadPhase = 2;
+                _texturePreloadIter = null;
+                _previewPreloadIter = _tilePalette?.PreloadAllPreviews();
+                if (_loadingLabel != null) _loadingLabel.Text = "Generando previews...";
+            }
+        }
+        else if (_preloadPhase == 2 && _previewPreloadIter != null)
+        {
+            // Time-budget preview generation
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            int count = 0;
+            while (sw.Elapsed.TotalMilliseconds < 8.0)
+            {
+                if (!_previewPreloadIter.MoveNext()) { _preloadPhase = 3; break; }
+                count++;
+            }
+            if (_loadingBar != null) _loadingBar.Value = 80f + 20f * (_preloadPhase == 3 ? 1f : 0.5f);
+            if (_loadingLabel != null && _preloadPhase != 3)
+                _loadingLabel.Text = $"Generando previews... ({count})";
+
+            if (_preloadPhase == 3)
+            {
+                _previewPreloadIter = null;
+                if (_loadingLabel != null) _loadingLabel.Text = "Listo!";
+                if (_loadingBar != null) _loadingBar.Value = 100;
+                _loadingFadingOut = true;
+                SetStatus("Editor listo");
+            }
+        }
+        else if (_preloadPhase == 3 && _loadingFadingOut)
+        {
+            _loadingFadeAlpha -= 0.05f;
+            if (_loadingFadeAlpha <= 0f)
+            {
+                _loadingFadeAlpha = 0f;
+                _loadingFadingOut = false;
+                _preloadPhase = 0;
+                if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+            }
+            else if (_preloadOverlay != null)
+            {
+                _preloadOverlay.Modulate = new Color(1, 1, 1, _loadingFadeAlpha);
+            }
+        }
     }
 
     private void SyncViewportData()
