@@ -30,27 +30,11 @@ public partial class WorldRenderer
                                                 _framePixelOffsetX, _framePixelOffsetY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
-                // Ground objects — skip if same GRH already exists in L3 (prevents z-fighting flicker)
+                // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
                     && objGrh != tile.Layer3)
                 {
-                    const float objBright = 220f / 255f;
-                    float objAlpha = 1f;
-                    if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(objGrh))
-                    {
-                        float smoothUX = _frameUserX + _state.ScreenOffsetX / 32f;
-                        float smoothUY = _frameUserY + _state.ScreenOffsetY / 32f;
-                        float dx = Math.Abs(x - smoothUX);
-                        float dy = Math.Abs(y - smoothUY);
-                        const float innerX = 3f, innerY = 2f;
-                        const float outerX = 5f, outerY = 7f;
-                        float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
-                        float ty = dy <= innerY ? 0f : dy >= outerY ? 1f : (dy - innerY) / (outerY - innerY);
-                        float t = Math.Max(tx, ty);
-                        float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
-                        objAlpha = treeAlpha + (1f - treeAlpha) * t;
-                    }
-                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, objAlpha));
+                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true);
                 }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
