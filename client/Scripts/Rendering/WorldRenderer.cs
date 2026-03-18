@@ -525,11 +525,11 @@ void fragment() {
 		_frameMinY = Math.Max(1, screenMinY - TerrainBufferSize);
 		_frameMaxY = Math.Min(mapH, screenMaxY + TerrainBufferSize);
 
-		// L1 water bounds (small margin)
-		_frameL1MinX = Math.Max(1, screenMinX - 2);
-		_frameL1MaxX = Math.Min(mapW, screenMaxX + 2);
-		_frameL1MinY = Math.Max(1, screenMinY - 2);
-		_frameL1MaxY = Math.Min(mapH, screenMaxY + 2);
+		// L1 water bounds (+3 to account for pixel offset during smooth scroll)
+		_frameL1MinX = Math.Max(1, screenMinX - 3);
+		_frameL1MaxX = Math.Min(mapW, screenMaxX + 3);
+		_frameL1MinY = Math.Max(1, screenMinY - 3);
+		_frameL1MaxY = Math.Min(mapH, screenMaxY + 3);
 
 		// Character bounds (viewport only + 1 tile for smooth edge)
 		_frameCharMinX = Math.Max(1, screenMinX - CharBufferSize);
@@ -593,9 +593,9 @@ void fragment() {
 		// PASS 1: Layer 1 — ONLY water tiles. Non-water tiles are drawn once
 		// by NonWaterMaskLayer (PASS 1b), avoiding the double-draw that killed FPS.
 		// ==========================================
-		for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
+		for (int y = _frameMinY; y <= _frameMaxY; y++)
 		{
-			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
+			for (int x = _frameMinX; x <= _frameMaxX; x++)
 			{
 				ref var tile = ref _state.MapData.Tiles[x, y];
 				if (!IsWaterGrh(tile.Layer1)) continue; // only water
