@@ -1131,52 +1131,82 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Background preload: textures load incrementally in _Process without blocking the editor
+        // Blocking preload: overlay visible, _Process only ticks preload until done
         if (_textures != null && _grhs != null)
         {
             _preloadPhase = 1;
             _texturePreloadIter = _textures.PreloadAll(_grhs);
-            SetStatus($"Cargando texturas en background... (0/{_textures.PreloadTotal})");
+            if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+            if (_loadingTitle != null) { _loadingTitle.Visible = true; _loadingTitle.Text = "World Editor"; }
+            if (_loadingLabel != null) { _loadingLabel.Visible = true; _loadingLabel.Text = "Cargando texturas..."; }
+            if (_loadingBar != null) { _loadingBar.Visible = true; _loadingBar.Value = 0; }
+            GD.Print($"[Editor] Starting preload: {_textures.PreloadTotal} textures");
         }
         else
         {
             _preloadPhase = 0;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
             SetStatus("Editor listo");
         }
-        if (_preloadOverlay != null) _preloadOverlay.Visible = false;
     }
 
     private void TickTexturePreload()
     {
+        // Phase 1: preload textures (blocking — same as client Main.cs)
         if (_preloadPhase == 1 && _texturePreloadIter != null && _textures != null)
         {
-            // Background preload: 8ms budget per frame — editor stays responsive
-            bool done = _textures.TickPreload(_texturePreloadIter, 8.0);
-            SetStatus($"Cargando texturas... ({_textures.PreloadDone}/{_textures.PreloadTotal})");
+            bool done = _textures.TickPreload(_texturePreloadIter, 12.0);
+            float progress = _textures.PreloadTotal > 0
+                ? (float)_textures.PreloadDone / _textures.PreloadTotal : 1f;
+            if (_loadingBar != null) _loadingBar.Value = progress * 80.0;
+            if (_loadingLabel != null)
+                _loadingLabel.Text = $"Cargando texturas... ({_textures.PreloadDone}/{_textures.PreloadTotal})";
 
             if (done)
             {
-                _preloadPhase = 2;
+                GD.Print($"[Editor] Texture preload complete: {_textures.PreloadDone} textures");
                 _texturePreloadIter = null;
+                _preloadPhase = 2;
                 _previewPreloadIter = _palette?.PreloadAllPreviews();
-                SetStatus("Generando previews...");
+                if (_loadingLabel != null) _loadingLabel.Text = "Generando previews...";
             }
         }
+        // Phase 2: generate palette previews (blocking)
         else if (_preloadPhase == 2 && _previewPreloadIter != null)
         {
-            // Background preview generation: 8ms budget per frame
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            while (sw.Elapsed.TotalMilliseconds < 8.0)
+            while (sw.Elapsed.TotalMilliseconds < 12.0)
             {
                 if (!_previewPreloadIter.MoveNext())
                 {
-                    _preloadPhase = 0;
+                    GD.Print("[Editor] Preview generation complete");
                     _previewPreloadIter = null;
+                    _preloadPhase = 3;
+                    _loadingFadingOut = true;
+                    _loadingFadeAlpha = 1f;
+                    if (_loadingBar != null) _loadingBar.Value = 100;
+                    if (_loadingLabel != null) _loadingLabel.Text = "Listo!";
                     SetStatus("Editor listo");
-                    // Rebuild palette to show loaded previews
                     _palette?.UpdateGridHighlights();
                     return;
                 }
+            }
+            if (_loadingBar != null) _loadingBar.Value = 80.0 + 20.0 * 0.5;
+        }
+        // Phase 3: fade out overlay
+        else if (_preloadPhase == 3 && _loadingFadingOut)
+        {
+            _loadingFadeAlpha -= 0.05f;
+            if (_loadingFadeAlpha <= 0f)
+            {
+                _loadingFadeAlpha = 0f;
+                _loadingFadingOut = false;
+                _preloadPhase = 0;
+                if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+            }
+            else if (_preloadOverlay != null)
+            {
+                _preloadOverlay.Modulate = new Color(1, 1, 1, _loadingFadeAlpha);
             }
         }
     }
@@ -2000,8 +2030,12 @@ public partial class EditorMain : Control
     {
         DoLayout();
 
-        // Tick texture preload (N images per frame, non-blocking)
-        TickTexturePreload();
+        // Blocking preload — nothing else runs until textures + previews are done
+        if (_preloadPhase > 0)
+        {
+            TickTexturePreload();
+            return;
+        }
 
         // Open tile properties when clicked with property tools
         if (_state.ShowTileProperties && _propsPanel != null && _map != null)
