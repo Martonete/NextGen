@@ -66,12 +66,12 @@ public static class MapLoader
                 throw new InvalidDataException($"Invalid .aomap magic in {path}");
         }
 
-        ushort version = reader.ReadInt32();
+        ushort version = reader.ReadUInt16();
         if (version != 1)
             throw new InvalidDataException($"Unsupported .aomap version {version} in {path}");
 
-        ushort width = reader.ReadInt32();
-        ushort height = reader.ReadInt32();
+        ushort width = reader.ReadUInt16();
+        ushort height = reader.ReadUInt16();
         uint flags = reader.ReadUInt32(); // reserved, skip
 
         var mapData = new MapData(width, height);
@@ -143,12 +143,12 @@ public static class MapLoader
                 throw new InvalidDataException($"Invalid .aoinf magic in {path}");
         }
 
-        ushort version = reader.ReadInt32();
+        ushort version = reader.ReadUInt16();
         if (version != 1)
             throw new InvalidDataException($"Unsupported .aoinf version {version} in {path}");
 
-        ushort width = reader.ReadInt32();
-        ushort height = reader.ReadInt32();
+        ushort width = reader.ReadUInt16();
+        ushort height = reader.ReadUInt16();
         uint flags = reader.ReadUInt32(); // reserved, skip
 
         // Validate dimensions match the map
