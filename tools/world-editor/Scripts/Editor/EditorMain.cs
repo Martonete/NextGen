@@ -1131,67 +1131,52 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Textures load on demand — no blocking preload needed
-        _preloadPhase = 0;
+        // Background preload: textures load incrementally in _Process without blocking the editor
+        if (_textures != null && _grhs != null)
+        {
+            _preloadPhase = 1;
+            _texturePreloadIter = _textures.PreloadAll(_grhs);
+            SetStatus($"Cargando texturas en background... (0/{_textures.PreloadTotal})");
+        }
+        else
+        {
+            _preloadPhase = 0;
+            SetStatus("Editor listo");
+        }
         if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-        SetStatus("Editor listo");
     }
 
     private void TickTexturePreload()
     {
         if (_preloadPhase == 1 && _texturePreloadIter != null && _textures != null)
         {
-            bool done = _textures.TickPreload(_texturePreloadIter, 12.0);
-            float progress = _textures.PreloadTotal > 0
-                ? (float)_textures.PreloadDone / _textures.PreloadTotal : 1f;
-            if (_loadingBar != null) _loadingBar.Value = progress * 80f; // 0-80% for textures
-            if (_loadingLabel != null)
-                _loadingLabel.Text = $"Cargando texturas... ({_textures.PreloadDone}/{_textures.PreloadTotal})";
+            // Background preload: 8ms budget per frame — editor stays responsive
+            bool done = _textures.TickPreload(_texturePreloadIter, 8.0);
+            SetStatus($"Cargando texturas... ({_textures.PreloadDone}/{_textures.PreloadTotal})");
 
             if (done)
             {
                 _preloadPhase = 2;
                 _texturePreloadIter = null;
                 _previewPreloadIter = _palette?.PreloadAllPreviews();
-                if (_loadingLabel != null) _loadingLabel.Text = "Generando previews...";
+                SetStatus("Generando previews...");
             }
         }
         else if (_preloadPhase == 2 && _previewPreloadIter != null)
         {
-            // Time-budget preview generation
+            // Background preview generation: 8ms budget per frame
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            int count = 0;
             while (sw.Elapsed.TotalMilliseconds < 8.0)
             {
-                if (!_previewPreloadIter.MoveNext()) { _preloadPhase = 3; break; }
-                count++;
-            }
-            if (_loadingBar != null) _loadingBar.Value = 80f + 20f * (_preloadPhase == 3 ? 1f : 0.5f);
-            if (_loadingLabel != null && _preloadPhase != 3)
-                _loadingLabel.Text = $"Generando previews... ({count})";
-
-            if (_preloadPhase == 3)
-            {
-                _previewPreloadIter = null;
-                if (_loadingLabel != null) _loadingLabel.Text = "Listo!";
-                if (_loadingBar != null) _loadingBar.Value = 100;
-                _loadingFadingOut = true;
-                SetStatus("Editor listo");
-            }
-        }
-        else if (_preloadPhase == 3 && _loadingFadingOut)
-        {
-            _loadingFadeAlpha -= 0.05f;
-            if (_loadingFadeAlpha <= 0f)
-            {
-                _loadingFadeAlpha = 0f;
-                _loadingFadingOut = false;
-                _preloadPhase = 0;
-                if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-            }
-            else if (_preloadOverlay != null)
-            {
-                _preloadOverlay.Modulate = new Color(1, 1, 1, _loadingFadeAlpha);
+                if (!_previewPreloadIter.MoveNext())
+                {
+                    _preloadPhase = 0;
+                    _previewPreloadIter = null;
+                    SetStatus("Editor listo");
+                    // Rebuild palette to show loaded previews
+                    _palette?.UpdateGridHighlights();
+                    return;
+                }
             }
         }
     }
