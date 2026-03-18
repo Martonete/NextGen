@@ -72,9 +72,11 @@ public partial class EditorMain : Control
     private Label? _rightInfoLabel;
 
     // Right sidebar: selection area section
+    private HSeparator? _rightSelSeparator;
     private VBoxContainer? _rightSelectionSection;
     private Label? _rightSelectionLabel;
     private Button? _rightFillButton;
+    private Button? _rightDeselectButton;
 
     // Tool bar (Excalidraw-style)
     private HBoxContainer? _toolBar;
@@ -397,13 +399,18 @@ public partial class EditorMain : Control
         _rightInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         rightVBox.AddChild(_rightInfoLabel);
 
+        // Separator between texture info and selection area
+        _rightSelSeparator = new HSeparator();
+        _rightSelSeparator.AddThemeConstantOverride("separation", 12);
+        _rightSelSeparator.Visible = false;
+        rightVBox.AddChild(_rightSelSeparator);
+
         // Selection area section (shown when HasSelection)
         _rightSelectionSection = new VBoxContainer();
-        _rightSelectionSection.AddThemeConstantOverride("separation", 4);
+        _rightSelectionSection.AddThemeConstantOverride("separation", 6);
         _rightSelectionSection.Visible = false;
 
-        _rightSelectionSection.AddChild(EditorTheme.MakeHSeparator());
-        _rightSelectionSection.AddChild(EditorTheme.SectionLabel("SELECTED AREA"));
+        _rightSelectionSection.AddChild(EditorTheme.SectionLabel("ÁREA SELECCIONADA"));
 
         _rightSelectionLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         _rightSelectionLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
@@ -413,6 +420,10 @@ public partial class EditorMain : Control
         _rightFillButton.Disabled = true;
         _rightFillButton.Pressed += () => _viewport?.FillSelection();
         _rightSelectionSection.AddChild(_rightFillButton);
+
+        _rightDeselectButton = EditorTheme.MakeButton("Deseleccionar");
+        _rightDeselectButton.Pressed += () => { _state.ClearSelection(); _viewport?.QueueRedraw(); };
+        _rightSelectionSection.AddChild(_rightDeselectButton);
 
         rightVBox.AddChild(_rightSelectionSection);
 
@@ -1426,6 +1437,8 @@ public partial class EditorMain : Control
     {
         if (_map == null) return;
         if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
+        // Ensure MapNumber is valid (never save as Mapa0)
+        if (_map.MapNumber <= 0) _map.MapNumber = _state.CurrentMapNumber > 0 ? _state.CurrentMapNumber : 1;
 
         // Save to primary map dir (server if available — all 3 files)
         MapLoader.Save(_state.MapDir, _map);
@@ -2154,6 +2167,7 @@ public partial class EditorMain : Control
         bool hasSel = _state.HasSelection;
 
         _rightSelectionSection.Visible = hasSel;
+        if (_rightSelSeparator != null) _rightSelSeparator.Visible = hasSel;
 
         if (hasSel)
         {

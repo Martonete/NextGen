@@ -1271,6 +1271,16 @@ public partial class MapViewport : Control
                         ApplyToolAt(tile.X, tile.Y);
                         break;
                     case EditorTool.Select:
+                        // Click outside existing selection → clear it
+                        if (State.HasSelection)
+                        {
+                            var clamped = ClampToMap(tile);
+                            if (clamped.X < State.SelX1 || clamped.X > State.SelX2 ||
+                                clamped.Y < State.SelY1 || clamped.Y > State.SelY2)
+                            {
+                                State.ClearSelection();
+                            }
+                        }
                         _isSelecting = true;
                         _selectStart = ClampToMap(tile);
                         _dragCurrent = _selectStart;
