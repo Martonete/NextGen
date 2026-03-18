@@ -41,10 +41,11 @@ public static partial class CharRenderer
         int nickY = (int)pos.Y + 30;
 
         // VB6: dead -> alpha 80, invisible -> pulsing alpha, else 255
-        byte alpha = ch.Dead ? (byte)80
-                   : ch.Invisible ? (byte)(ch.TransparenciaBody * 255 / 100)
-                   : (byte)255;
-        Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, alpha / 255f);
+        // FovAlpha applied so name fades with character at viewport edge
+        float baseAlpha = ch.Dead ? 80f / 255f
+                   : ch.Invisible ? ch.TransparenciaBody / 100f
+                   : 1f;
+        Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, baseAlpha * ch.FovAlpha);
         font.DrawText(canvas, centerX, nickY, nick, nickColor, center: true);
 
         // VB6: rank badge at Y+45 for admins, clan for non-admins
@@ -117,7 +118,9 @@ public static partial class CharRenderer
             }
         }
 
-        byte alpha = (byte)Math.Clamp((int)ch.DialogAlpha, 0, 255);
+        // Apply FovAlpha so dialog fades with the character at viewport edge
+        float combinedAlpha = ch.DialogAlpha * ch.FovAlpha;
+        byte alpha = (byte)Math.Clamp((int)combinedAlpha, 0, 255);
         if (alpha == 0) return;
 
         var lines = WrapText(ch.DialogText, 24);

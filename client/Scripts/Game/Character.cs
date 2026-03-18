@@ -81,7 +81,8 @@ public class Character
 
 	// FOV fade: smooth alpha transition when entering/leaving the core viewport
 	// 1.0 = fully visible (inside core), 0.0 = fully invisible (outside core)
-	public float FovAlpha = 1f;
+	// Starts at 0 so new characters fade in instead of popping
+	public float FovAlpha;
 
 	// Debug helper
 	public bool _debugLogged;
