@@ -65,12 +65,11 @@ public partial class EditorMain : Control
     private ColorRect? _sidebarBorder;
     private ColorRect? _headerBg; // opaque background behind toolbar+navbar to prevent viewport overflow
 
-    // Map navigation bar
-    private PanelContainer? _mapNavPanel; // background panel for nav bar
-    private HBoxContainer? _mapNavBar;
-    private SpinBox? _mapNumSpin;
-    private Button[] _mapNavButtons = Array.Empty<Button>();
-    private const int NavButtonCount = 11; // show ±5 maps around current
+    // Right sidebar (selected texture preview)
+    private PanelContainer? _rightSidebar;
+    private TextureRect? _rightPreview;
+    private Label? _rightNameLabel;
+    private Label? _rightInfoLabel;
 
     // Tool bar (Excalidraw-style)
     private HBoxContainer? _toolBar;
@@ -100,10 +99,10 @@ public partial class EditorMain : Control
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
-    private const float NavBarHeight = 28;
     private const float ToolBarHeight = 40;
     private const float TileInfoHeight = 110;
     private const float SidebarBorderWidth = 1;
+    private const float RightSidebarWidth = 200;
 
     public override void _Ready()
     {
@@ -288,79 +287,7 @@ public partial class EditorMain : Control
         SyncToolBar();
         SyncLayerTabs();
 
-        // --- Map navigation bar (below toolbar, compact) ---
-        _mapNavPanel = new PanelContainer();
-        var navBg = EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 4, 2, EditorTheme.BORDER, 1);
-        navBg.BorderWidthTop = 0;
-        navBg.BorderWidthLeft = 0;
-        navBg.BorderWidthRight = 0;
-        _mapNavPanel.AddThemeStyleboxOverride("panel", navBg);
-
-        _mapNavBar = new HBoxContainer();
-        _mapNavBar.AddThemeConstantOverride("separation", 2);
-        _mapNavBar.ClipContents = true;
-        _mapNavBar.Alignment = BoxContainer.AlignmentMode.Begin;
-
-        var navLabel = EditorTheme.MakeLabel("Mapa", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
-        navLabel.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        _mapNavBar.AddChild(navLabel);
-
-        // Left arrow (compact)
-        var btnPrev = new Button { Text = "\u25c0", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Retroceder", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        btnPrev.AddThemeFontSizeOverride("font_size", 9);
-        btnPrev.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
-        btnPrev.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
-        btnPrev.Pressed += () => NavigateMapOffset(-NavButtonCount);
-        _mapNavBar.AddChild(btnPrev);
-
-        // Map number buttons (compact pills)
-        _mapNavButtons = new Button[NavButtonCount];
-        for (int i = 0; i < NavButtonCount; i++)
-        {
-            var btn = new Button
-            {
-                CustomMinimumSize = new Vector2(36, 22),
-                SizeFlagsHorizontal = SizeFlags.ShrinkBegin,
-            };
-            btn.AddThemeFontSizeOverride("font_size", 10);
-            int capturedIdx = i;
-            btn.Pressed += () => OnNavButtonPressed(capturedIdx);
-            _mapNavBar.AddChild(btn);
-            _mapNavButtons[i] = btn;
-        }
-
-        // Right arrow (compact)
-        var btnNext = new Button { Text = "\u25b6", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Avanzar", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        btnNext.AddThemeFontSizeOverride("font_size", 9);
-        btnNext.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
-        btnNext.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
-        btnNext.Pressed += () => NavigateMapOffset(NavButtonCount);
-        _mapNavBar.AddChild(btnNext);
-
-        // Separator + Quick jump (compact)
-        var navSep = EditorTheme.ToolBarGroupSeparator();
-        navSep.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        _mapNavBar.AddChild(navSep);
-
-        _mapNumSpin = EditorTheme.MakeSpinBox(1, 999, 1, 1);
-        _mapNumSpin.CustomMinimumSize = new Vector2(60, 0);
-        _mapNumSpin.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        _mapNavBar.AddChild(_mapNumSpin);
-
-        var goBtn = new Button { Text = "Ir", CustomMinimumSize = new Vector2(32, 22), TooltipText = "Ir al mapa", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        goBtn.AddThemeFontSizeOverride("font_size", 10);
-        goBtn.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY, 10, 4, 1));
-        goBtn.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY_H, 10, 4, 1));
-        goBtn.AddThemeColorOverride("font_color", Colors.White);
-        goBtn.Pressed += () => RequestLoadMap((int)_mapNumSpin!.Value);
-        _mapNavBar.AddChild(goBtn);
-
-        // Spacer absorbs remaining width so buttons stay packed left
-        var navSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _mapNavBar.AddChild(navSpacer);
-
-        _mapNavPanel.AddChild(_mapNavBar);
-        AddChild(_mapNavPanel);
+        // Map nav bar removed — single map, auto-loads map 1
 
         // --- Left sidebar: TabContainer with Tiles + NPCs ---
         _sidebarTabs = new TabContainer();
@@ -376,6 +303,8 @@ public partial class EditorMain : Control
         _sidebarTabs.AddThemeColorOverride("font_unselected_color", EditorTheme.TEXT_SECONDARY);
         _sidebarTabs.AddThemeColorOverride("font_hovered_color", EditorTheme.TEXT_PRIMARY);
         _sidebarTabs.AddThemeColorOverride("font_selected_color", Colors.White);
+        _sidebarTabs.ClipContents = true;
+        _sidebarTabs.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_sidebarTabs);
 
         _palette = new TilePalette { Name = "Tiles", State = _state };
@@ -419,6 +348,39 @@ public partial class EditorMain : Control
         // Sidebar right border (1px separator between sidebar and viewport)
         _sidebarBorder = new ColorRect { Color = EditorTheme.BORDER };
         AddChild(_sidebarBorder);
+
+        // --- Right sidebar: selected texture preview ---
+        _rightSidebar = new PanelContainer();
+        _rightSidebar.AddThemeStyleboxOverride("panel",
+            EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 6, 4, EditorTheme.BORDER, 1));
+        _rightSidebar.ClipContents = true;
+        _rightSidebar.MouseFilter = MouseFilterEnum.Stop;
+
+        var rightVBox = new VBoxContainer();
+        rightVBox.AddThemeConstantOverride("separation", 6);
+
+        var rsTitle = EditorTheme.SectionLabel("SELECTED TEXTURE");
+        rightVBox.AddChild(rsTitle);
+
+        _rightPreview = new TextureRect
+        {
+            CustomMinimumSize = new Vector2(128, 128),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
+        };
+        rightVBox.AddChild(_rightPreview);
+
+        _rightNameLabel = EditorTheme.MakeLabel("(none)", EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_SM);
+        _rightNameLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        rightVBox.AddChild(_rightNameLabel);
+
+        _rightInfoLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        rightVBox.AddChild(_rightInfoLabel);
+
+        _rightSidebar.AddChild(rightVBox);
+        AddChild(_rightSidebar);
 
         // --- Status bar (professional, with top border and pill indicators) ---
         _statusOuter = new VBoxContainer();
@@ -547,15 +509,7 @@ public partial class EditorMain : Control
             _toolBar.ZIndex = 2;
         }
 
-        float navTop = tbTop + ToolBarHeight;
-        if (_mapNavPanel != null)
-        {
-            _mapNavPanel.Position = new Vector2(0, navTop);
-            _mapNavPanel.Size = new Vector2(win.X, NavBarHeight);
-            _mapNavPanel.ZIndex = 2;
-        }
-
-        float contentTop = navTop + NavBarHeight;
+        float contentTop = tbTop + ToolBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
 
@@ -592,12 +546,21 @@ public partial class EditorMain : Control
             _sidebarBorder.Size = new Vector2(SidebarBorderWidth, contentH);
         }
 
-        // Viewport
+        // Right sidebar
+        if (_rightSidebar != null)
+        {
+            _rightSidebar.Position = new Vector2(win.X - RightSidebarWidth, contentTop);
+            _rightSidebar.Size = new Vector2(RightSidebarWidth, contentH);
+            _rightSidebar.ZIndex = 2;
+        }
+
+        // Viewport (between left and right sidebars)
         if (_viewport != null)
         {
             float vpX = PaletteWidth + SidebarBorderWidth;
+            float vpW = win.X - vpX - RightSidebarWidth;
             _viewport.Position = new Vector2(vpX, contentTop);
-            _viewport.Size = new Vector2(win.X - vpX, contentH);
+            _viewport.Size = new Vector2(vpW, contentH);
         }
 
         // Status bar (outer container with border line + bar)
@@ -1050,7 +1013,6 @@ public partial class EditorMain : Control
         _state.ResetDirty();
         UpdateViewport();
         UpdateNavBar();
-        if (_mapNumSpin != null) _mapNumSpin.Value = mapNumber;
         SetStatus($"Mapa {mapNumber} cargado ({_map.Width}x{_map.Height}) — {_map.Name}");
     }
 
@@ -1071,7 +1033,6 @@ public partial class EditorMain : Control
                 _state.ResetDirty();
                 UpdateViewport();
                 UpdateNavBar();
-                if (_mapNumSpin != null) _mapNumSpin.Value = mapNum;
                 SetStatus($"Mapa {mapNum} cargado — {_map.Name}");
                 return;
             }
@@ -1484,54 +1445,8 @@ public partial class EditorMain : Control
 
     #region Map Navigation Bar
 
-    private int _navOffset; // offset for paging through maps
-
-    private void UpdateNavBar()
-    {
-        if (_mapNavButtons.Length == 0) return;
-        int center = _state.CurrentMapNumber + _navOffset;
-        int half = NavButtonCount / 2;
-
-        for (int i = 0; i < NavButtonCount; i++)
-        {
-            int mapNum = center - half + i;
-            var btn = _mapNavButtons[i];
-            if (mapNum < 1)
-            {
-                btn.Text = "";
-                btn.Disabled = true;
-                btn.Visible = false;
-                btn.Modulate = Colors.White;
-                continue;
-            }
-
-            btn.Text = mapNum.ToString();
-            btn.Disabled = false;
-            btn.Visible = true;
-            bool isCurrent = mapNum == _state.CurrentMapNumber;
-            bool exists = _state.AvailableMaps.Contains(mapNum);
-            EditorTheme.StyleNavButtonCompact(btn, isCurrent, exists);
-        }
-    }
-
-    private void OnNavButtonPressed(int buttonIndex)
-    {
-        int center = _state.CurrentMapNumber + _navOffset;
-        int half = NavButtonCount / 2;
-        int mapNum = center - half + buttonIndex;
-        if (mapNum < 1) return;
-
-        if (_state.AvailableMaps.Contains(mapNum))
-            RequestLoadMap(mapNum);
-        else
-            SetStatus($"Mapa{mapNum}.map no existe");
-    }
-
-    private void NavigateMapOffset(int delta)
-    {
-        _navOffset += delta;
-        UpdateNavBar();
-    }
+    // Map nav bar removed — single map mode. UpdateNavBar kept as no-op for callers.
+    private void UpdateNavBar() { }
 
     #endregion
 
@@ -1797,7 +1712,64 @@ public partial class EditorMain : Control
         _palette?.SyncLayerUI();
         SyncToolBar();
         SyncLayerTabs();
+        UpdateRightSidebar();
         _viewport?.QueueRedraw();
+    }
+
+    private TextureRef? _lastRightSidebarTexRef;
+    private int _lastRightSidebarEyedrop;
+
+    private void UpdateRightSidebar()
+    {
+        if (_rightPreview == null || _rightNameLabel == null || _rightInfoLabel == null) return;
+
+        var texRef = _state.SelectedTexture;
+        int eyedrop = _state.EyedropGrh;
+
+        // Avoid rebuilding every frame — only when selection changes
+        if (texRef == _lastRightSidebarTexRef && eyedrop == _lastRightSidebarEyedrop) return;
+        _lastRightSidebarTexRef = texRef;
+        _lastRightSidebarEyedrop = eyedrop;
+
+        if (texRef != null)
+        {
+            _rightNameLabel.Text = texRef.Name;
+            _rightInfoLabel.Text = $"GRH: {texRef.GrhIndex}\nLayer: {Math.Max(texRef.Layer, 1)}\nSize: {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
+            _rightPreview.Texture = _palette?.GetPreviewTexture(texRef);
+        }
+        else if (eyedrop > 0)
+        {
+            _rightNameLabel.Text = "Eyedrop";
+            _rightInfoLabel.Text = $"GRH: {eyedrop}\nLayer: {_state.ActiveLayer}";
+            _rightPreview.Texture = GenerateGrhPreview(eyedrop);
+        }
+        else
+        {
+            _rightNameLabel.Text = "(none)";
+            _rightInfoLabel.Text = "";
+            _rightPreview.Texture = null;
+        }
+    }
+
+    private Texture2D? GenerateGrhPreview(int grhIndex)
+    {
+        if (_grhs == null || _textures == null || grhIndex <= 0 || grhIndex >= _grhs.Length) return null;
+        var grh = _grhs[grhIndex];
+        if (grh.NumFrames <= 0) return null;
+        if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+        {
+            int fIdx = grh.Frames[0];
+            if (fIdx > 0 && fIdx < _grhs.Length) grh = _grhs[fIdx];
+        }
+        if (grh.FileNum <= 0) return null;
+        var srcTex = _textures.GetTexture(grh.FileNum);
+        if (srcTex == null) return null;
+        var atlas = new AtlasTexture();
+        atlas.Atlas = srcTex;
+        atlas.Region = new Rect2(grh.SX, grh.SY,
+            Math.Min(grh.PixelWidth, srcTex.GetWidth() - grh.SX),
+            Math.Min(grh.PixelHeight, srcTex.GetHeight() - grh.SY));
+        return atlas;
     }
 
     public override void _Notification(int what)

@@ -67,12 +67,14 @@ public partial class TilePalette : VBoxContainer
         _scrollContainer = new ScrollContainer();
         _scrollContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
         _scrollContainer.CustomMinimumSize = new Vector2(290, 200);
+        _scrollContainer.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_scrollContainer);
 
         _grid = new GridContainer();
         _grid.Columns = Columns;
         _grid.AddThemeConstantOverride("h_separation", 4);
         _grid.AddThemeConstantOverride("v_separation", 4);
+        _grid.MouseFilter = MouseFilterEnum.Stop;
         _scrollContainer.AddChild(_grid);
     }
 
@@ -360,6 +362,14 @@ public partial class TilePalette : VBoxContainer
     }
 
     public int PreviewPreloadTotal => Catalog?.AllRefs.Count ?? 0;
+
+    /// <summary>
+    /// Public accessor for preview textures (used by right sidebar).
+    /// </summary>
+    public Texture2D? GetPreviewTexture(TextureRef texRef)
+    {
+        return GetOrCreatePreview(texRef);
+    }
 
     /// <summary>
     /// Get a cached preview or create one. Uses AtlasTexture for single-tile

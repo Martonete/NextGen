@@ -1294,7 +1294,9 @@ public partial class MapViewport : Control
                         PickStartAt(tile.X, tile.Y);
                         break;
                     case EditorTool.Fill:
-                        if (State.SelectedTexture != null)
+                        if (State.HasSelection)
+                            FillSelection();
+                        else if (State.SelectedTexture != null)
                             StampMosaicPattern(State.SelectedTexture, tile.X, tile.Y);
                         else
                             FloodFill(tile.X, tile.Y);
@@ -1700,6 +1702,48 @@ public partial class MapViewport : Control
             State.SelectedTexture = null; // Clear catalog selection, use raw GRH
             State.ActiveTool = EditorTool.Paint;
         }
+    }
+
+    /// <summary>
+    /// Fill only the selected rectangle with the current texture or eyedrop GRH.
+    /// Uses mosaic pattern if a catalog texture with tiles is selected.
+    /// </summary>
+    public void FillSelection()
+    {
+        if (Map == null || State == null || !State.HasSelection) return;
+
+        int layer = State.ActiveLayer;
+        var texRef = State.SelectedTexture;
+        int singleFillGrh = 0;
+
+        if (texRef == null)
+        {
+            if (State.EyedropGrh > 0)
+                singleFillGrh = State.EyedropGrh;
+            else
+                return;
+        }
+
+        Undo?.BeginBatch("Fill Selection");
+
+        int x1 = State.SelX1, y1 = State.SelY1;
+        int x2 = State.SelX2, y2 = State.SelY2;
+
+        for (int y = y1; y <= y2; y++)
+        {
+            for (int x = x1; x <= x2; x++)
+            {
+                if (!Map.InBounds(x, y)) continue;
+
+                var before = Map.Tiles[x, y];
+                int fillGrh = texRef != null ? GetMosaicGrh(texRef, x, y) : singleFillGrh;
+                SetLayerGrh(ref Map.Tiles[x, y], layer, fillGrh);
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+            }
+        }
+
+        Undo?.EndBatch();
+        QueueRedraw();
     }
 
     public void FloodFill(int startX, int startY)

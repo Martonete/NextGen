@@ -541,6 +541,8 @@ public static class EditorTheme
             case "save":     DrawIconSave(canvas, center, s, color, w); break;
             case "undo":     DrawIconUndo(canvas, center, s, color, w); break;
             case "redo":     DrawIconRedo(canvas, center, s, color, w); break;
+            case "folder":   DrawIconFolder(canvas, center, s, color, w); break;
+            case "file_new": DrawIconFileNew(canvas, center, s, color, w); break;
         }
     }
 
@@ -968,6 +970,65 @@ public static class EditorTheme
         c.DrawLine(arrowPt, arrowPt + new Vector2(-ah * 0.3f, -ah), col, w);
     }
 
+    // --- Folder: simple folder shape (rectangle with tab on top-left) ---
+    private static void DrawIconFolder(Control c, Vector2 p, float s, Color col, float w)
+    {
+        float hs = s * 0.58f;
+        float tabW = hs * 0.45f;
+        float tabH = hs * 0.25f;
+
+        // Main body
+        var tl = p + new Vector2(-hs, -hs * 0.4f);
+        var tr = p + new Vector2(hs, -hs * 0.4f);
+        var br = p + new Vector2(hs, hs);
+        var bl = p + new Vector2(-hs, hs);
+
+        // Tab on top-left
+        var tabTL = tl + new Vector2(0, -tabH);
+        var tabTR = tl + new Vector2(tabW, -tabH);
+        var tabBR = tl + new Vector2(tabW + tabH * 0.5f, 0);
+
+        c.DrawLine(tabTL, tabTR, col, w);
+        c.DrawLine(tabTR, tabBR, col, w);
+        c.DrawLine(tabTL, tl, col, w);
+
+        // Body outline
+        c.DrawLine(tl, tr, col, w);
+        c.DrawLine(tr, br, col, w);
+        c.DrawLine(br, bl, col, w);
+        c.DrawLine(bl, tl, col, w);
+    }
+
+    // --- FileNew: document with + sign ---
+    private static void DrawIconFileNew(Control c, Vector2 p, float s, Color col, float w)
+    {
+        float hs = s * 0.52f;
+        float fold = hs * 0.35f;
+
+        // Document outline with folded corner
+        var tl = p + new Vector2(-hs, -hs);
+        var tr = p + new Vector2(hs - fold, -hs);
+        var foldPt = p + new Vector2(hs, -hs + fold);
+        var br = p + new Vector2(hs, hs);
+        var bl = p + new Vector2(-hs, hs);
+
+        c.DrawLine(tl, tr, col, w);
+        c.DrawLine(tr, foldPt, col, w);
+        c.DrawLine(foldPt, br, col, w);
+        c.DrawLine(br, bl, col, w);
+        c.DrawLine(bl, tl, col, w);
+
+        // Fold crease
+        c.DrawLine(tr, tr + new Vector2(0, fold), col, w * 0.7f);
+        c.DrawLine(tr + new Vector2(0, fold), foldPt, col, w * 0.7f);
+
+        // Plus sign in center
+        float ps = hs * 0.35f;
+        var center = p + new Vector2(0, s * 0.1f);
+        c.DrawLine(center + new Vector2(0, -ps), center + new Vector2(0, ps), col, w);
+        c.DrawLine(center + new Vector2(-ps, 0), center + new Vector2(ps, 0), col, w);
+    }
+
     // ── Drawing utilities ────────────────────────────────────────────
 
     private static void DrawDashedLine(Control c, Vector2 from, Vector2 to,
@@ -1038,6 +1099,8 @@ public static class EditorTheme
         if (lower.Contains("save") || lower.Contains("guardar")) return "save";
         if (lower.Contains("undo") || lower.Contains("deshacer")) return "undo";
         if (lower.Contains("redo") || lower.Contains("rehacer")) return "redo";
+        if (lower.Contains("abrir") || lower.Contains("open")) return "folder";
+        if (lower.Contains("nuevo") || lower.Contains("new")) return "file_new";
         return "pencil"; // final fallback
     }
 
