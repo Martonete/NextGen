@@ -326,9 +326,10 @@ public partial class WorldRenderer
     {
         if (_state?.MapData == null || _data == null || _animator == null) return;
 
-        for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
+        // Must cover same range as L2/L3 terrain buffer to prevent flash at edges
+        for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
-            for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
+            for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
