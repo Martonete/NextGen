@@ -1249,5 +1249,6 @@ public partial class Main : Control
 	public override void _ExitTree()
 	{
 		_tcp?.Dispose();
+		_gameData?.Textures?.Cleanup();
 	}
 }

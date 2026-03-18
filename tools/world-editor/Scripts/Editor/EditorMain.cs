@@ -2229,6 +2229,7 @@ public partial class EditorMain : Control
         // Intercept window close to check for unsaved changes
         if (what == NotificationWMCloseRequest)
         {
+            _textures?.Cleanup(); // Free GPU textures before exit
             if (_state.IsDirty)
             {
                 CheckDirtyThen(() => GetTree().Quit());

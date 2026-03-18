@@ -188,4 +188,12 @@ public class TextureManager
                 false, Image.Format.Rgba8, data);
         }
     }
+
+    /// <summary>Free all cached textures to release GPU memory.</summary>
+    public void Cleanup()
+    {
+        _cache.Clear();
+        _lruOrder.Clear();
+        _lruNodes.Clear();
+    }
 }
