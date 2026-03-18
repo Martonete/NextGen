@@ -73,15 +73,19 @@ public partial class MapViewport : Control
         AddChild(_particleOverlay);
     }
 
+    private double _animTime; // ms, for tile animations
+
     public override void _Process(double delta)
     {
+        _animTime += delta * 1000.0;
+
         // Animate marching ants for selection
         if (State != null && (State.HasSelection || _isSelecting))
         {
             _marchingAntsOffset = (_marchingAntsOffset + (float)(MarchingAntsSpeed * delta))
                 % (MarchingAntsDash + MarchingAntsGap);
-            QueueRedraw();
         }
+        QueueRedraw();
     }
 
     public override void _Draw()
@@ -897,7 +901,10 @@ public partial class MapViewport : Control
         var grh = Grhs[grhIndex];
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
-            int frameIdx = grh.Frames[0];
+            int frame = grh.Speed > 0
+                ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames
+                : 0;
+            int frameIdx = grh.Frames[frame];
             if (frameIdx <= 0 || frameIdx >= Grhs.Length) return;
             grh = Grhs[frameIdx];
         }
@@ -928,7 +935,10 @@ public partial class MapViewport : Control
         var grh = Grhs[grhIndex];
         if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
         {
-            int frameIdx = grh.Frames[0];
+            int frame = grh.Speed > 0
+                ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames
+                : 0;
+            int frameIdx = grh.Frames[frame];
             if (frameIdx <= 0 || frameIdx >= Grhs.Length) return;
             grh = Grhs[frameIdx];
         }
