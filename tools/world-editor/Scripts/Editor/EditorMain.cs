@@ -1166,23 +1166,17 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Blocking preload: overlay visible, _Process only ticks preload until done
+        // Synchronous preload: load ALL textures before editor is usable
         if (_textures != null && _grhs != null)
         {
-            _preloadPhase = 1;
-            _texturePreloadIter = _textures.PreloadAll(_grhs);
-            if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
-            if (_loadingTitle != null) { _loadingTitle.Visible = true; _loadingTitle.Text = "World Editor"; }
-            if (_loadingLabel != null) { _loadingLabel.Visible = true; _loadingLabel.Text = "Cargando texturas..."; }
-            if (_loadingBar != null) { _loadingBar.Visible = true; _loadingBar.Value = 0; }
-            GD.Print($"[Editor] Starting preload: {_textures.PreloadTotal} textures");
+            var iter = _textures.PreloadAll(_grhs);
+            GD.Print($"[Editor] Preloading {_textures.PreloadTotal} textures...");
+            while (iter.MoveNext()) { } // load all textures synchronously
+            GD.Print($"[Editor] Preload complete: {_textures.PreloadDone} textures cached");
         }
-        else
-        {
-            _preloadPhase = 0;
-            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-            SetStatus("Editor listo");
-        }
+        _preloadPhase = 0;
+        if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+        SetStatus("Editor listo");
     }
 
     private void TickTexturePreload()
