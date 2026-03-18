@@ -40,40 +40,47 @@ public partial class TilePalette : VBoxContainer
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(300, 0);
+        SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        ClipContents = true;
         AddThemeConstantOverride("separation", 3);
 
         // Search box
         _searchBox = new LineEdit();
         _searchBox.PlaceholderText = "Buscar textura...";
         _searchBox.ClearButtonEnabled = true;
-        _searchBox.CustomMinimumSize = new Vector2(290, 28);
+        _searchBox.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _searchBox.CustomMinimumSize = new Vector2(0, 28);
         _searchBox.AddThemeFontSizeOverride("font_size", 11);
         _searchBox.TextChanged += OnSearchChanged;
         AddChild(_searchBox);
 
         // Category buttons (wrapped flow — always fully visible, no scrollbar)
         _categoryFlow = new FlowContainer();
-        _categoryFlow.CustomMinimumSize = new Vector2(290, 0);
         _categoryFlow.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         AddChild(_categoryFlow);
 
-        // Info label
+        // Info label — 2 lines, clipped, no width expansion
         _infoLabel = EditorTheme.MakeLabel("Selecciona una textura", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
-        _infoLabel.CustomMinimumSize = new Vector2(0, 18);
+        _infoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _infoLabel.CustomMinimumSize = new Vector2(0, 28);
+        _infoLabel.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _infoLabel.ClipText = true;
         AddChild(_infoLabel);
 
         // Scroll + Grid for texture previews
         _scrollContainer = new ScrollContainer();
         _scrollContainer.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _scrollContainer.CustomMinimumSize = new Vector2(290, 200);
+        _scrollContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _scrollContainer.CustomMinimumSize = new Vector2(0, 200);
         _scrollContainer.MouseFilter = MouseFilterEnum.Stop;
+        _scrollContainer.ClipContents = true;
         AddChild(_scrollContainer);
 
         _grid = new GridContainer();
         _grid.Columns = Columns;
         _grid.AddThemeConstantOverride("h_separation", 4);
         _grid.AddThemeConstantOverride("v_separation", 4);
+        _grid.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _grid.MouseFilter = MouseFilterEnum.Stop;
         _scrollContainer.AddChild(_grid);
     }
@@ -245,7 +252,7 @@ public partial class TilePalette : VBoxContainer
             EmitSignal(SignalName.LayerChanged, texRef.Layer);
         }
 
-        _infoLabel!.Text = $"{texRef.Name} | GRH {texRef.GrhIndex} | L{Math.Max(texRef.Layer, 1)} | {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
+        _infoLabel!.Text = $"{texRef.Name} — GRH {texRef.GrhIndex}\nL{Math.Max(texRef.Layer, 1)} — {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
 
         // Just update highlights — don't rebuild the entire grid
         UpdateGridHighlights();
@@ -254,7 +261,7 @@ public partial class TilePalette : VBoxContainer
     /// <summary>
     /// Update button highlights without rebuilding the grid.
     /// </summary>
-    private void UpdateGridHighlights()
+    public void UpdateGridHighlights()
     {
         foreach (var (btn, texRef) in _gridButtons)
         {
