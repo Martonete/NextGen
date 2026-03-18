@@ -757,6 +757,7 @@ public static class RpgTheme
     {
         var btn = new TextureButton();
         btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+        btn.FocusMode = Control.FocusModeEnum.None; // Never grab keyboard focus — prevents arrow keys from being captured by Godot focus navigation
         if (isLong)
         {
             btn.TextureNormal = GetTex("long_button.png");
