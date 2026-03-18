@@ -68,33 +68,16 @@ public static class MapLoader
     /// Save map files. If mapOnly=true, only writes the map file (client-side graphics).
     public static void Save(string mapDir, MapData mapData, bool mapOnly)
     {
-        bool useNewFormat = mapData.Width > 100 || mapData.Height > 100;
+        // Always save as .aomap format (Int32 layers) — legacy .map is deprecated
+        string aomapFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aomap");
+        SaveAoMapFile(aomapFile, mapData);
 
-        if (useNewFormat)
+        if (!mapOnly)
         {
-            string aomapFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aomap");
-            SaveAoMapFile(aomapFile, mapData);
-
-            if (!mapOnly)
-            {
-                string aoinfFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aoinf");
-                string datFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.dat");
-                SaveAoInfFile(aoinfFile, mapData);
-                SaveDatFile(datFile, mapData);
-            }
-        }
-        else
-        {
-            string mapFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.map");
-            SaveMapFile(mapFile, mapData);
-
-            if (!mapOnly)
-            {
-                string infFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.inf");
-                string datFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.dat");
-                SaveInfFile(infFile, mapData);
-                SaveDatFile(datFile, mapData);
-            }
+            string aoinfFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.aoinf");
+            string datFile = Path.Combine(mapDir, $"Mapa{mapData.MapNumber}.dat");
+            SaveAoInfFile(aoinfFile, mapData);
+            SaveDatFile(datFile, mapData);
         }
     }
 

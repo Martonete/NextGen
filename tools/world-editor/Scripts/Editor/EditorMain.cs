@@ -1378,12 +1378,12 @@ public partial class EditorMain : Control
 
     private void CreateNewMap(int mapNumber)
     {
-        _map = new MapData();
+        _map = new MapData(1000, 1000);
         _map.MapNumber = mapNumber;
         _map.Name = $"Mapa {mapNumber}";
 
-        for (int y = 1; y <= 100; y++)
-            for (int x = 1; x <= 100; x++)
+        for (int y = 1; y <= 1000; y++)
+            for (int x = 1; x <= 1000; x++)
                 _map.Tiles[x, y].Layer1 = 1;
 
         _state.CurrentMapNumber = mapNumber;
