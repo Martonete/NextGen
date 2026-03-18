@@ -517,7 +517,7 @@ public partial class EditorMain : Control
             Title = "Guardar Mapa Como",
             Size = new Vector2I(600, 400),
         };
-        _saveDialog.AddFilter("*.map", "Mapa AO");
+        _saveDialog.AddFilter("*.aomap", "Mapa AO");
         _saveDialog.FileSelected += OnSaveFileSelected;
         AddChild(_saveDialog);
 
@@ -1445,44 +1445,34 @@ public partial class EditorMain : Control
     {
         if (_map == null) return;
         if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
-        // Ensure MapNumber is valid (never save as Mapa0)
         if (_map.MapNumber <= 0) _map.MapNumber = _state.CurrentMapNumber > 0 ? _state.CurrentMapNumber : 1;
 
-        // Save to primary map dir (server if available — all 3 files)
-        MapLoader.Save(_state.MapDir, _map);
-
-        // Dual-save: client gets .map only, server gets all 3
-        string secondaryDir = "";
-        bool secondaryMapOnly = false;
-        if (_state.MapDir == _serverMapDir && _clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+        // Save .aomap to client Maps dir
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
         {
-            secondaryDir = _clientMapDir;
-            secondaryMapOnly = true;  // Client only needs .map
-        }
-        else if (_state.MapDir == _clientMapDir && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-        {
-            secondaryDir = _serverMapDir;
-            secondaryMapOnly = false; // Server needs all 3
+            MapLoader.Save(_clientMapDir, _map);
+            GD.Print($"[Editor] Saved to client: {_clientMapDir}");
         }
 
-        if (secondaryDir.Length > 0)
+        // Save .aomap + .aoinf + .dat to server maps dir
+        if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
         {
-            MapLoader.Save(secondaryDir, _map, mapOnly: secondaryMapOnly);
-            GD.Print($"[Editor] Dual-save: also saved to {secondaryDir} (mapOnly={secondaryMapOnly})");
+            MapLoader.Save(_serverMapDir, _map);
+            GD.Print($"[Editor] Saved to server: {_serverMapDir}");
         }
 
         _state.ResetDirty();
         _state.ScanAvailableMaps(_state.MapDir);
         UpdateNavBar();
-        string dualMsg = secondaryDir.Length > 0 ? " (cliente .map + server .map/.inf/.dat)" : "";
-        SetStatus($"Mapa {_map.MapNumber} guardado{dualMsg}");
+        bool dual = _clientMapDir.Length > 0 && _serverMapDir.Length > 0;
+        SetStatus($"Mapa {_map.MapNumber} guardado" + (dual ? " (cliente + server)" : ""));
     }
 
     private void OnSaveAsMap()
     {
         if (!string.IsNullOrEmpty(_state.MapDir))
             _saveDialog!.CurrentDir = _state.MapDir;
-        _saveDialog!.CurrentFile = $"Mapa{_map?.MapNumber ?? 1}.map";
+        _saveDialog!.CurrentFile = $"Mapa{_map?.MapNumber ?? 1}.aomap";
         _saveDialog.Popup();
     }
 
@@ -1501,29 +1491,20 @@ public partial class EditorMain : Control
             _state.CurrentMapNumber = parsedNum;
         }
 
-        MapLoader.Save(dir, _map);
+        // Save to both client and server dirs
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+            MapLoader.Save(_clientMapDir, _map);
+        if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+            MapLoader.Save(_serverMapDir, _map);
+        // Also save to the explicitly chosen dir if different
+        if (dir != _clientMapDir && dir != _serverMapDir)
+            MapLoader.Save(dir, _map);
 
-        // Dual-save: client gets .map only, server gets all 3
-        string otherDir = "";
-        bool otherMapOnly = false;
-        if (dir != _clientMapDir && _clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
-        {
-            otherDir = _clientMapDir;
-            otherMapOnly = true;  // Client only needs .map
-        }
-        else if (dir != _serverMapDir && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-        {
-            otherDir = _serverMapDir;
-            otherMapOnly = false; // Server needs all 3
-        }
-        if (otherDir.Length > 0)
-            MapLoader.Save(otherDir, _map, mapOnly: otherMapOnly);
-
+        _state.MapDir = dir;
         _state.ResetDirty();
         _state.ScanAvailableMaps(dir);
         UpdateNavBar();
-        string dualMsg = otherDir.Length > 0 ? " (cliente .map + server .map/.inf/.dat)" : "";
-        SetStatus($"Mapa {_map.MapNumber} guardado en {dir}{dualMsg}");
+        SetStatus($"Mapa {_map.MapNumber} guardado (cliente + server)");
     }
 
     private void OnDataPathSelected(string path)
