@@ -1096,11 +1096,23 @@ public static class EditorTheme
     private static string ResolveByContent(string text)
     {
         string lower = text.ToLowerInvariant();
-        if (lower.Contains("save") || lower.Contains("guardar")) return "save";
-        if (lower.Contains("undo") || lower.Contains("deshacer")) return "undo";
-        if (lower.Contains("redo") || lower.Contains("rehacer")) return "redo";
+        // File operations
+        if (lower.Contains("guardar") || lower.Contains("save")) return "save";
+        if (lower.Contains("deshacer") || lower.Contains("undo")) return "undo";
+        if (lower.Contains("rehacer") || lower.Contains("redo")) return "redo";
         if (lower.Contains("abrir") || lower.Contains("open")) return "folder";
         if (lower.Contains("nuevo") || lower.Contains("new")) return "file_new";
+        // Tool names (Spanish)
+        if (lower.Contains("pintar") || lower.Contains("paint")) return "pencil";
+        if (lower.Contains("borrar") || lower.Contains("erase")) return "eraser";
+        if (lower.Contains("seleccionar") || lower.Contains("select")) return "select";
+        if (lower.Contains("mover") || lower.Contains("move")) return "move";
+        if (lower.Contains("rellenar") || lower.Contains("fill")) return "fill";
+        if (lower.Contains("cuentagotas") || lower.Contains("eyedrop")) return "eyedrop";
+        if (lower.Contains("bloquear") || lower.Contains("block")) return "block";
+        if (lower.Contains("luz") || lower.Contains("light")) return "light";
+        if (lower.Contains("salida") || lower.Contains("exit")) return "exit";
+        if (lower.Contains("trigger")) return "trigger";
         return "pencil"; // final fallback
     }
 

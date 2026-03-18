@@ -110,7 +110,7 @@ public partial class EditorMain : Control
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
-    private const float ToolBarHeight = 40;
+    private const float ToolBarHeight = 44;
     private const float TileInfoHeight = 110;
     private const float SidebarBorderWidth = 1;
     private const float RightSidebarWidth = 200;
