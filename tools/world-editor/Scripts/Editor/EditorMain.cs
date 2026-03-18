@@ -71,6 +71,11 @@ public partial class EditorMain : Control
     private Label? _rightNameLabel;
     private Label? _rightInfoLabel;
 
+    // Right sidebar: selection area section
+    private VBoxContainer? _rightSelectionSection;
+    private Label? _rightSelectionLabel;
+    private Button? _rightFillButton;
+
     // Tool bar (Excalidraw-style)
     private HBoxContainer? _toolBar;
     private Button[] _toolBarButtons = Array.Empty<Button>();
@@ -391,6 +396,25 @@ public partial class EditorMain : Control
         _rightInfoLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
         _rightInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         rightVBox.AddChild(_rightInfoLabel);
+
+        // Selection area section (shown when HasSelection)
+        _rightSelectionSection = new VBoxContainer();
+        _rightSelectionSection.AddThemeConstantOverride("separation", 4);
+        _rightSelectionSection.Visible = false;
+
+        _rightSelectionSection.AddChild(EditorTheme.MakeHSeparator());
+        _rightSelectionSection.AddChild(EditorTheme.SectionLabel("SELECTED AREA"));
+
+        _rightSelectionLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightSelectionLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _rightSelectionSection.AddChild(_rightSelectionLabel);
+
+        _rightFillButton = EditorTheme.PrimaryButton("Rellenar con textura");
+        _rightFillButton.Disabled = true;
+        _rightFillButton.Pressed += () => _viewport?.FillSelection();
+        _rightSelectionSection.AddChild(_rightFillButton);
+
+        rightVBox.AddChild(_rightSelectionSection);
 
         _rightSidebar.AddChild(rightVBox);
         AddChild(_rightSidebar);
@@ -2079,11 +2103,14 @@ public partial class EditorMain : Control
         SyncToolBar();
         SyncLayerTabs();
         UpdateRightSidebar();
+        UpdateSelectionSection();
         _viewport?.QueueRedraw();
     }
 
     private TextureRef? _lastRightSidebarTexRef;
     private int _lastRightSidebarEyedrop;
+    private bool _lastRightSidebarHasSel;
+    private int _lastSelX1, _lastSelY1, _lastSelX2, _lastSelY2;
 
     private void UpdateRightSidebar()
     {
@@ -2115,6 +2142,41 @@ public partial class EditorMain : Control
             _rightInfoLabel.Text = "";
             _rightPreview.Texture = null;
         }
+
+        // Update fill button enabled state when texture changes
+        UpdateSelectionSection();
+    }
+
+    private void UpdateSelectionSection()
+    {
+        if (_rightSelectionSection == null || _rightSelectionLabel == null || _rightFillButton == null) return;
+
+        bool hasSel = _state.HasSelection;
+
+        _rightSelectionSection.Visible = hasSel;
+
+        if (hasSel)
+        {
+            // Only update label text when coordinates change
+            if (hasSel != _lastRightSidebarHasSel ||
+                _state.SelX1 != _lastSelX1 || _state.SelY1 != _lastSelY1 ||
+                _state.SelX2 != _lastSelX2 || _state.SelY2 != _lastSelY2)
+            {
+                int w = _state.SelX2 - _state.SelX1 + 1;
+                int h = _state.SelY2 - _state.SelY1 + 1;
+                _rightSelectionLabel.Text = $"({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
+            }
+
+            // Always re-evaluate fill button (texture may have changed)
+            bool hasTexture = _state.SelectedTexture != null || _state.EyedropGrh > 0;
+            _rightFillButton.Disabled = !hasTexture;
+        }
+
+        _lastRightSidebarHasSel = hasSel;
+        _lastSelX1 = _state.SelX1;
+        _lastSelY1 = _state.SelY1;
+        _lastSelX2 = _state.SelX2;
+        _lastSelY2 = _state.SelY2;
     }
 
     private Texture2D? GenerateGrhPreview(int grhIndex)

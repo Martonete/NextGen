@@ -1039,6 +1039,17 @@ public partial class MapViewport : Control
         return new Vector2I(tx, ty);
     }
 
+    /// <summary>
+    /// Clamp a tile coordinate to valid map bounds (1..Width, 1..Height).
+    /// </summary>
+    private Vector2I ClampToMap(Vector2I tile)
+    {
+        if (Map == null) return tile;
+        return new Vector2I(
+            Math.Clamp(tile.X, 1, Map.Width),
+            Math.Clamp(tile.Y, 1, Map.Height));
+    }
+
     private Vector2 ToPanel(Vector2 screenPos)
     {
         return screenPos - GlobalPosition;
@@ -1261,8 +1272,8 @@ public partial class MapViewport : Control
                         break;
                     case EditorTool.Select:
                         _isSelecting = true;
-                        _selectStart = tile;
-                        _dragCurrent = tile;
+                        _selectStart = ClampToMap(tile);
+                        _dragCurrent = _selectStart;
                         break;
                     case EditorTool.Move:
                         if (State.HasSelection && Map != null)
@@ -1333,7 +1344,8 @@ public partial class MapViewport : Control
                 if (_isSelecting)
                 {
                     _isSelecting = false;
-                    State!.SetSelection(_selectStart.X, _selectStart.Y, _dragCurrent.X, _dragCurrent.Y);
+                    var clampedEnd = ClampToMap(_dragCurrent);
+                    State!.SetSelection(_selectStart.X, _selectStart.Y, clampedEnd.X, clampedEnd.Y);
                     QueueRedraw();
                 }
                 if (_isDragging)
@@ -1424,7 +1436,7 @@ public partial class MapViewport : Control
 
         if (_isSelecting)
         {
-            _dragCurrent = hoverTile;
+            _dragCurrent = ClampToMap(hoverTile);
             QueueRedraw();
         }
 
