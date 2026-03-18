@@ -906,6 +906,7 @@ public partial class EditorMain : Control
 
     private void LoadDataPath(string dataPath)
     {
+        GD.Print($"[Editor] LoadDataPath: {dataPath}");
         _dataPath = dataPath;
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
@@ -932,11 +933,13 @@ public partial class EditorMain : Control
 
         if (!File.Exists(graficosInd))
         {
+            GD.PrintErr($"[Editor] Graficos.ind NOT FOUND at: {graficosInd}");
             SetStatus($"ERROR: {graficosInd} no encontrado");
             _preloadPhase = 0;
             if (_preloadOverlay != null) _preloadOverlay.Visible = false;
             return;
         }
+        GD.Print($"[Editor] Found Graficos.ind: {graficosInd}");
 
         _grhs = GrhLoader.Load(graficosInd);
         _textures = new TextureManager(graficosDir);
