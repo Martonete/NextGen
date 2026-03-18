@@ -480,8 +480,7 @@ public partial class Main : Control
 
 		// Save references for runtime repositioning
 		_gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
-		_gameViewport.Snap2dTransformsToPixel = true;
-		_gameViewport.Snap2dVerticesToPixel = true;
+		// Pixel snap is set via project settings (rendering/2d/snap/snap_2d_transforms_to_pixel)
 		_viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
 
 		// Wire resolution change: reposition all UI in-place (no scene reload)
