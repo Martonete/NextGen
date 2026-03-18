@@ -242,14 +242,12 @@ public partial class PacketHandler
             }
         }
 
-        // Start characters outside core viewport at FovAlpha=0 to prevent flash
-        if (charIndex != _state.UserCharIndex
-            && ResolutionManager.ExtraTilesX > 0
-            && (Math.Abs(x - _state.UserPosX) > ResolutionManager.CoreHalfX
-                || Math.Abs(y - _state.UserPosY) > ResolutionManager.CoreHalfY))
-        {
-            ch.FovAlpha = 0f;
-        }
+        // Characters inside the core viewport appear instantly (map load, area change).
+        // Characters outside fade in when they enter the viewport (movement).
+        bool insideCore = charIndex == _state.UserCharIndex
+            || (Math.Abs(x - _state.UserPosX) <= ResolutionManager.CoreHalfX
+                && Math.Abs(y - _state.UserPosY) <= ResolutionManager.CoreHalfY);
+        ch.FovAlpha = insideCore ? 1f : 0f;
 
         _state.Characters[charIndex] = ch;
 
