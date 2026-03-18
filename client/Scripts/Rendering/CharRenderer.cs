@@ -52,18 +52,21 @@ public static partial class CharRenderer
 		int charTileY = 0)
 	{
 		// Smooth FOV fade: characters outside core 17x13 viewport fade out
-		// Applies at ALL resolutions — at 800x600 this hides the +1 buffer chars
-		int userX = state?.UserPosX ?? 0;
-		int userY = state?.UserPosY ?? 0;
-		bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, userX, userY);
-		float target = insideCore ? 1f : 0f;
-		float step = FovFadeRate * deltaMs / 1000f;
-		if (ch.FovAlpha < target)
-			ch.FovAlpha = Math.Min(ch.FovAlpha + step, target);
-		else if (ch.FovAlpha > target)
-			ch.FovAlpha = Math.Max(ch.FovAlpha - step, target);
+		// Only applies during gameplay (state != null). UI previews (char select) skip this.
+		if (state != null)
+		{
+			int userX = state.UserPosX;
+			int userY = state.UserPosY;
+			bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, userX, userY);
+			float target = insideCore ? 1f : 0f;
+			float step = FovFadeRate * deltaMs / 1000f;
+			if (ch.FovAlpha < target)
+				ch.FovAlpha = Math.Min(ch.FovAlpha + step, target);
+			else if (ch.FovAlpha > target)
+				ch.FovAlpha = Math.Max(ch.FovAlpha - step, target);
 
-		if (ch.FovAlpha <= 0.01f) return; // fully faded out, skip drawing
+			if (ch.FovAlpha <= 0.01f) return; // fully faded out, skip drawing
+		}
 
 		int heading = ch.Heading;
 		if (heading < 1 || heading > 4) heading = 3;
