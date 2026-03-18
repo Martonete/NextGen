@@ -1144,6 +1144,8 @@ public partial class ToolIconCanvas : Control
     public ToolIconCanvas(string unicodeIcon)
     {
         _iconName = EditorTheme.ResolveIconName(unicodeIcon);
+        MouseFilter = MouseFilterEnum.Ignore; // Don't absorb clicks — let parent Button handle them
+        Godot.GD.Print($"[ToolIcon] '{unicodeIcon}' → '{_iconName}'");
     }
 
     public override void _Draw()
