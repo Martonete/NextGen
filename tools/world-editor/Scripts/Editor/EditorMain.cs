@@ -768,8 +768,12 @@ public partial class EditorMain : Control
         return null;
     }
 
+    private bool _dataLoaded;
+
     private void TryAutoDetectDataPath()
     {
+        if (_dataLoaded) return;
+
         // 1. Try saved config first
         string? savedPath = LoadConfigValue("client_data");
         if (savedPath != null && Directory.Exists(savedPath) && File.Exists(Path.Combine(savedPath, "INIT", "Graficos.ind")))
@@ -1114,7 +1118,8 @@ public partial class EditorMain : Control
         // Textures load on demand — no blocking preload needed
         _preloadPhase = 0;
         if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-        SetStatus(_textures != null ? "Editor listo" : "Sin datos cargados");
+        _dataLoaded = _textures != null && _grhs != null;
+        SetStatus(_dataLoaded ? "Editor listo" : "Sin datos cargados");
     }
 
     private void TickTexturePreload()
