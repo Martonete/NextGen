@@ -706,7 +706,7 @@ public partial class EditorMain : Control
     private void BuildLoadingScreen()
     {
         _preloadOverlay = new Panel();
-        _preloadOverlay.Visible = false;
+        _preloadOverlay.Visible = true; // visible from first frame — preload shows progress
         _preloadOverlay.ZIndex = 100;
         var style = new StyleBoxFlat();
         style.BgColor = new Color(0.08f, 0.08f, 0.10f, 1f);
@@ -1166,28 +1166,23 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Synchronous preload: load ALL textures + previews before editor is usable
+        // Start preload — overlay blocks editor, _Process ticks it with progress bar
         if (_textures != null && _grhs != null)
         {
-            // Phase 1: load all PNG textures into cache
-            var texIter = _textures.PreloadAll(_grhs);
-            GD.Print($"[Editor] Preloading {_textures.PreloadTotal} textures...");
-            while (texIter.MoveNext()) { }
-            GD.Print($"[Editor] Texture preload complete: {_textures.PreloadDone} cached");
-
-            // Phase 2: generate all palette preview thumbnails
-            if (_palette != null)
-            {
-                var prevIter = _palette.PreloadAllPreviews();
-                GD.Print("[Editor] Generating palette previews...");
-                int prevCount = 0;
-                while (prevIter.MoveNext()) prevCount++;
-                GD.Print($"[Editor] Preview generation complete: {prevCount} previews");
-            }
+            _preloadPhase = 1;
+            _texturePreloadIter = _textures.PreloadAll(_grhs);
+            if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+            if (_loadingTitle != null) { _loadingTitle.Visible = true; _loadingTitle.Text = "World Editor"; }
+            if (_loadingLabel != null) { _loadingLabel.Visible = true; _loadingLabel.Text = "Cargando texturas..."; }
+            if (_loadingBar != null) { _loadingBar.Visible = true; _loadingBar.Value = 0; }
+            GD.Print($"[Editor] Starting preload: {_textures.PreloadTotal} textures");
         }
-        _preloadPhase = 0;
-        if (_preloadOverlay != null) _preloadOverlay.Visible = false;
-        SetStatus("Editor listo");
+        else
+        {
+            _preloadPhase = 0;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+            SetStatus("Editor listo");
+        }
     }
 
     private void TickTexturePreload()
