@@ -56,7 +56,7 @@ public partial class WorldRenderer : Node2D
 
 	// Buffer sizes beyond visible area
 	private const int TerrainBufferSize = 16; // L1-L4: supports GRHs up to 512px (16 tiles)
-	private const int CharBufferSize = 1;     // Characters/NPCs: viewport only (+ 1 for smooth edge)
+	private const int CharBufferSize = 0;     // Characters/NPCs: viewport only (no buffer — VB6 clips at surface edge)
 
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
 	private float _roofAlpha = 255f;

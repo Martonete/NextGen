@@ -157,6 +157,15 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
+    // VB6: LanzarHechizo range check — target must be within visible area (8x6 tiles)
+    // Self-target spells skip this check (TargetType::Self_ uses caster's own position)
+    const RANGO_VISION_X: i32 = 8;
+    const RANGO_VISION_Y: i32 = 6;
+    if (target_x - x).abs() > RANGO_VISION_X || (target_y - y).abs() > RANGO_VISION_Y {
+        state.send_console(conn_id, "Estás muy lejos para lanzar ese hechizo.", font_index::FIGHT);
+        return;
+    }
+
     // Clear pending spell immediately
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.pending_spell = 0;
