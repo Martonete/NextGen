@@ -1051,7 +1051,8 @@ public partial class EditorMain : Control
             _texturePreloadIter = _textures.PreloadAll(_grhs);
             _loadingFadingOut = false;
             _loadingFadeAlpha = 1f;
-            if (_preloadOverlay != null) _preloadOverlay.Visible = true;
+            if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+            GD.Print($"[Editor] Starting preload: {_textures.PreloadTotal} textures from {_grhs.Length} GRHs");
             SetStatus("Cargando texturas...");
         }
         else
