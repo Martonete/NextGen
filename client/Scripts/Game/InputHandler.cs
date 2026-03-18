@@ -248,6 +248,12 @@ public class InputHandler
 			_tcp.SendPacket(ClientPackets.WriteMeditate());
 			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
+		// Rest (VB6: /DESCANSAR)
+		else if (_keys.IsActionPressed(GameAction.Rest))
+		{
+			_tcp.SendPacket(ClientPackets.WriteTalk("/DESCANSAR"));
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+		}
 		// PvP safety toggle (VB6: /SEG)
 		else if (_keys.IsActionPressed(GameAction.SafetyToggle))
 		{

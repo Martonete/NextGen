@@ -208,7 +208,6 @@ public partial class PacketHandler
     private void HandleBinGuildInfoStr(ByteQueue bq, string tag)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] GuildInfo{tag} (binary): {data.Length} chars");
         _state.GuildInfoData = data;
         _state.GuildInfoType = tag;
         _state.ShowGuildPanel = true;
@@ -228,7 +227,6 @@ public partial class PacketHandler
     {
         bool canObj = bq.ReadBoolean();
         bool canGold = bq.ReadBoolean();
-        GD.Print($"[PKT] GuildBankPermsResp: canObj={canObj} canGold={canGold}");
         _state.GuildBankCanObj = canObj;
         _state.GuildBankCanGold = canGold;
     }
@@ -289,7 +287,6 @@ public partial class PacketHandler
             _state.GuildBankItems[idx].MaxDef = maxDef;
         }
         _state.GuildBankGold = bankGold;
-        GD.Print($"[PKT] GuildBankSlotData slot={slot} {name} x{amount} bankGold={bankGold}");
     }
 
     // ── Quest ─────────────────────────────────────────────────────
@@ -302,7 +299,6 @@ public partial class PacketHandler
         string data = bq.ReadString();
         _state.QuestDataTag = tag;
         _state.QuestDataPayload = data;
-        GD.Print($"[PKT] QuestData tag={tag} len={data.Length}");
     }
 
     // ── Misc data ─────────────────────────────────────────────────
@@ -323,7 +319,6 @@ public partial class PacketHandler
     {
         string name = bq.ReadString();
         byte priv = bq.ReadByte();
-        GD.Print($"[PKT] MenuData: {name} priv={priv}");
         // TODO: show right-click context menu when implemented
     }
 
@@ -340,7 +335,6 @@ public partial class PacketHandler
     private void HandleBinSelectData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] SelectData (binary): {data}");
         // TODO: show selection dialog when implemented
     }
 
@@ -357,7 +351,6 @@ public partial class PacketHandler
     private void HandleBinMiniTopData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] MiniTopData (binary): {data.Length} chars");
         // TODO: show mini ranking when implemented
     }
 
@@ -375,7 +368,6 @@ public partial class PacketHandler
     private void HandleBinStringOnly(ByteQueue bq, string tag)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
     }
 
     /// <summary>
@@ -389,7 +381,6 @@ public partial class PacketHandler
     private void HandleBinEnchatData(ByteQueue bq)
     {
         string name = bq.ReadString();
-        GD.Print($"[PKT] EnchatData: {name}");
     }
 
     /// <summary>
@@ -424,7 +415,6 @@ public partial class PacketHandler
     {
         byte raza = bq.ReadByte();
         byte genero = bq.ReadByte();
-        GD.Print($"[PKT] CosmeticSurgery raza={raza} genero={genero}");
     }
 
     // ── Guild bank ────────────────────────────────────────────────
@@ -448,7 +438,6 @@ public partial class PacketHandler
         _state.GuildBankCanObj = canObj;
         _state.GuildBankCanGold = canGold;
         _state.ShowGuildBank = true;
-        GD.Print($"[PKT] GuildBankInitResp canObj={canObj} canGold={canGold}");
     }
 
     /// <summary>
@@ -465,7 +454,6 @@ public partial class PacketHandler
     {
         byte slot = bq.ReadByte();
         byte objType = bq.ReadByte();
-        GD.Print($"[PKT] GuildBankSlotResp slot={slot} type={objType}");
     }
 
     // ── Ping ──────────────────────────────────────────────────────
@@ -483,7 +471,6 @@ public partial class PacketHandler
     private void HandleBinPingRequest()
     {
         // Send pong back to server (using existing binary ping/pong infrastructure)
-        GD.Print("[PKT] Ping received — sending Pong");
         // The TcpClient's SendPing() method sends the pong response.
         _state.PingSentMs = Time.GetTicksMsec();
     }
@@ -553,28 +540,7 @@ public partial class PacketHandler
         _state.ForumVisibility = visibility;
         _state.ForumCanMakeSticky = canMakeSticky;
         _state.ShowForumPanel = true;
-
-        GD.Print($"[PKT] ShowForumForm visibility={visibility} canMakeSticky={canMakeSticky} posts={_state.ForumPosts.Count}");
     }
 
-    // ── GenericText fallback ──────────────────────────────────────
-
-    /// <summary>
-    /// GenericText (ID 255) — legacy text packet bridge.
-    /// Wire: u16 LE length, then ASCII text bytes.
-    /// Dispatches through the legacy text handler.
-    /// </summary>
-    private void HandleGenericTextPacket(ByteQueue bq)
-    {
-        short len = bq.ReadInteger();
-        if (len <= 0) return;
-
-        var bytes = new byte[len];
-        for (int i = 0; i < len; i++)
-            bytes[i] = bq.ReadByte();
-
-        string text = System.Text.Encoding.ASCII.GetString(bytes);
-        HandlePacket(text);
-    }
 
 }

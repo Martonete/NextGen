@@ -66,7 +66,6 @@ public partial class PacketHandler
         }
 
         OnMapLoad?.Invoke();
-        GD.Print($"[GAME] Change map (binary): {mapNum} v{mapVersion}");
     }
 
 
@@ -261,8 +260,6 @@ public partial class PacketHandler
             _state.UserGuildName = ltIdx >= 0 ? name[(ltIdx + 1)..] : "";
         }
 
-        GD.Print($"[CC] {name} idx={charIndex} body={body} head={head} weapon={weapon} shield={shield} casco={helmet} (binary)");
-
         if (body <= 0)
             GD.PrintErr($"[CC] WARNING: char {name} (idx={charIndex}) has body=0!");
     }
@@ -379,13 +376,11 @@ public partial class PacketHandler
             {
                 _state.Dead = true;
                 OnPlaySound?.Invoke(SoundManager.SND_DEATH);
-                GD.Print($"[CP] User died (head={head}, binary)");
             }
             else if (!nowDead && wasDead)
             {
                 _state.Dead = false;
                 OnPlaySound?.Invoke(SoundManager.SND_REVIVE);
-                GD.Print($"[CP] User revived (binary)");
             }
         }
     }
@@ -624,7 +619,6 @@ public partial class PacketHandler
                 Active = true,
             });
         }
-        GD.Print($"[PKT] Arrow: src={srcIndex} tgt={tgtIndex} grh={grhIndex}");
     }
 
     /// <summary>
@@ -698,7 +692,6 @@ public partial class PacketHandler
         _state.ScreenOffsetX = 0;
         _state.ScreenOffsetY = 0;
 
-        GD.Print($"[PKT] ForceCharMove heading={heading} -> ({newX},{newY})");
     }
 
     // ── Forum ───────────────────────────────────────────────────
@@ -766,7 +759,6 @@ public partial class PacketHandler
         int reputation = bq.ReadLong();
         string description = bq.ReadString();
         string guildName = bq.ReadString();
-        GD.Print($"[PKT] CharacterInfo (binary): {name} Lvl {level} Guild={guildName}");
     }
 
     // ── Console message by ID ─────────────────────────────────────
@@ -810,7 +802,6 @@ public partial class PacketHandler
     private void HandleBinNavigationData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] Navigation data (binary): {data}");
     }
 
     /// <summary>
@@ -919,7 +910,6 @@ public partial class PacketHandler
     private void HandleBinWorkMode(ByteQueue bq)
     {
         byte skill = bq.ReadByte();
-        GD.Print($"[PKT] WorkMode skill={skill}");
     }
 
     /// <summary>

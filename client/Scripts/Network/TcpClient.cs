@@ -42,8 +42,6 @@ public class AoTcpClient : IDisposable
         _stream = _client.GetStream();
         _connected = true;
 
-        GD.Print($"[TCP] Connected to {host}:{port}");
-
         // Start reading in background
         _ = Task.Run(() => ReadLoop(_cts.Token));
     }
@@ -97,7 +95,6 @@ public class AoTcpClient : IDisposable
                 int bytesRead = await _stream.ReadAsync(_readBuffer, 0, _readBuffer.Length, ct);
                 if (bytesRead == 0)
                 {
-                    GD.Print("[TCP] Server closed connection");
                     Disconnect();
                     return;
                 }
@@ -130,7 +127,6 @@ public class AoTcpClient : IDisposable
         _client?.Dispose();
         _stream = null;
         _client = null;
-        GD.Print("[TCP] Disconnected");
     }
 
     public void Dispose()

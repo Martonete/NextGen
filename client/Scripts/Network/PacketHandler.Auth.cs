@@ -22,13 +22,11 @@ public partial class PacketHandler
         byte charClass = bq.ReadByte();
         _state.IsLogged = true;
         _state.UserClass = charClass;
-        GD.Print($"[GAME] Login successful — LOGGED (binary, class={charClass})");
     }
 
 
     private void HandleBinDisconnect(ByteQueue bq)
     {
-        GD.Print("[GAME] Disconnect received (binary)");
         _state.IsLogged = false;
     }
 
@@ -38,7 +36,6 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         _state.LoginError = msg;
         _state.MensajeText = msg;
-        GD.Print($"[LOGIN] ERR (binary): {msg}");
     }
 
 
@@ -46,14 +43,12 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         _state.MensajeText = msg;
-        GD.Print($"[GM] Message box (binary): {msg}");
     }
 
 
     private void HandleBinUserIndex(ByteQueue bq)
     {
         short index = bq.ReadInteger();
-        GD.Print($"[GAME] UserIndexInServer: {index}");
     }
 
 
@@ -61,7 +56,6 @@ public partial class PacketHandler
     {
         short index = bq.ReadInteger();
         _state.UserCharIndex = index;
-        GD.Print($"[GAME] Self char index (binary): {index}");
     }
 
     // ── Commerce / Bank ───────────────────────────────────────────
@@ -77,14 +71,12 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         _state.MensajeText = msg;
-        GD.Print($"[GM] MessageBox2 (binary): {msg}");
     }
 
 
     private void HandleBinUserIndexAlt(ByteQueue bq)
     {
         short index = bq.ReadInteger();
-        GD.Print($"[GAME] UserIndexAlt: {index}");
     }
 
 
@@ -92,7 +84,6 @@ public partial class PacketHandler
     {
         short index = bq.ReadInteger();
         _state.UserCharIndex = index;
-        GD.Print($"[GAME] UserCharIndexAlt: {index}");
     }
 
 
@@ -129,7 +120,6 @@ public partial class PacketHandler
     private void HandleBinAccountData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] AccountData (binary): {data}");
     }
 
     // ── Movement / Projectiles ────────────────────────────────────
@@ -171,7 +161,6 @@ public partial class PacketHandler
             Race = race,
         };
         _state.CharacterList.Add(preview);
-        GD.Print($"[LOGIN] ADDPJ (binary): {name} Lvl {level} ({charClass}) body={body} head={head} weapon={weapon} shield={shield} helmet={helmet}");
     }
 
 
@@ -180,7 +169,6 @@ public partial class PacketHandler
         string code = bq.ReadString();
         _state.SecurityCode = code;
         _state.CurrentScreen = Screen.CharSelect;
-        GD.Print("[LOGIN] CODEH (binary): switching to char select");
     }
 
 
@@ -221,7 +209,6 @@ public partial class PacketHandler
         string notice = bq.ReadString();
         _state.CharacterList.Clear();
         _state.ServerNotice = notice;
-        GD.Print($"[LOGIN] INIAC (binary): {numChars} chars, notice={notice}");
     }
 
     // ── Death & status ────────────────────────────────────────────
@@ -233,7 +220,6 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         _state.MensajeText = msg;
-        GD.Print($"[GAME] ERO (binary): {msg}");
     }
 
 
@@ -248,7 +234,6 @@ public partial class PacketHandler
     {
         byte opt1 = bq.ReadByte();
         byte opt2 = bq.ReadByte();
-        GD.Print($"[PKT] ClassOptions opt1={opt1} opt2={opt2} (bonus selection UI not yet implemented)");
     }
 
     // ── Particles / Lights ───────────────────────────────────────────

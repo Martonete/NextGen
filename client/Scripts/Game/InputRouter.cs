@@ -52,6 +52,9 @@ public class InputRouter
     public Action? OnEnterFullscreen;
     public Action? OnExitFullscreen;
 
+    /// <summary>Callback to toggle spell macro (Tab key — VB6 parity).</summary>
+    public Action? OnSpellMacroToggle;
+
     public InputRouter(GameState state)
     {
         _state = state;
@@ -144,6 +147,14 @@ public class InputRouter
                     if (_state.OptionsPanelOpen) _optionsPanel.Close();
                     else _optionsPanel.Open();
                 }
+                viewport.SetInputAsHandled();
+                return true;
+            }
+
+            // Tab: toggle spell macro (VB6 parity)
+            if (key.Keycode == Key.Tab && !_state.ChatActive)
+            {
+                OnSpellMacroToggle?.Invoke();
                 viewport.SetInputAsHandled();
                 return true;
             }

@@ -67,7 +67,6 @@ public partial class PacketHandler
         _state.Level = bq.ReadByte();
         _state.ExpNext = bq.ReadLong();
         _state.Exp = bq.ReadLong();
-        GD.Print($"[GAME] Stats (binary): HP {_state.MinHp}/{_state.MaxHp} Mana {_state.MinMana}/{_state.MaxMana} Lvl {_state.Level}");
     }
 
     // ── Map / Position ────────────────────────────────────────────
@@ -327,7 +326,6 @@ public partial class PacketHandler
     private void HandleBinSpellInfoResp(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] SpellInfoResp (binary): {data}");
         _state.SpellInfoText = data;
     }
 
@@ -349,7 +347,6 @@ public partial class PacketHandler
         _state.WorkMacro.Stop();  // Cancel work macro on death
         _state.ChatMessages.Enqueue(new ChatMessage { Text = "¡Has muerto!", Color = "FF0000", Type = ChatType.Combat });
         OnPlaySound?.Invoke(SoundManager.SND_DEATH);
-        GD.Print("[GAME] Player died — Dead (binary)");
     }
 
 
@@ -473,7 +470,6 @@ public partial class PacketHandler
                 break;
             }
             case 17: // WorkRequestTarget
-                GD.Print("[PKT] MultiMessage: WorkRequestTarget");
                 break;
             case 18: // HaveKilledUser
             {
@@ -495,7 +491,6 @@ public partial class PacketHandler
                 break;
             }
             case 20: // EarnExp
-                GD.Print("[PKT] MultiMessage: EarnExp");
                 break;
             case 21: // GoHome
             {
@@ -580,7 +575,6 @@ public partial class PacketHandler
         string name = bq.ReadString();
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
             ch.Name = name;
-        GD.Print($"[PKT] StatName: {name}");
     }
 
 
@@ -608,7 +602,6 @@ public partial class PacketHandler
         int time1 = bq.ReadLong();
         int time2 = bq.ReadLong();
         // Scroll timers not yet implemented on the client.
-        GD.Print($"[PKT] TimerInfo id={id} t1={time1} t2={time2}");
     }
 
     // ── Class options ────────────────────────────────────────────────
@@ -657,7 +650,6 @@ public partial class PacketHandler
         int t2 = bq.ReadLong();
         int t3 = bq.ReadLong();
         int t4 = bq.ReadLong();
-        GD.Print($"[PKT] BattleTeamScores: {t1}/{t2}/{t3}/{t4}");
         _state.BattleTeamScores = $"{t1},{t2},{t3},{t4}";
     }
 
@@ -683,7 +675,6 @@ public partial class PacketHandler
         _state.MapColorR = r;
         _state.MapColorG = g;
         _state.MapColorB = b;
-        GD.Print($"[PKT] AmbientColor R={r} G={g} B={b}");
     }
 
     // ── Bank (legacy) ─────────────────────────────────────────────
@@ -700,7 +691,6 @@ public partial class PacketHandler
     private void HandleBinFestData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] FestData: {data}");
         var parts = data.Split(',');
         if (parts.Length >= 8)
         {
@@ -735,8 +725,6 @@ public partial class PacketHandler
     private void HandleBinFullCharInfo(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] FullCharInfo: {data}");
-
         string[] fields = data.Split(',');
         if (fields.Length < 15) return;
 

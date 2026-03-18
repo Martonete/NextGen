@@ -20,7 +20,6 @@ public partial class PacketHandler
         _state.Banqueando = true;
         // Mark that the next bank open should clear stale data before populating
         _bankLoadPending = true;
-        GD.Print($"[PKT] BankInit (binary): gold={bankGold}");
     }
 
 
@@ -36,7 +35,6 @@ public partial class PacketHandler
         _state.PartnerTradeSlotCount = 0;
         _state.MyTradeGold = 0;
         _state.PartnerTradeGold = 0;
-        GD.Print($"[PKT] UserCommerceInit (binary): {otherName}");
     }
 
 
@@ -148,7 +146,6 @@ public partial class PacketHandler
                 _state.MyTradeSlotCount = idx + 1;
             _state.TradePartnerAccepted = false;
         }
-        GD.Print($"[PKT] ChangeUserTradeSlot (binary): slot={offerSlot} {name} x{amount}");
     }
 
 
@@ -169,7 +166,6 @@ public partial class PacketHandler
             }
             _state.TradePartnerAccepted = false;
         }
-        GD.Print($"[PKT] CancelOfferItem slot={slot}");
     }
 
 
@@ -194,7 +190,6 @@ public partial class PacketHandler
             entry.Upgrade = bq.ReadInteger();
             list.Add(entry);
         }
-        GD.Print($"[PKT] CraftList: {count} items (3mat={hasThreeMats})");
     }
 
     /// <summary>
@@ -215,7 +210,6 @@ public partial class PacketHandler
         for (int i = 0; i < _state.BankItems.Length; i++)
             _state.BankItems[i] = new BankItem();
         _state.BankItemCount = 0;
-        GD.Print("[PKT] BankReset (binary)");
     }
 
 
@@ -223,7 +217,6 @@ public partial class PacketHandler
     {
         string data = bq.ReadString();
         _state.Banqueando = true;
-        GD.Print($"[PKT] InitBankLegacy (binary): {data}");
     }
 
     /// <summary>
@@ -304,7 +297,6 @@ public partial class PacketHandler
         string text = bq.ReadString();
         string name = bq.ReadString();
         _state.ChatMessages.Enqueue(new ChatMessage { Text = text, Color = "00FFFF" });
-        GD.Print($"[PKT] ResponseMsg: {text} (name={name})");
     }
 
 
@@ -338,7 +330,6 @@ public partial class PacketHandler
         _state.PartnerTradeSlotCount = 0;
         _state.MyTradeGold = 0;
         _state.PartnerTradeGold = 0;
-        GD.Print($"[PKT] TradeInitLegacy: partner={partnerName}");
     }
 
     /// <summary>
@@ -354,7 +345,6 @@ public partial class PacketHandler
         int gold = bq.ReadLong();
         _state.PartnerTradeGold = gold;
         _state.TradePartnerAccepted = false;
-        GD.Print($"[PKT] TradeOfferRecv: gold={gold}");
     }
 
     /// <summary>
@@ -381,7 +371,6 @@ public partial class PacketHandler
             _state.PartnerTradeSlotCount++;
             _state.TradePartnerAccepted = false;
         }
-        GD.Print($"[PKT] TradeItems: {name} x{amount} (obj={objIndex})");
     }
 
     /// <summary>

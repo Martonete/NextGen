@@ -141,7 +141,7 @@ public partial class WeatherRenderer : Node2D
             if (chunkSize < 0) break;
             int chunkDataStart = pos + 8;
 
-            if (chunkId == "fmt " && chunkSize >= 16)
+            if (chunkId == "fmt " && chunkSize >= 16 && chunkDataStart + 16 <= raw.Length)
             {
                 audioFormat = BitConverter.ToInt16(raw, chunkDataStart);
                 channels = BitConverter.ToInt16(raw, chunkDataStart + 2);

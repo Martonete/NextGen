@@ -555,5 +555,6 @@ public partial class Main
         _inputRouter.DataPath = _dataPath;
         _inputRouter.OnEnterFullscreen = () => EnterFullscreen();
         _inputRouter.OnExitFullscreen = () => ExitFullscreen();
+        _inputRouter.OnSpellMacroToggle = () => _inventoryUI?.HandleSpellMacroToggle();
     }
 }

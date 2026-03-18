@@ -123,29 +123,10 @@ public static class ClientPacketId
     public const byte ToInfo = 146;
 
     // Misc (150+)
-    public const byte HouseQuery = 150;
-    public const byte HouseBuy = 151;
     public const byte PetRename = 152;
-    public const byte GemExchange = 153;
-    public const byte MedalExchange = 154;
-    public const byte DivineOffer = 155;
-    public const byte TsShop = 156;
-    public const byte UpgradeQuery = 157;
-    public const byte UpgradeDo = 158;
-    public const byte ArenaSpectate = 159;
-    public const byte DragDrop = 160;
-    public const byte Vote = 161;
-    public const byte Report = 162;
     public const byte SosView = 163;
     public const byte SosSend = 164;
     public const byte SosRespond = 165;
-    public const byte DonationMenu = 166;
-    public const byte DonationPreview = 167;
-    public const byte DonationRedeem = 168;
-    public const byte TournamentMenu = 169;
-    public const byte PrizeInfo = 170;
-    public const byte PrizeBuy = 171;
-    public const byte FpzReport = 172;
     public const byte ClanInvalidName = 173;
     public const byte PCGF = 174;
     public const byte PCWC = 175;
@@ -646,11 +627,4 @@ public static class ServerPacketId
     /// ArenaData — arena duel list (MAR). ID 254.
     public const byte ArenaData = 254;
 
-    /// <summary>
-    /// GenericText packet (opcode 255): wraps a legacy text-format packet.
-    /// Format: [255][len:u16 LE][text_bytes]
-    /// Used by the server's bridge layer during protocol migration.
-    /// The client should parse the text content using the old text dispatch logic.
-    /// </summary>
-    public const byte GenericText = 255;
 }
