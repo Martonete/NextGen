@@ -21,6 +21,7 @@ public partial class WorldRenderer
         if (_state == null || _data == null || _animator == null) return;
         if (_state.MapData == null) return;
 
+        // Terrain layers (L2 objects, L3 trees) + ground objects — large buffer for big sprites
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
             for (int x = _frameMinX; x <= _frameMaxX; x++)
@@ -51,20 +52,22 @@ public partial class WorldRenderer
                     DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, objAlpha));
                 }
 
-                // Characters/NPCs at this tile
-                var charsHere = GetCharsAt(x, y);
-                for (int ci = 0; ci < charsHere.Count; ci++)
+                // Characters/NPCs — only within viewport bounds (no large buffer)
+                if (x >= _frameCharMinX && x <= _frameCharMaxX && y >= _frameCharMinY && y <= _frameCharMaxY)
                 {
-                    if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
+                    var charsHere = GetCharsAt(x, y);
+                    for (int ci = 0; ci < charsHere.Count; ci++)
+                    {
+                        if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
+                        if (ch.Invisible && charsHere[ci] != _state.UserCharIndex) continue;
 
-                    if (ch.Invisible && charsHere[ci] != _state.UserCharIndex) continue;
+                        float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
+                        float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
 
-                    float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
-                    float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);
-
-                    CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
-                                               _data, _animator, _deltaMs, _state, this,
-                                               charTileX: x, charTileY: y);
+                        CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
+                                                   _data, _animator, _deltaMs, _state, this,
+                                                   charTileX: x, charTileY: y);
+                    }
                 }
 
                 // Layer 3 (trees/objects) — slightly dimmed (220/255)
@@ -74,16 +77,11 @@ public partial class WorldRenderer
                     float l3Alpha = 1f;
                     if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
                     {
-                        // Smooth distance-based transparency near player to prevent flicker.
-                        // Use sub-tile precision: ScreenOffset gives fractional position
-                        // during smooth scrolling, preventing 1-tile jumps in the fade zone.
                         float smoothUserX = _frameUserX + _state.ScreenOffsetX / 32f;
                         float smoothUserY = _frameUserY + _state.ScreenOffsetY / 32f;
                         float dx = Math.Abs(x - smoothUserX);
                         float dy = Math.Abs(y - smoothUserY);
-                        // Inner rectangle where trees are transparent
                         const float innerX = 3f, innerY = 2f;
-                        // Outer rectangle where trees are fully opaque
                         const float outerX = 5f, outerY = 7f;
                         float tx = dx <= innerX ? 0f : dx >= outerX ? 1f : (dx - innerX) / (outerX - innerX);
                         float ty = dy <= innerY ? 0f : dy >= outerY ? 1f : (dy - innerY) / (outerY - innerY);

@@ -54,9 +54,9 @@ public partial class WorldRenderer : Node2D
 	private static int HalfWindowTileWidth => ResolutionManager.HalfTilesX;
 	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
-	// Buffer beyond visible area for large sprites (trees, buildings in L3).
-	// VB6 used 9, but large GRHs (4-6 tiles tall) need more margin to avoid pop-in.
-	private const int TileBufferSize = 13;
+	// Buffer sizes beyond visible area
+	private const int TerrainBufferSize = 16; // L1-L4: supports GRHs up to 512px (16 tiles)
+	private const int CharBufferSize = 1;     // Characters/NPCs: viewport only (+ 1 for smooth edge)
 
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
 	private float _roofAlpha = 255f;
@@ -105,8 +105,9 @@ public partial class WorldRenderer : Node2D
 	// Per-frame camera data (computed in _Draw, used by child layer callbacks)
 	private int _frameUserX, _frameUserY;
 	private float _framePixelOffsetX, _framePixelOffsetY;
-	private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
-	private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
+	private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;       // terrain L1-L4 (large buffer)
+	private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY; // L1 water (small buffer for perf)
+	private int _frameCharMinX, _frameCharMaxX, _frameCharMinY, _frameCharMaxY; // characters (viewport only)
 	private bool _frameHasLights;
 
 	// GPU lightmap shader — samples a 101×101 texture for smooth per-vertex lighting.
@@ -515,19 +516,26 @@ void fragment() {
 		int screenMinY = _frameUserY - HalfWindowTileHeight;
 		int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
-		// Extended bounds with tile buffer (clamped to map dimensions)
 		int mapW = _state.MapData.Width;
 		int mapH = _state.MapData.Height;
-		_frameMinX = Math.Max(1, screenMinX - TileBufferSize);
-		_frameMaxX = Math.Min(mapW, screenMaxX + TileBufferSize);
-		_frameMinY = Math.Max(1, screenMinY - TileBufferSize);
-		_frameMaxY = Math.Min(mapH, screenMaxY + TileBufferSize);
 
-		// L1 bounds (visible +2 margin) — used by mask layer too
+		// L2/L3 terrain bounds (large buffer for 512px sprites)
+		_frameMinX = Math.Max(1, screenMinX - TerrainBufferSize);
+		_frameMaxX = Math.Min(mapW, screenMaxX + TerrainBufferSize);
+		_frameMinY = Math.Max(1, screenMinY - TerrainBufferSize);
+		_frameMaxY = Math.Min(mapH, screenMaxY + TerrainBufferSize);
+
+		// L1 water bounds (small margin)
 		_frameL1MinX = Math.Max(1, screenMinX - 2);
 		_frameL1MaxX = Math.Min(mapW, screenMaxX + 2);
 		_frameL1MinY = Math.Max(1, screenMinY - 2);
 		_frameL1MaxY = Math.Min(mapH, screenMaxY + 2);
+
+		// Character bounds (viewport only + 1 tile for smooth edge)
+		_frameCharMinX = Math.Max(1, screenMinX - CharBufferSize);
+		_frameCharMaxX = Math.Min(mapW, screenMaxX + CharBufferSize);
+		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
+		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
 
 		_frameHasLights = (_state.Config?.ShowLights ?? true)
 						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
