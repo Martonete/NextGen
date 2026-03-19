@@ -23,7 +23,7 @@ use super::{
 // =====================================================================
 
 /// HardwareCheck — Hardware serial check (first packet from client).
-pub(super) async fn handle_kerd22(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let hd_serial = read_field(1, payload, ',');
 
@@ -42,7 +42,7 @@ pub(super) async fn handle_kerd22(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// AccountLogin — Account login.
-pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
     let password = read_field(2, payload, ',');
@@ -149,7 +149,7 @@ pub(super) async fn handle_alogin(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// CreateAccount — Create new account.
-pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
     let password = read_field(2, payload, ',');
@@ -171,6 +171,13 @@ pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, 
 
     if password.len() < 3 {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("La password debe tener al menos 3 caracteres."));
+        close_connection(state, conn_id).await;
+        return;
+    }
+
+    // PIN validation: 4-10 numeric digits only
+    if pin.len() < 4 || pin.len() > 10 || !pin.chars().all(|c| c.is_ascii_digit()) {
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("El PIN debe ser de 4 a 10 digitos numericos."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -205,7 +212,7 @@ pub(super) async fn handle_naccnt(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// CharacterSelect — Character login (primary, with full validation).
-pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_character_select(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let char_name = read_field(1, payload, ',');
     let account = read_field(2, payload, ',');
@@ -253,13 +260,29 @@ pub(super) async fn handle_thcjxd(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// CharacterLogin — Character login (simplified variant).
-pub(super) async fn handle_oologi(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_character_login(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let char_name = read_field(1, payload, ',');
     let account = read_field(2, payload, ',');
     let codex = read_field(3, payload, ',');
 
     info!("[AUTH] Character login (CharacterLogin): '{}' from #{}", char_name, conn_id);
+
+    // HD ban check (VB6 13.3 parity)
+    let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
+    if !paso_hd {
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
+        close_connection(state, conn_id).await;
+        return;
+    }
+
+    // Verify character belongs to logged-in account
+    let account_name = state.users.get(&conn_id).map(|u| u.account_name.clone()).unwrap_or_default();
+    if account_name.is_empty() {
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes iniciar sesion primero."));
+        close_connection(state, conn_id).await;
+        return;
+    }
 
     if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
@@ -899,7 +922,7 @@ pub(crate) async fn connect_user(
 // =====================================================================
 
 /// CreateCharacter — Create new character.
-pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_create_character(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
@@ -959,6 +982,20 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
         return;
     }
 
+    // VB6 13.3: max 5 characters per account
+    let account_name_for_check = state.users.get(&conn_id)
+        .map(|u| u.account_name.clone())
+        .unwrap_or_default();
+    if !account_name_for_check.is_empty() {
+        let num_pjs = accounts::load_account(&state.pool, &account_name_for_check).await
+            .map(|a| a.num_pjs)
+            .unwrap_or(5);
+        if num_pjs >= 5 {
+            state.send_bytes(conn_id, &binary_packets::write_error_msg("Ya tienes el maximo de 5 personajes."));
+            return;
+        }
+    }
+
     match charfile::create_charfile(
         &state.pool,
         account_id,
@@ -993,7 +1030,7 @@ pub(super) async fn handle_nlogin(state: &mut GameState, conn_id: ConnectionId, 
 ///   INT = max(16, 13 + rand(0,3) + rand(0,2))   → 16-18
 ///   CHA = max(15, 12 + rand(0,3) + rand(0,3))   → 15-18
 ///   CON = 16 + rand(0,1) + rand(0,1)            → 16-18
-pub(super) async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) {
+pub(super) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionId) {
     info!("[AUTH] Dice roll request from #{}", conn_id);
 
     let str_val = (13 + rand_range(0, 3) + rand_range(0, 2)).max(15);
@@ -1014,13 +1051,19 @@ pub(super) async fn handle_tirdad(state: &mut GameState, conn_id: ConnectionId) 
 }
 
 /// DeleteCharacter — Delete character.
-pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 4);
     let char_name = read_field(1, payload, ',');
     let account_name = read_field(2, payload, ',').to_uppercase();
     let password = read_field(3, payload, ',');
 
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
+
+    // Cannot delete a character that is currently online
+    if state.is_name_online(&char_name) {
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("No puedes borrar un personaje que esta conectado."));
+        return;
+    }
 
     if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
@@ -1072,7 +1115,7 @@ pub(super) async fn handle_tbrp(state: &mut GameState, conn_id: ConnectionId, da
 }
 
 /// ChangePassword — Change account password.
-pub(super) async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_change_password(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
     let old_password = read_field(2, payload, ',');
@@ -1130,7 +1173,7 @@ pub(super) async fn handle_repass(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// AccountRecovery — Account recovery via PIN.
-pub(super) async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_account_recovery(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let payload = strip_opcode(data, 6);
     let account_name = read_field(1, payload, ',');
     let pin = read_field(2, payload, ',');
@@ -1152,9 +1195,11 @@ pub(super) async fn handle_reecuh(state: &mut GameState, conn_id: ConnectionId, 
         return;
     }
 
-    let new_pass = 100 + (rand_simple_u32() % 900);
+    // Generate random 8-character alphanumeric password (excludes ambiguous chars: 0/O/1/l/I)
+    let chars: Vec<char> = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789".chars().collect();
+    let new_pass: String = (0..8).map(|_| chars[rand_range(0, chars.len() as i32 - 1) as usize]).collect();
 
-    if let Ok(hash) = password::hash_password(&new_pass.to_string()) {
+    if let Ok(hash) = password::hash_password(&new_pass) {
         let _ = accounts::update_password(&state.pool, &account_name, &hash).await;
     }
 

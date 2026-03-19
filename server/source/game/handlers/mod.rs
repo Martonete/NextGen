@@ -639,25 +639,25 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
 
     // Match opcode prefix — order matters for single-char opcodes
     if data.starts_with(client_opcodes::KERD22) {
-        auth::handle_kerd22(state, conn_id, data).await;
+        auth::handle_hardware_check(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::ALOGIN) {
-        auth::handle_alogin(state, conn_id, data).await;
+        auth::handle_account_login(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::NACCNT) {
-        auth::handle_naccnt(state, conn_id, data).await;
+        auth::handle_create_account(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::THCJXD) {
-        auth::handle_thcjxd(state, conn_id, data).await;
+        auth::handle_character_select(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::OOLOGI) {
-        auth::handle_oologi(state, conn_id, data).await;
+        auth::handle_character_login(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::NLOGIN) {
-        auth::handle_nlogin(state, conn_id, data).await;
+        auth::handle_create_character(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::TIRDAD) {
-        auth::handle_tirdad(state, conn_id).await;
+        auth::handle_roll_dice(state, conn_id).await;
     } else if data.starts_with(client_opcodes::TBRP) {
-        auth::handle_tbrp(state, conn_id, data).await;
+        auth::handle_delete_character(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::REPASS) {
-        auth::handle_repass(state, conn_id, data).await;
+        auth::handle_change_password(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::REECUH) {
-        auth::handle_reecuh(state, conn_id, data).await;
+        auth::handle_account_recovery(state, conn_id, data).await;
     } else if data.starts_with(client_opcodes::COMMERCE_CLOSE) {
         info!("[DISPATCH] #{} FINCOM", conn_id);
         handle_commerce_close(state, conn_id).await;
