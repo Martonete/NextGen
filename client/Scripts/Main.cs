@@ -200,12 +200,19 @@ public partial class Main : Control
 		int vpT = ResolutionManager.TopMargin;
 		int vpW = ResolutionManager.ViewportW;
 		int vpH = ResolutionManager.ViewportH;
+		float uiScale = ResolutionManager.UIScale;
 
 		void Center(Control? panel)
 		{
 			if (panel == null) return;
-			float px = vpL + (vpW - panel.Size.X) / 2f;
-			float py = vpT + (vpH - panel.Size.Y) / 2f;
+			// Scale the panel so its internal content (fonts, buttons) fits the current resolution.
+			// Panels are designed at 800x600 (UIScale=1.0). At higher res, Scale > 1.
+			panel.Scale = new Vector2(uiScale, uiScale);
+			// Center using scaled size (Size * Scale)
+			float scaledW = panel.Size.X * uiScale;
+			float scaledH = panel.Size.Y * uiScale;
+			float px = vpL + (vpW - scaledW) / 2f;
+			float py = vpT + (vpH - scaledH) / 2f;
 			panel.Position = new Vector2(Math.Max(vpL, px), Math.Max(vpT, py));
 		}
 

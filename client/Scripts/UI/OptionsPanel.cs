@@ -512,15 +512,8 @@ public partial class OptionsPanel : RpgBaseForm
         _config.Save(_dataPath);
 
         // Apply new resolution and reposition all UI
+        // RepositionUI() + CenterPanelsInViewport() handles everything including this panel
         ResolutionManager.ApplyResolution(w, h);
-        OnResolutionChanged?.Invoke();
-
-        // Re-center this panel for the new resolution
-        if (Visible)
-        {
-            var vpSize = GetViewportRect().Size;
-            Position = (vpSize - Size) / 2.0f;
-        }
     }
 
     // ── Performance preset ────────────────────────────────
