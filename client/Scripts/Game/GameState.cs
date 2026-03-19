@@ -64,6 +64,7 @@ public class GameState
 	public string AccountName = "";
 	public string SecurityCode = "";
 	public string LoginError = "";
+	public ArgentumNextgen.Network.CoordCipher? CoordCipher; // Anti-cheat rolling cipher
 	public string ServerNotice = "";
 	public string MensajeText = ""; // VB6 Mensaje form: set to show modal dialog
 	public List<CharacterPreview> CharacterList = new();

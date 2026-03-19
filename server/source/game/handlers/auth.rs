@@ -757,7 +757,12 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
-    state.send_bytes(conn_id, &binary_packets::write_logged(0));
+    // Generate anti-cheat coord cipher seed (random per session)
+    let coord_seed = rand_range(1, i32::MAX) as u32;
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.coord_cipher = Some(crate::protocol::coord_cipher::CoordCipher::new(coord_seed));
+    }
+    state.send_bytes(conn_id, &binary_packets::write_logged(0, coord_seed));
 
     // --- PHASE 8: Equipment hitbox stats (VB6 line 1701) ---
     let anm = build_anm_packet(state, conn_id);

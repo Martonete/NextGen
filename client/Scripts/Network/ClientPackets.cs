@@ -145,28 +145,31 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    public static byte[] WriteLeftClick(short x, short y)
+    public static byte[] WriteLeftClick(short x, short y, CoordCipher? cipher = null)
     {
         var bq = new ByteQueue();
         bq.WriteByte(ClientPacketId.LeftClick);
+        if (cipher != null) { var (ex, ey) = cipher.Encode(x, y); x = ex; y = ey; }
         bq.WriteInteger(x);
         bq.WriteInteger(y);
         return bq.ToArray();
     }
 
-    public static byte[] WriteRightClick(short x, short y)
+    public static byte[] WriteRightClick(short x, short y, CoordCipher? cipher = null)
     {
         var bq = new ByteQueue();
         bq.WriteByte(ClientPacketId.RightClick);
+        if (cipher != null) { var (ex, ey) = cipher.Encode(x, y); x = ex; y = ey; }
         bq.WriteInteger(x);
         bq.WriteInteger(y);
         return bq.ToArray();
     }
 
-    public static byte[] WriteWorkLeftClick(short x, short y, byte skill)
+    public static byte[] WriteWorkLeftClick(short x, short y, byte skill, CoordCipher? cipher = null)
     {
         var bq = new ByteQueue();
         bq.WriteByte(ClientPacketId.WorkLeftClick);
+        if (cipher != null) { var (ex, ey) = cipher.Encode(x, y); x = ex; y = ey; }
         bq.WriteInteger(x);
         bq.WriteInteger(y);
         bq.WriteByte(skill);

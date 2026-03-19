@@ -20,8 +20,13 @@ public partial class PacketHandler
     private void HandleBinLogged(ByteQueue bq)
     {
         byte charClass = bq.ReadByte();
+        uint coordSeed = (uint)bq.ReadLong();
         _state.IsLogged = true;
         _state.UserClass = charClass;
+
+        // Initialize anti-cheat coordinate cipher with server-provided seed
+        _state.CoordCipher = new CoordCipher();
+        _state.CoordCipher.Init(coordSeed);
     }
 
 

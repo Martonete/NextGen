@@ -298,6 +298,7 @@ public partial class Main
         _state.IsLogged = false;
         _state.Paused = false;
         _state.LoginError = "";
+        _state.CoordCipher = null;
         _state.ServerNotice = "";
         _state.SecurityCode = "";
         _state.CharacterList.Clear();

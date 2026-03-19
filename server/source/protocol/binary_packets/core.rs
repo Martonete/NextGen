@@ -5,11 +5,12 @@ use crate::protocol::packets::ServerPacketID;
 
 // ── Auth / Login ───────────────────────────────────────────
 
-/// ID 0: Login successful.
-pub fn write_logged(class: u8) -> Vec<u8> {
+/// ID 0: Login successful. Includes coord cipher seed for anti-cheat.
+pub fn write_logged(class: u8, coord_seed: u32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::Logged.to_byte());
     pkt.write_byte(class);
+    pkt.write_long(coord_seed as i32);
     pkt.into_bytes()
 }
 

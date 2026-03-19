@@ -54,6 +54,9 @@ pub struct UserState {
     pub hd_serial: String,
     pub paso_hd: bool,
 
+    // Anti-cheat: rolling coordinate cipher (initialized at login)
+    pub coord_cipher: Option<crate::protocol::coord_cipher::CoordCipher>,
+
     // Account state (set by AccountLogin)
     pub account_name: String,
     pub account_password: String,
@@ -357,6 +360,7 @@ impl UserState {
             ip,
             hd_serial: String::new(),
             paso_hd: false,
+            coord_cipher: None,
             account_name: String::new(),
             account_password: String::new(),
             account_id: 0,

@@ -468,7 +468,7 @@ public class InputHandler
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
-			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY));
+			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
 	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
@@ -476,7 +476,7 @@ public class InputHandler
 		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
-			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY));
+			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
 	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
@@ -485,7 +485,7 @@ public class InputHandler
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
 		if (IsInMapBounds(tileX, tileY))
 		{
-			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill));
+			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill, _state.CoordCipher));
 			_state.UsingSkill = 0;
 		}
 	}
