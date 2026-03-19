@@ -757,8 +757,17 @@ pub(crate) async fn connect_user(
 
     // --- PHASE 7: LOGGED — client switches to game mode (VB6 line 1692) ---
     // CRITICAL: Must come BEFORE stats, inventory, spells, area visibility
-    // Generate anti-cheat coord cipher seed (random per session)
-    let coord_seed = rand_range(1, i32::MAX) as u32;
+    // Generate anti-cheat coord cipher seed with full 32-bit entropy.
+    // Uses /dev/urandom (not rand_simple_u32 which only has ~10 bits).
+    let coord_seed = {
+        use std::io::Read;
+        let mut buf = [0u8; 4];
+        if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+            let _ = f.read_exact(&mut buf);
+        }
+        let s = u32::from_le_bytes(buf);
+        if s == 0 { 1u32 } else { s } // XorShift requires non-zero seed
+    };
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.coord_cipher = Some(crate::protocol::coord_cipher::CoordCipher::new(coord_seed));
     }

@@ -45,6 +45,40 @@ impl CoordCipher {
         let y = (encoded_y as u16).wrapping_sub(oy) as i16;
         (x, y)
     }
+
+    /// Decode with desync tolerance: try current counter, then ±1.
+    /// Returns decoded coords and whether a resync was needed.
+    /// If resync succeeds, the counter is corrected.
+    pub fn decode_tolerant(&mut self, encoded_x: i16, encoded_y: i16, map_w: i32, map_h: i32) -> Option<(i16, i16)> {
+        // Save state before trying
+        let saved_counter = self.counter;
+
+        // Try normal decode (counter + 1)
+        let (x, y) = self.decode(encoded_x, encoded_y);
+        if x >= 1 && x <= map_w as i16 && y >= 1 && y <= map_h as i16 {
+            return Some((x, y));
+        }
+
+        // Try counter + 1 (client sent extra packet we missed)
+        self.counter = saved_counter + 1;
+        let (x2, y2) = self.decode(encoded_x, encoded_y);
+        if x2 >= 1 && x2 <= map_w as i16 && y2 >= 1 && y2 <= map_h as i16 {
+            return Some((x2, y2)); // counter auto-corrected
+        }
+
+        // Try counter - 1 (server processed a phantom extra)
+        if saved_counter > 0 {
+            self.counter = saved_counter - 1;
+            let (x3, y3) = self.decode(encoded_x, encoded_y);
+            if x3 >= 1 && x3 <= map_w as i16 && y3 >= 1 && y3 <= map_h as i16 {
+                return Some((x3, y3)); // counter auto-corrected
+            }
+        }
+
+        // All attempts failed — likely cheat or severe desync
+        self.counter = saved_counter + 1; // advance anyway to stay in sync
+        None
+    }
 }
 
 #[cfg(test)]

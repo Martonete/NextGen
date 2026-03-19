@@ -105,14 +105,19 @@ use super::npc;
 use crate::data::npcs::NpcType;
 
 /// Decode coordinate-bearing packet using the per-connection rolling cipher.
-/// Falls back to raw coordinates if cipher is not initialized (pre-login).
-fn decode_coords(state: &mut GameState, conn_id: ConnectionId, enc_x: i16, enc_y: i16) -> (i16, i16) {
+/// Returns None if cipher is not active (pre-login) or decoding fails validation.
+fn decode_coords(state: &mut GameState, conn_id: ConnectionId, enc_x: i16, enc_y: i16) -> Option<(i16, i16)> {
+    let (map, map_w, map_h) = state.users.get(&conn_id)
+        .map(|u| (u.pos_map, 0i32, 0i32))
+        .unwrap_or((0, 0, 0));
+    let (grid_w, grid_h) = state.grid_dimensions(map);
+
     if let Some(user) = state.users.get_mut(&conn_id) {
         if let Some(cipher) = user.coord_cipher.as_mut() {
-            return cipher.decode(enc_x, enc_y);
+            return cipher.decode_tolerant(enc_x, enc_y, grid_w, grid_h);
         }
     }
-    (enc_x, enc_y) // fallback: no cipher active
+    None // No cipher = reject (must be logged in to send coordinate packets)
 }
 
 /// Process all binary packets in a TCP data chunk.
@@ -345,24 +350,27 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         ClientPacketID::LeftClick => {
             let enc_x = bq.read_integer().unwrap_or(0);
             let enc_y = bq.read_integer().unwrap_or(0);
-            let (x, y) = decode_coords(state, conn_id, enc_x, enc_y);
-            let text = format!("LC{},{}", x, y);
-            handle_packet(state, conn_id, &text).await;
+            if let Some((x, y)) = decode_coords(state, conn_id, enc_x, enc_y) {
+                let text = format!("LC{},{}", x, y);
+                handle_packet(state, conn_id, &text).await;
+            }
         }
         ClientPacketID::RightClick => {
             let enc_x = bq.read_integer().unwrap_or(0);
             let enc_y = bq.read_integer().unwrap_or(0);
-            let (x, y) = decode_coords(state, conn_id, enc_x, enc_y);
-            let text = format!("RC{},{}", x, y);
-            handle_packet(state, conn_id, &text).await;
+            if let Some((x, y)) = decode_coords(state, conn_id, enc_x, enc_y) {
+                let text = format!("RC{},{}", x, y);
+                handle_packet(state, conn_id, &text).await;
+            }
         }
         ClientPacketID::WorkLeftClick => {
             let enc_x = bq.read_integer().unwrap_or(0);
             let enc_y = bq.read_integer().unwrap_or(0);
             let skill = bq.read_byte().unwrap_or(0);
-            let (x, y) = decode_coords(state, conn_id, enc_x, enc_y);
-            let text = format!("WLC{},{},{}", x, y, skill);
-            handle_packet(state, conn_id, &text).await;
+            if let Some((x, y)) = decode_coords(state, conn_id, enc_x, enc_y) {
+                let text = format!("WLC{},{},{}", x, y, skill);
+                handle_packet(state, conn_id, &text).await;
+            }
         }
 
         // Chat
