@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerRace;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::{ObjData, ObjType};
 use crate::db::guilds;
 use super::common::*;
@@ -21,11 +21,7 @@ use super::{
 // =====================================================================
 
 /// SWAP — Swap two inventory slots.
-pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let slot1: usize = read_field(1, payload, ',').parse().unwrap_or(0);
-    let slot2: usize = read_field(2, payload, ',').parse().unwrap_or(0);
-
+pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, slot1: usize, slot2: usize) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.comerciando || user.trading {
             state.send_msg_id(conn_id, 153, "");
@@ -62,19 +58,13 @@ pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, da
 }
 
 /// SKSE — Distribute skill points.
-pub(super) async fn handle_skse(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-
-    // Parse 22 comma-delimited skill increments
-    let mut increments = [0i32; 22];
+pub(super) async fn handle_skse(state: &mut GameState, conn_id: ConnectionId, increments: &[i32; 22]) {
     let mut total = 0i32;
-    for i in 0..22 {
-        let val: i32 = read_field(i + 1, payload, ',').parse().unwrap_or(0);
+    for &val in increments.iter() {
         if val < 0 {
             state.send_console(conn_id, "Valor invalido.", font_index::INFO);
             return;
         }
-        increments[i] = val;
         total += val;
     }
 
@@ -100,10 +90,7 @@ pub(super) async fn handle_skse(state: &mut GameState, conn_id: ConnectionId, da
 
 /// INFS — Spell info. VB6: TCP_HandleData1.bas:2747-2764
 /// Sends ||281 through ||287 packets (message-based, client reads from Textos.ao)
-pub(super) async fn handle_infs(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let slot: usize = payload.trim().parse().unwrap_or(0);
-
+pub(super) async fn handle_infs(state: &mut GameState, conn_id: ConnectionId, slot: usize) {
     let spell_idx = state.users.get(&conn_id)
         .and_then(|u| if slot >= 1 && slot <= MAX_SPELL_SLOTS { Some(u.spells[slot - 1]) } else { None })
         .unwrap_or(0);
@@ -132,11 +119,7 @@ pub(super) async fn handle_infs(state: &mut GameState, conn_id: ConnectionId, da
 
 /// DESPHE — Move/swap spell positions. VB6: DesplazarHechizo(userindex, Dire, CualHechizo)
 /// Format: DESPHE<direction>,<slot> where direction=1(up) or 2(down), slot=1-based
-pub(super) async fn handle_desphe(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let direction: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
-    let slot: usize = read_field(2, payload, ',').parse().unwrap_or(0);
-
+pub(super) async fn handle_desphe(state: &mut GameState, conn_id: ConnectionId, direction: i32, slot: usize) {
     if !(direction >= 1 && direction <= 2) { return; }
     if slot < 1 || slot > MAX_SPELL_SLOTS { return; }
 
@@ -171,10 +154,7 @@ pub(super) async fn handle_desphe(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// DAMINF — Player stats form (send detailed info about a target player).
-pub(super) async fn handle_daminf(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let target_name = payload.trim();
-
+pub(super) async fn handle_daminf(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
     // Find target user by name
     let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
     if target_conn.is_none() {
@@ -230,10 +210,7 @@ pub(super) async fn handle_fest(state: &mut GameState, conn_id: ConnectionId) {
 }
 
 /// CABEZI — Change head/hairstyle (barber). Costs 500 gold.
-pub(super) async fn handle_cabezi(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let new_head: i32 = payload.trim().parse().unwrap_or(0);
-
+pub(super) async fn handle_cabezi(state: &mut GameState, conn_id: ConnectionId, new_head: i32) {
     if new_head <= 0 {
         return;
     }
@@ -268,25 +245,17 @@ pub(super) async fn handle_cabezi(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// TR — Drop item via mouse click (at current position).
-pub(super) async fn handle_mouse_drop(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let slot: usize = read_field(1, payload, ',').parse().unwrap_or(0);
-    let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(1);
-
+pub(super) async fn handle_mouse_drop(state: &mut GameState, conn_id: ConnectionId, slot: usize, amount: i32) {
     if slot < 1 || slot > MAX_INVENTORY_SLOTS || amount <= 0 {
         return;
     }
 
     // Delegate to the same drop logic as TI
-    let drop_data = format!("TI{},{}", slot, amount);
-    handle_drop_item(state, conn_id, &drop_data).await;
+    handle_drop_item(state, conn_id, slot, amount).await;
 }
 
 /// BOF — Level bonus selection.
-pub(super) async fn handle_bof(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let selection: i32 = payload.trim().parse().unwrap_or(0);
-
+pub(super) async fn handle_bof(state: &mut GameState, conn_id: ConnectionId, selection: i32) {
     if selection < 1 || selection > 3 {
         return;
     }
@@ -313,7 +282,7 @@ pub(super) async fn handle_bof(state: &mut GameState, conn_id: ConnectionId, dat
 /// UK — Use Skill. VB6: TCP_HandleData1.bas Case "UK".
 /// Robar/Magia/Domar → sends T01<skillID> to client (opens skill tree UI).
 /// Skill use handler (UK packet). do_ocultarse handles all its own checks.
-pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, skill_num: i32) {
     let dead = match state.users.get(&conn_id) {
         Some(u) if u.logged => u.dead,
         _ => return,
@@ -323,9 +292,6 @@ pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data
         state.send_msg_id(conn_id, 3, "");
         return;
     }
-
-    let payload = strip_opcode(data, 2); // "UK" is 2 chars
-    let skill_num: i32 = payload.trim().parse().unwrap_or(0);
 
     match skill_num {
         3 => { // Robar
@@ -348,10 +314,7 @@ pub(super) async fn handle_uk(state: &mut GameState, conn_id: ConnectionId, data
 }
 
 /// ENTR — Train creature from trainer NPC.
-pub(super) async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let creature_slot: i32 = payload.trim().parse().unwrap_or(0);
-
+pub(super) async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, creature_slot: i32) {
     if creature_slot <= 0 {
         return;
     }
@@ -411,11 +374,7 @@ pub(super) async fn handle_tengomacros(state: &mut GameState, conn_id: Connectio
 
 
 /// # — Send SOS/consultation.
-pub(super) async fn handle_sos_send(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 1);
-    let _tipo: i32 = read_field(1, payload, '|').parse().unwrap_or(0);
-    let contenido = read_field(2, payload, '|');
-
+pub(super) async fn handle_sos_send(state: &mut GameState, conn_id: ConnectionId, contenido: &str) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.silenced {
             state.send_msg_id(conn_id, 945, &format!("{}", user.silence_timer));
@@ -449,11 +408,7 @@ pub(super) async fn handle_sos_send(state: &mut GameState, conn_id: ConnectionId
 }
 
 /// X — Admin responds to SOS.
-pub(super) async fn handle_sos_respond(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 1);
-    let target_name = read_field(1, payload, '*');
-    let texto = read_field(2, payload, '*');
-
+pub(super) async fn handle_sos_respond(state: &mut GameState, conn_id: ConnectionId, target_name: &str, texto: &str) {
     let priv_level = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
     if priv_level < privilege_level::CONSEJERO {
         return;
@@ -489,11 +444,7 @@ pub(super) async fn handle_consul(state: &mut GameState, conn_id: ConnectionId) 
 
 
 /// DYDTRA — Drag & drop transfer items to another player.
-pub(super) async fn handle_dydtra(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let slot: usize = read_field(1, payload, ',').parse().unwrap_or(0);
-    let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(0);
-
+pub(super) async fn handle_dydtra(state: &mut GameState, conn_id: ConnectionId, slot: usize, amount: i32) {
     if slot < 1 || slot > MAX_INVENTORY_SLOTS || amount <= 0 {
         return;
     }
@@ -560,10 +511,7 @@ pub(super) async fn handle_dydtra(state: &mut GameState, conn_id: ConnectionId, 
 
 
 /// DOWNSI — Cast spell by target name.
-pub(super) async fn handle_downsi(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let target_name = payload.trim();
-
+pub(super) async fn handle_downsi(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
     let target_conn = state.online_names.get(&target_name.to_uppercase()).copied();
     if target_conn.is_none() {
         return;
@@ -585,10 +533,7 @@ pub(super) async fn handle_downsi(state: &mut GameState, conn_id: ConnectionId, 
 }
 
 /// NVOT — Vote in poll.
-pub(super) async fn handle_nvot(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let option: usize = payload.trim().parse().unwrap_or(0);
-
+pub(super) async fn handle_nvot(state: &mut GameState, conn_id: ConnectionId, option: usize) {
     if !state.poll_active {
         state.send_console(conn_id, "No hay votacion activa.", font_index::INFO);
         return;
@@ -610,11 +555,7 @@ pub(super) async fn handle_nvot(state: &mut GameState, conn_id: ConnectionId, da
 }
 
 /// NEWD — New report/denuncia.
-pub(super) async fn handle_newd(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let target_name = read_field(1, payload, ',');
-    let reason = read_field(2, payload, ',');
-
+pub(super) async fn handle_newd(state: &mut GameState, conn_id: ConnectionId, target_name: &str, reason: &str) {
     let reporter = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
 
     info!("[REPORT] {} reports {}: {}", reporter, target_name, reason);

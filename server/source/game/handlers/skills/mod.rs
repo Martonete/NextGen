@@ -22,7 +22,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
@@ -275,20 +275,7 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
 }
 
 /// WLC — Work Left Click (main skill dispatch).
-pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3); // "WLC" = 3 chars
-    let target_x: i32 = match read_field(1, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let target_y: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let skill_type: i32 = match read_field(3, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
+pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, target_x: i32, target_y: i32, skill_type: i32) {
 
     // Validate user
     let (dead, meditating, map, ux, uy) = match state.users.get(&conn_id) {

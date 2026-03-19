@@ -469,8 +469,7 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
 // ini_get, ini_write, user_has_items — moved to common.rs
 
 /// FWO — Query house owner and price from Casas.dat.
-pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let num_casa = read_field(1, payload, ',');
 
     let casas_path = state.base_path.join("dat").join("Casas.dat");
@@ -488,8 +487,7 @@ pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, dat
 }
 
 /// CUC — Buy a house.
-pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let num_casa: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
 
     let casas_path = state.base_path.join("dat").join("Casas.dat");
@@ -540,8 +538,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
 }
 
 /// CNM — Rename pet/creature.
-pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let nick = read_field(1, payload, ',');
 
     let pet_idx = state.users.get(&conn_id)

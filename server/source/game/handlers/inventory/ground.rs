@@ -5,7 +5,7 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
@@ -140,22 +140,12 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
 }
 
 /// TI<slot>,<amount> — Drop item from inventory to ground.
-pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let slot_raw: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
-    let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(1);
-
+pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionId, slot: usize, amount: i32) {
     if amount <= 0 {
         return;
     }
 
-    // FLAGORO = -1 means drop gold
-    if slot_raw == -1 {
-        handle_drop_gold(state, conn_id, amount).await;
-        return;
-    }
-
-    let slot = slot_raw as usize;
+    // slot must be 1..=max_slots (FLAGORO=-1 gold drops are handled by caller)
     let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
     if slot < 1 || slot > max_slots {
         return;

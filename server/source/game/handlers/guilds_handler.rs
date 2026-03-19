@@ -148,9 +148,8 @@ pub(super) async fn handle_guild_info(state: &mut GameState, conn_id: Connection
 }
 
 /// CIG — Submit guild creation form (after SHOWFUN was sent).
-/// Data format: CIG<desc><BF><name><BF><url><BF><cantcodex><BF><codex1><BF>...
-pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+/// Data format: <desc><BF><name><BF><url><BF><cantcodex><BF><codex1><BF>...
+pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let parts: Vec<&str> = payload.split(BF).collect();
 
     if parts.len() < 4 {
@@ -610,8 +609,7 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
 }
 
 /// DESCOD — Update guild codex and description.
-pub(super) async fn handle_guild_update_codex(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
+pub(super) async fn handle_guild_update_codex(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let parts: Vec<&str> = payload.split(BF).collect();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
@@ -650,8 +648,8 @@ pub(super) async fn handle_guild_update_codex(state: &mut GameState, conn_id: Co
 }
 
 /// ACEPTARI — Accept applicant into guild.
-pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let applicant_name = strip_opcode(data, 8).trim().to_string();
+pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let applicant_name = name.trim().to_string();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -706,10 +704,9 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
 }
 
 /// RECHAZAR — Reject applicant.
-pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 8);
-    let name = read_field(1, payload, ',');
-    let reason = read_field(2, payload, ',');
+pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let reject_name = read_field(1, name, ',');
+    let reason = read_field(2, name, ',');
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -728,17 +725,17 @@ pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: Connecti
         || guild.sub_lider2.to_uppercase() == char_name.to_uppercase();
     if !is_leader && !is_sublider { return; }
 
-    guilds::remove_applicant(&state.pool, &guild.name, &name).await;
+    guilds::remove_applicant(&state.pool, &guild.name, &reject_name).await;
 
     // If online, notify
-    if let Some(&target_conn) = state.online_names.get(&name.to_uppercase()) {
+    if let Some(&target_conn) = state.online_names.get(&reject_name.to_uppercase()) {
         state.send_console(target_conn, &format!("Tu solicitud fue rechazada: {}", reason), font_index::INFO);
     }
 }
 
 /// ECHARCLA — Expel member from guild.
-pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let target_name = strip_opcode(data, 8).trim().to_string();
+pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let target_name = name.trim().to_string();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -789,8 +786,8 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
 }
 
 /// ACTGNEWS — Update guild news.
-pub(super) async fn handle_guild_news(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let news = strip_opcode(data, 8).to_string();
+pub(super) async fn handle_guild_news(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
+    let news = payload.to_string();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -813,8 +810,7 @@ pub(super) async fn handle_guild_news(state: &mut GameState, conn_id: Connection
 }
 
 /// SOLICITUD — Apply to join a guild.
-pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 9);
+pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let guild_name = read_field(1, payload, ',');
     let petition = read_field(2, payload, ',');
 
@@ -856,8 +852,8 @@ pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: Connectio
 }
 
 /// CLANDETAILS — Request details about a guild.
-pub(super) async fn handle_guild_details(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let guild_name = strip_opcode(data, 11).trim().to_string();
+pub(super) async fn handle_guild_details(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let guild_name = name.trim().to_string();
 
     if !state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false) {
         return;

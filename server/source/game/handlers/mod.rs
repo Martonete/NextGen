@@ -225,19 +225,17 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         }
     };
 
-    // Bridge: read binary fields, reconstruct text for existing handlers.
+    // Bridge: read binary fields, call typed handlers directly.
     match packet_id {
         // Pre-login
         ClientPacketID::HardwareCheck => {
             let hd = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("KERD22{}", hd);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_hardware_check(state, conn_id, &hd).await;
         }
         ClientPacketID::AccountLogin => {
             let account = bq.read_ascii_string().unwrap_or_default();
             let password = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ALOGIN{},{}", account, password);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_account_login(state, conn_id, &account, &password).await;
         }
         ClientPacketID::CreateCharacter => {
             // Read all fields from binary
@@ -261,53 +259,45 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
                 9 => "Paladin", 10 => "Cazador", 11 => "Trabajador", 12 => "Pirata",
                 _ => "Guerrero",
             };
-            let gender_str = if gender == 1 { "Hombre" } else { "Mujer" };
-            let text = format!("NLOGIN{},{},0,{},{},{},{},{}", char_name, race_name, gender_str, class_name, homeland, account, head);
-            handle_packet(state, conn_id, &text).await;
+            let gender_i32: i32 = if gender == 1 { 1 } else { 2 };
+            auth::handle_create_character(state, conn_id, &char_name, race_name, gender_i32, class_name, homeland as i32, &account, head as i32).await;
         }
         ClientPacketID::CharacterLogin => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
             let account = bq.read_ascii_string().unwrap_or_default();
             let codex = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("OOLOGI{},{},{}", char_name, account, codex);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_character_login(state, conn_id, &char_name, &account, &codex).await;
         }
         ClientPacketID::CharacterSelect => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
             let account = bq.read_ascii_string().unwrap_or_default();
             let codex = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("THCJXD{},{},{}", char_name, account, codex);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_character_select(state, conn_id, &char_name, &account, &codex).await;
         }
         ClientPacketID::CreateAccount => {
             let account = bq.read_ascii_string().unwrap_or_default();
             let password = bq.read_ascii_string().unwrap_or_default();
             let pin = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("NACCNT{},{},{}", account, password, pin);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_create_account(state, conn_id, &account, &password, &pin).await;
         }
         ClientPacketID::ChangePassword => {
             let old_pass = bq.read_ascii_string().unwrap_or_default();
             let new_pass = bq.read_ascii_string().unwrap_or_default();
-            // Handler expects: REPASS<account>,<old>,<new>,<confirm>
             let account = state.users.get(&conn_id)
                 .map(|u| u.account_name.clone())
                 .unwrap_or_default();
-            let text = format!("REPASS{},{},{},{}", account, old_pass, new_pass, new_pass);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_change_password(state, conn_id, &account, &old_pass, &new_pass, &new_pass).await;
         }
         ClientPacketID::AccountRecovery => {
             let account = bq.read_ascii_string().unwrap_or_default();
             let pin = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("REECUH{},{}", account, pin);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_account_recovery(state, conn_id, &account, &pin).await;
         }
         ClientPacketID::RollDice => {
-            handle_packet(state, conn_id, "TIRDAD").await;
+            auth::handle_roll_dice(state, conn_id).await;
         }
         ClientPacketID::DeleteCharacter => {
             let char_name = bq.read_ascii_string().unwrap_or_default();
-            // Handler expects: TBRP<name>,<account>,<password(codex)>
             // Binary client only sends name. Account is from connection state.
             // For security verification, load the charfile password (codex) server-side
             // since the client is already authenticated via AccountLogin.
@@ -316,51 +306,45 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
                 .unwrap_or_default();
             let codex = charfile::load_charfile(&state.pool, &char_name).await
                 .map(|c| c.password).unwrap_or_default();
-            let text = format!("TBRP{},{},{}", char_name, account, codex);
-            handle_packet(state, conn_id, &text).await;
+            auth::handle_delete_character(state, conn_id, &char_name, &account, &codex).await;
         }
 
         // Movement
         ClientPacketID::Walk => {
             let heading = bq.read_byte().unwrap_or(1);
-            let text = format!("M{}", heading);
-            handle_packet(state, conn_id, &text).await;
+            movement::handle_walk(state, conn_id, heading as i32).await;
         }
         ClientPacketID::ChangeHeading => {
             let heading = bq.read_byte().unwrap_or(1);
-            let text = format!("CHEA{}", heading);
-            handle_packet(state, conn_id, &text).await;
+            movement::handle_change_heading(state, conn_id, heading as i32).await;
         }
         ClientPacketID::RequestPos => {
-            handle_packet(state, conn_id, "RPU").await;
+            movement::handle_request_pos(state, conn_id).await;
         }
         ClientPacketID::SyncPosition => {
-            handle_packet(state, conn_id, "ACTUALIZAR").await;
+            handle_actualizar(state, conn_id).await;
         }
 
         // Combat
         ClientPacketID::Attack => {
-            handle_packet(state, conn_id, "AT").await;
+            handle_attack(state, conn_id).await;
         }
         ClientPacketID::CastSpell => {
             let slot = bq.read_byte().unwrap_or(0);
-            let text = format!("LH{}", slot);
-            handle_packet(state, conn_id, &text).await;
+            handle_cast_spell(state, conn_id, slot as usize).await;
         }
         ClientPacketID::LeftClick => {
             let enc_x = bq.read_integer().unwrap_or(0);
             let enc_y = bq.read_integer().unwrap_or(0);
             if let Some((x, y)) = decode_coords(state, conn_id, enc_x, enc_y) {
-                let text = format!("LC{},{}", x, y);
-                handle_packet(state, conn_id, &text).await;
+                handle_left_click(state, conn_id, x as i32, y as i32).await;
             }
         }
         ClientPacketID::RightClick => {
             let enc_x = bq.read_integer().unwrap_or(0);
             let enc_y = bq.read_integer().unwrap_or(0);
             if let Some((x, y)) = decode_coords(state, conn_id, enc_x, enc_y) {
-                let text = format!("RC{},{}", x, y);
-                handle_packet(state, conn_id, &text).await;
+                handle_right_click(state, conn_id, x as i32, y as i32).await;
             }
         }
         ClientPacketID::WorkLeftClick => {
@@ -368,239 +352,217 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let enc_y = bq.read_integer().unwrap_or(0);
             let skill = bq.read_byte().unwrap_or(0);
             if let Some((x, y)) = decode_coords(state, conn_id, enc_x, enc_y) {
-                let text = format!("WLC{},{},{}", x, y, skill);
-                handle_packet(state, conn_id, &text).await;
+                handle_work_left_click(state, conn_id, x as i32, y as i32, skill as i32).await;
             }
         }
 
         // Chat
         ClientPacketID::Talk => {
             let msg = bq.read_ascii_string().unwrap_or_default();
-            let text = format!(";{}", msg);
-            handle_packet(state, conn_id, &text).await;
+            if msg.starts_with('/') {
+                let logged = state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false);
+                if logged { handle_slash_command(state, conn_id, &msg).await; }
+            } else {
+                social::handle_talk(state, conn_id, &msg).await;
+            }
         }
         ClientPacketID::Yell => {
             let msg = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("-{}", msg);
-            handle_packet(state, conn_id, &text).await;
+            social::handle_yell(state, conn_id, &msg).await;
         }
         ClientPacketID::Whisper => {
             let target = bq.read_ascii_string().unwrap_or_default();
             let msg = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("\\{}@{}", target, msg);
-            handle_packet(state, conn_id, &text).await;
+            social::handle_whisper(state, conn_id, &target, &msg).await;
         }
         ClientPacketID::SlashCommand => {
             let cmd = bq.read_ascii_string().unwrap_or_default();
-            // Slash commands go through the talk handler as ";/<cmd>"
-            let text = format!(";{}", cmd);
-            handle_packet(state, conn_id, &text).await;
+            if cmd.starts_with('/') {
+                let logged = state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false);
+                if logged { handle_slash_command(state, conn_id, &cmd).await; }
+            } else {
+                social::handle_talk(state, conn_id, &cmd).await;
+            }
         }
 
         // Items
         ClientPacketID::PickUp => {
-            handle_packet(state, conn_id, "AG").await;
+            handle_pick_up(state, conn_id).await;
         }
         ClientPacketID::DropItem => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("TI{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            // FLAGORO: slot 0xFF (255 as u8 = -1 as i8) means drop gold
+            if slot == 0xFF {
+                handle_drop_gold(state, conn_id, amount as i32).await;
+            } else {
+                handle_drop_item(state, conn_id, slot as usize, amount as i32).await;
+            }
         }
         ClientPacketID::UseItem => {
             let slot = bq.read_byte().unwrap_or(0);
-            let text = format!("USA{}", slot);
-            handle_packet(state, conn_id, &text).await;
+            handle_use_item(state, conn_id, slot as usize).await;
         }
         ClientPacketID::UseItemClick => {
             let slot = bq.read_byte().unwrap_or(0);
-            let text = format!("QSA{}", slot);
-            handle_packet(state, conn_id, &text).await;
+            handle_use_item_click(state, conn_id, slot as usize).await;
         }
         ClientPacketID::EquipItem => {
             let slot = bq.read_byte().unwrap_or(0);
-            let text = format!("EQUI{}", slot);
-            handle_packet(state, conn_id, &text).await;
+            handle_equip(state, conn_id, slot as usize).await;
         }
         ClientPacketID::SwapItems => {
             let from = bq.read_byte().unwrap_or(0);
             let to = bq.read_byte().unwrap_or(0);
-            let text = format!("SWAP{},{}", from, to);
-            handle_packet(state, conn_id, &text).await;
+            handle_swap(state, conn_id, from as usize, to as usize).await;
         }
         ClientPacketID::MouseDrop => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("TR{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_mouse_drop(state, conn_id, slot as usize, amount as i32).await;
         }
 
         // Skills
         ClientPacketID::UseSkill => {
             let skill_id = bq.read_byte().unwrap_or(0);
-            let text = format!("UK{}", skill_id);
-            handle_packet(state, conn_id, &text).await;
+            handle_uk(state, conn_id, skill_id as i32).await;
         }
         ClientPacketID::SkillSet => {
-            // SKSE sends comma-separated skill points
-            let mut parts = Vec::new();
-            for _ in 0..20 {
-                parts.push(bq.read_byte().unwrap_or(0).to_string());
+            // Read 20 bytes into array, pad remaining with 0
+            let mut increments = [0i32; 22];
+            for i in 0..20 {
+                increments[i] = bq.read_byte().unwrap_or(0) as i32;
             }
-            let text = format!("SKSE{}", parts.join(","));
-            handle_packet(state, conn_id, &text).await;
+            handle_skse(state, conn_id, &increments).await;
         }
         ClientPacketID::Meditate => {
-            handle_packet(state, conn_id, "ME").await;
+            handle_meditate(state, conn_id).await;
         }
         ClientPacketID::SafeToggle => {
-            handle_packet(state, conn_id, "SEG").await;
+            handle_safe_toggle(state, conn_id).await;
         }
         ClientPacketID::MacroDetect => {
-            handle_packet(state, conn_id, "TENGOMACROS").await;
+            handle_tengomacros(state, conn_id).await;
         }
         ClientPacketID::LevelBonus => {
             let bonus = bq.read_byte().unwrap_or(0);
-            let text = format!("BOF{}", bonus);
-            handle_packet(state, conn_id, &text).await;
+            handle_bof(state, conn_id, bonus as i32).await;
         }
 
         // Spells
         ClientPacketID::SpellInfo => {
             let slot = bq.read_byte().unwrap_or(0);
-            let text = format!("INFS{}", slot);
-            handle_packet(state, conn_id, &text).await;
+            handle_infs(state, conn_id, slot as usize).await;
         }
         ClientPacketID::MoveSpell => {
             let from = bq.read_byte().unwrap_or(0);
             let to = bq.read_byte().unwrap_or(0);
-            let text = format!("DESPHE{},{}", from, to);
-            handle_packet(state, conn_id, &text).await;
+            handle_desphe(state, conn_id, from as i32, to as usize).await;
         }
         ClientPacketID::CastByName => {
             let target = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("DOWNSI{}", target);
-            handle_packet(state, conn_id, &text).await;
+            handle_downsi(state, conn_id, &target).await;
         }
 
         // Commerce
         ClientPacketID::CommerceBuy => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("COMP,{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_commerce_buy(state, conn_id, slot as usize, amount as i32).await;
         }
         ClientPacketID::CommerceSell => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("VEND,{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_commerce_sell(state, conn_id, slot as usize, amount as i32).await;
         }
         ClientPacketID::CommerceClose => {
-            handle_packet(state, conn_id, "FINCOM").await;
+            handle_commerce_close(state, conn_id).await;
         }
         ClientPacketID::TradeOfferGold => {
             let amount = bq.read_long().unwrap_or(0);
-            let text = format!("UOR{}", amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_trade_offer_gold(state, conn_id, amount as i64).await;
         }
         ClientPacketID::TradeOfferItem => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("UOC{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_trade_offer_item(state, conn_id, slot as usize, amount as i32).await;
         }
         ClientPacketID::TradeResponse => {
             let response = bq.read_byte().unwrap_or(0);
-            let text = format!("TDR{}", response);
-            handle_packet(state, conn_id, &text).await;
+            handle_trade_response(state, conn_id, response as i32).await;
         }
         ClientPacketID::TradeCancel => {
-            handle_packet(state, conn_id, "TCM").await;
+            handle_trade_cancel(state, conn_id).await;
         }
         ClientPacketID::TradeChat => {
             let msg = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("VHC{}", msg);
-            handle_packet(state, conn_id, &text).await;
+            handle_trade_chat(state, conn_id, &msg).await;
         }
 
         // Banking
         ClientPacketID::BankDeposit => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("DEPO,{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_bank_deposit(state, conn_id, slot as usize, amount as i32).await;
         }
         ClientPacketID::BankWithdraw => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            let text = format!("RETI,{},{}", slot, amount);
-            handle_packet(state, conn_id, &text).await;
+            handle_bank_withdraw(state, conn_id, slot as usize, amount as i32).await;
         }
         ClientPacketID::BankClose => {
-            handle_packet(state, conn_id, "FINBAN").await;
+            handle_bank_close(state, conn_id).await;
         }
 
         // Crafting
         ClientPacketID::ConstructSmith => {
             let item = bq.read_integer().unwrap_or(0);
-            let text = format!("CNS{}", item);
-            handle_packet(state, conn_id, &text).await;
+            handle_construct_smith(state, conn_id, item as i32).await;
         }
         ClientPacketID::ConstructCarp => {
             let item = bq.read_integer().unwrap_or(0);
-            let text = format!("CNC{}", item);
-            handle_packet(state, conn_id, &text).await;
+            handle_construct_carp(state, conn_id, item as i32).await;
         }
         ClientPacketID::TrainCreature => {
             let pet = bq.read_byte().unwrap_or(0);
-            let text = format!("ENTR{}", pet);
-            handle_packet(state, conn_id, &text).await;
+            handle_entr(state, conn_id, pet as i32).await;
         }
 
         // Guild
         ClientPacketID::GuildInfo => {
-            handle_packet(state, conn_id, "GLINFO").await;
+            handle_guild_info(state, conn_id).await;
         }
         ClientPacketID::GuildCreate => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CIG{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_create(state, conn_id, &data_str).await;
         }
         ClientPacketID::GuildUpdateCodex => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("DESCOD{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_update_codex(state, conn_id, &data_str).await;
         }
         ClientPacketID::GuildAccept => {
             let name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ACEPTARI{}", name);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_accept(state, conn_id, &name).await;
         }
         ClientPacketID::GuildReject => {
             let name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("RECHAZAR{}", name);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_reject(state, conn_id, &name).await;
         }
         ClientPacketID::GuildExpel => {
             let name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ECHARCLA{}", name);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_expel(state, conn_id, &name).await;
         }
         ClientPacketID::GuildNews => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("ACTGNEWS{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_news(state, conn_id, &data_str).await;
         }
         ClientPacketID::GuildApply => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("SOLICITUD{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_apply(state, conn_id, &data_str).await;
         }
         ClientPacketID::GuildDetails => {
             let name = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CLANDETAILS{}", name);
-            handle_packet(state, conn_id, &text).await;
+            handle_guild_details(state, conn_id, &name).await;
         }
 
         // Forum
@@ -615,43 +577,67 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         // Player info
         ClientPacketID::PlayerInfo => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("DAMINF{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            handle_daminf(state, conn_id, &data_str).await;
         }
         ClientPacketID::MiniStats => {
-            handle_packet(state, conn_id, "FEST").await;
+            handle_fest(state, conn_id).await;
         }
         ClientPacketID::HeadChange => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("CABEZI{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            handle_cabezi(state, conn_id, data_str.parse().unwrap_or(0)).await;
         }
         ClientPacketID::Rankings => {
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let text = format!("RANKIN{}", data_str);
-            handle_packet(state, conn_id, &text).await;
+            // Rankings not implemented — ignore
+            let _data_str = bq.read_ascii_string().unwrap_or_default();
         }
 
-        // Misc — all use the generic string bridge
-        ClientPacketID::HouseQuery => { bridge_string(bq, state, conn_id, "FWO").await; }
-        ClientPacketID::HouseBuy => { bridge_string(bq, state, conn_id, "CUC").await; }
-        ClientPacketID::PetRename => { bridge_string(bq, state, conn_id, "CNM").await; }
-        ClientPacketID::DragDrop => { bridge_string(bq, state, conn_id, "DYDTRA").await; }
-        ClientPacketID::Vote => { bridge_string(bq, state, conn_id, "NVOT").await; }
-        ClientPacketID::Report => { bridge_string(bq, state, conn_id, "NEWD").await; }
-        ClientPacketID::SosView => { handle_packet(state, conn_id, "CONSUL").await; }
-        ClientPacketID::SosSend => { bridge_string(bq, state, conn_id, "#").await; }
-        ClientPacketID::SosRespond => { bridge_string(bq, state, conn_id, "X").await; }
+        // Misc
+        ClientPacketID::HouseQuery => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_fwo(state, conn_id, &data_str).await;
+        }
+        ClientPacketID::HouseBuy => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_cuc(state, conn_id, &data_str).await;
+        }
+        ClientPacketID::PetRename => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_cnm(state, conn_id, &data_str).await;
+        }
+        ClientPacketID::DragDrop => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let slot: usize = read_field(1, &data_str, ',').parse().unwrap_or(0);
+            let amount: i32 = read_field(2, &data_str, ',').parse().unwrap_or(0);
+            handle_dydtra(state, conn_id, slot, amount).await;
+        }
+        ClientPacketID::Vote => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let option: usize = data_str.trim().parse().unwrap_or(0);
+            handle_nvot(state, conn_id, option).await;
+        }
+        ClientPacketID::Report => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let target_name = read_field(1, &data_str, ',');
+            let reason = read_field(2, &data_str, ',');
+            handle_newd(state, conn_id, &target_name, &reason).await;
+        }
+        ClientPacketID::SosView => {
+            handle_consul(state, conn_id).await;
+        }
+        ClientPacketID::SosSend => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let contenido = read_field(2, &data_str, '|');
+            handle_sos_send(state, conn_id, &contenido).await;
+        }
+        ClientPacketID::SosRespond => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let target_name = read_field(1, &data_str, '*');
+            let texto = read_field(2, &data_str, '*');
+            handle_sos_respond(state, conn_id, &target_name, &texto).await;
+        }
     }
 
     PacketResult::Ok
-}
-
-/// Bridge helper: reads a string from ByteQueue and forwards to text handler.
-async fn bridge_string(bq: &mut ByteQueue, state: &mut GameState, conn_id: ConnectionId, opcode: &str) {
-    let data_str = bq.read_ascii_string().unwrap_or_default();
-    let text = format!("{}{}", opcode, data_str);
-    handle_packet(state, conn_id, &text).await;
 }
 
 /// Route a decrypted packet to the appropriate handler.
@@ -661,154 +647,274 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
 
     // Match opcode prefix — order matters for single-char opcodes
     if data.starts_with(client_opcodes::KERD22) {
-        auth::handle_hardware_check(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let hd_serial = read_field(1, payload, ',');
+        auth::handle_hardware_check(state, conn_id, &hd_serial).await;
     } else if data.starts_with(client_opcodes::ALOGIN) {
-        auth::handle_account_login(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let account_name = read_field(1, payload, ',');
+        let password = read_field(2, payload, ',');
+        auth::handle_account_login(state, conn_id, &account_name, &password).await;
     } else if data.starts_with(client_opcodes::NACCNT) {
-        auth::handle_create_account(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let account_name = read_field(1, payload, ',');
+        let password = read_field(2, payload, ',');
+        let pin = read_field(3, payload, ',');
+        auth::handle_create_account(state, conn_id, &account_name, &password, &pin).await;
     } else if data.starts_with(client_opcodes::THCJXD) {
-        auth::handle_character_select(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let char_name = read_field(1, payload, ',');
+        let account = read_field(2, payload, ',');
+        let codex = read_field(3, payload, ',');
+        auth::handle_character_select(state, conn_id, &char_name, &account, &codex).await;
     } else if data.starts_with(client_opcodes::OOLOGI) {
-        auth::handle_character_login(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let char_name = read_field(1, payload, ',');
+        let account = read_field(2, payload, ',');
+        let codex = read_field(3, payload, ',');
+        auth::handle_character_login(state, conn_id, &char_name, &account, &codex).await;
     } else if data.starts_with(client_opcodes::NLOGIN) {
-        auth::handle_create_character(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let char_name = read_field(1, payload, ',');
+        let race = read_field(2, payload, ',');
+        let gender_str = read_field(4, payload, ',');
+        let gender: i32 = if gender_str.to_lowercase().contains("ombre") { 1 } else { 2 };
+        let class = read_field(5, payload, ',');
+        let hogar: i32 = read_field(6, payload, ',').parse().unwrap_or(1);
+        let account = read_field(7, payload, ',');
+        let head: i32 = read_field(8, payload, ',').parse().unwrap_or(0);
+        auth::handle_create_character(state, conn_id, &char_name, &race, gender, &class, hogar, &account, head).await;
     } else if data.starts_with(client_opcodes::TIRDAD) {
         auth::handle_roll_dice(state, conn_id).await;
     } else if data.starts_with(client_opcodes::TBRP) {
-        auth::handle_delete_character(state, conn_id, data).await;
+        let payload = strip_opcode(data, 4);
+        let char_name = read_field(1, payload, ',');
+        let account_name = read_field(2, payload, ',').to_uppercase();
+        let password = read_field(3, payload, ',');
+        auth::handle_delete_character(state, conn_id, &char_name, &account_name, &password).await;
     } else if data.starts_with(client_opcodes::REPASS) {
-        auth::handle_change_password(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let account_name = read_field(1, payload, ',');
+        let old_password = read_field(2, payload, ',');
+        let new_password = read_field(3, payload, ',');
+        let confirm_password = read_field(4, payload, ',');
+        auth::handle_change_password(state, conn_id, &account_name, &old_password, &new_password, &confirm_password).await;
     } else if data.starts_with(client_opcodes::REECUH) {
-        auth::handle_account_recovery(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let account_name = read_field(1, payload, ',');
+        let pin = read_field(2, payload, ',');
+        auth::handle_account_recovery(state, conn_id, &account_name, &pin).await;
     } else if data.starts_with(client_opcodes::COMMERCE_CLOSE) {
         info!("[DISPATCH] #{} FINCOM", conn_id);
         handle_commerce_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::COMMERCE_BUY) {
         info!("[DISPATCH] #{} COMP raw='{}'", conn_id, data);
-        handle_commerce_buy(state, conn_id, data).await;
+        let payload = strip_opcode(data, 5); // "COMP," = 5
+        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        handle_commerce_buy(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::COMMERCE_SELL) {
         info!("[DISPATCH] #{} VEND raw='{}'", conn_id, data);
-        handle_commerce_sell(state, conn_id, data).await;
+        let payload = strip_opcode(data, 5); // "VEND," = 5
+        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        handle_commerce_sell(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::TRADE_CANCEL) {
         handle_trade_cancel(state, conn_id).await;
     } else if data.starts_with(client_opcodes::TRADE_RESPONSE) {
-        handle_trade_response(state, conn_id, data).await;
+        let response: i32 = strip_opcode(data, 3).trim().parse().unwrap_or(0);
+        handle_trade_response(state, conn_id, response).await;
     } else if data.starts_with(client_opcodes::TRADE_OFFER_GOLD) {
-        handle_trade_offer_gold(state, conn_id, data).await;
+        let gold: i64 = strip_opcode(data, 3).trim().parse().unwrap_or(0);
+        handle_trade_offer_gold(state, conn_id, gold).await;
     } else if data.starts_with(client_opcodes::TRADE_OFFER_ITEM) {
-        handle_trade_offer_item(state, conn_id, data).await;
+        let payload = strip_opcode(data, 3);
+        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        handle_trade_offer_item(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::TRADE_CHAT) {
-        handle_trade_chat(state, conn_id, data).await;
+        let msg = strip_opcode(data, 3);
+        handle_trade_chat(state, conn_id, msg).await;
     } else if data.starts_with(client_opcodes::BANK_CLOSE) {
         handle_bank_close(state, conn_id).await;
     } else if data.starts_with(client_opcodes::BANK_DEPOSIT) {
-        handle_bank_deposit(state, conn_id, data).await;
+        let payload = strip_opcode(data, 5); // "DEPO," = 5
+        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        handle_bank_deposit(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::BANK_WITHDRAW) {
-        handle_bank_withdraw(state, conn_id, data).await;
+        let payload = strip_opcode(data, 5); // "RETI," = 5
+        let slot: usize = match read_field(1, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        let amount: i32 = match read_field(2, payload, ',').parse() { Ok(v) if v >= 1 => v, _ => return };
+        handle_bank_withdraw(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::WORK_LEFT_CLICK) {
-        handle_work_left_click(state, conn_id, data).await;
+        let payload = strip_opcode(data, 3); // "WLC" = 3
+        let target_x: i32 = match read_field(1, payload, ',').parse() { Ok(v) => v, _ => return };
+        let target_y: i32 = match read_field(2, payload, ',').parse() { Ok(v) => v, _ => return };
+        let skill_type: i32 = match read_field(3, payload, ',').parse() { Ok(v) => v, _ => return };
+        handle_work_left_click(state, conn_id, target_x, target_y, skill_type).await;
     } else if data.starts_with(client_opcodes::GUILD_INFO) {
         handle_guild_info(state, conn_id).await;
     } else if data.starts_with(client_opcodes::GUILD_CREATE) {
-        handle_guild_create(state, conn_id, data).await;
+        handle_guild_create(state, conn_id, strip_opcode(data, 3)).await;
     } else if data.starts_with(client_opcodes::GUILD_UPDATE_CODEX) {
-        handle_guild_update_codex(state, conn_id, data).await;
+        handle_guild_update_codex(state, conn_id, strip_opcode(data, 6)).await;
     } else if data.starts_with(client_opcodes::GUILD_ACCEPT) {
-        handle_guild_accept(state, conn_id, data).await;
+        handle_guild_accept(state, conn_id, strip_opcode(data, 8)).await;
     } else if data.starts_with(client_opcodes::GUILD_REJECT) {
-        handle_guild_reject(state, conn_id, data).await;
+        handle_guild_reject(state, conn_id, strip_opcode(data, 8)).await;
     } else if data.starts_with(client_opcodes::GUILD_EXPEL) {
-        handle_guild_expel(state, conn_id, data).await;
+        handle_guild_expel(state, conn_id, strip_opcode(data, 8)).await;
     } else if data.starts_with(client_opcodes::GUILD_NEWS) {
-        handle_guild_news(state, conn_id, data).await;
+        handle_guild_news(state, conn_id, strip_opcode(data, 8)).await;
     } else if data.starts_with(client_opcodes::GUILD_APPLY) {
-        handle_guild_apply(state, conn_id, data).await;
+        handle_guild_apply(state, conn_id, strip_opcode(data, 9)).await;
     } else if data.starts_with(client_opcodes::GUILD_DETAILS) {
-        handle_guild_details(state, conn_id, data).await;
+        handle_guild_details(state, conn_id, strip_opcode(data, 11)).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_SMITH) {
-        handle_construct_smith(state, conn_id, data).await;
+        let item_index: i32 = strip_opcode(data, 3).trim().parse().unwrap_or(0);
+        handle_construct_smith(state, conn_id, item_index).await;
     } else if data.starts_with(client_opcodes::CONSTRUCT_CARP) {
-        handle_construct_carp(state, conn_id, data).await;
+        let item_index: i32 = strip_opcode(data, 3).trim().parse().unwrap_or(0);
+        handle_construct_carp(state, conn_id, item_index).await;
     } else if data.starts_with(client_opcodes::EQUIP_ITEM) {
-        handle_equip(state, conn_id, data).await;
+        let slot: usize = strip_opcode(data, 4).trim().parse().unwrap_or(0);
+        handle_equip(state, conn_id, slot).await;
     } else if data.starts_with(client_opcodes::POSITION_UPDATE) {
         handle_actualizar(state, conn_id).await;
     } else if data.starts_with(client_opcodes::MACRO_DETECT) {
         handle_tengomacros(state, conn_id).await;
     } else if data.starts_with(client_opcodes::HOUSE_QUERY) {
-        handle_fwo(state, conn_id, data).await;
+        handle_fwo(state, conn_id, strip_opcode(data, 3)).await;
     } else if data.starts_with(client_opcodes::HOUSE_BUY) {
-        handle_cuc(state, conn_id, data).await;
+        handle_cuc(state, conn_id, strip_opcode(data, 3)).await;
     } else if data.starts_with(client_opcodes::PET_RENAME) {
-        handle_cnm(state, conn_id, data).await;
+        handle_cnm(state, conn_id, strip_opcode(data, 3)).await;
     } else if data.starts_with(client_opcodes::CAST_BY_NAME) {
-        handle_downsi(state, conn_id, data).await;
+        let target_name = strip_opcode(data, 6).trim();
+        handle_downsi(state, conn_id, target_name).await;
     } else if data.starts_with(client_opcodes::MOVE_SPELL) {
-        handle_desphe(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let direction: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
+        let slot: usize = read_field(2, payload, ',').parse().unwrap_or(0);
+        handle_desphe(state, conn_id, direction, slot).await;
     } else if data.starts_with(client_opcodes::PLAYER_INFO) {
-        handle_daminf(state, conn_id, data).await;
+        let target_name = strip_opcode(data, 6).trim();
+        handle_daminf(state, conn_id, target_name).await;
     } else if data.starts_with(client_opcodes::MINI_STATS) {
         handle_fest(state, conn_id).await;
     } else if data.starts_with(client_opcodes::HEAD_CHANGE) {
-        handle_cabezi(state, conn_id, data).await;
+        let new_head: i32 = strip_opcode(data, 6).trim().parse().unwrap_or(0);
+        handle_cabezi(state, conn_id, new_head).await;
     } else if data.starts_with(client_opcodes::DRAG_DROP) {
-        handle_dydtra(state, conn_id, data).await;
+        let payload = strip_opcode(data, 6);
+        let slot: usize = read_field(1, payload, ',').parse().unwrap_or(0);
+        let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(0);
+        handle_dydtra(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::VOTE) {
-        handle_nvot(state, conn_id, data).await;
+        let option: usize = strip_opcode(data, 4).trim().parse().unwrap_or(0);
+        handle_nvot(state, conn_id, option).await;
     } else if data.starts_with(client_opcodes::REPORT) {
-        handle_newd(state, conn_id, data).await;
+        let payload = strip_opcode(data, 4);
+        let target_name = read_field(1, payload, ',');
+        let reason = read_field(2, payload, ',');
+        handle_newd(state, conn_id, &target_name, &reason).await;
     } else if data.starts_with(client_opcodes::SOS_VIEW) {
         handle_consul(state, conn_id).await;
     } else if data.starts_with(client_opcodes::SWAP_ITEMS) {
-        handle_swap(state, conn_id, data).await;
+        let payload = strip_opcode(data, 4);
+        let slot1: usize = read_field(1, payload, ',').parse().unwrap_or(0);
+        let slot2: usize = read_field(2, payload, ',').parse().unwrap_or(0);
+        handle_swap(state, conn_id, slot1, slot2).await;
     } else if data.starts_with(client_opcodes::SKILL_SET) {
-        handle_skse(state, conn_id, data).await;
+        let payload = strip_opcode(data, 4);
+        let mut increments = [0i32; 22];
+        for i in 0..22 {
+            increments[i] = read_field(i + 1, payload, ',').parse().unwrap_or(0);
+        }
+        handle_skse(state, conn_id, &increments).await;
     } else if data.starts_with(client_opcodes::SPELL_INFO) {
-        handle_infs(state, conn_id, data).await;
+        let slot: usize = strip_opcode(data, 4).trim().parse().unwrap_or(0);
+        handle_infs(state, conn_id, slot).await;
     } else if data.starts_with(client_opcodes::LEVEL_BONUS) {
-        handle_bof(state, conn_id, data).await;
+        let selection: i32 = strip_opcode(data, 3).trim().parse().unwrap_or(0);
+        handle_bof(state, conn_id, selection).await;
     } else if data.starts_with(client_opcodes::TRAIN_CREATURE) {
-        handle_entr(state, conn_id, data).await;
+        let creature_slot: i32 = strip_opcode(data, 4).trim().parse().unwrap_or(0);
+        handle_entr(state, conn_id, creature_slot).await;
     } else if data.starts_with(client_opcodes::USE_SKILL) {
-        handle_uk(state, conn_id, data).await;
+        let skill_num: i32 = strip_opcode(data, 2).trim().parse().unwrap_or(0);
+        handle_uk(state, conn_id, skill_num).await;
     } else if data.starts_with(client_opcodes::SAFE_TOGGLE) {
         handle_safe_toggle(state, conn_id).await;
     } else if data.starts_with(client_opcodes::USE_ITEM_CLICK) {
-        handle_use_item_click(state, conn_id, data).await;
+        let payload = strip_opcode(data, 3);
+        let slot: usize = read_field(1, payload, ',').parse().unwrap_or(0);
+        handle_use_item_click(state, conn_id, slot).await;
     } else if data.starts_with(client_opcodes::USE_ITEM) {
-        handle_use_item(state, conn_id, data).await;
+        let slot: usize = strip_opcode(data, 3).trim().parse().unwrap_or(0);
+        handle_use_item(state, conn_id, slot).await;
     } else if data.starts_with(client_opcodes::ATTACK) {
         handle_attack(state, conn_id).await;
     } else if data.starts_with(client_opcodes::PICK_UP) {
         handle_pick_up(state, conn_id).await;
     } else if data.starts_with(client_opcodes::DROP_ITEM) {
-        handle_drop_item(state, conn_id, data).await;
+        let payload = strip_opcode(data, 2);
+        let slot_raw: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
+        let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(1);
+        if slot_raw == -1 {
+            handle_drop_gold(state, conn_id, amount).await;
+        } else {
+            handle_drop_item(state, conn_id, slot_raw as usize, amount).await;
+        }
     } else if data.starts_with(client_opcodes::CAST_SPELL) {
-        handle_cast_spell(state, conn_id, data).await;
+        let spell_slot: usize = strip_opcode(data, 2).parse().unwrap_or(0);
+        handle_cast_spell(state, conn_id, spell_slot).await;
     } else if data.starts_with(client_opcodes::LEFT_CLICK) {
-        handle_left_click(state, conn_id, data).await;
+        let payload = strip_opcode(data, 2);
+        let x: i32 = match read_field(1, payload, ',').parse() { Ok(v) => v, _ => return };
+        let y: i32 = match read_field(2, payload, ',').parse() { Ok(v) => v, _ => return };
+        handle_left_click(state, conn_id, x, y).await;
     } else if data.starts_with(client_opcodes::RIGHT_CLICK) {
-        handle_right_click(state, conn_id, data).await;
+        let payload = strip_opcode(data, 2);
+        let x: i32 = match read_field(1, payload, ',').parse() { Ok(v) => v, _ => return };
+        let y: i32 = match read_field(2, payload, ',').parse() { Ok(v) => v, _ => return };
+        handle_right_click(state, conn_id, x, y).await;
     } else if data.starts_with(client_opcodes::MEDITATE) {
         handle_meditate(state, conn_id).await;
     } else if data.starts_with(client_opcodes::CHANGE_HEADING) {
-        movement::handle_change_heading(state, conn_id, data).await;
+        let heading: i32 = strip_opcode(data, 4).parse().unwrap_or(0);
+        movement::handle_change_heading(state, conn_id, heading).await;
     } else if data.starts_with(client_opcodes::REQUEST_POS) {
         movement::handle_request_pos(state, conn_id).await;
     } else if data.starts_with(client_opcodes::WALK) {
-        movement::handle_walk(state, conn_id, data).await;
+        let heading: i32 = strip_opcode(data, 1).parse().unwrap_or(0);
+        movement::handle_walk(state, conn_id, heading).await;
     } else if data.starts_with(client_opcodes::MOUSE_DROP) {
-        handle_mouse_drop(state, conn_id, data).await;
+        let payload = strip_opcode(data, 2);
+        let slot: usize = read_field(1, payload, ',').parse().unwrap_or(0);
+        let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(1);
+        handle_mouse_drop(state, conn_id, slot, amount).await;
     } else if data.starts_with(client_opcodes::YELL) {
-        social::handle_yell(state, conn_id, data).await;
+        let message = strip_opcode(data, 1);
+        social::handle_yell(state, conn_id, message).await;
     } else if data.starts_with(client_opcodes::SOS_SEND) {
-        handle_sos_send(state, conn_id, data).await;
+        let payload = strip_opcode(data, 1);
+        let contenido = read_field(2, payload, '|');
+        handle_sos_send(state, conn_id, &contenido).await;
     } else if data.starts_with(client_opcodes::TALK) {
-        social::handle_talk(state, conn_id, data).await;
+        let message = strip_opcode(data, 1);
+        social::handle_talk(state, conn_id, message).await;
     } else if data.starts_with(client_opcodes::WHISPER) {
-        social::handle_whisper(state, conn_id, data).await;
+        let payload = strip_opcode(data, 1);
+        let target_name = read_field(1, payload, '@');
+        let message = read_field(2, payload, '@');
+        social::handle_whisper(state, conn_id, &target_name, &message).await;
     } else if data.starts_with(client_opcodes::SOS_RESPOND) {
-        handle_sos_respond(state, conn_id, data).await;
+        let payload = strip_opcode(data, 1);
+        let target_name = read_field(1, payload, '*');
+        let texto = read_field(2, payload, '*');
+        handle_sos_respond(state, conn_id, &target_name, &texto).await;
     } else if data.starts_with('/') {
         // VB6 client sends slash commands directly (without ";" prefix)
         // See General.bas enviarMacro: if first char is "/" → SendData(text) raw

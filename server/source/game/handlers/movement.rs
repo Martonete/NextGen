@@ -17,7 +17,7 @@ use super::{
 // =====================================================================
 
 /// M<heading> — Character movement.
-pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, heading: i32) {
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
@@ -37,11 +37,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // Movement speed is controlled entirely client-side by animation timing.
     // No server-side anti-flood for movement.
 
-    // Parse heading from payload (single digit after "M")
-    let heading_str = strip_opcode(data, 1);
-    let heading: i32 = heading_str.parse().unwrap_or(0);
+    // Validate heading (1=north, 2=east, 3=south, 4=west)
     if heading < 1 || heading > 4 {
-        warn!("[WALK] #{} bad heading '{}' parsed={}", conn_id, heading_str, heading);
+        warn!("[WALK] #{} bad heading {}", conn_id, heading);
         return;
     }
 
@@ -252,14 +250,13 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
 }
 
 /// CHEA<heading> — Change heading without moving.
-pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, heading: i32) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index),
         _ => return,
     };
     let (map, x, y, char_index) = user_data;
 
-    let heading: i32 = strip_opcode(data, 4).parse().unwrap_or(0);
     if heading < 1 || heading > 4 {
         return;
     }

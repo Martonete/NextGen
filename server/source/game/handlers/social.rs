@@ -4,7 +4,7 @@
 use crate::net::ConnectionId;
 use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::font_index;
 use crate::data::balance;
 use super::common::*;
 use super::{send_inventory_slot, handle_slash_command};
@@ -504,14 +504,12 @@ pub(super) async fn handle_slash_stats(state: &mut GameState, conn_id: Connectio
 /// VB6 format: T|<color>~<message>~<charindex>
 /// Client parses with ReadField(N, rData, 176) for dialog bubble,
 /// or ReadField(N, rData, 126) for console text.
-pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, message: &str) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.dead, u.privileges, u.silenced),
         _ => return,
     };
     let (map, x, y, char_index, dead, privileges, silenced) = user_data;
-
-    let message = strip_opcode(data, 1);
 
     // Handle slash commands (e.g., /RESUCITAR) — silenced users can still use commands
     // VB6: empty messages are allowed (used for "cartelear" — clearing text bubbles)
@@ -536,12 +534,12 @@ pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, da
     };
 
     // Send binary talk packet to area
-    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, &message, color);
+    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, message, color);
 }
 
 /// - — Yell message (larger area, red text).
 /// VB6 format: N|<color>~<message>~<charindex>
-pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, message: &str) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.dead),
         _ => return,
@@ -552,40 +550,30 @@ pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, da
         return; // Dead players can't yell
     }
 
-    let message = strip_opcode(data, 1);
     if message.is_empty() {
         return;
     }
 
     // Yell uses red color and goes to the whole map (binary overhead chat)
-    state.send_chat_over_head_to(SendTarget::ToMap(map), &message, char_index.0 as i16, 255);
+    state.send_chat_over_head_to(SendTarget::ToMap(map), message, char_index.0 as i16, 255);
 }
 
 /// \ — Whisper (private message).
 /// Client sends: \<targetname>@<message>
 /// Server sends P| packets to both sender and receiver.
-pub(super) async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId, target_name: &str, message: &str) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.char_name.clone(), u.privileges),
         _ => return,
     };
     let (sender_name, privileges) = user_data;
 
-    let payload = strip_opcode(data, 1); // Strip "\"
-    if payload.is_empty() {
-        return;
-    }
-
-    // Parse target@message (@ as delimiter)
-    let target_name = read_field(1, payload, '@');
-    let message = read_field(2, payload, '@');
-
     if target_name.is_empty() || message.is_empty() {
         return;
     }
 
     // Find target user
-    let target_id = state.find_user_by_name(&target_name);
+    let target_id = state.find_user_by_name(target_name);
 
     if target_id.is_none() {
         // User not found — send console message
@@ -597,7 +585,7 @@ pub(super) async fn handle_whisper(state: &mut GameState, conn_id: ConnectionId,
     // Get target's display name
     let target_display = state.users.get(&target_id)
         .map(|u| u.char_name.clone())
-        .unwrap_or_else(|| target_name.clone());
+        .unwrap_or_else(|| target_name.to_string());
 
     // Send to sender: "Le dijiste a <target>: <message>" (binary whisper)
     state.send_whisper(conn_id, &format!("Le dijiste a {}: {}", target_display, message), font_index::WHISPER_SENT);

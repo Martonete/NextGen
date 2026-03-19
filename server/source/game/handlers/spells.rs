@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, MAX_SPELL_SLOTS};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::data::experience::MAX_LEVEL;
 use super::common::*;
@@ -19,12 +19,8 @@ use super::{user_die, npc_die, check_user_level, revive_user, warp_user};
 /// LH<slot>,<target_x>,<target_y> — Cast spell.
 /// LH<slot> — Select spell to cast (VB6: flags.Hechizo = slot).
 /// Does NOT cast the spell — the cast happens on the next RC (right-click) that targets a tile.
-pub(super) async fn handle_cast_spell(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let spell_slot: usize = match payload.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= MAX_SPELL_SLOTS => s,
-        _ => return,
-    };
+pub(super) async fn handle_cast_spell(state: &mut GameState, conn_id: ConnectionId, spell_slot: usize) {
+    if spell_slot < 1 || spell_slot > MAX_SPELL_SLOTS { return; }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.logged {

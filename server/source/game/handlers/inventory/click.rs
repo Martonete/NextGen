@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerRace;
 use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
@@ -19,16 +19,7 @@ use crate::game::handlers::{
 use crate::game::handlers::skills::skill_id;
 use super::doors::{accion_para_puerta, accion_para_foro};
 
-pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let x: i32 = match read_field(1, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let y: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
+pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     do_lookat_tile(state, conn_id, x, y).await;
 }
 
@@ -382,17 +373,7 @@ pub(crate) fn npc_health_by_survival(min_hp: i32, max_hp: i32, survival_skill: i
 
 /// RC<x>,<y> — Right click on tile (interact / context menu).
 /// VB6 equivalent: Accion() in Acciones.bas — handles doors, NPCs, users, items.
-pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let x: i32 = match read_field(1, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let y: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-
+pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     let (map, user_x, user_y, privileges, dead) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.privileges, u.dead),
         _ => return,

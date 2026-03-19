@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::{ObjData, ObjType};
 use crate::game::handlers::common::*;
@@ -23,28 +23,17 @@ use super::equip::unequip_slot;
 /// QSA<slot>,<visible> — Use item via double-click on inventory picture.
 /// VB6: picInv_DblClick sends QSA<slot>,<True|False>.
 /// If InvenVisible = "FALSO", it's a hack attempt (using items with inv hidden).
-pub(crate) async fn handle_use_item_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(crate) async fn handle_use_item_click(state: &mut GameState, conn_id: ConnectionId, slot: usize) {
     // VB6: HandleUseItem exits early if Meditando
     let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
     if is_meditating {
         return;
     }
 
-    let payload = strip_opcode(data, 3);
-    let slot_str = read_field(1, payload, ',');
-    let visible_str = read_field(2, payload, ',');
-
-    // Anti-cheat: if inventory window is hidden, it's a hack
-    if visible_str.eq_ignore_ascii_case("falso") || visible_str.eq_ignore_ascii_case("false") {
-        info!("[CHEAT] QSA with hidden inventory from #{}", conn_id);
+    let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
+    if slot < 1 || slot > max_slots {
         return;
     }
-
-    let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
-    let slot: usize = match slot_str.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= max_slots => s,
-        _ => return,
-    };
     let idx = slot - 1;
 
     let (obj_index, _amount) = match state.users.get(&conn_id) {
@@ -82,30 +71,27 @@ pub(crate) async fn handle_use_item_click(state: &mut GameState, conn_id: Connec
 
     // Delegate to inner use-item with from_click=true so it skips
     // puede_potear() (already set by puede_clickear above)
-    let usa_data = format!("USA{}", slot);
-    handle_use_item_inner(state, conn_id, &usa_data, true).await;
+    handle_use_item_inner(state, conn_id, slot, true).await;
 }
 
-pub(crate) async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    handle_use_item_inner(state, conn_id, data, false).await;
+pub(crate) async fn handle_use_item(state: &mut GameState, conn_id: ConnectionId, slot: usize) {
+    handle_use_item_inner(state, conn_id, slot, false).await;
 }
 
 /// Inner use-item logic. `from_click` = true when called from QSA (double-click),
 /// which means puede_clickear() already set both interval_click and interval_poteo,
 /// so we skip the puede_potear() check to avoid double-blocking.
-pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, data: &str, from_click: bool) {
+pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: ConnectionId, slot: usize, from_click: bool) {
     // VB6: HandleUseItem exits early if Meditando
     let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
     if is_meditating {
         return;
     }
 
-    let slot_str = strip_opcode(data, 3);
     let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
-    let slot: usize = match slot_str.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= max_slots => s,
-        _ => return,
-    };
+    if slot < 1 || slot > max_slots {
+        return;
+    }
     let idx = slot - 1;
 
     let (obj_index, amount) = match state.users.get(&conn_id) {

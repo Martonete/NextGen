@@ -15,12 +15,10 @@ use crate::game::handlers::{
 };
 
 /// EQUI<slot> — Equip/unequip item from inventory slot.
-pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let slot_str = strip_opcode(data, 4);
-    let slot: usize = match slot_str.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= MAX_INVENTORY_SLOTS => s,
-        _ => return,
-    };
+pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, slot: usize) {
+    if slot < 1 || slot > MAX_INVENTORY_SLOTS {
+        return;
+    }
     let idx = slot - 1; // 0-based
 
     let user = match state.users.get(&conn_id) {

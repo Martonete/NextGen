@@ -23,16 +23,13 @@ use super::{
 // =====================================================================
 
 /// HardwareCheck — Hardware serial check (first packet from client).
-pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let hd_serial = read_field(1, payload, ',');
-
+pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: ConnectionId, hd_serial: &str) {
     info!("[AUTH] HD serial check from #{}: HD={}", conn_id, hd_serial);
 
     let is_banned = state.bans.is_hd_banned(&hd_serial);
 
     if let Some(user) = state.users.get_mut(&conn_id) {
-        user.hd_serial = hd_serial;
+        user.hd_serial = hd_serial.to_string();
         user.paso_hd = !is_banned;
     }
 
@@ -42,11 +39,7 @@ pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: Connec
 }
 
 /// AccountLogin — Account login.
-pub(super) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let account_name = read_field(1, payload, ',');
-    let password = read_field(2, payload, ',');
-
+pub(super) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str) {
     info!("[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}", account_name, password.len(), password.as_bytes(), conn_id);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
@@ -92,8 +85,8 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
     }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
-        user.account_name = account_name.clone();
-        user.account_password = password;
+        user.account_name = account_name.to_string();
+        user.account_password = password.to_string();
         user.account_id = account.id;
     }
 
@@ -149,12 +142,7 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
 }
 
 /// CreateAccount — Create new account.
-pub(super) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let account_name = read_field(1, payload, ',');
-    let password = read_field(2, payload, ',');
-    let pin = read_field(3, payload, ',');
-
+pub(super) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str, pin: &str) {
     info!("[AUTH] New account request: '{}' from #{}", account_name, conn_id);
 
     if !is_valid_name(&account_name) {
@@ -212,12 +200,7 @@ pub(super) async fn handle_create_account(state: &mut GameState, conn_id: Connec
 }
 
 /// CharacterSelect — Character login (primary, with full validation).
-pub(super) async fn handle_character_select(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let char_name = read_field(1, payload, ',');
-    let account = read_field(2, payload, ',');
-    let codex = read_field(3, payload, ',');
-
+pub(super) async fn handle_character_select(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
     info!("[AUTH] Character login (CharacterSelect): '{}' account='{}' from #{}", char_name, account, conn_id);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
@@ -256,16 +239,11 @@ pub(super) async fn handle_character_select(state: &mut GameState, conn_id: Conn
         return;
     }
 
-    connect_user(state, conn_id, &char_name, &account, &codex).await;
+    connect_user(state, conn_id, char_name, account, codex).await;
 }
 
 /// CharacterLogin — Character login (simplified variant).
-pub(super) async fn handle_character_login(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let char_name = read_field(1, payload, ',');
-    let account = read_field(2, payload, ',');
-    let codex = read_field(3, payload, ',');
-
+pub(super) async fn handle_character_login(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
     info!("[AUTH] Character login (CharacterLogin): '{}' from #{}", char_name, conn_id);
 
     // HD ban check (VB6 13.3 parity)
@@ -298,7 +276,7 @@ pub(super) async fn handle_character_login(state: &mut GameState, conn_id: Conne
         return;
     }
 
-    connect_user(state, conn_id, &char_name, &account, &codex).await;
+    connect_user(state, conn_id, char_name, account, codex).await;
 }
 
 /// ConnectUser — Full character login (called after CharacterSelect or CharacterLogin validation).
@@ -936,9 +914,17 @@ pub(crate) async fn connect_user(
 // =====================================================================
 
 /// CreateCharacter — Create new character.
-pub(super) async fn handle_create_character(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-
+pub(super) async fn handle_create_character(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    char_name: &str,
+    race: &str,
+    gender: i32,
+    class: &str,
+    hogar: i32,
+    account: &str,
+    head: i32,
+) {
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
     if !paso_hd {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
@@ -957,16 +943,6 @@ pub(super) async fn handle_create_character(state: &mut GameState, conn_id: Conn
         close_connection(state, conn_id).await;
         return;
     }
-
-    let char_name = read_field(1, payload, ',');
-    let race = read_field(2, payload, ',');
-    // VB6 client sends gender as string ("Hombre"/"Mujer"), not integer
-    let gender_str = read_field(4, payload, ',');
-    let gender: i32 = if gender_str.to_lowercase().contains("ombre") { 1 } else { 2 };
-    let class = read_field(5, payload, ',');
-    let hogar: i32 = read_field(6, payload, ',').parse().unwrap_or(1);
-    let account = read_field(7, payload, ',');
-    let head: i32 = read_field(8, payload, ',').parse().unwrap_or(0);
 
     info!("[AUTH] New character request: '{}' race='{}' class='{}' from #{}", char_name, race, class, conn_id);
 
@@ -1028,7 +1004,7 @@ pub(super) async fn handle_create_character(state: &mut GameState, conn_id: Conn
         Ok(_char_id) => {
             info!("[AUTH] Character '{}' created successfully — auto-logging in", char_name);
             // Auto-login after creation (VB6 behavior: enter game directly)
-            connect_user(state, conn_id, &char_name, &account, "").await;
+            connect_user(state, conn_id, char_name, account, "").await;
         }
         Err(e) => {
             state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string()));
@@ -1065,12 +1041,7 @@ pub(super) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionI
 }
 
 /// DeleteCharacter — Delete character.
-pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 4);
-    let char_name = read_field(1, payload, ',');
-    let account_name = read_field(2, payload, ',').to_uppercase();
-    let password = read_field(3, payload, ',');
-
+pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account_name: &str, password: &str) {
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
 
     // Cannot delete a character that is currently online
@@ -1129,13 +1100,7 @@ pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: Conn
 }
 
 /// ChangePassword — Change account password.
-pub(super) async fn handle_change_password(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let account_name = read_field(1, payload, ',');
-    let old_password = read_field(2, payload, ',');
-    let new_password = read_field(3, payload, ',');
-    let confirm_password = read_field(4, payload, ',');
-
+pub(super) async fn handle_change_password(state: &mut GameState, conn_id: ConnectionId, account_name: &str, old_password: &str, new_password: &str, confirm_password: &str) {
     info!("[AUTH] Password change request for '{}' from #{}", account_name, conn_id);
 
     if new_password == old_password {
@@ -1187,11 +1152,7 @@ pub(super) async fn handle_change_password(state: &mut GameState, conn_id: Conne
 }
 
 /// AccountRecovery — Account recovery via PIN.
-pub(super) async fn handle_account_recovery(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
-    let account_name = read_field(1, payload, ',');
-    let pin = read_field(2, payload, ',');
-
+pub(super) async fn handle_account_recovery(state: &mut GameState, conn_id: ConnectionId, account_name: &str, pin: &str) {
     info!("[AUTH] Account recovery request for '{}' from #{}", account_name, conn_id);
 
     let account = match accounts::load_account(&state.pool, &account_name).await {

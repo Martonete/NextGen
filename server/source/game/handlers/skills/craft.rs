@@ -3,7 +3,7 @@
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::{ObjData, ObjType};
 use crate::game::handlers::common::*;
 use crate::game::handlers::{send_inventory_slot, send_full_inventory, check_user_level};
@@ -528,7 +528,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     }
 }
 
-pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: ConnectionId, item_index: i32) {
     // VB6: must have MARTILLO_HERRERO or MARTILLO_HERRERO_NEWBIE equipped
     let weapon_idx = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
     if weapon_idx != MARTILLO_HERRERO && weapon_idx != MARTILLO_HERRERO_NEWBIE {
@@ -536,11 +536,8 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
         return;
     }
 
-    let payload = strip_opcode(data, 3);
-    let obj_index: i32 = match payload.trim().parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+    let obj_index: i32 = item_index;
+    if obj_index < 1 { return; }
 
     let obj = match state.get_object(obj_index) {
         Some(o) => o.clone(),
@@ -599,12 +596,9 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 }
 
 /// CNC — Construct carpentry item.
-pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let obj_index: i32 = match payload.trim().parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: ConnectionId, item_index: i32) {
+    let obj_index: i32 = item_index;
+    if obj_index < 1 { return; }
 
     let obj = match state.get_object(obj_index) {
         Some(o) => o.clone(),
