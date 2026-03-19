@@ -205,12 +205,14 @@ public partial class Main : Control
 		void Center(Control? panel)
 		{
 			if (panel == null) return;
-			// Scale the panel so its internal content (fonts, buttons) fits the current resolution.
-			// Panels are designed at 800x600 (UIScale=1.0). At higher res, Scale > 1.
-			panel.Scale = new Vector2(uiScale, uiScale);
-			// Center using scaled size (Size * Scale)
-			float scaledW = panel.Size.X * uiScale;
-			float scaledH = panel.Size.Y * uiScale;
+			// Scale panel proportionally, but cap so it fits inside the viewport
+			float maxScaleW = (float)vpW / panel.Size.X;
+			float maxScaleH = (float)vpH / panel.Size.Y;
+			float panelScale = Math.Min(uiScale, Math.Min(maxScaleW * 0.95f, maxScaleH * 0.95f));
+			panel.Scale = new Vector2(panelScale, panelScale);
+			// Center using scaled size
+			float scaledW = panel.Size.X * panelScale;
+			float scaledH = panel.Size.Y * panelScale;
 			float px = vpL + (vpW - scaledW) / 2f;
 			float py = vpT + (vpH - scaledH) / 2f;
 			panel.Position = new Vector2(Math.Max(vpL, px), Math.Max(vpT, py));
