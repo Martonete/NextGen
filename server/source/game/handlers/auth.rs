@@ -254,9 +254,11 @@ pub(super) async fn handle_character_login(state: &mut GameState, conn_id: Conne
         return;
     }
 
-    // Verify character belongs to logged-in account
-    let account_name = state.users.get(&conn_id).map(|u| u.account_name.clone()).unwrap_or_default();
-    if account_name.is_empty() {
+    // Verify user is logged into an account
+    let (account_name, account_id) = state.users.get(&conn_id)
+        .map(|u| (u.account_name.clone(), u.account_id))
+        .unwrap_or_default();
+    if account_name.is_empty() || account_id == 0 {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes iniciar sesion primero."));
         close_connection(state, conn_id).await;
         return;
@@ -264,6 +266,15 @@ pub(super) async fn handle_character_login(state: &mut GameState, conn_id: Conne
 
     if !charfile::character_exists(&state.pool, &char_name).await {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("El personaje no existe."));
+        close_connection(state, conn_id).await;
+        return;
+    }
+
+    // Verify character belongs to the logged-in account (prevent cross-account login)
+    let char_account_id = charfile::load_charfile(&state.pool, &char_name).await
+        .map(|c| c.account_id).unwrap_or(0);
+    if char_account_id != account_id {
+        state.send_bytes(conn_id, &binary_packets::write_error_msg("Este personaje no pertenece a tu cuenta."));
         close_connection(state, conn_id).await;
         return;
     }
@@ -474,12 +485,7 @@ pub(crate) async fn connect_user(
         user.fecha_ingreso = char_data.fecha_ingreso.clone();
         user.matados_ingreso = char_data.matados_ingreso;
         user.next_recompensa = char_data.next_recompensa;
-        user.hogar = match char_data.hogar {
-            1 => "Thir".to_string(),
-            2 => "Inthak".to_string(),
-            3 => "Ruvendel".to_string(),
-            _ => "Thir".to_string(),
-        };
+        user.hogar = "Ullathorpe".to_string();
 
         // Stats
         user.class = PlayerClass::from_str_or_default(&char_data.class);
@@ -497,7 +503,7 @@ pub(crate) async fn connect_user(
         user.gold = char_data.gold;
         user.bank_gold = char_data.bank_gold;
         user.skill_pts_libres = char_data.skill_pts_libres;
-        user.hogar = char_data.hogar.to_string();
+        // hogar loaded above (default Ullathorpe)
         user.max_agua = char_data.max_agua;
         user.min_agua = char_data.min_agua;
         user.max_ham = char_data.max_ham;
