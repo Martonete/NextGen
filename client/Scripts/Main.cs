@@ -501,7 +501,8 @@ public partial class Main : Control
 				EnterFullscreen();
 			else
 				ExitFullscreen();
-			RepositionUI();
+			// Defer repositioning to next frame so window resize has taken effect
+			Callable.From(RepositionUI).CallDeferred();
 		};
 
 		// Apply initial SubViewport size
