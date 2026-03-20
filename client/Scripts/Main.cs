@@ -235,6 +235,16 @@ public partial class Main : Control
 		Center(_optionsPanel);
 		Center(_keyBindPanel);
 		Center(_questPanel);
+		Center(_trainerPanel);
+		Center(_changePasswordPanel);
+		Center(_gmPanel);
+		Center(_spawnListPanel);
+		Center(_sosPanel);
+		Center(_motdEditorPanel);
+		Center(_guildAlignmentPanel);
+		Center(_peaceProposalPanel);
+		Center(_guildMemberPanel);
+		Center(_tutorialPanel);
 	}
 
 	private readonly GameData _gameData = new();

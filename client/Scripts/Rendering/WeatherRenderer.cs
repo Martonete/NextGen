@@ -281,7 +281,9 @@ public partial class WeatherRenderer : Node2D
             _lightningFlashAlpha = 0f;
         }
 
-        QueueRedraw();
+        // Only redraw when there's something to draw (rain or lightning flash)
+        if (_rainIntensity > 0f || _lightningFlashAlpha > 0f)
+            QueueRedraw();
     }
 
     public override void _Draw()

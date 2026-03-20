@@ -95,11 +95,7 @@ public partial class AuraAdditiveLayer : Node2D
         _renderer = renderer;
     }
 
-    public override void _Process(double delta)
-    {
-        QueueRedraw();
-    }
-
+    // No _Process QueueRedraw needed — parent WorldRenderer triggers via line 777
     public override void _Draw()
     {
         _renderer?.DrawPendingAuras(this);
