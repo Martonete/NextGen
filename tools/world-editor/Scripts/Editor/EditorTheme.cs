@@ -1119,7 +1119,9 @@ public static class EditorTheme
             "\u265f" => "npc",        // chess pawn
             "\u25c6" => "object",     // black diamond
             "\u26a1" => "trigger",    // lightning
-            "\U0001F4BE" => "save",   // floppy disk
+            "\U0001F4BE" => "save",   // floppy disk 💾
+            "\U0001F4C2" => "folder", // open folder 📂
+            "\U0001F4C1" => "folder", // folder 📁
             "\u21B6" => "undo",       // undo arrow
             "\u21B7" => "redo",       // redo arrow
             _ => unicodeIcon.Length > 0 ? ResolveByContent(unicodeIcon) : "pencil",
