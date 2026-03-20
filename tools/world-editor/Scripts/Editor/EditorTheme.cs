@@ -1122,8 +1122,10 @@ public static class EditorTheme
             "\U0001F4BE" => "save",   // floppy disk 💾
             "\U0001F4C2" => "folder", // open folder 📂
             "\U0001F4C1" => "folder", // folder 📁
-            "\u21B6" => "undo",       // undo arrow
-            "\u21B7" => "redo",       // redo arrow
+            "\u21B6" => "undo",       // undo arrow ↶
+            "\u21B7" => "redo",       // redo arrow ↷
+            "\u21a9" => "undo",       // leftwards arrow with hook ↩
+            "\u21aa" => "redo",       // rightwards arrow with hook ↪
             _ => unicodeIcon.Length > 0 ? ResolveByContent(unicodeIcon) : "pencil",
         };
     }
