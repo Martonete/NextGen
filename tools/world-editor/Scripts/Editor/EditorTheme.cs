@@ -926,48 +926,84 @@ public static class EditorTheme
         c.DrawLine(p + new Vector2(-dw, hs * 0.20f), p + new Vector2(-dw, hs), col, w * 0.8f);
     }
 
-    // --- Undo: curved left arrow ---
+    // --- Undo: circular counterclockwise arrow inside ring ---
     private static void DrawIconUndo(Control c, Vector2 p, float s, Color col, float w)
     {
-        float r = s * 0.42f;
-        // Arc (right half of circle)
-        int segs = 10;
-        for (int i = 0; i < segs; i++)
+        float outerR = s * 0.82f;
+        float arrowR = s * 0.46f;
+
+        // Outer ring
+        int circSegs = 24;
+        for (int i = 0; i < circSegs; i++)
         {
-            float a1 = MathF.PI * 0.1f + i * MathF.PI * 1.2f / segs;
-            float a2 = MathF.PI * 0.1f + (i + 1) * MathF.PI * 1.2f / segs;
+            float a1 = i * MathF.Tau / circSegs;
+            float a2 = (i + 1) * MathF.Tau / circSegs;
             c.DrawLine(
-                p + new Vector2(MathF.Cos(a1) * r, MathF.Sin(a1) * r),
-                p + new Vector2(MathF.Cos(a2) * r, MathF.Sin(a2) * r),
+                p + new Vector2(MathF.Cos(a1) * outerR, MathF.Sin(a1) * outerR),
+                p + new Vector2(MathF.Cos(a2) * outerR, MathF.Sin(a2) * outerR),
                 col, w);
         }
-        // Arrow at start
-        float startA = MathF.PI * 0.1f;
-        var arrowPt = p + new Vector2(MathF.Cos(startA) * r, MathF.Sin(startA) * r);
-        float ah = s * 0.22f;
-        c.DrawLine(arrowPt, arrowPt + new Vector2(-ah, -ah * 0.5f), col, w);
-        c.DrawLine(arrowPt, arrowPt + new Vector2(ah * 0.3f, -ah), col, w);
+
+        // Inner arrow arc (~280° counterclockwise, gap at top-left)
+        float startAngle = -MathF.PI * 0.6f;
+        float sweep = MathF.PI * 1.55f;
+        int arcSegs = 16;
+        for (int i = 0; i < arcSegs; i++)
+        {
+            float a1 = startAngle + i * sweep / arcSegs;
+            float a2 = startAngle + (i + 1) * sweep / arcSegs;
+            c.DrawLine(
+                p + new Vector2(MathF.Cos(a1) * arrowR, MathF.Sin(a1) * arrowR),
+                p + new Vector2(MathF.Cos(a2) * arrowR, MathF.Sin(a2) * arrowR),
+                col, w * 1.6f);
+        }
+
+        // Arrowhead at arc start (points counterclockwise)
+        var tip = p + new Vector2(MathF.Cos(startAngle) * arrowR, MathF.Sin(startAngle) * arrowR);
+        float ah = s * 0.26f;
+        float tang = startAngle - MathF.PI * 0.5f;
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang + 0.45f), MathF.Sin(tang + 0.45f)) * ah, col, w * 1.6f);
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang - 0.65f), MathF.Sin(tang - 0.65f)) * ah, col, w * 1.6f);
     }
 
-    // --- Redo: curved right arrow (mirror of undo) ---
+    // --- Redo: circular clockwise arrow inside ring (mirror of undo) ---
     private static void DrawIconRedo(Control c, Vector2 p, float s, Color col, float w)
     {
-        float r = s * 0.42f;
-        int segs = 10;
-        for (int i = 0; i < segs; i++)
+        float outerR = s * 0.82f;
+        float arrowR = s * 0.46f;
+
+        // Outer ring
+        int circSegs = 24;
+        for (int i = 0; i < circSegs; i++)
         {
-            float a1 = -(MathF.PI * 0.1f + i * MathF.PI * 1.2f / segs);
-            float a2 = -(MathF.PI * 0.1f + (i + 1) * MathF.PI * 1.2f / segs);
+            float a1 = i * MathF.Tau / circSegs;
+            float a2 = (i + 1) * MathF.Tau / circSegs;
             c.DrawLine(
-                p + new Vector2(-MathF.Cos(-a1) * r, MathF.Sin(-a1) * r),
-                p + new Vector2(-MathF.Cos(-a2) * r, MathF.Sin(-a2) * r),
+                p + new Vector2(MathF.Cos(a1) * outerR, MathF.Sin(a1) * outerR),
+                p + new Vector2(MathF.Cos(a2) * outerR, MathF.Sin(a2) * outerR),
                 col, w);
         }
-        float startA = MathF.PI * 0.1f;
-        var arrowPt = p + new Vector2(-MathF.Cos(startA) * r, MathF.Sin(startA) * r);
-        float ah = s * 0.22f;
-        c.DrawLine(arrowPt, arrowPt + new Vector2(ah, -ah * 0.5f), col, w);
-        c.DrawLine(arrowPt, arrowPt + new Vector2(-ah * 0.3f, -ah), col, w);
+
+        // Inner arrow arc (~280° clockwise, gap at top-right)
+        float startAngle = -MathF.PI * 0.4f;
+        float sweep = -MathF.PI * 1.55f;
+        int arcSegs = 16;
+        for (int i = 0; i < arcSegs; i++)
+        {
+            float a1 = startAngle + i * sweep / arcSegs;
+            float a2 = startAngle + (i + 1) * sweep / arcSegs;
+            c.DrawLine(
+                p + new Vector2(MathF.Cos(a1) * arrowR, MathF.Sin(a1) * arrowR),
+                p + new Vector2(MathF.Cos(a2) * arrowR, MathF.Sin(a2) * arrowR),
+                col, w * 1.6f);
+        }
+
+        // Arrowhead at arc start (points clockwise)
+        var tip = p + new Vector2(MathF.Cos(startAngle) * arrowR, MathF.Sin(startAngle) * arrowR);
+        float ah = s * 0.26f;
+        float tang = startAngle + MathF.PI * 0.5f;
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang - 0.45f), MathF.Sin(tang - 0.45f)) * ah, col, w * 1.6f);
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang + 0.65f), MathF.Sin(tang + 0.65f)) * ah, col, w * 1.6f);
     }
 
     // --- Folder: simple folder shape (rectangle with tab on top-left) ---
