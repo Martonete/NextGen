@@ -183,11 +183,15 @@ public partial class CharSelectForm : RpgBaseForm
         ch.FovAlpha = 1f; // UI preview — always fully visible
         ch.Body = charInfo.Body;
         ch.Head = charInfo.Head;
-        ch.WeaponAnim = charInfo.Weapon;
-        ch.ShieldAnim = charInfo.Shield;
-        ch.CascoAnim = charInfo.Helmet;
         ch.Heading = 3;
         ch.Dead = charInfo.Dead;
+        // Only show equipment if character has a head (boats don't)
+        if (charInfo.Head > 0)
+        {
+            ch.WeaponAnim = charInfo.Weapon;
+            ch.ShieldAnim = charInfo.Shield;
+            ch.CascoAnim = charInfo.Helmet;
+        }
         ch.Name = ""; // No name in preview (already shown in list)
         ch._debugLogged = true;
         ch._equipDebugLogged = true;
