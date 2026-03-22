@@ -11,13 +11,13 @@ use crate::net::ConnectionId;
 pub const MAP_WIDTH: usize = 100;
 pub const MAP_HEIGHT: usize = 100;
 
-// Client viewport (tiles visible on screen)
-pub const X_WINDOW: i32 = 17;
-pub const Y_WINDOW: i32 = 13;
+// Client viewport — worst case for 1920x1080 resolution (~45x23 tiles visible)
+pub const X_WINDOW: i32 = 45;
+pub const Y_WINDOW: i32 = 23;
 
 // Border offsets (half viewport) — used for area queries and range checks
-pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 8
-pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 6
+pub const MIN_X_BORDER: i32 = X_WINDOW / 2; // 22
+pub const MIN_Y_BORDER: i32 = Y_WINDOW / 2; // 11
 
 // Extended visibility for objects (doors, ground items, particles, lights).
 // Covers up to 1920x1080 (45x27 tiles → half = 22x13) with margin.
@@ -173,11 +173,19 @@ impl MapGrid {
     }
 
     /// Check if a tile is free for walking.
+    /// If the chunk isn't loaded yet, the tile is considered free (no user/NPC on it).
+    /// Out-of-bounds coordinates return false.
     pub fn is_tile_free(&self, x: i32, y: i32) -> bool {
-        if let Some(t) = self.tile(x, y) {
-            t.user_conn.is_none() && t.npc_index == 0
-        } else {
-            false
+        if x < 1 || x > self.width || y < 1 || y > self.height {
+            return false;
+        }
+        let (cx, cy) = chunk_coords(x, y);
+        match self.chunks.get(&(cx, cy)) {
+            Some(chunk) => {
+                let t = &chunk.tiles[local_index(x, y)];
+                t.user_conn.is_none() && t.npc_index == 0
+            }
+            None => true, // Chunk not loaded = no user/NPC = free
         }
     }
 
@@ -480,11 +488,17 @@ mod tests {
 
     #[test]
     fn bounds_check_dynamic() {
-        assert!(in_map_bounds_for(9, 7, 100, 100));
-        assert!(!in_map_bounds_for(8, 7, 100, 100));
+        // min_x = 1 + X_WINDOW/2 = 1 + 22 = 23
+        // min_y = 1 + Y_WINDOW/2 = 1 + 11 = 12
+        assert!(in_map_bounds_for(23, 12, 100, 100));
+        assert!(!in_map_bounds_for(22, 12, 100, 100));
         // Larger map
-        assert!(in_map_bounds_for(9, 7, 200, 200));
-        assert!(in_map_bounds_for(192, 194, 200, 200));
-        assert!(!in_map_bounds_for(193, 7, 200, 200));
+        assert!(in_map_bounds_for(23, 12, 200, 200));
+        assert!(in_map_bounds_for(178, 189, 200, 200));
+        assert!(!in_map_bounds_for(179, 12, 200, 200));
+        // 1000x1000 map — full range minus border
+        assert!(in_map_bounds_for(23, 12, 1000, 1000));
+        assert!(in_map_bounds_for(978, 989, 1000, 1000));
+        assert!(!in_map_bounds_for(979, 12, 1000, 1000));
     }
 }

@@ -229,6 +229,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         auto_cura_user(state, conn_id).await;
     }
 
+    // Zone change detection — send ZoneChange packet if player crossed into a different zone
+    check_zone_change(state, conn_id).await;
+
     // Area boundary visibility (VB6: ModAreas.CheckUpdateNeededUser)
     // Only fires when crossing a 9x9 zone boundary — sends CA + new strip CCs
     check_update_needed_user(state, conn_id, heading).await;

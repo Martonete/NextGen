@@ -205,7 +205,7 @@ pub(super) async fn handle_slash_daroro(state: &mut GameState, conn_id: Connecti
         user.gold -= amount;
     }
     if let Some(target) = state.users.get_mut(&target_conn) {
-        target.gold += amount;
+        target.gold = (target.gold + amount).min(MAX_GOLD);
     }
 
     send_stats_gold(state, conn_id).await;

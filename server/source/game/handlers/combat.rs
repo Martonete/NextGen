@@ -526,14 +526,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             && state.users.get(&victim_id).map(|u| u.atacable_por == conn_id).unwrap_or(false);
 
         if !in_duel {
-            let attacker_trigger = get_map_tile_trigger(state, map, x, y);
-            if attacker_trigger == crate::data::maps::Trigger::SafeZone {
+            // Zone-aware safe check (Trigger > Zone > Map hierarchy)
+            if is_safe_at(state, map, x, y) {
                 state.send_msg_id(conn_id, 163, "");
                 return;
             }
             let victim_pos = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
-            let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
-            if victim_trigger == crate::data::maps::Trigger::SafeZone {
+            if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
                 state.send_msg_id(conn_id, 163, "");
                 return;
             }
@@ -804,7 +803,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // Apply damage to victim
         if let Some(victim) = state.users.get_mut(&victim_id) {
-            victim.min_hp -= damage as i32;
+            victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
         }
 
         // VB6: Any PvP hit cancels victim meditation unconditionally
@@ -861,7 +860,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             if puede_apunalar(class, weapon.apunala, skill_apunalar) {
                 if let Some(stab_dmg) = do_apunalar(skill_apunalar, class, damage, false) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp -= stab_dmg as i32;
+                        victim.min_hp = victim.min_hp.saturating_sub(stab_dmg as i32);
                     }
                     state.send_console(conn_id, &format!("Has apuñalado a {} por {}", victim_name, stab_dmg), font_index::FIGHT);
                     state.send_console(victim_id, &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg), font_index::FIGHT);
@@ -876,27 +875,38 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 }
             }
 
+            // Early death check — stop further damage if victim already dead after backstab
+            if state.users.get(&victim_id).map(|u| u.min_hp <= 0).unwrap_or(false) {
+                // Skip remaining special attacks (crit + cut) — victim is already dead
+            } else {
+
             // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
             let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
             if let Some(crit_dmg) = do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage) {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
-                    victim.min_hp -= crit_dmg as i32;
+                    victim.min_hp = victim.min_hp.saturating_sub(crit_dmg as i32);
                 }
                 state.send_console(conn_id, &format!("Has golpeado críticamente a {} por {}.", victim_name, crit_dmg), font_index::FIGHT);
                 state.send_console(victim_id, &format!("{} te ha golpeado críticamente por {}.", attacker_name, crit_dmg), font_index::FIGHT);
             }
+
+            // Early death check — stop further damage if victim already dead after crit
+            if !state.users.get(&victim_id).map(|u| u.min_hp <= 0).unwrap_or(false) {
 
             // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
             // In PvP: only on projectile attacks (VB6 SistemaCombate.bas:1272)
             if weapon.is_proyectil && puede_acuchillar(class, weapon.acuchilla) {
                 if let Some(cut_dmg) = do_acuchillar(damage) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp -= cut_dmg as i32;
+                        victim.min_hp = victim.min_hp.saturating_sub(cut_dmg as i32);
                     }
                     state.send_console(conn_id, &format!("Has acuchillado a {} por {}", victim_name, cut_dmg), font_index::FIGHT);
                     state.send_console(victim_id, &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg), font_index::FIGHT);
                 }
             }
+
+            } // end early death check after crit
+            } // end early death check after backstab
         }
 
         // VB6: Fire Elemental reacts to PvP
@@ -911,9 +921,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             user_die(state, victim_id, Some(conn_id)).await;
         }
     } else {
-        // Safe zone check for NPC attacks too
-        let attacker_trigger = get_map_tile_trigger(state, map, x, y);
-        if attacker_trigger == crate::data::maps::Trigger::SafeZone {
+        // Zone-aware safe check for NPC attacks
+        if is_safe_at(state, map, x, y) {
             state.send_msg_id(conn_id, 164, "");
             return;
         }
@@ -1422,5 +1431,20 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         check_user_level(state, killer).await;
 
         info!("[COMBAT] '{}' killed '{}' (+{} exp)", killer_name, victim_name, exp_gain);
+    }
+
+    // Zone exit point: if the player died inside a zone with a defined exit point,
+    // warp their ghost to that exit instead of leaving them at the death tile.
+    // VB6 parity: zones with salida_map > 0 expel dead players to the exit coords.
+    let zone_exit = state.game_data.maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())
+        .and_then(|game_map| game_map.get_zone_at(x - 1, y - 1))
+        .filter(|z| z.salida_map > 0)
+        .map(|z| (z.salida_map, z.salida_x, z.salida_y));
+
+    if let Some((exit_map, exit_x, exit_y)) = zone_exit {
+        info!("[COMBAT] '{}' died in zone with exit — warping to map {} ({},{})", victim_name, exit_map, exit_x, exit_y);
+        warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
     }
 }

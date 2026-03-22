@@ -86,6 +86,9 @@ pub struct NpcState {
     pub orig_x: i32,
     pub orig_y: i32,
 
+    /// Zone ID this NPC belongs to (0 = no zone / static NPC). Used for AI confinement.
+    pub zone_id: u16,
+
     // AI
     pub movement: i32,
     pub hostile: bool,
@@ -269,6 +272,7 @@ impl NpcState {
             snd2: data.snd2,
             snd3: data.snd3,
             damage_received: Vec::new(),
+            zone_id: 0,
         }
     }
 

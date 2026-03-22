@@ -1088,6 +1088,21 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
         return (false, None);
     }
 
+    // Zone confinement: NPC with zone_id > 0 can't leave its zone bounds
+    let npc_zone_id = state.get_npc(npc_idx).map(|n| n.zone_id).unwrap_or(0);
+    if npc_zone_id > 0 {
+        let map_idx = map as usize;
+        let zone_allows = state.game_data.maps.get(map_idx)
+            .and_then(|m| m.as_ref())
+            .and_then(|gm| gm.zones.as_ref())
+            .and_then(|zs| zs.zones.iter().find(|z| z.id == npc_zone_id))
+            .map(|z| z.contains(new_x, new_y))
+            .unwrap_or(true);
+        if !zone_allows {
+            return (false, None);
+        }
+    }
+
     // Zone boundary: NPC can't wander beyond configured radius from spawn
     let (orig_x, orig_y) = state.get_npc(npc_idx)
         .map(|n| (n.orig_x, n.orig_y)).unwrap_or((0, 0));

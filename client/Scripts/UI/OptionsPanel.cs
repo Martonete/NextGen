@@ -497,9 +497,6 @@ public partial class OptionsPanel : RpgBaseForm
 
     // ── Resolution change ─────────────────────────────────
 
-    /// <summary>Callback for resolution change requiring scene reload.</summary>
-    public event System.Action? OnResolutionChanged;
-
     private void OnResolutionSelected(long index)
     {
         if (_loading || _config == null) return;

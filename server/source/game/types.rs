@@ -59,7 +59,6 @@ pub struct UserState {
 
     // Account state (set by AccountLogin)
     pub account_name: String,
-    pub account_password: String,
     pub account_id: i32,
 
     // Character state (set by CharacterSelect/CharacterLogin)
@@ -291,6 +290,7 @@ pub struct UserState {
     pub hogar: String,            // Home city (Thir, Inthak, Ruvendel, etc.)
     pub traveling: bool,           // VB6: Traveling — dead user teleporting home via /HOGAR
     pub counter_go_home: i32,      // VB6: GoHome counter — counts up to 250 ticks (10s at 40ms) then teleport
+    pub current_zone_id: u16,      // Zone system: current zone ID (0 = wilderness)
 
     // Navigation — barco_slot is the inventory slot (1-based) holding the equipped boat (VB6 BarcoSlot)
     pub barco_slot: usize,
@@ -351,6 +351,10 @@ pub struct UserState {
 
     // Meditation concentration delay (VB6: 2-second warmup before regen starts)
     pub meditation_start_tick: i32,   // Countdown ticks (40ms each); regen skipped while > 0
+
+    // Rate limiting for character deletion
+    pub last_delete_attempt: Option<std::time::Instant>,
+    pub delete_attempt_count: u8,
 }
 
 impl UserState {
@@ -362,7 +366,6 @@ impl UserState {
             paso_hd: false,
             coord_cipher: None,
             account_name: String::new(),
-            account_password: String::new(),
             account_id: 0,
             char_name: String::new(),
             logged: false,
@@ -567,6 +570,9 @@ impl UserState {
             last_map: 0,
             uptime: 0,
             meditation_start_tick: 0,
+            current_zone_id: 0,
+            last_delete_attempt: None,
+            delete_attempt_count: 0,
         }
     }
 
@@ -825,6 +831,11 @@ pub struct GameState {
     // Server shutdown/restart countdown (VB6: /APAGAR, /REINICIAR)
     pub shutdown_countdown: i32,     // Seconds remaining until shutdown (0 = inactive)
     pub shutdown_restart: bool,      // true = restart, false = shutdown
+
+    // Auth rate limiting — brute-force protection
+    // Maps IP → (failure_count, first_failure_time).
+    // After MAX_AUTH_FAILURES consecutive failures the IP is locked out for AUTH_LOCKOUT_SECS.
+    pub auth_failures: HashMap<String, (u32, std::time::Instant)>,
 }
 
 /// SOS message (help request from player)
@@ -967,6 +978,7 @@ impl GameState {
             forced_night: false,
             shutdown_countdown: 0,
             shutdown_restart: false,
+            auth_failures: HashMap::new(),
         }
     }
 
@@ -1035,6 +1047,14 @@ impl GameState {
                             }
                         }
                         self.parties[pi] = None;
+                    }
+                }
+                // H4: Clear duel partner's flags on disconnect (VB6: duel ends when either party disconnects)
+                let duel_partner = user.atacable_por;
+                if duel_partner > 0 {
+                    if let Some(partner) = self.users.get_mut(&duel_partner) {
+                        partner.atacable_por = 0;
+                        partner.duel_pending = 0;
                     }
                 }
             }
@@ -1281,11 +1301,15 @@ impl GameState {
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
             if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
                 let g = tile.graphic[0];
-                let is_water = (g >= 1505 && g <= 1520)
-                    || (g >= 5665 && g <= 5680)
-                    || (g >= 13547 && g <= 13562)
-                    || (g >= 44520 && g <= 44711);
-                is_water && tile.graphic[1] == 0
+                let is_water = (g >= 1505  && g <= 1520)   // (Animación)(AGUA) — 4×4
+                    || (g >= 5665  && g <= 5680)            // Agua Clarita — 4×4
+                    || (g >= 13547 && g <= 13562)           // classic variant — 4×4
+                    || (g >= 28268 && g <= 28283)           // Agua verde — 4×4
+                    || (g >= 30762 && g <= 30777)           // Agua azul — 4×4
+                    || (g >= 32498 && g <= 32513)           // Agua celeste — 4×4
+                    || (g >= 44520 && g <= 44711)           // Agua v2 — 16×12
+                    || (g >= 53678 && g <= 53869);          // Agua v3 — 16×12
+                is_water
             } else {
                 false
             }
@@ -1398,6 +1422,59 @@ impl GameState {
             if self.spawn_npc(npc_number, map, x, y).is_some() {
                 count += 1;
             }
+        }
+        count
+    }
+
+    /// Spawn NPCs defined in zone spawn lists (.aozone files).
+    /// Called after spawn_map_npcs() on server startup.
+    pub fn spawn_zone_npcs(&mut self) -> usize {
+        use crate::data::zones::SpawnMode;
+
+        let mut spawns_to_create: Vec<(usize, i32, i32, i32, u16)> = Vec::new(); // (npc_num, map, x, y, zone_id)
+
+        for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
+            if let Some(game_map) = maybe_map {
+                if let Some(ref zones) = game_map.zones {
+                    let map_num = map_idx as i32;
+                    for spawn in &zones.spawns {
+                        let zone = zones.zones.iter().find(|z| z.id == spawn.zone_id);
+                        for _ in 0..spawn.cantidad {
+                            let (sx, sy) = match spawn.spawn_mode {
+                                SpawnMode::Fixed => (spawn.spawn_x, spawn.spawn_y),
+                                SpawnMode::Random => {
+                                    if let Some(z) = zone {
+                                        // Pick random position within zone bounds
+                                        let rx = crate::game::handlers::common::rand_range(z.x1, z.x2);
+                                        let ry = crate::game::handlers::common::rand_range(z.y1, z.y2);
+                                        (rx, ry)
+                                    } else {
+                                        (spawn.spawn_x, spawn.spawn_y)
+                                    }
+                                }
+                            };
+                            if sx > 0 && sy > 0 {
+                                spawns_to_create.push((spawn.npc_index as usize, map_num, sx, sy, spawn.zone_id));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut count = 0;
+        for (npc_num, map, x, y, zone_id) in spawns_to_create {
+            if let Some(npc_idx) = self.spawn_npc(npc_num, map, x, y) {
+                // Tag NPC with zone_id for AI confinement
+                if let Some(npc) = self.get_npc_mut(npc_idx) {
+                    npc.zone_id = zone_id;
+                }
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            tracing::info!("[ZONES] Spawned {} NPCs from zone definitions", count);
         }
         count
     }

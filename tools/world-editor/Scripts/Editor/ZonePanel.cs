@@ -2,345 +2,246 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using AOWorldEditor.Data;
 
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// Panel for defining and editing sub-zones within the map.
-/// Zones are editor metadata with gameplay properties (PvP, Safe, etc.).
+/// Sidebar panel for managing zones. Lists all zones in the current map,
+/// allows creating, editing, deleting zones, and selecting them for viewport highlighting.
 /// </summary>
 public partial class ZonePanel : VBoxContainer
 {
     public EditorState? State;
+    public MapZoneData? ZoneData;
 
-    // Zone list (left side)
-    private ItemList? _zoneList;
+    /// <summary>Fired when a zone is selected (for viewport centering/highlighting).</summary>
+    public Action<ZoneInfo>? OnZoneSelected;
+    /// <summary>Fired when zone data changes (add/edit/delete).</summary>
+    public Action? OnZonesChanged;
+    /// <summary>Fired when user wants to edit a zone's properties.</summary>
+    public Action<ZoneInfo>? OnEditZone;
 
-    // Property editors (right side)
-    private LineEdit? _nameEdit;
-    private OptionButton? _typeSelect;
-    private SpinBox? _x1Spin, _y1Spin, _x2Spin, _y2Spin;
-    private SpinBox? _wanderSpin;
-    private CheckBox? _noMagicCheck, _noInvisCheck, _noResCheck, _noHideCheck, _noSummonCheck;
-
-    // Buttons
-    private Button? _addBtn, _removeBtn;
-
-    // Property container (hidden when no zone selected)
-    private VBoxContainer? _propsContainer;
-
-    private static readonly string[] ZoneTypes = { "Normal", "Safe", "PvP", "Arena", "Dungeon", "Town" };
-
-    [Signal] public delegate void ZonesChangedEventHandler();
+    private VBoxContainer? _listContainer;
+    private Label? _emptyLabel;
+    private int _selectedZoneId = -1;
 
     public override void _Ready()
     {
-        AddThemeConstantOverride("separation", 4);
+        SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        ClipContents = true;
+        AddThemeConstantOverride("separation", 6);
 
-        // Header
+        // Top margin so content doesn't hug the tab bar
+        var topSpacer = new Control();
+        topSpacer.CustomMinimumSize = new Vector2(0, 8);
+        AddChild(topSpacer);
+
+        // Header with add button
         var header = new HBoxContainer();
-        header.AddThemeConstantOverride("separation", 4);
-        var title = EditorTheme.SectionLabel("ZONES");
+        header.AddThemeConstantOverride("separation", 8);
+        var title = EditorTheme.SectionLabel("ZONAS");
         title.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         header.AddChild(title);
-
-        _addBtn = EditorTheme.MakeButton("+ Add", OnAddZone, EditorTheme.TEXT_SUCCESS);
-        _addBtn.CustomMinimumSize = new Vector2(60, 24);
-        header.AddChild(_addBtn);
-
-        _removeBtn = EditorTheme.MakeButton("- Remove", OnRemoveZone, EditorTheme.TEXT_DANGER);
-        _removeBtn.CustomMinimumSize = new Vector2(70, 24);
-        header.AddChild(_removeBtn);
-
+        var addBtn = EditorTheme.PrimaryButton("+ Nueva Zona", OnAddZone);
+        addBtn.CustomMinimumSize = new Vector2(120, 28);
+        header.AddChild(addBtn);
         AddChild(header);
-
-        // Zone list
-        _zoneList = new ItemList
-        {
-            CustomMinimumSize = new Vector2(0, 120),
-            SizeFlagsVertical = SizeFlags.ShrinkBegin,
-            SelectMode = ItemList.SelectModeEnum.Single,
-            AllowReselect = true,
-        };
-        _zoneList.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        _zoneList.AddThemeColorOverride("font_color", EditorTheme.TEXT_PRIMARY);
-        _zoneList.AddThemeColorOverride("font_selected_color", Colors.White);
-        var listBg = EditorTheme.FlatBox(EditorTheme.BG_INPUT, 3, 2, 2, EditorTheme.BORDER_SUBTLE, 1);
-        _zoneList.AddThemeStyleboxOverride("panel", listBg);
-        _zoneList.ItemSelected += OnZoneSelected;
-        AddChild(_zoneList);
 
         AddChild(EditorTheme.MakeHSeparator());
 
-        // Properties container
-        _propsContainer = new VBoxContainer();
-        _propsContainer.AddThemeConstantOverride("separation", 4);
+        // Scrollable list
+        var scroll = new ScrollContainer();
+        scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
+        scroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        scroll.ClipContents = true;
+        AddChild(scroll);
 
-        var propsLabel = EditorTheme.SectionLabel("PROPERTIES");
-        _propsContainer.AddChild(propsLabel);
+        _listContainer = new VBoxContainer();
+        _listContainer.AddThemeConstantOverride("separation", 4);
+        _listContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        scroll.AddChild(_listContainer);
 
-        // Name
-        var nameRow = new HBoxContainer();
-        nameRow.AddThemeConstantOverride("separation", 4);
-        nameRow.AddChild(EditorTheme.MakeLabel("Name:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _nameEdit = new LineEdit { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _nameEdit.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        _nameEdit.TextChanged += OnNameChanged;
-        nameRow.AddChild(_nameEdit);
-        _propsContainer.AddChild(nameRow);
+        _emptyLabel = EditorTheme.MakeLabel("No hay zonas definidas.\nUsa '+ Nueva Zona' para crear una.",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _emptyLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _listContainer.AddChild(_emptyLabel);
 
-        // Type
-        var typeRow = new HBoxContainer();
-        typeRow.AddThemeConstantOverride("separation", 4);
-        typeRow.AddChild(EditorTheme.MakeLabel("Type:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _typeSelect = new OptionButton { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _typeSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        for (int i = 0; i < ZoneTypes.Length; i++)
-            _typeSelect.AddItem(ZoneTypes[i], i);
-        _typeSelect.ItemSelected += OnTypeChanged;
-        typeRow.AddChild(_typeSelect);
-        _propsContainer.AddChild(typeRow);
-
-        // Bounds
-        _propsContainer.AddChild(EditorTheme.SectionLabel("BOUNDS (TILE COORDS)"));
-
-        var boundsGrid = new GridContainer { Columns = 4 };
-        boundsGrid.AddThemeConstantOverride("h_separation", 4);
-        boundsGrid.AddThemeConstantOverride("v_separation", 4);
-
-        boundsGrid.AddChild(EditorTheme.MakeLabel("X1:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _x1Spin = EditorTheme.MakeSpinBox(1, 2000, 1, 1);
-        _x1Spin.ValueChanged += (v) => OnBoundsChanged();
-        boundsGrid.AddChild(_x1Spin);
-
-        boundsGrid.AddChild(EditorTheme.MakeLabel("Y1:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _y1Spin = EditorTheme.MakeSpinBox(1, 2000, 1, 1);
-        _y1Spin.ValueChanged += (v) => OnBoundsChanged();
-        boundsGrid.AddChild(_y1Spin);
-
-        boundsGrid.AddChild(EditorTheme.MakeLabel("X2:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _x2Spin = EditorTheme.MakeSpinBox(1, 2000, 1, 100);
-        _x2Spin.ValueChanged += (v) => OnBoundsChanged();
-        boundsGrid.AddChild(_x2Spin);
-
-        boundsGrid.AddChild(EditorTheme.MakeLabel("Y2:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _y2Spin = EditorTheme.MakeSpinBox(1, 2000, 1, 100);
-        _y2Spin.ValueChanged += (v) => OnBoundsChanged();
-        boundsGrid.AddChild(_y2Spin);
-
-        _propsContainer.AddChild(boundsGrid);
-
-        // NPC wander radius
-        var wanderRow = new HBoxContainer();
-        wanderRow.AddThemeConstantOverride("separation", 4);
-        wanderRow.AddChild(EditorTheme.MakeLabel("NPC Wander:", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM));
-        _wanderSpin = EditorTheme.MakeSpinBox(0, 100, 1, 0);
-        _wanderSpin.TooltipText = "0 = unlimited wander radius";
-        _wanderSpin.ValueChanged += (v) => OnWanderChanged();
-        wanderRow.AddChild(_wanderSpin);
-        _propsContainer.AddChild(wanderRow);
-
-        _propsContainer.AddChild(EditorTheme.MakeHSeparator());
-
-        // Flags
-        _propsContainer.AddChild(EditorTheme.SectionLabel("RESTRICTIONS"));
-
-        _noMagicCheck = MakeFlagCheck("No Magic", (v) => OnFlagChanged());
-        _propsContainer.AddChild(_noMagicCheck);
-
-        _noInvisCheck = MakeFlagCheck("No Invis", (v) => OnFlagChanged());
-        _propsContainer.AddChild(_noInvisCheck);
-
-        _noResCheck = MakeFlagCheck("No Resurrect", (v) => OnFlagChanged());
-        _propsContainer.AddChild(_noResCheck);
-
-        _noHideCheck = MakeFlagCheck("No Hide", (v) => OnFlagChanged());
-        _propsContainer.AddChild(_noHideCheck);
-
-        _noSummonCheck = MakeFlagCheck("No Summon", (v) => OnFlagChanged());
-        _propsContainer.AddChild(_noSummonCheck);
-
-        _propsContainer.Visible = false;
-        AddChild(_propsContainer);
+        RebuildList();
     }
 
-    private static CheckBox MakeFlagCheck(string text, Action<bool> onChange)
+    /// <summary>Rebuild the zone list from ZoneData.</summary>
+    public void RebuildList()
     {
-        var chk = new CheckBox { Text = text };
-        chk.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        chk.AddThemeColorOverride("font_color", EditorTheme.TEXT_SECONDARY);
-        chk.Toggled += (bool on) => onChange(on);
-        return chk;
+        if (_listContainer == null) return;
+
+        // Remove all children except _emptyLabel
+        foreach (var child in _listContainer.GetChildren())
+        {
+            if (child != _emptyLabel)
+                child.QueueFree();
+        }
+
+        if (ZoneData == null || ZoneData.Zones.Count == 0)
+        {
+            if (_emptyLabel != null) _emptyLabel.Visible = true;
+            return;
+        }
+
+        if (_emptyLabel != null) _emptyLabel.Visible = false;
+
+        foreach (var zone in ZoneData.Zones)
+        {
+            var card = CreateZoneCard(zone);
+            _listContainer.AddChild(card);
+        }
     }
 
-    /// <summary>
-    /// Rebuild the zone list UI from the state.
-    /// </summary>
-    public void Rebuild()
+    private PanelContainer CreateZoneCard(ZoneInfo zone)
     {
-        if (_zoneList == null || State == null) return;
-        _zoneList.Clear();
+        var panel = new PanelContainer();
+        var bgColor = GetZoneTypeColor(zone.Type);
+        bgColor.A = 0.15f;
+        panel.AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(bgColor, 6, 8, 6));
+        panel.CustomMinimumSize = new Vector2(0, 60);
 
-        foreach (var zone in State.Zones)
+        var hbox = new HBoxContainer();
+        hbox.AddThemeConstantOverride("separation", 8);
+        panel.AddChild(hbox);
+
+        // Color indicator bar
+        var colorBar = new ColorRect();
+        colorBar.Color = GetZoneTypeColor(zone.Type);
+        colorBar.CustomMinimumSize = new Vector2(4, 0);
+        hbox.AddChild(colorBar);
+
+        // Info column
+        var info = new VBoxContainer();
+        info.AddThemeConstantOverride("separation", 2);
+        info.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        hbox.AddChild(info);
+
+        var nameLabel = EditorTheme.MakeLabel(
+            zone.Name.Length > 0 ? zone.Name : $"Zona {zone.Id}",
+            EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_MD);
+        info.AddChild(nameLabel);
+
+        string typeStr = zone.Type switch
         {
-            var color = EditorTheme.GetZoneBorderColor(zone.Type);
-            _zoneList.AddItem($"[{zone.Type}] {zone.Name}");
-            int idx = _zoneList.ItemCount - 1;
-            _zoneList.SetItemCustomFgColor(idx, color);
+            ZoneType.Safe => "Segura",
+            ZoneType.PvP => "PvP",
+            ZoneType.Dungeon => "Dungeon",
+            ZoneType.Arena => "Arena",
+            _ => "Neutral"
+        };
+        var detailLabel = EditorTheme.MakeLabel(
+            $"{typeStr} | ({zone.X1},{zone.Y1}) → ({zone.X2},{zone.Y2})",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_XS);
+        info.AddChild(detailLabel);
+
+        // Spawn count
+        int spawnCount = 0;
+        if (ZoneData != null)
+            foreach (var s in ZoneData.Spawns)
+                if (s.ZoneId == zone.Id) spawnCount++;
+        if (spawnCount > 0)
+        {
+            var spawnLabel = EditorTheme.MakeLabel($"NPCs: {spawnCount} spawns",
+                EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_XS);
+            info.AddChild(spawnLabel);
         }
 
-        // Restore selection
-        if (State.SelectedZoneIndex >= 0 && State.SelectedZoneIndex < State.Zones.Count)
+        // Buttons column
+        var buttons = new VBoxContainer();
+        buttons.AddThemeConstantOverride("separation", 2);
+        hbox.AddChild(buttons);
+
+        int zoneId = zone.Id;
+        var editBtn = EditorTheme.MakeButton("Editar", () => { var z = GetZoneById(zoneId); if (z != null) OnEditZone?.Invoke(z); });
+        editBtn.CustomMinimumSize = new Vector2(60, 24);
+        buttons.AddChild(editBtn);
+
+        var delBtn = EditorTheme.MakeButton("Eliminar", () => DeleteZone(zoneId));
+        delBtn.CustomMinimumSize = new Vector2(60, 24);
+        buttons.AddChild(delBtn);
+
+        // Click to select/highlight
+        panel.GuiInput += (ev) =>
         {
-            _zoneList.Select(State.SelectedZoneIndex);
-            LoadZoneProperties(State.Zones[State.SelectedZoneIndex]);
-            if (_propsContainer != null) _propsContainer.Visible = true;
-        }
-        else
-        {
-            if (_propsContainer != null) _propsContainer.Visible = false;
-        }
+            if (ev is InputEventMouseButton mb && mb.Pressed && mb.ButtonIndex == MouseButton.Left)
+            {
+                _selectedZoneId = zoneId;
+                var z = GetZoneById(zoneId);
+                if (z != null) OnZoneSelected?.Invoke(z);
+            }
+        };
+
+        return panel;
     }
 
     private void OnAddZone()
     {
-        if (State == null) return;
+        if (ZoneData == null) ZoneData = new MapZoneData();
 
-        var zone = new MapZone
+        int nextId = ZoneData.Zones.Count + 1;
+
+        // Use active selection bounds if available; fall back to a default area
+        int x1 = 40, y1 = 40, x2 = 60, y2 = 60;
+        if (State?.HasSelection == true)
         {
-            Name = $"Zone {State.Zones.Count + 1}",
-            Type = "Normal",
-            X1 = 1, Y1 = 1, X2 = 100, Y2 = 100,
+            x1 = State.SelX1; y1 = State.SelY1;
+            x2 = State.SelX2; y2 = State.SelY2;
+        }
+
+        var newZone = new ZoneInfo
+        {
+            Id = nextId,
+            Name = $"Zona {nextId}",
+            Type = ZoneType.Neutral,
+            X1 = x1, Y1 = y1, X2 = x2, Y2 = y2,
         };
-        State.Zones.Add(zone);
-        State.SelectedZoneIndex = State.Zones.Count - 1;
-        Rebuild();
-        EmitSignal(SignalName.ZonesChanged);
+        ZoneData.Zones.Add(newZone);
+        RebuildList();
+        OnZonesChanged?.Invoke();
+        OnEditZone?.Invoke(newZone);
     }
 
-    private void OnRemoveZone()
+    private void DeleteZone(int zoneId)
     {
-        if (State == null || State.SelectedZoneIndex < 0 || State.SelectedZoneIndex >= State.Zones.Count) return;
-
-        State.Zones.RemoveAt(State.SelectedZoneIndex);
-        if (State.SelectedZoneIndex >= State.Zones.Count)
-            State.SelectedZoneIndex = State.Zones.Count - 1;
-        Rebuild();
-        EmitSignal(SignalName.ZonesChanged);
-    }
-
-    private void OnZoneSelected(long index)
-    {
-        if (State == null) return;
-        State.SelectedZoneIndex = (int)index;
-
-        if (index >= 0 && index < State.Zones.Count)
+        if (ZoneData == null) return;
+        ZoneData.Zones.RemoveAll(z => z.Id == zoneId);
+        ZoneData.Spawns.RemoveAll(s => s.ZoneId == zoneId);
+        // Re-number zone IDs
+        for (int i = 0; i < ZoneData.Zones.Count; i++)
+            ZoneData.Zones[i].Id = i + 1;
+        // Fix spawn references
+        foreach (var s in ZoneData.Spawns)
         {
-            LoadZoneProperties(State.Zones[(int)index]);
-            if (_propsContainer != null) _propsContainer.Visible = true;
+            if (s.ZoneId > zoneId) s.ZoneId--;
         }
-        else
-        {
-            if (_propsContainer != null) _propsContainer.Visible = false;
-        }
-        EmitSignal(SignalName.ZonesChanged);
+        RebuildList();
+        OnZonesChanged?.Invoke();
     }
 
-    private bool _updatingUI;
-
-    private void LoadZoneProperties(MapZone zone)
+    private ZoneInfo? GetZoneById(int id)
     {
-        _updatingUI = true;
-        if (_nameEdit != null) _nameEdit.Text = zone.Name;
-        if (_typeSelect != null)
-        {
-            for (int i = 0; i < ZoneTypes.Length; i++)
-            {
-                if (ZoneTypes[i] == zone.Type)
-                {
-                    _typeSelect.Selected = i;
-                    break;
-                }
-            }
-        }
-        if (_x1Spin != null) _x1Spin.Value = zone.X1;
-        if (_y1Spin != null) _y1Spin.Value = zone.Y1;
-        if (_x2Spin != null) _x2Spin.Value = zone.X2;
-        if (_y2Spin != null) _y2Spin.Value = zone.Y2;
-        if (_wanderSpin != null) _wanderSpin.Value = zone.NpcWanderRadius;
-        if (_noMagicCheck != null) _noMagicCheck.ButtonPressed = zone.NoMagic;
-        if (_noInvisCheck != null) _noInvisCheck.ButtonPressed = zone.NoInvis;
-        if (_noResCheck != null) _noResCheck.ButtonPressed = zone.NoResurrect;
-        if (_noHideCheck != null) _noHideCheck.ButtonPressed = zone.NoHide;
-        if (_noSummonCheck != null) _noSummonCheck.ButtonPressed = zone.NoSummon;
-        _updatingUI = false;
+        if (ZoneData == null) return null;
+        foreach (var z in ZoneData.Zones)
+            if (z.Id == id) return z;
+        return null;
     }
 
-    private MapZone? GetSelectedZone()
-    {
-        if (State == null || State.SelectedZoneIndex < 0 || State.SelectedZoneIndex >= State.Zones.Count)
-            return null;
-        return State.Zones[State.SelectedZoneIndex];
-    }
+    /// <summary>Get the currently selected zone ID (-1 if none).</summary>
+    public int SelectedZoneId => _selectedZoneId;
 
-    private void OnNameChanged(string newText)
+    /// <summary>Get zone type color for overlays and cards.</summary>
+    public static Color GetZoneTypeColor(ZoneType type) => type switch
     {
-        if (_updatingUI) return;
-        var zone = GetSelectedZone();
-        if (zone == null) return;
-        zone.Name = newText;
-        UpdateListItem(State!.SelectedZoneIndex, zone);
-        EmitSignal(SignalName.ZonesChanged);
-    }
-
-    private void OnTypeChanged(long index)
-    {
-        if (_updatingUI) return;
-        var zone = GetSelectedZone();
-        if (zone == null || index < 0 || index >= ZoneTypes.Length) return;
-        zone.Type = ZoneTypes[(int)index];
-        UpdateListItem(State!.SelectedZoneIndex, zone);
-        EmitSignal(SignalName.ZonesChanged);
-    }
-
-    private void OnBoundsChanged()
-    {
-        if (_updatingUI) return;
-        var zone = GetSelectedZone();
-        if (zone == null) return;
-        zone.X1 = (int)(_x1Spin?.Value ?? 1);
-        zone.Y1 = (int)(_y1Spin?.Value ?? 1);
-        zone.X2 = (int)(_x2Spin?.Value ?? 100);
-        zone.Y2 = (int)(_y2Spin?.Value ?? 100);
-        EmitSignal(SignalName.ZonesChanged);
-    }
-
-    private void OnWanderChanged()
-    {
-        if (_updatingUI) return;
-        var zone = GetSelectedZone();
-        if (zone == null) return;
-        zone.NpcWanderRadius = (int)(_wanderSpin?.Value ?? 0);
-        EmitSignal(SignalName.ZonesChanged);
-    }
-
-    private void OnFlagChanged()
-    {
-        if (_updatingUI) return;
-        var zone = GetSelectedZone();
-        if (zone == null) return;
-        zone.NoMagic = _noMagicCheck?.ButtonPressed ?? false;
-        zone.NoInvis = _noInvisCheck?.ButtonPressed ?? false;
-        zone.NoResurrect = _noResCheck?.ButtonPressed ?? false;
-        zone.NoHide = _noHideCheck?.ButtonPressed ?? false;
-        zone.NoSummon = _noSummonCheck?.ButtonPressed ?? false;
-        EmitSignal(SignalName.ZonesChanged);
-    }
-
-    private void UpdateListItem(int index, MapZone zone)
-    {
-        if (_zoneList == null || index < 0 || index >= _zoneList.ItemCount) return;
-        _zoneList.SetItemText(index, $"[{zone.Type}] {zone.Name}");
-        _zoneList.SetItemCustomFgColor(index, EditorTheme.GetZoneBorderColor(zone.Type));
-    }
+        ZoneType.Safe => new Color(0.2f, 0.8f, 0.3f),      // green
+        ZoneType.PvP => new Color(0.9f, 0.2f, 0.2f),       // red
+        ZoneType.Dungeon => new Color(0.6f, 0.3f, 0.8f),    // purple
+        ZoneType.Arena => new Color(0.9f, 0.7f, 0.1f),      // gold
+        _ => new Color(0.5f, 0.5f, 0.5f),                   // gray (neutral)
+    };
 }

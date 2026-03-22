@@ -999,6 +999,13 @@ public partial class Main : Control
 		{
 			if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
 			{
+				// Drain packets buffered before disconnect (e.g. success message sent just before server closed)
+				if (_tcp != null)
+				{
+					foreach (var chunk in _tcp.PollPackets())
+						_packetHandler?.HandleBinaryData(chunk);
+				}
+
 				// Server dropped connection during login/account creation — reset UI
 				_tcp?.Dispose();
 				_tcp = null;

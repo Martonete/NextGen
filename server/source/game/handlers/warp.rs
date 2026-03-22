@@ -544,7 +544,17 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
     // GMs with exact=true skip this — they can stand on blocked tiles.
-    let (final_x, final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
+    let (mut final_x, mut final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
+
+    // Bounds-check: clamp coordinates to valid map range regardless of exact flag.
+    // GM teleports (exact=true) bypass find_free_pos but still need bounds validation.
+    {
+        let (grid_w, grid_h) = state.grid_dimensions(new_map);
+        if final_x < 1 || final_x > grid_w || final_y < 1 || final_y > grid_h {
+            final_x = final_x.clamp(1, grid_w);
+            final_y = final_y.clamp(1, grid_h);
+        }
+    }
 
     // 5. Update user position
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -613,6 +623,12 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 10. Send area visibility (CA + strip CCs/NPCs/items)
     make_user_visible(state, conn_id).await;
+
+    // 10b. Zone change detection — reset zone_id to force ZoneChange packet
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.current_zone_id = u16::MAX; // Force mismatch so check_zone_change always fires
+    }
+    check_zone_change(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
     //     Skip if invisible (GM or spell) — others must NOT see us (except clanmates).

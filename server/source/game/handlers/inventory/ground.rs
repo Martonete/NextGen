@@ -22,7 +22,18 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     };
     let (map, x, y) = user_data;
 
-    // Check if there's a ground item on the user's tile
+    // Check if there's a ground item on the user's tile.
+    //
+    // RACE ANALYSIS (H5): No race condition exists here in single-threaded Tokio.
+    // We read ground_item as a value copy (no reference held), then perform all
+    // synchronous checks (is_fixed, obj type, inventory slot search) before
+    // removing the item from the tile. There is NO `.await` between the check
+    // on line below and the tile-clear at `tile.ground_item = default()` further
+    // down. Because Tokio's single-threaded executor cannot interleave two
+    // handlers in the gap between two synchronous statements, a second player
+    // cannot observe or consume the same item in that window.
+    // If this ever moves to a multi-threaded executor or acquires an await between
+    // check and clear, revisit with `Option::take()` atomic-take pattern.
     let ground_item = state.world.grid(map)
         .and_then(|g| g.tile(x, y))
         .map(|t| t.ground_item)

@@ -1,4 +1,4 @@
-mod common;
+pub(crate) mod common;
 mod gm_teleport;
 mod gm_moderation;
 mod gm_items;

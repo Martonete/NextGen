@@ -354,6 +354,9 @@ pub enum ServerPacketID {
     Ping = 250,
     TravelsOpen = 251,
 
+    // Zones
+    ZoneChange = 252,
+
     // Generic text fallback (for any remaining text-based packets)
     GenericText = 255,
 }

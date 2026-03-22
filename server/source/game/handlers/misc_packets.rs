@@ -30,7 +30,7 @@ pub(super) async fn handle_swap(state: &mut GameState, conn_id: ConnectionId, sl
     }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
-        let max_slots = user.current_inventory_slots;
+        let max_slots = user.current_inventory_slots.min(user.inventory.len());
         if slot1 == 0 || slot2 == 0 || slot1 > max_slots || slot2 > max_slots || slot1 == slot2 {
             return;
         }

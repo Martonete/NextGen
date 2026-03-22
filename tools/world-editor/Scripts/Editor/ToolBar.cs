@@ -44,8 +44,6 @@ public partial class ToolBar : HBoxContainer
         AddToolButton("Pintar", EditorTool.Paint);
         AddToolButton("Borrar", EditorTool.Erase);
         AddToolButton("Seleccionar", EditorTool.Select);
-        AddToolButton("Mover", EditorTool.Move);
-        AddToolButton("Rellenar", EditorTool.Fill);
         AddToolButton("Cuentagotas", EditorTool.Eyedrop);
         AddToolButton("Bloquear", EditorTool.Block);
         AddToolButton("Luz", EditorTool.Light);

@@ -106,9 +106,10 @@ async fn main() {
     let mut state = GameState::new(config.clone(), base_path.clone(), game_data, pool, bans);
     info!("Game state initialized");
 
-    // Spawn NPCs from map data
+    // Spawn NPCs from map data + zone definitions
     let npc_count = state.spawn_map_npcs();
-    info!("Spawned {} NPCs from map data", npc_count);
+    let zone_npc_count = state.spawn_zone_npcs();
+    info!("Spawned {} NPCs from maps + {} from zones", npc_count, zone_npc_count);
 
     // Load static map objects (doors, items from .inf files) into world grid
     let obj_count = state.load_map_objects();

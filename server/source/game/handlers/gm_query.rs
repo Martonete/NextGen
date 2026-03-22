@@ -7,6 +7,7 @@ use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::protocol::{font_index, binary_packets};
 use super::{warp_user, send_warp_fx, check_user_level, naked_body,
     send_stats_hp, send_stats_mana, send_stats_sta, send_stats_gold, send_stats_exp};
+use super::common::MAX_GOLD;
 
 // =============================================================================
 
@@ -400,7 +401,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
-                user.gold = value;
+                user.gold = value.max(0).min(MAX_GOLD);
             }
             send_stats_gold(state, target).await;
             state.send_msg_id(conn_id, 572, &value.to_string());
@@ -558,7 +559,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
-                user.gold = value;
+                user.gold = value.max(0).min(MAX_GOLD);
             }
             send_stats_gold(state, target).await;
             state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@oro@{}@{}", gm_name, target_name, value));

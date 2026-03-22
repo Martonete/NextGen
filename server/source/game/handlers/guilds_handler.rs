@@ -1,6 +1,7 @@
 //! Guild system handlers: guild management, codex, member management.
 //! Extracted from mod.rs to reduce file size.
 
+use tracing::warn;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
@@ -362,18 +363,35 @@ pub(super) async fn handle_slash_salirclan(state: &mut GameState, conn_id: Conne
 /// Handle a member leaving a guild (used by /SALIRCLAN and /CERRARCLAN for subliders)
 pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: ConnectionId, char_name: &str, guild_index: i32) {
 
+    // Validate: the calling connection must match char_name OR be a GM
+    let caller_ok = state.users.get(&conn_id).map(|u| {
+        u.char_name.to_uppercase() == char_name.to_uppercase() || u.privileges > 0
+    }).unwrap_or(false);
+    if !caller_ok {
+        warn!("[GUILD] handle_member_leave: conn #{} tried to remove '{}' but is not that character or a GM", conn_id, char_name);
+        return;
+    }
+
     let guild = match guilds::load_guild(&state.pool, guild_index).await {
         Some(g) => g,
         None => return,
     };
+
+    // Validate: char_name must actually be a member of this guild
+    let members = guilds::load_members(&state.pool, &guild.name).await;
+    let is_member = members.iter().any(|m| m.to_uppercase() == char_name.to_uppercase());
+    if !is_member {
+        warn!("[GUILD] handle_member_leave: '{}' is not a member of guild '{}'", char_name, guild.name);
+        return;
+    }
 
     // If sublider, clear the slot
     let is_sub1 = guild.sub_lider1.to_uppercase() == char_name.to_uppercase();
     let is_sub2 = guild.sub_lider2.to_uppercase() == char_name.to_uppercase();
     if is_sub1 || is_sub2 {
         let mut updated = guild.clone();
-        if is_sub1 { updated.sub_lider1 = "Fermin".to_string(); }
-        if is_sub2 { updated.sub_lider2 = "Fermin".to_string(); }
+        if is_sub1 { updated.sub_lider1 = String::new(); }
+        if is_sub2 { updated.sub_lider2 = String::new(); }
         guilds::save_guild(&state.pool, &updated).await;
 
         // Notify guild
@@ -465,9 +483,9 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     }
 
     let mut updated = guild;
-    if updated.sub_lider1 == "Fermin" || updated.sub_lider1.is_empty() {
+    if updated.sub_lider1.is_empty() {
         updated.sub_lider1 = target_name.to_string();
-    } else if updated.sub_lider2 == "Fermin" || updated.sub_lider2.is_empty() {
+    } else if updated.sub_lider2.is_empty() {
         updated.sub_lider2 = target_name.to_string();
     } else {
         state.send_msg_id(conn_id, 513, "");
@@ -499,9 +517,9 @@ pub(super) async fn handle_slash_qsublidr(state: &mut GameState, conn_id: Connec
 
     let mut updated = guild;
     if updated.sub_lider1.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider1 = "Fermin".to_string();
+        updated.sub_lider1 = String::new();
     } else if updated.sub_lider2.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider2 = "Fermin".to_string();
+        updated.sub_lider2 = String::new();
     } else {
         state.send_msg_id(conn_id, 516, "");
         return;
@@ -677,6 +695,14 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
         return;
     }
 
+    // Prevent adding someone who is already a member
+    let already_member = members.iter().any(|m| m.to_uppercase() == applicant_name.to_uppercase());
+    if already_member {
+        warn!("[GUILD] handle_guild_accept: '{}' is already a member of guild '{}'", applicant_name, guild.name);
+        guilds::remove_applicant(&state.pool, &guild.name, &applicant_name).await;
+        return;
+    }
+
     // Remove from applicants
     guilds::remove_applicant(&state.pool, &guild.name, &applicant_name).await;
 
@@ -759,13 +785,17 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
         return;
     }
 
-    // If target is sublider, clear slot
+    // If target is sublider, clear slot (save once)
     let mut updated = guild.clone();
+    let mut sub_changed = false;
     if updated.sub_lider1.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider1 = "Fermin".to_string();
-        guilds::save_guild(&state.pool, &updated).await;
+        updated.sub_lider1 = String::new();
+        sub_changed = true;
     } else if updated.sub_lider2.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider2 = "Fermin".to_string();
+        updated.sub_lider2 = String::new();
+        sub_changed = true;
+    }
+    if sub_changed {
         guilds::save_guild(&state.pool, &updated).await;
     }
 

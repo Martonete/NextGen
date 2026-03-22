@@ -184,18 +184,22 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
-    if min_mana < spell.mana_requerido {
-        state.send_msg_id(conn_id, 18, ""); // Not enough mana
-        return;
-    }
-    // VB6: Stamina check (modHechizos.bas lines 468-475)
-    if spell.sta_requerido > 0 {
-        let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
-        if sta < spell.sta_requerido {
-            state.send_msg_id(conn_id, 18, ""); // Not enough stamina
+    // VB6: PuedeLanzar — GMs (privileges > 0) skip mana/stamina checks entirely
+    // modHechizos.bas: "If UserList(UserIndex).flags.Privilegios = 0 Then"
+    if privileges == 0 {
+        if min_mana < spell.mana_requerido {
+            state.send_msg_id(conn_id, 18, ""); // Not enough mana
             return;
         }
-    }
+        // VB6: Stamina check (modHechizos.bas lines 468-475)
+        if spell.sta_requerido > 0 {
+            let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
+            if sta < spell.sta_requerido {
+                state.send_msg_id(conn_id, 18, ""); // Not enough stamina
+                return;
+            }
+        }
+    } // end privileges == 0 mana/stamina gate
     if spell.min_skill > 0 {
         let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0);
         if magic_skill < spell.min_skill {
@@ -281,11 +285,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         || spell.paraliza || spell.inmoviliza
         || spell.envenena || spell.maldicion;
 
-    // ===== STEP 4: Safe zone check for offensive spells (VB6: PuedeAtacar) =====
+    // ===== STEP 4: Safe zone check for offensive spells (Trigger > Zone > Map) =====
     if is_offensive {
-        let attacker_trigger = get_map_tile_trigger(state, map, x, y);
-        if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_msg_id(conn_id, 164, ""); // Can't attack in safe zone
+        if is_safe_at(state, map, x, y) {
+            state.send_msg_id(conn_id, 164, "");
             return;
         }
     }
@@ -341,11 +344,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             return; // NO mana consumed, NO FX
         }
 
-        // VB6: Safe zone check — victim in safe zone blocks offensive spells
+        // Zone-aware safe check — victim in safe zone blocks offensive spells
         if is_offensive && target_id != conn_id {
             let victim_pos = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
-            let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
-            if victim_trigger == crate::data::maps::Trigger::SafeZone {
+            if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
                 state.send_msg_id(conn_id, 164, "");
                 return;
             }
@@ -363,9 +365,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 state.send_msg_id(conn_id, 155, "");
                 return;
             }
-            // Clan safe check — can't cast offensive spells on clanmates with seguro_clan on
+            // Clan safe check — can't cast offensive spells on clanmates if EITHER party has seguro_clan on
             let caster_seguro = state.users.get(&conn_id).map(|u| u.seguro_clan).unwrap_or(false);
-            if caster_seguro && same_clan(state, conn_id, target_id) {
+            let target_seguro = state.users.get(&target_id).map(|u| u.seguro_clan).unwrap_or(false);
+            if (caster_seguro || target_seguro) && same_clan(state, conn_id, target_id) {
                 state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
                 return;
             }
@@ -628,8 +631,17 @@ pub(super) async fn apply_spell_properties_npc(
 
     // Apply damage to NPC
     if let Some(npc) = state.get_npc_mut(npc_idx) {
-        npc.min_hp -= damage;
+        npc.min_hp = npc.min_hp.saturating_sub(damage);
         npc.damage_received.push((caster_id, damage));
+    }
+
+    // Detect death synchronously (before any await — prevents double-death race)
+    let npc_is_dead = state.get_npc(npc_idx).map(|n| n.min_hp < 1).unwrap_or(false);
+    if npc_is_dead {
+        // Mark as dead immediately to prevent race with concurrent casters
+        if let Some(npc) = state.get_npc_mut(npc_idx) {
+            npc.min_hp = 0;
+        }
     }
 
     // Per-hit EXP (VB6: CalcularDarExp — proportional exp on every hit)
@@ -651,15 +663,12 @@ pub(super) async fn apply_spell_properties_npc(
         }
     }
 
-    // Check NPC death
-    let npc_death_data = state.get_npc(npc_idx).and_then(|n| {
-        if n.min_hp < 1 { Some((n.give_exp, n.give_gld_min, n.give_gld_max)) } else { None }
-    });
-    if let Some((give_exp, give_gld_min, give_gld_max)) = npc_death_data {
-        if let Some(npc) = state.get_npc_mut(npc_idx) {
-            npc.min_hp = 0;
+    // Execute death after exp (NPC already marked dead above — safe from race)
+    if npc_is_dead {
+        let death_data = state.get_npc(npc_idx).map(|n| (n.give_exp, n.give_gld_min, n.give_gld_max));
+        if let Some((give_exp, give_gld_min, give_gld_max)) = death_data {
+            npc_die(state, npc_idx, caster_id, give_exp, give_gld_min, give_gld_max).await;
         }
-        npc_die(state, npc_idx, caster_id, give_exp, give_gld_min, give_gld_max).await;
     }
 }
 
@@ -816,7 +825,7 @@ pub(super) async fn apply_spell_properties(
         let base_damage = calc_spell_damage(state, caster_id, spell);
         let final_damage = subtract_magic_defense(state, target_id, base_damage);
         if let Some(target) = state.users.get_mut(&target_id) {
-            target.min_hp -= final_damage;
+            target.min_hp = target.min_hp.saturating_sub(final_damage);
         }
         damage_dealt = final_damage;
     }
@@ -930,14 +939,11 @@ pub(super) async fn apply_spell_status(
     if spell.invisibilidad && target_dead {
         return;
     }
-    // VB6: Invisibility — check map InviSinEfecto
+    // Zone-aware invisibility check (Zone > Map)
     if spell.invisibilidad {
-        let invi_blocked = state.game_data.maps.get(target_map as usize)
-            .and_then(|m| m.as_ref())
-            .map(|m| m.info.invi_sin_efecto)
-            .unwrap_or(false);
-        if invi_blocked {
-            state.send_console(caster_id, "La invisibilidad no funciona en este mapa.", font_index::INFO);
+        let (tx, ty) = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
+        if is_invi_blocked_at(state, target_map, tx, ty) {
+            state.send_console(caster_id, "La invisibilidad no funciona aqui.", font_index::INFO);
             return;
         }
     }
@@ -1097,6 +1103,17 @@ pub(super) async fn apply_spell_status(
 
             let target_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(1);
 
+            // Check if the HP cost would kill the caster before applying resurrection.
+            // Cost formula: caster loses HP * (1 - target_level * 0.015) of current HP,
+            // meaning new_hp = current_hp * (1 - target_level * 0.015).
+            // If new_hp <= 0 the caster would die — reject early to avoid inconsistent state.
+            let caster_hp = state.users.get(&caster_id).map(|u| u.min_hp).unwrap_or(0);
+            let new_caster_hp = ((caster_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
+            if new_caster_hp <= 0 {
+                state.send_console(caster_id, "No tienes suficiente vida para lanzar este hechizo.", font_index::INFO);
+                return;
+            }
+
             // VB6 13.3: ALL classes resurrect immediately (no Cleric vs others branching)
             revive_user(state, target_id).await;
             if let Some(target) = state.users.get_mut(&target_id) {
@@ -1227,13 +1244,9 @@ pub(super) async fn apply_spell_invocation(
         _ => return,
     };
 
-    // VB6: InvocarSinEfecto — block summoning on certain maps
-    let invocar_blocked = state.game_data.maps.get(map as usize)
-        .and_then(|m| m.as_ref())
-        .map(|m| m.info.invocar_sin_efecto)
-        .unwrap_or(false);
-    if invocar_blocked {
-        state.send_console(caster_id, "No puedes invocar criaturas en este mapa.", font_index::INFO);
+    // Zone-aware invocation check (Zone > Map)
+    if is_invocar_blocked_at(state, map, x, y) {
+        state.send_console(caster_id, "No puedes invocar criaturas aqui.", font_index::INFO);
         return;
     }
 

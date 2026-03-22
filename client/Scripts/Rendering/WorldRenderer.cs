@@ -102,6 +102,8 @@ public partial class WorldRenderer : Node2D
 	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
 
+
+
 	// Per-frame camera data (computed in _Draw, used by child layer callbacks)
 	private int _frameUserX, _frameUserY;
 	private float _framePixelOffsetX, _framePixelOffsetY;
@@ -336,10 +338,16 @@ void fragment() {
 		_weatherRenderer.ZIndex = 5;
 		AddChild(_weatherRenderer);
 
-		// Fog overlay: z=6 (darkens extended viewport edges beyond core 17x13)
+		// Safe zone border: z=6 (red fog at safe zone edges to warn players)
+		var safeZoneBorder = new SafeZoneBorderLayer(_state);
+		safeZoneBorder.Name = "SafeZoneBorder";
+		safeZoneBorder.ZIndex = 6;
+		AddChild(safeZoneBorder);
+
+		// Fog overlay: z=7 (darkens extended viewport edges beyond core 17x13)
 		var fogOverlay = new FogOverlayLayer();
 		fogOverlay.Name = "FogOverlay";
-		fogOverlay.ZIndex = 6;
+		fogOverlay.ZIndex = 7;
 		AddChild(fogOverlay);
 	}
 
@@ -603,6 +611,8 @@ void fragment() {
 			}
 		}
 
+
+
 		// ==========================================
 		// PASS 1.5: Character reflections on water
 		// Drawn after Layer 1 so they appear on water tiles.
@@ -810,10 +820,14 @@ void fragment() {
 	/// </summary>
 	public static bool IsWaterGrh(int g)
 	{
-		return (g >= 1505 && g <= 1520)
-			|| (g >= 5665 && g <= 5680)
-			|| (g >= 13547 && g <= 13562)
-			|| (g >= 44520 && g <= 44711);
+		return (g >= 1505  && g <= 1520)   // (Animación)(AGUA) — 4×4
+			|| (g >= 5665  && g <= 5680)   // Agua Clarita — 4×4
+			|| (g >= 13547 && g <= 13562)  // classic variant — 4×4
+			|| (g >= 28268 && g <= 28283)  // Agua verde — 4×4
+			|| (g >= 30762 && g <= 30777)  // Agua azul — 4×4
+			|| (g >= 32498 && g <= 32513)  // Agua celeste — 4×4
+			|| (g >= 44520 && g <= 44711)  // Agua v2 — 16×12
+			|| (g >= 53678 && g <= 53869); // Agua v3 — 16×12
 	}
 
 	/// <summary>
@@ -823,7 +837,7 @@ void fragment() {
 	{
 		if (mapData == null || x < 1 || x > mapData.Width || y < 1 || y > mapData.Height) return false;
 		ref var tile = ref mapData.Tiles[x, y];
-		return IsWaterGrh(tile.Layer1) && tile.Layer2 <= 0;
+		return IsWaterGrh(tile.Layer1);
 	}
 
 	/// <summary>

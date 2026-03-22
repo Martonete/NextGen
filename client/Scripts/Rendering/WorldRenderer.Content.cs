@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -42,10 +43,14 @@ public partial class WorldRenderer
                 if (x >= _frameCharMinX && x <= _frameCharMaxX && y >= _frameCharMinY && y <= _frameCharMaxY)
                 {
                     var charsHere = GetCharsAt(x, y);
-                    for (int ci = 0; ci < charsHere.Count; ci++)
+                    // Sort by effective Y for correct isometric z-order (higher Y = drawn on top)
+                    var sortedChars = charsHere.Count > 1
+                        ? charsHere.OrderBy(cid => _state.Characters.TryGetValue(cid, out var c) ? c.MoveOffsetY : 0f).ToList()
+                        : (IEnumerable<int>)charsHere;
+                    foreach (var cid in sortedChars)
                     {
-                        if (!_state.Characters.TryGetValue(charsHere[ci], out var ch)) continue;
-                        if (ch.Invisible && charsHere[ci] != _state.UserCharIndex) continue;
+                        if (!_state.Characters.TryGetValue(cid, out var ch)) continue;
+                        if (ch.Invisible && cid != _state.UserCharIndex) continue;
 
                         float charPx = tilePos.X + (float)Math.Round(ch.MoveOffsetX);
                         float charPy = tilePos.Y + (float)Math.Round(ch.MoveOffsetY);

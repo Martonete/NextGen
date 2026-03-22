@@ -96,8 +96,9 @@ public class GameUIUpdater
         _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"Onlines: {_state.OnlineCount}";
-        // VB6: Coord.Caption = NombreMapa on first line, (Map, X, Y) on second
-        _coordsLabel!.Text = $"{_state.MapName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
+        // Zone name replaces map name when inside a zone
+        string locationName = _state.CurrentZoneName.Length > 0 ? _state.CurrentZoneName : _state.MapName;
+        _coordsLabel!.Text = $"{locationName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
 
         // GM button visibility
         if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;

@@ -624,6 +624,9 @@ public static class ServerPacketId
     /// TravelsOpen — open travels/teleport panel. ID 251.
     public const byte TravelsOpen = 251;
 
+    /// ZoneChange — player entered a different zone. ID 252.
+    public const byte ZoneChange = 252;
+
     /// ArenaData — arena duel list (MAR). ID 254.
     public const byte ArenaData = 254;
 

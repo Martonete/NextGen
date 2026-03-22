@@ -98,6 +98,15 @@ public class GameState
 	public int UserCharIndex;
 	public string UserName = "";
 
+	// Zone system
+	public string CurrentZoneName = "";
+	public byte CurrentZoneType;
+	public bool CurrentZoneSafe;
+	public short CurrentZoneMusic;
+	public short CurrentZoneX1, CurrentZoneY1, CurrentZoneX2, CurrentZoneY2;
+	public bool ZoneChanged; // flag consumed by Main._Process to update HUD
+	public bool ZoneLluvia, ZoneNieve, ZoneNiebla;
+
 	// User status flags
 	public bool Raining;
 	public bool UserBlind;

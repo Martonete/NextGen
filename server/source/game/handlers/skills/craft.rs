@@ -684,9 +684,8 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
         return;
     }
 
-    // Check tile trigger — no campfires in safe zones (trigger 1)
-    let tile_trigger = get_map_tile_trigger(state, map, x, y);
-    if tile_trigger == crate::data::maps::Trigger::SafeZone {
+    // Zone-aware safe check — no campfires in safe zones
+    if is_safe_at(state, map, x, y) {
         state.send_console(conn_id, "No puedes crear fogatas en zona segura.", font_index::INFO);
         return;
     }

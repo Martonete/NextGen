@@ -755,6 +755,9 @@ public partial class PacketHandler
             case ServerPacketId.TravelsOpen: // 251
                 _state.ShowTravelPanel = true;
                 break;
+            case ServerPacketId.ZoneChange: // 252
+                HandleBinZoneChange(bq);
+                break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);
                 break;

@@ -139,8 +139,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if lanza_spells > 0 && !spells.is_empty() {
                             let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                             if !skip_spell {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                             }
                         }
@@ -196,8 +196,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                             // Cast spell if in range
                             if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
@@ -266,8 +266,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if lanza_spells > 0 && !spells.is_empty() {
                                 let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                                 if !skip_spell {
-                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                    let spell_id = spells[spell_idx];
+                                    let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                    let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
                             }
@@ -281,8 +281,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         } else {
                             // Cast spell if possible
                             if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
@@ -362,8 +362,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if lanza_spells > 0 && !spells.is_empty() {
                                 let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                                 if !skip_spell {
-                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                    let spell_id = spells[spell_idx];
+                                    let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                    let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
                             }
@@ -373,8 +373,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                                 n.can_attack = false;
                             }
                         } else if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                            let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                            let spell_id = spells[spell_idx];
+                            let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                            let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                             npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
@@ -447,8 +447,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if lanza_spells > 0 && !spells.is_empty() {
                                 let skip_spell = ataca_doble && rand_range(0, 1) == 0;
                                 if !skip_spell {
-                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                    let spell_id = spells[spell_idx];
+                                    let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                    let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 }
                             }
@@ -462,8 +462,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         // VB6 AiNpcObjeto: scan vision for spell targets at range
                         if let Some(target_conn) = find_nearest_player(state, map, x, y) {
                             if rand_range(1, 3) < 3 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
@@ -739,8 +739,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                             // Cast spell at range
                             if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
@@ -810,8 +810,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if let Some((tx, ty)) = target_pos {
                             let dist = (x - tx).abs() + (y - ty).abs();
                             if dist <= 8 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
@@ -892,8 +892,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some((tx, ty)) = target_pos {
                                 let dist = (x - tx).abs() + (y - ty).abs();
                                 if dist <= 8 {
-                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                    let spell_id = spells[spell_idx];
+                                    let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                    let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                     npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                                     if let Some(n) = state.get_npc_mut(npc_idx) {
                                         n.can_attack = false;
@@ -1013,8 +1013,8 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                             // Cast debuff spells at range if can't reach
                             if dist > 1 && dist <= 8 && lanza_spells > 0 && !spells.is_empty() && !did_attack {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
+                                let spell_idx = (rand_range(0, spells.len() as i32 - 1) as usize).min(spells.len().saturating_sub(1));
+                                let spell_id = *spells.get(spell_idx).unwrap_or(&spells[0]);
                                 npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
                             }
 

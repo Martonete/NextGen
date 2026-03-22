@@ -38,6 +38,9 @@ pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: Connec
     }
 }
 
+const MAX_AUTH_FAILURES: u32 = 5;
+const AUTH_LOCKOUT_SECS: u64 = 300;
+
 /// AccountLogin — Account login.
 pub(super) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str) {
     info!("[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}", account_name, password.len(), password.as_bytes(), conn_id);
@@ -47,6 +50,36 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
         state.send_bytes(conn_id, &binary_packets::write_error_msg("Tu PC se encuentra bajo Tolerancia 0."));
         close_connection(state, conn_id).await;
         return;
+    }
+
+    // Rate limiting: check per-IP failed-attempt counter before processing credentials.
+    let ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
+    if !ip.is_empty() {
+        // Determine lock state without holding a borrow, then perform any mutation separately.
+        enum RateLimitState { Allow, Locked, Expired }
+        let rl_state = match state.auth_failures.get(&ip) {
+            Some((count, first_time)) => {
+                if first_time.elapsed().as_secs() >= AUTH_LOCKOUT_SECS {
+                    RateLimitState::Expired
+                } else if *count >= MAX_AUTH_FAILURES {
+                    RateLimitState::Locked
+                } else {
+                    RateLimitState::Allow
+                }
+            }
+            None => RateLimitState::Allow,
+        };
+        match rl_state {
+            RateLimitState::Expired => { state.auth_failures.remove(&ip); }
+            RateLimitState::Locked => {
+                warn!("[AUTH] Rate limit: IP {} is locked out (too many failed attempts)", ip);
+                state.send_bytes(conn_id, &binary_packets::write_error_msg(
+                    "Demasiados intentos fallidos. Intente nuevamente en 5 minutos."
+                ));
+                return;
+            }
+            RateLimitState::Allow => {}
+        }
     }
 
     if !is_valid_name(&account_name) {
@@ -69,6 +102,12 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
     };
 
     if !password::verify_password(&password, &account.password_hash) {
+        // Record failure for rate limiting.
+        if !ip.is_empty() {
+            let entry = state.auth_failures.entry(ip.clone()).or_insert((0, std::time::Instant::now()));
+            entry.0 += 1;
+            warn!("[AUTH] Wrong password for account '{}' from {} (failure #{}/{})", account_name, ip, entry.0, MAX_AUTH_FAILURES);
+        }
         state.send_bytes(conn_id, &binary_packets::write_error_msg("Contraseña incorrecta. Verificá e intentá nuevamente."));
         return;
     }
@@ -84,9 +123,13 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
         return;
     }
 
+    // Successful login — clear any accumulated failure counter for this IP.
+    if !ip.is_empty() {
+        state.auth_failures.remove(&ip);
+    }
+
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.account_name = account_name.to_string();
-        user.account_password = password.to_string();
         user.account_id = account.id;
     }
 
@@ -145,6 +188,36 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
 pub(super) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str, pin: &str) {
     info!("[AUTH] New account request: '{}' from #{}", account_name, conn_id);
 
+    // Rate limiting: block IPs that have exceeded the failed-attempt threshold.
+    let ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
+    if !ip.is_empty() {
+        enum RateLimitState { Allow, Locked, Expired }
+        let rl_state = match state.auth_failures.get(&ip) {
+            Some((count, first_time)) => {
+                if first_time.elapsed().as_secs() >= AUTH_LOCKOUT_SECS {
+                    RateLimitState::Expired
+                } else if *count >= MAX_AUTH_FAILURES {
+                    RateLimitState::Locked
+                } else {
+                    RateLimitState::Allow
+                }
+            }
+            None => RateLimitState::Allow,
+        };
+        match rl_state {
+            RateLimitState::Expired => { state.auth_failures.remove(&ip); }
+            RateLimitState::Locked => {
+                warn!("[AUTH] Rate limit: IP {} locked out from account creation", ip);
+                state.send_bytes(conn_id, &binary_packets::write_error_msg(
+                    "Demasiados intentos fallidos. Intente nuevamente en 5 minutos."
+                ));
+                close_connection(state, conn_id).await;
+                return;
+            }
+            RateLimitState::Allow => {}
+        }
+    }
+
     if !is_valid_name(&account_name) {
         state.send_bytes(conn_id, &binary_packets::write_error_msg("Nombre de cuenta invalido."));
         close_connection(state, conn_id).await;
@@ -193,6 +266,12 @@ pub(super) async fn handle_create_account(state: &mut GameState, conn_id: Connec
             close_connection(state, conn_id).await;
         }
         Err(e) => {
+            // Count creation failures (e.g. duplicate account name) toward the lockout.
+            if !ip.is_empty() {
+                let entry = state.auth_failures.entry(ip.clone()).or_insert((0, std::time::Instant::now()));
+                entry.0 += 1;
+                warn!("[AUTH] Account creation failed for '{}' from {} (failure #{}/{}): {}", account_name, ip, entry.0, MAX_AUTH_FAILURES, e);
+            }
             state.send_bytes(conn_id, &binary_packets::write_error_msg(&e.to_string()));
             close_connection(state, conn_id).await;
         }
@@ -331,8 +410,9 @@ pub(crate) async fn connect_user(
         }
     };
 
-    // Verify password (CodeX)
-    if !codex.is_empty() && char_data.password.to_uppercase() != codex.to_uppercase() {
+    // Verify password (CodeX): if character has a password, client must provide it.
+    // Guard on char_data.password (not codex) to prevent bypass via empty string.
+    if !char_data.password.is_empty() && char_data.password.to_uppercase() != codex.to_uppercase() {
         state.send_bytes(conn_id, &binary_packets::write_finish_ok());
         state.send_bytes(conn_id, &binary_packets::write_error_show("Password incorrecto."));
         close_connection(state, conn_id).await;
@@ -720,7 +800,9 @@ pub(crate) async fn connect_user(
     state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
 
     // --- PHASE 2: Privilege level (VB6 lines 1558-1596) ---
-    state.send_bytes(conn_id, &binary_packets::write_privilege_level(char_data.privileges as u8));
+    // Use effective privileges (role_overrides may have elevated above char_data.privileges)
+    let eff_priv = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(char_data.privileges);
+    state.send_bytes(conn_id, &binary_packets::write_privilege_level(eff_priv as u8));
 
     // --- PHASE 3: Hunger/Thirst (VB6 line 1608) ---
     state.send_bytes(conn_id, &binary_packets::write_update_hunger_thirst(
@@ -869,6 +951,9 @@ pub(crate) async fn connect_user(
         state.send_bytes(conn_id, &binary_packets::write_pos_update(x as i16, y as i16));
         // Send area visibility (other players, NPCs, ground items)
         make_user_visible(state, conn_id).await;
+
+        // Send initial zone info (so client knows zone name, safety, bounds from the start)
+        check_zone_change(state, conn_id).await;
 
         // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
@@ -1049,6 +1134,20 @@ pub(super) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionI
 /// DeleteCharacter — Delete character.
 pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account_name: &str, password: &str) {
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
+
+    // Rate limit: 5-second cooldown between delete attempts
+    let now = std::time::Instant::now();
+    if let Some(user) = state.users.get(&conn_id) {
+        if let Some(last) = user.last_delete_attempt {
+            if now.duration_since(last).as_secs() < 5 {
+                state.send_bytes(conn_id, &binary_packets::write_error_msg("Debes esperar antes de intentar borrar otro personaje."));
+                return;
+            }
+        }
+    }
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.last_delete_attempt = Some(now);
+    }
 
     // Cannot delete a character that is currently online
     if state.is_name_online(&char_name) {

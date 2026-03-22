@@ -93,6 +93,8 @@ pub struct MapTile {
     pub original_blocked: bool,
     /// Original object index from .inf file — used to detect door object changes on map entry.
     pub original_obj_index: i16,
+    /// Zone ID (0 = no zone / wilderness). Pre-cached at map load from .aozone data.
+    pub zone_id: u16,
 }
 
 /// Chunk size for tile storage. Each chunk holds CHUNK_SIZE x CHUNK_SIZE tiles.
@@ -139,6 +141,7 @@ impl MapTiles {
                         user_index: 0,
                         original_blocked: false,
                         original_obj_index: 0,
+                        zone_id: 0,
                     };
                     Some(&DEFAULT_TILE)
                 }
@@ -213,6 +216,37 @@ impl Default for MapInfo {
 pub struct GameMap {
     pub info: MapInfo,
     pub tiles: MapTiles,
+    pub zones: Option<super::zones::MapZones>,
+}
+
+impl GameMap {
+    /// Pre-cache zone_id on every tile for O(1) lookup.
+    /// Called after loading the .aozone file.
+    pub fn init_zones(&mut self) {
+        if let Some(ref zones) = self.zones {
+            for zone in &zones.zones {
+                // Zone bounds are 1-based (game coords), tiles are 0-based
+                for y in zone.y1..=zone.y2 {
+                    for x in zone.x1..=zone.x2 {
+                        let tx = (x - 1).max(0) as usize;
+                        let ty = (y - 1).max(0) as usize;
+                        if let Some(tile) = self.tiles.get_mut(tx, ty) {
+                            tile.zone_id = zone.id;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Get the zone data for a tile position, or None if wilderness (zone_id=0).
+    pub fn get_zone_at(&self, x: i32, y: i32) -> Option<&super::zones::ZoneData> {
+        let zone_id = self.tiles.get(x as usize, y as usize)
+            .map(|t| t.zone_id)
+            .unwrap_or(0);
+        if zone_id == 0 { return None; }
+        self.zones.as_ref()?.zones.iter().find(|z| z.id == zone_id)
+    }
 }
 
 /// Helper to read a little-endian i16 from a cursor.
@@ -587,7 +621,13 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     let dat_file = resolve_map_path(&maps_dir, &name, &["dat", "dat", "DAT"]);
     let info = load_map_dat(&dat_file, map_num);
 
-    Ok(GameMap { info, tiles })
+    // Load zone data (.aozone file)
+    let zones = super::zones::load_zone_file(maps_dir.to_str().unwrap_or(""), map_num as i32);
+
+    let mut game_map = GameMap { info, tiles, zones };
+    game_map.init_zones(); // Pre-cache zone_id on every tile
+
+    Ok(game_map)
 }
 
 /// Load all maps from the maps/ directory.

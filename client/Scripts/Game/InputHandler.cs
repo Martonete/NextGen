@@ -404,7 +404,7 @@ public class InputHandler
 				return false;
 		}
 
-		bool isWater = ArgentumNextgen.Rendering.WorldRenderer.IsWaterGrh(tile.Layer1) && tile.Layer2 == 0;
+		bool isWater = ArgentumNextgen.Rendering.WorldRenderer.IsWaterGrh(tile.Layer1);
 		if (!_state.UserNavigating && isWater)
 			return false;
 		if (_state.UserNavigating && !isWater)

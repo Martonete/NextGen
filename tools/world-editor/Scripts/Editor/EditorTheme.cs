@@ -71,6 +71,7 @@ public static class EditorTheme
     public static readonly Color OVERLAY_TRIGGER   = new(0.8f, 0.8f, 0.3f, 0.25f);
 
     // ── Font sizes ───────────────────────────────────────────────────
+    public const int FONT_XS = 10;
     public const int FONT_SM = 12;
     public const int FONT_MD = 14;
     public const int FONT_LG = 16;
@@ -214,51 +215,94 @@ public static class EditorTheme
     }
 
     /// <summary>
-    /// Creates a compact 36x36 icon-only tool toggle button (vector icon, no text).
+    /// Creates a compact icon tool toggle button. When <paramref name="label"/> is provided,
+    /// the button grows to 52px tall and shows the label below the icon.
     /// </summary>
-    public static Button ToolToggleCompact(string icon, string tooltip)
+    public static Button ToolToggleCompact(string icon, string tooltip, string label = "")
     {
+        bool hasLabel = label.Length > 0;
+        float h = hasLabel ? 52 : 36;
         var btn = new Button
         {
             TooltipText = tooltip,
             ToggleMode = true,
-            CustomMinimumSize = new Vector2(36, 36),
+            CustomMinimumSize = new Vector2(54, h),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             Text = "",
             ClipText = true,
         };
-        btn.AddThemeStyleboxOverride("normal",  FlatBox(BG_TOOL_NORMAL, 6, 0, 0));
-        btn.AddThemeStyleboxOverride("hover",   FlatBox(BG_TOOL_HOVER, 6, 0, 0, BORDER, 1));
-        btn.AddThemeStyleboxOverride("pressed", FlatBox(BG_TOOL_ACTIVE, 6, 0, 0, ACCENT_DIM, 1));
+        var empty = new StyleBoxEmpty();
+        var activeBox  = FlatBox(BG_TOOL_ACTIVE, 6, 0, 0, ACCENT_DIM, 1);
+        var activeHBox = FlatBox(new Color(BG_TOOL_ACTIVE.R + 0.04f, BG_TOOL_ACTIVE.G + 0.04f, BG_TOOL_ACTIVE.B + 0.04f), 6, 0, 0, ACCENT_DIM, 1);
+        btn.AddThemeStyleboxOverride("normal",         empty);
+        btn.AddThemeStyleboxOverride("hover",          FlatBox(BG_TOOL_HOVER, 6, 0, 0));
+        btn.AddThemeStyleboxOverride("pressed",        activeBox);
+        btn.AddThemeStyleboxOverride("hover_pressed",  activeHBox);
+        btn.AddThemeStyleboxOverride("focus",          empty);
 
         var iconCanvas = new ToolIconCanvas(icon);
         iconCanvas.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        if (hasLabel) iconCanvas.OffsetBottom = -13f;
         iconCanvas.MouseFilter = Control.MouseFilterEnum.Ignore;
         btn.AddChild(iconCanvas);
+
+        if (hasLabel)
+        {
+            var lbl = new Label { Text = label };
+            lbl.AddThemeFontSizeOverride("font_size", 9);
+            lbl.HorizontalAlignment = HorizontalAlignment.Center;
+            lbl.VerticalAlignment = VerticalAlignment.Bottom;
+            lbl.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+            lbl.OffsetTop = -13f;
+            lbl.AddThemeColorOverride("font_color", TEXT_SECONDARY);
+            lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
+            btn.AddChild(lbl);
+        }
 
         return btn;
     }
 
     /// <summary>
-    /// Creates a compact action button (36x36, vector icon, non-toggle) for file ops / undo / redo.
+    /// Creates a compact action button (non-toggle). When <paramref name="label"/> is provided,
+    /// the button grows to 62px tall and shows the label below the icon.
     /// </summary>
-    public static Button ActionButtonCompact(string icon, string tooltip, Action? cb = null)
+    public static Button ActionButtonCompact(string icon, string tooltip, Action? cb = null, string label = "")
     {
+        bool hasLabel = label.Length > 0;
+        float h = hasLabel ? 52 : 36;
         var btn = new Button
         {
             TooltipText = tooltip,
             ToggleMode = false,
-            CustomMinimumSize = new Vector2(36, 36),
+            CustomMinimumSize = new Vector2(54, h),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             Text = "",
             ClipText = true,
         };
-        btn.AddThemeStyleboxOverride("normal",  FlatBox(BG_TOOL_NORMAL, 6, 0, 0));
-        btn.AddThemeStyleboxOverride("hover",   FlatBox(BG_TOOL_HOVER, 6, 0, 0, BORDER, 1));
-        btn.AddThemeStyleboxOverride("pressed", FlatBox(BG_TOOL_ACTIVE, 6, 0, 0));
+        var empty = new StyleBoxEmpty();
+        btn.AddThemeStyleboxOverride("normal",   empty);
+        btn.AddThemeStyleboxOverride("hover",    FlatBox(BG_TOOL_HOVER, 6, 0, 0));
+        btn.AddThemeStyleboxOverride("pressed",  FlatBox(BG_TOOL_ACTIVE, 6, 0, 0));
+        btn.AddThemeStyleboxOverride("focus",    empty);
 
         var iconCanvas = new ToolIconCanvas(icon);
         iconCanvas.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        if (hasLabel) iconCanvas.OffsetBottom = -13f;
         iconCanvas.MouseFilter = Control.MouseFilterEnum.Ignore;
         btn.AddChild(iconCanvas);
+
+        if (hasLabel)
+        {
+            var lbl = new Label { Text = label };
+            lbl.AddThemeFontSizeOverride("font_size", 9);
+            lbl.HorizontalAlignment = HorizontalAlignment.Center;
+            lbl.VerticalAlignment = VerticalAlignment.Bottom;
+            lbl.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+            lbl.OffsetTop = -13f;
+            lbl.AddThemeColorOverride("font_color", TEXT_SECONDARY);
+            lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
+            btn.AddChild(lbl);
+        }
 
         if (cb != null) btn.Pressed += cb;
         return btn;
@@ -269,15 +313,15 @@ public static class EditorTheme
     /// </summary>
     public static Control ToolBarGroupSeparator()
     {
-        var container = new Control { CustomMinimumSize = new Vector2(9, 36) };
+        var container = new Control { CustomMinimumSize = new Vector2(14, 52) };
         var line = new ColorRect
         {
             Color = BORDER_SUBTLE,
-            CustomMinimumSize = new Vector2(1, 20),
+            CustomMinimumSize = new Vector2(1, 32),
         };
         line.SetAnchorsPreset(Control.LayoutPreset.Center);
-        line.Size = new Vector2(1, 20);
-        line.Position = new Vector2(4f, 8);
+        line.Size = new Vector2(1, 28);
+        line.Position = new Vector2(5f, 12);
         container.AddChild(line);
         return container;
     }
@@ -288,8 +332,8 @@ public static class EditorTheme
     public static PanelContainer ToolBarGroup()
     {
         var panel = new PanelContainer();
-        var bg = new Color(BG_PANEL.R + 0.015f, BG_PANEL.G + 0.015f, BG_PANEL.B + 0.015f);
-        panel.AddThemeStyleboxOverride("panel", FlatBox(bg, 5, 2, 2));
+        panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        panel.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
         return panel;
     }
 
@@ -321,6 +365,7 @@ public static class EditorTheme
             Text = label,
             ToggleMode = true,
             CustomMinimumSize = new Vector2(44, 28),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             TooltipText = $"Capa {layerNum} ({fullName}) — tecla {layerNum}",
         };
         btn.AddThemeFontSizeOverride("font_size", FONT_SM);
@@ -546,35 +591,46 @@ public static class EditorTheme
         }
     }
 
-    // --- Hand: open palm with five fingers ---
+    // --- Hand: open palm facing viewer (stop-hand style, thumb on the right) ---
     private static void DrawIconHand(Control c, Vector2 p, float s, Color col, float w)
     {
-        float palmW = s * 0.58f;
-        float palmH = s * 0.48f;
-        float palmY = p.Y + s * 0.10f;
+        // 4 wide fingers + thumb on right side.
+        // Finger cluster is shifted left so the whole icon stays centered on p.
 
-        // Palm (rounded rect outline)
-        c.DrawLine(new Vector2(p.X - palmW, palmY - palmH * 0.2f),
-                   new Vector2(p.X - palmW, palmY + palmH), col, w);
-        c.DrawLine(new Vector2(p.X - palmW, palmY + palmH),
-                   new Vector2(p.X + palmW, palmY + palmH), col, w);
-        c.DrawLine(new Vector2(p.X + palmW, palmY + palmH),
-                   new Vector2(p.X + palmW, palmY - palmH * 0.2f), col, w);
+        float fw     = s * 0.090f;   // finger half-width
+        float fSep   = s * 0.075f;   // gap between adjacent fingers
+        float step   = fw * 2 + fSep;
+        float fBase  = p.Y + s * 0.10f;  // y where fingers meet the palm
+        float palmBot = p.Y + s * 0.58f; // palm bottom
 
-        // Five fingers as lines rising from palm top
-        float[] xOff = { -0.48f, -0.24f, 0f, 0.24f, 0.48f };
-        float[] heights = { 0.48f, 0.70f, 0.78f, 0.66f, 0.40f };
-        for (int i = 0; i < 5; i++)
+        // Shift fingers left by half the thumb protrusion so icon is centered
+        float fLeft = p.X - step * 1.5f - s * 0.12f;
+        float[] fX  = { fLeft, fLeft + step, fLeft + step * 2, fLeft + step * 3 };
+        float[] fH  = { s * 0.60f, s * 0.72f, s * 0.64f, s * 0.46f }; // index→pinky
+
+        for (int i = 0; i < 4; i++)
         {
-            float fx = p.X + xOff[i] * s;
-            float baseY = palmY - palmH * 0.2f;
-            float topY = baseY - heights[i] * s;
-            c.DrawLine(new Vector2(fx, baseY), new Vector2(fx, topY), col, w);
-            c.DrawCircle(new Vector2(fx, topY), w * 0.55f, col);
+            float tipY = fBase - fH[i];
+            c.DrawLine(new Vector2(fX[i] - fw, fBase),    new Vector2(fX[i] - fw, tipY + fw), col, w);
+            c.DrawLine(new Vector2(fX[i] + fw, fBase),    new Vector2(fX[i] + fw, tipY + fw), col, w);
+            c.DrawArc( new Vector2(fX[i], tipY + fw), fw, MathF.PI, MathF.Tau, 8, col, w);
         }
-        // Connect finger bases
-        c.DrawLine(new Vector2(p.X - 0.48f * s, palmY - palmH * 0.2f),
-                   new Vector2(p.X + 0.48f * s, palmY - palmH * 0.2f), col, w);
+
+        // Palm: left edge, bottom, right edge, top bar
+        float pL = fX[0] - fw;
+        float pR = fX[3] + fw;
+        c.DrawLine(new Vector2(pL, fBase),   new Vector2(pL, palmBot),   col, w);
+        c.DrawLine(new Vector2(pL, palmBot), new Vector2(pR, palmBot),   col, w);
+        c.DrawLine(new Vector2(pR, fBase),   new Vector2(pR, palmBot),   col, w);
+        c.DrawLine(new Vector2(pL, fBase),   new Vector2(pR, fBase),     col, w);
+
+        // Thumb — right side of palm, angles outward-upward
+        float tbX = pR,              tbY = fBase + s * 0.26f;
+        float ttX = pR + s * 0.26f,  ttY = fBase + s * 0.02f;
+        float tfw = fw * 0.85f;
+        c.DrawLine(new Vector2(tbX, tbY),            new Vector2(ttX, ttY + tfw),  col, w);
+        c.DrawLine(new Vector2(tbX, tbY - tfw * 1.4f), new Vector2(ttX, ttY - tfw), col, w);
+        c.DrawArc( new Vector2(ttX, ttY), tfw, -MathF.PI * 0.5f, MathF.PI * 0.5f, 6, col, w);
     }
 
     // --- Pencil: angled pencil with sharp tip ---

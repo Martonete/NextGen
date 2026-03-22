@@ -359,3 +359,34 @@ pub fn write_level_up(skill_points: i16) -> Vec<u8> {
 }
 
 
+
+/// ID 252: Zone change notification.
+/// Sent when player enters a new zone or on login/map change.
+/// Wire: string zone_name, byte zone_type, byte is_safe, i16 music,
+///       byte lluvia, byte nieve, byte niebla,
+///       i16 x1, i16 y1, i16 x2, i16 y2 (zone bounds for client fog rendering)
+pub fn write_zone_change(
+    zone_name: &str, zone_type: u8, is_safe: bool, music: i16,
+    lluvia: bool, nieve: bool, niebla: bool,
+    x1: i16, y1: i16, x2: i16, y2: i16,
+) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::ZoneChange.to_byte());
+    pkt.write_ascii_string(zone_name);
+    pkt.write_byte(zone_type);
+    pkt.write_byte(is_safe as u8);
+    pkt.write_integer(music);
+    pkt.write_byte(lluvia as u8);
+    pkt.write_byte(nieve as u8);
+    pkt.write_byte(niebla as u8);
+    pkt.write_integer(x1);
+    pkt.write_integer(y1);
+    pkt.write_integer(x2);
+    pkt.write_integer(y2);
+    pkt.into_bytes()
+}
+
+/// ID 252: Zone change to "wilderness" (no zone — map defaults).
+pub fn write_zone_change_wilderness(map_name: &str, is_safe: bool, music: i16) -> Vec<u8> {
+    write_zone_change(map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0)
+}

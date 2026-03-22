@@ -916,4 +916,35 @@ public partial class PacketHandler
     /// Carp:  count, per item: name(str), grh(i16), madera(i16), maderaElf(i16), objIdx(i16), upgrade(i16)
     /// </summary>
 
+    // ── Zone Change ─────────────────────────────────────────────
+
+    private void HandleBinZoneChange(ByteQueue bq)
+    {
+        string zoneName = bq.ReadString();
+        byte zoneType = bq.ReadByte();
+        bool isSafe = bq.ReadByte() != 0;
+        short music = bq.ReadInteger();
+        bool lluvia = bq.ReadByte() != 0;
+        bool nieve = bq.ReadByte() != 0;
+        bool niebla = bq.ReadByte() != 0;
+        short zoneX1 = bq.ReadInteger();
+        short zoneY1 = bq.ReadInteger();
+        short zoneX2 = bq.ReadInteger();
+        short zoneY2 = bq.ReadInteger();
+
+        _state.CurrentZoneName = zoneName;
+        _state.CurrentZoneType = zoneType;
+        _state.CurrentZoneSafe = isSafe;
+        _state.CurrentZoneMusic = music;
+        _state.CurrentZoneX1 = zoneX1;
+        _state.CurrentZoneY1 = zoneY1;
+        _state.CurrentZoneX2 = zoneX2;
+        _state.CurrentZoneY2 = zoneY2;
+        _state.ZoneChanged = true;
+
+        // Update weather
+        _state.ZoneLluvia = lluvia;
+        _state.ZoneNieve = nieve;
+        _state.ZoneNiebla = niebla;
+    }
 }

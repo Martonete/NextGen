@@ -18,6 +18,7 @@ pub mod npcs;
 pub mod maps;
 pub mod balance;
 pub mod crafting;
+pub mod zones;
 
 use std::path::Path;
 

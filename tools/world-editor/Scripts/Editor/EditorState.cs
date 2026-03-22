@@ -55,6 +55,13 @@ public class EditorState
     // Selected NPC from palette (for quick-place with NPC tool)
     public int SelectedNpcNumber;
 
+    // Selected Object from palette (for quick-place with Object tool)
+    public int SelectedObjectNumber;
+
+    // Light tool config
+    public int LightR = 255, LightG = 220, LightB = 180;
+    public int LightRange = 6;
+
     // Zone system (editor metadata for sub-regions)
     public List<MapZone> Zones { get; } = new();
     public int SelectedZoneIndex = -1;
@@ -69,6 +76,12 @@ public class EditorState
     // Hover tile (under cursor)
     public int HoverX, HoverY;
     public bool HoverValid;
+
+    // Selected tile (Hand tool click)
+    public int SelectedTileX = -1;
+    public int SelectedTileY = -1;
+    public bool HasSelectedTile => SelectedTileX >= 0 && SelectedTileY >= 0;
+    public void ClearSelectedTile() { SelectedTileX = -1; SelectedTileY = -1; }
 
     // Dirty state
     public bool IsDirty { get; private set; }
@@ -135,6 +148,7 @@ public class EditorState
         SelY1 = Math.Min(y1, y2);
         SelX2 = Math.Max(x1, x2);
         SelY2 = Math.Max(y1, y2);
+        ClearSelectedTile(); // Area selection and tile selection are mutually exclusive
     }
 
     public void ClearSelection()
@@ -236,8 +250,8 @@ public enum EditorTool
     Hand,     // Pan: click+drag moves the camera
     Paint,    // Draw: click+drag paints with selected texture
     Erase,    // Erase: click+drag clears active layer
-    Select,   // Rectangle select for copy/paste/move
-    Move,     // Drag selected rectangle to new position
+    Select,   // Rectangle select for copy/paste
+    Move,     // Drag selected rectangle to new position (activated from selection panel)
     Pick,     // Click on entity (L3/NPC/obj) → drag to move
     Fill,     // Flood fill with texture
     Eyedrop,  // Sample GRH from tile
