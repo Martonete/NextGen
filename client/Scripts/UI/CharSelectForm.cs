@@ -180,6 +180,7 @@ public partial class CharSelectForm : RpgBaseForm
         }
 
         var ch = new Character();
+        ch.FovAlpha = 1f; // UI preview — always fully visible
         ch.Body = charInfo.Body;
         ch.Head = charInfo.Head;
         ch.WeaponAnim = charInfo.Weapon;
