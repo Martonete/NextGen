@@ -311,7 +311,7 @@ impl Default for ObjData {
 /// Load the complete objects database.
 /// Returns a Vec where index 0 is OBJ1, index 1 is OBJ2, etc.
 pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
-    let path = base.join("dat").join("Obj.dat");
+    let path = base.join("dat").join("obj.dat");
     let ini = IniFile::load(&path)
         .map_err(|e| format!("Failed to load Obj.dat: {}", e))?;
 
@@ -464,7 +464,7 @@ mod tests {
     fn load_real_objects() {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
         let base = base.as_path();
-        if !base.join("dat").join("Obj.dat").exists() {
+        if !base.join("dat").join("obj.dat").exists() {
             return;
         }
         let objs = load_objects(base).unwrap();
