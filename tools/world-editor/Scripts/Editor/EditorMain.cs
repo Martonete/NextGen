@@ -2523,16 +2523,13 @@ public partial class EditorMain : Control
                     }
                     if (grh.FileNum <= 0) continue;
 
-                    var srcTex = _textures.GetTexture(grh.FileNum);
-                    if (srcTex == null) continue;
-
-                    var srcImg = srcTex.GetImage();
+                    var srcImg = _textures.GetImageCached(grh.FileNum);
                     if (srcImg == null) continue;
 
                     int srcX = Math.Max(0, (int)grh.SX);
                     int srcY = Math.Max(0, (int)grh.SY);
-                    int srcW = Math.Max(1, Math.Min((int)grh.PixelWidth, srcTex.GetWidth() - srcX));
-                    int srcH = Math.Max(1, Math.Min((int)grh.PixelHeight, srcTex.GetHeight() - srcY));
+                    int srcW = Math.Max(1, Math.Min((int)grh.PixelWidth, srcImg.GetWidth() - srcX));
+                    int srcH = Math.Max(1, Math.Min((int)grh.PixelHeight, srcImg.GetHeight() - srcY));
 
                     var region = srcImg.GetRegion(new Rect2I(srcX, srcY, srcW, srcH));
                     region.Resize(TileRender, TileRender, Image.Interpolation.Nearest);

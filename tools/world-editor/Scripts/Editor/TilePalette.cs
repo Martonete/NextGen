@@ -427,9 +427,7 @@ public partial class TilePalette : VBoxContainer
                 }
                 if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
 
-                var srcTex = Textures.GetTexture(grh.FileNum);
-                if (srcTex == null) continue;
-                var srcImg = srcTex.GetImage();
+                var srcImg = Textures.GetImageCached(grh.FileNum);
                 if (srcImg == null) continue;
 
                 int cropW = Math.Min(grh.PixelWidth, srcImg.GetWidth() - grh.SX);
