@@ -2163,6 +2163,13 @@ public partial class EditorMain : Control
 
     private void OnDeselectSelection()
     {
+        // Cancel floating insert before it's committed
+        if (_state.Pending.Active && _state.Pending.IsInsert)
+        {
+            CancelPendingPlacement();
+            return;
+        }
+
         if (_state.InsertedMapSelection)
         {
             // Undo the insert — revert the tiles that were stamped
@@ -2711,9 +2718,23 @@ public partial class EditorMain : Control
         if (_rightSelectionSection == null || _rightSelectionLabel == null || _rightFillButton == null) return;
 
         bool hasSel = _state.HasSelection;
+        bool hasPendingInsert = _state.Pending.Active && _state.Pending.IsInsert;
 
-        _rightSelectionSection.Visible = hasSel;
-        if (_rightSelSeparator != null) _rightSelSeparator.Visible = hasSel;
+        _rightSelectionSection.Visible = hasSel || hasPendingInsert;
+        if (_rightSelSeparator != null) _rightSelSeparator.Visible = hasSel || hasPendingInsert;
+
+        // Show insert info during floating phase (before commit)
+        if (hasPendingInsert && !hasSel)
+        {
+            var p = _state.Pending;
+            _rightSelectionLabel.Text = $"MAPA A INSERTAR\nPosición: ({p.OriginX},{p.OriginY})\n{p.Width}x{p.Height} tiles\nArrastrá para mover, ✓ para aplicar";
+            _rightFillButton.Visible = false;
+            if (_rightMoveAreaButton != null) _rightMoveAreaButton.Visible = false;
+            if (_rightInsertApplyButton != null) _rightInsertApplyButton.Visible = false;
+            if (_rightInsertTrimButton != null) _rightInsertTrimButton.Visible = false;
+            if (_rightDeselectButton != null) _rightDeselectButton.Visible = true;
+            return;
+        }
 
         if (hasSel)
         {
@@ -2730,6 +2751,11 @@ public partial class EditorMain : Control
                 _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
                 UpdateSelectionThumbnail();
             }
+
+            // Restore normal button visibility (may have been hidden during floating phase)
+            _rightFillButton.Visible = true;
+            if (_rightMoveAreaButton != null) _rightMoveAreaButton.Visible = true;
+            if (_rightDeselectButton != null) _rightDeselectButton.Visible = true;
 
             // Always re-evaluate fill button (texture may have changed)
             bool hasTexture = _state.SelectedTexture != null || _state.EyedropGrh > 0;

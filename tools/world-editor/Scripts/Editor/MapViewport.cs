@@ -452,6 +452,59 @@ public partial class MapViewport : Control
                 if (t.Layer4 > 0) DrawTileGrh(t.Layer4, tx, ty, center: true, modulate: new Color(1, 1, 1, 0.4f));
             }
 
+        // ── Overlays on pending tiles (blocked, exits, NPCs, objects) ──
+        for (int py = 0; py < p.Height; py++)
+            for (int px = 0; px < p.Width; px++)
+            {
+                int tx = p.OriginX + px, ty = p.OriginY + py;
+                if (!Map.InBounds(tx, ty)) continue;
+                ref var t = ref p.Tiles[px, py];
+                float bx = tx * TileSize;
+                float by = ty * TileSize;
+
+                // Blocked: red hatching
+                if (t.Blocked)
+                {
+                    DrawRect(new Rect2(bx, by, TileSize, TileSize), new Color(1f, 0f, 0f, 0.12f));
+                    DrawLine(new Vector2(bx, by + TileSize), new Vector2(bx + TileSize, by),
+                        new Color(1f, 0.2f, 0.2f, 0.5f), 0.8f);
+                    DrawLine(new Vector2(bx, by), new Vector2(bx + TileSize, by + TileSize),
+                        new Color(1f, 0.2f, 0.2f, 0.5f), 0.8f);
+                }
+
+                // Exit: green arrow + map label
+                if (t.HasExit)
+                {
+                    DrawRect(new Rect2(bx + 1, by + 1, TileSize - 2, TileSize - 2),
+                        new Color(0.1f, 0.8f, 0.3f, 0.15f));
+                    var center = new Vector2(bx + TileSize * 0.5f, by + TileSize * 0.35f);
+                    var arrowCol = new Color(0.4f, 1f, 0.5f, 0.7f);
+                    DrawLine(center, center + new Vector2(0, 6), arrowCol, 1.5f);
+                    DrawLine(center, center + new Vector2(-3, 3), arrowCol, 1.5f);
+                    DrawLine(center, center + new Vector2(3, 3), arrowCol, 1.5f);
+                    DrawOverlayPill(bx + 1, by + TileSize - 12,
+                        $"M{t.ExitMap}", new Color(0.1f, 0.5f, 0.2f, 0.85f),
+                        new Color(0.5f, 1f, 0.5f, 0.95f), 7);
+                }
+
+                // NPC: orange dot
+                if (t.HasNpc)
+                {
+                    var npcCenter = new Vector2(bx + TileSize * 0.5f, by + TileSize * 0.5f);
+                    DrawCircle(npcCenter, TileSize * 0.18f, new Color(1f, 0.6f, 0.2f, 0.6f));
+                    DrawOverlayPill(bx + 1, by + 1,
+                        $"N{t.NpcIndex}", new Color(0.6f, 0.3f, 0.05f, 0.85f),
+                        new Color(1f, 0.7f, 0.3f, 0.95f), 7);
+                }
+
+                // Object: purple dot
+                if (t.HasObject)
+                {
+                    var objCenter = new Vector2(bx + TileSize * 0.5f, by + TileSize * 0.7f);
+                    DrawCircle(objCenter, TileSize * 0.12f, new Color(0.7f, 0.3f, 1f, 0.5f));
+                }
+            }
+
         // Outline around the placement area (marching ants)
         var placementRect = new Rect2(
             p.OriginX * TileSize, p.OriginY * TileSize,
