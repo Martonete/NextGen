@@ -188,8 +188,6 @@ public partial class EditorMain : Control
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.AddSeparator();
         editMenu.AddItem("Eliminar (Supr)", 5);
-        editMenu.AddSeparator();
-        editMenu.AddItem("Insertar Mapa... (Ctrl+I)", 6);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -685,6 +683,9 @@ public partial class EditorMain : Control
         _insertFormatWindow.Size = new Vector2I(320, 180);
         _insertFormatWindow.Exclusive = true;
         _insertFormatWindow.Unresizable = true;
+        _insertFormatWindow.Visible = false;
+        _insertFormatWindow.WrapControls = true;
+        _insertFormatWindow.Transient = true;
         _insertFormatWindow.CloseRequested += () => _insertFormatWindow.Hide();
 
         var insertMargin = new MarginContainer();
@@ -1481,7 +1482,6 @@ public partial class EditorMain : Control
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
             case 5: DeleteSelection(); break;
-            case 6: InsertMap(); break;
         }
     }
 
