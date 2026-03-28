@@ -48,6 +48,10 @@ public partial class EditorMain : Control
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
     private FileDialog? _serverPathDialog;
+    private ConfirmationDialog? _insertFormatDialog;
+    private OptionButton? _insertFormatSelect;
+    private FileDialog? _insertFileDialog;
+    private LegacyMapFormat _insertFormat;
     private PopupMenu? _viewMenu;
 
     // Walk mode
@@ -182,6 +186,8 @@ public partial class EditorMain : Control
         editMenu.AddItem("Pegar (Ctrl+V)", 3);
         editMenu.AddSeparator();
         editMenu.AddItem("Eliminar (Supr)", 5);
+        editMenu.AddSeparator();
+        editMenu.AddItem("Insertar Mapa... (Ctrl+I)", 6);
         editMenu.IdPressed += OnEditMenuId;
         _menuBar.AddChild(editMenu);
 
@@ -670,6 +676,50 @@ public partial class EditorMain : Control
         };
         _serverPathDialog.DirSelected += OnServerPathSelected;
         AddChild(_serverPathDialog);
+
+        // Insert Map: format selector dialog
+        _insertFormatDialog = new ConfirmationDialog();
+        _insertFormatDialog.Title = "Insertar Mapa";
+        _insertFormatDialog.Size = new Vector2I(380, 200);
+        _insertFormatDialog.OkButtonText = "Abrir Mapa...";
+
+        var insertVbox = new VBoxContainer();
+        insertVbox.AddThemeConstantOverride("separation", 10);
+
+        var insertLabel = new Label { Text = "Formato del mapa a importar:" };
+        insertLabel.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        insertVbox.AddChild(insertLabel);
+
+        _insertFormatSelect = new OptionButton();
+        _insertFormatSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        _insertFormatSelect.AddItem("Auto-detectar", (int)LegacyMapFormat.AutoDetect);
+        _insertFormatSelect.AddItem("0.99z (formato fijo, 13 bytes/tile)", (int)LegacyMapFormat.Fixed_099z);
+        _insertFormatSelect.AddItem("11.5 - 13.3 (formato variable, Int16)", (int)LegacyMapFormat.Variable_Int16);
+        _insertFormatSelect.Selected = 0;
+        insertVbox.AddChild(_insertFormatSelect);
+
+        var insertHint = new Label { Text = "Solo aplica a mapas legacy (.map). Los .aomap siempre usan Int32." };
+        insertHint.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+        insertHint.AddThemeColorOverride("font_color", EditorTheme.TEXT_MUTED);
+        insertHint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        insertVbox.AddChild(insertHint);
+
+        _insertFormatDialog.AddChild(insertVbox);
+        _insertFormatDialog.Confirmed += OnInsertFormatConfirmed;
+        AddChild(_insertFormatDialog);
+
+        // Insert Map: file selector dialog
+        _insertFileDialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Title = "Seleccionar Mapa",
+            Size = new Vector2I(600, 400),
+        };
+        _insertFileDialog.AddFilter("*.map", "Mapa AO (legacy)");
+        _insertFileDialog.AddFilter("*.aomap", "Mapa AO (nuevo)");
+        _insertFileDialog.FileSelected += OnInsertMapFileSelected;
+        AddChild(_insertFileDialog);
 
         BuildMapPropsDialog();
         BuildUnsavedDialog();
@@ -1420,6 +1470,7 @@ public partial class EditorMain : Control
             case 3: PasteClipboard(); break;
             case 4: CutSelection(); break;
             case 5: DeleteSelection(); break;
+            case 6: InsertMap(); break;
         }
     }
 
@@ -1903,6 +1954,81 @@ public partial class EditorMain : Control
         _viewport?.QueueRedraw();
     }
 
+    private void InsertMap()
+    {
+        if (_map == null) return;
+        if (_state.Pending.Active) return;
+        _insertFormat = LegacyMapFormat.AutoDetect;
+        if (_insertFormatSelect != null) _insertFormatSelect.Selected = 0;
+        _insertFormatDialog!.Popup();
+    }
+
+    private void OnInsertFormatConfirmed()
+    {
+        if (_insertFormatSelect == null) return;
+        _insertFormat = (LegacyMapFormat)_insertFormatSelect.GetSelectedId();
+        _insertFileDialog!.Popup();
+    }
+
+    private void OnInsertMapFileSelected(string path)
+    {
+        if (_map == null || _state.Pending.Active) return;
+
+        string ext = Path.GetExtension(path).ToLowerInvariant();
+        MapData imported;
+        string formatInfo;
+
+        try
+        {
+            if (ext == ".aomap")
+            {
+                // Our format (Int32 layers) — use existing loader
+                imported = MapLoader.LoadStandalone(path);
+                formatInfo = "NextGen";
+            }
+            else
+            {
+                // Legacy .map (Int16 layers) — use legacy loader with selected format
+                var resolvedFormat = _insertFormat;
+                if (resolvedFormat == LegacyMapFormat.AutoDetect)
+                {
+                    resolvedFormat = LegacyMapLoader.DetectFormat(path);
+                    GD.Print($"[InsertMap] Auto-detected format: {LegacyMapLoader.FormatLabel(resolvedFormat)}");
+                }
+                imported = LegacyMapLoader.Load(path, resolvedFormat);
+                formatInfo = LegacyMapLoader.FormatLabel(resolvedFormat);
+            }
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"ERROR: no se pudo cargar '{Path.GetFileName(path)}': {ex.Message}");
+            GD.PrintErr($"[InsertMap] Failed to load {path}: {ex}");
+            return;
+        }
+
+        int w = imported.Width;
+        int h = imported.Height;
+        if (w <= 0 || h <= 0)
+        {
+            SetStatus("ERROR: el mapa importado está vacío");
+            return;
+        }
+
+        // Convert 1-indexed MapData tiles to 0-indexed buffer for PendingPlacement
+        var buf = new MapTile[w, h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                buf[x, y] = imported.Tiles[x + 1, y + 1];
+
+        // Place at hover tile (cursor position), otherwise top-left
+        int originX = _state.HoverValid ? _state.HoverX : 1;
+        int originY = _state.HoverValid ? _state.HoverY : 1;
+
+        _state.Pending.Begin(buf, w, h, originX, originY);
+        SetStatus($"Insertando mapa {w}x{h} ({formatInfo}) — arrastrá y ✓ para aceptar, ✗ para cancelar");
+        _viewport?.QueueRedraw();
+    }
+
     /// <summary>
     /// Commit the pending placement to the map (called from viewport accept button).
     /// </summary>
@@ -2030,6 +2156,7 @@ public partial class EditorMain : Control
                 case Key.X: CutSelection(); break;
                 case Key.C: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
                 case Key.V: PasteClipboard(); break;
+                case Key.I: InsertMap(); break;
             }
         }
         else

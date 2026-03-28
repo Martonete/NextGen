@@ -58,6 +58,33 @@ public static class MapLoader
         return legacy;
     }
 
+    /// <summary>
+    /// Load a .aomap file from an arbitrary path (not necessarily in the editor's map directory).
+    /// Loads the companion .aoinf from the same directory if it exists.
+    /// For legacy .map files (Int16 layers), use LegacyMapLoader.Load instead.
+    /// </summary>
+    public static MapData LoadStandalone(string mapFilePath)
+    {
+        string ext = Path.GetExtension(mapFilePath).ToLowerInvariant();
+        if (ext != ".aomap")
+            throw new NotSupportedException(
+                $"LoadStandalone only handles .aomap files. For legacy .map files use LegacyMapLoader.Load. Path: {mapFilePath}");
+
+        string dir = Path.GetDirectoryName(mapFilePath) ?? "";
+        string baseName = Path.GetFileNameWithoutExtension(mapFilePath);
+
+        var mapData = LoadAoMapFile(mapFilePath);
+
+        string aoinfPath = Path.Combine(dir, baseName + ".aoinf");
+        if (File.Exists(aoinfPath))
+            LoadAoInfFile(aoinfPath, mapData);
+
+        // .dat (metadata: name, music, ambient) is intentionally not loaded —
+        // Insert Map only needs tile data, not map-level properties.
+
+        return mapData;
+    }
+
     /// Save all map files to the given directory.
     /// Uses .aomap/.aoinf format for maps larger than 100x100, legacy .map/.inf otherwise.
     public static void Save(string mapDir, MapData mapData)
