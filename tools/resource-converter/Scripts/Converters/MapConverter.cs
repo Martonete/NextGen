@@ -45,8 +45,13 @@ public static class MapConverter
 
         Directory.CreateDirectory(outputDir);
 
-        // Find all .map files
-        var mapFiles = Directory.GetFiles(inputDir, "*.map", SearchOption.TopDirectoryOnly);
+        // Find all .map files (case-insensitive on Linux)
+        var mapSet = new System.Collections.Generic.HashSet<string>(
+            Directory.GetFiles(inputDir, "*.map", SearchOption.TopDirectoryOnly));
+        foreach (var f in Directory.GetFiles(inputDir, "*.MAP", SearchOption.TopDirectoryOnly))
+            mapSet.Add(f);
+        var mapFiles = new string[mapSet.Count];
+        mapSet.CopyTo(mapFiles);
         Array.Sort(mapFiles, StringComparer.OrdinalIgnoreCase);
         result.Total = mapFiles.Length;
 
@@ -71,17 +76,11 @@ public static class MapConverter
                 ConvertMapFile(mapFile, outputDir, mapNum, format);
 
                 // Convert .inf → .aoinf (if exists)
-                string infFile = Path.Combine(inputDir, $"{baseName}.inf");
-                if (!File.Exists(infFile))
-                    infFile = Path.Combine(inputDir, $"{baseName}.INF");
-                if (File.Exists(infFile))
+                if (FindFileCI(inputDir, $"{baseName}.inf", out string infFile))
                     ConvertInfFile(infFile, outputDir, mapNum, format);
 
                 // Copy .dat as-is (metadata is INI text, no conversion needed)
-                string datFile = Path.Combine(inputDir, $"{baseName}.dat");
-                if (!File.Exists(datFile))
-                    datFile = Path.Combine(inputDir, $"{baseName}.DAT");
-                if (File.Exists(datFile))
+                if (FindFileCI(inputDir, $"{baseName}.dat", out string datFile))
                     File.Copy(datFile, Path.Combine(outputDir, $"Mapa{mapNum}.dat"), true);
 
                 result.Converted++;
@@ -291,4 +290,19 @@ public static class MapConverter
     }
 
     #endregion
+
+    private static bool FindFileCI(string dir, string fileName, out string foundPath)
+    {
+        foundPath = Path.Combine(dir, fileName);
+        if (File.Exists(foundPath)) return true;
+        try
+        {
+            foreach (var f in Directory.GetFiles(dir))
+                if (string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase))
+                { foundPath = f; return true; }
+        }
+        catch { }
+        foundPath = "";
+        return false;
+    }
 }

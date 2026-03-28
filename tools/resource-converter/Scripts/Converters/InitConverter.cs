@@ -48,7 +48,7 @@ public static class InitConverter
         result.Missing = missing.ToArray();
 
         // Determine files to process
-        var filesToProcess = new System.Collections.Generic.List<(string src, string dst)>();
+        var filesToProcess = new System.Collections.Generic.List<InitTask>();
 
         if (version == AoVersion.V123)
         {
@@ -57,7 +57,7 @@ public static class InitConverter
                 FindFileCaseInsensitive(inputDir, "Graficos2.ind", out string g2) &&
                 FindFileCaseInsensitive(inputDir, "Graficos3.ind", out string g3))
             {
-                filesToProcess.Add(("|MERGE_GRH|" + g1 + "|" + g2 + "|" + g3, "Graficos.ind"));
+                filesToProcess.Add(new InitTask("Graficos.ind", MergeSources: new[] { g1, g2, g3 }));
             }
         }
 
@@ -72,36 +72,30 @@ public static class InitConverter
                 continue;
 
             if (FindFileCaseInsensitive(inputDir, file, out string foundPath))
-                filesToProcess.Add((foundPath, file));
+                filesToProcess.Add(new InitTask(file, CopySource: foundPath));
         }
 
         result.Total = filesToProcess.Count;
 
         for (int i = 0; i < filesToProcess.Count; i++)
         {
-            var (src, dst) = filesToProcess[i];
-            onProgress?.Invoke(i + 1, result.Total, dst);
+            var task = filesToProcess[i];
+            onProgress?.Invoke(i + 1, result.Total, task.Destination);
 
             try
             {
-                string outPath = Path.Combine(outputDir, dst);
+                string outPath = Path.Combine(outputDir, task.Destination);
 
-                if (src.StartsWith("|MERGE_GRH|"))
-                {
-                    // Merge 3 Graficos .ind files
-                    var parts = src.Split('|');
-                    MergeGraficosInd(parts[2], parts[3], parts[4], outPath);
-                }
-                else
-                {
-                    File.Copy(src, outPath, true);
-                }
+                if (task.MergeSources != null)
+                    MergeGraficosInd(task.MergeSources[0], task.MergeSources[1], task.MergeSources[2], outPath);
+                else if (task.CopySource != null)
+                    File.Copy(task.CopySource, outPath, true);
 
                 result.Converted++;
             }
             catch (Exception ex)
             {
-                GD.PrintErr($"[INIT] Error converting {dst}: {ex.Message}");
+                GD.PrintErr($"[INIT] Error converting {task.Destination}: {ex.Message}");
                 result.Errors++;
             }
         }
@@ -111,8 +105,10 @@ public static class InitConverter
 
     /// <summary>
     /// Merge three Graficos .ind files into a single one.
-    /// All three share the same format: each has MiCabecera(263) + entries.
-    /// The merged file uses the header from part 1, with a combined entry stream.
+    /// Format: MiCabecera(263) + Version(4) + Count(4) + sparse entries.
+    /// Each entry starts with GrhIndex(int32) so the reader resolves by index, not position.
+    /// Concatenating the three entry streams works because entries are self-indexing.
+    /// Count = max of the three counts (used as array size hint; reader expands dynamically).
     /// </summary>
     private static void MergeGraficosInd(string path1, string path2, string path3, string outPath)
     {
@@ -178,3 +174,9 @@ public static class InitConverter
         return false;
     }
 }
+
+/// <summary>Typed task for INIT conversion: either a copy or a merge operation.</summary>
+internal sealed record InitTask(
+    string Destination,
+    string? CopySource = null,
+    string[]? MergeSources = null);

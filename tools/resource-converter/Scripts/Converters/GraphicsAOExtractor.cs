@@ -145,7 +145,9 @@ public static class GraphicsAOExtractor
         while (totalRead < uncompressedSize)
         {
             int read = deflateStream.Read(output, totalRead, uncompressedSize - totalRead);
-            if (read == 0) break;
+            if (read == 0)
+                throw new InvalidDataException(
+                    $"Decompression incomplete: expected {uncompressedSize} bytes, got {totalRead}");
             totalRead += read;
         }
 
