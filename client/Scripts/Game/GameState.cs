@@ -121,7 +121,6 @@ public class GameState
 	public bool UserMounted;
 	public bool UserStopped;
 	public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
-	public bool ItemSafety; // Unused — item drop safety removed (13.3 parity)
 	public bool SeguroResu;     // VB6: SeguroResu — resurrection safety
 	public bool Resting;        // VB6: Descansar toggle (DOK)
 	// Drop quantity dialog state
@@ -297,10 +296,6 @@ public class GameState
 	public List<CraftEntry> CarpItems = new();
 	public bool ShowBlacksmithForm;
 	public bool ShowCarpenterForm;
-
-	// Event / environment
-	public string BattleTeamScores = ""; // BattleTeamScores (ID 163)
-	public byte AmbientColorR = 200, AmbientColorG = 200, AmbientColorB = 200; // AmbientColor (ID 164)
 
 	// Guild
 	public bool GuildBankCanObj;      // Permission: can withdraw items from guild bank

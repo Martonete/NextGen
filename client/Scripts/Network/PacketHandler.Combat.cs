@@ -646,11 +646,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinBattleTeamScores(ByteQueue bq)
     {
-        int t1 = bq.ReadLong();
-        int t2 = bq.ReadLong();
-        int t3 = bq.ReadLong();
-        int t4 = bq.ReadLong();
-        _state.BattleTeamScores = $"{t1},{t2},{t3},{t4}";
+        // Drain 4 ints — scoreboard UI is not yet implemented, data discarded
+        bq.ReadLong(); bq.ReadLong(); bq.ReadLong(); bq.ReadLong();
     }
 
     /// <summary>
@@ -668,10 +665,6 @@ public partial class PacketHandler
         byte r = bq.ReadByte();
         byte g = bq.ReadByte();
         byte b = bq.ReadByte();
-        _state.AmbientColorR = r;
-        _state.AmbientColorG = g;
-        _state.AmbientColorB = b;
-        // Also set MapColor fields — WorldRenderer reads these for ambient light
         _state.MapColorR = r;
         _state.MapColorG = g;
         _state.MapColorB = b;

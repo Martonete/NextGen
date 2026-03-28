@@ -70,10 +70,12 @@ pub async fn tick_intervals(state: &mut GameState) {
             state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
             if !navigating {
                 // Re-broadcast CC so others see us again
-                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
-                let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
+                if let Some(user) = state.users.get(&conn_id) {
+                    let cc = user.build_cc_binary();
+                    let cd = crate::game::handlers::common::build_cd_binary(user);
+                    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+                    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
+                }
                 // Tell self we're visible again
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
                 state.send_bytes(conn_id, &nover);
@@ -110,8 +112,10 @@ pub async fn tick_intervals(state: &mut GameState) {
                 // Send CC+CD only to non-clanmates (they had CharacterRemove and need
                 // the full character recreated). Clanmates already have the character
                 // so they just need SetInvisible(false) — avoids animation reset.
-                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                let cd = build_cd_binary(state.users.get(&conn_id).unwrap());
+                let (cc, cd) = match state.users.get(&conn_id) {
+                    Some(user) => (user.build_cc_binary(), build_cd_binary(user)),
+                    None => continue,
+                };
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
                 let area_users = state.get_area_users(map, x, y, conn_id);
                 for other_id in area_users {

@@ -637,8 +637,10 @@ pub(super) async fn handle_slash_showname(state: &mut GameState, conn_id: Connec
     }
 
     // Re-broadcast CC so clients see updated name visibility
-    let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+    if let Some(user) = state.users.get(&conn_id) {
+        let cc = user.build_cc_binary();
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+    }
 
     let status = if new_val { "visible" } else { "oculto" };
     state.send_console(conn_id, &format!("Tu nombre ahora es {}.", status), font_index::INFO);

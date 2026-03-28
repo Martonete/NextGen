@@ -80,31 +80,6 @@ public static partial class CharRenderer
 			? new Vector2(body.HeadOffsetX, body.HeadOffsetY)
 			: new Vector2(0, -30);
 
-		// Debug: log character draw info once (with rendering diagnostics)
-		if (!ch._debugLogged)
-		{
-			ch._debugLogged = true;
-			string bodyInfo = "N/A";
-			if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-			{
-				var b = data.Bodies[ch.Body];
-				int walkGrh = b.Walk[heading];
-				var resolved = walkGrh > 0 ? data.ResolveGrh(walkGrh, 0) : null;
-				bool hasTex = resolved != null && resolved.FileNum > 0 &&
-							  data.Textures?.GetTexture(resolved.FileNum) != null;
-				bodyInfo = $"Walk[{heading}]={walkGrh} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}";
-			}
-			else
-			{
-				bodyInfo = ch.Body <= 0 ? "body<=0" : $"body>={data.Bodies.Length} (out of range)";
-			}
-			string shieldInfo = ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length
-				? $"grh={data.Shields[ch.ShieldAnim].Walk[heading]}" : "none";
-			string cascoInfo = ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
-				? $"grh={data.Cascos[ch.CascoAnim].Head[heading]}" : "none";
-			Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim}({shieldInfo}) casco={ch.CascoAnim}({cascoInfo})");
-		}
-
 		// Pulsing transparency for dead and invisible (self) chars.
 		// Time-based: full cycle ~2s. Range 18→53 (alpha ~45→135 of 255).
 		if (ch.Dead || ch.Invisible)
@@ -148,10 +123,6 @@ public static partial class CharRenderer
 		// Heading-dependent draw order (VB6: dibujarPersonaje)
 		DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
 					  colorOverride: invisOverride);
-
-		// Mark equipment debug as logged (after first full draw)
-		if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
-			ch._equipDebugLogged = true;
 
 		// FX overlays — not drawn when invisible (VB6: entire char skipped in invisible branch)
 		if (!ch.Invisible)
@@ -446,30 +417,11 @@ public static partial class CharRenderer
 		Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
 		int heading, GameData data, Color? colorOverride = null)
 	{
-		if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length)
-		{
-			if (!ch._equipDebugLogged && ch.CascoAnim > 0)
-			{
-				Godot.GD.PrintErr($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} OUT OF RANGE (max={data.Cascos.Length-1})");
-			}
-			return;
-		}
+		if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
 		var casco = data.Cascos[ch.CascoAnim];
-		if (casco.Head == null || casco.Head[heading] == 0)
-		{
-			if (!ch._equipDebugLogged)
-				Godot.GD.PrintErr($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} Head[{heading}]=0 (no GRH)");
-			return;
-		}
+		if (casco.Head == null || casco.Head[heading] == 0) return;
 
 		int grhIdx = casco.Head[heading];
-		if (!ch._equipDebugLogged)
-		{
-			var resolved = data.ResolveGrh(grhIdx, 0);
-			bool hasTex = resolved != null && resolved.FileNum > 0 &&
-						  data.Textures?.GetTexture(resolved.FileNum) != null;
-			Godot.GD.Print($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} heading={heading} grh={grhIdx} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
-		}
 
 		// VB6: no per-heading X adjustment; mounted gets X+1
 		float xAdj = ch.Mounted ? 1f : 0f;
@@ -498,28 +450,10 @@ public static partial class CharRenderer
 		int heading, GameData data, GrhAnimator animator,
 		Color? colorOverride = null)
 	{
-		if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length)
-		{
-			if (!ch._equipDebugLogged && ch.ShieldAnim > 0)
-				Godot.GD.PrintErr($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} OUT OF RANGE (max={data.Shields.Length-1})");
-			return;
-		}
+		if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
 		var shield = data.Shields[ch.ShieldAnim];
 		int grhIndex = shield.Walk[heading];
-		if (grhIndex <= 0)
-		{
-			if (!ch._equipDebugLogged)
-				Godot.GD.PrintErr($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} Walk[{heading}]=0 (no GRH)");
-			return;
-		}
-
-		if (!ch._equipDebugLogged)
-		{
-			var resolved = data.ResolveGrh(grhIndex, 0);
-			bool hasTex = resolved != null && resolved.FileNum > 0 &&
-						  data.Textures?.GetTexture(resolved.FileNum) != null;
-			Godot.GD.Print($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} heading={heading} grh={grhIndex} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
-		}
+		if (grhIndex <= 0) return;
 
 		// VB6: Escudo.ShieldWalk drawn at PixelOffsetX, PixelOffsetY (same as body), center=1
 		int frame = ch.Moving ? (int)ch.WalkFrame : 0;

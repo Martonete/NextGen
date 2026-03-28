@@ -36,17 +36,7 @@ use super::skills::{
 /// `skill` = UserSkills(eSkill.Armas), `agility` = UserAtributos(Agilidad),
 /// `level` = ELV, `class_mod` = ModClase(clase).AtaqueArmas
 pub(super) fn poder_ataque_arma(skill: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    let temp = if skill < 31 {
-        skill as i64 * class_mod as i64
-    } else if skill < 61 {
-        (skill + agility) as i64 * class_mod as i64
-    } else if skill < 91 {
-        (skill + 2 * agility) as i64 * class_mod as i64
-    } else {
-        (skill + 3 * agility) as i64 * class_mod as i64
-    };
-    // VB6: integer arithmetic — cast class_mod to i64 truncates like VB6's Long multiplication
-    // Actually VB6 multiplies by Single (float), so let's be more precise:
+    // VB6: PoderAtaqueArma — use f64 arithmetic to match VB6 Single multiplication precision.
     let temp = if skill < 31 {
         (skill as f64 * class_mod as f64) as i64
     } else if skill < 61 {
@@ -1374,7 +1364,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
 
     // Award experience to killer
     if let Some(killer) = killer_id {
-        let exp_gain = victim_level as i64;
+        let exp_gain = (victim_level as i64) * state.multiplicador_exp as i64;
         let killer_name = state.users.get(&killer).map(|u| u.char_name.clone()).unwrap_or_default();
 
         if let Some(k) = state.users.get_mut(&killer) {

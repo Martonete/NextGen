@@ -193,8 +193,6 @@ public partial class CharSelectForm : RpgBaseForm
             ch.CascoAnim = charInfo.Helmet;
         }
         ch.Name = ""; // No name in preview (already shown in list)
-        ch._debugLogged = true;
-        ch._equipDebugLogged = true;
 
         // Center character in 130x130 viewport.
         // Use the tile-center approach: in-game characters are centered at pos.X + 16.

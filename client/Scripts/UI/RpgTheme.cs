@@ -789,16 +789,8 @@ public static class RpgTheme
         btn.AddChild(label);
         FillParent(label);
 
-        btn.ButtonDown += () =>
-        {
-            btn.Modulate = new Color(0.8f, 0.75f, 0.7f);
-            var pos = btn.Position; pos.Y += 1; btn.Position = pos;
-        };
-        btn.ButtonUp += () =>
-        {
-            btn.Modulate = new Color(1, 1, 1);
-            var pos = btn.Position; pos.Y -= 1; btn.Position = pos;
-        };
+        btn.ButtonDown += () => { btn.Modulate = new Color(0.8f, 0.75f, 0.7f); };
+        btn.ButtonUp += () => { btn.Modulate = new Color(1, 1, 1); };
 
         return btn;
     }

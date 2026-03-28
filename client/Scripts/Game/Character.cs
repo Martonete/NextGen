@@ -84,7 +84,4 @@ public class Character
 	// Starts at 0 so new characters fade in instead of popping
 	public float FovAlpha;
 
-	// Debug helper
-	public bool _debugLogged;
-	public bool _equipDebugLogged;
 }

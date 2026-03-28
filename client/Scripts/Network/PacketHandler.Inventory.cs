@@ -53,24 +53,25 @@ public partial class PacketHandler
         }
 
         // VB6: Update per-equipment bottom bar labels
-        // ObjType: 1=Weapon, 2=Armadura, 3=Escudo (shield), 31=Casco (helmet)
+        // ObjType values match server data/objects.rs ObjType enum:
+        // 2=Weapon, 3=Armor, 16=Shield, 17=Helmet
         if (equipped)
         {
             switch (objType)
             {
-                case 1: // otWeapon
+                case 2: // otWeapon
                     _state.WeaponEqpSlot = slot;
                     _state.WeaponLabel = $"{minHit}/{maxHit}";
                     break;
-                case 2: // otArmadura
+                case 3: // otArmadura
                     _state.ArmourEqpSlot = slot;
                     _state.ArmourLabel = $"{minDef}/{maxDef}";
                     break;
-                case 3: // otEscudo (shield)
+                case 16: // otEscudo (shield)
                     _state.ShieldEqpSlot = slot;
                     _state.ShieldLabel = $"{minDef}/{maxDef}";
                     break;
-                case 31: // otCasco (helmet)
+                case 17: // otCasco (helmet)
                     _state.HelmEqpSlot = slot;
                     _state.HelmLabel = $"{minDef}/{maxDef}";
                     break;

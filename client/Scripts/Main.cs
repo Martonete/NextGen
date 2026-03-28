@@ -442,6 +442,30 @@ public partial class Main : Control
 	private IEnumerator<int>? _texturePreloadIter;
 	private bool _startupPreloadDone;
 
+	/// <summary>
+	/// Creates a fresh PacketHandler and wires all callbacks.
+	/// Called exactly once — at login time, after _tcp is assigned.
+	/// </summary>
+	private void CreatePacketHandler()
+	{
+		_packetHandler = new PacketHandler(_state);
+		_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
+		if (_soundManager != null)
+		{
+			_packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
+			_packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
+			_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
+			_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
+		}
+		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
+		{
+			var floatingLayer = _worldRenderer?.FloatingText;
+			if (floatingLayer == null) return;
+			var color = Color.FromHtml(colorHex);
+			floatingLayer.AddText(charIndex, text, color);
+		};
+	}
+
 	public override void _Ready()
 	{
 		GD.Print("=== Argentum Nextgen — Godot 4 Client ===");
@@ -473,8 +497,6 @@ public partial class Main : Control
 		// Load user configuration (Options.ao)
 		_state.Config = GameConfig.Load(dataPath);
 		_state.ShowNames = _state.Config.ShowNames;
-		// Apply resolution BEFORE anything else touches viewport/UI
-		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
 
 		// Apply V-Sync
 		DisplayServer.WindowSetVsyncMode(
@@ -520,10 +542,6 @@ public partial class Main : Control
 		// Apply initial SubViewport size
 		_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
 
-		// Setup packet handler
-		_packetHandler = new PacketHandler(_state);
-		_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
-
 		// Setup sound manager
 		_soundManager = new SoundManager();
 		AddChild(_soundManager);
@@ -532,19 +550,6 @@ public partial class Main : Control
 		_soundManager.SoundEnabled = _state.Config.SfxEnabled;
 		_soundManager.SetMusicVolume(_state.Config.MusicVolume);
 		_soundManager.SetSfxVolume(_state.Config.SfxVolume);
-		_packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
-		_packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
-		_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
-		_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
-
-		// Wire floating text callback: spawns rising damage/heal numbers above characters
-		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
-		{
-			var floatingLayer = _worldRenderer?.FloatingText;
-			if (floatingLayer == null) return;
-			var color = Color.FromHtml(colorHex);
-			floatingLayer.AddText(charIndex, text, color);
-		};
 
 		// Initialize weather renderer with sound manager (rain sound)
 		_worldRenderer?.InitWeather(_soundManager);
@@ -564,15 +569,7 @@ public partial class Main : Control
 		_loginForm.OnLoginRequest = (account, password) =>
 		{
 			_tcp = new AoTcpClient();
-			_packetHandler = new PacketHandler(_state);
-			_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
-			if (_soundManager != null)
-			{
-				_packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
-				_packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
-				_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
-				_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
-			}
+			CreatePacketHandler();
 			_inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
 			if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
 			_inputHandler.OnPlaySoundAt = (id, x, y) =>

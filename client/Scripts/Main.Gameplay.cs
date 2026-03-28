@@ -331,7 +331,6 @@ public partial class Main
         _state.Resting = false;
         _state.Meditating = false;
         _state.SafeMode = false;
-        _state.ItemSafety = true; // Re-enable on reconnect (VB6: ISItem starts true)
         _state.SeguroResu = false;
         _state.DropDialogOpen = false;
         _state.ShowTravelPanel = false;

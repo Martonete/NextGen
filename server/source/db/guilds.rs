@@ -207,7 +207,7 @@ pub async fn load_applicants(pool: &PgPool, guild_name: &str) -> Vec<GuildApplic
 
 /// Save guild info.
 pub async fn save_guild(pool: &PgPool, guild: &GuildInfo) {
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE guilds SET
             name = $2, founder = $3, date = $4, alignment = $5, antifaccion = $6,
             leader = $7, sub_lider1 = $8, sub_lider2 = $9, url = $10,
@@ -227,7 +227,10 @@ pub async fn save_guild(pool: &PgPool, guild: &GuildInfo) {
     .bind(guild.castle_sieges).bind(guild.reputation)
     .bind(guild.elecciones_abiertas)
     .execute(pool)
-    .await;
+    .await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 }
 
 /// Save members list (replace all).
@@ -239,16 +242,22 @@ pub async fn save_members(pool: &PgPool, guild_name: &str, members: &[String]) {
         _ => return,
     };
 
-    let _ = sqlx::query("DELETE FROM guild_members WHERE guild_id = $1")
-        .bind(db_id).execute(pool).await;
+    if let Err(e) = sqlx::query("DELETE FROM guild_members WHERE guild_id = $1")
+        .bind(db_id).execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 
     for name in members {
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)
              ON CONFLICT DO NOTHING"
         )
         .bind(db_id).bind(name)
-        .execute(pool).await;
+        .execute(pool).await
+        {
+            tracing::error!("Guild DB error: {e}");
+        }
     }
 }
 
@@ -261,12 +270,15 @@ pub async fn add_member(pool: &PgPool, guild_name: &str, char_name: &str) {
         _ => return,
     };
 
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)
          ON CONFLICT DO NOTHING"
     )
     .bind(db_id).bind(char_name)
-    .execute(pool).await;
+    .execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 }
 
 /// Remove member.
@@ -278,11 +290,14 @@ pub async fn remove_member(pool: &PgPool, guild_name: &str, char_name: &str) {
         _ => return,
     };
 
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "DELETE FROM guild_members WHERE guild_id = $1 AND UPPER(char_name) = UPPER($2)"
     )
     .bind(db_id).bind(char_name)
-    .execute(pool).await;
+    .execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 }
 
 /// Save applicants (replace all).
@@ -294,15 +309,21 @@ pub async fn save_applicants(pool: &PgPool, guild_name: &str, applicants: &[Guil
         _ => return,
     };
 
-    let _ = sqlx::query("DELETE FROM guild_applicants WHERE guild_id = $1")
-        .bind(db_id).execute(pool).await;
+    if let Err(e) = sqlx::query("DELETE FROM guild_applicants WHERE guild_id = $1")
+        .bind(db_id).execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 
     for app in applicants {
-        let _ = sqlx::query(
+        if let Err(e) = sqlx::query(
             "INSERT INTO guild_applicants (guild_id, char_name, detail) VALUES ($1, $2, $3)"
         )
         .bind(db_id).bind(&app.name).bind(&app.detail)
-        .execute(pool).await;
+        .execute(pool).await
+        {
+            tracing::error!("Guild DB error: {e}");
+        }
     }
 }
 
@@ -346,11 +367,14 @@ pub async fn remove_applicant(pool: &PgPool, guild_name: &str, char_name: &str) 
         _ => return,
     };
 
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "DELETE FROM guild_applicants WHERE guild_id = $1 AND UPPER(char_name) = UPPER($2)"
     )
     .bind(db_id).bind(char_name)
-    .execute(pool).await;
+    .execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 }
 
 /// Load guild bank gold.
@@ -368,11 +392,14 @@ pub async fn load_bank_gold(pool: &PgPool, guild_name: &str) -> i64 {
 
 /// Save guild bank gold.
 pub async fn save_bank_gold(pool: &PgPool, guild_name: &str, gold: i64) {
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE guilds SET bank_gold = $1 WHERE UPPER(name) = UPPER($2) AND NOT dissolved"
     )
     .bind(gold).bind(guild_name)
-    .execute(pool).await;
+    .execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 }
 
 /// Load guild bank items.
@@ -415,12 +442,15 @@ pub async fn save_bank_items(pool: &PgPool, guild_name: &str, items: &[GuildBank
         _ => return,
     };
 
-    let _ = sqlx::query("DELETE FROM guild_bank_items WHERE guild_id = $1")
-        .bind(db_id).execute(pool).await;
+    if let Err(e) = sqlx::query("DELETE FROM guild_bank_items WHERE guild_id = $1")
+        .bind(db_id).execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 
     for (i, slot) in items.iter().enumerate() {
         if slot.obj_index > 0 {
-            let _ = sqlx::query(
+            if let Err(e) = sqlx::query(
                 "INSERT INTO guild_bank_items (guild_id, slot, obj_index, amount)
                  VALUES ($1, $2, $3, $4)"
             )
@@ -428,7 +458,10 @@ pub async fn save_bank_items(pool: &PgPool, guild_name: &str, items: &[GuildBank
             .bind(i as i16)
             .bind(slot.obj_index)
             .bind(slot.amount)
-            .execute(pool).await;
+            .execute(pool).await
+            {
+                tracing::error!("Guild DB error: {e}");
+            }
         }
     }
 }
@@ -473,22 +506,28 @@ pub async fn create_guild(
     .unwrap_or(0);
 
     // Add founder as first member
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)"
     )
     .bind(db_id).bind(founder)
-    .execute(pool).await;
+    .execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 
     guild_num
 }
 
 /// Dissolve a guild.
 pub async fn dissolve_guild(pool: &PgPool, guild_num: i32) {
-    let _ = sqlx::query(
+    if let Err(e) = sqlx::query(
         "UPDATE guilds SET dissolved = TRUE, leader = '', founder = '' WHERE guild_number = $1"
     )
     .bind(guild_num)
-    .execute(pool).await;
+    .execute(pool).await
+    {
+        tracing::error!("Guild DB error: {e}");
+    }
 }
 
 /// List all active guilds (number, name, alignment, level).

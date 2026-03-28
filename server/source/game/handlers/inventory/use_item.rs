@@ -278,9 +278,9 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_usm_off);
                 let pkt_mvol_off = binary_packets::write_levitate(mnt_ci as i16, false);
                 state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_mvol_off);
-                let (pkt_cd, pkt_au) = {
-                    let u = state.users.get(&conn_id).unwrap();
-                    (crate::game::handlers::common::build_cd_binary(u), crate::game::handlers::common::build_aura_binary(u))
+                let (pkt_cd, pkt_au) = match state.users.get(&conn_id) {
+                    Some(u) => (crate::game::handlers::common::build_cd_binary(u), crate::game::handlers::common::build_aura_binary(u)),
+                    None => return,
                 };
                 state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_cd);
                 state.send_data_bytes(SendTarget::ToArea { map: user_map, x: user_x, y: user_y }, &pkt_au);
@@ -556,12 +556,12 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
                     None => return,
                 };
-                let cp_nav = {
-                    let u = state.users.get(&conn_id).unwrap();
-                    binary_packets::write_character_change(
+                let cp_nav = match state.users.get(&conn_id) {
+                    Some(u) => binary_packets::write_character_change(
                         u.char_index.0 as i16, u.body as i16, u.head as i16, u.heading as u8,
                         u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
-                    )
+                    ),
+                    None => return,
                 };
                 state.send_data_bytes(SendTarget::ToArea { map: nav_map, x: nav_x, y: nav_y }, &cp_nav);
                 let pkt_nav = binary_packets::write_navigate_toggle();
