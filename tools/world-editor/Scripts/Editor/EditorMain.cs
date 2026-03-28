@@ -86,7 +86,13 @@ public partial class EditorMain : Control
     private Button? _rightFillButton;
     private Button? _rightMoveAreaButton;
     private Button? _rightDeselectButton;
+    private Button? _rightInsertApplyButton;
+    private Button? _rightInsertTrimButton;
     private TextureRect? _rightSelPreview;
+
+    // Trim borders dialog
+    private Window? _trimBordersWindow;
+    private SpinBox? _trimBordersSpin;
 
     // Right sidebar: light tool section
     private HSeparator? _rightLightSeparator;
@@ -498,8 +504,19 @@ public partial class EditorMain : Control
         _rightSelectionSection.AddChild(clearAllBtn);
 
         _rightDeselectButton = EditorTheme.MakeButton("Deseleccionar");
-        _rightDeselectButton.Pressed += () => { _state.ClearSelection(); _viewport?.QueueRedraw(); };
+        _rightDeselectButton.Pressed += OnDeselectSelection;
         _rightSelectionSection.AddChild(_rightDeselectButton);
+
+        // Insert Map specific buttons (hidden by default)
+        _rightInsertTrimButton = EditorTheme.MakeButton("Cortar bordes...");
+        _rightInsertTrimButton.Visible = false;
+        _rightInsertTrimButton.Pressed += ShowTrimBordersDialog;
+        _rightSelectionSection.AddChild(_rightInsertTrimButton);
+
+        _rightInsertApplyButton = EditorTheme.PrimaryButton("Aplicar mapa insertado");
+        _rightInsertApplyButton.Visible = false;
+        _rightInsertApplyButton.Pressed += () => { _state.InsertedMapSelection = false; _viewport?.QueueRedraw(); SetStatus("Mapa insertado aplicado"); };
+        _rightSelectionSection.AddChild(_rightInsertApplyButton);
 
         rightVBox.AddChild(_rightSelectionSection);
 
@@ -2021,11 +2038,23 @@ public partial class EditorMain : Control
             for (int x = 0; x < w; x++)
                 buf[x, y] = imported.Tiles[x + 1, y + 1];
 
-        // Place at hover tile (cursor position), otherwise top-left
-        int originX = _state.HoverValid ? _state.HoverX : 1;
-        int originY = _state.HoverValid ? _state.HoverY : 1;
+        // Place centered on current viewport
+        int originX, originY;
+        if (_viewport != null)
+        {
+            float invZoom = 1f / Math.Max(_state.Zoom, 0.01f);
+            int viewCenterX = (int)((-_state.CameraOffset.X * invZoom + _viewport.Size.X * invZoom / 2) / 32);
+            int viewCenterY = (int)((-_state.CameraOffset.Y * invZoom + _viewport.Size.Y * invZoom / 2) / 32);
+            originX = Math.Max(1, viewCenterX - w / 2);
+            originY = Math.Max(1, viewCenterY - h / 2);
+        }
+        else
+        {
+            originX = 1;
+            originY = 1;
+        }
 
-        _state.Pending.Begin(buf, w, h, originX, originY);
+        _state.Pending.Begin(buf, w, h, originX, originY, isInsert: true);
         SetStatus($"Insertando mapa {w}x{h} ({formatInfo}) — arrastrá y ✓ para aceptar, ✗ para cancelar");
         _viewport?.QueueRedraw();
     }
@@ -2098,8 +2127,19 @@ public partial class EditorMain : Control
         _state.MarkDirty();
         SetStatus($"Aplicado {p.Width}x{p.Height} tiles en ({p.OriginX},{p.OriginY})");
         bool wasMove = p.IsMove;
+        bool wasInsert = p.IsInsert;
+
+        // After inserting a map, create a selection on the applied area
+        if (wasInsert)
+        {
+            _state.SetSelection(p.OriginX, p.OriginY,
+                p.OriginX + p.Width - 1, p.OriginY + p.Height - 1);
+            _state.InsertedMapSelection = true;
+        }
+
         p.Cancel();
         if (wasMove) SetActiveTool(EditorTool.Select);
+        if (wasInsert) SetActiveTool(EditorTool.Select);
         _viewport?.QueueRedraw();
     }
 
@@ -2120,6 +2160,102 @@ public partial class EditorMain : Control
         _viewport?.QueueRedraw();
     }
 
+
+    private void OnDeselectSelection()
+    {
+        if (_state.InsertedMapSelection)
+        {
+            // Undo the insert — revert the tiles that were stamped
+            _undo.Undo(_map!);
+            _state.InsertedMapSelection = false;
+            SetStatus("Mapa insertado descartado");
+        }
+        _state.ClearSelection();
+        _viewport?.QueueRedraw();
+    }
+
+    private void ShowTrimBordersDialog()
+    {
+        if (_trimBordersWindow == null) BuildTrimBordersDialog();
+        _trimBordersSpin!.Value = 6;
+        _trimBordersWindow!.PopupCentered();
+    }
+
+    private void BuildTrimBordersDialog()
+    {
+        _trimBordersWindow = new Window();
+        _trimBordersWindow.Title = "Cortar Bordes";
+        _trimBordersWindow.Size = new Vector2I(300, 160);
+        _trimBordersWindow.Exclusive = true;
+        _trimBordersWindow.Unresizable = true;
+        _trimBordersWindow.Visible = false;
+        _trimBordersWindow.Transient = true;
+        _trimBordersWindow.WrapControls = true;
+        _trimBordersWindow.CloseRequested += () => _trimBordersWindow.Hide();
+
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_left", 20);
+        margin.AddThemeConstantOverride("margin_right", 20);
+        margin.AddThemeConstantOverride("margin_top", 16);
+        margin.AddThemeConstantOverride("margin_bottom", 16);
+        margin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 12);
+
+        var label = new Label { Text = "Tiles a cortar de cada borde:" };
+        label.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        vbox.AddChild(label);
+
+        _trimBordersSpin = EditorTheme.MakeSpinBox(1, 50, 1);
+        _trimBordersSpin.Value = 6;
+        vbox.AddChild(_trimBordersSpin);
+
+        var applyBtn = EditorTheme.PrimaryButton("Aplicar recorte");
+        applyBtn.Pressed += OnTrimBordersApply;
+        vbox.AddChild(applyBtn);
+
+        margin.AddChild(vbox);
+        _trimBordersWindow.AddChild(margin);
+        AddChild(_trimBordersWindow);
+    }
+
+    private void OnTrimBordersApply()
+    {
+        _trimBordersWindow?.Hide();
+        if (_map == null || !_state.HasSelection) return;
+
+        int trim = (int)(_trimBordersSpin?.Value ?? 6);
+        int newX1 = _state.SelX1 + trim;
+        int newY1 = _state.SelY1 + trim;
+        int newX2 = _state.SelX2 - trim;
+        int newY2 = _state.SelY2 - trim;
+
+        if (newX1 > newX2 || newY1 > newY2)
+        {
+            SetStatus("ERROR: recorte demasiado grande, no queda área");
+            return;
+        }
+
+        // Clear the border tiles
+        _undo.BeginBatch("Trim borders");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (x >= newX1 && x <= newX2 && y >= newY1 && y <= newY2) continue;
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                _map.Tiles[x, y] = new MapTile();
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+
+        // Shrink selection to trimmed area
+        _state.SetSelection(newX1, newY1, newX2, newY2);
+        _state.MarkDirty();
+        SetStatus($"Recortados {trim} tiles de cada borde — selección ahora {newX2 - newX1 + 1}x{newY2 - newY1 + 1}");
+        _viewport?.QueueRedraw();
+    }
 
     #endregion
 
@@ -2590,7 +2726,8 @@ public partial class EditorMain : Control
             {
                 int w = _state.SelX2 - _state.SelX1 + 1;
                 int h = _state.SelY2 - _state.SelY1 + 1;
-                _rightSelectionLabel.Text = $"({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
+                string prefix = _state.InsertedMapSelection ? "MAPA INSERTADO\n" : "";
+                _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
                 UpdateSelectionThumbnail();
             }
 
@@ -2601,6 +2738,11 @@ public partial class EditorMain : Control
             // Sync move button toggle state when tool changes
             if (_state.ActiveTool != _lastSelActiveTool)
                 _rightMoveAreaButton?.SetPressedNoSignal(_state.ActiveTool == EditorTool.Move);
+
+            // Show/hide insert-specific buttons
+            bool isInsert = _state.InsertedMapSelection;
+            if (_rightInsertApplyButton != null) _rightInsertApplyButton.Visible = isInsert;
+            if (_rightInsertTrimButton != null) _rightInsertTrimButton.Visible = isInsert;
         }
 
         _lastRightSidebarHasSel = hasSel;

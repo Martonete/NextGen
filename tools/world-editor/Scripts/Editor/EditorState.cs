@@ -26,6 +26,7 @@ public class EditorState
 
     // Selection rectangle (tile coords, inclusive)
     public bool HasSelection;
+    public bool InsertedMapSelection; // True when selection was created by Insert Map
     public int SelX1, SelY1, SelX2, SelY2;
 
     // Clipboard (copied tiles)
@@ -154,6 +155,7 @@ public class EditorState
     public void ClearSelection()
     {
         HasSelection = false;
+        InsertedMapSelection = false;
     }
 
     public void CopySelection(MapData map)
@@ -204,12 +206,13 @@ public class PendingPlacement
     public int Width, Height;
     public int OriginX, OriginY;   // Current top-left position on the map
     public bool IsMove;            // True if this came from a move (clears source on commit)
+    public bool IsInsert;           // True if this came from Insert Map (shows selection panel after commit)
     public int SourceX, SourceY;   // Original position of moved tiles (for clearing source)
     public MapTile[,]? MoveSnapshot; // Original map state for move operations
 
     public void Begin(MapTile[,] tiles, int w, int h, int ox, int oy,
                       bool isMove = false, MapTile[,]? snapshot = null,
-                      int srcX = 0, int srcY = 0)
+                      int srcX = 0, int srcY = 0, bool isInsert = false)
     {
         Active = true;
         Tiles = tiles;
@@ -218,6 +221,7 @@ public class PendingPlacement
         OriginX = ox;
         OriginY = oy;
         IsMove = isMove;
+        IsInsert = isInsert;
         SourceX = srcX;
         SourceY = srcY;
         MoveSnapshot = snapshot;
@@ -226,6 +230,7 @@ public class PendingPlacement
     public void Cancel()
     {
         Active = false;
+        IsInsert = false;
         Tiles = null;
         MoveSnapshot = null;
     }
