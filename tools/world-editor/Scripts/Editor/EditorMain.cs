@@ -48,7 +48,7 @@ public partial class EditorMain : Control
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
     private FileDialog? _serverPathDialog;
-    private ConfirmationDialog? _insertFormatDialog;
+    private Window? _insertFormatWindow;
     private OptionButton? _insertFormatSelect;
     private FileDialog? _insertFileDialog;
     private LegacyMapFormat _insertFormat;
@@ -171,6 +171,8 @@ public partial class EditorMain : Control
         fileMenu.AddSeparator();
         fileMenu.AddItem("Propiedades del Mapa...", 4);
         fileMenu.AddItem("Propiedades de Tile (T)", 5);
+        fileMenu.AddSeparator();
+        fileMenu.AddItem("Insertar Mapa... (Ctrl+I)", 8);
         fileMenu.AddSeparator();
         fileMenu.AddItem("Configurar Ruta Cliente (Data/)...", 6);
         fileMenu.AddItem("Configurar Ruta Server...", 7);
@@ -677,47 +679,55 @@ public partial class EditorMain : Control
         _serverPathDialog.DirSelected += OnServerPathSelected;
         AddChild(_serverPathDialog);
 
-        // Insert Map: format selector dialog
-        _insertFormatDialog = new ConfirmationDialog();
-        _insertFormatDialog.Title = "Insertar Mapa";
-        _insertFormatDialog.Size = new Vector2I(380, 200);
-        _insertFormatDialog.OkButtonText = "Abrir Mapa...";
+        // Insert Map: compact centered format selector window
+        _insertFormatWindow = new Window();
+        _insertFormatWindow.Title = "Insertar Mapa";
+        _insertFormatWindow.Size = new Vector2I(320, 180);
+        _insertFormatWindow.Exclusive = true;
+        _insertFormatWindow.Unresizable = true;
+        _insertFormatWindow.CloseRequested += () => _insertFormatWindow.Hide();
+
+        var insertMargin = new MarginContainer();
+        insertMargin.AddThemeConstantOverride("margin_left", 20);
+        insertMargin.AddThemeConstantOverride("margin_right", 20);
+        insertMargin.AddThemeConstantOverride("margin_top", 16);
+        insertMargin.AddThemeConstantOverride("margin_bottom", 16);
+        insertMargin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
 
         var insertVbox = new VBoxContainer();
-        insertVbox.AddThemeConstantOverride("separation", 10);
+        insertVbox.AddThemeConstantOverride("separation", 12);
 
-        var insertLabel = new Label { Text = "Formato del mapa a importar:" };
+        var insertLabel = new Label { Text = "Formato del mapa:" };
         insertLabel.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
         insertVbox.AddChild(insertLabel);
 
         _insertFormatSelect = new OptionButton();
         _insertFormatSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
         _insertFormatSelect.AddItem("Auto-detectar", (int)LegacyMapFormat.AutoDetect);
-        _insertFormatSelect.AddItem("0.99z (formato fijo, 13 bytes/tile)", (int)LegacyMapFormat.Fixed_099z);
-        _insertFormatSelect.AddItem("11.5 - 13.3 (formato variable, Int16)", (int)LegacyMapFormat.Variable_Int16);
+        _insertFormatSelect.AddItem("0.99z (fijo)", (int)LegacyMapFormat.Fixed_099z);
+        _insertFormatSelect.AddItem("11.5 - 13.3 (variable)", (int)LegacyMapFormat.Variable_Int16);
         _insertFormatSelect.Selected = 0;
         insertVbox.AddChild(_insertFormatSelect);
 
-        var insertHint = new Label { Text = "Solo aplica a mapas legacy (.map). Los .aomap siempre usan Int32." };
-        insertHint.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        insertHint.AddThemeColorOverride("font_color", EditorTheme.TEXT_MUTED);
-        insertHint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        insertVbox.AddChild(insertHint);
+        var insertBtn = new Button { Text = "Seleccionar Mapa..." };
+        insertBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        insertBtn.CustomMinimumSize = new Vector2(0, 36);
+        insertBtn.Pressed += OnInsertSelectMapPressed;
+        insertVbox.AddChild(insertBtn);
 
-        _insertFormatDialog.AddChild(insertVbox);
-        _insertFormatDialog.Confirmed += OnInsertFormatConfirmed;
-        AddChild(_insertFormatDialog);
+        insertMargin.AddChild(insertVbox);
+        _insertFormatWindow.AddChild(insertMargin);
+        AddChild(_insertFormatWindow);
 
-        // Insert Map: file selector dialog
+        // Insert Map: file selector dialog (only .map files)
         _insertFileDialog = new FileDialog
         {
             FileMode = FileDialog.FileModeEnum.OpenFile,
             Access = FileDialog.AccessEnum.Filesystem,
-            Title = "Seleccionar Mapa",
+            Title = "Seleccionar archivo .map",
             Size = new Vector2I(600, 400),
         };
-        _insertFileDialog.AddFilter("*.map", "Mapa AO (legacy)");
-        _insertFileDialog.AddFilter("*.aomap", "Mapa AO (nuevo)");
+        _insertFileDialog.AddFilter("*.map", "Mapa AO Legacy (.map)");
         _insertFileDialog.FileSelected += OnInsertMapFileSelected;
         AddChild(_insertFileDialog);
 
@@ -1457,6 +1467,7 @@ public partial class EditorMain : Control
             case 5: ToggleTileProperties(); break;
             case 6: _dataPathDialog?.Popup(); break;
             case 7: _serverPathDialog?.Popup(); break;
+            case 8: InsertMap(); break;
         }
     }
 
@@ -1960,13 +1971,14 @@ public partial class EditorMain : Control
         if (_state.Pending.Active) return;
         _insertFormat = LegacyMapFormat.AutoDetect;
         if (_insertFormatSelect != null) _insertFormatSelect.Selected = 0;
-        _insertFormatDialog!.Popup();
+        _insertFormatWindow!.PopupCentered();
     }
 
-    private void OnInsertFormatConfirmed()
+    private void OnInsertSelectMapPressed()
     {
         if (_insertFormatSelect == null) return;
         _insertFormat = (LegacyMapFormat)_insertFormatSelect.GetSelectedId();
+        _insertFormatWindow!.Hide();
         _insertFileDialog!.Popup();
     }
 
@@ -1974,30 +1986,19 @@ public partial class EditorMain : Control
     {
         if (_map == null || _state.Pending.Active) return;
 
-        string ext = Path.GetExtension(path).ToLowerInvariant();
         MapData imported;
         string formatInfo;
 
         try
         {
-            if (ext == ".aomap")
+            var resolvedFormat = _insertFormat;
+            if (resolvedFormat == LegacyMapFormat.AutoDetect)
             {
-                // Our format (Int32 layers) — use existing loader
-                imported = MapLoader.LoadStandalone(path);
-                formatInfo = "NextGen";
+                resolvedFormat = LegacyMapLoader.DetectFormat(path);
+                GD.Print($"[InsertMap] Auto-detected format: {LegacyMapLoader.FormatLabel(resolvedFormat)}");
             }
-            else
-            {
-                // Legacy .map (Int16 layers) — use legacy loader with selected format
-                var resolvedFormat = _insertFormat;
-                if (resolvedFormat == LegacyMapFormat.AutoDetect)
-                {
-                    resolvedFormat = LegacyMapLoader.DetectFormat(path);
-                    GD.Print($"[InsertMap] Auto-detected format: {LegacyMapLoader.FormatLabel(resolvedFormat)}");
-                }
-                imported = LegacyMapLoader.Load(path, resolvedFormat);
-                formatInfo = LegacyMapLoader.FormatLabel(resolvedFormat);
-            }
+            imported = LegacyMapLoader.Load(path, resolvedFormat);
+            formatInfo = LegacyMapLoader.FormatLabel(resolvedFormat);
         }
         catch (Exception ex)
         {
