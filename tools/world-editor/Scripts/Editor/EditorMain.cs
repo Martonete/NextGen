@@ -92,6 +92,7 @@ public partial class EditorMain : Control
 
     // Trim borders dialog
     private Window? _trimBordersWindow;
+    private ZoneEditPopup? _pendingZonePopup;
     private SpinBox? _trimBordersSpin;
 
     // Right sidebar: light tool section
@@ -408,6 +409,7 @@ public partial class EditorMain : Control
         };
         _viewport.OnPendingAccept += CommitPendingPlacement;
         _viewport.OnPendingCancel += CancelPendingPlacement;
+        _viewport.OnSelectionCompleted += OnSelectionCompleted;
         AddChild(_viewport);
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area
@@ -2181,6 +2183,17 @@ public partial class EditorMain : Control
         _viewport?.QueueRedraw();
     }
 
+    private void OnSelectionCompleted()
+    {
+        // If a zone edit popup requested map selection, feed the coords back
+        if (_pendingZonePopup != null && _state.HasSelection)
+        {
+            _pendingZonePopup.SetBoundsFromSelection(
+                _state.SelX1, _state.SelY1, _state.SelX2, _state.SelY2);
+            _pendingZonePopup = null;
+        }
+    }
+
     private void ShowTrimBordersDialog()
     {
         if (_trimBordersWindow == null) BuildTrimBordersDialog();
@@ -2920,6 +2933,13 @@ public partial class EditorMain : Control
             _zonePanel?.RebuildList();
             _viewport?.QueueRedraw();
             _state.MarkDirty();
+        };
+        popup.OnRequestMapSelect += () =>
+        {
+            // Activate Select tool — when user finishes selection, fill bounds back
+            SetActiveTool(EditorTool.Select);
+            _pendingZonePopup = popup;
+            SetStatus("Seleccioná el área de la zona en el mapa, luego suelta para confirmar");
         };
         AddChild(popup);
         popup.PopupCentered();

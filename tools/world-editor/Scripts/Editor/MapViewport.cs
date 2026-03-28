@@ -19,6 +19,7 @@ public partial class MapViewport : Control
     public ParticleEngine? Particles;
     public Action? OnPendingAccept;   // Fire when user clicks ✓ on pending placement
     public Action? OnPendingCancel;   // Fire when user clicks ✗ on pending placement
+    public Action? OnSelectionCompleted; // Fire when a drag-selection is released
     public int[]? ObjGrhs;
     public int[]? NpcBodies;
     public int[]? NpcHeads;
@@ -36,6 +37,8 @@ public partial class MapViewport : Control
     private bool _isMovingSelection;   // drag-to-move selection bounds (no tile content move)
     private Vector2I _selMoveAnchor;   // tile where the move-selection drag started
     private int _selOrigX1, _selOrigY1, _selOrigX2, _selOrigY2; // bounds snapshot for move
+    private bool _isResizingSelection; // drag edge to resize selection
+    private int _resizeEdge;           // 0=top, 1=right, 2=bottom, 3=left
     private bool _spaceHeld;
     private Vector2 _panStart;
     private Vector2 _panCameraStart;
@@ -1216,6 +1219,29 @@ public partial class MapViewport : Control
             Math.Clamp(tile.Y, 1, Map.Height));
     }
 
+    /// <summary>
+    /// Returns which edge of the selection the tile is on: 0=top, 1=right, 2=bottom, 3=left.
+    /// Returns -1 if not on any edge. A tile is on the edge if it's within the selection
+    /// row/column at the boundary.
+    /// </summary>
+    private int GetSelectionEdge(Vector2I tile)
+    {
+        if (State == null || !State.HasSelection) return -1;
+        int x = tile.X, y = tile.Y;
+        int x1 = State.SelX1, y1 = State.SelY1, x2 = State.SelX2, y2 = State.SelY2;
+
+        // Top edge: y == y1, x within bounds
+        if (y == y1 && x >= x1 && x <= x2) return 0;
+        // Bottom edge: y == y2
+        if (y == y2 && x >= x1 && x <= x2) return 2;
+        // Left edge: x == x1, y within bounds
+        if (x == x1 && y >= y1 && y <= y2) return 3;
+        // Right edge: x == x2
+        if (x == x2 && y >= y1 && y <= y2) return 1;
+
+        return -1;
+    }
+
     private Vector2 ToPanel(Vector2 screenPos)
     {
         return screenPos - GlobalPosition;
@@ -1447,6 +1473,18 @@ public partial class MapViewport : Control
                     case EditorTool.Select:
                     {
                         var clamped = ClampToMap(tile);
+
+                        // Check if click is on a selection edge (for resize)
+                        int edge = GetSelectionEdge(clamped);
+                        if (edge >= 0)
+                        {
+                            _isResizingSelection = true;
+                            _resizeEdge = edge;
+                            _selOrigX1 = State.SelX1; _selOrigY1 = State.SelY1;
+                            _selOrigX2 = State.SelX2; _selOrigY2 = State.SelY2;
+                            break;
+                        }
+
                         bool insideSel = State.HasSelection &&
                             clamped.X >= State.SelX1 && clamped.X <= State.SelX2 &&
                             clamped.Y >= State.SelY1 && clamped.Y <= State.SelY2;
@@ -1553,11 +1591,18 @@ public partial class MapViewport : Control
                     _isSelecting = false;
                     var clampedEnd = ClampToMap(_dragCurrent);
                     State!.SetSelection(_selectStart.X, _selectStart.Y, clampedEnd.X, clampedEnd.Y);
+                    OnSelectionCompleted?.Invoke();
                     QueueRedraw();
                 }
                 if (_isMovingSelection)
                 {
                     _isMovingSelection = false;
+                    QueueRedraw();
+                }
+                if (_isResizingSelection)
+                {
+                    _isResizingSelection = false;
+                    OnSelectionCompleted?.Invoke();
                     QueueRedraw();
                 }
                 if (_isDragging)
@@ -1678,9 +1723,22 @@ public partial class MapViewport : Control
             var cur = ClampToMap(hoverTile);
             int dx = cur.X - _selMoveAnchor.X;
             int dy = cur.Y - _selMoveAnchor.Y;
-            int w = _selOrigX2 - _selOrigX1;
-            int h = _selOrigY2 - _selOrigY1;
             State.SetSelection(_selOrigX1 + dx, _selOrigY1 + dy, _selOrigX2 + dx, _selOrigY2 + dy);
+            QueueRedraw();
+        }
+
+        if (_isResizingSelection && State != null)
+        {
+            var cur = ClampToMap(hoverTile);
+            int x1 = _selOrigX1, y1 = _selOrigY1, x2 = _selOrigX2, y2 = _selOrigY2;
+            switch (_resizeEdge)
+            {
+                case 0: y1 = Math.Min(cur.Y, y2); break; // top
+                case 1: x2 = Math.Max(cur.X, x1); break; // right
+                case 2: y2 = Math.Max(cur.Y, y1); break; // bottom
+                case 3: x1 = Math.Min(cur.X, x2); break; // left
+            }
+            State.SetSelection(x1, y1, x2, y2);
             QueueRedraw();
         }
 

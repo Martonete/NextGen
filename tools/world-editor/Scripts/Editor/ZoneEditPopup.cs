@@ -13,6 +13,8 @@ public partial class ZoneEditPopup : Window
     public ZoneInfo? Zone;
     public MapZoneData? ZoneData;
     public Action? OnSaved;
+    /// <summary>Called when user clicks "Seleccionar en mapa" — host should activate Select tool and wire selection back.</summary>
+    public Action? OnRequestMapSelect;
 
     private LineEdit? _nameEdit;
     private OptionButton? _typeOption;
@@ -90,6 +92,14 @@ public partial class ZoneEditPopup : Window
         AddSpinWithLabel(boundsRow2, "X2:", 1, 1000, Zone.X2, out _x2Spin);
         AddSpinWithLabel(boundsRow2, "Y2:", 1, 1000, Zone.Y2, out _y2Spin);
         vbox.AddChild(boundsRow2);
+
+        var selectBtn = EditorTheme.MakeButton("Seleccionar en mapa");
+        selectBtn.Pressed += () =>
+        {
+            Hide(); // minimize popup so user can see the map
+            OnRequestMapSelect?.Invoke();
+        };
+        vbox.AddChild(selectBtn);
 
         // === Restrictions ===
         vbox.AddChild(EditorTheme.MakeHSeparator());
@@ -213,6 +223,16 @@ public partial class ZoneEditPopup : Window
 
         OnSaved?.Invoke();
         Hide();
+    }
+
+    /// <summary>Update the bounds SpinBoxes from an external selection and re-show the popup.</summary>
+    public void SetBoundsFromSelection(int x1, int y1, int x2, int y2)
+    {
+        if (_x1Spin != null) _x1Spin.Value = x1;
+        if (_y1Spin != null) _y1Spin.Value = y1;
+        if (_x2Spin != null) _x2Spin.Value = x2;
+        if (_y2Spin != null) _y2Spin.Value = y2;
+        Show();
     }
 
     // === Helpers ===
