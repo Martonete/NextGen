@@ -209,12 +209,20 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     }
     // VB6: Staff power check for Mages (modHechizos.bas lines 449-460)
     if spell.need_staff > 0 {
-        let (class, weapon_slot, inv) = state.users.get(&conn_id)
-            .map(|u| (u.class, u.equip.weapon, u.inventory.clone()))
-            .unwrap_or_default();
+        let (class, weapon_slot, obj_idx) = match state.users.get(&conn_id) {
+            Some(u) => {
+                let slot = u.equip.weapon;
+                let idx = if slot > 0 && slot <= u.inventory.len() {
+                    u.inventory[slot - 1].obj_index
+                } else {
+                    0
+                };
+                (u.class, slot, idx)
+            }
+            None => (PlayerClass::default(), 0, 0),
+        };
         if class == PlayerClass::Mago {
-            let staff_power = if weapon_slot > 0 && weapon_slot <= inv.len() {
-                let obj_idx = inv[weapon_slot - 1].obj_index;
+            let staff_power = if weapon_slot > 0 {
                 state.game_data.objects.get(obj_idx as usize).map(|o| o.staff_power).unwrap_or(0)
             } else { 0 };
             if staff_power < spell.need_staff {

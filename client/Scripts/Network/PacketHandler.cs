@@ -45,7 +45,19 @@ public partial class PacketHandler
     /// Callback to stop all SFX (called on position warp within same map).
     public Action? OnStopSfx;
 
-    // Meditation FX IDs — cleared when character moves
+    // Meditation FX IDs — cleared when the character moves or the meditate toggle fires.
+    // Each ID corresponds to a GRH animation played over the character while meditating:
+    //   4   = Meditación básica (aura blanca pequeña)
+    //   5   = Meditación mago (aura azul)
+    //   6   = Meditación druida (aura verde)
+    //  16   = Aura de meditación genérica (resplandor dorado)
+    //  42   = Partículas de meditación 1 (chispas blancas)
+    //  43   = Partículas de meditación 2 (chispas azules)
+    //  44   = Partículas de meditación 3 (chispas doradas)
+    //  45   = Partículas de meditación 4 (chispas verdes)
+    // 103   = Aura meditación clérigo (cruz / luz)
+    // 104   = Aura meditación paladin (escudo brillante)
+    // 105   = Aura meditación hechicero (espirales mágicas)
     private static readonly HashSet<int> MeditationFxIds = new()
     {
         4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105

@@ -121,9 +121,6 @@ public partial class PacketHandler
 
     // ── Chat variants (binary) ──────────────────────────────────
 
-
-    // ── Chat variants (binary) ──────────────────────────────────
-
     private void HandleBinChatTalk(ByteQueue bq)
     {
         short charIndex = bq.ReadInteger();
@@ -196,9 +193,6 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
-    // ── Stat variants ─────────────────────────────────────────────
-
-
     // ── Guild ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -217,12 +211,6 @@ public partial class PacketHandler
     /// GuildBankPermsResp (ID 195) — guild bank permissions.
     /// Wire: bool canObj, bool canGold
     /// </summary>
-
-
-    /// <summary>
-    /// GuildBankPermsResp (ID 195) — guild bank permissions.
-    /// Wire: bool canObj, bool canGold
-    /// </summary>
     private void HandleBinGuildBankPermsResp(ByteQueue bq)
     {
         bool canObj = bq.ReadBoolean();
@@ -234,11 +222,6 @@ public partial class PacketHandler
     /// <summary>
     /// ClanChatResp (ID 196) — clan chat message. Wire: string msg, u8 fontIndex
     /// </summary>
-
-
-    /// <summary>
-    /// ClanChatResp (ID 196) — clan chat message. Wire: string msg, u8 fontIndex
-    /// </summary>
     private void HandleBinClanChatResp(ByteQueue bq)
     {
         string msg = bq.ReadString();
@@ -246,13 +229,6 @@ public partial class PacketHandler
         string color = FontTypes.GetHexColor(fontIndex);
         _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
-
-    /// <summary>
-    /// GuildBankSlotData (ID 197) — full guild bank slot (SBG opcode).
-    /// Wire: u8 slot, i16 objIdx, string name, i16 amount, i16 grh,
-    ///        u8 objType, i16 maxHit, i16 minHit, i16 maxDef, i32 bankGold, i32 userGold
-    /// </summary>
-
 
     /// <summary>
     /// GuildBankSlotData (ID 197) — full guild bank slot (SBG opcode).
@@ -291,9 +267,6 @@ public partial class PacketHandler
 
     // ── Quest ─────────────────────────────────────────────────────
 
-
-    // ── Quest ─────────────────────────────────────────────────────
-
     private void HandleBinQuestData(ByteQueue bq, string tag)
     {
         string data = bq.ReadString();
@@ -307,16 +280,9 @@ public partial class PacketHandler
     /// MenuData (ID 221) — right-click context menu (MENU opcode).
     /// Wire: string name, u8 priv
     /// </summary>
-
-
-    // ── Misc data ─────────────────────────────────────────────────
-
-    /// <summary>
-    /// MenuData (ID 221) — right-click context menu (MENU opcode).
-    /// Wire: string name, u8 priv
-    /// </summary>
     private void HandleBinMenuData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string name = bq.ReadString();
         byte priv = bq.ReadByte();
         // TODO: show right-click context menu when implemented
@@ -326,14 +292,9 @@ public partial class PacketHandler
     /// SelectData (ID 222) — selection list data (SELE opcode).
     /// Wire: string data
     /// </summary>
-
-
-    /// <summary>
-    /// SelectData (ID 222) — selection list data (SELE opcode).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinSelectData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
         // TODO: show selection dialog when implemented
     }
@@ -342,23 +303,12 @@ public partial class PacketHandler
     /// MiniTopData (ID 223) — mini ranking data (MTOP opcode).
     /// Wire: string data
     /// </summary>
-
-
-    /// <summary>
-    /// MiniTopData (ID 223) — mini ranking data (MTOP opcode).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinMiniTopData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
         // TODO: show mini ranking when implemented
     }
-
-    /// <summary>
-    /// FestData (ID 227) — character stats summary from /EST command.
-    /// Wire: string "crimMatados,ciudMatados,level,class,status,0,guildIndex,reputation"
-    /// </summary>
-
 
     /// <summary>
     /// Generic single-string packets (ImageData, BkwData, GinfData,
@@ -373,20 +323,10 @@ public partial class PacketHandler
     /// <summary>
     /// EnchatData (ID 228) — enter chat room. Wire: string name
     /// </summary>
-
-
-    /// <summary>
-    /// EnchatData (ID 228) — enter chat room. Wire: string name
-    /// </summary>
     private void HandleBinEnchatData(ByteQueue bq)
     {
         string name = bq.ReadString();
     }
-
-    /// <summary>
-    /// IrchatData (ID 229) — IRC-style chat message. Wire: string sender, string msg
-    /// </summary>
-
 
     /// <summary>
     /// IrchatData (ID 229) — IRC-style chat message. Wire: string sender, string msg
@@ -423,14 +363,6 @@ public partial class PacketHandler
     /// GuildBankInitResp (ID 247) — guild bank init (INITCBANK opcode).
     /// Wire: bool canObj, bool canGold
     /// </summary>
-
-
-    // ── Guild bank ────────────────────────────────────────────────
-
-    /// <summary>
-    /// GuildBankInitResp (ID 247) — guild bank init (INITCBANK opcode).
-    /// Wire: bool canObj, bool canGold
-    /// </summary>
     private void HandleBinGuildBankInitResp(ByteQueue bq)
     {
         bool canObj = bq.ReadBoolean();
@@ -439,12 +371,6 @@ public partial class PacketHandler
         _state.GuildBankCanGold = canGold;
         _state.ShowGuildBank = true;
     }
-
-    /// <summary>
-    /// GuildBankSlotResp (ID 248) — guild bank slot (BANCOBK opcode).
-    /// Wire: u8 slot, u8 objType
-    /// </summary>
-
 
     /// <summary>
     /// GuildBankSlotResp (ID 248) — guild bank slot (BANCOBK opcode).
@@ -461,13 +387,6 @@ public partial class PacketHandler
     /// <summary>
     /// Ping (ID 250) — server→client ping request. Respond immediately with Pong.
     /// </summary>
-
-
-    // ── Ping ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Ping (ID 250) — server→client ping request. Respond immediately with Pong.
-    /// </summary>
     private void HandleBinPingRequest()
     {
         // Send pong back to server (using existing binary ping/pong infrastructure)
@@ -477,24 +396,11 @@ public partial class PacketHandler
 
     // ── Arena ─────────────────────────────────────────────────────
 
-
-    // ── Arena ─────────────────────────────────────────────────────
-
     private void HandleBinArenaData(ByteQueue bq)
     {
         bq.ReadString();
         return;
     }
-
-    // ── ForceCharMove ─────────────────────────────────────────────
-
-    /// <summary>
-    /// ForceCharMove (ID 32) — server pushes the player in a direction.
-    /// Used for ghost push, spell knockback, etc.
-    /// Wire: u8 heading (1=N, 2=E, 3=S, 4=W)
-    /// Same logic as InputHandler.TryMove but without LegalPos check or packet send.
-    /// </summary>
-
 
     // ── Forum ───────────────────────────────────────────────────
 
@@ -521,12 +427,6 @@ public partial class PacketHandler
 
         _state.ForumPosts.Add(post);
     }
-
-    /// <summary>
-    /// ShowForumForm (ID 118) — server signals to open the forum UI.
-    /// Wire: u8 visibility (bitflags: 1=General, 2=Caos, 4=Real), u8 canMakeSticky
-    /// </summary>
-
 
     /// <summary>
     /// ShowForumForm (ID 118) — server signals to open the forum UI.

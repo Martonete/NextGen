@@ -41,6 +41,38 @@ pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: Connec
 const MAX_AUTH_FAILURES: u32 = 5;
 const AUTH_LOCKOUT_SECS: u64 = 300;
 
+/// Result of a rate-limit check on an IP address.
+enum RateLimitResult {
+    /// Request is allowed (no record or count below threshold).
+    Allow,
+    /// The lockout window has expired; the stale entry was cleared by the caller.
+    Expired,
+    /// IP is locked out — too many failures within the window.
+    Locked,
+}
+
+/// Check the per-IP auth failure counter against the global thresholds.
+///
+/// Does NOT mutate `failures` — the caller must remove the entry on `Expired`
+/// to keep the borrow checker happy (avoids holding a `&mut` across checks).
+fn check_rate_limit(
+    failures: &std::collections::HashMap<String, (u32, std::time::Instant)>,
+    ip: &str,
+) -> RateLimitResult {
+    match failures.get(ip) {
+        Some((count, first_time)) => {
+            if first_time.elapsed().as_secs() >= AUTH_LOCKOUT_SECS {
+                RateLimitResult::Expired
+            } else if *count >= MAX_AUTH_FAILURES {
+                RateLimitResult::Locked
+            } else {
+                RateLimitResult::Allow
+            }
+        }
+        None => RateLimitResult::Allow,
+    }
+}
+
 /// AccountLogin — Account login.
 pub(super) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str) {
     info!("[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}", account_name, password.len(), password.as_bytes(), conn_id);
@@ -55,30 +87,16 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
     // Rate limiting: check per-IP failed-attempt counter before processing credentials.
     let ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
     if !ip.is_empty() {
-        // Determine lock state without holding a borrow, then perform any mutation separately.
-        enum RateLimitState { Allow, Locked, Expired }
-        let rl_state = match state.auth_failures.get(&ip) {
-            Some((count, first_time)) => {
-                if first_time.elapsed().as_secs() >= AUTH_LOCKOUT_SECS {
-                    RateLimitState::Expired
-                } else if *count >= MAX_AUTH_FAILURES {
-                    RateLimitState::Locked
-                } else {
-                    RateLimitState::Allow
-                }
-            }
-            None => RateLimitState::Allow,
-        };
-        match rl_state {
-            RateLimitState::Expired => { state.auth_failures.remove(&ip); }
-            RateLimitState::Locked => {
+        match check_rate_limit(&state.auth_failures, &ip) {
+            RateLimitResult::Expired => { state.auth_failures.remove(&ip); }
+            RateLimitResult::Locked => {
                 warn!("[AUTH] Rate limit: IP {} is locked out (too many failed attempts)", ip);
                 state.send_bytes(conn_id, &binary_packets::write_error_msg(
                     "Demasiados intentos fallidos. Intente nuevamente en 5 minutos."
                 ));
                 return;
             }
-            RateLimitState::Allow => {}
+            RateLimitResult::Allow => {}
         }
     }
 
@@ -191,22 +209,9 @@ pub(super) async fn handle_create_account(state: &mut GameState, conn_id: Connec
     // Rate limiting: block IPs that have exceeded the failed-attempt threshold.
     let ip = state.users.get(&conn_id).map(|u| u.ip.clone()).unwrap_or_default();
     if !ip.is_empty() {
-        enum RateLimitState { Allow, Locked, Expired }
-        let rl_state = match state.auth_failures.get(&ip) {
-            Some((count, first_time)) => {
-                if first_time.elapsed().as_secs() >= AUTH_LOCKOUT_SECS {
-                    RateLimitState::Expired
-                } else if *count >= MAX_AUTH_FAILURES {
-                    RateLimitState::Locked
-                } else {
-                    RateLimitState::Allow
-                }
-            }
-            None => RateLimitState::Allow,
-        };
-        match rl_state {
-            RateLimitState::Expired => { state.auth_failures.remove(&ip); }
-            RateLimitState::Locked => {
+        match check_rate_limit(&state.auth_failures, &ip) {
+            RateLimitResult::Expired => { state.auth_failures.remove(&ip); }
+            RateLimitResult::Locked => {
                 warn!("[AUTH] Rate limit: IP {} locked out from account creation", ip);
                 state.send_bytes(conn_id, &binary_packets::write_error_msg(
                     "Demasiados intentos fallidos. Intente nuevamente en 5 minutos."
@@ -214,7 +219,7 @@ pub(super) async fn handle_create_account(state: &mut GameState, conn_id: Connec
                 close_connection(state, conn_id).await;
                 return;
             }
-            RateLimitState::Allow => {}
+            RateLimitResult::Allow => {}
         }
     }
 

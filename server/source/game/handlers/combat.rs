@@ -1014,18 +1014,6 @@ pub(super) fn calc_defense_power(tacticas: i32, agility: i32, level: i32) -> f64
     poder_evasion(tacticas, agility, level, 1.0) as f64
 }
 
-/// Calculate defense/evasion power with balance modifier (legacy API).
-pub(super) fn calc_defense_power_with_balance(
-    tacticas: i32, agility: i32, level: i32, class_mod: f32,
-    has_shield: bool, _shield_max_def: i32, shield_class_mod: f32,
-    _is_mago: bool,
-) -> f64 {
-    let base = poder_evasion(tacticas, agility, level, class_mod) as f64;
-    // For NPC combat, shield evasion uses the old formula
-    // (npcs don't have Defensa skill)
-    base
-}
-
 /// Get armor absorption for NPC combat (unchanged from before).
 pub(super) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, body_part: i32) -> i32 {
     let user = match state.users.get(&conn_id) {
@@ -1103,24 +1091,6 @@ pub(super) fn calc_armor_absorption_with_penetration(state: &GameState, conn_id:
 /// Class-based damage modifier from balance data.
 pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: PlayerClass) -> f64 {
     state.game_data.balance.class_mod_dano_armas_e(class) as f64
-}
-
-/// Fallback class-based damage modifier (no longer used in PvP but kept for reference).
-pub(super) fn class_damage_modifier(class: PlayerClass) -> f64 {
-    match class {
-        PlayerClass::Guerrero => 1.1,
-        PlayerClass::Cazador => 0.9,
-        PlayerClass::Paladin => 1.0,
-        PlayerClass::Asesino => 1.0,
-        PlayerClass::Ladron => 0.8,
-        PlayerClass::Bardo => 0.8,
-        PlayerClass::Clerigo => 0.8,
-        PlayerClass::Mago => 0.5,
-        PlayerClass::Druida => 0.7,
-        PlayerClass::Pirata => 1.0,
-        PlayerClass::Trabajador => 0.8,
-        PlayerClass::Bandido => 0.9,
-    }
 }
 
 // =====================================================================

@@ -15,8 +15,7 @@ use crate::game::types::MAX_INVENTORY_SLOTS;
 use crate::protocol::font_index;
 use super::{
     user_die, check_user_level, send_inventory_slot, send_full_inventory,
-    calc_attack_power, calc_defense_power, calc_armor_absorption, calc_armor_absorption_with_penetration,
-    class_damage_modifier,
+    calc_armor_absorption_with_penetration,
     poder_evasion, poder_evasion_escudo,
     poder_ataque_arma, poder_ataque_proyectil, poder_ataque_wrestling,
     calcular_dano, get_weapon_info, get_ring_info,
@@ -815,34 +814,9 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     // VB6: Lugar = RandomNumber(bCabeza, bTorso) → 1=head, 2=torso
     let body_part = rand_range(1, 2);
     let raw_damage = rand_range(npc_min_hit.max(1), npc_max_hit.max(1));
-    let absorption = {
-        let user = state.users.get(&target_conn);
-        let (mut combined_min, mut combined_max) = (0i32, 0i32);
-        if let Some(u) = user {
-            // Armor/helmet defense
-            let armor_slot = if body_part == 1 { u.equip.helmet } else { u.equip.armor };
-            if armor_slot > 0 && armor_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
-                let obj_idx = u.inventory[armor_slot - 1].obj_index;
-                if let Some(obj) = state.game_data.objects.get(obj_idx as usize) {
-                    if obj.min_def > 0 || obj.max_def > 0 {
-                        combined_min += obj.min_def.max(0);
-                        combined_max += obj.max_def.max(1);
-                    }
-                }
-            }
-            // Shield defense
-            if u.equip.shield > 0 && u.equip.shield <= crate::game::types::MAX_INVENTORY_SLOTS {
-                let shield_idx = u.inventory[u.equip.shield - 1].obj_index;
-                if let Some(obj) = state.game_data.objects.get(shield_idx as usize) {
-                    if obj.min_def > 0 || obj.max_def > 0 {
-                        combined_min += obj.min_def.max(0);
-                        combined_max += obj.max_def.max(1);
-                    }
-                }
-            }
-        }
-        if combined_max > 0 { rand_range(combined_min, combined_max) } else { 0 }
-    };
+    // VB6: AtacarPersonaje applies refuerzo (weapon penetration) from NPC weapon.
+    // NPC data does not carry a weapon-object refuerzo value, so penetration is 0.
+    let absorption = calc_armor_absorption_with_penetration(state, target_conn, body_part, 0);
 
     // VB6: Boat defense — if user is sailing, boat absorbs damage too
     let boat_defense = {

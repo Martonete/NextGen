@@ -14,7 +14,7 @@ pub fn write_logged(class: u8, coord_seed: u32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 55: Error message (disconnects after showing).
+/// ID 2: Error message (disconnects after showing).
 pub fn write_error_msg(msg: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ErrorMsg.to_byte());
@@ -22,7 +22,7 @@ pub fn write_error_msg(msg: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 28: User char index in server.
+/// ID 5: User char index in server.
 pub fn write_user_char_index(index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UserCharIndexInServer.to_byte());
@@ -30,7 +30,7 @@ pub fn write_user_char_index(index: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 67: Dice roll result for character creation.
+/// ID 59: Dice roll result for character creation.
 pub fn write_dice_roll(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::DiceRoll.to_byte());
@@ -65,7 +65,7 @@ pub fn write_pos_update(x: i16, y: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 41: Area changed.
+/// ID 40: Area changed.
 pub fn write_area_changed(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::AreaChanged.to_byte());
@@ -120,7 +120,7 @@ pub fn write_character_move(char_index: i16, x: i16, y: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 34: Character change (appearance update).
+/// ID 33: Character change (appearance update).
 pub fn write_character_change(
     char_index: i16, body: i16, head: i16, heading: u8,
     weapon: i16, shield: i16, helmet: i16,
@@ -150,7 +150,7 @@ pub fn write_set_invisible(char_index: i16, invisible: bool, duration_secs: i16)
     pkt.into_bytes()
 }
 
-/// ID 44: Create FX on character.
+/// ID 43: Create FX on character.
 pub fn write_create_fx(char_index: i16, fx_index: i16, fx_loops: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CreateFX.to_byte());
@@ -162,7 +162,7 @@ pub fn write_create_fx(char_index: i16, fx_index: i16, fx_loops: i16) -> Vec<u8>
 
 // ── Objects on ground ──────────────────────────────────────
 
-/// ID 35: Object create on ground.
+/// ID 34: Object create on ground.
 pub fn write_object_create(x: i16, y: i16, grh_index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectCreate.to_byte());
@@ -172,7 +172,7 @@ pub fn write_object_create(x: i16, y: i16, grh_index: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 36: Object delete from ground.
+/// ID 35: Object delete from ground.
 pub fn write_object_delete(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectDelete.to_byte());
@@ -181,7 +181,7 @@ pub fn write_object_delete(x: i16, y: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 37: Block position update.
+/// ID 36: Block position update.
 pub fn write_block_position(x: i16, y: i16, blocked: bool) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::BlockPosition.to_byte());
@@ -267,7 +267,7 @@ pub fn write_guild_chat(chat: &str) -> Vec<u8> {
 
 // ── Stats ──────────────────────────────────────────────────
 
-/// ID 17: Update HP (VB6: [H]MaxHP,MinHP).
+/// ID 18: Update HP (VB6: [H]MaxHP,MinHP).
 pub fn write_update_hp(max_hp: i16, min_hp: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateHP.to_byte());
@@ -276,7 +276,7 @@ pub fn write_update_hp(max_hp: i16, min_hp: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 16: Update Mana (VB6: [M]MaxMAN,MinMAN).
+/// ID 17: Update Mana (VB6: [M]MaxMAN,MinMAN).
 pub fn write_update_mana(max_mana: i16, min_mana: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateMana.to_byte());
@@ -285,7 +285,7 @@ pub fn write_update_mana(max_mana: i16, min_mana: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 15: Update Stamina (VB6: [E]MaxSta,MinSta).
+/// ID 16: Update Stamina (VB6: [E]MaxSta,MinSta).
 pub fn write_update_sta(max_sta: i16, min_sta: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateSta.to_byte());
@@ -294,7 +294,7 @@ pub fn write_update_sta(max_sta: i16, min_sta: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 18: Update Gold.
+/// ID 19: Update Gold.
 pub fn write_update_gold(gold: i32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateGold.to_byte());
@@ -302,7 +302,7 @@ pub fn write_update_gold(gold: i32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 19: Update Bank Gold.
+/// ID 102: Update Bank Gold.
 pub fn write_update_bank_gold(bank_gold: i32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateBankGold.to_byte());
@@ -318,7 +318,7 @@ pub fn write_update_exp(exp: i32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 45: Update full user stats (login bulk).
+/// ID 44: Update full user stats (login bulk).
 pub fn write_update_user_stats(
     max_hp: i16, min_hp: i16, max_mana: i16, min_mana: i16,
     max_sta: i16, min_sta: i16, gold: i32, level: u8,

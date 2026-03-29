@@ -385,9 +385,6 @@ public partial class PacketHandler
 
     // ── Objects on ground ─────────────────────────────────────────
 
-
-    // ── Objects on ground ─────────────────────────────────────────
-
     private void HandleBinObjectCreate(ByteQueue bq)
     {
         int x = bq.ReadInteger();
@@ -415,9 +412,6 @@ public partial class PacketHandler
             _state.MapData.Tiles[x, y].Blocked = blocked;
         }
     }
-
-    // ── Sound / Music ─────────────────────────────────────────────
-
 
     // ── Sound / Music ─────────────────────────────────────────────
 
@@ -484,15 +478,6 @@ public partial class PacketHandler
     /// Wire: i16 charIndex, bool mounted
     /// Matches VB6 USM opcode.
     /// </summary>
-
-
-    // ── Mount / Levitate ─────────────────────────────────────────────
-
-    /// <summary>
-    /// UserMount (ID 142) — mount/dismount a character.
-    /// Wire: i16 charIndex, bool mounted
-    /// Matches VB6 USM opcode.
-    /// </summary>
     private void HandleBinUserMount(ByteQueue bq)
     {
         short charIndex = bq.ReadInteger();
@@ -525,16 +510,6 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
             ch.Levitating = levitating;
     }
-
-    // ── Animation / Equipment stats ──────────────────────────────────
-
-    /// <summary>
-    /// AnimData (ID 225) — equipment hitbox stats (20 comma-separated fields).
-    /// Wire: string data (CSV: armaMin,armaMax,armorMin,armorMax,escuMin,escuMax,
-    ///        cascMin,cascMax,herrMin,herrMax, then 10 magic defense fields)
-    /// Matches VB6 ANM opcode.
-    /// </summary>
-
 
     // ── Animation / Equipment stats ──────────────────────────────────
 
@@ -578,14 +553,6 @@ public partial class PacketHandler
         _state.MagDefMax = magMax + magMaxa + magMaxb + magMaxc + magMaxd;
     }
 
-    // ── Timer ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// TimerInfo (ID 246) — scroll/timer slot (TIS opcode). Ignored for now.
-    /// Wire: u8 id, i32 time1, i32 time2
-    /// </summary>
-
-
     // ── Movement / Projectiles ────────────────────────────────────
 
     /// <summary>
@@ -623,12 +590,6 @@ public partial class PacketHandler
     /// NavigateBroadcast (ID 109) — broadcast navigation state for a char (NVG opcode).
     /// Wire: i16 charIndex, bool navigating
     /// </summary>
-
-
-    /// <summary>
-    /// NavigateBroadcast (ID 109) — broadcast navigation state for a char (NVG opcode).
-    /// Wire: i16 charIndex, bool navigating
-    /// </summary>
     private void HandleBinNavigateBroadcast(ByteQueue bq)
     {
         short charIndex = bq.ReadInteger();
@@ -636,9 +597,6 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
             ch.Navigating = navigating;
     }
-
-    // ── Chat (continued) ──────────────────────────────────────────
-
 
     // ── ForceCharMove ─────────────────────────────────────────────
 
@@ -694,13 +652,6 @@ public partial class PacketHandler
 
     // ── Forum ───────────────────────────────────────────────────
 
-    /// <summary>
-    /// AddForumMsg (ID 117) — server sends a forum post to accumulate before showing the form.
-    /// Wire: u8 forumType, string title, string author, string message
-    /// forumType: 0=General, 1=GeneralSticky, 2=Caos, 3=CaosSticky, 4=Real, 5=RealSticky
-    /// </summary>
-
-
     private void HandleBinCharData(ByteQueue bq)
     {
         short idx = bq.ReadInteger();
@@ -747,6 +698,12 @@ public partial class PacketHandler
 
     private void HandleBinCharacterInfo(ByteQueue bq)
     {
+        // LEGACY / UNIMPLEMENTED (opcode 75 — CharacterInfo)
+        // Reads 10 fields to advance the byte queue and prevent stream corruption,
+        // but stores nothing. The newer FullCharInfo (opcode 245) supersedes this
+        // packet and populates _state.CharInfoCurrent via HandleBinFullCharInfo.
+        // TODO: either remove from server send list or populate CharInfoCurrent here
+        // once it is confirmed opcode 75 is still sent by 13.3+ servers.
         string name = bq.ReadString();
         byte race = bq.ReadByte();
         byte charClass = bq.ReadByte();
@@ -757,6 +714,7 @@ public partial class PacketHandler
         int reputation = bq.ReadLong();
         string description = bq.ReadString();
         string guildName = bq.ReadString();
+        GD.Print($"[PKT] CharacterInfo (opcode 75) received for '{name}' — legacy, data discarded");
     }
 
     // ── Console message by ID ─────────────────────────────────────
@@ -799,6 +757,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinNavigationData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
     }
 
@@ -907,6 +866,7 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinWorkMode(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         byte skill = bq.ReadByte();
     }
 

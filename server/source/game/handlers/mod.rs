@@ -593,10 +593,12 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
 
         // Misc
         ClientPacketID::HouseQuery => {
+            // TODO: client never sends this opcode — dead handler
             let data_str = bq.read_ascii_string().unwrap_or_default();
             handle_fwo(state, conn_id, &data_str).await;
         }
         ClientPacketID::HouseBuy => {
+            // TODO: client never sends this opcode — dead handler
             let data_str = bq.read_ascii_string().unwrap_or_default();
             handle_cuc(state, conn_id, &data_str).await;
         }
@@ -605,17 +607,20 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             handle_cnm(state, conn_id, &data_str).await;
         }
         ClientPacketID::DragDrop => {
+            // TODO: client never sends this opcode — dead handler
             let data_str = bq.read_ascii_string().unwrap_or_default();
             let slot: usize = read_field(1, &data_str, ',').parse().unwrap_or(0);
             let amount: i32 = read_field(2, &data_str, ',').parse().unwrap_or(0);
             handle_dydtra(state, conn_id, slot, amount).await;
         }
         ClientPacketID::Vote => {
+            // TODO: client never sends this opcode — dead handler
             let data_str = bq.read_ascii_string().unwrap_or_default();
             let option: usize = data_str.trim().parse().unwrap_or(0);
             handle_nvot(state, conn_id, option).await;
         }
         ClientPacketID::Report => {
+            // TODO: client never sends this opcode — dead handler
             let data_str = bq.read_ascii_string().unwrap_or_default();
             let target_name = read_field(1, &data_str, ',');
             let reason = read_field(2, &data_str, ',');

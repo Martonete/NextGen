@@ -11,7 +11,7 @@ use crate::game::handlers::common::*;
 use crate::game::handlers::{
     send_inventory_slot, user_die, do_cast_spell,
     calc_attack_power, calc_attack_power_with_balance, calc_defense_power, calc_armor_absorption,
-    class_damage_modifier, class_damage_modifier_from_balance,
+    class_damage_modifier_from_balance,
     check_user_level,
     poder_evasion, poder_evasion_escudo,
 };

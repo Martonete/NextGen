@@ -84,11 +84,11 @@ public partial class PacketHandler
 
     private void HandleBinSendSkills(ByteQueue bq)
     {
-        for (int i = 0; i < 20; i++)
+        // Read exactly as many skills as the server sends (Skills array has 22 slots).
+        // Previous code read only 20, leaving indices 20 and 21 at default zero.
+        for (int i = 0; i < _state.Skills.Length; i++)
         {
-            byte skillVal = bq.ReadByte();
-            if (i < _state.Skills.Length)
-                _state.Skills[i] = skillVal;
+            _state.Skills[i] = bq.ReadByte();
         }
     }
 
@@ -218,12 +218,6 @@ public partial class PacketHandler
     /// UserHit (ID 135) — attacker index + damage that hit player.
     /// Wire: i16 attackerIndex, i16 damage
     /// </summary>
-
-
-    /// <summary>
-    /// UserHit (ID 135) — attacker index + damage that hit player.
-    /// Wire: i16 attackerIndex, i16 damage
-    /// </summary>
     private void HandleBinUserHit(ByteQueue bq)
     {
         short attackerIndex = bq.ReadInteger();
@@ -244,11 +238,6 @@ public partial class PacketHandler
     /// <summary>
     /// NpcHit (ID 137) — NPC hit player. Wire: u8 bodyPart, i16 damage
     /// </summary>
-
-
-    /// <summary>
-    /// NpcHit (ID 137) — NPC hit player. Wire: u8 bodyPart, i16 damage
-    /// </summary>
     private void HandleBinNpcHit(ByteQueue bq)
     {
         byte bodyPart = bq.ReadByte();
@@ -258,11 +247,6 @@ public partial class PacketHandler
         // Floating red damage on player (NPC hit us)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
-
-    /// <summary>
-    /// PvpDmgRecv (ID 138) — PvP damage received. Wire: i16 attackerIndex, i16 damage
-    /// </summary>
-
 
     /// <summary>
     /// PvpDmgRecv (ID 138) — PvP damage received. Wire: i16 attackerIndex, i16 damage
@@ -287,11 +271,6 @@ public partial class PacketHandler
     /// <summary>
     /// PvpDmgDeal (ID 139) — PvP damage dealt. Wire: i16 victimIndex, i16 damage
     /// </summary>
-
-
-    /// <summary>
-    /// PvpDmgDeal (ID 139) — PvP damage dealt. Wire: i16 victimIndex, i16 damage
-    /// </summary>
     private void HandleBinPvpDmgDeal(ByteQueue bq)
     {
         short victimIndex = bq.ReadInteger();
@@ -308,14 +287,6 @@ public partial class PacketHandler
         // Floating yellow damage on victim (PvP dealt)
         OnFloatingText?.Invoke(victimIndex, $"-{damage}", "FFFF66");
     }
-
-    // ── Spells ────────────────────────────────────────────────────
-
-    /// <summary>
-    /// SpellInfoResp (ID 148) — spell info string (INFS response).
-    /// Wire: string data
-    /// </summary>
-
 
     // ── Spells ────────────────────────────────────────────────────
 
@@ -560,14 +531,6 @@ public partial class PacketHandler
         _state.MinHam = bq.ReadByte();
     }
 
-    // ── Safe / Combat state ───────────────────────────────────────
-
-    /// <summary>
-    /// UserSwing (ID 134) — attacker index who missed player.
-    /// Wire: i16 attackerIndex
-    /// </summary>
-
-
     // ── Stat variants ─────────────────────────────────────────────
 
     private void HandleBinStatName(ByteQueue bq)
@@ -584,12 +547,6 @@ public partial class PacketHandler
         _state.CarryBulk = bulk;
     }
 
-    /// <summary>
-    /// HungerThirst (ID 128) — same layout as UpdateHungerAndThirst (ID 60).
-    /// Wire: u8 maxAgua, u8 minAgua, u8 maxHam, u8 minHam
-    /// </summary>
-
-
     // ── Timer ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -598,6 +555,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinTimerInfo(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
+        // Bytes must still be consumed to keep the stream in sync.
         byte id = bq.ReadByte();
         int time1 = bq.ReadLong();
         int time2 = bq.ReadLong();
@@ -637,9 +596,6 @@ public partial class PacketHandler
         _state.OnlineCount = count;
     }
 
-    // ── MultiMessage ──────────────────────────────────────────────
-
-
     /// <summary>
     /// BattleTeamScores (ID 163) — BatallaMistica event kill scores.
     /// Wire: i32 t1, i32 t2, i32 t3, i32 t4
@@ -649,12 +605,6 @@ public partial class PacketHandler
         // Drain 4 ints — scoreboard UI is not yet implemented, data discarded
         bq.ReadLong(); bq.ReadLong(); bq.ReadLong(); bq.ReadLong();
     }
-
-    /// <summary>
-    /// AmbientColor (ID 164) — map ambient RGB override (PCR opcode).
-    /// Wire: u8 r, u8 g, u8 b
-    /// </summary>
-
 
     /// <summary>
     /// AmbientColor (ID 164) — map ambient RGB override (PCR opcode).
@@ -671,11 +621,6 @@ public partial class PacketHandler
     }
 
     // ── Bank (legacy) ─────────────────────────────────────────────
-
-    /// <summary>
-    /// InitBankLegacy (ID 165) — legacy bank init. Wire: string data
-    /// </summary>
-
 
     /// <summary>
     /// FestData (ID 227) — character stats summary from /EST command.
@@ -709,12 +654,6 @@ public partial class PacketHandler
     /// FullCharInfo (ID 245) — character info from /MIRAR or DAMINF.
     /// CSV: name,race,class,level,gold,reputation,crimMatados,ciudMatados,status,faction,guildIndex,0,maxHp,maxMana,maxSta
     /// </summary>
-
-
-    /// <summary>
-    /// FullCharInfo (ID 245) — character info from /MIRAR or DAMINF.
-    /// CSV: name,race,class,level,gold,reputation,crimMatados,ciudMatados,status,faction,guildIndex,0,maxHp,maxMana,maxSta
-    /// </summary>
     private void HandleBinFullCharInfo(ByteQueue bq)
     {
         string data = bq.ReadString();
@@ -742,11 +681,5 @@ public partial class PacketHandler
         _state.CharInfoCurrent = info;
         _state.ShowCharInfo = true;
     }
-
-    /// <summary>
-    /// Generic single-string packets (ImageData, BkwData, GinfData,
-    /// IcoData, ZsosData, SbrData, AuctionList, CosmeticImage/Pcgn/Pcss/Pccc)
-    /// — read one string and log.
-    /// </summary>
 
 }

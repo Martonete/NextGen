@@ -113,74 +113,56 @@ pub(super) fn is_safe_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
         .unwrap_or(false)
 }
 
-/// Check if magic is blocked at a position (Trigger > Zone > Map).
-pub(super) fn is_magic_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+/// Shared implementation for all zone-based action-blocking checks.
+///
+/// Each check reads a different boolean from `ZoneInfo` (via `zone_field`) and a
+/// different boolean from `MapInfo` (via `map_field`). Callers use the five typed
+/// wrappers below so call sites remain self-documenting.
+fn is_action_blocked_at<F, G>(
+    state: &GameState,
+    map: i32, x: i32, y: i32,
+    zone_field: F,
+    map_field: G,
+) -> bool
+where
+    F: Fn(&crate::data::zones::ZoneData) -> bool,
+    G: Fn(&crate::data::maps::MapInfo) -> bool,
+{
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
         if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
-            return zone.sin_magia;
+            return zone_field(zone);
         }
     }
     state.game_data.maps.get(map_idx)
         .and_then(|m| m.as_ref())
-        .map(|m| m.info.magia_sin_efecto)
+        .map(|m| map_field(&m.info))
         .unwrap_or(false)
+}
+
+/// Check if magic is blocked at a position (Zone > Map).
+pub(super) fn is_magic_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    is_action_blocked_at(state, map, x, y, |z| z.sin_magia, |m| m.magia_sin_efecto)
 }
 
 /// Check if invisibility is blocked at a position (Zone > Map).
 pub(super) fn is_invi_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
-            return zone.sin_invi;
-        }
-    }
-    state.game_data.maps.get(map_idx)
-        .and_then(|m| m.as_ref())
-        .map(|m| m.info.invi_sin_efecto)
-        .unwrap_or(false)
+    is_action_blocked_at(state, map, x, y, |z| z.sin_invi, |m| m.invi_sin_efecto)
 }
 
 /// Check if invocation is blocked at a position (Zone > Map).
 pub(super) fn is_invocar_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
-            return zone.sin_invocar;
-        }
-    }
-    state.game_data.maps.get(map_idx)
-        .and_then(|m| m.as_ref())
-        .map(|m| m.info.invocar_sin_efecto)
-        .unwrap_or(false)
+    is_action_blocked_at(state, map, x, y, |z| z.sin_invocar, |m| m.invocar_sin_efecto)
 }
 
 /// Check if hiding (ocultar) is blocked at a position (Zone > Map).
 pub(super) fn is_ocultar_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
-            return zone.sin_ocultar;
-        }
-    }
-    state.game_data.maps.get(map_idx)
-        .and_then(|m| m.as_ref())
-        .map(|m| m.info.ocultar_sin_efecto)
-        .unwrap_or(false)
+    is_action_blocked_at(state, map, x, y, |z| z.sin_ocultar, |m| m.ocultar_sin_efecto)
 }
 
 /// Check if resurrection is blocked at a position (Zone > Map).
 pub(super) fn is_resu_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
-    let map_idx = map as usize;
-    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
-            return zone.sin_resucitar;
-        }
-    }
-    state.game_data.maps.get(map_idx)
-        .and_then(|m| m.as_ref())
-        .map(|m| m.info.resu_sin_efecto)
-        .unwrap_or(false)
+    is_action_blocked_at(state, map, x, y, |z| z.sin_resucitar, |m| m.resu_sin_efecto)
 }
 
 /// Get the zone ID at a tile position (0 = no zone).

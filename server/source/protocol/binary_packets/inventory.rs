@@ -5,7 +5,7 @@ use crate::protocol::packets::ServerPacketID;
 
 // ── Inventory / Spells ─────────────────────────────────────
 
-/// ID 47: Change inventory slot.
+/// ID 46: Change inventory slot.
 pub fn write_change_inventory_slot(
     slot: u8, obj_index: i16, name: &str, amount: i16,
     equipped: bool, grh_index: i16, obj_type: u8,
@@ -28,7 +28,7 @@ pub fn write_change_inventory_slot(
     pkt.into_bytes()
 }
 
-/// ID 48: Change bank slot.
+/// ID 47: Change bank slot.
 pub fn write_change_bank_slot(
     slot: u8, obj_index: i16, name: &str, amount: i16,
     equipped: bool, grh_index: i16, obj_type: u8,
@@ -51,7 +51,7 @@ pub fn write_change_bank_slot(
     pkt.into_bytes()
 }
 
-/// ID 49: Change spell slot.
+/// ID 48: Change spell slot.
 pub fn write_change_spell_slot(slot: u8, spell_index: i16, name: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ChangeSpellSlot.to_byte());
@@ -61,7 +61,7 @@ pub fn write_change_spell_slot(slot: u8, spell_index: i16, name: &str) -> Vec<u8
     pkt.into_bytes()
 }
 
-/// ID 59: Change NPC inventory slot.
+/// ID 51: Change NPC inventory slot.
 pub fn write_change_npc_inv_slot(
     slot: u8, name: &str, amount: i16, value: f32,
     grh_index: i16, obj_index: i16, obj_type: u8,
@@ -93,7 +93,7 @@ pub fn write_play_midi(midi_index: u8) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 39: Play wave (sound effect).
+/// ID 38: Play wave (sound effect).
 pub fn write_play_wave(wave_index: u8, x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::PlayWave.to_byte());
@@ -105,28 +105,28 @@ pub fn write_play_wave(wave_index: u8, x: i16, y: i16) -> Vec<u8> {
 
 // ── Commerce / Bank / Trade ────────────────────────────────
 
-/// ID 5: Commerce end.
+/// ID 6: Commerce end.
 pub fn write_commerce_end() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CommerceEnd.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 6: Bank end.
+/// ID 7: Bank end.
 pub fn write_bank_end() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::BankEnd.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 7: Commerce init.
+/// ID 8: Commerce init.
 pub fn write_commerce_init() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CommerceInit.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 8: Bank init.
+/// ID 9: Bank init.
 pub fn write_bank_init(bank_gold: i32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::BankInit.to_byte());
@@ -134,7 +134,7 @@ pub fn write_bank_init(bank_gold: i32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 9: User commerce init.
+/// ID 10: User commerce init.
 pub fn write_user_commerce_init(other_name: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UserCommerceInit.to_byte());
@@ -142,14 +142,14 @@ pub fn write_user_commerce_init(other_name: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 10: User commerce end.
+/// ID 11: User commerce end.
 pub fn write_user_commerce_end() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UserCommerceEnd.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 12: Commerce chat message.
+/// ID 13: Commerce chat message.
 pub fn write_commerce_chat(chat: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CommerceChat.to_byte());
@@ -173,21 +173,21 @@ pub fn write_bank_ok() -> Vec<u8> {
 
 // ── Crafting ───────────────────────────────────────────────
 
-/// ID 13: Show blacksmith form.
+/// ID 14: Show blacksmith form.
 pub fn write_show_blacksmith_form() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ShowBlacksmithForm.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 14: Show carpenter form.
+/// ID 15: Show carpenter form.
 pub fn write_show_carpenter_form() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ShowCarpenterForm.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 46: Work request target.
+/// ID 45: Work request target.
 pub fn write_work_request_target(skill_type: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::WorkRequestTarget.to_byte());
@@ -197,14 +197,14 @@ pub fn write_work_request_target(skill_type: u8) -> Vec<u8> {
 
 // ── Toggles / Status ───────────────────────────────────────
 
-/// ID 1: Remove dialogs.
+/// ID 79: Remove dialogs.
 pub fn write_remove_dialogs() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::RemoveDialogs.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 2: Remove char dialog.
+/// ID 80: Remove char dialog.
 pub fn write_remove_char_dialog(char_index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::RemoveCharDialog.to_byte());
@@ -212,21 +212,21 @@ pub fn write_remove_char_dialog(char_index: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 3: Navigate toggle.
+/// ID 81: Navigate toggle.
 pub fn write_navigate_toggle() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::NavigateToggle.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 42: Pause toggle.
+/// ID 41: Pause toggle.
 pub fn write_pause_toggle() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::PauseToggle.to_byte());
     pkt.into_bytes()
 }
 
-/// ID 43: Rain toggle.
+/// ID 42: Rain toggle.
 pub fn write_rain_toggle() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::RainToggle.to_byte());
@@ -240,7 +240,7 @@ pub fn write_rest_ok() -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 68: Meditate toggle.
+/// ID 69: Meditate toggle.
 pub fn write_meditate_toggle() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::MeditateToggle.to_byte());
@@ -274,7 +274,7 @@ pub fn write_update_tag_and_status(char_index: i16, nick_color: u8, tag: &str) -
 
 // ── Guild ──────────────────────────────────────────────────
 
-/// ID 40: Guild list.
+/// ID 39: Guild list.
 pub fn write_guild_list(guild_names: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::GuildList.to_byte());
