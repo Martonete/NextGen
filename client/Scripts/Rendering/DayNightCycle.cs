@@ -73,6 +73,18 @@ public partial class DayNightCycle : ColorRect
         Size = new Vector2(ResolutionManager.ViewportW + 10, ResolutionManager.ViewportH + 10);
         Color = new Color(0, 0, 0, 0);
         MouseFilter = MouseFilterEnum.Ignore;
+        ResolutionManager.OnResolutionChanged += OnResolutionChanged;
+    }
+
+    public override void _ExitTree()
+    {
+        ResolutionManager.OnResolutionChanged -= OnResolutionChanged;
+    }
+
+    private void OnResolutionChanged()
+    {
+        Position = new Vector2(ResolutionManager.LeftMargin - 5, ResolutionManager.TopMargin - 5);
+        Size = new Vector2(ResolutionManager.ViewportW + 10, ResolutionManager.ViewportH + 10);
     }
 
     /// <summary>

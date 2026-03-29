@@ -84,4 +84,8 @@ public class Character
 	// Starts at 0 so new characters fade in instead of popping
 	public float FovAlpha;
 
+	// Dialog WrapText cache — avoids re-wrapping every frame when text hasn't changed
+	public string? CachedDialogText;
+	public string[]? CachedDialogLines;
+
 }

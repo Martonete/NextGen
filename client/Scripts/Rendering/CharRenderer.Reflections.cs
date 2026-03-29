@@ -77,7 +77,7 @@ public static partial class CharRenderer
     /// <summary>
     /// Draw reflected FX overlays (up to 3 simultaneous) on water.
     /// Uses the same Y-flip mirror as DrawReflection. Called from WorldRenderer PASS 1.5.
-    /// Does NOT advance frame counters — those are advanced in DrawFx/DrawCharacter.
+    /// Does NOT advance frame counters — those are advanced in UpdateCharacterTimers (_Process).
     /// </summary>
     public static void DrawReflectionFx(
         Node2D canvas, Character ch, Vector2 pos, Vector2 headOffset,
@@ -121,7 +121,7 @@ public static partial class CharRenderer
             }
             else
             {
-                // Read current frame from the slot counter (already advanced by DrawFx)
+                // Read current frame from the slot counter (already advanced by UpdateCharacterTimers)
                 frame = (int)ch.FxFrameCounter[i];
                 if (frame >= grh.NumFrames) frame = grh.NumFrames - 1;
                 if (frame < 0) frame = 0;

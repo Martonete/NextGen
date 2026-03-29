@@ -57,7 +57,7 @@ public partial class WorldRenderer
 
                         CharRenderer.DrawCharacter((Node2D)canvas, ch, new Vector2(charPx, charPy),
                                                    _data, _animator, _deltaMs, _state, this,
-                                                   charTileX: x, charTileY: y);
+                                                   charTileX: x, charTileY: y, charIdx: cid);
                     }
                 }
 
@@ -132,13 +132,6 @@ public partial class WorldRenderer
     {
         if (_state == null || _data == null) return;
 
-        if (_state.UserParalyzed && _state.ParalysisTimer > 0)
-        {
-            // Decrement in real seconds (deltaMs is in milliseconds)
-            _state.ParalysisTimer -= _deltaMs / 1000f;
-            if (_state.ParalysisTimer < 0) _state.ParalysisTimer = 0;
-        }
-
         int slot = 0;
 
         if (_state.UserParalyzed)
@@ -150,16 +143,6 @@ public partial class WorldRenderer
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
-            // Decrement invisibility countdown in real seconds
-            if (selfCh.InvisibleCountdown > 0)
-            {
-                selfCh.InvisibleCountdownTimer += _deltaMs;
-                if (selfCh.InvisibleCountdownTimer >= 1000f)
-                {
-                    selfCh.InvisibleCountdownTimer -= 1000f;
-                    selfCh.InvisibleCountdown--;
-                }
-            }
             float inviCurrent = selfCh.InvisibleCountdown;
             // Spell invisibility has countdown (label "INVISIBLE"), hide skill has no countdown (label "OCULTO")
             bool isSpellInvi = selfCh.InvisibleMaxCountdown > 0;

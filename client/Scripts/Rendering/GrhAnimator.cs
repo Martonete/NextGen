@@ -28,6 +28,9 @@ public class GrhAnimator
 	// Per-GRH state only for one-shot (non-looping) animations like FX.
 	private readonly Dictionary<int, AnimState> _fxStates = new();
 
+	// Reusable buffer for iterating _fxStates keys — avoids a new List<int> allocation every frame
+	private readonly List<int> _keysBuffer = new();
+
 	public struct AnimState
 	{
 		public float FrameCounter;
@@ -65,7 +68,9 @@ public class GrhAnimator
 		// Advance one-shot FX animations and remove completed ones
 		if (_fxStates.Count > 0)
 		{
-			var keys = new List<int>(_fxStates.Keys);
+			_keysBuffer.Clear();
+			_keysBuffer.AddRange(_fxStates.Keys);
+			var keys = _keysBuffer;
 			foreach (int key in keys)
 			{
 				if (key <= 0 || key >= data.Grhs.Length)

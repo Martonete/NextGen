@@ -51,7 +51,21 @@ public partial class SafeZoneBorderLayer : Node2D
     {
         float dt = (float)delta;
 
-        // Update warning state
+        // Cache current safe zone bounds from state (needed before UpdateZoneWarningState)
+        if (_state.CurrentZoneSafe && _state.CurrentZoneX1 > 0 && _state.CurrentZoneX2 > 0)
+        {
+            _safeX1 = _state.CurrentZoneX1;
+            _safeY1 = _state.CurrentZoneY1;
+            _safeX2 = _state.CurrentZoneX2;
+            _safeY2 = _state.CurrentZoneY2;
+            _hasSafeZone = true;
+        }
+
+        // Update zone transition state machine (must run in _Process, not _Draw)
+        if (_hasSafeZone)
+            UpdateZoneWarningState();
+
+        // Update warning alpha/timer based on current state
         switch (_warnState)
         {
             case WarningState.JustLeft:
@@ -68,7 +82,7 @@ public partial class SafeZoneBorderLayer : Node2D
                 if (_warningTimer <= 0) _warnState = WarningState.NearBorder;
                 break;
             case WarningState.NearBorder:
-                // Smooth transition toward target alpha (set in DrawZoneWarning)
+                // Smooth transition toward target alpha (set in UpdateZoneWarningState)
                 _warningAlpha += (_warningTarget - _warningAlpha) * Math.Min(1f, dt * 4f);
                 break;
             case WarningState.None:
@@ -79,18 +93,60 @@ public partial class SafeZoneBorderLayer : Node2D
         QueueRedraw();
     }
 
+    /// <summary>
+    /// Update zone entry/exit transitions. Must run in _Process — called once per frame.
+    /// </summary>
+    private void UpdateZoneWarningState()
+    {
+        const int ProximityTiles = 4;
+        int px = _state.UserPosX, py = _state.UserPosY;
+        int zX1 = _safeX1, zY1 = _safeY1, zX2 = _safeX2, zY2 = _safeY2;
+
+        bool insideSafe = px >= zX1 && px <= zX2 && py >= zY1 && py <= zY2;
+
+        if (_initialized)
+        {
+            if (_wasInsideSafe && !insideSafe)
+            {
+                _warnState = WarningState.JustLeft;
+                _warningText = "Saliste de la zona segura";
+                _warningAlpha = 1f;
+                _warningTimer = 3f;
+            }
+            else if (!_wasInsideSafe && insideSafe)
+            {
+                _warnState = WarningState.JustEntered;
+                _warningText = "Entraste a zona segura";
+                _warningAlpha = 1f;
+                _warningTimer = 2f;
+            }
+        }
+        _wasInsideSafe = insideSafe;
+        _initialized = true;
+
+        // Proximity warning when inside safe zone and no timed message active
+        if (insideSafe && _warnState != WarningState.JustEntered)
+        {
+            int minDist = Math.Min(
+                Math.Min(px - zX1, zX2 - px),
+                Math.Min(py - zY1, zY2 - py));
+
+            if (minDist <= ProximityTiles)
+            {
+                _warnState = WarningState.NearBorder;
+                _warningText = "Estás por salir de la zona segura";
+                _warningTarget = 1f;
+            }
+            else if (_warnState == WarningState.NearBorder)
+            {
+                _warningTarget = 0f;
+                if (_warningAlpha < 0.01f) _warnState = WarningState.None;
+            }
+        }
+    }
+
     public override void _Draw()
     {
-        // Remember last safe zone so we keep drawing it after leaving
-        if (_state.CurrentZoneSafe && _state.CurrentZoneX1 > 0 && _state.CurrentZoneX2 > 0)
-        {
-            _safeX1 = _state.CurrentZoneX1;
-            _safeY1 = _state.CurrentZoneY1;
-            _safeX2 = _state.CurrentZoneX2;
-            _safeY2 = _state.CurrentZoneY2;
-            _hasSafeZone = true;
-        }
-
         if (!_hasSafeZone) return;
 
         int zX1 = _safeX1;
@@ -98,18 +154,16 @@ public partial class SafeZoneBorderLayer : Node2D
         int zX2 = _safeX2;
         int zY2 = _safeY2;
 
-        // Mirror WorldRenderer camera formula exactly:
-        //   _frameUserX = UserPosX - AddToUserPosX  (renders at old tile during scroll)
-        //   _framePixelOffsetX = Round(-ScreenOffsetX)
-        int uX  = _state.UserPosX - _state.AddToUserPosX;
-        int uY  = _state.UserPosY - _state.AddToUserPosY;
+        var cam = WorldRenderer.CurrentCamera;
+        float uX  = cam.UserX;
+        float uY  = cam.UserY;
         int hX  = ResolutionManager.HalfTilesX;
         int hY  = ResolutionManager.HalfTilesY;
         int vpW = ResolutionManager.ViewportW;
         int vpH = ResolutionManager.ViewportH;
 
-        float offX = (float)Math.Round(-_state.ScreenOffsetX);
-        float offY = (float)Math.Round(-_state.ScreenOffsetY);
+        float offX = cam.PixelOffsetX;
+        float offY = cam.PixelOffsetY;
 
         // Screen pixel of left edge of tile t:   (t - uX + hX) * TS + offX
         // Screen pixel of top  edge of tile t:   (t - uY + hY) * TS + offY
@@ -187,58 +241,12 @@ public partial class SafeZoneBorderLayer : Node2D
         }
 
         // ── Proximity warning text ──
-        DrawZoneWarning(vpW, zX1, zY1, zX2, zY2);
+        DrawZoneWarning(vpW);
     }
 
-    private void DrawZoneWarning(int vpW, int zX1, int zY1, int zX2, int zY2)
+    private void DrawZoneWarning(int vpW)
     {
-        const int ProximityTiles = 4;
-        int px = _state.UserPosX, py = _state.UserPosY;
-
-        bool insideSafe = px >= zX1 && px <= zX2 && py >= zY1 && py <= zY2;
-
-        // Detect transitions
-        if (_initialized)
-        {
-            if (_wasInsideSafe && !insideSafe)
-            {
-                _warnState = WarningState.JustLeft;
-                _warningText = "Saliste de la zona segura";
-                _warningAlpha = 1f;
-                _warningTimer = 3f;
-            }
-            else if (!_wasInsideSafe && insideSafe)
-            {
-                _warnState = WarningState.JustEntered;
-                _warningText = "Entraste a zona segura";
-                _warningAlpha = 1f;
-                _warningTimer = 2f;
-            }
-        }
-        _wasInsideSafe = insideSafe;
-        _initialized = true;
-
-        // If inside safe zone near border and no timed message active → show proximity warning
-        if (insideSafe && _warnState != WarningState.JustEntered)
-        {
-            int minDist = Math.Min(
-                Math.Min(px - zX1, zX2 - px),
-                Math.Min(py - zY1, zY2 - py));
-
-            if (minDist <= ProximityTiles)
-            {
-                _warnState = WarningState.NearBorder;
-                _warningText = "Estás por salir de la zona segura";
-                _warningTarget = 1f; // smooth fade handled in _Process
-            }
-            else if (_warnState == WarningState.NearBorder)
-            {
-                _warningTarget = 0f; // fade out smoothly
-                if (_warningAlpha < 0.01f) _warnState = WarningState.None;
-            }
-        }
-
-        // Draw text
+        // Pure rendering — all state transitions happen in UpdateZoneWarningState (_Process)
         if (_warningAlpha < 0.01f || _warningText.Length == 0) return;
 
         var baseColor = _warnState == WarningState.JustLeft

@@ -43,6 +43,9 @@ public partial class WeatherRenderer : Node2D
     private const float RainTintAlpha = 0.08f;
     private static readonly Color RainTintColor = new(0.3f, 0.4f, 0.7f, RainTintAlpha);
 
+    // Rain drop base color (RGB only — alpha is applied per-drop based on _dropAlpha[i])
+    private static readonly Color RainDropBaseColor = new(0.7f, 0.75f, 0.9f, 1f);
+
     // Rain sound
     private AudioStreamPlayer? _rainSoundPlayer;
     private bool _rainSoundPlaying;
@@ -75,16 +78,6 @@ public partial class WeatherRenderer : Node2D
 
         // Look for rain sound file in Data/Sounds/WAV/
         string[] candidates = { "lluviaout.wav", "lluvia.wav", "rain.wav" };
-
-        // Walk up to find Data/ folder
-        var parent = GetParent();
-        while (parent != null)
-        {
-            if (parent is Node2D)
-                parent = parent.GetParent();
-            else
-                break;
-        }
 
         // Try common paths
         string[] basePaths = {
@@ -297,11 +290,10 @@ public partial class WeatherRenderer : Node2D
         DrawRect(new Rect2(0, 0, ViewW, ViewH), tint);
 
         // Rain drops (diagonal lines)
-        var dropColor = new Color(0.7f, 0.75f, 0.9f, 1f);
         for (int i = 0; i < MaxRainDrops; i++)
         {
             float a = _dropAlpha[i] * alpha;
-            var color = new Color(dropColor.R, dropColor.G, dropColor.B, a);
+            var color = new Color(RainDropBaseColor.R, RainDropBaseColor.G, RainDropBaseColor.B, a);
             float x = _dropX[i];
             float y = _dropY[i];
             // Diagonal line: top-left to bottom-right

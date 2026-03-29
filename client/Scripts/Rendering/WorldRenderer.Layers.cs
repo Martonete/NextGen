@@ -45,7 +45,7 @@ public partial class ReflectedAuraLayer : Node2D
 /// <summary>
 /// Child Node2D for PASS 1b: redraws non-water L1 tiles to mask reflection
 /// and reflected aura overflow onto land.
-/// z_index=-2, draws AFTER reflected auras but BEFORE L2.
+/// z_index=0, draws AFTER reflected auras but BEFORE L2 by scene tree position (Godot 4 behavior).
 /// </summary>
 public partial class NonWaterMaskLayer : Node2D
 {
@@ -64,7 +64,7 @@ public partial class NonWaterMaskLayer : Node2D
 
 /// <summary>
 /// Child Node2D for PASS 2: draws Layer 2 tiles (borders, objects).
-/// z_index=-1, draws AFTER mask but BEFORE normal auras.
+/// z_index=0, draws AFTER mask but BEFORE normal auras by scene tree position (Godot 4 behavior).
 /// Covers reflected aura portions under border opaque areas.
 /// </summary>
 public partial class Layer2Layer : Node2D

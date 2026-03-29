@@ -98,6 +98,23 @@ public partial class WorldRenderer : Node2D
 	// Whether any reflection was drawn this frame (used by PASS 1b mask)
 	private bool _frameAnyReflection;
 
+	// Dirty flag — set whenever map data, character state, or light state changes.
+	// _Process only calls QueueRedraw when this is true, avoiding per-frame redraws
+	// when nothing has changed (e.g., paused game, no movement, no animation tick).
+	private bool _renderDirty = true;
+
+	/// <summary>
+	/// Mark the renderer as needing a redraw on the next _Process tick.
+	/// Call this whenever map data, characters, lights, or animations change.
+	/// </summary>
+	public void MarkRenderDirty() => _renderDirty = true;
+
+	/// <summary>
+	/// Camera values for the current frame. Updated in _Process before any Draw calls.
+	/// Other layers (FloatingTextLayer, SafeZoneBorderLayer) read this instead of recomputing.
+	/// </summary>
+	public static CameraSnapshot CurrentCamera { get; private set; }
+
 	// Pre-computed water tile map — built on map load, avoids per-frame GRH range checks.
 	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
@@ -369,7 +386,60 @@ void fragment() {
 		if (_state?.MapData == null) return;
 		_deltaMs = (float)delta * 1000f;
 		UpdateRoofFade();
-		QueueRedraw();
+		UpdateStatusTimers();
+		UpdateAllCharacterTimers();
+		// Auto-mark dirty while a map is loaded and the game is not paused.
+		// GRH tile animations advance every frame so a redraw is always needed
+		// during active gameplay. When the game is paused, callers should avoid
+		// calling MarkRenderDirty() so the flag stays false and no redraw happens.
+		if (!(_state.Paused))
+			_renderDirty = true;
+		if (_renderDirty)
+		{
+			_renderDirty = false;
+			QueueRedraw();
+		}
+	}
+
+	/// <summary>
+	/// Advance status timers once per frame. Must run in _Process, not _Draw,
+	/// because _Draw can be called multiple times per frame.
+	/// </summary>
+	private void UpdateStatusTimers()
+	{
+		if (_state == null) return;
+
+		// Paralysis countdown
+		if (_state.UserParalyzed && _state.ParalysisTimer > 0)
+		{
+			_state.ParalysisTimer -= _deltaMs / 1000f;
+			if (_state.ParalysisTimer < 0) _state.ParalysisTimer = 0;
+		}
+
+		// Invisibility countdown (self character)
+		if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
+		{
+			if (selfCh.InvisibleCountdown > 0)
+			{
+				selfCh.InvisibleCountdownTimer += _deltaMs;
+				if (selfCh.InvisibleCountdownTimer >= 1000f)
+				{
+					selfCh.InvisibleCountdownTimer -= 1000f;
+					selfCh.InvisibleCountdown--;
+				}
+			}
+		}
+	}
+
+	/// <summary>
+	/// Advance per-character timers (FOV fade, transparency, FX, dialog) for all characters.
+	/// Must run in _Process, once per frame, before any draw calls.
+	/// </summary>
+	private void UpdateAllCharacterTimers()
+	{
+		if (_state == null || _data == null) return;
+		foreach (var ch in _state.Characters.Values)
+			CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
 	}
 
 	/// <summary>
@@ -516,6 +586,8 @@ void fragment() {
 		_framePixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
 		_framePixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
 
+		CurrentCamera = new CameraSnapshot(_frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+
 		// Visible tile range
 		int screenMinX = _frameUserX - HalfWindowTileWidth;
 		int screenMaxX = _frameUserX + HalfWindowTileWidth;
@@ -599,9 +671,9 @@ void fragment() {
 		// PASS 1: Layer 1 — ONLY water tiles. Non-water tiles are drawn once
 		// by NonWaterMaskLayer (PASS 1b), avoiding the double-draw that killed FPS.
 		// ==========================================
-		for (int y = _frameMinY; y <= _frameMaxY; y++)
+		for (int y = _frameL1MinY; y <= _frameL1MaxY; y++)
 		{
-			for (int x = _frameMinX; x <= _frameMaxX; x++)
+			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
 			{
 				ref var tile = ref _state.MapData.Tiles[x, y];
 				if (!IsWaterGrh(tile.Layer1)) continue; // only water
@@ -751,6 +823,7 @@ void fragment() {
 		// Collect roof draws — per-region fade using _fadingRoofRegion (persists during fade-out AND fade-in)
 		{
 			float fadeA = _roofAlpha / 255f;
+			Color fadingRoofColor = new Color(1, 1, 1, fadeA); // computed once per frame, reused per fading tile
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
@@ -759,22 +832,22 @@ void fragment() {
 					ref var tile = ref _state.MapData.Tiles[x, y];
 					if (tile.Layer4 <= 0) continue;
 
-					// Determine alpha: tiles in the fading region get fade, others stay opaque
-					float alpha;
+					// Determine color: tiles in the fading region get fade, others stay opaque
+					Color roofColor;
 					if (_fadingRoofRegion > 0 && _roofRegionMap != null
 						&& x >= 1 && x <= mapW && y >= 1 && y <= mapH
 						&& _roofRegionMap[x, y] == _fadingRoofRegion)
 					{
-						alpha = fadeA; // fading region
+						if (fadeA <= 0f) continue; // fully hidden, skip draw
+						roofColor = fadingRoofColor;
 					}
 					else
 					{
-						alpha = 1f; // other roofs always visible
+						roofColor = Colors.White; // other roofs always visible
 					}
-					if (alpha <= 0f) continue; // fully hidden, skip draw
 
 					Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-					_pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, alpha)));
+					_pendingRoofDraws.Add((tile.Layer4, pos, roofColor));
 				}
 			}
 		}
@@ -855,4 +928,22 @@ void fragment() {
 			   grhIndex == 8489 || grhIndex == 8483;
 	}
 
+}
+
+/// <summary>
+/// Camera values snapshot for the current frame.
+/// Computed once in WorldRenderer._Process and shared with other rendering layers.
+/// </summary>
+public readonly struct CameraSnapshot
+{
+	public readonly float UserX;
+	public readonly float UserY;
+	public readonly float PixelOffsetX;
+	public readonly float PixelOffsetY;
+
+	public CameraSnapshot(float userX, float userY, float pixelOffsetX, float pixelOffsetY)
+	{
+		UserX = userX; UserY = userY;
+		PixelOffsetX = pixelOffsetX; PixelOffsetY = pixelOffsetY;
+	}
 }

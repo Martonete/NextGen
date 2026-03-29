@@ -42,9 +42,7 @@ public partial class FloatingTextLayer : Node2D
     private readonly List<FloatingText> _texts = new();
     private Font? _font;
     private const int FontSize = 14;
-    private const int FontSizeLarge = 18; // for crits/big hits
-
-    // Stacking: track recent texts per character to offset vertically
+    // Stacking: track active text count per character to offset vertically
     private readonly Dictionary<int, int> _recentCountPerChar = new();
 
     public void Init(WorldRenderer renderer, GameState state)
@@ -60,14 +58,9 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddText(int charIndex, string text, Color color)
     {
-        // Stack offset: if there are already active texts on this char, offset upward
-        int stack = 0;
-        foreach (var t in _texts)
-        {
-            if (t.CharIndex == charIndex && t.Timer < 0.5f)
-                stack++;
-        }
+        _recentCountPerChar.TryGetValue(charIndex, out int stack);
         float offsetY = stack * 16f;
+        _recentCountPerChar[charIndex] = stack + 1;
 
         _texts.Add(new FloatingText(charIndex, text, color, 1.5f, 40f, offsetY));
     }
@@ -114,7 +107,14 @@ public partial class FloatingTextLayer : Node2D
         {
             _texts[i].Timer += dt;
             if (_texts[i].Timer >= _texts[i].Duration)
+            {
+                int ci = _texts[i].CharIndex;
+                if (_recentCountPerChar.TryGetValue(ci, out int cnt) && cnt > 1)
+                    _recentCountPerChar[ci] = cnt - 1;
+                else
+                    _recentCountPerChar.Remove(ci);
                 _texts.RemoveAt(i);
+            }
         }
 
         if (_texts.Count > 0)
@@ -126,13 +126,11 @@ public partial class FloatingTextLayer : Node2D
         if (_state == null || _renderer == null || _font == null) return;
         if (_texts.Count == 0) return;
 
-        int userX = _state.UserPosX;
-        int userY = _state.UserPosY;
-        // Camera pixel offset — NEGATED because ScreenOffset grows in the movement
-        // direction, but tiles must shift in the OPPOSITE direction on screen.
-        // Must match WorldRenderer._framePixelOffsetX/Y exactly.
-        float pixelOffsetX = (float)System.Math.Round(-_state.ScreenOffsetX);
-        float pixelOffsetY = (float)System.Math.Round(-_state.ScreenOffsetY);
+        var cam = WorldRenderer.CurrentCamera;
+        float userX = cam.UserX;
+        float userY = cam.UserY;
+        float pixelOffsetX = cam.PixelOffsetX;
+        float pixelOffsetY = cam.PixelOffsetY;
 
         foreach (var ft in _texts)
         {

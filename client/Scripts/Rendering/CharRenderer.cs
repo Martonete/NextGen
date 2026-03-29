@@ -23,6 +23,10 @@ public static partial class CharRenderer
 	// Helmets are drawn at HeadOffset + OFFSET_HEAD (head uses just HeadOffset).
 	private const int OFFSET_HEAD = -34;
 
+	// Static buffers for DrawShadowProjected — reused every call to avoid per-frame allocations
+	private static readonly Vector2[] _shadowVerts = new Vector2[4];
+	private static readonly Color[] _shadowColors = new Color[4];
+
 	/// <summary>
 	/// Fade speed: characters transition from visible to invisible over ~250ms.
 	/// Rate = 1.0 / 250ms = 4.0 per second.
@@ -49,24 +53,12 @@ public static partial class CharRenderer
 		GameState? state = null,
 		WorldRenderer? worldRenderer = null,
 		int charTileX = 0,
-		int charTileY = 0)
+		int charTileY = 0,
+		int charIdx = -1)
 	{
-		// Smooth FOV fade: characters outside core 17x13 viewport fade out
-		// Only applies during gameplay (state != null). UI previews (char select) skip this.
-		if (state != null)
-		{
-			int userX = state.UserPosX;
-			int userY = state.UserPosY;
-			bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, userX, userY);
-			float target = insideCore ? 1f : 0f;
-			float step = FovFadeRate * deltaMs / 1000f;
-			if (ch.FovAlpha < target)
-				ch.FovAlpha = Math.Min(ch.FovAlpha + step, target);
-			else if (ch.FovAlpha > target)
-				ch.FovAlpha = Math.Max(ch.FovAlpha - step, target);
-
-			if (ch.FovAlpha <= 0.01f) return; // fully faded out, skip drawing
-		}
+		// FOV fade — timers are advanced by UpdateCharacterTimers in _Process.
+		// For UI previews (state == null), always fully visible.
+		if (state != null && ch.FovAlpha <= 0.01f) return; // fully faded out, skip drawing
 
 		int heading = ch.Heading;
 		if (heading < 1 || heading > 4) heading = 3;
@@ -80,22 +72,7 @@ public static partial class CharRenderer
 			? new Vector2(body.HeadOffsetX, body.HeadOffsetY)
 			: new Vector2(0, -30);
 
-		// Pulsing transparency for dead and invisible (self) chars.
-		// Time-based: full cycle ~2s. Range 18→53 (alpha ~45→135 of 255).
-		if (ch.Dead || ch.Invisible)
-		{
-			float speed = deltaMs * 0.035f; // 35 / 1000ms = 0.035 per ms
-			if (!ch.Llegoalatransp)
-			{
-				ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 53f);
-				if (ch.TransparenciaBody >= 53f) ch.Llegoalatransp = true;
-			}
-			else
-			{
-				ch.TransparenciaBody = Math.Max(ch.TransparenciaBody - speed, 18f);
-				if (ch.TransparenciaBody <= 18f) ch.Llegoalatransp = false;
-			}
-		}
+		// TransparenciaBody pulsing — advanced by UpdateCharacterTimers in _Process.
 
 		// Water reflections are now drawn by WorldRenderer (PASS 1.5) between
 		// Layer 1 and Layer 2, so they clip naturally to water tiles.
@@ -130,7 +107,7 @@ public static partial class CharRenderer
 
 		// Character-attached particles — not drawn when invisible
 		if (!ch.Invisible && state != null && (state.Config?.ShowParticles ?? true))
-			DrawCharParticles(canvas, ch, screenPos, state, data, animator?.GlobalTimeMs ?? 0, worldRenderer);
+			DrawCharParticles(canvas, ch, screenPos, state, data, animator?.GlobalTimeMs ?? 0, worldRenderer, charIdx);
 
 		// Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
 		// VB6: name IS drawn for invisible self (visible to self/GMs)
@@ -311,9 +288,12 @@ public static partial class CharRenderer
 		float vBot = (float)(sy + ph) / texH;
 
 		// CCW: BL → BR → TR → TL
+		_shadowVerts[0] = bl; _shadowVerts[1] = br; _shadowVerts[2] = tr; _shadowVerts[3] = tl;
+		_shadowColors[0] = shadowColor; _shadowColors[1] = shadowColor;
+		_shadowColors[2] = shadowColor; _shadowColors[3] = shadowColor;
 		canvas.DrawPolygon(
-			new[] { bl, br, tr, tl },
-			new[] { shadowColor, shadowColor, shadowColor, shadowColor },
+			_shadowVerts,
+			_shadowColors,
 			new[] { new Vector2(u0, vBot), new Vector2(u1, vBot),
 					new Vector2(u1, vTop), new Vector2(u0, vTop) },
 			texture);
@@ -527,6 +507,8 @@ public static partial class CharRenderer
 		Node2D canvas, Character ch, Vector2 pos,
 		GameData data, GrhAnimator animator, float deltaMs)
 	{
+		// Timer advancement (FxFrameCounter, FxLoops) is done by UpdateCharacterTimers in _Process.
+		// This method only reads the current frame state for rendering.
 		for (int i = 0; i < 3; i++)
 		{
 			int fxIdx = ch.ActiveFxSlots[i];
@@ -535,61 +517,12 @@ public static partial class CharRenderer
 			var fx = data.Fxs[fxIdx];
 			if (fx.Animacion <= 0) continue;
 
-			// Resolve GRH to get numFrames and speed
 			int grhIndex = fx.Animacion;
 			if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) continue;
 			var grh = data.Grhs[grhIndex];
 			int numFrames = grh.NumFrames;
-			float speed = grh.Speed > 0 ? grh.Speed : 100f;
 
-			if (numFrames <= 1)
-			{
-				// Static FX — draw once per loop, then clear (VB6: .Started=0 after Draw_Grh)
-				if (ch.FxLoops[i] != -1)
-				{
-					ch.FxLoops[i]--;
-					if (ch.FxLoops[i] <= 0)
-					{
-						ch.ActiveFxSlots[i] = 0;
-						ch.FxLoops[i] = 0;
-						ch.FxFrameCounter[i] = 0;
-						continue;
-					}
-				}
-				Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
-				DrawGrh(canvas, data, grhIndex, 0, fxPos, true,
-						new Color(1, 1, 1, 150f / 255f));
-				continue;
-			}
-
-			// Advance per-slot frame counter
-			ch.FxFrameCounter[i] += deltaMs * numFrames / speed;
-
-			// Check for animation cycle completion
-			if (ch.FxFrameCounter[i] >= numFrames)
-			{
-				if (ch.FxLoops[i] == -1)
-				{
-					// Infinite loop — wrap around
-					ch.FxFrameCounter[i] %= numFrames;
-				}
-				else
-				{
-					ch.FxLoops[i]--;
-					if (ch.FxLoops[i] <= 0)
-					{
-						// Animation finished — clear slot
-						ch.ActiveFxSlots[i] = 0;
-						ch.FxLoops[i] = 0;
-						ch.FxFrameCounter[i] = 0;
-						continue;
-					}
-					// More loops remaining — wrap around
-					ch.FxFrameCounter[i] %= numFrames;
-				}
-			}
-
-			int frame = (int)ch.FxFrameCounter[i];
+			int frame = numFrames <= 1 ? 0 : (int)Math.Min(ch.FxFrameCounter[i], numFrames - 1);
 			Vector2 fxDrawPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
 			DrawGrh(canvas, data, grhIndex, frame, fxDrawPos, true,
 					new Color(1, 1, 1, 150f / 255f));
@@ -603,18 +536,9 @@ public static partial class CharRenderer
 	private static void DrawCharParticles(Node2D canvas, Character ch, Vector2 pos,
 										   GameState state, GameData data,
 										   double globalTimeMs,
-										   WorldRenderer? worldRenderer = null)
+										   WorldRenderer? worldRenderer = null,
+										   int charIdx = -1)
 	{
-		// Find char index for this character in state.Characters
-		int charIdx = -1;
-		foreach (var kvp in state.Characters)
-		{
-			if (ReferenceEquals(kvp.Value, ch))
-			{
-				charIdx = kvp.Key;
-				break;
-			}
-		}
 		if (charIdx < 0) return;
 
 		foreach (var stream in state.MapParticles)
@@ -653,6 +577,129 @@ public static partial class CharRenderer
 					// Fallback: draw directly (no additive blend)
 					DrawGrh(canvas, data, p.GrhIndex, frame, pPos, true, color);
 				}
+			}
+		}
+	}
+
+	/// <summary>
+	/// Advance all per-character timers once per frame. Must be called from _Process
+	/// (or equivalent), NOT from _Draw, to prevent double-advancing when _Draw is
+	/// called multiple times per frame.
+	/// Covers: FovAlpha, TransparenciaBody, FxFrameCounter/FxLoops, dialog timers.
+	/// </summary>
+	public static void UpdateCharacterTimers(Character ch, float deltaMs, GameState state, GameData data)
+	{
+		// ── FOV fade ──
+		int userX = state.UserPosX;
+		int userY = state.UserPosY;
+		bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, userX, userY);
+		float fovTarget = insideCore ? 1f : 0f;
+		float fovStep = FovFadeRate * deltaMs / 1000f;
+		if (ch.FovAlpha < fovTarget)
+			ch.FovAlpha = Math.Min(ch.FovAlpha + fovStep, fovTarget);
+		else if (ch.FovAlpha > fovTarget)
+			ch.FovAlpha = Math.Max(ch.FovAlpha - fovStep, fovTarget);
+
+		// ── Transparency pulse (dead / invisible) ──
+		if (ch.Dead || ch.Invisible)
+		{
+			float speed = deltaMs * 0.035f;
+			if (!ch.Llegoalatransp)
+			{
+				ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 53f);
+				if (ch.TransparenciaBody >= 53f) ch.Llegoalatransp = true;
+			}
+			else
+			{
+				ch.TransparenciaBody = Math.Max(ch.TransparenciaBody - speed, 18f);
+				if (ch.TransparenciaBody <= 18f) ch.Llegoalatransp = false;
+			}
+		}
+
+		// ── FX frame counters ──
+		if (data.Fxs != null && data.Grhs != null)
+		{
+			for (int i = 0; i < 3; i++)
+			{
+				int fxIdx = ch.ActiveFxSlots[i];
+				if (fxIdx <= 0 || fxIdx >= data.Fxs.Length) continue;
+
+				var fx = data.Fxs[fxIdx];
+				if (fx.Animacion <= 0) continue;
+
+				int grhIndex = fx.Animacion;
+				if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) continue;
+				var grh = data.Grhs[grhIndex];
+				int numFrames = grh.NumFrames;
+				float speed = grh.Speed > 0 ? grh.Speed : 100f;
+
+				if (numFrames <= 1)
+				{
+					// Static FX — decrement loop counter once per frame
+					if (ch.FxLoops[i] != -1)
+					{
+						ch.FxLoops[i]--;
+						if (ch.FxLoops[i] <= 0)
+						{
+							ch.ActiveFxSlots[i] = 0;
+							ch.FxLoops[i] = 0;
+							ch.FxFrameCounter[i] = 0;
+						}
+					}
+				}
+				else
+				{
+					// Animated FX — advance frame counter
+					ch.FxFrameCounter[i] += deltaMs * numFrames / speed;
+
+					if (ch.FxFrameCounter[i] >= numFrames)
+					{
+						if (ch.FxLoops[i] == -1)
+						{
+							ch.FxFrameCounter[i] %= numFrames;
+						}
+						else
+						{
+							ch.FxLoops[i]--;
+							if (ch.FxLoops[i] <= 0)
+							{
+								ch.ActiveFxSlots[i] = 0;
+								ch.FxLoops[i] = 0;
+								ch.FxFrameCounter[i] = 0;
+							}
+							else
+							{
+								ch.FxFrameCounter[i] %= numFrames;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// ── Dialog timers ──
+		if (!string.IsNullOrEmpty(ch.DialogText))
+		{
+			float dtFactor = deltaMs / 16.667f;
+			long now = System.Environment.TickCount64;
+			long elapsed = now - ch.DialogStartMs;
+
+			if (ch.DialogDurationMs >= 292)
+			{
+				if (ch.DialogRiseCounter > 0)
+					ch.DialogRiseCounter = Math.Max(0, ch.DialogRiseCounter - dtFactor);
+				if (ch.DialogRiseCounter > 0)
+					ch.DialogAlpha = Math.Min(255f, ch.DialogAlpha + 12f * dtFactor);
+			}
+
+			if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
+				ch.DialogFading = true;
+
+			if (ch.DialogFading)
+			{
+				ch.DialogAlpha = Math.Max(0, ch.DialogAlpha - 10f * dtFactor);
+				if (ch.DialogAlpha <= 9f)
+					ch.DialogText = "";
 			}
 		}
 	}
