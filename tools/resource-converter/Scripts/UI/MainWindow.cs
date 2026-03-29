@@ -59,7 +59,7 @@ public partial class MainWindow : Control
 
         // Header bar
         var header = new PanelContainer();
-        var headerStyle = new StyleBoxFlat { BgColor = Theme.BG_PANEL };
+        var headerStyle = new StyleBoxFlat { BgColor = AppTheme.BG_PANEL };
         headerStyle.ContentMarginLeft = headerStyle.ContentMarginRight = 16;
         headerStyle.ContentMarginTop = headerStyle.ContentMarginBottom = 10;
         header.AddThemeStyleboxOverride("panel", headerStyle);
@@ -67,12 +67,12 @@ public partial class MainWindow : Control
         var headerRow = new HBoxContainer();
         headerRow.AddThemeConstantOverride("separation", 16);
 
-        var titleLabel = Theme.MakeLabel("AO Resource Converter", Theme.TEXT_PRIMARY, Theme.FONT_XL);
+        var titleLabel = AppTheme.MakeLabel("AO Resource Converter", AppTheme.TEXT_PRIMARY, AppTheme.FONT_XL);
         headerRow.AddChild(titleLabel);
 
-        headerRow.AddChild(Theme.MakeLabel("Version:", Theme.TEXT_SECONDARY, Theme.FONT_MD));
+        headerRow.AddChild(AppTheme.MakeLabel("Version:", AppTheme.TEXT_SECONDARY, AppTheme.FONT_MD));
 
-        _versionSelect = Theme.MakeOptionButton();
+        _versionSelect = AppTheme.MakeOptionButton();
         _versionSelect.AddItem("0.99z", (int)AoVersion.V099z);
         _versionSelect.AddItem("0.11.5", (int)AoVersion.V115);
         _versionSelect.AddItem("0.12.3", (int)AoVersion.V123);
@@ -86,7 +86,7 @@ public partial class MainWindow : Control
         spacer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         headerRow.AddChild(spacer);
 
-        _statusLabel = Theme.MakeLabel("Listo", Theme.TEXT_MUTED, Theme.FONT_SM);
+        _statusLabel = AppTheme.MakeLabel("Listo", AppTheme.TEXT_MUTED, AppTheme.FONT_SM);
         headerRow.AddChild(_statusLabel);
 
         header.AddChild(headerRow);
@@ -95,7 +95,7 @@ public partial class MainWindow : Control
         // Tab container
         _tabs = new TabContainer();
         _tabs.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _tabs.AddThemeFontSizeOverride("font_size", Theme.FONT_MD);
+        _tabs.AddThemeFontSizeOverride("font_size", AppTheme.FONT_MD);
         root.AddChild(_tabs);
 
         // Build tabs
@@ -140,16 +140,16 @@ public partial class MainWindow : Control
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", 12);
 
-        vbox.AddChild(Theme.Heading("Convertir Graficos"));
-        vbox.AddChild(Theme.MakeLabel("Convierte BMP sueltos o Graphics.AO a PNG con color key.", Theme.TEXT_SECONDARY));
-        vbox.AddChild(Theme.Sep());
+        vbox.AddChild(AppTheme.Heading("Convertir Graficos"));
+        vbox.AddChild(AppTheme.MakeLabel("Convierte BMP sueltos o Graphics.AO a PNG con color key.", AppTheme.TEXT_SECONDARY));
+        vbox.AddChild(AppTheme.Sep());
 
         _gfxIsArchive = new CheckBox { Text = "Es archivo Graphics.AO (0.12.3)" };
-        _gfxIsArchive.AddThemeFontSizeOverride("font_size", Theme.FONT_MD);
+        _gfxIsArchive.AddThemeFontSizeOverride("font_size", AppTheme.FONT_MD);
         vbox.AddChild(_gfxIsArchive);
 
         // Input
-        vbox.AddChild(Theme.SectionLabel("CARPETA / ARCHIVO DE ORIGEN"));
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA / ARCHIVO DE ORIGEN"));
         var gfxInputRow = CreatePathRow(out _gfxInputPath, "Seleccionar...", () =>
         {
             if (_gfxIsArchive?.ButtonPressed == true)
@@ -168,7 +168,7 @@ public partial class MainWindow : Control
         vbox.AddChild(gfxInputRow);
 
         // Output
-        vbox.AddChild(Theme.SectionLabel("CARPETA DE SALIDA (PNGs)"));
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA DE SALIDA (PNGs)"));
         var gfxOutputRow = CreatePathRow(out _gfxOutputPath, "Seleccionar...", () =>
         {
             _pendingDirCallback = path => _gfxOutputPath!.Text = path;
@@ -177,15 +177,15 @@ public partial class MainWindow : Control
         vbox.AddChild(gfxOutputRow);
 
         // Progress
-        _gfxProgress = Theme.MakeProgressBar();
+        _gfxProgress = AppTheme.MakeProgressBar();
         vbox.AddChild(_gfxProgress);
 
-        _gfxStatus = Theme.MakeLabel("", Theme.TEXT_MUTED, Theme.FONT_SM);
+        _gfxStatus = AppTheme.MakeLabel("", AppTheme.TEXT_MUTED, AppTheme.FONT_SM);
         _gfxStatus.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         vbox.AddChild(_gfxStatus);
 
         // Convert button
-        var convertBtn = Theme.PrimaryButton("Convertir Graficos");
+        var convertBtn = AppTheme.PrimaryButton("Convertir Graficos");
         convertBtn.Pressed += OnConvertGraphics;
         vbox.AddChild(convertBtn);
 
@@ -253,7 +253,7 @@ public partial class MainWindow : Control
     {
         if (_gfxStatus == null) return;
         _gfxStatus.Text = text;
-        _gfxStatus.AddThemeColorOverride("font_color", isError ? Theme.TEXT_DANGER : Theme.TEXT_SUCCESS);
+        _gfxStatus.AddThemeColorOverride("font_color", isError ? AppTheme.TEXT_DANGER : AppTheme.TEXT_SUCCESS);
     }
 
     #endregion
@@ -266,12 +266,12 @@ public partial class MainWindow : Control
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", 12);
 
-        vbox.AddChild(Theme.Heading("Convertir INITs"));
-        vbox.AddChild(Theme.MakeLabel("Convierte archivos .ind y .dat de la carpeta INIT al formato NextGen.", Theme.TEXT_SECONDARY));
-        vbox.AddChild(Theme.Sep());
+        vbox.AddChild(AppTheme.Heading("Convertir INITs"));
+        vbox.AddChild(AppTheme.MakeLabel("Convierte archivos .ind y .dat de la carpeta INIT al formato NextGen.", AppTheme.TEXT_SECONDARY));
+        vbox.AddChild(AppTheme.Sep());
 
         // Input
-        vbox.AddChild(Theme.SectionLabel("CARPETA INIT DE ORIGEN"));
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA INIT DE ORIGEN"));
         var initInputRow = CreatePathRow(out _initInputPath, "Seleccionar...", () =>
         {
             _pendingDirCallback = path =>
@@ -284,13 +284,13 @@ public partial class MainWindow : Control
         vbox.AddChild(initInputRow);
 
         // Validation
-        _initValidation = Theme.MakeLabel("Seleccioná una carpeta para validar archivos", Theme.TEXT_MUTED, Theme.FONT_SM);
+        _initValidation = AppTheme.MakeLabel("Seleccioná una carpeta para validar archivos", AppTheme.TEXT_MUTED, AppTheme.FONT_SM);
         _initValidation.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _initValidation.CustomMinimumSize = new Vector2(0, 60);
         vbox.AddChild(_initValidation);
 
         // Output
-        vbox.AddChild(Theme.SectionLabel("CARPETA INIT DE SALIDA"));
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA INIT DE SALIDA"));
         var initOutputRow = CreatePathRow(out _initOutputPath, "Seleccionar...", () =>
         {
             _pendingDirCallback = path => _initOutputPath!.Text = path;
@@ -299,14 +299,14 @@ public partial class MainWindow : Control
         vbox.AddChild(initOutputRow);
 
         // Progress
-        _initProgress = Theme.MakeProgressBar();
+        _initProgress = AppTheme.MakeProgressBar();
         vbox.AddChild(_initProgress);
 
-        _initStatus = Theme.MakeLabel("", Theme.TEXT_MUTED, Theme.FONT_SM);
+        _initStatus = AppTheme.MakeLabel("", AppTheme.TEXT_MUTED, AppTheme.FONT_SM);
         vbox.AddChild(_initStatus);
 
         // Convert button
-        var convertBtn = Theme.PrimaryButton("Convertir INITs");
+        var convertBtn = AppTheme.PrimaryButton("Convertir INITs");
         convertBtn.Pressed += OnConvertInits;
         vbox.AddChild(convertBtn);
 
@@ -332,7 +332,7 @@ public partial class MainWindow : Control
         string header = $"Version {VersionConfig.Label(_selectedVersion)}: {found}/{expected.Length} archivos encontrados\n";
         _initValidation.Text = header + string.Join("\n", lines);
         _initValidation.AddThemeColorOverride("font_color",
-            found == expected.Length ? Theme.TEXT_SUCCESS : Theme.TEXT_DANGER);
+            found == expected.Length ? AppTheme.TEXT_SUCCESS : AppTheme.TEXT_DANGER);
     }
 
     private async void OnConvertInits()
@@ -382,7 +382,7 @@ public partial class MainWindow : Control
     {
         if (_initStatus == null) return;
         _initStatus.Text = text;
-        _initStatus.AddThemeColorOverride("font_color", isError ? Theme.TEXT_DANGER : Theme.TEXT_SUCCESS);
+        _initStatus.AddThemeColorOverride("font_color", isError ? AppTheme.TEXT_DANGER : AppTheme.TEXT_SUCCESS);
     }
 
     #endregion
@@ -395,12 +395,12 @@ public partial class MainWindow : Control
         var vbox = new VBoxContainer();
         vbox.AddThemeConstantOverride("separation", 12);
 
-        vbox.AddChild(Theme.Heading("Convertir Mapas"));
-        vbox.AddChild(Theme.MakeLabel("Convierte todos los .map/.inf a .aomap/.aoinf (Int32, tamaño variable).", Theme.TEXT_SECONDARY));
-        vbox.AddChild(Theme.Sep());
+        vbox.AddChild(AppTheme.Heading("Convertir Mapas"));
+        vbox.AddChild(AppTheme.MakeLabel("Convierte todos los .map/.inf a .aomap/.aoinf (Int32, tamaño variable).", AppTheme.TEXT_SECONDARY));
+        vbox.AddChild(AppTheme.Sep());
 
         // Input
-        vbox.AddChild(Theme.SectionLabel("CARPETA MAPS DE ORIGEN"));
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA MAPS DE ORIGEN"));
         var mapInputRow = CreatePathRow(out _mapInputPath, "Seleccionar...", () =>
         {
             _pendingDirCallback = path => _mapInputPath!.Text = path;
@@ -409,7 +409,7 @@ public partial class MainWindow : Control
         vbox.AddChild(mapInputRow);
 
         // Output
-        vbox.AddChild(Theme.SectionLabel("CARPETA MAPS DE SALIDA"));
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA MAPS DE SALIDA"));
         var mapOutputRow = CreatePathRow(out _mapOutputPath, "Seleccionar...", () =>
         {
             _pendingDirCallback = path => _mapOutputPath!.Text = path;
@@ -418,14 +418,14 @@ public partial class MainWindow : Control
         vbox.AddChild(mapOutputRow);
 
         // Progress
-        _mapProgress = Theme.MakeProgressBar();
+        _mapProgress = AppTheme.MakeProgressBar();
         vbox.AddChild(_mapProgress);
 
-        _mapStatus = Theme.MakeLabel("", Theme.TEXT_MUTED, Theme.FONT_SM);
+        _mapStatus = AppTheme.MakeLabel("", AppTheme.TEXT_MUTED, AppTheme.FONT_SM);
         vbox.AddChild(_mapStatus);
 
         // Convert button
-        var convertBtn = Theme.PrimaryButton("Convertir Mapas");
+        var convertBtn = AppTheme.PrimaryButton("Convertir Mapas");
         convertBtn.Pressed += OnConvertMaps;
         vbox.AddChild(convertBtn);
 
@@ -476,7 +476,7 @@ public partial class MainWindow : Control
     {
         if (_mapStatus == null) return;
         _mapStatus.Text = text;
-        _mapStatus.AddThemeColorOverride("font_color", isError ? Theme.TEXT_DANGER : Theme.TEXT_SUCCESS);
+        _mapStatus.AddThemeColorOverride("font_color", isError ? AppTheme.TEXT_DANGER : AppTheme.TEXT_SUCCESS);
     }
 
     #endregion
@@ -525,10 +525,10 @@ public partial class MainWindow : Control
         pathEdit = new LineEdit();
         pathEdit.PlaceholderText = "/ruta/a/carpeta...";
         pathEdit.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        pathEdit.AddThemeFontSizeOverride("font_size", Theme.FONT_MD);
+        pathEdit.AddThemeFontSizeOverride("font_size", AppTheme.FONT_MD);
         row.AddChild(pathEdit);
 
-        var btn = Theme.MakeButton(buttonText);
+        var btn = AppTheme.MakeButton(buttonText);
         btn.Pressed += onBrowse;
         row.AddChild(btn);
 

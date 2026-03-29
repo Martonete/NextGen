@@ -3,7 +3,7 @@ using Godot;
 
 namespace AOResourceConverter.UI;
 
-public static class Theme
+public static class AppTheme
 {
     public static readonly Color BG_DARK       = new(0.112f, 0.114f, 0.128f);
     public static readonly Color BG_PANEL      = new(0.148f, 0.152f, 0.170f);
