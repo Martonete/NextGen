@@ -10,6 +10,11 @@ client/build/
 dist/
 *.import
 
+# Environment secrets
+.env
+.env.local
+.env.*.local
+
 # .NET / C# build artifacts
 **/bin/
 **/obj/
