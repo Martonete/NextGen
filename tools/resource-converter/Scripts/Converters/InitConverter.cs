@@ -13,6 +13,7 @@ namespace AOResourceConverter.Converters;
 /// </summary>
 public static class InitConverter
 {
+    private const int MiCabeceraSize = 263;
     public struct ConvertResult
     {
         public int Total;
@@ -112,8 +113,6 @@ public static class InitConverter
     /// </summary>
     private static void MergeGraficosInd(string path1, string path2, string path3, string outPath)
     {
-        const int MiCabeceraSize = 263;
-
         byte[] data1 = File.ReadAllBytes(path1);
         byte[] data2 = File.ReadAllBytes(path2);
         byte[] data3 = File.ReadAllBytes(path3);
