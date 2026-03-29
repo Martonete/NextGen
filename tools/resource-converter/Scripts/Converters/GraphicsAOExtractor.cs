@@ -87,14 +87,30 @@ public static class GraphicsAOExtractor
                 }
 
                 byte[] bmpBytes;
-                if (entry.CompressedSize < entry.UncompressedSize)
+                if (entry.CompressedSize >= 2 && entry.CompressedSize != entry.UncompressedSize)
                 {
-                    // Decompress with zlib (deflate with 2-byte zlib header)
-                    bmpBytes = ZlibDecompress(fileData, offset0, entry.CompressedSize, entry.UncompressedSize);
+                    // Try zlib decompression first (VB6 always compresses, but zlib can
+                    // produce output >= input for incompressible data)
+                    try
+                    {
+                        bmpBytes = ZlibDecompress(fileData, offset0, entry.CompressedSize, entry.UncompressedSize);
+                    }
+                    catch
+                    {
+                        // Fallback: treat as stored uncompressed
+                        bmpBytes = new byte[entry.CompressedSize];
+                        Array.Copy(fileData, offset0, bmpBytes, 0, entry.CompressedSize);
+                    }
+                }
+                else if (entry.CompressedSize < 2)
+                {
+                    GD.PrintErr($"[GraphicsAO] Entry {entry.FileName} has compressed size < 2, skipping");
+                    result.Errors++;
+                    continue;
                 }
                 else
                 {
-                    // Stored uncompressed
+                    // CompressedSize == UncompressedSize: stored uncompressed
                     bmpBytes = new byte[entry.CompressedSize];
                     Array.Copy(fileData, offset0, bmpBytes, 0, entry.CompressedSize);
                 }

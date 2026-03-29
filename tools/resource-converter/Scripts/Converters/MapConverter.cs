@@ -301,7 +301,10 @@ public static class MapConverter
                 if (string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase))
                 { foundPath = f; return true; }
         }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            GD.PrintErr($"[MapConv] Error accessing {dir}: {ex.Message}");
+        }
         foundPath = "";
         return false;
     }

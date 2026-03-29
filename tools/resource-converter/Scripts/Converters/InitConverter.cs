@@ -118,34 +118,63 @@ public static class InitConverter
         byte[] data2 = File.ReadAllBytes(path2);
         byte[] data3 = File.ReadAllBytes(path3);
 
-        // Each file: MiCabecera(263) + Version(4) + Count(4) + entries
-        // We need to find the max count and merge all entries
+        // Auto-detect header offset per file (same logic as GrhLoader):
+        // With MiCabecera: offset 263 → Version(4) + Count(4) + entries
+        // Without MiCabecera: offset 0 → Version(4) + Count(4) + entries
+        int hdr1 = DetectGrhHeaderOffset(data1);
+        int hdr2 = DetectGrhHeaderOffset(data2);
+        int hdr3 = DetectGrhHeaderOffset(data3);
 
         using var ms = new MemoryStream();
 
-        // Use header from file 1 (MiCabecera + Version)
-        ms.Write(data1, 0, MiCabeceraSize + 4); // 263 + 4 = 267 bytes (cabecera + version)
+        // Use header from file 1 (up to and including Version field)
+        ms.Write(data1, 0, hdr1 + 4); // header + version(4)
 
-        // Read counts from all three files
-        int count1 = BitConverter.ToInt32(data1, MiCabeceraSize + 4);
-        int count2 = BitConverter.ToInt32(data2, MiCabeceraSize + 4);
-        int count3 = BitConverter.ToInt32(data3, MiCabeceraSize + 4);
+        // Read counts
+        int count1 = BitConverter.ToInt32(data1, hdr1 + 4);
+        int count2 = BitConverter.ToInt32(data2, hdr2 + 4);
+        int count3 = BitConverter.ToInt32(data3, hdr3 + 4);
         int maxCount = Math.Max(count1, Math.Max(count2, count3));
 
         // Write the max count
         ms.Write(BitConverter.GetBytes(maxCount), 0, 4);
 
-        // Write entry streams from all three files (skip their headers)
-        int entriesOffset = MiCabeceraSize + 8; // 263 + 4 (version) + 4 (count)
-        if (data1.Length > entriesOffset)
-            ms.Write(data1, entriesOffset, data1.Length - entriesOffset);
-        if (data2.Length > entriesOffset)
-            ms.Write(data2, entriesOffset, data2.Length - entriesOffset);
-        if (data3.Length > entriesOffset)
-            ms.Write(data3, entriesOffset, data3.Length - entriesOffset);
+        // Append entry streams from all three (skip each file's header+version+count)
+        int off1 = hdr1 + 8, off2 = hdr2 + 8, off3 = hdr3 + 8;
+        if (data1.Length > off1) ms.Write(data1, off1, data1.Length - off1);
+        if (data2.Length > off2) ms.Write(data2, off2, data2.Length - off2);
+        if (data3.Length > off3) ms.Write(data3, off3, data3.Length - off3);
 
         File.WriteAllBytes(outPath, ms.ToArray());
-        GD.Print($"[INIT] Merged Graficos 1+2+3 → {outPath} (counts: {count1}+{count2}+{count3}, max: {maxCount})");
+        GD.Print($"[INIT] Merged Graficos 1+2+3 → {outPath} (hdrs: {hdr1}/{hdr2}/{hdr3}, counts: {count1}+{count2}+{count3}, max: {maxCount})");
+    }
+
+    /// <summary>
+    /// Auto-detect .ind header offset: with MiCabecera (263) or without (0).
+    /// Same logic as client GrhLoader.Load() auto-detection.
+    /// </summary>
+    private static int DetectGrhHeaderOffset(byte[] data)
+    {
+        // Try offset 0: read Version(4) + Count(4)
+        if (data.Length >= 8)
+        {
+            int count = BitConverter.ToInt32(data, 4);
+            if (count > 0 && count <= 100_000) return 0;
+        }
+        // Try offset 263 (MiCabecera): read Version(4) + Count(4)
+        if (data.Length >= MiCabeceraSize + 8)
+        {
+            int count = BitConverter.ToInt32(data, MiCabeceraSize + 4);
+            if (count > 0 && count <= 100_000) return MiCabeceraSize;
+        }
+        // Try offset 1 (flag byte skip)
+        if (data.Length >= 9)
+        {
+            int count = BitConverter.ToInt32(data, 5);
+            if (count > 0 && count <= 100_000) return 1;
+        }
+        // Default to MiCabecera
+        return MiCabeceraSize;
     }
 
     /// <summary>
