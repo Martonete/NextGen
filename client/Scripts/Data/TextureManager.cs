@@ -32,6 +32,17 @@ public class TextureManager
     }
 
     /// <summary>
+    /// Reset preload state so a new PreloadAll / TickPreload cycle can run.
+    /// Call this on map change or when textures need re-evaluation.
+    /// </summary>
+    public void ResetPreload()
+    {
+        PreloadFinished = false;
+        PreloadTotal = 0;
+        PreloadDone = 0;
+    }
+
+    /// <summary>
     /// Preload all textures referenced by GrhData. Returns an enumerator for
     /// time-budgeted incremental loading (call TickPreload from _Process).
     /// </summary>
@@ -181,5 +192,13 @@ public class TextureManager
             image.SetData(image.GetWidth(), image.GetHeight(),
                 false, Image.Format.Rgba8, data);
         }
+    }
+
+    /// <summary>Free all cached textures to release GPU memory.</summary>
+    public void Cleanup()
+    {
+        _cache.Clear();
+        _lruOrder.Clear();
+        _lruNodes.Clear();
     }
 }

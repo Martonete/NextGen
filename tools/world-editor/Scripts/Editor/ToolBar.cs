@@ -44,8 +44,6 @@ public partial class ToolBar : HBoxContainer
         AddToolButton("Pintar", EditorTool.Paint);
         AddToolButton("Borrar", EditorTool.Erase);
         AddToolButton("Seleccionar", EditorTool.Select);
-        AddToolButton("Mover", EditorTool.Move);
-        AddToolButton("Rellenar", EditorTool.Fill);
         AddToolButton("Cuentagotas", EditorTool.Eyedrop);
         AddToolButton("Bloquear", EditorTool.Block);
         AddToolButton("Luz", EditorTool.Light);
@@ -106,18 +104,28 @@ public partial class ToolBar : HBoxContainer
         }
     }
 
+    private const int IconBtnSize = 36;
+
     private void AddButton(string text, string? shortcut, Action action)
     {
-        var btn = new Button { Text = text };
-        if (shortcut != null)
-            btn.TooltipText = $"Ctrl+{shortcut}";
+        var btn = new Button();
+        btn.CustomMinimumSize = new Vector2(IconBtnSize, IconBtnSize);
+        btn.TooltipText = shortcut != null ? $"{text} (Ctrl+{shortcut})" : text;
+        var icon = new ToolIconCanvas(text);
+        icon.CustomMinimumSize = new Vector2(IconBtnSize - 4, IconBtnSize - 4);
+        btn.AddChild(icon);
         btn.Pressed += action;
         AddChild(btn);
     }
 
     private void AddToolButton(string text, EditorTool tool)
     {
-        var btn = new Button { Text = text };
+        var btn = new Button();
+        btn.CustomMinimumSize = new Vector2(IconBtnSize, IconBtnSize);
+        btn.TooltipText = text;
+        var icon = new ToolIconCanvas(text);
+        icon.CustomMinimumSize = new Vector2(IconBtnSize - 4, IconBtnSize - 4);
+        btn.AddChild(icon);
         btn.Pressed += () =>
         {
             if (State != null) State.ActiveTool = tool;

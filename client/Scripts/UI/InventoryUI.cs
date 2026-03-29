@@ -279,7 +279,7 @@ public class InventoryUI
             return;
 
         // Not on any panel — drop on ground
-        if (_state.ItemSafety && item.Amount > 1)
+        if (item.Amount > 1)
         {
             OnShowDropDialog?.Invoke(slot, item.Name);
         }

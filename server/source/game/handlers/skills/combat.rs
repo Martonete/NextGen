@@ -11,8 +11,9 @@ use crate::game::handlers::common::*;
 use crate::game::handlers::{
     send_inventory_slot, user_die, do_cast_spell,
     calc_attack_power, calc_attack_power_with_balance, calc_defense_power, calc_armor_absorption,
-    class_damage_modifier, class_damage_modifier_from_balance,
+    class_damage_modifier_from_balance,
     check_user_level,
+    poder_evasion, poder_evasion_escudo,
 };
 use crate::game::constants::*;
 use super::{skill_id, luck_denominator, luck_denominator_lookup, try_level_skill, try_level_skill_with_hit};
@@ -97,28 +98,39 @@ pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i
         if num_pets >= 3 {
             state.send_console(conn_id, "No puedes tener más mascotas!", font_index::INFO);
         } else {
-            // Assign pet to user
-            if let Some(npc) = state.get_npc_mut(npc_idx) {
-                npc.maestro_user = Some(conn_id);
-                npc.hostile = false;
-                npc.target = None;
-            }
-            if let Some(u) = state.users.get_mut(&conn_id) {
-                u.nro_mascotas = u.nro_mascotas + 1;
-                // Store in pet slots
-                for i in 0..3 {
-                    if u.mascotas_index[i] == 0 {
-                        u.mascotas_index[i] = npc_idx;
-                        u.mascotas_type[i] = npc_number as i32;
-                        break;
+            // VB6: PuedeDomarMascota — max 2 of same NPC type
+            let pet_indices = state.users.get(&conn_id)
+                .map(|u| u.mascotas_index)
+                .unwrap_or([0; 3]);
+            let same_type_count = pet_indices.iter()
+                .filter(|&&idx| idx > 0 && state.get_npc(idx).map(|n| n.npc_number == npc_number).unwrap_or(false))
+                .count();
+            if same_type_count >= 2 {
+                state.send_console(conn_id, "Ya tienes demasiadas mascotas de ese tipo.", font_index::INFO);
+            } else {
+                // Assign pet to user
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.maestro_user = Some(conn_id);
+                    npc.hostile = false;
+                    npc.target = None;
+                }
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    u.nro_mascotas = u.nro_mascotas + 1;
+                    // Store in pet slots
+                    for i in 0..3 {
+                        if u.mascotas_index[i] == 0 {
+                            u.mascotas_index[i] = npc_idx;
+                            u.mascotas_type[i] = npc_number as i32;
+                            break;
+                        }
                     }
                 }
-            }
-            state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO);
+                state.send_console(conn_id, "Has domado a la criatura!", font_index::INFO);
 
-            // VB6: SubirSkill on success
-            if let Some(u) = state.users.get_mut(&conn_id) {
-                try_level_skill_with_hit(u, 17, true); // Domar = index 17
+                // VB6: SubirSkill on success
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    try_level_skill_with_hit(u, 17, true); // Domar = index 17
+                }
             }
         }
     } else {
@@ -357,9 +369,8 @@ async fn resolve_ranged_attack_npc(
     let ammo_dmg = if arrow_max_hit > 0 { rand_range(arrow_min_hit.max(0), arrow_max_hit.max(1)) } else { 0 };
     let weapon_dmg = bow_dmg + ammo_dmg;
 
-    // VB6: StrBonus = (MaxHIT/5) * max(0, Strength-15), UserDmg = Rand(MinHIT, MaxHIT)
-    let total_max_hit = max_hit + arrow_max_hit;
-    let str_bonus = ((total_max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
+    // VB6: StrBonus uses only bow's MaxHIT (not arrow), matching VB6's commented-out line
+    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
     let user_dmg = rand_range(min_hit, max_hit);
     let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
 
@@ -425,21 +436,39 @@ async fn resolve_ranged_attack_user(
 
     let victim_data = match state.users.get(&victim_id) {
         Some(v) if v.logged && !v.dead => {
-            (v.level, v.attributes[1], v.skills[3], v.char_name.clone(), v.privileges, v.char_index)
+            (v.level, v.attributes[1], v.skills[3], v.skills[4],
+             v.char_name.clone(), v.privileges, v.char_index, v.class,
+             v.equip.shield > 0 && v.equip.shield <= MAX_INVENTORY_SLOTS,
+             v.meditating)
         }
         _ => return,
     };
-    let (v_level, v_agility, v_tacticas, victim_name, v_privs, v_char_index) = victim_data;
+    let (v_level, v_agility, v_tacticas, v_defensa,
+         victim_name, v_privs, v_char_index, v_class,
+         v_has_shield, v_meditating) = victim_data;
 
     if v_privs > 0 { return; }
 
     // Hit check — VB6: PoderAtaqueProyectil + ModClase.AtaqueProyectiles
     let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles_e(class);
     let attack_power = calc_attack_power_with_balance(skill_proyectiles, agility, level, atk_mod);
-    let defense_power = calc_defense_power(v_tacticas, v_agility, v_level);
-    let hit_prob = ((50.0 + (attack_power - defense_power) * 0.4) as i32).clamp(10, 90);
+    // VB6: victim evasion includes shield bonus (same as melee PvP)
+    let v_evasion_mod = state.game_data.balance.class_mod_evasion_e(v_class);
+    let mut victim_evasion = poder_evasion(v_tacticas, v_agility, v_level, v_evasion_mod) as f64;
+    if v_has_shield {
+        let shield_mod = state.game_data.balance.class_mod_escudo_e(v_class);
+        victim_evasion += poder_evasion_escudo(v_defensa, shield_mod) as f64;
+    }
+    let mut prob = (50.0 + (attack_power - victim_evasion) * 0.4) as i32;
+    prob = prob.clamp(10, 90);
 
-    if rand_range(1, 100) > hit_prob {
+    // VB6: Meditation reduces evasion by 25%
+    if v_meditating {
+        let prob_evadir = ((100 - prob) as f64 * 0.75) as i32;
+        prob = (100 - prob_evadir).min(90);
+    }
+
+    if rand_range(1, 100) > prob {
         let pkt = binary_packets::write_multi_user_attacked_swing(_char_index.0 as i16);
         state.send_bytes(victim_id, &pkt);
         let pkt = binary_packets::write_multi_msg_simple(MultiMessageID::UserSwing);
@@ -457,9 +486,8 @@ async fn resolve_ranged_attack_user(
     let ammo_dmg = if arrow_max_hit > 0 { rand_range(arrow_min_hit.max(0), arrow_max_hit.max(1)) } else { 0 };
     let weapon_dmg = bow_dmg + ammo_dmg;
 
-    // VB6: StrBonus uses combined max, UserDmg from user stats
-    let total_max_hit = max_hit + arrow_max_hit;
-    let str_bonus = ((total_max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
+    // VB6: StrBonus uses only bow's MaxHIT (not arrow), matching VB6's commented-out line
+    let str_bonus = ((max_hit as f64 / 5.0) * (strength - 15).max(0) as f64) as i32;
     let user_dmg = rand_range(min_hit, max_hit);
     let base_dmg = 3 * weapon_dmg + str_bonus + user_dmg;
 

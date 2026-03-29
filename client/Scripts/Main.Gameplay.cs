@@ -55,6 +55,7 @@ public partial class Main
                 _accountCreateScreen!.Panel!.Visible = true;
                 _gameUI!.Visible = false;
                 _accountCreateScreen?.ResetForm();
+                CenterPanelOnScreen(_accountCreateScreen!.Panel!);
                 break;
 
             case Screen.CharCreate:
@@ -64,6 +65,7 @@ public partial class Main
                 _accountCreateScreen!.Panel!.Visible = false;
                 _gameUI!.Visible = false;
                 _charCreateScreen?.ResetForm();
+                CenterPanelOnScreen(_charCreateScreen!.Panel!);
                 break;
 
             case Screen.Game:
@@ -89,7 +91,6 @@ public partial class Main
                     _guildPanel!.Init(_state, _tcp);
                     _guildFoundationPanel!.Init(_state, _tcp);
                     _forumPanel!.Init(_state, _tcp);
-                    _mailPanel!.Init(_state, _tcp);
                     _partyPanel!.Init(_state, _tcp);
                     if (_chatSystem != null) _chatSystem.PartyPanel = _partyPanel;
                     _gameUIUpdater?.BindMinimap(_minimapPanel, _partyPanel);
@@ -127,6 +128,15 @@ public partial class Main
     }
 
     /// <summary>
+    /// Center a Control on the real screen (for panels inside CanvasLayer).
+    /// </summary>
+    private static void CenterPanelOnScreen(Control panel)
+    {
+        var ws = DisplayServer.WindowGetSize();
+        panel.Position = (new Vector2(ws.X, ws.Y) - panel.Size * panel.Scale) / 2f;
+    }
+
+    /// <summary>
     /// Enter fullscreen with aspect ratio mode from config.
     /// 0 = 4:3 (keep aspect, black bars on wide screens)
     /// 1 = 16:9 (stretch to fill, no black bars)
@@ -134,25 +144,34 @@ public partial class Main
     private void EnterFullscreen()
     {
         var root = GetTree().Root;
+        // Set content scale to match the current resolution layout.
+        // This tells Godot to scale our WindowWidth x WindowHeight content to fill the screen.
+        root.ContentScaleSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+        root.ContentScaleMode = Window.ContentScaleModeEnum.CanvasItems;
         root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
-        // 4:3 = Keep aspect (black bars), 16:9 = Ignore aspect (stretch to fill)
         root.ContentScaleAspect = _state.Config.AspectRatioMode == 0
             ? Window.ContentScaleAspectEnum.Keep
             : Window.ContentScaleAspectEnum.Ignore;
+        DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, false);
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Fullscreen);
     }
 
     /// <summary>
-    /// Exit fullscreen to windowed 800×600, centered.
+    /// Exit fullscreen to windowed mode at configured resolution, centered.
     /// </summary>
     private void ExitFullscreen()
     {
         var root = GetTree().Root;
+        // Disable content scaling — in windowed mode we use real pixels
+        root.ContentScaleSize = new Vector2I(0, 0);
+        root.ContentScaleMode = Window.ContentScaleModeEnum.Disabled;
         root.ContentScaleStretch = Window.ContentScaleStretchEnum.Fractional;
         root.ContentScaleAspect = Window.ContentScaleAspectEnum.Keep;
         DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.ResizeDisabled, false);
+        // Borderless window — we have our own minimize/close buttons
+        DisplayServer.WindowSetFlag(DisplayServer.WindowFlags.Borderless, true);
         DisplayServer.WindowSetMode(DisplayServer.WindowMode.Windowed);
-        var winSize = new Vector2I(800, 600);
+        var winSize = new Vector2I(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         DisplayServer.WindowSetSize(winSize);
         var screenSize = DisplayServer.ScreenGetSize();
         DisplayServer.WindowSetPosition(new Vector2I(
@@ -218,6 +237,9 @@ public partial class Main
     {
         GD.Print($"[MAIN] Disconnect: {message}");
 
+        // Save server error before reset clears it
+        string serverError = _state.LoginError;
+
         // Clean up TCP resources (VB6: Socket1.Disconnect + Socket1.Cleanup)
         _tcp?.Dispose();
         _tcp = null;
@@ -258,7 +280,9 @@ public partial class Main
         _state.CurrentScreen = Screen.Login;
         HandleScreenChange(Screen.Login);
         _lastScreen = Screen.Login;
-        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = message;
+        // Prefer server error message (e.g. "Password incorrecto") over generic disconnect
+        string displayMsg = !string.IsNullOrEmpty(serverError) ? serverError : message;
+        if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = displayMsg;
         if (_loginForm?.ConnectButton != null) _loginForm.ConnectButton.Disabled = false;
 
         // VB6: frmConnect.MousePointer = 1 (normal cursor)
@@ -274,6 +298,7 @@ public partial class Main
         _state.IsLogged = false;
         _state.Paused = false;
         _state.LoginError = "";
+        _state.CoordCipher = null;
         _state.ServerNotice = "";
         _state.SecurityCode = "";
         _state.CharacterList.Clear();
@@ -306,7 +331,6 @@ public partial class Main
         _state.Resting = false;
         _state.Meditating = false;
         _state.SafeMode = false;
-        _state.ItemSafety = true; // Re-enable on reconnect (VB6: ISItem starts true)
         _state.SeguroResu = false;
         _state.DropDialogOpen = false;
         _state.ShowTravelPanel = false;
@@ -315,7 +339,7 @@ public partial class Main
         _state.AddToUserPosY = 0;
         _state.ScreenOffsetX = 0;
         _state.ScreenOffsetY = 0;
-        _state.PtCooldownFrames = 0;
+        _state.PtCooldownUntilMs = 0;
         _state.PendingMoves = 0;
 
         // Characters & objects
@@ -507,9 +531,14 @@ public partial class Main
         {
             _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
+            _gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
 
             // Load particles and lights embedded in tile data (byFlags bits 5/6)
             LoadTileParticlesAndLights(_state);
+
+            // Pre-compute spatial maps for O(1) lookups during rendering
+            _worldRenderer?.RebuildWaterMap();
+            _worldRenderer?.BuildRoofRegions();
 
             GD.Print($"[MAIN] Map {_state.CurrentMap} loaded OK");
         }
@@ -523,9 +552,9 @@ public partial class Main
     {
         if (state.MapData == null) return;
         var map = state.MapData;
-        for (int y = 1; y <= 100; y++)
+        for (int y = 1; y <= map.Height; y++)
         {
-            for (int x = 1; x <= 100; x++)
+            for (int x = 1; x <= map.Width; x++)
             {
                 ref var tile = ref map.Tiles[x, y];
                 if (tile.ParticleGroup > 0)
@@ -582,8 +611,8 @@ public partial class Main
                 _charSelectForm!.EnterButton!.Disabled = true;
                 _charSelectForm!.NoticeLabel!.Text = "Entrando al mundo...";
 
-                _tcp!.SendPacket(ClientPackets.WriteOologi(charName, account, code));
-                GD.Print($"[MAIN] Sent: OOLOGI {charName}");
+                _tcp!.SendPacket(ClientPackets.WriteCharacterLogin(charName, account, code));
+                GD.Print($"[MAIN] Sent: CharacterLogin {charName}");
             }
         }
         else
@@ -669,11 +698,11 @@ public partial class Main
             if (_loginForm?.StatusLabel != null) _loginForm.StatusLabel.Text = "Enviando login...";
 
             await Task.Delay(100);
-            _tcp.SendPacket(ClientPackets.WriteKerd22());
+            _tcp.SendPacket(ClientPackets.WriteHardwareCheck());
 
             await Task.Delay(50);
-            _tcp.SendPacket(ClientPackets.WriteAlogin(account, password));
-            GD.Print("[MAIN] Sent: ALOGIN (binary)");
+            _tcp.SendPacket(ClientPackets.WriteAccountLogin(account, password));
+            GD.Print("[MAIN] Sent: AccountLogin (binary)");
 
             _ = Task.Run(async () =>
             {
@@ -724,14 +753,14 @@ public partial class Main
             GD.Print($"[MAIN] Connecting for account creation...");
             await _tcp.ConnectAsync(ServerHost, ServerPort);
             _connecting = false;
-            GD.Print("[MAIN] Connected! Sending NACCNT...");
+            GD.Print("[MAIN] Connected! Sending CreateAccount...");
 
             await Task.Delay(100);
-            _tcp.SendPacket(ClientPackets.WriteKerd22());
+            _tcp.SendPacket(ClientPackets.WriteHardwareCheck());
 
             await Task.Delay(50);
-            _tcp.SendPacket(ClientPackets.WriteNaccnt(account, password, pin));
-            GD.Print("[MAIN] Sent: NACCNT (binary)");
+            _tcp.SendPacket(ClientPackets.WriteCreateAccount(account, password, pin));
+            GD.Print("[MAIN] Sent: CreateAccount (binary)");
         }
         catch (Exception ex)
         {

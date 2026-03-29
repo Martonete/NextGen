@@ -15,8 +15,7 @@ use crate::game::types::MAX_INVENTORY_SLOTS;
 use crate::protocol::font_index;
 use super::{
     user_die, check_user_level, send_inventory_slot, send_full_inventory,
-    calc_attack_power, calc_defense_power, calc_armor_absorption, calc_armor_absorption_with_penetration,
-    class_damage_modifier,
+    calc_armor_absorption_with_penetration,
     poder_evasion, poder_evasion_escudo,
     poder_ataque_arma, poder_ataque_proyectil, poder_ataque_wrestling,
     calcular_dano, get_weapon_info, get_ring_info,
@@ -26,9 +25,7 @@ use super::{
     remove_pet_from_owner,
 };
 use super::skills::try_level_skill_with_hit;
-
-/// VB6: EspadaMataDragonesIndex = 402 (Dragon Slayer sword)
-const ESPADA_MATA_DRAGONES: i32 = 402;
+use crate::game::constants::*;
 
 // =====================================================================
 // NPC system — spawning, AI, combat
@@ -36,10 +33,11 @@ const ESPADA_MATA_DRAGONES: i32 = 402;
 
 /// Send CC packets for all NPCs in the area around (x, y) on map to a specific user.
 pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32) {
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_y = (y - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (y + world::MIN_Y_BORDER - 1).min(world::MAP_HEIGHT as i32);
+    let max_y = (y + world::MIN_Y_BORDER - 1).min(grid_h);
     let min_x = (x - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (x + world::MIN_X_BORDER - 1).min(world::MAP_WIDTH as i32);
+    let max_x = (x + world::MIN_X_BORDER - 1).min(grid_w);
 
     // Collect NPC CCs first to avoid borrow issues
     let mut npc_ccs: Vec<Vec<u8>> = Vec::new();
@@ -66,10 +64,11 @@ pub(super) async fn send_area_npc_ccs(state: &mut GameState, conn_id: Connection
 
 /// Send ground item visuals (HO) in the area to a user.
 pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32) {
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_y = (y - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (y + world::MIN_Y_BORDER - 1).min(world::MAP_HEIGHT as i32);
+    let max_y = (y + world::MIN_Y_BORDER - 1).min(grid_h);
     let min_x = (x - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (x + world::MIN_X_BORDER - 1).min(world::MAP_WIDTH as i32);
+    let max_x = (x + world::MIN_X_BORDER - 1).min(grid_w);
 
     let mut ho_packets: Vec<Vec<u8>> = Vec::new();
     if let Some(grid) = state.world.grid(map) {
@@ -82,7 +81,7 @@ pub(super) async fn send_area_ground_items(state: &mut GameState, conn_id: Conne
                             .map(|o| o.grh_index)
                             .unwrap_or(0);
                         if grh > 0 {
-                            ho_packets.push(binary_packets::write_object_create(gx as u8, gy as u8, grh as i16));
+                            ho_packets.push(binary_packets::write_object_create(gx as i16, gy as i16, grh as i16));
                         }
                     }
                 }
@@ -247,7 +246,7 @@ pub(super) async fn user_attack_npc(
     }
 
     if !hit {
-        let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(2, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::UserSwing);
         state.send_bytes(conn_id, &pkt);
@@ -290,18 +289,18 @@ pub(super) async fn user_attack_npc(
 
     let damage_before_def = base_damage + boat_bonus;
 
-    // VB6: EspadaMataDragonesIndex (402) — deals 1 damage to non-dragons, full to dragons
+    // VB6: EspadaMataDragonesIndex (402) — instakill dragons, 1 damage to non-dragons
     let npc_is_dragon = state.get_npc(npc_idx).map(|n| n.npc_type == NpcType::Dragon).unwrap_or(false);
-    let damage_before_def = if weapon_info.obj_index == ESPADA_MATA_DRAGONES && !npc_is_dragon {
-        1i64
-    } else {
-        damage_before_def
-    };
-
-    // VB6: damage = DañoBase - NPC.Stats.def
     let npc_def = state.get_npc(npc_idx).map(|n| n.def).unwrap_or(0) as i64;
-    let damage = if weapon_info.obj_index == ESPADA_MATA_DRAGONES && !npc_is_dragon {
-        1 // Dragon Slayer always deals exactly 1 to non-dragons (ignores defense)
+
+    let damage = if weapon_info.obj_index == ESPADA_MATA_DRAGONES {
+        if npc_is_dragon {
+            // VB6: CalcularDaño = NpcList(NpcIndex).Stats.MinHp + NpcList(NpcIndex).Stats.def
+            let npc_min_hp = state.get_npc(npc_idx).map(|n| n.min_hp).unwrap_or(0);
+            npc_min_hp + npc_def as i32 // Guaranteed kill — damage equals remaining HP + def
+        } else {
+            1 // Dragon Slayer always deals exactly 1 to non-dragons (ignores defense)
+        }
     } else {
         (damage_before_def - npc_def).max(0) as i32
     };
@@ -360,16 +359,16 @@ pub(super) async fn user_attack_npc(
         .map(|n| (n.snd1, n.snd2))
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd1 as u8, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(npc_snd1 as u8, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     }
-    let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
+    let snd = binary_packets::write_play_wave(10, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     if npc_snd2 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd2 as u8, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(npc_snd2 as u8, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     } else {
-        let snd = binary_packets::write_play_wave(12, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(12, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
     }
 
@@ -380,12 +379,10 @@ pub(super) async fn user_attack_npc(
     // VB6: If NPC still alive after initial hit, try backstab and critical
     let npc_still_alive = state.get_npc(npc_idx).map(|n| n.min_hp > 0).unwrap_or(false);
     if npc_still_alive {
-        let user_heading = state.users.get(&conn_id).map(|u| u.heading).unwrap_or(0);
-        let npc_heading = state.get_npc(npc_idx).map(|n| n.heading).unwrap_or(0);
         let apunalar_sk = state.users.get(&conn_id).map(|u| u.skills[8]).unwrap_or(0);
 
         // VB6: DoApuñalar — backstab (NPC target gets 2x damage)
-        if puede_apunalar(class, user_heading, npc_heading) && apunalar_sk > 0 {
+        if puede_apunalar(class, weapon_info.apunala, apunalar_sk) {
             // VB6: Assassin ignores NPC defense for backstab base damage
             let stab_base = if class == PlayerClass::Asesino {
                 damage_before_def as i64 // Ignore defense for Assassin
@@ -436,9 +433,9 @@ pub(super) async fn user_attack_npc(
     let npc_dead = state.get_npc(npc_idx).map(|n| n.min_hp <= 0).unwrap_or(false);
 
     // Per-hit EXP (VB6: CalcularDarExp — gives proportional exp on EVERY hit, not just on death)
+    // VB6: ExpaDar = CLng(ElDaño * (GiveEXP / MaxHp)) — NO multiplier per hit
     if npc_give_exp > 0 && npc_max_hp > 0 {
-        let exp_mult = state.multiplicador_exp;
-        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64 * exp_mult as f64) as i64;
+        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64) as i64;
 
         // Level cap check
         let can_level = state.users.get(&conn_id)
@@ -500,7 +497,7 @@ pub(super) async fn npc_die(
 
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
-        let snd_pkt = binary_packets::write_play_wave(snd3 as u8, x as u8, y as u8);
+        let snd_pkt = binary_packets::write_play_wave(snd3 as u8, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt);
     }
 
@@ -598,7 +595,7 @@ async fn drop_gold_on_floor(state: &mut GameState, map: i32, x: i32, y: i32, tot
         };
 
         if is_new && grh_index > 0 {
-            let pkt = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+            let pkt = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
         }
 
@@ -608,86 +605,102 @@ async fn drop_gold_on_floor(state: &mut GameState, map: i32, x: i32, y: i32, tot
     }
 }
 
-/// Drop NPC inventory items on death.
+/// Drop NPC inventory items on death using VB6 tiered drop table.
 /// VB6: NPC_TIRAR_ITEMS (Modulo_InventANDobj.bas).
-/// Probability: ProbTirar * 2, capped at 200. Roll 1-200, if <= prob → drop.
-/// Charisma bonus: >=20 adds luck.
+/// Tiered system: Roll 1-100. If > 90: no drops (10% nothing).
+/// If <= 90: drop tier 1 (slot 0). If <= 10: also drop tier 2 (slot 1).
+/// Then 10% chance each for tiers 3, 4, 5 (slots 2, 3, 4).
+/// Pretoriano NPCs: drop ALL inventory + gold (special case).
 pub(super) async fn npc_drop_items(
     state: &mut GameState,
     npc_idx: usize,
-    killer_id: ConnectionId,
+    _killer_id: ConnectionId,
     map: i32,
     npc_x: i32,
     npc_y: i32,
 ) {
-    // Get NPC inventory before killing
-    let npc_inv: Vec<(i32, i32, i32)> = match state.get_npc(npc_idx) {
-        Some(n) => n.inventory.iter()
-            .filter(|slot| slot.obj_index > 0 && slot.amount > 0)
-            .map(|slot| (slot.obj_index, slot.amount, slot.prob_tirar))
-            .collect(),
+    // Get NPC number and inventory (slots 0-4 = tiers 1-5)
+    let (npc_number, npc_inv): (usize, Vec<(i32, i32)>) = match state.get_npc(npc_idx) {
+        Some(n) => {
+            let inv: Vec<(i32, i32)> = n.inventory.iter()
+                .map(|slot| (slot.obj_index, slot.amount))
+                .collect();
+            (n.npc_number, inv)
+        }
         None => return,
     };
 
-    if npc_inv.is_empty() {
-        return;
-    }
-
-    // Get killer's charisma for luck bonus
-    let charisma = state.users.get(&killer_id)
-        .map(|u| u.attributes[3]) // [3] = Charisma
-        .unwrap_or(18);
-
-    // Charisma luck modifier
-    let luck_mod = match charisma {
-        0..=18 => -1,
-        19 => 0,
-        20 => 1,
-        21 => 2,
-        c => (c - 21).max(0),
-    };
-
-    // Drop multiplier
-    let drop_mult = state.multiplicador_drop;
-
-    for (obj_index, amount, prob_tirar) in npc_inv {
-        if prob_tirar <= 0 {
-            continue;
-        }
-
-        // Calculate drop probability (VB6: ProbTirar * 2 * mult_drop, cap 200)
-        let prob = ((prob_tirar * 2 + luck_mod) * drop_mult).max(1).min(200);
-
-        // Roll
-        let roll = random_number(1, 200);
-        if roll <= prob {
-            // Drop item — use actual amount from NPC inventory (VB6 drops full amount)
-            let drop_amount = amount.max(1);
-
-            // Find a free tile near the NPC
+    // Special case: Pretoriano NPCs drop ALL inventory items + gold
+    if es_pretoriano(npc_number) {
+        for (obj_index, amount) in &npc_inv {
+            if *obj_index <= 0 || *amount <= 0 { continue; }
             let (dx, dy) = find_free_tile(state, map, npc_x, npc_y);
             let drop_x = npc_x + dx;
             let drop_y = npc_y + dy;
-
-            // Place item on ground
             let grid = state.world.grid_mut(map);
             if let Some(tile) = grid.tile_mut(drop_x, drop_y) {
                 if tile.ground_item.obj_index == 0 {
-                    tile.ground_item.obj_index = obj_index;
-                    tile.ground_item.amount = drop_amount;
+                    tile.ground_item.obj_index = *obj_index;
+                    tile.ground_item.amount = *amount;
                 }
             }
-
-            // Get GRH for the object
-            let grh = state.get_object(obj_index).map(|o| o.grh_index).unwrap_or(0);
+            let grh = state.get_object(*obj_index).map(|o| o.grh_index).unwrap_or(0);
             if grh > 0 {
-                let ho_pkt = binary_packets::write_object_create(drop_x as u8, drop_y as u8, grh as i16);
+                let ho_pkt = binary_packets::write_object_create(drop_x as i16, drop_y as i16, grh as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x: npc_x, y: npc_y }, &ho_pkt);
             }
-
-            // Track for world cleanup
-            clean_world_add_item(state, map, drop_x, drop_y, 10, obj_index);
+            clean_world_add_item(state, map, drop_x, drop_y, 10, *obj_index);
         }
+        return;
+    }
+
+    // VB6 tiered drop table
+    let roll = random_number(1, 100);
+
+    // If roll > 90: no drops at all (10% chance of nothing)
+    if roll > 90 {
+        return;
+    }
+
+    // Collect which tiers to drop based on the roll
+    let mut tiers_to_drop: Vec<usize> = Vec::new();
+
+    // Roll <= 90: always drop tier 1 (slot 0)
+    tiers_to_drop.push(0);
+
+    // Roll <= 10: also drop tier 2 (slot 1), plus 10% chance each for tiers 3-5
+    if roll <= 10 {
+        tiers_to_drop.push(1);
+        if random_number(1, 10) == 1 { tiers_to_drop.push(2); }
+        if random_number(1, 10) == 1 { tiers_to_drop.push(3); }
+        if random_number(1, 10) == 1 { tiers_to_drop.push(4); }
+    }
+
+    // Drop items for each tier
+    for tier_idx in tiers_to_drop {
+        if tier_idx >= npc_inv.len() { continue; }
+        let (obj_index, amount) = npc_inv[tier_idx];
+        if obj_index <= 0 || amount <= 0 { continue; }
+
+        let (dx, dy) = find_free_tile(state, map, npc_x, npc_y);
+        let drop_x = npc_x + dx;
+        let drop_y = npc_y + dy;
+
+        let grid = state.world.grid_mut(map);
+        if let Some(tile) = grid.tile_mut(drop_x, drop_y) {
+            if tile.ground_item.obj_index == 0 {
+                tile.ground_item.obj_index = obj_index;
+                tile.ground_item.amount = amount;
+            }
+        }
+
+        let grh = state.get_object(obj_index).map(|o| o.grh_index).unwrap_or(0);
+        if grh > 0 {
+            let ho_pkt = binary_packets::write_object_create(drop_x as i16, drop_y as i16, grh as i16);
+            state.send_data_bytes(SendTarget::ToArea { map, x: npc_x, y: npc_y }, &ho_pkt);
+        }
+
+        clean_world_add_item(state, map, drop_x, drop_y, 10, obj_index);
     }
 }
 
@@ -760,7 +773,7 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
 
             if rechazo {
                 // Shield blocks — VB6: SND_ESCUDO + messages + skill up
-                let snd = binary_packets::write_play_wave(37, nx as u8, ny as u8);
+                let snd = binary_packets::write_play_wave(37, nx as i16, ny as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
                 let pkt = binary_packets::write_multi_msg_simple(
                     crate::protocol::packets::MultiMessageID::BlockedWithShieldUser);
@@ -778,7 +791,7 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         }
 
         // Miss — VB6: SND_SWING to area + N1
-        let snd = binary_packets::write_play_wave(2, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(2, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
         let pkt = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::NPCSwing);
         state.send_bytes(target_conn, &pkt);
@@ -797,11 +810,31 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         try_level_skill_with_hit(victim, 3, false);
     }
 
-    // Damage + armor absorption (VB6: NpcDaño — body hits use armor+shield)
-    let body_part = rand_range(1, 6);
+    // Damage + armor absorption (VB6: NpcDaño — combined armor+shield single roll)
+    // VB6: Lugar = RandomNumber(bCabeza, bTorso) → 1=head, 2=torso
+    let body_part = rand_range(1, 2);
     let raw_damage = rand_range(npc_min_hit.max(1), npc_max_hit.max(1));
+    // VB6: AtacarPersonaje applies refuerzo (weapon penetration) from NPC weapon.
+    // NPC data does not carry a weapon-object refuerzo value, so penetration is 0.
     let absorption = calc_armor_absorption_with_penetration(state, target_conn, body_part, 0);
-    let damage = (raw_damage - absorption).max(1);
+
+    // VB6: Boat defense — if user is sailing, boat absorbs damage too
+    let boat_defense = {
+        let mut def = 0;
+        if let Some(u) = state.users.get(&target_conn) {
+            if u.navigating && u.barco_slot > 0 && u.barco_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+                let boat_idx = u.inventory[u.barco_slot - 1].obj_index;
+                if let Some(obj) = state.game_data.objects.get(boat_idx as usize) {
+                    if obj.max_def > 0 {
+                        def = rand_range(obj.min_def.max(0), obj.max_def.max(1));
+                    }
+                }
+            }
+        }
+        def
+    };
+
+    let damage = (raw_damage - absorption - boat_defense).max(1);
 
     // Apply damage
     if let Some(user) = state.users.get_mut(&target_conn) {
@@ -809,9 +842,6 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
     }
     let n2_pkt = binary_packets::write_multi_npc_hit_user(body_part as u8, damage as i16);
     state.send_bytes(target_conn, &n2_pkt);
-
-    // VB6: floating yellow damage number above user (N| vbYellow°-<damage>°charIndex)
-    state.send_chat_over_head_to(SendTarget::ToArea { map, x: nx, y: ny }, &format!("-{}", damage), u_char_index.0 as i16, 65535);
 
     // Blood FX on player (VB6: FXSANGRE = 14)
     let fx_pkt = binary_packets::write_create_fx(u_char_index.0 as i16, 14, 0);
@@ -822,18 +852,18 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
         .map(|n| (n.snd1, n.snd2))
         .unwrap_or((0, 0));
     if npc_snd1 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd1 as u8, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(npc_snd1 as u8, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     }
     // SND_IMPACTO to area on hit
-    let snd = binary_packets::write_play_wave(10, nx as u8, ny as u8);
+    let snd = binary_packets::write_play_wave(10, nx as i16, ny as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     // Victim sound: Snd2 if defined, else SND_IMPACTO2 (12)
     if npc_snd2 > 0 {
-        let snd = binary_packets::write_play_wave(npc_snd2 as u8, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(npc_snd2 as u8, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     } else {
-        let snd = binary_packets::write_play_wave(12, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(12, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     }
 
@@ -847,6 +877,28 @@ pub(super) async fn npc_attack_user(state: &mut GameState, npc_idx: usize, targe
                 user.counter_poison = 0;
             }
             state.send_msg_id(target_conn, 171, &npc_name);
+        }
+    }
+
+    // VB6: NpcDano meditation break formula — conditional based on damage vs threshold
+    {
+        let med_data = state.users.get(&target_conn).map(|u| {
+            (u.meditating, u.min_hp, u.attributes[2], u.skills[6], u.char_index.0, u.pos_map, u.pos_x, u.pos_y)
+        });
+        if let Some((is_meditating, min_hp, intelligence, meditar_skill, ci, umap, ux, uy)) = med_data {
+            if is_meditating {
+                let threshold = (min_hp as f64 / 100.0 * intelligence as f64
+                    * meditar_skill as f64 / 100.0 * 12.0
+                    / (rand_range(0, 5) as f64 + 7.0)) as i32;
+                if damage > threshold {
+                    if let Some(user) = state.users.get_mut(&target_conn) {
+                        user.meditating = false;
+                    }
+                    state.send_bytes(target_conn, &binary_packets::write_meditate_toggle());
+                    let fx_clear = binary_packets::write_create_fx(ci as i16, 0, 0);
+                    state.send_data_bytes(SendTarget::ToArea { map: umap, x: ux, y: uy }, &fx_clear);
+                }
+            }
         }
     }
 
@@ -894,27 +946,54 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &fx);
     }
     if spell.wav > 0 {
-        let snd = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
+        let snd = binary_packets::write_play_wave(spell.wav as u8, nx as i16, ny as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &snd);
     }
 
     // Spell effect
     match spell.sube_hp {
         1 => {
-            // Heal spell (SubeHP=1) — when cast on a user target, NPC heals ITSELF
-            // (VB6: NpcLanzaSpellSobreUser with SubeHP=1 heals the NPC, not the user)
+            // Heal spell (SubeHP=1) — VB6: heals the TARGET USER, not the NPC
+            // (VB6: NpcLanzaSpellSobreUser → UserList(UserIndex).Stats.MinHp += damage)
             let heal = rand_range(spell.min_hp.max(1), spell.max_hp.max(1));
-            if let Some(npc) = state.get_npc_mut(npc_idx) {
-                npc.min_hp = (npc.min_hp + heal).min(npc.max_hp);
+            if let Some(user) = state.users.get_mut(&target_conn) {
+                user.min_hp = (user.min_hp + heal).min(user.max_hp);
             }
+            send_stats_hp(state, target_conn).await;
         }
         2 => {
             // Damage spell (SubeHP=2)
             let mut damage = rand_range(spell.min_hp.max(1), spell.max_hp.max(1));
 
-            // Armor magic defense reduction (simplified — use armor absorption)
-            let absorption = calc_armor_absorption(state, target_conn, rand_range(1, 6));
-            damage = (damage - absorption / 2).max(1); // Magic has half physical absorption
+            // VB6: Magic defense from helmet + ring (DefensaMagicaMin/Max)
+            let (helmet_slot, ring_slot) = state.users.get(&target_conn)
+                .map(|u| (u.equip.helmet, u.equip.ring))
+                .unwrap_or((0, 0));
+            // Helmet magic defense
+            if helmet_slot > 0 && helmet_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+                let helmet_obj_idx = state.users.get(&target_conn)
+                    .map(|u| u.inventory[helmet_slot - 1].obj_index).unwrap_or(0);
+                if helmet_obj_idx > 0 {
+                    if let Some(obj) = state.game_data.objects.get(helmet_obj_idx as usize) {
+                        if obj.defensa_magica_max > 0 {
+                            damage -= rand_range(obj.defensa_magica_min, obj.defensa_magica_max);
+                        }
+                    }
+                }
+            }
+            // Ring magic defense
+            if ring_slot > 0 && ring_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+                let ring_obj_idx = state.users.get(&target_conn)
+                    .map(|u| u.inventory[ring_slot - 1].obj_index).unwrap_or(0);
+                if ring_obj_idx > 0 {
+                    if let Some(obj) = state.game_data.objects.get(ring_obj_idx as usize) {
+                        if obj.defensa_magica_max > 0 {
+                            damage -= rand_range(obj.defensa_magica_min, obj.defensa_magica_max);
+                        }
+                    }
+                }
+            }
+            damage = damage.max(1);
 
             // Apply damage
             if let Some(user) = state.users.get_mut(&target_conn) {
@@ -934,15 +1013,24 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
         _ => {}
     }
 
-    // Paralysis effect
+    // Paralysis effect — VB6: SUPERANILLO (700) blocks NPC paralysis
     if spell.paraliza {
-        if let Some(user) = state.users.get_mut(&target_conn) {
-            user.paralyzed = true;
-            user.counter_paralisis = state.config.intervalo_paralizado;
+        const SUPERANILLO: i32 = 700;
+        let ring_slot = state.users.get(&target_conn).map(|u| u.equip.ring).unwrap_or(0);
+        let ring_obj = if ring_slot > 0 && ring_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+            state.users.get(&target_conn).map(|u| u.inventory[ring_slot - 1].obj_index).unwrap_or(0)
+        } else { 0 };
+        if ring_obj == SUPERANILLO {
+            state.send_console(target_conn, "Tu anillo rechaza los efectos del hechizo.", font_index::INFO);
+        } else {
+            if let Some(user) = state.users.get_mut(&target_conn) {
+                user.paralyzed = true;
+                user.counter_paralisis = state.intervals.paralizado;
+            }
+            let duration_secs = (state.intervals.paralizado as f32 * 0.04) as i16;
+            let pkt = binary_packets::write_paralize_ok(duration_secs);
+            state.send_bytes(target_conn, &pkt);
         }
-        let duration_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
-        let pkt = binary_packets::write_paralize_ok(duration_secs);
-        state.send_bytes(target_conn, &pkt);
     }
 }
 
@@ -966,9 +1054,39 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
     let new_x = x + dx;
     let new_y = y + dy;
 
-    // Check bounds and blocked
-    if !world::in_map_bounds(new_x, new_y) {
+    // Check bounds using actual grid dimensions (not hardcoded 100)
+    let bounds_ok = state.world.grid(map)
+        .map(|g| world::in_map_bounds_grid(g, new_x, new_y))
+        .unwrap_or(false);
+    if !bounds_ok {
         return (false, None);
+    }
+
+    // Zone confinement: NPC with zone_id > 0 can't leave its zone bounds
+    let npc_zone_id = state.get_npc(npc_idx).map(|n| n.zone_id).unwrap_or(0);
+    if npc_zone_id > 0 {
+        let map_idx = map as usize;
+        let zone_allows = state.game_data.maps.get(map_idx)
+            .and_then(|m| m.as_ref())
+            .and_then(|gm| gm.zones.as_ref())
+            .and_then(|zs| zs.zones.iter().find(|z| z.id == npc_zone_id))
+            .map(|z| z.contains(new_x, new_y))
+            .unwrap_or(true);
+        if !zone_allows {
+            return (false, None);
+        }
+    }
+
+    // Zone boundary: NPC can't wander beyond configured radius from spawn
+    let (orig_x, orig_y) = state.get_npc(npc_idx)
+        .map(|n| (n.orig_x, n.orig_y)).unwrap_or((0, 0));
+    if let Some(zone) = state.get_zone(map) {
+        if zone.npc_wander_radius > 0 {
+            let dist = (new_x - orig_x).abs().max((new_y - orig_y).abs());
+            if dist > zone.npc_wander_radius {
+                return (false, None);
+            }
+        }
     }
     if state.is_tile_blocked(map, new_x, new_y) {
         return (false, None);
@@ -1024,7 +1142,7 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
             let (ddx, ddy) = world::heading_to_offset(dir);
             let nx = new_x + ddx;
             let ny = new_y + ddy;
-            if !world::in_map_bounds(nx, ny) { continue; }
+            if !state.world.grid(map).map(|g| world::in_map_bounds_grid(g, nx, ny)).unwrap_or(false) { continue; }
             if state.is_tile_blocked(map, nx, ny) { continue; }
             let free = state.world.grid(map)
                 .map(|g| g.is_tile_free(nx, ny))
@@ -1082,7 +1200,8 @@ pub(super) fn move_npc(state: &mut GameState, npc_idx: usize, heading: i32) -> (
 }
 
 /// VB6: CheckPets — When an NPC attacks a user, the user's pets react by targeting that NPC.
-/// Water Elemental (NPC 92) is excluded from auto-aggression when check_elementals=true.
+/// VB6: CheckElementales=True (default) → ALL pets respond.
+///       CheckElementales=False → exclude FUEGO (93) and TIERRA (94).
 pub(super) fn check_pets(state: &mut GameState, attacker_npc_idx: usize, victim_conn: ConnectionId, check_elementals: bool) {
     let pets = match state.users.get(&victim_conn) {
         Some(u) => u.mascotas_index,
@@ -1099,8 +1218,9 @@ pub(super) fn check_pets(state: &mut GameState, attacker_npc_idx: usize, victim_
         };
         let (pet_number, existing_target) = pet_data;
 
-        // VB6: Water Elemental excluded from auto-aggression when check_elementals=true
-        if check_elementals && pet_number == npc::ELEMENTAL_AGUA {
+        // VB6: If CheckElementales=False, skip FUEGO (93) and TIERRA (94)
+        // (CheckElementales OR (Numero <> FUEGO AND Numero <> TIERRA))
+        if !check_elementals && (pet_number == npc::ELEMENTAL_FUEGO || pet_number == npc::ELEMENTAL_TIERRA) {
             continue;
         }
 

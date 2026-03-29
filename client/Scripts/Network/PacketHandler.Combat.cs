@@ -17,8 +17,8 @@ public partial class PacketHandler
     {
         short maxSta = bq.ReadInteger();
         short minSta = bq.ReadInteger();
-        _state.MaxSta = maxSta;
-        _state.MinSta = minSta;
+        _state.MaxSta = Math.Max((short)1, maxSta);
+        _state.MinSta = Math.Max((short)0, minSta);
     }
 
 
@@ -26,8 +26,8 @@ public partial class PacketHandler
     {
         short maxMana = bq.ReadInteger();
         short minMana = bq.ReadInteger();
-        _state.MaxMana = maxMana;
-        _state.MinMana = minMana;
+        _state.MaxMana = Math.Max((short)1, maxMana);
+        _state.MinMana = Math.Max((short)0, minMana);
     }
 
 
@@ -36,8 +36,8 @@ public partial class PacketHandler
         short maxHp = bq.ReadInteger();
         short minHp = bq.ReadInteger();
         int oldHp = _state.MinHp;
-        _state.MaxHp = maxHp;
-        _state.MinHp = minHp;
+        _state.MaxHp = Math.Max((short)1, maxHp);
+        _state.MinHp = Math.Max((short)0, minHp);
 
         // Detect healing: HP increased and we already had HP data (oldHp > 0)
         int delta = minHp - oldHp;
@@ -57,17 +57,16 @@ public partial class PacketHandler
 
     private void HandleBinUpdateUserStats(ByteQueue bq)
     {
-        _state.MaxHp = bq.ReadInteger();
-        _state.MinHp = bq.ReadInteger();
-        _state.MaxMana = bq.ReadInteger();
-        _state.MinMana = bq.ReadInteger();
-        _state.MaxSta = bq.ReadInteger();
-        _state.MinSta = bq.ReadInteger();
+        _state.MaxHp = Math.Max((short)1, bq.ReadInteger());
+        _state.MinHp = Math.Max((short)0, bq.ReadInteger());
+        _state.MaxMana = Math.Max((short)1, bq.ReadInteger());
+        _state.MinMana = Math.Max((short)0, bq.ReadInteger());
+        _state.MaxSta = Math.Max((short)1, bq.ReadInteger());
+        _state.MinSta = Math.Max((short)0, bq.ReadInteger());
         _state.Gold = bq.ReadLong();
         _state.Level = bq.ReadByte();
         _state.ExpNext = bq.ReadLong();
         _state.Exp = bq.ReadLong();
-        GD.Print($"[GAME] Stats (binary): HP {_state.MinHp}/{_state.MaxHp} Mana {_state.MinMana}/{_state.MaxMana} Lvl {_state.Level}");
     }
 
     // ── Map / Position ────────────────────────────────────────────
@@ -85,11 +84,11 @@ public partial class PacketHandler
 
     private void HandleBinSendSkills(ByteQueue bq)
     {
-        for (int i = 0; i < 20; i++)
+        // Read exactly as many skills as the server sends (Skills array has 22 slots).
+        // Previous code read only 20, leaving indices 20 and 21 at default zero.
+        for (int i = 0; i < _state.Skills.Length; i++)
         {
-            byte skillVal = bq.ReadByte();
-            if (i < _state.Skills.Length)
-                _state.Skills[i] = skillVal;
+            _state.Skills[i] = bq.ReadByte();
         }
     }
 
@@ -122,10 +121,11 @@ public partial class PacketHandler
     private void HandleBinLevelUp(ByteQueue bq)
     {
         short skillPoints = bq.ReadInteger();
-        _state.FreeSkillPoints = skillPoints;
+        // VB6: SkillPts = SkillPts + Pts — accumulate, don't overwrite
+        _state.FreeSkillPoints += skillPoints;
         _state.ChatMessages.Enqueue(new ChatMessage
         {
-            Text = $"Has subido de nivel! Tienes {skillPoints} puntos de habilidad.",
+            Text = $"Has subido de nivel! Has ganado {skillPoints} skillpoints.",
             Color = "00FF00"
         });
         // Play level-up fanfare sound
@@ -157,19 +157,35 @@ public partial class PacketHandler
             return;
         }
 
+        // VB6: loops >= 999 = infinite, loops 0 = play once (treat as 1)
+        int loops = fxLoops >= 999 ? -1 : Math.Max((int)fxLoops, 1);
+
+        // If same FX already active, restart it in its existing slot (no duplicates)
         for (int i = 0; i < 3; i++)
         {
-            if (ch.ActiveFxSlots[i] == 0)
+            if (ch.ActiveFxSlots[i] == fxIndex)
             {
-                ch.ActiveFxSlots[i] = fxIndex;
-                ch.FxLoops[i] = fxLoops >= 999 ? -1 : fxLoops;
+                ch.FxLoops[i] = loops;
                 ch.FxFrameCounter[i] = 0;
                 return;
             }
         }
 
+        // Find empty slot for a new different FX
+        for (int i = 0; i < 3; i++)
+        {
+            if (ch.ActiveFxSlots[i] == 0)
+            {
+                ch.ActiveFxSlots[i] = fxIndex;
+                ch.FxLoops[i] = loops;
+                ch.FxFrameCounter[i] = 0;
+                return;
+            }
+        }
+
+        // All slots full — replace slot 0
         ch.ActiveFxSlots[0] = fxIndex;
-        ch.FxLoops[0] = fxLoops >= 999 ? -1 : fxLoops;
+        ch.FxLoops[0] = loops;
         ch.FxFrameCounter[0] = 0;
     }
 
@@ -202,12 +218,6 @@ public partial class PacketHandler
     /// UserHit (ID 135) — attacker index + damage that hit player.
     /// Wire: i16 attackerIndex, i16 damage
     /// </summary>
-
-
-    /// <summary>
-    /// UserHit (ID 135) — attacker index + damage that hit player.
-    /// Wire: i16 attackerIndex, i16 damage
-    /// </summary>
     private void HandleBinUserHit(ByteQueue bq)
     {
         short attackerIndex = bq.ReadInteger();
@@ -228,11 +238,6 @@ public partial class PacketHandler
     /// <summary>
     /// NpcHit (ID 137) — NPC hit player. Wire: u8 bodyPart, i16 damage
     /// </summary>
-
-
-    /// <summary>
-    /// NpcHit (ID 137) — NPC hit player. Wire: u8 bodyPart, i16 damage
-    /// </summary>
     private void HandleBinNpcHit(ByteQueue bq)
     {
         byte bodyPart = bq.ReadByte();
@@ -242,11 +247,6 @@ public partial class PacketHandler
         // Floating red damage on player (NPC hit us)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
-
-    /// <summary>
-    /// PvpDmgRecv (ID 138) — PvP damage received. Wire: i16 attackerIndex, i16 damage
-    /// </summary>
-
 
     /// <summary>
     /// PvpDmgRecv (ID 138) — PvP damage received. Wire: i16 attackerIndex, i16 damage
@@ -267,11 +267,6 @@ public partial class PacketHandler
         // Floating red damage on player (PvP received)
         OnFloatingText?.Invoke(_state.UserCharIndex, $"-{damage}", "FF3333");
     }
-
-    /// <summary>
-    /// PvpDmgDeal (ID 139) — PvP damage dealt. Wire: i16 victimIndex, i16 damage
-    /// </summary>
-
 
     /// <summary>
     /// PvpDmgDeal (ID 139) — PvP damage dealt. Wire: i16 victimIndex, i16 damage
@@ -299,18 +294,9 @@ public partial class PacketHandler
     /// SpellInfoResp (ID 148) — spell info string (INFS response).
     /// Wire: string data
     /// </summary>
-
-
-    // ── Spells ────────────────────────────────────────────────────
-
-    /// <summary>
-    /// SpellInfoResp (ID 148) — spell info string (INFS response).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinSpellInfoResp(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] SpellInfoResp (binary): {data}");
         _state.SpellInfoText = data;
     }
 
@@ -328,9 +314,10 @@ public partial class PacketHandler
     {
         _state.Dead = true;
         _state.ShowDeathPanel = true;
+        _state.SpellMacro.Stop(); // Cancel spell macro on death
+        _state.WorkMacro.Stop();  // Cancel work macro on death
         _state.ChatMessages.Enqueue(new ChatMessage { Text = "¡Has muerto!", Color = "FF0000", Type = ChatType.Combat });
         OnPlaySound?.Invoke(SoundManager.SND_DEATH);
-        GD.Print("[GAME] Player died — Dead (binary)");
     }
 
 
@@ -454,7 +441,6 @@ public partial class PacketHandler
                 break;
             }
             case 17: // WorkRequestTarget
-                GD.Print("[PKT] MultiMessage: WorkRequestTarget");
                 break;
             case 18: // HaveKilledUser
             {
@@ -476,7 +462,6 @@ public partial class PacketHandler
                 break;
             }
             case 20: // EarnExp
-                GD.Print("[PKT] MultiMessage: EarnExp");
                 break;
             case 21: // GoHome
             {
@@ -493,7 +478,8 @@ public partial class PacketHandler
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "Has regresado a tu hogar.", Color = "00FF00" });
                 break;
             default:
-                GD.Print($"[PKT] MultiMessage unknown sub-type={subType}");
+                GD.PrintErr($"[PKT] MultiMessage unknown sub-type={subType}, stream may be corrupted");
+                StreamCorrupted = true;
                 break;
         }
     }
@@ -545,14 +531,6 @@ public partial class PacketHandler
         _state.MinHam = bq.ReadByte();
     }
 
-    // ── Safe / Combat state ───────────────────────────────────────
-
-    /// <summary>
-    /// UserSwing (ID 134) — attacker index who missed player.
-    /// Wire: i16 attackerIndex
-    /// </summary>
-
-
     // ── Stat variants ─────────────────────────────────────────────
 
     private void HandleBinStatName(ByteQueue bq)
@@ -560,7 +538,6 @@ public partial class PacketHandler
         string name = bq.ReadString();
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var ch))
             ch.Name = name;
-        GD.Print($"[PKT] StatName: {name}");
     }
 
 
@@ -570,12 +547,6 @@ public partial class PacketHandler
         _state.CarryBulk = bulk;
     }
 
-    /// <summary>
-    /// HungerThirst (ID 128) — same layout as UpdateHungerAndThirst (ID 60).
-    /// Wire: u8 maxAgua, u8 minAgua, u8 maxHam, u8 minHam
-    /// </summary>
-
-
     // ── Timer ────────────────────────────────────────────────────────
 
     /// <summary>
@@ -584,11 +555,12 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinTimerInfo(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
+        // Bytes must still be consumed to keep the stream in sync.
         byte id = bq.ReadByte();
         int time1 = bq.ReadLong();
         int time2 = bq.ReadLong();
         // Scroll timers not yet implemented on the client.
-        GD.Print($"[PKT] TimerInfo id={id} t1={time1} t2={time2}");
     }
 
     // ── Class options ────────────────────────────────────────────────
@@ -624,28 +596,15 @@ public partial class PacketHandler
         _state.OnlineCount = count;
     }
 
-    // ── MultiMessage ──────────────────────────────────────────────
-
-
     /// <summary>
     /// BattleTeamScores (ID 163) — BatallaMistica event kill scores.
     /// Wire: i32 t1, i32 t2, i32 t3, i32 t4
     /// </summary>
     private void HandleBinBattleTeamScores(ByteQueue bq)
     {
-        int t1 = bq.ReadLong();
-        int t2 = bq.ReadLong();
-        int t3 = bq.ReadLong();
-        int t4 = bq.ReadLong();
-        GD.Print($"[PKT] BattleTeamScores: {t1}/{t2}/{t3}/{t4}");
-        _state.BattleTeamScores = $"{t1},{t2},{t3},{t4}";
+        // Drain 4 ints — scoreboard UI is not yet implemented, data discarded
+        bq.ReadLong(); bq.ReadLong(); bq.ReadLong(); bq.ReadLong();
     }
-
-    /// <summary>
-    /// AmbientColor (ID 164) — map ambient RGB override (PCR opcode).
-    /// Wire: u8 r, u8 g, u8 b
-    /// </summary>
-
 
     /// <summary>
     /// AmbientColor (ID 164) — map ambient RGB override (PCR opcode).
@@ -656,22 +615,12 @@ public partial class PacketHandler
         byte r = bq.ReadByte();
         byte g = bq.ReadByte();
         byte b = bq.ReadByte();
-        _state.AmbientColorR = r;
-        _state.AmbientColorG = g;
-        _state.AmbientColorB = b;
-        // Also set MapColor fields — WorldRenderer reads these for ambient light
         _state.MapColorR = r;
         _state.MapColorG = g;
         _state.MapColorB = b;
-        GD.Print($"[PKT] AmbientColor R={r} G={g} B={b}");
     }
 
     // ── Bank (legacy) ─────────────────────────────────────────────
-
-    /// <summary>
-    /// InitBankLegacy (ID 165) — legacy bank init. Wire: string data
-    /// </summary>
-
 
     /// <summary>
     /// FestData (ID 227) — character stats summary from /EST command.
@@ -680,7 +629,6 @@ public partial class PacketHandler
     private void HandleBinFestData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] FestData: {data}");
         var parts = data.Split(',');
         if (parts.Length >= 8)
         {
@@ -706,17 +654,9 @@ public partial class PacketHandler
     /// FullCharInfo (ID 245) — character info from /MIRAR or DAMINF.
     /// CSV: name,race,class,level,gold,reputation,crimMatados,ciudMatados,status,faction,guildIndex,0,maxHp,maxMana,maxSta
     /// </summary>
-
-
-    /// <summary>
-    /// FullCharInfo (ID 245) — character info from /MIRAR or DAMINF.
-    /// CSV: name,race,class,level,gold,reputation,crimMatados,ciudMatados,status,faction,guildIndex,0,maxHp,maxMana,maxSta
-    /// </summary>
     private void HandleBinFullCharInfo(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] FullCharInfo: {data}");
-
         string[] fields = data.Split(',');
         if (fields.Length < 15) return;
 
@@ -741,11 +681,5 @@ public partial class PacketHandler
         _state.CharInfoCurrent = info;
         _state.ShowCharInfo = true;
     }
-
-    /// <summary>
-    /// Generic single-string packets (ImageData, BkwData, GinfData,
-    /// IcoData, ZsosData, SbrData, AuctionList, CosmeticImage/Pcgn/Pcss/Pccc)
-    /// — read one string and log.
-    /// </summary>
 
 }

@@ -147,16 +147,21 @@ public partial class CharSelectForm : RpgBaseForm
         btnRow.AddChild(exitBtn);
     }
 
+    public override void _Process(double delta)
+    {
+        base._Process(delta);
+        // Keep preview redrawing (animator needs continuous updates for static frame resolve)
+        _previewNode?.QueueRedraw();
+    }
+
     private void UpdatePreview(int index)
     {
         if (_state == null || index < 0 || index >= _state.CharacterList.Count)
         {
             if (_previewHintLabel != null) _previewHintLabel.Visible = true;
-            _previewNode?.QueueRedraw();
             return;
         }
         if (_previewHintLabel != null) _previewHintLabel.Visible = false;
-        _previewNode?.QueueRedraw();
     }
 
     private void DrawCharPreview()
@@ -168,19 +173,26 @@ public partial class CharSelectForm : RpgBaseForm
         if (sel.Length == 0 || sel[0] >= _state.CharacterList.Count) return;
 
         var charInfo = _state.CharacterList[sel[0]];
-        if (charInfo.Body <= 0) return;
+        if (charInfo.Body <= 0)
+        {
+            GD.Print($"[CHARSEL] Body<=0 for slot {sel[0]}, body={charInfo.Body}");
+            return;
+        }
 
         var ch = new Character();
+        ch.FovAlpha = 1f; // UI preview — always fully visible
         ch.Body = charInfo.Body;
         ch.Head = charInfo.Head;
-        ch.WeaponAnim = charInfo.Weapon;
-        ch.ShieldAnim = charInfo.Shield;
-        ch.CascoAnim = charInfo.Helmet;
         ch.Heading = 3;
         ch.Dead = charInfo.Dead;
+        // Only show equipment if character has a head (boats don't)
+        if (charInfo.Head > 0)
+        {
+            ch.WeaponAnim = charInfo.Weapon;
+            ch.ShieldAnim = charInfo.Shield;
+            ch.CascoAnim = charInfo.Helmet;
+        }
         ch.Name = ""; // No name in preview (already shown in list)
-        ch._debugLogged = true;
-        ch._equipDebugLogged = true;
 
         // Center character in 130x130 viewport.
         // Use the tile-center approach: in-game characters are centered at pos.X + 16.

@@ -128,6 +128,17 @@ public partial class TradePanel : RpgBaseForm
         ShowForm();
     }
 
+    public override void HideForm()
+    {
+        // Send cancel packet and reset Trading flag so AnyFormOpen doesn't freeze input
+        if (_state != null && _state.Trading)
+        {
+            _tcp?.SendPacket(ClientPackets.WriteTradeCancel());
+            _state.Trading = false;
+        }
+        base.HideForm();
+    }
+
     public void CloseTrade()
     {
         HideForm();

@@ -18,6 +18,7 @@ public class AoTcpClient : IDisposable
     private TcpClient? _client;
     private NetworkStream? _stream;
     private CancellationTokenSource? _cts;
+    private const int MaxInboundQueueSize = 1000;
     private readonly ConcurrentQueue<byte[]> _inboundQueue = new();
     private readonly byte[] _readBuffer = new byte[8192];
     private volatile bool _connected;
@@ -41,8 +42,6 @@ public class AoTcpClient : IDisposable
         _stream = _client.GetStream();
         _connected = true;
 
-        GD.Print($"[TCP] Connected to {host}:{port}");
-
         // Start reading in background
         _ = Task.Run(() => ReadLoop(_cts.Token));
     }
@@ -51,18 +50,19 @@ public class AoTcpClient : IDisposable
     /// Send raw binary bytes to the server.
     /// 13.3 protocol: no encryption, no framing.
     /// </summary>
-    public void SendPacket(byte[] data)
+    public bool SendPacket(byte[] data)
     {
-        if (!_connected || _stream == null || data.Length == 0) return;
+        if (!_connected || _stream == null || data.Length == 0) return false;
 
         try
         {
             _stream.Write(data, 0, data.Length);
+            return true;
         }
         catch (Exception ex)
         {
             GD.PrintErr($"[TCP] Send error: {ex.Message}");
-            Disconnect();
+            return false;
         }
     }
 
@@ -95,7 +95,6 @@ public class AoTcpClient : IDisposable
                 int bytesRead = await _stream.ReadAsync(_readBuffer, 0, _readBuffer.Length, ct);
                 if (bytesRead == 0)
                 {
-                    GD.Print("[TCP] Server closed connection");
                     Disconnect();
                     return;
                 }
@@ -103,7 +102,10 @@ public class AoTcpClient : IDisposable
                 // Enqueue the raw bytes for the packet handler
                 byte[] data = new byte[bytesRead];
                 Array.Copy(_readBuffer, data, bytesRead);
-                _inboundQueue.Enqueue(data);
+                if (_inboundQueue.Count < MaxInboundQueueSize)
+                    _inboundQueue.Enqueue(data);
+                else
+                    GD.PrintErr("[TCP] Inbound queue full — dropping packet");
             }
         }
         catch (OperationCanceledException)
@@ -125,7 +127,6 @@ public class AoTcpClient : IDisposable
         _client?.Dispose();
         _stream = null;
         _client = null;
-        GD.Print("[TCP] Disconnected");
     }
 
     public void Dispose()

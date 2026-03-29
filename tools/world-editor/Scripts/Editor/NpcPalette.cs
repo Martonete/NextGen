@@ -39,7 +39,8 @@ public partial class NpcPalette : VBoxContainer
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(300, 0);
+        SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        ClipContents = true;
         AddThemeConstantOverride("separation", 3);
 
         // Search box
@@ -75,7 +76,10 @@ public partial class NpcPalette : VBoxContainer
         // Scrollable list
         _scroll = new ScrollContainer();
         _scroll.SizeFlagsVertical = SizeFlags.ExpandFill;
-        _scroll.CustomMinimumSize = new Vector2(290, 200);
+        _scroll.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _scroll.CustomMinimumSize = new Vector2(0, 200);
+        _scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        _scroll.ClipContents = true;
         AddChild(_scroll);
 
         _listContainer = new VBoxContainer();

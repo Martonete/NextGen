@@ -14,6 +14,239 @@ public partial class Main : Control
 	private const string ServerHost = "127.0.0.1";
 	private const int ServerPort = 5028;
 
+	// Saved references for runtime repositioning on resolution change
+	private SubViewportContainer? _viewportContainer;
+	private SubViewport? _gameViewport;
+	private Control? _sidebarBg;
+	private GameHudFrame? _hudFrame;
+
+	// Saved references for runtime repositioning of sidebar elements
+	private NinePatchRect? _nameFrame;
+	private NinePatchRect? _levelFrame;
+	private Panel? _levelBadge;
+	private NinePatchRect? _xpBarBg;
+	private TextureRect? _goldIcon;
+	// Sidebar buttons saved for repositioning
+	private TextureButton? _mapaButton;
+	private TextureButton? _grupoButton;
+	private TextureButton? _opcionesButton;
+	private TextureButton? _estadisticasButton;
+	private TextureButton? _clanesButton;
+	private TextureButton? _minimizeButton;
+	private TextureButton? _closeMenuButton;
+	private Label? _statSepLabel;
+
+	/// <summary>
+	/// Reposition ALL UI elements to match current ResolutionManager values.
+	/// Called on resolution change without reloading the scene.
+	/// </summary>
+	private void RepositionUI()
+	{
+		int S(int v) => ResolutionManager.S(v);
+		int sbW = S(210);
+		// Extra space = real sidebar minus design sidebar (scaled).
+		// At 800x600: extra=0. At higher res: extra > 0 → distribute evenly.
+		int sidebarRealW = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
+		int designSidebarW = S(240); // DesignSidebarWidth scaled
+		int extraSidebar = Math.Max(0, sidebarRealW - designSidebarW);
+		int sbX = ResolutionManager.SidebarX + extraSidebar / 2;
+
+		// Root + GameUI
+		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		if (_gameUI != null) _gameUI.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// SubViewportContainer
+		if (_viewportContainer != null)
+		{
+			_viewportContainer.OffsetLeft = ResolutionManager.LeftMargin;
+			_viewportContainer.OffsetTop = ResolutionManager.TopMargin;
+			_viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
+			_viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+		}
+
+		// SubViewport
+		if (_gameViewport != null)
+			_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+
+		// Sidebar background
+		if (_sidebarBg != null)
+			_sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// HUD frame (big_bar_bg + big_bar_frame)
+		if (_hudFrame != null)
+			_hudFrame.ResizeToWindow();
+
+		// Stat bar overlay
+		if (_statBarOverlay != null)
+			_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// --- Sidebar internal elements ---
+		// Name frame
+		if (_nameFrame != null) { _nameFrame.Position = new Vector2(sbX, S(17)); _nameFrame.Size = new Vector2(sbW, S(42)); }
+		// NameLabel
+		if (_nameLabel != null) { _nameLabel.Position = new Vector2(sbX + S(14), S(19)); _nameLabel.Size = new Vector2(sbW - S(28), S(38)); _nameLabel.AddThemeFontSizeOverride("font_size", S(11)); }
+		// Level frame
+		if (_levelFrame != null) { _levelFrame.Position = new Vector2(sbX + S(2), S(55)); _levelFrame.Size = new Vector2(sbW - S(4), S(20)); }
+		// Level badge
+		if (_levelBadge != null) { _levelBadge.Position = new Vector2(sbX + S(6), S(57)); _levelBadge.Size = new Vector2(S(30), S(16)); }
+		// LevelLabel
+		if (_levelLabel != null) { _levelLabel.Position = new Vector2(sbX + S(6), S(57)); _levelLabel.Size = new Vector2(S(30), S(16)); _levelLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		// XP bar
+		if (_xpBarBg != null) { _xpBarBg.Position = new Vector2(sbX + S(2), S(78)); _xpBarBg.Size = new Vector2(sbW - S(4), S(14)); }
+		// ExpLabel
+		if (_expLabel != null) { _expLabel.Position = new Vector2(sbX + S(2), S(78)); _expLabel.Size = new Vector2(sbW - S(4), S(14)); _expLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// Gold icon + label
+		if (_goldIcon != null) { _goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137)); _goldIcon.Size = new Vector2(S(14), S(14)); }
+		if (_goldLabel != null) { _goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135)); _goldLabel.Size = new Vector2(S(60), S(14)); _goldLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// --- Sidebar buttons (relative to BottomBarY) ---
+		int btnX = sbX + S(122);
+		int btn0Y = ResolutionManager.BottomBarY - S(120);
+		int btnStep = S(21);
+		int btnFontSize = S(10);
+		int btnW = S(93);
+
+		// Coords label (map name + coords) — centered below stat bars (left half of sidebar)
+		int coordsW = S(120);
+		if (_coordsLabel != null) { _coordsLabel.Position = new Vector2(sbX, S(549)); _coordsLabel.Size = new Vector2(coordsW, S(28)); _coordsLabel.HorizontalAlignment = HorizontalAlignment.Center; _coordsLabel.AddThemeFontSizeOverride("font_size", S(8)); }
+		// Online + FPS — centered below Clanes button
+		int clanesBottomY = btn0Y + btnStep * 4 + S(22);
+		if (_onlineLabel != null) { _onlineLabel.Position = new Vector2(btnX, clanesBottomY); _onlineLabel.Size = new Vector2(btnW, S(12)); _onlineLabel.HorizontalAlignment = HorizontalAlignment.Center; _onlineLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_fpsLabel != null) { _fpsLabel.Position = new Vector2(btnX, clanesBottomY + S(12)); _fpsLabel.Size = new Vector2(btnW, S(12)); _fpsLabel.HorizontalAlignment = HorizontalAlignment.Center; _fpsLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+
+		if (_mapaButton != null) { _mapaButton.Position = new Vector2(btnX, btn0Y); _mapaButton.Size = new Vector2(S(93), S(20)); _mapaButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_grupoButton != null) { _grupoButton.Position = new Vector2(btnX, btn0Y + btnStep); _grupoButton.Size = new Vector2(S(93), S(20)); _grupoButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_opcionesButton != null) { _opcionesButton.Position = new Vector2(btnX, btn0Y + btnStep * 2); _opcionesButton.Size = new Vector2(S(93), S(20)); _opcionesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_estadisticasButton != null) { _estadisticasButton.Position = new Vector2(btnX, btn0Y + btnStep * 3); _estadisticasButton.Size = new Vector2(S(93), S(20)); _estadisticasButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+		if (_clanesButton != null) { _clanesButton.Position = new Vector2(btnX, btn0Y + btnStep * 4); _clanesButton.Size = new Vector2(S(93), S(20)); _clanesButton.AddThemeFontSizeOverride("font_size", btnFontSize); }
+
+		// Minimize/Close buttons
+		if (_minimizeButton != null) { _minimizeButton.Position = new Vector2(ResolutionManager.WindowWidth - S(48), S(4)); _minimizeButton.Size = new Vector2(S(17), S(17)); }
+		if (_closeMenuButton != null) { _closeMenuButton.Position = new Vector2(ResolutionManager.WindowWidth - S(30), S(4)); _closeMenuButton.Size = new Vector2(S(17), S(17)); }
+
+		// --- Inventory/Spell panel area ---
+		int contentW = S(190);
+		int designOffset = S(10);
+		int sideX = ResolutionManager.SidebarX + designOffset + extraSidebar / 2;
+		int tabX = sideX - S(6);
+		int tabBtnW = (contentW + S(12)) / 2;
+		if (_invTabButton != null) { _invTabButton.Position = new Vector2(tabX, S(122)); _invTabButton.Size = new Vector2(tabBtnW, S(34)); _invTabButton.AddThemeFontSizeOverride("font_size", S(10)); }
+		if (_spellTabButton != null) { _spellTabButton.Position = new Vector2(tabX + tabBtnW, S(122)); _spellTabButton.Size = new Vector2(tabBtnW, S(34)); _spellTabButton.AddThemeFontSizeOverride("font_size", S(10)); }
+		int invX = sideX + (contentW - S(171)) / 2;
+		float uiScale = ResolutionManager.UIScale;
+		if (_inventoryPanel != null) { _inventoryPanel.Position = new Vector2(invX, S(158)); _inventoryPanel.Size = new Vector2(171, 174); _inventoryPanel.Scale = new Vector2(uiScale, uiScale); }
+		if (_spellPanel != null) { _spellPanel.Position = new Vector2(sideX, S(158)); _spellPanel.Size = new Vector2(190, 186); _spellPanel.Scale = new Vector2(uiScale, uiScale); }
+		if (_dydToggle != null) { _dydToggle.Position = new Vector2(sideX - S(25), S(338)); _dydToggle.Size = new Vector2(S(21), S(21)); }
+		int halfBtn = contentW / 2 - S(2);
+		if (_lanzarButton != null) { _lanzarButton.Position = new Vector2(sideX, S(348)); _lanzarButton.Size = new Vector2(halfBtn, S(28)); _lanzarButton.AddThemeFontSizeOverride("font_size", S(10)); }
+		if (_infoButton != null) { _infoButton.Position = new Vector2(sideX + halfBtn + S(4), S(348)); _infoButton.Size = new Vector2(halfBtn, S(28)); _infoButton.AddThemeFontSizeOverride("font_size", S(10)); }
+		if (_spellUpButton != null) _spellUpButton.Position = new Vector2(sideX + contentW + S(2), S(200));
+		if (_spellDownButton != null) _spellDownButton.Position = new Vector2(sideX + contentW + S(2), S(230));
+
+		// --- Stat labels ---
+		int bbY = ResolutionManager.BottomBarY + S(9);
+		if (_armorLabel != null) { _armorLabel.Position = new Vector2(S(55), bbY); _armorLabel.Size = new Vector2(S(100), S(17)); _armorLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_helmLabel != null) { _helmLabel.Position = new Vector2(S(170), bbY); _helmLabel.Size = new Vector2(S(90), S(17)); _helmLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_shieldLabel != null) { _shieldLabel.Position = new Vector2(S(310), bbY); _shieldLabel.Size = new Vector2(S(95), S(17)); _shieldLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		if (_weaponLabel != null) { _weaponLabel.Position = new Vector2(S(435), bbY); _weaponLabel.Size = new Vector2(S(90), S(17)); _weaponLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+		// Agilidad | Fuerza — centered row
+		int statRowW = S(190);
+		int statRowY = ResolutionManager.BottomBarY - S(160);
+		if (_agilidadLabel != null) { _agilidadLabel.Position = new Vector2(sideX, statRowY); _agilidadLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _agilidadLabel.HorizontalAlignment = HorizontalAlignment.Right; _agilidadLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		if (_statSepLabel != null) { _statSepLabel.Position = new Vector2(sideX + statRowW / 2 - S(5), statRowY); _statSepLabel.Size = new Vector2(S(10), S(14)); }
+		if (_fuerzaLabel != null) { _fuerzaLabel.Position = new Vector2(sideX + statRowW / 2 + S(5), statRowY); _fuerzaLabel.Size = new Vector2(statRowW / 2 - S(5), S(14)); _fuerzaLabel.HorizontalAlignment = HorizontalAlignment.Left; _fuerzaLabel.AddThemeFontSizeOverride("font_size", S(9)); }
+		// --- Minimap (inside console area, top-right corner) ---
+		// Position: right-aligned to ConsoleRight, with S(5) gap from console text
+		int mmBorderW = S(118);
+		int mmBorderX = ResolutionManager.ConsoleRight - mmBorderW;
+		if (_minimapBorder != null) { _minimapBorder.Position = new Vector2(mmBorderX, S(19)); _minimapBorder.Size = new Vector2(mmBorderW, S(118)); }
+		if (_minimapPanel != null) { _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28)); _minimapPanel.Size = new Vector2(S(100), S(100)); }
+
+		// Macro status label
+		if (_macroStatusLabel != null) { _macroStatusLabel.Position = new Vector2(S(484), S(4)); _macroStatusLabel.Size = new Vector2(S(60), S(12)); _macroStatusLabel.AddThemeFontSizeOverride("font_size", S(7)); }
+
+		// Blind overlay
+		if (_blindOverlay != null)
+			_blindOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		// Console + ChatInput offsets (scaled from design values)
+		if (_consoleLabel != null)
+		{
+			_consoleLabel.OffsetLeft = S(27);
+			_consoleLabel.OffsetTop = S(28);
+			_consoleLabel.OffsetBottom = S(115);
+		}
+		if (_chatInputNode != null)
+		{
+			_chatInputNode.OffsetLeft = S(22);
+			_chatInputNode.OffsetTop = S(118);
+			_chatInputNode.OffsetBottom = S(139);
+		}
+		// Right edge depends on minimap visibility
+		UpdateConsoleWidth();
+
+		// Re-center all game panels in the viewport area
+		CenterPanelsInViewport();
+
+		// Fog overlay needs redraw
+		_worldRenderer?.QueueRedraw();
+	}
+
+	/// <summary>
+	/// Re-center all game panels within the current viewport area.
+	/// </summary>
+	private void CenterPanelsInViewport()
+	{
+		int vpL = ResolutionManager.LeftMargin;
+		int vpT = ResolutionManager.TopMargin;
+		int vpW = ResolutionManager.ViewportW;
+		int vpH = ResolutionManager.ViewportH;
+		float uiScale = ResolutionManager.UIScale;
+
+		void Center(Control? panel)
+		{
+			if (panel == null) return;
+			// Scale panel proportionally, but cap so it fits inside the viewport
+			float maxScaleW = (float)vpW / panel.Size.X;
+			float maxScaleH = (float)vpH / panel.Size.Y;
+			float panelScale = Math.Min(uiScale, Math.Min(maxScaleW * 0.95f, maxScaleH * 0.95f));
+			panel.Scale = new Vector2(panelScale, panelScale);
+			// Center using scaled size
+			float scaledW = panel.Size.X * panelScale;
+			float scaledH = panel.Size.Y * panelScale;
+			float px = vpL + (vpW - scaledW) / 2f;
+			float py = vpT + (vpH - scaledH) / 2f;
+			panel.Position = new Vector2(Math.Max(vpL, px), Math.Max(vpT, py));
+		}
+
+		Center(_commercePanel);
+		Center(_tradePanel);
+		Center(_bankPanel);
+		Center(_vaultPanel);
+		Center(_guildBankPanel);
+		Center(_craftPanel);
+		Center(_guildPanel);
+		Center(_guildFoundationPanel);
+		Center(_forumPanel);
+		Center(_partyPanel);
+		Center(_travelPanel);
+		Center(_deathPanel);
+		Center(_macroPanel);
+		Center(_statsPanel);
+		Center(_optionsPanel);
+		Center(_keyBindPanel);
+		Center(_questPanel);
+		Center(_trainerPanel);
+		Center(_changePasswordPanel);
+		Center(_gmPanel);
+		Center(_spawnListPanel);
+		Center(_sosPanel);
+		Center(_motdEditorPanel);
+		Center(_guildAlignmentPanel);
+		Center(_peaceProposalPanel);
+		Center(_guildMemberPanel);
+		Center(_tutorialPanel);
+	}
+
 	private readonly GameData _gameData = new();
 	private readonly GameState _state = new();
 	private AoTcpClient? _tcp;
@@ -24,6 +257,10 @@ public partial class Main : Control
 	private ParticleSystem _particleSystem = new();
 	private LightSystem _lightSystem = new();
 	private SoundManager? _soundManager;
+
+	// Borderless window drag state
+	private bool _windowDragging;
+	private Vector2I _windowDragStart;
 
 	private bool _connecting;
 
@@ -104,9 +341,6 @@ public partial class Main : Control
 
 	// Forum panel (frmForo)
 	private ForumPanel? _forumPanel;
-
-	// Mail panel
-	private MailPanel? _mailPanel;
 
 	// Party panel (frmGrupo)
 	private PartyPanel? _partyPanel;
@@ -208,6 +442,30 @@ public partial class Main : Control
 	private IEnumerator<int>? _texturePreloadIter;
 	private bool _startupPreloadDone;
 
+	/// <summary>
+	/// Creates a fresh PacketHandler and wires all callbacks.
+	/// Called exactly once — at login time, after _tcp is assigned.
+	/// </summary>
+	private void CreatePacketHandler()
+	{
+		_packetHandler = new PacketHandler(_state);
+		_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
+		if (_soundManager != null)
+		{
+			_packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
+			_packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
+			_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
+			_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
+		}
+		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
+		{
+			var floatingLayer = _worldRenderer?.FloatingText;
+			if (floatingLayer == null) return;
+			var color = Color.FromHtml(colorHex);
+			floatingLayer.AddText(charIndex, text, color);
+		};
+	}
+
 	public override void _Ready()
 	{
 		GD.Print("=== Argentum Nextgen — Godot 4 Client ===");
@@ -239,11 +497,15 @@ public partial class Main : Control
 		// Load user configuration (Options.ao)
 		_state.Config = GameConfig.Load(dataPath);
 		_state.ShowNames = _state.Config.ShowNames;
+
 		// Apply V-Sync
 		DisplayServer.WindowSetVsyncMode(
 			_state.Config.VsyncEnabled ? DisplayServer.VSyncMode.Enabled : DisplayServer.VSyncMode.Disabled);
 		if (_state.Config.FpsLimit > 0)
 			Engine.MaxFps = _state.Config.FpsLimit;
+
+		// Apply dynamic resolution (window size + tile calculation)
+		ResolutionManager.ApplyResolution(_state.Config.ResolutionWidth, _state.Config.ResolutionHeight);
 
 		// Load key bindings (Teclas.ao)
 		_state.Keys = KeyBindings.Load(dataPath);
@@ -260,9 +522,25 @@ public partial class Main : Control
 		var gameWorldNode = GetNode<Node2D>("GameUI/GameViewportContainer/GameViewport/GameWorld");
 		gameWorldNode.AddChild(_worldRenderer);
 
-		// Setup packet handler
-		_packetHandler = new PacketHandler(_state);
-		_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
+		// Save references for runtime repositioning
+		_gameViewport = GetNode<SubViewport>("GameUI/GameViewportContainer/GameViewport");
+		// Pixel snap is set via project settings (rendering/2d/snap/snap_2d_transforms_to_pixel)
+		_viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
+
+		// Wire resolution change: reposition all UI in-place (no scene reload)
+		// In fullscreen, update ContentScaleSize so the new layout fills the screen.
+		ResolutionManager.OnResolutionChanged += () =>
+		{
+			if (_state.Config.Fullscreen)
+				EnterFullscreen();
+			else
+				ExitFullscreen();
+			// Defer repositioning to next frame so window resize has taken effect
+			Callable.From(RepositionUI).CallDeferred();
+		};
+
+		// Apply initial SubViewport size
+		_gameViewport.Size = new Vector2I(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
 
 		// Setup sound manager
 		_soundManager = new SoundManager();
@@ -272,19 +550,6 @@ public partial class Main : Control
 		_soundManager.SoundEnabled = _state.Config.SfxEnabled;
 		_soundManager.SetMusicVolume(_state.Config.MusicVolume);
 		_soundManager.SetSfxVolume(_state.Config.SfxVolume);
-		_packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
-		_packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
-		_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
-		_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
-
-		// Wire floating text callback: spawns rising damage/heal numbers above characters
-		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
-		{
-			var floatingLayer = _worldRenderer?.FloatingText;
-			if (floatingLayer == null) return;
-			var color = Color.FromHtml(colorHex);
-			floatingLayer.AddText(charIndex, text, color);
-		};
 
 		// Initialize weather renderer with sound manager (rain sound)
 		_worldRenderer?.InitWeather(_soundManager);
@@ -304,17 +569,11 @@ public partial class Main : Control
 		_loginForm.OnLoginRequest = (account, password) =>
 		{
 			_tcp = new AoTcpClient();
-			_packetHandler = new PacketHandler(_state);
-			_packetHandler.OnMapLoad = () => { _soundManager?.StopAllSfx(); LoadCurrentMap(); };
-			if (_soundManager != null)
-			{
-				_packetHandler.OnPlaySound = (id) => _soundManager.PlaySound(id);
-				_packetHandler.OnPlaySoundAt = (id, x, y) => _soundManager.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
-				_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
-				_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
-			}
+			CreatePacketHandler();
 			_inputHandler = new InputHandler(_tcp, _state, _state.Keys, GetViewport());
 			if (_inputRouter != null) _inputRouter.InputHandler = _inputHandler;
+			_inputHandler.OnPlaySoundAt = (id, x, y) =>
+				_soundManager?.PlaySoundAt(id, x, y, _state.UserPosX, _state.UserPosY);
 			_inputHandler.OnToggleMusic = () =>
 			{
 				_state.Config.MusicEnabled = !_state.Config.MusicEnabled;
@@ -343,9 +602,27 @@ public partial class Main : Control
 		// Grab Game UI nodes
 		_gameUI = GetNode<Control>("GameUI");
 
+		// === Apply dynamic resolution to viewport/UI ===
+		Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		_gameUI.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+
+		var viewportContainer = GetNode<SubViewportContainer>("GameUI/GameViewportContainer");
+		// MouseFilter.Pass so buttons on top of the viewport area can receive clicks.
+		// Game viewport clicks are handled via _Input → HandleMouseClick, not GUI system.
+		viewportContainer.MouseFilter = Control.MouseFilterEnum.Pass;
+		viewportContainer.OffsetLeft = ResolutionManager.LeftMargin;
+		viewportContainer.OffsetTop = ResolutionManager.TopMargin;
+		viewportContainer.OffsetRight = ResolutionManager.LeftMargin + ResolutionManager.ViewportW;
+		viewportContainer.OffsetBottom = ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+
 		// Chat system
 		var console = GetNode<RichTextLabel>("GameUI/Console");
 		_consoleLabel = console;
+		// Set scaled offsets (design: left=27, top=28, bottom=115, right=ConsoleRight)
+		console.OffsetLeft = S(27);
+		console.OffsetTop = S(28);
+		console.OffsetBottom = S(115);
+		console.OffsetRight = ResolutionManager.ConsoleRight;
 		var consoleStyle = new StyleBoxEmpty();
 		consoleStyle.ContentMarginLeft = 2;
 		consoleStyle.ContentMarginRight = 2;
@@ -355,6 +632,11 @@ public partial class Main : Control
 
 		var chatInput = GetNode<LineEdit>("GameUI/ChatInput");
 		_chatInputNode = chatInput;
+		// Set scaled offsets (design: left=22, top=118, bottom=139, right=ConsoleRight)
+		chatInput.OffsetLeft = S(22);
+		chatInput.OffsetTop = S(118);
+		chatInput.OffsetBottom = S(139);
+		chatInput.OffsetRight = ResolutionManager.ConsoleRight;
 		chatInput.Visible = false;
 		chatInput.MaxLength = 160;
 		// RPG-styled input for chat
@@ -391,30 +673,36 @@ public partial class Main : Control
 
 		// === Redesigned top sidebar: Name frame + Level strip + XP bar ===
 		// Background layer inserted after HudFrame so frames draw behind labels
-		var sidebarBg = new Control();
-		sidebarBg.MouseFilter = Control.MouseFilterEnum.Ignore;
-		sidebarBg.Size = new Vector2(800, 600);
+		_sidebarBg = new Control();
+		_sidebarBg.MouseFilter = Control.MouseFilterEnum.Ignore;
+		_sidebarBg.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
+		var sidebarBg = _sidebarBg;
 		_gameUI.AddChild(sidebarBg);
 		_gameUI.MoveChild(sidebarBg, 1); // index 1 = after HudFrame(0), before scene labels
 
-		// Sidebar content area: shifted left toward minimap
-		const int sbX = 560;
-		const int sbW = 210;
+		// Sidebar content area: design position at base res, center extra at higher res
+		int S(int v) => ResolutionManager.S(v);
+		int sbW = S(210);
+		int sidebarRealW2 = ResolutionManager.WindowWidth - ResolutionManager.SidebarX;
+		int designSbW2 = S(240);
+		int extraSb2 = Math.Max(0, sidebarRealW2 - designSbW2);
+		int sbX = ResolutionManager.SidebarX + extraSb2 / 2;
 
 		// --- Name frame: name_frame_mid_ready.png NinePatch ---
 		var nameFrame = RpgTheme.CreateNinePatch("name_frame_mid_ready.png", new Vector4(30, 10, 30, 10));
-		nameFrame.Position = new Vector2(sbX, 17);
-		nameFrame.Size = new Vector2(sbW, 42);
+		nameFrame.Position = new Vector2(sbX, S(17));
+		nameFrame.Size = new Vector2(sbW, S(42));
 		sidebarBg.AddChild(nameFrame);
+		_nameFrame = nameFrame;
 
 		// NameLabel: centered with padding inside frame
-		_nameLabel.Position = new Vector2(sbX + 14, 19);
-		_nameLabel.Size = new Vector2(sbW - 28, 38);
+		_nameLabel.Position = new Vector2(sbX + S(14), S(19));
+		_nameLabel.Size = new Vector2(sbW - S(28), S(38));
 		_nameLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_nameLabel.VerticalAlignment = VerticalAlignment.Center;
 		_nameLabel.ClipText = true;
 		ApplyFont(_nameLabel, "Tahoma", 700);
-		_nameLabel.AddThemeFontSizeOverride("font_size", 11);
+		_nameLabel.AddThemeFontSizeOverride("font_size", S(11));
 		_nameLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 1f, 1f));
 		_nameLabel.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 1f));
 		_nameLabel.AddThemeConstantOverride("shadow_offset_x", 1);
@@ -423,9 +711,10 @@ public partial class Main : Control
 
 		// --- Level + Rep strip: info_window.png NinePatch ---
 		var levelFrame = RpgTheme.CreateNinePatch("info_window.png", new Vector4(12, 12, 12, 12));
-		levelFrame.Position = new Vector2(sbX + 2, 55);
-		levelFrame.Size = new Vector2(sbW - 4, 20);
+		levelFrame.Position = new Vector2(sbX + S(2), S(55));
+		levelFrame.Size = new Vector2(sbW - S(4), S(20));
 		sidebarBg.AddChild(levelFrame);
+		_levelFrame = levelFrame;
 
 		// Level badge: small rounded dark box with gold border
 		var levelBadge = new Panel();
@@ -434,73 +723,78 @@ public partial class Main : Control
 		badgeStyle.BgColor = new Color(0.06f, 0.05f, 0.04f, 0.95f);
 		badgeStyle.BorderColor = new Color(0.72f, 0.56f, 0.22f, 0.9f);
 		badgeStyle.SetBorderWidthAll(1);
-		badgeStyle.SetCornerRadiusAll(9);
+		badgeStyle.SetCornerRadiusAll(S(9));
 		levelBadge.AddThemeStyleboxOverride("panel", badgeStyle);
-		levelBadge.Position = new Vector2(sbX + 6, 57);
-		levelBadge.Size = new Vector2(30, 16);
+		levelBadge.Position = new Vector2(sbX + S(6), S(57));
+		levelBadge.Size = new Vector2(S(30), S(16));
 		sidebarBg.AddChild(levelBadge);
+		_levelBadge = levelBadge;
 
 		// LevelLabel: inside badge
-		_levelLabel.Position = new Vector2(sbX + 6, 57);
-		_levelLabel.Size = new Vector2(30, 16);
+		_levelLabel.Position = new Vector2(sbX + S(6), S(57));
+		_levelLabel.Size = new Vector2(S(30), S(16));
 		_levelLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_levelLabel.VerticalAlignment = VerticalAlignment.Center;
 		ApplyFont(_levelLabel, "Tahoma", 700);
-		_levelLabel.AddThemeFontSizeOverride("font_size", 9);
+		_levelLabel.AddThemeFontSizeOverride("font_size", S(9));
 		_levelLabel.AddThemeColorOverride("font_color", new Color(0.95f, 0.82f, 0.4f));
 
 		// --- XP bar: xp_bar.png background + fill from StatBarOverlay ---
 		var xpBarBg = RpgTheme.CreateNinePatch("xp_bar.png", new Vector4(4, 4, 4, 4));
-		xpBarBg.Position = new Vector2(sbX + 2, 78);
-		xpBarBg.Size = new Vector2(sbW - 4, 14);
+		xpBarBg.Position = new Vector2(sbX + S(2), S(78));
+		xpBarBg.Size = new Vector2(sbW - S(4), S(14));
 		sidebarBg.AddChild(xpBarBg);
+		_xpBarBg = xpBarBg;
 
 		// ExpLabel: overlay centered on XP bar
-		_expLabel.Position = new Vector2(sbX + 2, 78);
-		_expLabel.Size = new Vector2(sbW - 4, 14);
+		_expLabel.Position = new Vector2(sbX + S(2), S(78));
+		_expLabel.Size = new Vector2(sbW - S(4), S(14));
 		_expLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		_expLabel.VerticalAlignment = VerticalAlignment.Center;
 		ApplyFont(_expLabel, "Tahoma", 700);
-		_expLabel.AddThemeFontSizeOverride("font_size", 8);
+		_expLabel.AddThemeFontSizeOverride("font_size", S(8));
 		_expLabel.AddThemeColorOverride("font_color", Colors.White);
 		_expLabel.AddThemeColorOverride("font_shadow_color", new Color(0f, 0f, 0f, 0.8f));
 		_expLabel.AddThemeConstantOverride("shadow_offset_x", 1);
 		_expLabel.AddThemeConstantOverride("shadow_offset_y", 1);
 
-		// Gold icon + label: centered above sidebar buttons (buttons at X=682, W=93)
+		// Gold icon + label: positioned relative to BottomBarY
 		var goldIcon = new TextureRect();
 		goldIcon.Texture = RpgTheme.GetTex("Icons/greed.png");
 		goldIcon.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
 		goldIcon.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
-		goldIcon.Position = new Vector2(700, 428);
-		goldIcon.Size = new Vector2(14, 14);
+		goldIcon.Position = new Vector2(sbX + S(140), ResolutionManager.BottomBarY - S(137));
+		goldIcon.Size = new Vector2(S(14), S(14));
 		goldIcon.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(goldIcon);
+		_goldIcon = goldIcon;
 
-		_goldLabel.Position = new Vector2(715, 430);
-		_goldLabel.Size = new Vector2(60, 14);
+		_goldLabel.Position = new Vector2(sbX + S(155), ResolutionManager.BottomBarY - S(135));
+		_goldLabel.Size = new Vector2(S(60), S(14));
 		_goldLabel.HorizontalAlignment = HorizontalAlignment.Left;
 		ApplyFont(_goldLabel, "Tahoma", 700);
-		_goldLabel.AddThemeFontSizeOverride("font_size", 8);
+		_goldLabel.AddThemeFontSizeOverride("font_size", S(8));
 		_goldLabel.AddThemeColorOverride("font_color", new Color(1f, 1f, 0.502f));
 
-		// Online label: below sidebar buttons, centered like FPS
-		_onlineLabel.Position = new Vector2(682, 552);
-		_onlineLabel.Size = new Vector2(93, 12);
-		_onlineLabel.HorizontalAlignment = HorizontalAlignment.Center;
-		ApplyFont(_onlineLabel, "Tahoma", 700);
-		_onlineLabel.AddThemeFontSizeOverride("font_size", 7);
-
-		// Coords label
-		_coordsLabel.Position = new Vector2(580, 560);
+		// Map name + coords — centered below stat bars
+		_coordsLabel.Position = new Vector2(sbX, S(549));
+		_coordsLabel.Size = new Vector2(sbW, S(28));
+		_coordsLabel.HorizontalAlignment = HorizontalAlignment.Center;
 		ApplyFont(_coordsLabel, "Tahoma", 700);
-		_coordsLabel.AddThemeFontSizeOverride("font_size", 9);
+		_coordsLabel.AddThemeFontSizeOverride("font_size", S(8));
+
+		// Online label — right side
+		_onlineLabel.Position = new Vector2(sbX + sbW / 2, ResolutionManager.BottomBarY - S(5));
+		_onlineLabel.Size = new Vector2(sbW / 2 - S(4), S(12));
+		_onlineLabel.HorizontalAlignment = HorizontalAlignment.Right;
+		ApplyFont(_onlineLabel, "Tahoma", 700);
+		_onlineLabel.AddThemeFontSizeOverride("font_size", S(7));
 
 		// Custom stat bar overlay — draws colored fill rects at VB6 positions
 		_statBarOverlay = new StatBarOverlay();
 		_statBarOverlay.DataPath = dataPath;
 		_statBarOverlay.Position = Vector2.Zero;
-		_statBarOverlay.Size = new Vector2(800, 600);
+		_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		_statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
 		_gameUI.AddChild(_statBarOverlay);
 
@@ -540,8 +834,8 @@ public partial class Main : Control
 			int[] selected = charList.GetSelectedItems();
 			if (selected.Length == 0 || selected[0] >= _state.CharacterList.Count || _tcp == null) return;
 			string charName = _state.CharacterList[selected[0]].Name;
-			_tcp.SendPacket(ClientPackets.WriteTbrp(charName));
-			GD.Print($"[MAIN] Sent: TBRP {charName}");
+			_tcp.SendPacket(ClientPackets.WriteDeleteCharacter(charName));
+			GD.Print($"[MAIN] Sent: DeleteCharacter {charName}");
 			noticeLabel.Text = "Eliminando personaje...";
 		};
 
@@ -563,10 +857,10 @@ public partial class Main : Control
 		{
 			int head = _state.CreateCharHead;
 			string account = _state.AccountName;
-			_tcp!.SendPacket(ClientPackets.WriteNlogin(
+			_tcp!.SendPacket(ClientPackets.WriteCreateCharacter(
 				_state.CreateCharName, (byte)_state.CreateCharRace, (byte)_state.CreateCharGender,
 				(byte)_state.CreateCharClass, (short)head, (byte)_state.CreateCharFaction, account));
-			GD.Print("[MAIN] Sent: NLOGIN (binary)");
+			GD.Print("[MAIN] Sent: CreateCharacter (binary)");
 		};
 
 		// Load InvEqu textures (inventory/spell backgrounds) — no longer depends on Principal.jpg
@@ -702,6 +996,13 @@ public partial class Main : Control
 		{
 			if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
 			{
+				// Drain packets buffered before disconnect (e.g. success message sent just before server closed)
+				if (_tcp != null)
+				{
+					foreach (var chunk in _tcp.PollPackets())
+						_packetHandler?.HandleBinaryData(chunk);
+				}
+
 				// Server dropped connection during login/account creation — reset UI
 				_tcp?.Dispose();
 				_tcp = null;
@@ -722,6 +1023,11 @@ public partial class Main : Control
 		foreach (byte[] chunk in dataChunks)
 		{
 			_packetHandler.HandleBinaryData(chunk);
+			if (_packetHandler.StreamCorrupted)
+			{
+				HandleDisconnect("Stream corrupted (unknown opcode) — disconnected.");
+				return;
+			}
 		}
 
 		// Update spatial audio listener position each frame
@@ -857,6 +1163,55 @@ public partial class Main : Control
 		// Block all input during startup preload
 		if (!_startupPreloadDone) return;
 
+		// Borderless window drag: click+drag on non-interactive areas moves the window.
+		// Uses position-based check instead of GuiGetHoveredControl (which is unreliable).
+		if (_state.Config.DragWindowEnabled
+			&& DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Windowed)
+		{
+			if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
+			{
+				if (mb.Pressed)
+				{
+					// Block drag on viewport (game clicks). Allow drag on sidebar
+					// empty space but not on interactive controls (buttons, etc.).
+					float cx = mb.Position.X;
+					float cy = mb.Position.Y;
+					bool inViewport = cx >= ResolutionManager.LeftMargin
+						&& cx < ResolutionManager.LeftMargin + ResolutionManager.ViewportW
+						&& cy >= ResolutionManager.TopMargin
+						&& cy < ResolutionManager.TopMargin + ResolutionManager.ViewportH;
+					if (!inViewport && !_state.AnyFormOpen)
+					{
+						var hovered = GetViewport().GuiGetHoveredControl();
+						bool onControl = hovered is BaseButton or Godot.Range
+							or LineEdit or TextEdit or InventoryPanel or SpellPanel;
+						// Also block if hovered control is inside an RpgBaseForm
+						if (!onControl && hovered != null)
+						{
+							var p = hovered.GetParent();
+							while (p != null) { if (p is UI.RpgBaseForm) { onControl = true; break; } p = p.GetParent(); }
+						}
+						if (!onControl)
+						{
+							_windowDragging = true;
+							_windowDragStart = DisplayServer.MouseGetPosition();
+						}
+					}
+				}
+				else
+				{
+					_windowDragging = false;
+				}
+			}
+			else if (@event is InputEventMouseMotion && _windowDragging)
+			{
+				var mouseNow = DisplayServer.MouseGetPosition();
+				var delta = mouseNow - _windowDragStart;
+				DisplayServer.WindowSetPosition(DisplayServer.WindowGetPosition() + delta);
+				_windowDragStart = mouseNow;
+			}
+		}
+
 		// Escape on login -> quit game
 		if (@event is InputEventKey escKey && escKey.Pressed && !escKey.Echo
 			&& escKey.Keycode == Key.Escape
@@ -894,6 +1249,25 @@ public partial class Main : Control
 			return;
 		}
 
+		// F12: toggle fullscreen — works on ALL screens
+		if (@event is InputEventKey f12Key && f12Key.Pressed && !f12Key.Echo
+			&& f12Key.Keycode == Key.F12)
+		{
+			bool goFullscreen = DisplayServer.WindowGetMode() != DisplayServer.WindowMode.Fullscreen;
+			if (goFullscreen) EnterFullscreen(); else ExitFullscreen();
+			_state.Config.Fullscreen = goFullscreen;
+			_state.Config.Save(_dataPath);
+			GetViewport().SetInputAsHandled();
+			// Re-center any visible form after fullscreen toggle
+			if (_loginForm != null && _loginForm.Visible) _loginForm.ShowForm();
+			if (_charSelectForm != null && _charSelectForm.Visible) _charSelectForm.ShowForm();
+			if (_charCreateScreen?.Panel != null && _charCreateScreen.Panel.Visible)
+				CenterPanelOnScreen(_charCreateScreen.Panel);
+			if (_accountCreateScreen?.Panel != null && _accountCreateScreen.Panel.Visible)
+				CenterPanelOnScreen(_accountCreateScreen.Panel);
+			return;
+		}
+
 		if (_state.CurrentScreen != Screen.Game) return;
 
 		// Delegate game-screen input to InputRouter
@@ -903,5 +1277,6 @@ public partial class Main : Control
 	public override void _ExitTree()
 	{
 		_tcp?.Dispose();
+		_gameData?.Textures?.Cleanup();
 	}
 }

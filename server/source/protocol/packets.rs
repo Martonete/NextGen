@@ -12,22 +12,22 @@
 #[repr(u8)]
 pub enum ClientPacketID {
     // Pre-login (0-9)
-    KERD22 = 0,          // Hardware serial check
-    ALOGIN = 1,          // Account login
-    NLOGIN = 2,          // New character creation + enter world
-    OOLOGI = 3,          // Character login (select existing char)
-    THCJXD = 4,          // Character login (primary, with full validation)
-    NACCNT = 5,          // New account creation
-    REPASS = 6,          // Password change
-    REECUH = 7,          // Account recovery
-    TIRDAD = 8,          // Roll dice (attributes)
-    TBRP = 9,            // Delete character
+    HardwareCheck = 0,    // Hardware serial check
+    AccountLogin = 1,     // Account login
+    CreateCharacter = 2,  // New character creation + enter world
+    CharacterLogin = 3,   // Character login (select existing char)
+    CharacterSelect = 4,  // Character login (primary, with full validation)
+    CreateAccount = 5,    // New account creation
+    ChangePassword = 6,   // Password change
+    AccountRecovery = 7,  // Account recovery
+    RollDice = 8,         // Roll dice (attributes)
+    DeleteCharacter = 9,  // Delete character
 
     // Movement / Position (10-14)
     Walk = 10,            // M<1-4> → Walk with heading byte
     ChangeHeading = 11,   // CHEA<1-4> → change heading
     RequestPos = 12,      // RPU → request position update
-    Actualizar = 13,      // ACTUALIZAR → position re-sync
+    SyncPosition = 13,    // ACTUALIZAR → position re-sync
 
     // Combat (20-24)
     Attack = 20,          // AT → attack
@@ -161,7 +161,7 @@ pub enum ServerPacketID {
     ObjectCreate = 34,
     ObjectDelete = 35,
     BlockPosition = 36,
-    PlayMIDI = 37,
+    PlayMusic = 37,
     PlayWave = 38,
     GuildList = 39,
     AreaChanged = 40,
@@ -173,28 +173,28 @@ pub enum ServerPacketID {
     ChangeInventorySlot = 46,
     ChangeBankSlot = 47,
     ChangeSpellSlot = 48,
-    Atributes = 49,
+    Attributes = 49,
     SendSkills = 50,
     ChangeNPCInventorySlot = 51,
     // 52-53 reserved for craft lists
-    RestOK = 54,
+    RestToggle = 54,
     ErrorShow = 55,
     Blind = 56,
-    Dumb = 57,
+    Silence = 57,
     ShowSignal = 58,
     DiceRoll = 59,
     UpdateHungerAndThirst = 60,
     Fame = 61,
     MiniStats = 62,
     LevelUp = 63,
-    AddPJ = 64,
+    AddCharPreview = 64,
     SecurityCode = 65,
     SetInvisible = 66,
     InitAccount = 67,
     DiceRollAlt = 68,
     MeditateToggle = 69,
     BlindNoMore = 70,
-    DumbNoMore = 71,
+    SilenceEnd = 71,
     TrainerCreatureList = 72,
     GuildNews = 73,
     PrivilegeLevel = 74,
@@ -205,8 +205,8 @@ pub enum ServerPacketID {
     RemoveDialogs = 79,
     RemoveCharDialog = 80,
     NavigateToggle = 81,
-    ParalizeOK = 82,
-    ShowGuildFundationForm = 83,
+    ParalyzeOK = 82,
+    ShowGuildFoundationForm = 83,
     TradeOK = 84,
     BankOK = 85,
     ChangeUserTradeSlot = 86,
@@ -290,7 +290,7 @@ pub enum ServerPacketID {
     SmithWeapons = 158,
     SmithArmors = 159,
     CarpItems = 160,
-    MedOK = 161,
+    MeditateOK = 161,
     Navigation = 162,
     AmbientColor = 164,      // PCR: map ambient RGB color
 
@@ -303,7 +303,7 @@ pub enum ServerPacketID {
     NpcInvItem = 171,
     NpcInvSlotLegacy = 172,
     InitCommerceLegacy = 173,
-    TransOK = 174,
+    TransactionOK = 174,
     ResponseMsg = 177,
     AuctionBid = 179,
 
@@ -353,7 +353,9 @@ pub enum ServerPacketID {
     // Ping
     Ping = 250,
     TravelsOpen = 251,
-    MailOpenTrigger = 252,
+
+    // Zones
+    ZoneChange = 252,
 
     // Generic text fallback (for any remaining text-based packets)
     GenericText = 255,
@@ -363,20 +365,20 @@ impl ClientPacketID {
     /// Convert byte to ClientPacketID, returns None for unmapped IDs.
     pub fn from_byte(b: u8) -> Option<Self> {
         match b {
-            0 => Some(Self::KERD22),
-            1 => Some(Self::ALOGIN),
-            2 => Some(Self::NLOGIN),
-            3 => Some(Self::OOLOGI),
-            4 => Some(Self::THCJXD),
-            5 => Some(Self::NACCNT),
-            6 => Some(Self::REPASS),
-            7 => Some(Self::REECUH),
-            8 => Some(Self::TIRDAD),
-            9 => Some(Self::TBRP),
+            0 => Some(Self::HardwareCheck),
+            1 => Some(Self::AccountLogin),
+            2 => Some(Self::CreateCharacter),
+            3 => Some(Self::CharacterLogin),
+            4 => Some(Self::CharacterSelect),
+            5 => Some(Self::CreateAccount),
+            6 => Some(Self::ChangePassword),
+            7 => Some(Self::AccountRecovery),
+            8 => Some(Self::RollDice),
+            9 => Some(Self::DeleteCharacter),
             10 => Some(Self::Walk),
             11 => Some(Self::ChangeHeading),
             12 => Some(Self::RequestPos),
-            13 => Some(Self::Actualizar),
+            13 => Some(Self::SyncPosition),
             20 => Some(Self::Attack),
             21 => Some(Self::CastSpell),
             22 => Some(Self::LeftClick),

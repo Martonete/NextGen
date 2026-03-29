@@ -11,6 +11,7 @@ use crate::game::handlers::{send_inventory_slot, send_full_inventory, check_user
 use crate::game::constants::*;
 use super::{skill_id, luck_denominator, max_items_extraibles, grant_crafting_rep,
     is_recolector, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj,
+    mod_fundicion,
     ESFUERZO_PESCAR_RECOLECTOR, ESFUERZO_PESCAR_GENERAL,
     ESFUERZO_TALAR_RECOLECTOR, ESFUERZO_TALAR_GENERAL,
     ESFUERZO_EXCAVAR_RECOLECTOR, ESFUERZO_EXCAVAR_GENERAL,
@@ -52,7 +53,7 @@ pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: 
     }
 
     // Play sound to area
-    let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as u8, uy as u8);
+    let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as i16, uy as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
@@ -113,8 +114,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     let tile_obj = state.game_data.maps.get(map as usize)
         .and_then(|m| m.as_ref())
         .and_then(|m| {
-            if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+            if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                 if tile.obj.obj_index > 0 {
                     state.get_object(tile.obj.obj_index as i32).map(|o| o.obj_type)
                 } else {
@@ -155,7 +155,7 @@ pub(crate) async fn do_talar(state: &mut GameState, conn_id: ConnectionId, tx: i
     }
 
     // Play sound
-    let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as u8, uy as u8);
+    let snd = binary_packets::write_play_wave(SND_TALAR as u8, ux as i16, uy as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
     // Luck roll
@@ -223,8 +223,7 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
             state.game_data.maps.get(map as usize)
                 .and_then(|m| m.as_ref())
                 .and_then(|m| {
-                    if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                        let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+                    if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                         if tile.obj.obj_index > 0 {
                             state.get_object(tile.obj.obj_index as i32).cloned()
                         } else {
@@ -257,11 +256,14 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
     }
 
     // Play sound
-    let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as u8, uy as u8);
+    let snd = binary_packets::write_play_wave(SND_MINERO as u8, ux as i16, uy as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
 
-    // Luck roll
-    let suerte = luck_denominator(skill);
+    // VB6: Apply ModFundicion class modifier to mining skill for luck calculation
+    let effective_skill = (skill as f32 / mod_fundicion(class)) as i32;
+
+    // Luck roll (uses effective skill with class modifier)
+    let suerte = luck_denominator(effective_skill);
     let roll = random_number(1, suerte);
 
     if roll <= 5 {

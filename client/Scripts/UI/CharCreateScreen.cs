@@ -80,12 +80,13 @@ public class CharCreateScreen
     public void CreatePanel(Node parent)
     {
         _charCreatePanel = new Control();
-        _charCreatePanel.Size = new Vector2(420, 560);
-        _charCreatePanel.CustomMinimumSize = new Vector2(420, 560);
-        _charCreatePanel.Position = new Vector2(190, 20);
+        _charCreatePanel.Size = new Vector2(580, 560);
+        _charCreatePanel.CustomMinimumSize = new Vector2(580, 560);
         _charCreatePanel.Visible = false;
         _charCreatePanel.ClipContents = true;
         _charCreatePanel.MouseFilter = Control.MouseFilterEnum.Stop;
+        float fs = RpgBaseForm.FormScale;
+        _charCreatePanel.Scale = new Vector2(fs, fs);
 
         // V2 background: big_bar stretched
         var bg = new TextureRect();
@@ -119,46 +120,72 @@ public class CharCreateScreen
         _charCreatePanel.AddChild(marginC);
         RpgTheme.FillParent(marginC);
 
-        var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
-        marginC.AddChild(vbox);
+        // ScrollContainer so buttons aren't clipped when content exceeds panel height
+        var scroll = new ScrollContainer();
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
+        scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+        scroll.MouseFilter = Control.MouseFilterEnum.Pass;
+        scroll.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        marginC.AddChild(scroll);
+
+        var outerVbox = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        outerVbox.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        scroll.AddChild(outerVbox);
 
         // Title
         var title = RpgTheme.CreateTitleLabel("Crear Personaje", 16);
-        vbox.AddChild(title);
+        outerVbox.AddChild(title);
+
+        // Two-column body: left (main fields) + right (gender + head)
+        var columnsRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
+        columnsRow.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        columnsRow.Alignment = BoxContainer.AlignmentMode.Begin;
+        outerVbox.AddChild(columnsRow);
+
+        // ── Left column ─────────────────────────────────────────────────
+        var leftCol = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        leftCol.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        columnsRow.AddChild(leftCol);
 
         // Name input
-        var nameLabel = RpgTheme.CreateInfoLabel("Nombre:", 11);
-        vbox.AddChild(nameLabel);
-
+        leftCol.AddChild(RpgTheme.CreateInfoLabel("Nombre:", 11));
         _charCreateNameInput = RpgTheme.CreateRpgInput("4-15 caracteres");
         _charCreateNameInput.MaxLength = 15;
-        vbox.AddChild(_charCreateNameInput);
+        leftCol.AddChild(_charCreateNameInput);
 
         // Race selector
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Raza:", 11));
+        leftCol.AddChild(RpgTheme.CreateInfoLabel("Raza:", 11));
         _raceToggle = RpgTheme.CreateRpgToggleGroup(RaceNames, 0, OnRaceSelected);
-        vbox.AddChild(_raceToggle);
-
-        // Gender selector
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Genero:", 11));
-        _genderToggle = RpgTheme.CreateRpgToggleGroup(GenderNames, 0, OnGenderSelected);
-        vbox.AddChild(_genderToggle);
+        leftCol.AddChild(_raceToggle);
 
         // Class selector (grid: 4 columns)
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Clase:", 11));
+        leftCol.AddChild(RpgTheme.CreateInfoLabel("Clase:", 11));
         _classToggle = RpgTheme.CreateRpgToggleGrid(ClassNames, 4, 0, OnClassSelected);
-        vbox.AddChild(_classToggle);
+        leftCol.AddChild(_classToggle);
 
         // Faction selector
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Faccion:", 11));
+        leftCol.AddChild(RpgTheme.CreateInfoLabel("Faccion:", 11));
         _factionToggle = RpgTheme.CreateRpgToggleGroup(FactionNames, 0, OnFactionSelected);
-        vbox.AddChild(_factionToggle);
+        leftCol.AddChild(_factionToggle);
 
-        // Head selector with preview
-        vbox.AddChild(RpgTheme.CreateInfoLabel("Cabeza:", 11));
-        var headRow = RpgTheme.CreateRow(RpgTheme.SpacingMd);
+        // ── Right column ─────────────────────────────────────────────────
+        var rightCol = RpgTheme.CreateColumn(RpgTheme.SpacingMd);
+        rightCol.CustomMinimumSize = new Vector2(160, 0);
+        rightCol.SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin;
+        columnsRow.AddChild(rightCol);
+
+        // Gender selector
+        rightCol.AddChild(RpgTheme.CreateInfoLabel("Genero:", 11));
+        _genderToggle = RpgTheme.CreateRpgToggleGroup(GenderNames, 0, OnGenderSelected);
+        rightCol.AddChild(_genderToggle);
+
+        // Head selector — arrows + centered preview
+        rightCol.AddChild(RpgTheme.CreateInfoLabel("Cabeza:", 11));
+
+        // Arrow row: [◄] [preview] [►]  — centered, symmetric
+        var headRow = RpgTheme.CreateRow(0);
         headRow.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.AddChild(headRow);
+        rightCol.AddChild(headRow);
 
         var headLeftBtn = RpgTheme.CreateMiniButton("Mini_arrow_left2.png", "Mini_arrow_left2_t.png", new Vector2(32, 32));
         headLeftBtn.Pressed += OnHeadPrev;
@@ -166,7 +193,9 @@ public class CharCreateScreen
 
         var headPreviewContainer = new SubViewportContainer();
         headPreviewContainer.CustomMinimumSize = new Vector2(64, 64);
+        headPreviewContainer.Size = new Vector2(64, 64);
         headPreviewContainer.Stretch = true;
+        headPreviewContainer.SizeFlagsHorizontal = Control.SizeFlags.ShrinkCenter;
         headRow.AddChild(headPreviewContainer);
 
         var headViewport = new SubViewport();
@@ -183,22 +212,24 @@ public class CharCreateScreen
         headRightBtn.Pressed += OnHeadNext;
         headRow.AddChild(headRightBtn);
 
+        // Head index label — centered below arrows, not in the row
         _charCreateHeadLabel = RpgTheme.CreateInfoLabel("1", 11);
-        headRow.AddChild(_charCreateHeadLabel);
+        _charCreateHeadLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _charCreateHeadLabel.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        rightCol.AddChild(_charCreateHeadLabel);
 
-        // Error label
+        // ── Bottom: error + buttons (full width, under columns) ──────────
         _charCreateError = new Label();
         _charCreateError.Text = "";
         _charCreateError.AddThemeColorOverride("font_color", new Color(1f, 0.3f, 0.3f));
         _charCreateError.AddThemeFontSizeOverride("font_size", 11);
         _charCreateError.HorizontalAlignment = HorizontalAlignment.Center;
         _charCreateError.AutowrapMode = TextServer.AutowrapMode.Word;
-        vbox.AddChild(_charCreateError);
+        outerVbox.AddChild(_charCreateError);
 
-        // Buttons row
         var btnRow = RpgTheme.CreateRow(RpgTheme.SpacingLg);
         btnRow.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.AddChild(btnRow);
+        outerVbox.AddChild(btnRow);
 
         _charCreateCreateBtn = RpgTheme.CreateRpgButton("Crear", false, 14);
         _charCreateCreateBtn.CustomMinimumSize = new Vector2(100, 36);
@@ -237,10 +268,11 @@ public class CharCreateScreen
         _deleteConfirmDialog = new Control();
         _deleteConfirmDialog.Size = new Vector2(320, 200);
         _deleteConfirmDialog.CustomMinimumSize = new Vector2(320, 200);
-        _deleteConfirmDialog.Position = new Vector2(240, 200);
         _deleteConfirmDialog.Visible = false;
         _deleteConfirmDialog.ZIndex = 100;
         _deleteConfirmDialog.MouseFilter = Control.MouseFilterEnum.Stop;
+        float dfs = RpgBaseForm.FormScale;
+        _deleteConfirmDialog.Scale = new Vector2(dfs, dfs);
 
         // V2 background
         var bgTex = new TextureRect();

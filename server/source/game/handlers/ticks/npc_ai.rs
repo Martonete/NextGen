@@ -51,15 +51,31 @@ pub async fn tick_npc_ai(state: &mut GameState) {
         let is_paralyzed = state.get_npc(npc_idx).map(|n| n.paralyzed).unwrap_or(false);
         if is_paralyzed { continue; }
 
+        // VB6: Elemental lifetime countdown (TiempoExistencia)
+        // AI tick runs every 100ms. Decrement and kill when expired.
+        {
+            let lifetime = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms).unwrap_or(0);
+            if lifetime > 0 {
+                if let Some(n) = state.get_npc_mut(npc_idx) {
+                    n.tiempo_existencia_ms -= 100; // 100ms per tick
+                }
+                let expired = state.get_npc(npc_idx).map(|n| n.tiempo_existencia_ms <= 0).unwrap_or(false);
+                if expired {
+                    npc_die(state, npc_idx, 0, 0, 0, 0).await;
+                    continue;
+                }
+            }
+        }
+
         let npc_data = match state.get_npc(npc_idx) {
             Some(n) => (n.movement, n.hostile, n.can_attack, n.map, n.x, n.y, n.target,
-                        n.lanza_spells, n.spells.clone(), n.npc_type, n.attacked_by.clone(),
-                        n.min_hp, n.max_hp, n.alineacion, n.ataca_doble),
+                        n.lanza_spells, n.spells.len(), n.npc_type, !n.attacked_by.is_empty(),
+                        n.min_hp, n.max_hp, n.alineacion, n.ataca_doble, n.npc_number),
             None => continue,
         };
         let (movement, hostile, can_attack, map, x, y, target,
-             lanza_spells, spells, npc_type, attacked_by,
-             cur_hp, max_hp, alineacion, ataca_doble) = npc_data;
+             lanza_spells, spells_len, npc_type, has_attacked_by,
+             cur_hp, max_hp, alineacion, ataca_doble, npc_number) = npc_data;
 
         // Skip NPCs on maps with no users (VB6 optimization)
         let map_users = state.map_user_counts.get(&map).copied().unwrap_or(0);
@@ -69,7 +85,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
         // NPC self-heal: if HP < 50% and has a heal spell, try to cast it on self
         if max_hp > 0 && cur_hp > 0 && cur_hp < max_hp / 2 && lanza_spells > 0 {
-            npc_try_self_heal(state, npc_idx, &spells).await;
+            npc_try_self_heal(state, npc_idx).await;
         }
 
         match movement {
@@ -117,14 +133,19 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // First: check adjacent tiles for attack
                 if can_attack {
                     if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
-                        // VB6 AtacaDoble: 50% chance to cast spell instead of melee
-                        if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                            let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                            let spell_id = spells[spell_idx];
-                            npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                        } else {
-                            npc_attack_user(state, npc_idx, target_conn).await;
+                        // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                        // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                        // Non-AtacaDoble with LanzaSpells = always spell+melee.
+                        if lanza_spells > 0 && spells_len > 0 {
+                            let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                            if !skip_spell {
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
+                            }
                         }
+                        // Melee ALWAYS happens after spell
+                        npc_attack_user(state, npc_idx, target_conn).await;
                         if let Some(n) = state.get_npc_mut(npc_idx) {
                             n.can_attack = false;
                             n.target = Some(target_conn);
@@ -174,10 +195,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let dist = (x - tx).abs() + (y - ty).abs();
 
                             // Cast spell if in range
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
                                 }
@@ -224,7 +245,13 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 // VB6 AI_AI_Defense — follow attacker (attacked_by) within 15 tiles
                 // Adjacent → melee. Far → spell + chase. Gone → restore_old_movement.
                 // Filter out GM attackers — NPCs should not chase GMs
-                let attacker_conn = find_player_by_name(state, map, x, y, &attacked_by)
+                let attacker_name_opt: Option<String> = if has_attacked_by {
+                    state.get_npc(npc_idx).map(|n| n.attacked_by.clone())
+                } else {
+                    None
+                };
+                let attacker_conn = attacker_name_opt.as_deref()
+                    .and_then(|name| find_player_by_name(state, map, x, y, name))
                     .filter(|c| state.users.get(c).map(|u| u.privileges == 0).unwrap_or(false));
 
                 if let Some(target_conn) = attacker_conn {
@@ -240,12 +267,18 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         let dist = (x - tx).abs() + (y - ty).abs();
 
                         if dist <= 1 && can_attack {
-                            // VB6 AtacaDoble: 50% chance to cast spell instead of melee
-                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else {
+                            // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                            // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                            if lanza_spells > 0 && spells_len > 0 {
+                                let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                                if !skip_spell {
+                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                        npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    }
+                                }
+                            }
+                            // VB6: Water elemental (#92) does NOT melee users (AI_NPC.bas:451)
+                            if npc_number != npc::ELEMENTAL_AGUA as usize {
                                 npc_attack_user(state, npc_idx, target_conn).await;
                             }
                             if let Some(n) = state.get_npc_mut(npc_idx) {
@@ -253,10 +286,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             }
                         } else {
                             // Cast spell if possible
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
                                 }
@@ -330,21 +363,25 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     if let Some((tx, ty)) = target_pos {
                         let dist = (x - tx).abs() + (y - ty).abs();
                         if dist <= 1 && can_attack {
-                            // VB6 AtacaDoble: 50% chance to cast spell instead of melee
-                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else {
-                                npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                            // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                            if lanza_spells > 0 && spells_len > 0 {
+                                let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                                if !skip_spell {
+                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                        npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    }
+                                }
                             }
+                            // Melee ALWAYS happens after spell
+                            npc_attack_user(state, npc_idx, target_conn).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
-                        } else if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                            let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                            let spell_id = spells[spell_idx];
-                            npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                        } else if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                            if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            }
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
@@ -409,30 +446,31 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 if hostile && can_attack {
                     // Adjacent melee/spell attack (VB6: same attack phase as other hostiles)
                     if let Some((target_conn, _adj_heading)) = find_adjacent_player(state, map, x, y) {
-                        // VB6: NpcObjeto → RandomNumber(1,3) < 3 → 2/3 chance to attack
+                        // VB6: NpcObjeto -> RandomNumber(1,3) < 3 -> 2/3 chance to attack
                         if rand_range(1, 3) < 3 {
-                            if ataca_doble && lanza_spells > 0 && !spells.is_empty() && rand_range(0, 1) == 0 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else if lanza_spells > 0 && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
-                            } else {
-                                npc_attack_user(state, npc_idx, target_conn).await;
+                            // VB6 AtacaDoble: spell FIRST, then ALWAYS melee.
+                            // AtacaDoble = 50% chance to SKIP the spell (melee only).
+                            if lanza_spells > 0 && spells_len > 0 {
+                                let skip_spell = ataca_doble && rand_range(0, 1) == 0;
+                                if !skip_spell {
+                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                        npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    }
+                                }
                             }
+                            // Melee ALWAYS happens after spell
+                            npc_attack_user(state, npc_idx, target_conn).await;
                             if let Some(n) = state.get_npc_mut(npc_idx) {
                                 n.can_attack = false;
                             }
                         }
-                    } else if lanza_spells > 0 && !spells.is_empty() {
+                    } else if lanza_spells > 0 && spells_len > 0 {
                         // VB6 AiNpcObjeto: scan vision for spell targets at range
                         if let Some(target_conn) = find_nearest_player(state, map, x, y) {
                             if rand_range(1, 3) < 3 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
                                 }
@@ -456,6 +494,15 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                     if let Some((mx, my, master_target_npc)) = master_pos {
                         let dist = (x - mx).abs() + (y - my).abs();
+
+                        // VB6: Water elemental (#92) does NOT attack users (line 451/489 AI_NPC.bas)
+                        // and has LanzaSpells=0. It's a tank that only attacks assigned NPC targets.
+                        // No healing behavior exists in VB6 13.3.
+
+                        // VB6: Elementals do NOT proactively cast spells while following.
+                        // Spell casting only happens in AI_DEFENSE mode (triggered when
+                        // the elemental or its owner is attacked). That mode is handled
+                        // separately in the AI_DEFENSE/AI_HOSTILE_CHASE branches.
 
                         // Priority: pet's own target (from check_pets) > master's target
                         let effective_target = if pet_target_npc > 0 {
@@ -697,10 +744,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let dist = (x - tx).abs() + (y - ty).abs();
 
                             // Cast spell at range
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && !spells.is_empty() {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && can_attack && spells_len > 0 {
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
                                 }
@@ -739,7 +786,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 let mut acted = false;
 
                 // First: try to paralyze adjacent pet NPCs
-                if can_attack && lanza_spells > 0 && !spells.is_empty() {
+                if can_attack && lanza_spells > 0 && spells_len > 0 {
                     if let Some((pet_idx, _, _)) = find_nearest_hostile_npc(state, map, x, y, npc_idx) {
                         let pet_pos = state.get_npc(pet_idx).map(|n| (n.x, n.y));
                         if let Some((px, py)) = pet_pos {
@@ -757,7 +804,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                 }
 
                 // Then: cast offensive spells on players
-                if !acted && can_attack && lanza_spells > 0 && !spells.is_empty() {
+                if !acted && can_attack && lanza_spells > 0 && spells_len > 0 {
                     let spell_target = target.or_else(|| find_nearest_player(state, map, x, y));
                     if let Some(target_conn) = spell_target {
                         if let Some(n) = state.get_npc_mut(npc_idx) {
@@ -769,9 +816,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         if let Some((tx, ty)) = target_pos {
                             let dist = (x - tx).abs() + (y - ty).abs();
                             if dist <= 8 {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                                 if let Some(n) = state.get_npc_mut(npc_idx) {
                                     n.can_attack = false;
                                 }
@@ -802,7 +849,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
 
                 let mut acted = false;
 
-                if can_attack && lanza_spells > 0 && !spells.is_empty() {
+                if can_attack && lanza_spells > 0 && spells_len > 0 {
                     // Priority 1: unparalyze allied pretoriano
                     if let Some((ally_idx, _ax, _ay)) = find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx) {
                         // Remove paralysis from ally (20% effectiveness like VB6 king)
@@ -851,9 +898,9 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             if let Some((tx, ty)) = target_pos {
                                 let dist = (x - tx).abs() + (y - ty).abs();
                                 if dist <= 8 {
-                                    let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                    let spell_id = spells[spell_idx];
-                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                        npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                    }
                                     if let Some(n) = state.get_npc_mut(npc_idx) {
                                         n.can_attack = false;
                                     }
@@ -906,7 +953,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                         n.min_hp = n.max_hp;
                     }
 
-                    if can_attack && lanza_spells > 0 && !spells.is_empty() {
+                    if can_attack && lanza_spells > 0 && spells_len > 0 {
                         // Priority 1: unparalyze allied pretoriano (20% chance)
                         if let Some((ally_idx, _ax, _ay)) = find_paralyzed_pretoriano_ally(state, map, x, y, npc_idx) {
                             if rand_range(1, 100) <= 20 {
@@ -971,10 +1018,10 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                             let dist = (x - tx).abs() + (y - ty).abs();
 
                             // Cast debuff spells at range if can't reach
-                            if dist > 1 && dist <= 8 && lanza_spells > 0 && !spells.is_empty() && !did_attack {
-                                let spell_idx = rand_range(0, spells.len() as i32 - 1) as usize;
-                                let spell_id = spells[spell_idx];
-                                npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                            if dist > 1 && dist <= 8 && lanza_spells > 0 && spells_len > 0 && !did_attack {
+                                if let Some(spell_id) = pick_npc_spell(state, npc_idx, spells_len) {
+                                    npc_cast_spell(state, npc_idx, target_conn, spell_id).await;
+                                }
                             }
 
                             // Chase aggressively
@@ -990,7 +1037,7 @@ pub async fn tick_npc_ai(state: &mut GameState) {
                     } else {
                         // No targets — heal self and return to spawn
                         if cur_hp < max_hp {
-                            npc_try_self_heal(state, npc_idx, &spells).await;
+                            npc_try_self_heal(state, npc_idx).await;
                         }
                         let (ox, oy) = state.get_npc(npc_idx)
                             .map(|n| (n.orig_x, n.orig_y))
@@ -1013,9 +1060,23 @@ pub async fn tick_npc_ai(state: &mut GameState) {
     }
 }
 
+/// Pick a random spell ID from an NPC's spell list without cloning the whole Vec.
+/// Returns `None` if the NPC no longer exists or has no spells.
+fn pick_npc_spell(state: &GameState, npc_idx: usize, spells_len: usize) -> Option<i32> {
+    if spells_len == 0 {
+        return None;
+    }
+    let spell_idx = (rand_range(0, spells_len as i32 - 1) as usize).min(spells_len.saturating_sub(1));
+    state.get_npc(npc_idx).and_then(|n| n.spells.get(spell_idx).copied())
+}
+
 /// NPC self-heal: check if any spell has SubeHP=1 and cast it on self.
-pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spells: &[i32]) {
-    for &spell_id in spells {
+pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize) {
+    let spell_ids: Vec<i32> = match state.get_npc(npc_idx) {
+        Some(n) => n.spells.clone(),
+        None => return,
+    };
+    for &spell_id in &spell_ids {
         let spell = match state.get_spell(spell_id) {
             Some(s) => s.clone(),
             None => continue,
@@ -1042,7 +1103,7 @@ pub(crate) async fn npc_try_self_heal(state: &mut GameState, npc_idx: usize, spe
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
             if spell.wav > 0 {
-                let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as u8, ny as u8);
+                let pkt = binary_packets::write_play_wave(spell.wav as u8, nx as i16, ny as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x: nx, y: ny }, &pkt);
             }
 

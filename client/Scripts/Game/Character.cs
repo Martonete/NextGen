@@ -30,6 +30,9 @@ public class Character
 	// Only advances when Moving=true. Reset to 0 on move start.
 	public float WalkFrame;
 
+	// VB6: .pie — alternates between left/right foot for step sounds
+	public bool FootToggle;
+
 	// Status
 	public bool Dead;
 	public bool Invisible;
@@ -76,7 +79,13 @@ public class Character
 	public float AuraAngleC;
 	public float NpcAuraAngle;
 
-	// Debug helper
-	public bool _debugLogged;
-	public bool _equipDebugLogged;
+	// FOV fade: smooth alpha transition when entering/leaving the core viewport
+	// 1.0 = fully visible (inside core), 0.0 = fully invisible (outside core)
+	// Starts at 0 so new characters fade in instead of popping
+	public float FovAlpha;
+
+	// Dialog WrapText cache — avoids re-wrapping every frame when text hasn't changed
+	public string? CachedDialogText;
+	public string[]? CachedDialogLines;
+
 }

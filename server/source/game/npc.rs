@@ -86,6 +86,9 @@ pub struct NpcState {
     pub orig_x: i32,
     pub orig_y: i32,
 
+    /// Zone ID this NPC belongs to (0 = no zone / static NPC). Used for AI confinement.
+    pub zone_id: u16,
+
     // AI
     pub movement: i32,
     pub hostile: bool,
@@ -148,6 +151,7 @@ pub struct NpcState {
     // Pet/summon owner
     pub maestro_user: Option<crate::net::ConnectionId>,
     pub counter_perdio_npc: i32,  // VB6: Contadores.TiemPerdique — pet inactivity timer (450 ticks = 18s at 40ms)
+    pub tiempo_existencia_ms: i64, // VB6: Contadores.TiempoExistencia — elemental lifetime in ms (0 = no expiry)
 
     // Area tracking (9x9 zone visibility — VB6 ModAreas.bas)
     pub area_id: i32,
@@ -255,6 +259,7 @@ impl NpcState {
             aura: data.aura,
             maestro_user: None,
             counter_perdio_npc: 0,
+            tiempo_existencia_ms: 0,
             area_id: 0,
             area_min_x: 0,
             area_min_y: 0,
@@ -267,6 +272,7 @@ impl NpcState {
             snd2: data.snd2,
             snd3: data.snd3,
             damage_received: Vec::new(),
+            zone_id: 0,
         }
     }
 
@@ -277,8 +283,8 @@ impl NpcState {
             self.body as i16,
             self.head as i16,
             self.heading as u8,
-            self.x as u8,
-            self.y as u8,
+            self.x as i16,
+            self.y as i16,
             self.weapon_anim as i16,
             self.shield_anim as i16,
             self.casco_anim as i16,

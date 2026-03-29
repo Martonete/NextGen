@@ -119,7 +119,6 @@ pub struct CharData {
     pub fecha_ingreso: String,
     pub matados_ingreso: i32,
     pub next_recompensa: i32,
-    pub email: String,
     pub counter_pena: i32,
     pub skills_asignados: i32,
     pub last_map: i32,
@@ -238,7 +237,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
                 recibio_armadura_real, recibio_armadura_caos,
                 recibio_exp_real, recibio_exp_caos,
                 nivel_ingreso, fecha_ingreso, matados_ingreso, next_recompensa,
-                email, counter_pena, skills_asignados, last_map, uptime,
+                counter_pena, skills_asignados, last_map, uptime,
                 mochila_eqp_slot, anillo_eqp_slot, pareja,
                 description
          FROM characters WHERE UPPER(name) = UPPER($1)"
@@ -337,7 +336,6 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
     let fecha_ingreso: String = row.try_get("fecha_ingreso").unwrap_or_default();
     let matados_ingreso: i32 = row.try_get("matados_ingreso").unwrap_or(0);
     let next_recompensa: i32 = row.try_get("next_recompensa").unwrap_or(0);
-    let email: String = row.try_get("email").unwrap_or_default();
     let counter_pena: i32 = row.try_get("counter_pena").unwrap_or(0);
     let skills_asignados: i32 = row.try_get("skills_asignados").unwrap_or(0);
     let last_map: i32 = row.try_get("last_map").unwrap_or(0);
@@ -426,7 +424,7 @@ pub async fn load_charfile(pool: &PgPool, char_name: &str) -> Result<CharData, S
         recibio_armadura_real, recibio_armadura_caos,
         recibio_exp_real, recibio_exp_caos,
         nivel_ingreso, fecha_ingreso, matados_ingreso, next_recompensa,
-        email, counter_pena, skills_asignados, last_map, uptime,
+        counter_pena, skills_asignados, last_map, uptime,
         mochila_eqp_slot: mochila_eqp_slot as usize,
         anillo_eqp_slot: anillo_eqp_slot as usize,
         pareja,
@@ -733,7 +731,6 @@ pub struct CharSaveData {
     pub fecha_ingreso: String,
     pub matados_ingreso: i32,
     pub next_recompensa: i32,
-    pub email: String,
     pub counter_pena: i32,
     pub skills_asignados: i32,
     pub last_map: i32,
@@ -792,10 +789,10 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
             recibio_exp_real = $70, recibio_exp_caos = $71,
             nivel_ingreso = $72, fecha_ingreso = $73,
             matados_ingreso = $74, next_recompensa = $75,
-            email = $76, counter_pena = $77, skills_asignados = $78,
-            last_map = $79, uptime = $80,
-            mochila_eqp_slot = $81, anillo_eqp_slot = $82,
-            pareja = $83,
+            counter_pena = $76, skills_asignados = $77,
+            last_map = $78, uptime = $79,
+            mochila_eqp_slot = $80, anillo_eqp_slot = $81,
+            pareja = $82,
             logged = FALSE, updated_at = NOW()
          WHERE id = $1"
     )
@@ -831,7 +828,7 @@ pub async fn save_charfile(pool: &PgPool, char_name: &str, data: &CharSaveData) 
     .bind(data.recibio_exp_real).bind(data.recibio_exp_caos)
     .bind(data.nivel_ingreso).bind(&data.fecha_ingreso)
     .bind(data.matados_ingreso).bind(data.next_recompensa)
-    .bind(&data.email).bind(data.counter_pena).bind(data.skills_asignados)
+    .bind(data.counter_pena).bind(data.skills_asignados)
     .bind(data.last_map).bind(data.uptime)
     .bind(data.mochila_eqp_slot as i32).bind(data.anillo_eqp_slot as i32)
     .bind(&data.pareja)

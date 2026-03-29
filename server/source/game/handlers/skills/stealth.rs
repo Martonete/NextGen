@@ -232,7 +232,7 @@ pub(crate) async fn do_ocultarse(state: &mut GameState, conn_id: ConnectionId) {
             + (0.00009229 * remaining.powi(2))
             + (-0.0088 * remaining)
             + 0.9571;
-        duration *= state.config.intervalo_oculto as f64;
+        duration *= state.intervals.oculto as f64;
 
         // Bandits hide for half time
         let is_bandit = class == PlayerClass::Bandido;

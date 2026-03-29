@@ -216,6 +216,9 @@ pub struct ObjData {
     pub staff_power: i32,
     pub staff_damage_bonus: i32,
 
+    // Backstab flag (VB6: Apuñala=1 — weapon enables backstab)
+    pub apunala: bool,
+
     // Pirate throat-cut (VB6: Acuchilla — weapon flag for DoAcuchillar)
     pub acuchilla: bool,
 
@@ -296,6 +299,7 @@ impl Default for ObjData {
             defensa_magica_max: 0,
             staff_power: 0,
             staff_damage_bonus: 0,
+            apunala: false,
             acuchilla: false,
             upgrade: 0,
             foro_id: String::new(),
@@ -307,7 +311,7 @@ impl Default for ObjData {
 /// Load the complete objects database.
 /// Returns a Vec where index 0 is OBJ1, index 1 is OBJ2, etc.
 pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
-    let path = base.join("dat").join("Obj.dat");
+    let path = base.join("dat").join("obj.dat");
     let ini = IniFile::load(&path)
         .map_err(|e| format!("Failed to load Obj.dat: {}", e))?;
 
@@ -399,6 +403,7 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             defensa_magica_max: get_int("DefensaMagicaMax"),
             staff_power: get_int("StaffPower"),
             staff_damage_bonus: get_int("StaffDamageBonus"),
+            apunala: get_bool("Apuñala"),
             acuchilla: get_bool("Acuchilla"),
             upgrade: get_int("Upgrade"),
             foro_id: get_str("ForoID"),
@@ -459,7 +464,7 @@ mod tests {
     fn load_real_objects() {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("server");
         let base = base.as_path();
-        if !base.join("dat").join("Obj.dat").exists() {
+        if !base.join("dat").join("obj.dat").exists() {
             return;
         }
         let objs = load_objects(base).unwrap();

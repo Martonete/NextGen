@@ -110,6 +110,18 @@ public partial class BankPanel : RpgBaseForm
         ShowForm();
     }
 
+    public override void HideForm()
+    {
+        base.HideForm();
+        // Clear bank flag when panel is closed (by X button, Escape, or server).
+        // Skip if vault is taking over (BovedaAbierta=true means vault manages the session).
+        if (_state != null && !_state.BovedaAbierta)
+        {
+            _state.Banqueando = false;
+            _tcp?.SendPacket(ClientPackets.WriteBankClose());
+        }
+    }
+
     public void CloseBank()
     {
         HideForm();

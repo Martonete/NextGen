@@ -50,20 +50,22 @@ pub struct UserState {
     pub conn_id: ConnectionId,
     pub ip: String,
 
-    // Pre-login state (set by KERD22)
+    // Pre-login state (set by HardwareCheck)
     pub hd_serial: String,
     pub paso_hd: bool,
 
-    // Account state (set by ALOGIN)
+    // Anti-cheat: rolling coordinate cipher (initialized at login)
+    pub coord_cipher: Option<crate::protocol::coord_cipher::CoordCipher>,
+
+    // Account state (set by AccountLogin)
     pub account_name: String,
-    pub account_password: String,
     pub account_id: i32,
 
-    // Character state (set by THCJXD/OOLOGI)
+    // Character state (set by CharacterSelect/CharacterLogin)
     pub char_name: String,
     pub logged: bool,
 
-    // Dice roll state (TIRDAD) — used during character creation only
+    // Dice roll state (RollDice) — used during character creation only
     pub dice_attributes: [i32; 5],
 
     // In-game position and character data (set after LOGGED)
@@ -288,6 +290,7 @@ pub struct UserState {
     pub hogar: String,            // Home city (Thir, Inthak, Ruvendel, etc.)
     pub traveling: bool,           // VB6: Traveling — dead user teleporting home via /HOGAR
     pub counter_go_home: i32,      // VB6: GoHome counter — counts up to 250 ticks (10s at 40ms) then teleport
+    pub current_zone_id: u16,      // Zone system: current zone ID (0 = wilderness)
 
     // Navigation — barco_slot is the inventory slot (1-based) holding the equipped boat (VB6 BarcoSlot)
     pub barco_slot: usize,
@@ -342,10 +345,16 @@ pub struct UserState {
     pub npcs_muertos: i32,           // Total NPCs killed
 
     // VB6 13.3: Misc persisted fields
-    pub email: String,               // CONTACTO.Email
     pub counter_pena: i32,           // COUNTERS.Pena (jail/penalty ticks)
     pub last_map: i32,               // FLAGS.LastMap
     pub uptime: i64,                 // INIT.UpTime (seconds played)
+
+    // Meditation concentration delay (VB6: 2-second warmup before regen starts)
+    pub meditation_start_tick: i32,   // Countdown ticks (40ms each); regen skipped while > 0
+
+    // Rate limiting for character deletion
+    pub last_delete_attempt: Option<std::time::Instant>,
+    pub delete_attempt_count: u8,
 }
 
 impl UserState {
@@ -355,8 +364,8 @@ impl UserState {
             ip,
             hd_serial: String::new(),
             paso_hd: false,
+            coord_cipher: None,
             account_name: String::new(),
-            account_password: String::new(),
             account_id: 0,
             char_name: String::new(),
             logged: false,
@@ -557,10 +566,13 @@ impl UserState {
             gm_request_pending: false,
             usuarios_matados: 0,
             npcs_muertos: 0,
-            email: String::new(),
             counter_pena: 0,
             last_map: 0,
             uptime: 0,
+            meditation_start_tick: 0,
+            current_zone_id: 0,
+            last_delete_attempt: None,
+            delete_attempt_count: 0,
         }
     }
 
@@ -578,8 +590,8 @@ impl UserState {
             self.body as i16,
             self.head as i16,
             self.heading as u8,
-            self.pos_x as u8,
-            self.pos_y as u8,
+            self.pos_x as i16,
+            self.pos_y as i16,
             self.weapon_anim as i16,
             self.shield_anim as i16,
             self.casco_anim as i16,
@@ -622,28 +634,41 @@ pub mod privilege_level {
 /// Values are in game ticks (1 tick = 40ms).
 /// VB6 reference (ms): Melee=1500, Arrows=1400, Spells=1400, Potions=1200, Work=700.
 #[derive(Debug, Clone)]
+/// All interval settings loaded from dat/Intervalos.ini.
+/// Configured in milliseconds, converted to ticks (/40, rounded) at load time.
 pub struct IntervalSettings {
-    pub golpe: i32,           // Melee attack interval (VB6: 1500ms → 38 ticks)
-    pub flechas: i32,         // Arrow shot interval (VB6: 1400ms → 35 ticks)
-    pub lanzar_hechizo: i32,  // Spell cast interval (VB6: 1400ms → 35 ticks)
-    pub magia_golpe: i32,     // VB6: IntervaloMagiaGolpe — delay after spell before melee
-    pub golpe_magia: i32,     // VB6: IntervaloGolpeMagia — delay after melee before spell
-    pub poteo_u: i32,         // Potion use interval (VB6: 1200ms → 30 ticks)
-    pub poteo_click: i32,     // Click action interval (default 6)
-    pub work: i32,            // Work/skill interval (VB6: 700ms → 18 ticks)
+    // Status effect durations (ticks)
+    pub paralizado: i32,      // Paralysis duration
+    pub invisible: i32,       // Spell invisibility duration
+    pub oculto: i32,          // Hide duration base
+    pub npc_ai_ms: u64,       // NPC AI tick interval (ms, used directly)
+
+    // Anti-cheat cooldowns (ticks)
+    pub golpe: i32,           // Melee attack cooldown
+    pub flechas: i32,         // Arrow shot cooldown
+    pub lanzar_hechizo: i32,  // Spell cast cooldown
+    pub magia_golpe: i32,     // Delay after spell before melee
+    pub golpe_magia: i32,     // Delay after melee before spell
+    pub poteo_u: i32,         // Potion use cooldown
+    pub poteo_click: i32,     // Click action cooldown
+    pub work: i32,            // Work/skill cooldown
 }
 
 impl Default for IntervalSettings {
     fn default() -> Self {
         Self {
-            golpe: 38,           // VB6: IntervaloUserPuedeAtacar = 1500ms / 40ms
-            flechas: 35,         // VB6: IntervaloUserPuedeFlechas = 1400ms / 40ms
-            lanzar_hechizo: 35,  // VB6: IntervaloUserPuedeLanzarHechizo = 1400ms / 40ms
-            magia_golpe: 50,     // VB6: IntervaloMagiaGolpe = 2000ms / 40ms
-            golpe_magia: 50,     // VB6: IntervaloGolpeMagia = 2000ms / 40ms
-            poteo_u: 30,         // VB6: IntervaloUserPuedePotear = 1200ms / 40ms
-            poteo_click: 6,
-            work: 18,            // VB6: IntervaloUserPuedeTrabajar = 700ms / 40ms
+            paralizado: 500,     // 20000ms / 40
+            invisible: 500,      // 20000ms / 40
+            oculto: 500,         // 20000ms / 40
+            npc_ai_ms: 1300,
+            golpe: 38,           // 1520ms / 40
+            flechas: 35,         // 1400ms / 40
+            lanzar_hechizo: 35,  // 1400ms / 40
+            magia_golpe: 50,     // 2000ms / 40
+            golpe_magia: 50,     // 2000ms / 40
+            poteo_u: 30,         // 1200ms / 40
+            poteo_click: 6,      //  240ms / 40
+            work: 18,            //  720ms / 40
         }
     }
 }
@@ -773,6 +798,9 @@ pub struct GameState {
     // Maps lowercase character name → privilege level. Loaded at startup, reloaded with /RELOADSINI.
     pub role_overrides: crate::config::RoleMap,
 
+    /// Zone properties registry — loaded from zones.ini, falls back to legacy .dat info.
+    pub zone_registry: crate::game::zones::ZoneRegistry,
+
     /// Per-connection receive buffers for accumulating partial binary packets.
     /// When a TCP read delivers a partial packet, leftover bytes are stored here
     /// and prepended to the next read.
@@ -803,6 +831,11 @@ pub struct GameState {
     // Server shutdown/restart countdown (VB6: /APAGAR, /REINICIAR)
     pub shutdown_countdown: i32,     // Seconds remaining until shutdown (0 = inactive)
     pub shutdown_restart: bool,      // true = restart, false = shutdown
+
+    // Auth rate limiting — brute-force protection
+    // Maps IP → (failure_count, first_failure_time).
+    // After MAX_AUTH_FAILURES consecutive failures the IP is locked out for AUTH_LOCKOUT_SECS.
+    pub auth_failures: HashMap<String, (u32, std::time::Instant)>,
 }
 
 /// SOS message (help request from player)
@@ -860,8 +893,24 @@ impl GameState {
         // Load role overrides from server.ini
         let role_overrides = crate::config::load_roles(&base_path);
 
-        // Count loaded maps to pre-allocate world grids
-        let map_count = game_data.maps.len();
+        // Load zone property overrides from zones.ini (falls back to legacy .dat)
+        let mut zone_registry = crate::game::zones::load_zone_overrides(&base_path);
+        // Auto-populate from legacy .dat MapInfo for zones not in zones.ini
+        for map in game_data.maps.iter().flatten() {
+            zone_registry.entry(map.info.num as i32)
+                .or_insert_with(|| crate::game::zones::ZoneProperties::from_map_info(&map.info));
+        }
+
+        // Create world grids sized to match each loaded map's dimensions
+        let mut world = WorldState::new(0); // empty, we'll add grids manually
+        for (i, map_opt) in game_data.maps.iter().enumerate() {
+            if let Some(map) = map_opt {
+                let w = map.tiles.width as i32;
+                let h = map.tiles.height as i32;
+                world.grids.insert(i as i32, crate::game::world::MapGrid::with_size(w, h, 9));
+                tracing::info!("Map {} grid: {}x{}", i, w, h);
+            }
+        }
 
         Self {
             config,
@@ -870,7 +919,7 @@ impl GameState {
             bans,
             notice,
             game_data,
-            world: WorldState::new(map_count),
+            world,
             users: HashMap::new(),
             writers: HashMap::new(),
             online_names: HashMap::new(),
@@ -918,6 +967,7 @@ impl GameState {
             map_user_counts: HashMap::new(),
             countdown_seconds: 0,
             role_overrides,
+            zone_registry,
             recv_buffers: HashMap::new(),
             packet_counts: HashMap::new(),
             max_packets_per_second: max_pps,
@@ -928,6 +978,7 @@ impl GameState {
             forced_night: false,
             shutdown_countdown: 0,
             shutdown_restart: false,
+            auth_failures: HashMap::new(),
         }
     }
 
@@ -996,6 +1047,14 @@ impl GameState {
                             }
                         }
                         self.parties[pi] = None;
+                    }
+                }
+                // H4: Clear duel partner's flags on disconnect (VB6: duel ends when either party disconnects)
+                let duel_partner = user.atacable_por;
+                if duel_partner > 0 {
+                    if let Some(partner) = self.users.get_mut(&duel_partner) {
+                        partner.atacable_por = 0;
+                        partner.duel_pending = 0;
                     }
                 }
             }
@@ -1122,6 +1181,25 @@ impl GameState {
         }
     }
 
+    /// Get zone properties for a map/zone ID. Returns None if zone not registered.
+    pub fn get_zone(&self, zone_id: i32) -> Option<&crate::game::zones::ZoneProperties> {
+        self.zone_registry.get(&zone_id)
+    }
+
+    /// Get the actual grid dimensions for a map. Checks runtime grid first,
+    /// then falls back to loaded map tile data. Never returns hardcoded values.
+    pub fn grid_dimensions(&self, map: i32) -> (i32, i32) {
+        if let Some(grid) = self.world.grid(map) {
+            return (grid.width, grid.height);
+        }
+        let idx = map as usize;
+        if let Some(Some(game_map)) = self.game_data.maps.get(idx) {
+            return (game_map.tiles.width as i32, game_map.tiles.height as i32);
+        }
+        tracing::warn!("grid_dimensions({}) — no grid or map data found", map);
+        (1000, 1000)
+    }
+
     /// Buffer binary bytes, flush immediately, and then close the connection.
     pub async fn send_bytes_and_close(&mut self, conn_id: ConnectionId, data: &[u8]) {
         self.send_bytes(conn_id, data);
@@ -1207,8 +1285,8 @@ impl GameState {
     pub fn is_tile_blocked(&self, map: i32, x: i32, y: i32) -> bool {
         let map_idx = map as usize;
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
-            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-                game_map.tiles[(y - 1) as usize][(x - 1) as usize].blocked
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+                tile.blocked
             } else {
                 true
             }
@@ -1221,13 +1299,17 @@ impl GameState {
     pub fn hay_agua(&self, map: i32, x: i32, y: i32) -> bool {
         let map_idx = map as usize;
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
-            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-                let tile = &game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
                 let g = tile.graphic[0];
-                let is_water = (g >= 1505 && g <= 1520)
-                    || (g >= 5665 && g <= 5680)
-                    || (g >= 13547 && g <= 13562);
-                is_water && tile.graphic[1] == 0
+                let is_water = (g >= 1505  && g <= 1520)   // (Animación)(AGUA) — 4×4
+                    || (g >= 5665  && g <= 5680)            // Agua Clarita — 4×4
+                    || (g >= 13547 && g <= 13562)           // classic variant — 4×4
+                    || (g >= 28268 && g <= 28283)           // Agua verde — 4×4
+                    || (g >= 30762 && g <= 30777)           // Agua azul — 4×4
+                    || (g >= 32498 && g <= 32513)           // Agua celeste — 4×4
+                    || (g >= 44520 && g <= 44711)           // Agua v2 — 16×12
+                    || (g >= 53678 && g <= 53869);          // Agua v3 — 16×12
+                is_water
             } else {
                 false
             }
@@ -1272,8 +1354,7 @@ impl GameState {
     pub fn get_tile_exit(&self, map: i32, x: i32, y: i32) -> Option<(i32, i32, i32)> {
         let map_idx = map as usize;
         if let Some(Some(game_map)) = self.game_data.maps.get(map_idx) {
-            if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-                let tile = &game_map.tiles[(y - 1) as usize][(x - 1) as usize];
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
                 if let Some(ref exit) = tile.tile_exit {
                     return Some((exit.map as i32, exit.x as i32, exit.y as i32));
                 }
@@ -1325,9 +1406,9 @@ impl GameState {
         let mut spawns: Vec<(usize, i32, i32, i32)> = Vec::new();
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
             if let Some(game_map) = maybe_map {
-                for y in 0..100 {
-                    for x in 0..100 {
-                        let npc_idx = game_map.tiles[y][x].npc_index;
+                for y in 0..game_map.tiles.height {
+                    for x in 0..game_map.tiles.width {
+                        let npc_idx = game_map.tiles.get(x, y).map(|t| t.npc_index).unwrap_or(0);
                         if npc_idx > 0 {
                             spawns.push((npc_idx as usize, map_idx as i32, (x + 1) as i32, (y + 1) as i32));
                         }
@@ -1345,6 +1426,59 @@ impl GameState {
         count
     }
 
+    /// Spawn NPCs defined in zone spawn lists (.aozone files).
+    /// Called after spawn_map_npcs() on server startup.
+    pub fn spawn_zone_npcs(&mut self) -> usize {
+        use crate::data::zones::SpawnMode;
+
+        let mut spawns_to_create: Vec<(usize, i32, i32, i32, u16)> = Vec::new(); // (npc_num, map, x, y, zone_id)
+
+        for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
+            if let Some(game_map) = maybe_map {
+                if let Some(ref zones) = game_map.zones {
+                    let map_num = map_idx as i32;
+                    for spawn in &zones.spawns {
+                        let zone = zones.zones.iter().find(|z| z.id == spawn.zone_id);
+                        for _ in 0..spawn.cantidad {
+                            let (sx, sy) = match spawn.spawn_mode {
+                                SpawnMode::Fixed => (spawn.spawn_x, spawn.spawn_y),
+                                SpawnMode::Random => {
+                                    if let Some(z) = zone {
+                                        // Pick random position within zone bounds
+                                        let rx = crate::game::handlers::common::rand_range(z.x1, z.x2);
+                                        let ry = crate::game::handlers::common::rand_range(z.y1, z.y2);
+                                        (rx, ry)
+                                    } else {
+                                        (spawn.spawn_x, spawn.spawn_y)
+                                    }
+                                }
+                            };
+                            if sx > 0 && sy > 0 {
+                                spawns_to_create.push((spawn.npc_index as usize, map_num, sx, sy, spawn.zone_id));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        let mut count = 0;
+        for (npc_num, map, x, y, zone_id) in spawns_to_create {
+            if let Some(npc_idx) = self.spawn_npc(npc_num, map, x, y) {
+                // Tag NPC with zone_id for AI confinement
+                if let Some(npc) = self.get_npc_mut(npc_idx) {
+                    npc.zone_id = zone_id;
+                }
+                count += 1;
+            }
+        }
+
+        if count > 0 {
+            tracing::info!("[ZONES] Spawned {} NPCs from zone definitions", count);
+        }
+        count
+    }
+
     /// Load static map objects (doors, items, etc.) from .inf data into the WorldState grid.
     /// VB6 loads these at startup: each tile's OBJInfo becomes a ground item on the runtime grid.
     pub fn load_map_objects(&mut self) -> usize {
@@ -1352,9 +1486,9 @@ impl GameState {
         for (map_idx, maybe_map) in self.game_data.maps.iter().enumerate() {
             if let Some(game_map) = maybe_map {
                 let map_num = map_idx as i32;
-                for y in 0..100usize {
-                    for x in 0..100usize {
-                        let obj = &game_map.tiles[y][x].obj;
+                for y in 0..game_map.tiles.height {
+                    for x in 0..game_map.tiles.width {
+                        let obj = match game_map.tiles.get(x, y) { Some(t) => &t.obj, None => continue };
                         if obj.obj_index > 0 {
                             let tile_x = (x + 1) as i32;
                             let tile_y = (y + 1) as i32;
@@ -1473,29 +1607,43 @@ fn rand_simple() -> u32 {
 }
 
 /// Load anti-cheat interval settings from dat/Intervalos.ini.
+/// Convert milliseconds to game ticks (1 tick = 40ms), rounded.
+fn ms_to_ticks(ms: i32) -> i32 {
+    ((ms as f64) / 40.0).round() as i32
+}
+
 fn load_intervals(base: &std::path::Path) -> IntervalSettings {
     let path = base.join("dat").join("Intervalos.ini");
     match crate::config::IniFile::load(&path) {
         Ok(ini) => {
-            let get = |key: &str, default: i32| -> i32 {
-                ini.get("INTERVALOS", key)
+            // Values in INI are milliseconds — convert to ticks (/40, rounded)
+            let get_ms = |key: &str, default_ms: i32| -> i32 {
+                let ms: i32 = ini.get("INTERVALOS", key)
                     .and_then(|s| s.parse().ok())
-                    .unwrap_or(default)
+                    .unwrap_or(default_ms);
+                ms_to_ticks(ms)
             };
+            let npc_ai_ms: u64 = ini.get("INTERVALOS", "IntervaloNpcAI")
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(1300);
             let settings = IntervalSettings {
-                golpe: get("Golpe", 38),           // VB6: 1500ms / 40ms
-                flechas: get("Flechas", 35),       // VB6: 1400ms / 40ms
-                lanzar_hechizo: get("LanzarHechizo", 35), // VB6: 1400ms / 40ms
-                poteo_u: get("PoteoU", 30),        // VB6: 1200ms / 40ms
-                poteo_click: get("PoteoClick", 6),
-                work: get("Work", 18),             // VB6: 700ms / 40ms
-                magia_golpe: get("MagiaGolpe", 50), // VB6: IntervaloMagiaGolpe cross-cooldown
-                golpe_magia: get("GolpeMagia", 50), // VB6: IntervaloGolpeMagia cross-cooldown
+                paralizado: get_ms("IntervaloParalizado", 20000),
+                invisible: get_ms("IntervaloInvisible", 20000),
+                oculto: get_ms("IntervaloOculto", 20000),
+                npc_ai_ms,
+                golpe: get_ms("Golpe", 1520),
+                flechas: get_ms("Flechas", 1400),
+                lanzar_hechizo: get_ms("LanzarHechizo", 1400),
+                poteo_u: get_ms("PoteoU", 1200),
+                poteo_click: get_ms("PoteoClick", 240),
+                work: get_ms("Work", 720),
+                magia_golpe: get_ms("MagiaGolpe", 2000),
+                golpe_magia: get_ms("GolpeMagia", 2000),
             };
             tracing::info!(
-                "Intervals loaded: golpe={}, flechas={}, hechizo={}, poteo={}, click={}, work={}",
-                settings.golpe, settings.flechas, settings.lanzar_hechizo,
-                settings.poteo_u, settings.poteo_click, settings.work
+                "Intervals loaded (ms→ticks): paralizado={}, invisible={}, oculto={}, npc_ai={}ms, golpe={}, flechas={}, hechizo={}",
+                settings.paralizado, settings.invisible, settings.oculto, settings.npc_ai_ms,
+                settings.golpe, settings.flechas, settings.lanzar_hechizo
             );
             settings
         }

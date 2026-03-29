@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Godot;
 using ArgentumNextgen.Data;
@@ -63,6 +64,7 @@ public class GameState
 	public string AccountName = "";
 	public string SecurityCode = "";
 	public string LoginError = "";
+	public ArgentumNextgen.Network.CoordCipher? CoordCipher; // Anti-cheat rolling cipher
 	public string ServerNotice = "";
 	public string MensajeText = ""; // VB6 Mensaje form: set to show modal dialog
 	public List<CharacterPreview> CharacterList = new();
@@ -86,7 +88,7 @@ public class GameState
 	// Map
 	public int CurrentMap;
 	public string MapName = "";
-	public int MapColorR = 160, MapColorG = 160, MapColorB = 160;
+	public int MapColorR = 255, MapColorG = 255, MapColorB = 255;
 	public MapData? MapData;
 	public bool NeedMapLoad;
 
@@ -95,6 +97,15 @@ public class GameState
 	public int UserPosY;
 	public int UserCharIndex;
 	public string UserName = "";
+
+	// Zone system
+	public string CurrentZoneName = "";
+	public byte CurrentZoneType;
+	public bool CurrentZoneSafe;
+	public short CurrentZoneMusic;
+	public short CurrentZoneX1, CurrentZoneY1, CurrentZoneX2, CurrentZoneY2;
+	public bool ZoneChanged; // flag consumed by Main._Process to update HUD
+	public bool ZoneLluvia, ZoneNieve, ZoneNiebla;
 
 	// User status flags
 	public bool Raining;
@@ -110,7 +121,6 @@ public class GameState
 	public bool UserMounted;
 	public bool UserStopped;
 	public bool SafeMode;       // VB6: Seguro (PvP safety toggle)
-	public bool ItemSafety = true; // VB6: ISItem — client-side drop prevention (toggled with numpad *)
 	public bool SeguroResu;     // VB6: SeguroResu — resurrection safety
 	public bool Resting;        // VB6: Descansar toggle (DOK)
 	// Drop quantity dialog state
@@ -158,7 +168,7 @@ public class GameState
 	// PT correction cooldown: blocks new moves for N frames after a position rejection.
 	// Prevents the client from immediately re-sending moves that the server will reject
 	// (e.g., NPC on tile that client can't see), which accumulates desync.
-	public int PtCooldownFrames;
+	public long PtCooldownUntilMs;
 
 	// Pending moves counter: tracks unconfirmed client-predicted moves.
 	// Caps how far ahead the client can predict (max 2 tiles).
@@ -287,10 +297,6 @@ public class GameState
 	public bool ShowBlacksmithForm;
 	public bool ShowCarpenterForm;
 
-	// Event / environment
-	public string BattleTeamScores = ""; // BattleTeamScores (ID 163)
-	public byte AmbientColorR = 200, AmbientColorG = 200, AmbientColorB = 200; // AmbientColor (ID 164)
-
 	// Guild
 	public bool GuildBankCanObj;      // Permission: can withdraw items from guild bank
 	public bool GuildBankCanGold;     // Permission: can withdraw gold from guild bank
@@ -316,12 +322,6 @@ public class GameState
 	public byte ForumVisibility;        // Bitflags: 1=General, 2=Caos, 4=Real
 	public byte ForumCanMakeSticky;     // 0=no, 2=GM can make stickies
 	public bool ShowForumPanel;         // Trigger to open forum panel
-
-	// Mail system
-	public List<MailEntry> MailInbox = new();
-	public MailEntry? MailCurrentMessage; // Currently viewed message (from MailContent)
-	public bool ShowMailPanel;           // Trigger to open mail panel
-	public bool MailInboxDirty;          // True when inbox changed
 
 	// Quest system (VB6: frmQuest)
 	public bool ShowQuestPanel;         // Trigger to open quest panel
@@ -355,7 +355,7 @@ public class GameState
 	// Light system
 	public List<MapLight> MapLights = new();
 	public Color AmbientLightColor = new Color(0.627f, 0.627f, 0.627f); // RGB(160,160,160)
-	public Color[,,]? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
+	public ChunkedLightColors? TileLightColors; // [x, y, corner(0-3)] — 4 corners per tile matching VB6
 	public bool LightsDirty;
 
 	// Chat message queue — drained by Main.cs each frame (capped to prevent unbounded growth)
@@ -481,7 +481,7 @@ public class TradeOfferSlot
 {
 	public short ObjIndex;
 	public int Amount;
-	public short GrhIndex;
+	public int GrhIndex;
 	public byte ObjType;
 	public short MaxHit, MinHit, MaxDef, MinDef;
 	public int Value;
@@ -572,6 +572,7 @@ public class ArrowProjectile
 	public float TargetX, TargetY; // destination pixel
 	public float Speed = 8f;  // pixels per frame
 	public bool Active = true;
+	public float LifetimeMs;  // accumulated lifetime for timeout
 }
 
 /// A craftable item entry (blacksmith weapons/armors, carpenter items).
@@ -584,20 +585,6 @@ public class CraftEntry
 	public int Mat3;      // LingO (smith only)
 	public int ObjIndex;
 	public int Upgrade;
-}
-
-/// A mail entry in the inbox.
-public class MailEntry
-{
-	public int Id;
-	public string Sender = "";
-	public string Subject = "";
-	public string Body = "";
-	public string Date = "";
-	public bool Read;
-	public int AttachedGold;
-	public int AttachedItemId;
-	public int AttachedItemAmount;
 }
 
 /// A slot in the guild bank (VB6: BancoInventarioB).
@@ -621,6 +608,80 @@ public class PetInfo
 	public int NpcType;      // NPC type number
 	public string Name = ""; // Creature name
 	public int HpPercent = 100;
+}
+
+/// <summary>
+/// Chunk-based light color storage. Light colors are grouped into 100x100 chunks
+/// that are lazily allocated on first access, keeping memory proportional
+/// to lit areas instead of the full map Width*Height*4.
+/// Accepts 1-based tile coordinates matching ChunkedTiles convention.
+/// Each tile has 4 corner colors (indices 0-3).
+/// </summary>
+public class ChunkedLightColors
+{
+	private const int ChunkSize = 100;
+	private const int CornersPerTile = 4;
+	private readonly Dictionary<(int, int), Color[]> _chunks = new();
+	private Color _defaultColor = Colors.White;
+
+	/// <summary>Set the default color returned for unloaded chunks.</summary>
+	public void SetDefaultColor(Color color) => _defaultColor = color;
+
+	/// <summary>Decompose 1-based tile coordinates into chunk key + flat local index.</summary>
+	private static (int cx, int cy, int local) Resolve(int x, int y)
+	{
+		int cx = (x - 1) / ChunkSize;
+		int cy = (y - 1) / ChunkSize;
+		int lx = (x - 1) % ChunkSize;
+		int ly = (y - 1) % ChunkSize;
+		return (cx, cy, (ly * ChunkSize + lx) * CornersPerTile);
+	}
+
+	/// <summary>
+	/// Get a corner color. Returns the default color if chunk is not allocated.
+	/// Does NOT create chunks — use for read-only access.
+	/// </summary>
+	public Color Get(int x, int y, int corner)
+	{
+		var (cx, cy, local) = Resolve(x, y);
+		if (_chunks.TryGetValue((cx, cy), out var chunk))
+			return chunk[local + corner];
+		return _defaultColor;
+	}
+
+	/// <summary>
+	/// Set a corner color. Lazily allocates the chunk on first write,
+	/// filling all values with the default color.
+	/// </summary>
+	public void Set(int x, int y, int corner, Color value)
+	{
+		var (cx, cy, local) = Resolve(x, y);
+		var key = (cx, cy);
+		if (!_chunks.TryGetValue(key, out var chunk))
+		{
+			chunk = new Color[ChunkSize * ChunkSize * CornersPerTile];
+			Array.Fill(chunk, _defaultColor);
+			_chunks[key] = chunk;
+		}
+		chunk[local + corner] = value;
+	}
+
+	/// <summary>
+	/// Reset all chunks to the default color. Called before recalculating lights.
+	/// Only resets chunks that have been allocated (touched by lights).
+	/// </summary>
+	public void ResetAll(Color ambient)
+	{
+		_defaultColor = ambient;
+		foreach (var chunk in _chunks.Values)
+			Array.Fill(chunk, ambient);
+	}
+
+	/// <summary>Check whether any chunks are allocated.</summary>
+	public bool HasData => _chunks.Count > 0;
+
+	/// <summary>Number of chunks currently allocated.</summary>
+	public int LoadedChunks => _chunks.Count;
 }
 
 /// Character info data from FullCharInfo (ID 245) packet.

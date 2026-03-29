@@ -359,7 +359,7 @@ public partial class WalkModePanel : Control
             {
                 int tx = CharX + dx, ty = CharY + dy;
                 if (!Map.InBounds(tx, ty)) continue;
-                short l2 = Map.Tiles[tx, ty].Layer2;
+                int l2 = Map.Tiles[tx, ty].Layer2;
                 if (l2 <= 0) continue;
                 float sx = (dx + HalfTilesX) * TileSize + ofsX;
                 float sy = (dy + HalfTilesY) * TileSize + ofsY;
@@ -390,7 +390,7 @@ public partial class WalkModePanel : Control
                 DrawTileNpc(tx, ty, sx, sy);
 
                 // L3 graphic layer
-                short l3 = Map.Tiles[tx, ty].Layer3;
+                int l3 = Map.Tiles[tx, ty].Layer3;
                 if (l3 > 0)
                 {
                     bool onCharTile = (tx == CharX && ty == CharY);
@@ -409,7 +409,7 @@ public partial class WalkModePanel : Control
                 {
                     int tx = CharX + dx, ty = CharY + dy;
                     if (!Map.InBounds(tx, ty)) continue;
-                    short l4 = Map.Tiles[tx, ty].Layer4;
+                    int l4 = Map.Tiles[tx, ty].Layer4;
                     if (l4 <= 0) continue;
                     float sx = (dx + HalfTilesX) * TileSize + ofsX;
                     float sy = (dy + HalfTilesY) * TileSize + ofsY;

@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, MAX_SPELL_SLOTS};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::data::experience::MAX_LEVEL;
 use super::common::*;
@@ -19,12 +19,8 @@ use super::{user_die, npc_die, check_user_level, revive_user, warp_user};
 /// LH<slot>,<target_x>,<target_y> — Cast spell.
 /// LH<slot> — Select spell to cast (VB6: flags.Hechizo = slot).
 /// Does NOT cast the spell — the cast happens on the next RC (right-click) that targets a tile.
-pub(super) async fn handle_cast_spell(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let spell_slot: usize = match payload.parse::<usize>() {
-        Ok(s) if s >= 1 && s <= MAX_SPELL_SLOTS => s,
-        _ => return,
-    };
+pub(super) async fn handle_cast_spell(state: &mut GameState, conn_id: ConnectionId, spell_slot: usize) {
+    if spell_slot < 1 || spell_slot > MAX_SPELL_SLOTS { return; }
 
     if let Some(user) = state.users.get_mut(&conn_id) {
         if user.logged {
@@ -157,6 +153,15 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
+    // VB6: LanzarHechizo range check — target must be within visible area (8x6 tiles)
+    // Self-target spells skip this check (TargetType::Self_ uses caster's own position)
+    const RANGO_VISION_X: i32 = 8;
+    const RANGO_VISION_Y: i32 = 6;
+    if (target_x - x).abs() > RANGO_VISION_X || (target_y - y).abs() > RANGO_VISION_Y {
+        state.send_console(conn_id, "Estás muy lejos para lanzar ese hechizo.", font_index::FIGHT);
+        return;
+    }
+
     // Clear pending spell immediately
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.pending_spell = 0;
@@ -179,18 +184,22 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
-    if min_mana < spell.mana_requerido {
-        state.send_msg_id(conn_id, 18, ""); // Not enough mana
-        return;
-    }
-    // VB6: Stamina check (modHechizos.bas lines 468-475)
-    if spell.sta_requerido > 0 {
-        let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
-        if sta < spell.sta_requerido {
-            state.send_msg_id(conn_id, 18, ""); // Not enough stamina
+    // VB6: PuedeLanzar — GMs (privileges > 0) skip mana/stamina checks entirely
+    // modHechizos.bas: "If UserList(UserIndex).flags.Privilegios = 0 Then"
+    if privileges == 0 {
+        if min_mana < spell.mana_requerido {
+            state.send_msg_id(conn_id, 18, ""); // Not enough mana
             return;
         }
-    }
+        // VB6: Stamina check (modHechizos.bas lines 468-475)
+        if spell.sta_requerido > 0 {
+            let sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
+            if sta < spell.sta_requerido {
+                state.send_msg_id(conn_id, 18, ""); // Not enough stamina
+                return;
+            }
+        }
+    } // end privileges == 0 mana/stamina gate
     if spell.min_skill > 0 {
         let magic_skill = state.users.get(&conn_id).map(|u| u.skills[5]).unwrap_or(0);
         if magic_skill < spell.min_skill {
@@ -200,12 +209,20 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
     }
     // VB6: Staff power check for Mages (modHechizos.bas lines 449-460)
     if spell.need_staff > 0 {
-        let (class, weapon_slot, inv) = state.users.get(&conn_id)
-            .map(|u| (u.class, u.equip.weapon, u.inventory.clone()))
-            .unwrap_or_default();
+        let (class, weapon_slot, obj_idx) = match state.users.get(&conn_id) {
+            Some(u) => {
+                let slot = u.equip.weapon;
+                let idx = if slot > 0 && slot <= u.inventory.len() {
+                    u.inventory[slot - 1].obj_index
+                } else {
+                    0
+                };
+                (u.class, slot, idx)
+            }
+            None => (PlayerClass::default(), 0, 0),
+        };
         if class == PlayerClass::Mago {
-            let staff_power = if weapon_slot > 0 && weapon_slot <= inv.len() {
-                let obj_idx = inv[weapon_slot - 1].obj_index;
+            let staff_power = if weapon_slot > 0 {
                 state.game_data.objects.get(obj_idx as usize).map(|o| o.staff_power).unwrap_or(0)
             } else { 0 };
             if staff_power < spell.need_staff {
@@ -276,11 +293,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
         || spell.paraliza || spell.inmoviliza
         || spell.envenena || spell.maldicion;
 
-    // ===== STEP 4: Safe zone check for offensive spells (VB6: PuedeAtacar) =====
+    // ===== STEP 4: Safe zone check for offensive spells (Trigger > Zone > Map) =====
     if is_offensive {
-        let attacker_trigger = get_map_tile_trigger(state, map, x, y);
-        if attacker_trigger == crate::data::maps::Trigger::SafeZone {
-            state.send_msg_id(conn_id, 164, ""); // Can't attack in safe zone
+        if is_safe_at(state, map, x, y) {
+            state.send_msg_id(conn_id, 164, "");
             return;
         }
     }
@@ -336,11 +352,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
             return; // NO mana consumed, NO FX
         }
 
-        // VB6: Safe zone check — victim in safe zone blocks offensive spells
+        // Zone-aware safe check — victim in safe zone blocks offensive spells
         if is_offensive && target_id != conn_id {
             let victim_pos = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
-            let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
-            if victim_trigger == crate::data::maps::Trigger::SafeZone {
+            if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
                 state.send_msg_id(conn_id, 164, "");
                 return;
             }
@@ -358,9 +373,10 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 state.send_msg_id(conn_id, 155, "");
                 return;
             }
-            // Clan safe check — can't cast offensive spells on clanmates with seguro_clan on
+            // Clan safe check — can't cast offensive spells on clanmates if EITHER party has seguro_clan on
             let caster_seguro = state.users.get(&conn_id).map(|u| u.seguro_clan).unwrap_or(false);
-            if caster_seguro && same_clan(state, conn_id, target_id) {
+            let target_seguro = state.users.get(&target_id).map(|u| u.seguro_clan).unwrap_or(false);
+            if (caster_seguro || target_seguro) && same_clan(state, conn_id, target_id) {
                 state.send_console(conn_id, "No puedes atacar a un miembro de tu clan. Usa /SEGUROCLAN para desactivar el seguro.", font_index::INFO);
                 return;
             }
@@ -526,7 +542,7 @@ pub(super) async fn send_spell_info_user(state: &mut GameState, caster_id: Conne
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
     }
     if spell.wav > 0 {
-        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
+        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
     }
 
@@ -569,7 +585,7 @@ pub(super) async fn send_spell_info_npc(state: &mut GameState, caster_id: Connec
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &fx_pkt);
     }
     if spell.wav > 0 {
-        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as u8, fx_y as u8);
+        let snd_pkt = binary_packets::write_play_wave(spell.wav as u8, fx_x as i16, fx_y as i16);
         state.send_data_bytes(SendTarget::ToArea { map: fx_map, x: fx_x, y: fx_y }, &snd_pkt);
     }
 
@@ -623,8 +639,17 @@ pub(super) async fn apply_spell_properties_npc(
 
     // Apply damage to NPC
     if let Some(npc) = state.get_npc_mut(npc_idx) {
-        npc.min_hp -= damage;
+        npc.min_hp = npc.min_hp.saturating_sub(damage);
         npc.damage_received.push((caster_id, damage));
+    }
+
+    // Detect death synchronously (before any await — prevents double-death race)
+    let npc_is_dead = state.get_npc(npc_idx).map(|n| n.min_hp < 1).unwrap_or(false);
+    if npc_is_dead {
+        // Mark as dead immediately to prevent race with concurrent casters
+        if let Some(npc) = state.get_npc_mut(npc_idx) {
+            npc.min_hp = 0;
+        }
     }
 
     // Per-hit EXP (VB6: CalcularDarExp — proportional exp on every hit)
@@ -646,15 +671,12 @@ pub(super) async fn apply_spell_properties_npc(
         }
     }
 
-    // Check NPC death
-    let npc_death_data = state.get_npc(npc_idx).and_then(|n| {
-        if n.min_hp < 1 { Some((n.give_exp, n.give_gld_min, n.give_gld_max)) } else { None }
-    });
-    if let Some((give_exp, give_gld_min, give_gld_max)) = npc_death_data {
-        if let Some(npc) = state.get_npc_mut(npc_idx) {
-            npc.min_hp = 0;
+    // Execute death after exp (NPC already marked dead above — safe from race)
+    if npc_is_dead {
+        let death_data = state.get_npc(npc_idx).map(|n| (n.give_exp, n.give_gld_min, n.give_gld_max));
+        if let Some((give_exp, give_gld_min, give_gld_max)) = death_data {
+            npc_die(state, npc_idx, caster_id, give_exp, give_gld_min, give_gld_max).await;
         }
-        npc_die(state, npc_idx, caster_id, give_exp, give_gld_min, give_gld_max).await;
     }
 }
 
@@ -677,7 +699,7 @@ pub(super) async fn apply_spell_status_npc(
         }
     }
 
-    let paralisis_interval = state.config.intervalo_paralizado;
+    let paralisis_interval = state.intervals.paralizado;
     if let Some(npc) = state.get_npc_mut(npc_idx) {
         if spell.envenena {
             npc.veneno = true;
@@ -811,7 +833,7 @@ pub(super) async fn apply_spell_properties(
         let base_damage = calc_spell_damage(state, caster_id, spell);
         let final_damage = subtract_magic_defense(state, target_id, base_damage);
         if let Some(target) = state.users.get_mut(&target_id) {
-            target.min_hp -= final_damage;
+            target.min_hp = target.min_hp.saturating_sub(final_damage);
         }
         damage_dealt = final_damage;
     }
@@ -899,10 +921,9 @@ pub(super) async fn apply_spell_status(
         return;
     }
 
-    // VB6: Super Anillo (700) blocks paralysis, poison, curse, blindness, stun
-    // modHechizos.bas lines 141-143, 166, 186
-    if spell.paraliza || spell.inmoviliza || spell.envenena || spell.maldicion
-        || spell.estupidez || spell.ceguera {
+    // VB6: Super Anillo (700) blocks paralysis, immobilize, stun, blindness only
+    // Does NOT block poison (envenena) or curse (maldicion)
+    if spell.paraliza || spell.inmoviliza || spell.estupidez || spell.ceguera {
         let ring_slot = state.users.get(&target_id).map(|u| u.equip.ring).unwrap_or(0);
         let ring_obj = get_equipped_obj_index(state, target_id, ring_slot);
         if ring_obj == SUPERANILLO {
@@ -926,14 +947,11 @@ pub(super) async fn apply_spell_status(
     if spell.invisibilidad && target_dead {
         return;
     }
-    // VB6: Invisibility — check map InviSinEfecto
+    // Zone-aware invisibility check (Zone > Map)
     if spell.invisibilidad {
-        let invi_blocked = state.game_data.maps.get(target_map as usize)
-            .and_then(|m| m.as_ref())
-            .map(|m| m.info.invi_sin_efecto)
-            .unwrap_or(false);
-        if invi_blocked {
-            state.send_console(caster_id, "La invisibilidad no funciona en este mapa.", font_index::INFO);
+        let (tx, ty) = state.users.get(&target_id).map(|u| (u.pos_x, u.pos_y)).unwrap_or((0, 0));
+        if is_invi_blocked_at(state, target_map, tx, ty) {
+            state.send_console(caster_id, "La invisibilidad no funciona aqui.", font_index::INFO);
             return;
         }
     }
@@ -953,7 +971,7 @@ pub(super) async fn apply_spell_status(
                 if spell.inmoviliza {
                     target.immobilized = true;
                 }
-                target.counter_paralisis = state.config.intervalo_paralizado;
+                target.counter_paralisis = state.intervals.paralizado;
                 send_paradok_on = true;
             }
         }
@@ -979,7 +997,7 @@ pub(super) async fn apply_spell_status(
         }
         if spell.estupidez {
             target.stunned = true;
-            target.counter_stun = state.config.intervalo_paralizado; // VB6: same duration
+            target.counter_stun = state.intervals.paralizado; // VB6: same duration
         }
         if spell.remover_estupidez {
             target.stunned = false;
@@ -987,7 +1005,7 @@ pub(super) async fn apply_spell_status(
         }
         if spell.ceguera {
             target.blind = true;
-            target.counter_blind = state.config.intervalo_paralizado / 3; // VB6: IntervaloParalizado / 3
+            target.counter_blind = state.intervals.paralizado / 3; // VB6: IntervaloParalizado / 3
         }
         if spell.invisibilidad {
             target.invisible = true;
@@ -999,12 +1017,12 @@ pub(super) async fn apply_spell_status(
 
     // Send PARADOK + PU outside borrow scope (VB6: lines 759-760)
     if send_paradok_on {
-        let para_secs = (state.config.intervalo_paralizado as f32 * 0.04) as i16;
+        let para_secs = (state.intervals.paralizado as f32 * 0.04) as i16;
         let pkt = binary_packets::write_paralize_ok(para_secs);
         state.send_bytes(target_id, &pkt);
         // PU forces client position to server-known position (prevents ghost movement)
         if let Some(u) = state.users.get(&target_id) {
-            let pu = binary_packets::write_pos_update(u.pos_x as u8, u.pos_y as u8);
+            let pu = binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
             state.send_bytes(target_id, &pu);
         }
     }
@@ -1020,7 +1038,7 @@ pub(super) async fn apply_spell_status(
         if let Some(u) = state.users.get(&target_id) {
             let ci = u.char_index.0 as i16;
             let (map, x, y) = (u.pos_map, u.pos_x, u.pos_y);
-            let invis_secs = (state.config.intervalo_invisible as f32 * 0.04) as i16;
+            let invis_secs = (state.intervals.invisible as f32 * 0.04) as i16;
             let bp_remove = binary_packets::write_character_remove(ci);
             let nover_pkt = binary_packets::write_set_invisible(ci, true, invis_secs);
             // Collect area users and decide per-user
@@ -1039,7 +1057,7 @@ pub(super) async fn apply_spell_status(
         }
     }
 
-    // Resurrection spell
+    // Resurrection spell — VB6 13.3: all classes resurrect immediately
     if spell.revivir {
         let target_dead = state.users.get(&target_id).map(|u| u.dead).unwrap_or(false);
         let target_seguro_resu = state.users.get(&target_id).map(|u| u.seguro_resu).unwrap_or(false);
@@ -1057,7 +1075,6 @@ pub(super) async fn apply_spell_status(
                 return;
             }
 
-            // Check if caster is cleric (instant full HP rez)
             let caster_class = state.users.get(&caster_id)
                 .map(|u| u.class)
                 .unwrap_or_default();
@@ -1065,40 +1082,84 @@ pub(super) async fn apply_spell_status(
                 .map(|u| u.char_name.clone())
                 .unwrap_or_default();
 
+            // VB6 13.3: Caster must have full stamina to resurrect
+            let (caster_min_sta, caster_max_sta) = state.users.get(&caster_id)
+                .map(|u| (u.min_sta, u.max_sta))
+                .unwrap_or((0, 1));
+            if caster_min_sta != caster_max_sta {
+                state.send_console(caster_id, "Necesitas tener toda tu energia para resucitar.", font_index::INFO);
+                return;
+            }
+
+            // VB6 13.3: Instrument check — Bardo needs LAUDELFICO or LAUDMAGICO,
+            // Druida needs FLAUTAELFICA or FLAUTAMAGICA equipped as ring
+            let ring_slot = state.users.get(&caster_id).map(|u| u.equip.ring).unwrap_or(0);
+            let ring_obj = get_equipped_obj_index(state, caster_id, ring_slot);
+            const FLAUTAMAGICA: i32 = 208;
+
+            if caster_class == PlayerClass::Bardo {
+                if ring_obj != LAUDELFICO && ring_obj != LAUDMAGICO {
+                    state.send_console(caster_id, "Necesitas un laúd para resucitar.", font_index::INFO);
+                    return;
+                }
+            } else if caster_class == PlayerClass::Druida {
+                if ring_obj != FLAUTAELFICA && ring_obj != FLAUTAMAGICA {
+                    state.send_console(caster_id, "Necesitas una flauta para resucitar.", font_index::INFO);
+                    return;
+                }
+            }
+
             let target_level = state.users.get(&target_id).map(|u| u.level).unwrap_or(1);
 
-            if caster_class == PlayerClass::Clerigo {
-                // Cleric: instant resurrection at full HP
-                revive_user(state, target_id).await;
-                if let Some(target) = state.users.get_mut(&target_id) {
-                    target.min_hp = target.max_hp;
-                    // VB6 13.3: reset stats on resurrection
-                    target.min_ham = 0;
-                    target.min_agua = 0;
-                    target.min_mana = 0;
-                    target.min_sta = 0;
+            // Check if the HP cost would kill the caster before applying resurrection.
+            // Cost formula: caster loses HP * (1 - target_level * 0.015) of current HP,
+            // meaning new_hp = current_hp * (1 - target_level * 0.015).
+            // If new_hp <= 0 the caster would die — reject early to avoid inconsistent state.
+            let caster_hp = state.users.get(&caster_id).map(|u| u.min_hp).unwrap_or(0);
+            let new_caster_hp = ((caster_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
+            if new_caster_hp <= 0 {
+                state.send_console(caster_id, "No tienes suficiente vida para lanzar este hechizo.", font_index::INFO);
+                return;
+            }
+
+            // VB6 13.3: ALL classes resurrect immediately (no Cleric vs others branching)
+            revive_user(state, target_id).await;
+            if let Some(target) = state.users.get_mut(&target_id) {
+                target.min_hp = target.max_hp;
+                // VB6 13.3: reset stats on resurrection
+                target.min_ham = 0;
+                target.min_agua = 0;
+                target.min_mana = 0;
+                target.min_sta = 0;
+            }
+            send_stats_hp(state, target_id).await;
+            state.send_msg_id(target_id, 749, &caster_name);
+
+            // VB6: +500 Noble rep if target is not criminal and not self-res
+            if caster_id != target_id {
+                let target_criminal = state.users.get(&target_id).map(|u| u.criminal).unwrap_or(false);
+                if !target_criminal {
+                    const MAX_REP: i32 = 6_000_000;
+                    if let Some(caster) = state.users.get_mut(&caster_id) {
+                        caster.rep_noble = (caster.rep_noble + 500).min(MAX_REP);
+                    }
+                    state.send_console(caster_id, "Los Dioses te sonrien, has ganado 500 puntos de nobleza!", font_index::INFO);
                 }
-                send_stats_hp(state, target_id).await;
-                state.send_msg_id(target_id, 749, &caster_name);
-            } else {
-                // Non-cleric: 10 second delayed resurrection
-                if let Some(target) = state.users.get_mut(&target_id) {
-                    target.segundos_para_revivir = 10;
-                    // VB6 13.3: reset stats on resurrection
-                    target.min_ham = 0;
-                    target.min_agua = 0;
-                    target.min_mana = 0;
-                    target.min_sta = 0;
-                }
-                state.send_msg_id(target_id, 845, "");
             }
 
             // Caster pays HP cost — VB6 13.3: hp * (1 - target_level * 0.015)
+            // Allow HP to reach 0 (caster can die from resurrection cost)
             if let Some(caster) = state.users.get_mut(&caster_id) {
                 let new_hp = ((caster.min_hp as f64) * (1.0 - target_level as f64 * 0.015)) as i32;
-                caster.min_hp = new_hp.max(1);
+                caster.min_hp = new_hp;
             }
             send_stats_hp(state, caster_id).await;
+
+            // If caster HP <= 0, caster dies from the resurrection cost
+            let caster_hp = state.users.get(&caster_id).map(|u| u.min_hp).unwrap_or(0);
+            if caster_hp <= 0 {
+                user_die(state, caster_id, None).await;
+            }
         }
     }
 }
@@ -1178,6 +1239,8 @@ pub(super) async fn apply_spell_buffs(
 /// Apply invocation spell — spawn NPCs as pets.
 /// VB6: HechizoInvocacion (modHechizos.bas). Max 3 pets, singleton elementals.
 const MAX_MASCOTAS: i32 = 3;
+/// VB6: IntervaloInvocacion = 1001 ticks at 50ms = ~50 seconds
+const ELEMENTAL_LIFETIME_MS: i64 = 50_000;
 
 pub(super) async fn apply_spell_invocation(
     state: &mut GameState,
@@ -1189,13 +1252,9 @@ pub(super) async fn apply_spell_invocation(
         _ => return,
     };
 
-    // VB6: InvocarSinEfecto — block summoning on certain maps
-    let invocar_blocked = state.game_data.maps.get(map as usize)
-        .and_then(|m| m.as_ref())
-        .map(|m| m.info.invocar_sin_efecto)
-        .unwrap_or(false);
-    if invocar_blocked {
-        state.send_console(caster_id, "No puedes invocar criaturas en este mapa.", font_index::INFO);
+    // Zone-aware invocation check (Zone > Map)
+    if is_invocar_blocked_at(state, map, x, y) {
+        state.send_console(caster_id, "No puedes invocar criaturas aqui.", font_index::INFO);
         return;
     }
 
@@ -1210,25 +1269,61 @@ pub(super) async fn apply_spell_invocation(
         return;
     }
 
-    // VB6: Elemental singleton checks — can only have one of each type
+    // VB6: Elemental singleton — if already summoned, warp it to caster + reset lifetime
     {
         use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
-        if let Some(user) = state.users.get(&caster_id) {
-            match npc_num {
-                ELEMENTAL_AGUA if user.ele_de_agua => {
-                    state.send_msg_id(caster_id, 23, ""); // Ya tienes un Elemental de Agua
-                    return;
+        let already_has = match state.users.get(&caster_id) {
+            Some(user) => match npc_num {
+                ELEMENTAL_AGUA => user.ele_de_agua,
+                ELEMENTAL_FUEGO => user.ele_de_fuego,
+                ELEMENTAL_TIERRA => user.ele_de_tierra,
+                _ => false,
+            },
+            None => false,
+        };
+        if already_has {
+            // Find the existing elemental and warp it to caster
+            let existing_idx = state.users.get(&caster_id)
+                .and_then(|u| {
+                    for slot in 0..3 {
+                        if u.mascotas_type[slot] == npc_num && u.mascotas_index[slot] > 0 {
+                            return Some(u.mascotas_index[slot]);
+                        }
+                    }
+                    None
+                });
+            if let Some(npc_idx) = existing_idx {
+                // Remove from old tile
+                let old_data = state.get_npc(npc_idx).map(|n| (n.char_index, n.map, n.x, n.y));
+                if let Some((ci, old_map, old_x, old_y)) = old_data {
+                    let grid = state.world.grid_mut(old_map);
+                    if let Some(tile) = grid.tile_mut(old_x, old_y) {
+                        if tile.npc_index == npc_idx as i32 { tile.npc_index = 0; }
+                    }
+                    let remove_pkt = binary_packets::write_character_remove(ci.0 as i16);
+                    state.send_data_bytes(SendTarget::ToArea { map: old_map, x: old_x, y: old_y }, &remove_pkt);
                 }
-                ELEMENTAL_FUEGO if user.ele_de_fuego => {
-                    state.send_msg_id(caster_id, 24, ""); // Ya tienes un Elemental de Fuego
-                    return;
+                // Set new position + reset lifetime
+                if let Some(npc) = state.get_npc_mut(npc_idx) {
+                    npc.map = map;
+                    npc.x = x;
+                    npc.y = y;
+                    npc.tiempo_existencia_ms = ELEMENTAL_LIFETIME_MS;
+                    npc.target = None;
+                    npc.target_npc = 0;
                 }
-                ELEMENTAL_TIERRA if user.ele_de_tierra => {
-                    state.send_msg_id(caster_id, 22, ""); // Ya tienes un Elemental de Tierra
-                    return;
+                // Place on new tile
+                let grid = state.world.grid_mut(map);
+                if let Some(tile) = grid.tile_mut(x, y) {
+                    tile.npc_index = npc_idx as i32;
                 }
-                _ => {}
+                // Broadcast creation at new position
+                let cc_pkt = state.get_npc(npc_idx).map(|n| n.build_cc_binary());
+                if let Some(pkt) = cc_pkt {
+                    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
+                }
             }
+            return;
         }
     }
 
@@ -1261,9 +1356,13 @@ pub(super) async fn apply_spell_invocation(
                 }
             }
 
-            // Set NPC owner
+            // Set NPC owner + lifetime for elementals
             if let Some(npc) = state.get_npc_mut(npc_idx) {
                 npc.maestro_user = Some(caster_id);
+                use crate::game::npc::{ELEMENTAL_AGUA, ELEMENTAL_FUEGO, ELEMENTAL_TIERRA};
+                if npc_num == ELEMENTAL_AGUA || npc_num == ELEMENTAL_FUEGO || npc_num == ELEMENTAL_TIERRA {
+                    npc.tiempo_existencia_ms = ELEMENTAL_LIFETIME_MS;
+                }
             }
 
             // Broadcast NPC creation using its CC packet
@@ -1361,7 +1460,7 @@ pub(super) async fn apply_spell_teleport(
     // Send map change packets
     let cm_pkt = binary_packets::write_change_map(dest_map as i16, 0, r as u8, g as u8, b as u8);
     state.send_bytes(caster_id, &cm_pkt);
-    let pu_pkt = binary_packets::write_pos_update(dest_x as u8, dest_y as u8);
+    let pu_pkt = binary_packets::write_pos_update(dest_x as i16, dest_y as i16);
     state.send_bytes(caster_id, &pu_pkt);
     let midi_pkt = binary_packets::write_play_midi(music as u8);
     state.send_bytes(caster_id, &midi_pkt);

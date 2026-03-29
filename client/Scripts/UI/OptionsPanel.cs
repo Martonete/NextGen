@@ -52,11 +52,16 @@ public partial class OptionsPanel : RpgBaseForm
     private Button? _chkMouseDClick;
     private Button? _chkMouseRClick;
     private Button? _chkMouseContext;
+    private Button? _chkBlockWalkOnChat;
+    private Button? _chkDragWindow;
+    private Button? _chkItemTooltip;
 
     // ── Render tab controls (Display) ──
     private Button? _chkFullscreen;
     private HBoxContainer? _aspectRow;
     private OptionButton? _optAspect;
+    private HBoxContainer? _resolutionRow;
+    private OptionButton? _optResolution;
 
     // ── Render tab controls ──
     private OptionButton? _optPerformance;
@@ -200,40 +205,58 @@ public partial class OptionsPanel : RpgBaseForm
 
         vbox.AddChild(RpgTheme.CreateSeparator());
 
-        // -- Controls section (merged from Controles tab) --
+        // -- Controls section --
         var ctrlCols = RpgTheme.CreateRow(RpgTheme.SpacingXl);
 
+        // Left column: Funciones (mouse options + walk/drag toggles)
         var ctrlLeft = RpgTheme.CreateColumn();
         ctrlLeft.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        ctrlLeft.AddChild(RpgTheme.CreateTitleLabel("Teclas", 15));
-        _btnKeyConfig = RpgTheme.CreateRpgButton("Configurar Teclas", false, 13);
-        _btnKeyConfig.CustomMinimumSize = new Vector2(0, 34);
-        _btnKeyConfig.Pressed += () => OnOpenKeyBinds?.Invoke();
-        ctrlLeft.AddChild(_btnKeyConfig);
+        ctrlLeft.AddChild(RpgTheme.CreateTitleLabel("Funciones", 15));
+
+        var dclickRow = RpgTheme.CreateRpgCheckboxRow("Doble click interactuar");
+        _chkMouseDClick = GetCheckboxFromRow(dclickRow);
+        _chkMouseDClick.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(dclickRow);
+
+        var rclickRow = RpgTheme.CreateRpgCheckboxRow("Usar click derecho como doble click");
+        _chkMouseRClick = GetCheckboxFromRow(rclickRow);
+        _chkMouseRClick.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(rclickRow);
+
+        var contextRow = RpgTheme.CreateRpgCheckboxRow("Menu contextual");
+        _chkMouseContext = GetCheckboxFromRow(contextRow);
+        _chkMouseContext.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(contextRow);
+
+        var walkBlockRow = RpgTheme.CreateRpgCheckboxRow("Bloquear caminata al escribir");
+        _chkBlockWalkOnChat = GetCheckboxFromRow(walkBlockRow);
+        _chkBlockWalkOnChat.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(walkBlockRow);
+
+        var dragWindowRow = RpgTheme.CreateRpgCheckboxRow("Mover la pantalla en modo ventana");
+        _chkDragWindow = GetCheckboxFromRow(dragWindowRow);
+        _chkDragWindow.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(dragWindowRow);
+
+        var tooltipRow = RpgTheme.CreateRpgCheckboxRow("Tooltip de objetos en inventario");
+        _chkItemTooltip = GetCheckboxFromRow(tooltipRow);
+        _chkItemTooltip.Toggled += _ => ApplyImmediate();
+        ctrlLeft.AddChild(tooltipRow);
+
         ctrlCols.AddChild(ctrlLeft);
 
         var ctrlSep = new VSeparator();
         ctrlSep.AddThemeConstantOverride("separation", 4);
         ctrlCols.AddChild(ctrlSep);
 
+        // Right column: Teclas
         var ctrlRight = RpgTheme.CreateColumn();
         ctrlRight.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        ctrlRight.AddChild(RpgTheme.CreateTitleLabel("Raton", 15));
-
-        var dclickRow = RpgTheme.CreateRpgCheckboxRow("Doble click interactuar");
-        _chkMouseDClick = GetCheckboxFromRow(dclickRow);
-        _chkMouseDClick.Toggled += _ => ApplyImmediate();
-        ctrlRight.AddChild(dclickRow);
-
-        var rclickRow = RpgTheme.CreateRpgCheckboxRow("Usar click derecho como doble click");
-        _chkMouseRClick = GetCheckboxFromRow(rclickRow);
-        _chkMouseRClick.Toggled += _ => ApplyImmediate();
-        ctrlRight.AddChild(rclickRow);
-
-        var contextRow = RpgTheme.CreateRpgCheckboxRow("Menu contextual");
-        _chkMouseContext = GetCheckboxFromRow(contextRow);
-        _chkMouseContext.Toggled += _ => ApplyImmediate();
-        ctrlRight.AddChild(contextRow);
+        ctrlRight.AddChild(RpgTheme.CreateTitleLabel("Teclas", 15));
+        _btnKeyConfig = RpgTheme.CreateRpgButton("Configurar Teclas", false, 13);
+        _btnKeyConfig.CustomMinimumSize = new Vector2(0, 34);
+        _btnKeyConfig.Pressed += () => OnOpenKeyBinds?.Invoke();
+        ctrlRight.AddChild(_btnKeyConfig);
 
         ctrlCols.AddChild(ctrlRight);
         vbox.AddChild(ctrlCols);
@@ -275,6 +298,15 @@ public partial class OptionsPanel : RpgBaseForm
         _optAspect = GetDropdownFromRow(_aspectRow);
         _optAspect.ItemSelected += _ => ApplyImmediate();
         leftCol.AddChild(_aspectRow);
+
+        // Resolution preset dropdown
+        var resLabels = new string[ResolutionManager.Presets.Length];
+        for (int i = 0; i < ResolutionManager.Presets.Length; i++)
+            resLabels[i] = ResolutionManager.Presets[i].label;
+        _resolutionRow = RpgTheme.CreateRpgDropdownRow("Resolucion:", resLabels, 120);
+        _optResolution = GetDropdownFromRow(_resolutionRow);
+        _optResolution.ItemSelected += OnResolutionSelected;
+        leftCol.AddChild(_resolutionRow);
 
         _fpsRow = RpgTheme.CreateRpgDropdownRow("FPS:",
             new[] { "60", "120", "144", "165", "240", "Sin limite" }, 100);
@@ -440,7 +472,7 @@ public partial class OptionsPanel : RpgBaseForm
 
         _state.OptionsPanelOpen = true;
         ShowForm();
-        SetTab(0);
+        SetTab(_activeTab);
     }
 
     public override void HideForm()
@@ -461,6 +493,24 @@ public partial class OptionsPanel : RpgBaseForm
         SaveControlsToConfig(_config);
         _config.Save(_dataPath);
         OnConfigApplied?.Invoke();
+    }
+
+    // ── Resolution change ─────────────────────────────────
+
+    private void OnResolutionSelected(long index)
+    {
+        if (_loading || _config == null) return;
+        int idx = (int)index;
+        if (idx < 0 || idx >= ResolutionManager.Presets.Length) return;
+
+        var (w, h, _) = ResolutionManager.Presets[idx];
+        _config.ResolutionWidth = w;
+        _config.ResolutionHeight = h;
+        _config.Save(_dataPath);
+
+        // Apply new resolution and reposition all UI
+        // RepositionUI() + CenterPanelsInViewport() handles everything including this panel
+        ResolutionManager.ApplyResolution(w, h);
     }
 
     // ── Performance preset ────────────────────────────────
@@ -544,11 +594,30 @@ public partial class OptionsPanel : RpgBaseForm
         SetCheck(_chkMouseDClick, cfg.MouseDoubleClick);
         SetCheck(_chkMouseRClick, cfg.MouseRightClick);
         SetCheck(_chkMouseContext, cfg.MouseContextMenu);
+        SetCheck(_chkBlockWalkOnChat, cfg.BlockWalkOnChat);
+        SetCheck(_chkDragWindow, cfg.DragWindowEnabled);
+        SetCheck(_chkItemTooltip, cfg.ShowItemTooltip);
 
         // Render tab — Display
         SetCheck(_chkFullscreen, cfg.Fullscreen);
         if (_aspectRow != null) _aspectRow.Visible = cfg.Fullscreen;
         if (_optAspect != null) _optAspect.Selected = cfg.AspectRatioMode;
+
+        // Resolution preset
+        if (_optResolution != null)
+        {
+            int resSel = 0;
+            for (int i = 0; i < ResolutionManager.Presets.Length; i++)
+            {
+                if (ResolutionManager.Presets[i].w == cfg.ResolutionWidth &&
+                    ResolutionManager.Presets[i].h == cfg.ResolutionHeight)
+                {
+                    resSel = i;
+                    break;
+                }
+            }
+            _optResolution.Selected = resSel;
+        }
 
         // Render tab
         if (_optPerformance != null) _optPerformance.Selected = cfg.PerformanceLevel;
@@ -605,10 +674,14 @@ public partial class OptionsPanel : RpgBaseForm
         cfg.MouseDoubleClick = IsChecked(_chkMouseDClick);
         cfg.MouseRightClick = IsChecked(_chkMouseRClick);
         cfg.MouseContextMenu = IsChecked(_chkMouseContext);
+        cfg.BlockWalkOnChat = IsChecked(_chkBlockWalkOnChat);
+        cfg.DragWindowEnabled = IsChecked(_chkDragWindow);
+        cfg.ShowItemTooltip = IsChecked(_chkItemTooltip);
 
         // Render tab — Display
         cfg.Fullscreen = IsChecked(_chkFullscreen);
         cfg.AspectRatioMode = _optAspect?.Selected ?? 0;
+        // Resolution is saved directly in OnResolutionSelected (requires scene reload)
 
         // Render tab
         cfg.PerformanceLevel = _optPerformance?.Selected ?? 2;

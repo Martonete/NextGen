@@ -18,6 +18,7 @@ pub mod npcs;
 pub mod maps;
 pub mod balance;
 pub mod crafting;
+pub mod zones;
 
 use std::path::Path;
 
@@ -50,40 +51,51 @@ impl GameData {
         // Fix: iterate all tiles, check .inf ObjIndex against objects DB, unblock open doors.
         let mut doors_fixed = 0;
         for game_map in maps.iter_mut().flatten() {
-            for y in 0..maps::MAP_HEIGHT {
-                for x in 0..maps::MAP_WIDTH {
-                    let oi = game_map.tiles[y][x].obj.obj_index as usize;
+            let w = game_map.tiles.width;
+            let h = game_map.tiles.height;
+            for y in 0..h {
+                for x in 0..w {
+                    let oi = game_map.tiles.get(x, y).map(|t| t.obj.obj_index as usize).unwrap_or(0);
                     if oi >= 1 {
                         if let Some(obj) = objects.get(oi - 1) {
                             // Door type (ObjType 6) with cerrada=0 means open → unblock
-                            if obj.obj_type == objects::ObjType::Door && obj.cerrada == 0 && game_map.tiles[y][x].blocked {
-                                game_map.tiles[y][x].blocked = false;
-                                game_map.tiles[y][x].original_blocked = false;
+                            let is_blocked = game_map.tiles.get(x, y).map(|t| t.blocked).unwrap_or(false);
+                            if obj.obj_type == objects::ObjType::Door && obj.cerrada == 0 && is_blocked {
+                                if let Some(tile) = game_map.tiles.get_mut(x, y) {
+                                    tile.blocked = false;
+                                    tile.original_blocked = false;
+                                }
                                 doors_fixed += 1;
                                 // Also unblock adjacent tiles for double/grand doors
                                 if obj.puerta_doble == 1 {
                                     // Double door: x-1, x+1, x+2
                                     for dx in &[-1i32, 1, 2] {
                                         let nx = x as i32 + dx;
-                                        if nx >= 0 && (nx as usize) < maps::MAP_WIDTH {
-                                            game_map.tiles[y][nx as usize].blocked = false;
-                                            game_map.tiles[y][nx as usize].original_blocked = false;
+                                        if nx >= 0 && (nx as usize) < w {
+                                            if let Some(adj) = game_map.tiles.get_mut(nx as usize, y) {
+                                                adj.blocked = false;
+                                                adj.original_blocked = false;
+                                            }
                                         }
                                     }
                                 } else if obj.porton == 1 || obj.reja_forta == 1 {
                                     // Grand/fortress gate: x-1, x-2, x+1, x+2
                                     for dx in &[-2i32, -1, 1, 2] {
                                         let nx = x as i32 + dx;
-                                        if nx >= 0 && (nx as usize) < maps::MAP_WIDTH {
-                                            game_map.tiles[y][nx as usize].blocked = false;
-                                            game_map.tiles[y][nx as usize].original_blocked = false;
+                                        if nx >= 0 && (nx as usize) < w {
+                                            if let Some(adj) = game_map.tiles.get_mut(nx as usize, y) {
+                                                adj.blocked = false;
+                                                adj.original_blocked = false;
+                                            }
                                         }
                                     }
                                 } else {
                                     // Single door: x-1
                                     if x > 0 {
-                                        game_map.tiles[y][x - 1].blocked = false;
-                                        game_map.tiles[y][x - 1].original_blocked = false;
+                                        if let Some(adj) = game_map.tiles.get_mut(x - 1, y) {
+                                            adj.blocked = false;
+                                            adj.original_blocked = false;
+                                        }
                                     }
                                 }
                             }

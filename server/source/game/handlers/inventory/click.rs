@@ -6,7 +6,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerRace;
 use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
@@ -19,16 +19,7 @@ use crate::game::handlers::{
 use crate::game::handlers::skills::skill_id;
 use super::doors::{accion_para_puerta, accion_para_foro};
 
-pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let x: i32 = match read_field(1, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let y: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
+pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     do_lookat_tile(state, conn_id, x, y).await;
 }
 
@@ -96,9 +87,10 @@ pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId,
 
     // ========== CHARACTER DETECTION (VB6 lines 779-800) ==========
     // VB6 checks Y+1 FIRST, then Y for chars
+    let grid_height = state.world.grid(map).map(|g| g.height).unwrap_or(100);
     if found_char == 0 {
         for &check_y in &[y + 1, y] {
-            if check_y < 1 || check_y > 100 { continue; }
+            if check_y < 1 || check_y > grid_height { continue; }
             // Check for user
             if found_char == 0 {
                 let tile_user = state.world.grid(map)
@@ -381,17 +373,7 @@ pub(crate) fn npc_health_by_survival(min_hp: i32, max_hp: i32, survival_skill: i
 
 /// RC<x>,<y> — Right click on tile (interact / context menu).
 /// VB6 equivalent: Accion() in Acciones.bas — handles doors, NPCs, users, items.
-pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let x: i32 = match read_field(1, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let y: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-
+pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     let (map, user_x, user_y, privileges, dead) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.privileges, u.dead),
         _ => return,
@@ -410,8 +392,9 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
         user.target_map = map;
     }
 
-    // NOTE: Spells are NOT cast from right-click. They are cast from WLC (Work Left Click)
-    // with skill_type = MAGIA (2). The right-click only does LookatTile (inspect).
+    // VB6: Right-click also shows tile info (LookatTile) before performing the action.
+    // This displays NPC/player name, health, guild, faction, etc.
+    do_lookat_tile(state, conn_id, x, y).await;
 
     // Gather tile data without holding borrows
     let tile_data = state.world.grid(map).and_then(|g| g.tile(x, y)).map(|t| {
@@ -425,7 +408,9 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // VB6 Acciones.bas: check Y+1 FIRST, then Y for characters.
     // Character heads extend upward — clicking on the head area (tile Y) finds the
     // character whose body is at tile Y+1. Only these two tiles are checked.
-    if tile_npc_idx == 0 && y + 1 <= 100 {
+    let rc_grid_height = state.world.grid(map).map(|g| g.height).unwrap_or(100);
+    let rc_grid_width = state.world.grid(map).map(|g| g.width).unwrap_or(100);
+    if tile_npc_idx == 0 && y + 1 <= rc_grid_height {
         if let Some(npc_on_y1) = state.world.grid(map).and_then(|g| g.tile(x, y + 1)).map(|t| t.npc_index) {
             if npc_on_y1 > 0 {
                 tile_npc_idx = npc_on_y1;
@@ -448,7 +433,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x-1: only for PuertaDoble or Porton doors
     for dx in [-1i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -463,7 +448,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x-2: only for Porton doors
     for dx in [-2i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -478,7 +463,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x+1: any door type
     for dx in [1i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -492,7 +477,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
     // x+2: only for PuertaDoble or Porton doors (VB6 line 93-99)
     for dx in [2i32] {
         let ax = x + dx;
-        if ax < 1 || ax > 100 { continue; }
+        if ax < 1 || ax > rc_grid_width { continue; }
         let adj_obj = get_map_tile_obj(state, map, ax, y);
         if adj_obj > 0 {
             if let Some(obj) = state.get_object(adj_obj) {
@@ -628,13 +613,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             }
                         }
                         NpcType::Mail => {
-                            // VB6: Correos (type 23) — opens mail form
-                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 5 {
-                                state.send_msg_id(conn_id, 13, ""); return;
-                            }
-                            let pkt_correo = binary_packets::write_mail_open();
-                            state.send_bytes(conn_id, &pkt_correo);
+                            // Mail system removed — was never part of VB6 13.3
                         }
                         NpcType::Citizenship => {
                             // VB6: Ciudadania (type 13)

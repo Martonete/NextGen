@@ -1,6 +1,9 @@
-# Skill: Argentum Online Map System
+---
+name: ao-mapper
+description: Use when reading/writing .map/.inf/.dat map files, modifying tile data, exits, NPC spawns, triggers, or building map editing tools.
+---
 
-How maps work in Argentum Online. Complete byte-level format spec.
+# AO Map System Reference
 
 ## Overview
 

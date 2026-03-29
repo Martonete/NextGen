@@ -23,6 +23,7 @@ public partial class EditorMain : Control
     private int[]? _npcHeads;
     private int[]? _headGrhs;
     private NpcDatabase? _npcDb;
+    private ObjectDatabase? _objDb;
     private string _dataPath = "";
     private string _clientMapDir = "";  // client/Data/Maps/
     private string _serverMapDir = "";  // server/maps/
@@ -37,6 +38,9 @@ public partial class EditorMain : Control
     private TabContainer? _sidebarTabs;
     private TilePalette? _palette;
     private NpcPalette? _npcPalette;
+    private ObjectPalette? _objPalette;
+    private ZonePanel? _zonePanel;
+    private MapZoneData? _mapZones;
     private MapViewport? _viewport;
     private Window? _propsWindow;
     private TilePropertiesPanel? _propsPanel;
@@ -44,6 +48,10 @@ public partial class EditorMain : Control
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
     private FileDialog? _serverPathDialog;
+    private Window? _insertFormatWindow;
+    private OptionButton? _insertFormatSelect;
+    private FileDialog? _insertFileDialog;
+    private LegacyMapFormat _insertFormat;
     private PopupMenu? _viewMenu;
 
     // Walk mode
@@ -65,12 +73,40 @@ public partial class EditorMain : Control
     private ColorRect? _sidebarBorder;
     private ColorRect? _headerBg; // opaque background behind toolbar+navbar to prevent viewport overflow
 
-    // Map navigation bar
-    private PanelContainer? _mapNavPanel; // background panel for nav bar
-    private HBoxContainer? _mapNavBar;
-    private SpinBox? _mapNumSpin;
-    private Button[] _mapNavButtons = Array.Empty<Button>();
-    private const int NavButtonCount = 11; // show ±5 maps around current
+    // Right sidebar (selected texture preview)
+    private PanelContainer? _rightSidebar;
+    private TextureRect? _rightPreview;
+    private Label? _rightNameLabel;
+    private Label? _rightInfoLabel;
+
+    // Right sidebar: selection area section
+    private HSeparator? _rightSelSeparator;
+    private VBoxContainer? _rightSelectionSection;
+    private Label? _rightSelectionLabel;
+    private Button? _rightFillButton;
+    private Button? _rightMoveAreaButton;
+    private Button? _rightDeselectButton;
+    private Button? _rightInsertApplyButton;
+    private Button? _rightInsertTrimButton;
+    private TextureRect? _rightSelPreview;
+
+    // Trim borders dialog
+    private Window? _trimBordersWindow;
+    private ZoneEditPopup? _pendingZonePopup;
+    private SpinBox? _trimBordersSpin;
+
+    // Right sidebar: light tool section
+    private HSeparator? _rightLightSeparator;
+    private VBoxContainer? _rightLightSection;
+    private HSlider? _lightSliderR, _lightSliderG, _lightSliderB, _lightSliderRange;
+    private Label? _lightLabelR, _lightLabelG, _lightLabelB, _lightLabelRange;
+    private ColorRect? _lightPreviewRect;
+    private Button? _lightEraseButton;
+
+    // Right sidebar: selected tile section (Hand tool)
+    private HSeparator? _rightTileSeparator;
+    private VBoxContainer? _rightTileSection;
+    private Label? _rightTileInfoLabel;
 
     // Tool bar (Excalidraw-style)
     private HBoxContainer? _toolBar;
@@ -92,30 +128,39 @@ public partial class EditorMain : Control
     private ConfirmationDialog? _unsavedDialog;
     private Action? _pendingAfterSaveCheck;
 
-    // Texture preload
-    private IEnumerator<int>? _preloadIter;
-    private Label? _preloadLabel;
-    private ProgressBar? _preloadBar;
+    // Texture preload loading screen
+    private ColorRect? _loadingBg;
+    private Label? _loadingTitle;
+    private Label? _loadingLabel;
+    private ProgressBar? _loadingBar;
     private Panel? _preloadOverlay;
-    // Preload phases: 1=textures, 2=previews. Time-budgeted (8ms/frame).
+    private int _preloadPhase; // 0=idle, 1=loading+previews, 2=done (fade-out)
     private IEnumerator<int>? _previewPreloadIter;
-    private int _preloadPhase; // 0=idle, 1=textures, 2=previews
+    private float _loadingFadeAlpha = 1f;
+    private bool _loadingFadingOut;
 
     private const float PaletteWidth = 280;
     private const float StatusHeight = 28;
-    private const float NavBarHeight = 28;
-    private const float ToolBarHeight = 40;
+    private const float ToolBarHeight = 62;
     private const float TileInfoHeight = 110;
     private const float SidebarBorderWidth = 1;
+    private const float RightSidebarWidth = 250;
+
+    private bool _readyCalled;
 
     public override void _Ready()
     {
+        // Guard: _Ready must run exactly once (Godot C# can re-fire on assembly hot-reload)
+        if (_readyCalled) return;
+        _readyCalled = true;
+
         // Wire dirty tracking
         _undo.Changed += () => _state.MarkDirty();
         _state.DirtyChanged += OnDirtyChanged;
         _state.ExitFollowRequested += OnExitFollow;
 
         BuildUI();
+        BuildLoadingScreen();
         TryAutoDetectDataPath();
     }
 
@@ -133,6 +178,8 @@ public partial class EditorMain : Control
         fileMenu.AddSeparator();
         fileMenu.AddItem("Propiedades del Mapa...", 4);
         fileMenu.AddItem("Propiedades de Tile (T)", 5);
+        fileMenu.AddSeparator();
+        fileMenu.AddItem("Insertar Mapa... (Ctrl+I)", 8);
         fileMenu.AddSeparator();
         fileMenu.AddItem("Configurar Ruta Cliente (Data/)...", 6);
         fileMenu.AddItem("Configurar Ruta Server...", 7);
@@ -184,9 +231,9 @@ public partial class EditorMain : Control
         // -- Group 1: File operations --
         var fileGroup = EditorTheme.ToolBarGroup();
         var fileGroupH = new HBoxContainer();
-        fileGroupH.AddThemeConstantOverride("separation", 4);
-        fileGroupH.AddChild(EditorTheme.ActionButtonCompact("\ud83d\udcc2", "Abrir Mapa (Ctrl+O)", () => RequestOpenMap()));
-        fileGroupH.AddChild(EditorTheme.ActionButtonCompact("\ud83d\udcbe", "Guardar (Ctrl+S)", () => OnSaveMap()));
+        fileGroupH.AddThemeConstantOverride("separation", 6);
+        fileGroupH.AddChild(EditorTheme.ActionButtonCompact("\ud83d\udcc2", "Abrir Mapa (Ctrl+O)", () => RequestOpenMap(), "Abrir"));
+        fileGroupH.AddChild(EditorTheme.ActionButtonCompact("\ud83d\udcbe", "Guardar (Ctrl+S)", () => OnSaveMap(), "Guardar"));
         fileGroup.AddChild(fileGroupH);
         _toolBar.AddChild(fileGroup);
 
@@ -195,9 +242,9 @@ public partial class EditorMain : Control
         // -- Group 2: Undo / Redo --
         var undoGroup = EditorTheme.ToolBarGroup();
         var undoGroupH = new HBoxContainer();
-        undoGroupH.AddThemeConstantOverride("separation", 4);
-        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.QueueRedraw(); }));
-        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.QueueRedraw(); }));
+        undoGroupH.AddThemeConstantOverride("separation", 6);
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21a9", "Deshacer (Ctrl+Z)", () => { _undo.Undo(_map!); _viewport?.QueueRedraw(); }, "Deshacer"));
+        undoGroupH.AddChild(EditorTheme.ActionButtonCompact("\u21aa", "Rehacer (Ctrl+Y)", () => { _undo.Redo(_map!); _viewport?.QueueRedraw(); }, "Rehacer"));
         undoGroup.AddChild(undoGroupH);
         _toolBar.AddChild(undoGroup);
 
@@ -206,7 +253,7 @@ public partial class EditorMain : Control
         // -- Group 3: Drawing tools --
         var drawGroup = EditorTheme.ToolBarGroup();
         var drawGroupH = new HBoxContainer();
-        drawGroupH.AddThemeConstantOverride("separation", 4);
+        drawGroupH.AddThemeConstantOverride("separation", 6);
 
         var toolDefs = new (EditorTool tool, string icon, string label, string shortcut)[]
         {
@@ -214,9 +261,7 @@ public partial class EditorMain : Control
             (EditorTool.Paint,   "\u270f", "Pintar",      "P"),
             (EditorTool.Erase,   "\u232b", "Borrar",      "E"),
             (EditorTool.Select,  "\u25a1", "Seleccionar", "R"),
-            (EditorTool.Move,    "\u21c6", "Mover",       "M"),
-            (EditorTool.Fill,    "\u25a8", "Rellenar",    "F"),
-            (EditorTool.Pick,    "\u261d", "Agarrar",     "V"),
+            (EditorTool.Pick,    "\u21c6", "Agarrar",     "V"),
             (EditorTool.Eyedrop, "\u25ce", "Cuentagotas", "I"),
             (EditorTool.Block,   "\u2298", "Bloquear",    "B"),
         };
@@ -224,7 +269,7 @@ public partial class EditorMain : Control
         for (int i = 0; i < toolDefs.Length; i++)
         {
             var (tool, icon, label, shortcut) = toolDefs[i];
-            var btn = EditorTheme.ToolToggleCompact(icon, $"{label} ({shortcut})");
+            var btn = EditorTheme.ToolToggleCompact(icon, $"{label} ({shortcut})", label);
             var capturedTool = tool;
             btn.Pressed += () => SetActiveTool(capturedTool);
             drawGroupH.AddChild(btn);
@@ -238,21 +283,19 @@ public partial class EditorMain : Control
         // -- Group 4: Property tools --
         var propGroup = EditorTheme.ToolBarGroup();
         var propGroupH = new HBoxContainer();
-        propGroupH.AddThemeConstantOverride("separation", 4);
+        propGroupH.AddThemeConstantOverride("separation", 6);
 
         var propToolDefs = new (EditorTool tool, string icon, string label)[]
         {
             (EditorTool.Light,   "\u2600", "Luz"),
             (EditorTool.Exit,    "\u2197", "Salida"),
-            (EditorTool.Npc,     "\u265f", "NPC"),
-            (EditorTool.Object,  "\u25c6", "Objeto"),
             (EditorTool.Trigger, "\u26a1", "Trigger"),
         };
         var extButtons = new Button[propToolDefs.Length];
         for (int i = 0; i < propToolDefs.Length; i++)
         {
             var (tool, icon, label) = propToolDefs[i];
-            var btn = EditorTheme.ToolToggleCompact(icon, label);
+            var btn = EditorTheme.ToolToggleCompact(icon, label, label);
             var capturedTool = tool;
             btn.Pressed += () => SetActiveTool(capturedTool);
             propGroupH.AddChild(btn);
@@ -272,7 +315,7 @@ public partial class EditorMain : Control
         // -- Group 5: Layer tabs (compact) --
         var layerGroup = EditorTheme.ToolBarGroup();
         var layerGroupH = new HBoxContainer();
-        layerGroupH.AddThemeConstantOverride("separation", 4);
+        layerGroupH.AddThemeConstantOverride("separation", 6);
         for (int li = 1; li <= 4; li++)
         {
             int capturedLayer = li;
@@ -291,94 +334,36 @@ public partial class EditorMain : Control
         SyncToolBar();
         SyncLayerTabs();
 
-        // --- Map navigation bar (below toolbar, compact) ---
-        _mapNavPanel = new PanelContainer();
-        var navBg = EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 4, 2, EditorTheme.BORDER, 1);
-        navBg.BorderWidthTop = 0;
-        navBg.BorderWidthLeft = 0;
-        navBg.BorderWidthRight = 0;
-        _mapNavPanel.AddThemeStyleboxOverride("panel", navBg);
+        // Map nav bar removed — single map, auto-loads map 1
 
-        _mapNavBar = new HBoxContainer();
-        _mapNavBar.AddThemeConstantOverride("separation", 2);
-        _mapNavBar.ClipContents = true;
-        _mapNavBar.Alignment = BoxContainer.AlignmentMode.Begin;
-
-        var navLabel = EditorTheme.MakeLabel("Mapa", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
-        navLabel.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        _mapNavBar.AddChild(navLabel);
-
-        // Left arrow (compact)
-        var btnPrev = new Button { Text = "\u25c0", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Retroceder", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        btnPrev.AddThemeFontSizeOverride("font_size", 9);
-        btnPrev.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
-        btnPrev.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
-        btnPrev.Pressed += () => NavigateMapOffset(-NavButtonCount);
-        _mapNavBar.AddChild(btnPrev);
-
-        // Map number buttons (compact pills)
-        _mapNavButtons = new Button[NavButtonCount];
-        for (int i = 0; i < NavButtonCount; i++)
-        {
-            var btn = new Button
-            {
-                CustomMinimumSize = new Vector2(36, 22),
-                SizeFlagsHorizontal = SizeFlags.ShrinkBegin,
-            };
-            btn.AddThemeFontSizeOverride("font_size", 10);
-            int capturedIdx = i;
-            btn.Pressed += () => OnNavButtonPressed(capturedIdx);
-            _mapNavBar.AddChild(btn);
-            _mapNavButtons[i] = btn;
-        }
-
-        // Right arrow (compact)
-        var btnNext = new Button { Text = "\u25b6", CustomMinimumSize = new Vector2(24, 22), TooltipText = "Avanzar", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        btnNext.AddThemeFontSizeOverride("font_size", 9);
-        btnNext.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 10, 2, 1));
-        btnNext.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 10, 2, 1));
-        btnNext.Pressed += () => NavigateMapOffset(NavButtonCount);
-        _mapNavBar.AddChild(btnNext);
-
-        // Separator + Quick jump (compact)
-        var navSep = EditorTheme.ToolBarGroupSeparator();
-        navSep.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        _mapNavBar.AddChild(navSep);
-
-        _mapNumSpin = EditorTheme.MakeSpinBox(1, 999, 1, 1);
-        _mapNumSpin.CustomMinimumSize = new Vector2(60, 0);
-        _mapNumSpin.SizeFlagsHorizontal = SizeFlags.ShrinkBegin;
-        _mapNavBar.AddChild(_mapNumSpin);
-
-        var goBtn = new Button { Text = "Ir", CustomMinimumSize = new Vector2(32, 22), TooltipText = "Ir al mapa", SizeFlagsHorizontal = SizeFlags.ShrinkBegin };
-        goBtn.AddThemeFontSizeOverride("font_size", 10);
-        goBtn.AddThemeStyleboxOverride("normal", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY, 10, 4, 1));
-        goBtn.AddThemeStyleboxOverride("hover", EditorTheme.FlatBox(EditorTheme.BG_BTN_PRIMARY_H, 10, 4, 1));
-        goBtn.AddThemeColorOverride("font_color", Colors.White);
-        goBtn.Pressed += () => RequestLoadMap((int)_mapNumSpin!.Value);
-        _mapNavBar.AddChild(goBtn);
-
-        // Spacer absorbs remaining width so buttons stay packed left
-        var navSpacer = new Control { SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _mapNavBar.AddChild(navSpacer);
-
-        _mapNavPanel.AddChild(_mapNavBar);
-        AddChild(_mapNavPanel);
-
-        // --- Left sidebar: TabContainer with Tiles + NPCs ---
+        // --- Left sidebar: TabContainer with Tiles + NPCs + Zonas ---
         _sidebarTabs = new TabContainer();
         _sidebarTabs.TabAlignment = TabBar.AlignmentMode.Center;
         _sidebarTabs.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
-        // Style tab headers as pills
-        var tabNormal = EditorTheme.FlatBox(EditorTheme.BG_TOOL_NORMAL, 8, 8, 3);
-        var tabHover = EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 8, 8, 3);
-        var tabSelected = EditorTheme.FlatBox(EditorTheme.BG_TOOL_ACTIVE, 8, 8, 3, EditorTheme.ACCENT, 1);
+
+        // Tab bar strip: fixed background so it always reads as a header band
+        var tabBarBg = EditorTheme.FlatBox(EditorTheme.BG_HEADER, 0, 0, 0,
+            EditorTheme.BORDER_SUBTLE, 1);
+        _sidebarTabs.AddThemeStyleboxOverride("tabbar_background", tabBarBg);
+
+        // Individual tab pills — generous padding (14h, 6v) so they breathe
+        var tabNormal   = EditorTheme.FlatBox(new Color(0, 0, 0, 0), 6, 14, 6);
+        var tabHover    = EditorTheme.FlatBox(EditorTheme.BG_TOOL_HOVER, 6, 14, 6);
+        var tabSelected = EditorTheme.FlatBox(EditorTheme.BG_TOOL_ACTIVE, 6, 14, 6,
+            EditorTheme.ACCENT, 1);
         _sidebarTabs.AddThemeStyleboxOverride("tab_unselected", tabNormal);
-        _sidebarTabs.AddThemeStyleboxOverride("tab_hovered", tabHover);
-        _sidebarTabs.AddThemeStyleboxOverride("tab_selected", tabSelected);
+        _sidebarTabs.AddThemeStyleboxOverride("tab_hovered",    tabHover);
+        _sidebarTabs.AddThemeStyleboxOverride("tab_selected",   tabSelected);
+        _sidebarTabs.AddThemeStyleboxOverride("tab_focus",      new StyleBoxEmpty());
         _sidebarTabs.AddThemeColorOverride("font_unselected_color", EditorTheme.TEXT_SECONDARY);
-        _sidebarTabs.AddThemeColorOverride("font_hovered_color", EditorTheme.TEXT_PRIMARY);
-        _sidebarTabs.AddThemeColorOverride("font_selected_color", Colors.White);
+        _sidebarTabs.AddThemeColorOverride("font_hovered_color",    EditorTheme.TEXT_PRIMARY);
+        _sidebarTabs.AddThemeColorOverride("font_selected_color",   Colors.White);
+
+        // Content panel: transparent so sidebar children draw their own bg
+        _sidebarTabs.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+
+        _sidebarTabs.ClipContents = true;
+        _sidebarTabs.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_sidebarTabs);
 
         _palette = new TilePalette { Name = "Tiles", State = _state };
@@ -388,6 +373,16 @@ public partial class EditorMain : Control
         _npcPalette = new NpcPalette { Name = "NPCs", State = _state };
         _npcPalette.NpcSelected += OnNpcPaletteSelected;
         _sidebarTabs.AddChild(_npcPalette);
+
+        _objPalette = new ObjectPalette { Name = "Objetos", State = _state };
+        _objPalette.ObjectSelected += OnObjectPaletteSelected;
+        _sidebarTabs.AddChild(_objPalette);
+
+        _zonePanel = new ZonePanel { Name = "Zonas", State = _state, ZoneData = _mapZones };
+        _zonePanel.OnZonesChanged += () => { _state.MarkDirty(); _viewport?.QueueRedraw(); };
+        _zonePanel.OnZoneSelected += (zone) => { _viewport?.CenterOnTile((zone.X1 + zone.X2) / 2, (zone.Y1 + zone.Y2) / 2); };
+        _zonePanel.OnEditZone += (zone) => ShowZoneEditPopup(zone);
+        _sidebarTabs.AddChild(_zonePanel);
 
         // --- Tile info panel (bottom of left sidebar, themed) ---
         _tileInfoPanel = new VBoxContainer();
@@ -409,10 +404,12 @@ public partial class EditorMain : Control
             Textures = _textures,
             State = _state,
             Undo = _undo,
+            ZoneData = _mapZones,
             ClipContents = true,
         };
         _viewport.OnPendingAccept += CommitPendingPlacement;
         _viewport.OnPendingCancel += CancelPendingPlacement;
+        _viewport.OnSelectionCompleted += OnSelectionCompleted;
         AddChild(_viewport);
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area
@@ -422,6 +419,179 @@ public partial class EditorMain : Control
         // Sidebar right border (1px separator between sidebar and viewport)
         _sidebarBorder = new ColorRect { Color = EditorTheme.BORDER };
         AddChild(_sidebarBorder);
+
+        // --- Right sidebar: selected texture preview ---
+        _rightSidebar = new PanelContainer();
+        _rightSidebar.AddThemeStyleboxOverride("panel",
+            EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 6, 4, EditorTheme.BORDER, 1));
+        _rightSidebar.ClipContents = true;
+        _rightSidebar.MouseFilter = MouseFilterEnum.Stop;
+
+        var rightVBox = new VBoxContainer();
+        rightVBox.AddThemeConstantOverride("separation", 6);
+
+        var rsTitle = EditorTheme.SectionLabel("SELECTED TEXTURE");
+        rightVBox.AddChild(rsTitle);
+
+        _rightPreview = new TextureRect
+        {
+            CustomMinimumSize = new Vector2(128, 128),
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            SizeFlagsHorizontal = SizeFlags.ShrinkCenter,
+        };
+        rightVBox.AddChild(_rightPreview);
+
+        _rightNameLabel = EditorTheme.MakeLabel("(none)", EditorTheme.TEXT_PRIMARY, EditorTheme.FONT_SM);
+        _rightNameLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        rightVBox.AddChild(_rightNameLabel);
+
+        _rightInfoLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        rightVBox.AddChild(_rightInfoLabel);
+
+        // Separator between texture info and selection area
+        _rightSelSeparator = new HSeparator();
+        _rightSelSeparator.AddThemeConstantOverride("separation", 12);
+        _rightSelSeparator.Visible = false;
+        rightVBox.AddChild(_rightSelSeparator);
+
+        // Selection area section (shown when HasSelection)
+        _rightSelectionSection = new VBoxContainer();
+        _rightSelectionSection.AddThemeConstantOverride("separation", 6);
+        _rightSelectionSection.Visible = false;
+
+        _rightSelectionSection.AddChild(EditorTheme.SectionLabel("ÁREA SELECCIONADA"));
+
+        // Thumbnail of selected map area
+        _rightSelPreview = new TextureRect
+        {
+            StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            CustomMinimumSize = new Vector2(0, 72),
+        };
+        _rightSelectionSection.AddChild(_rightSelPreview);
+
+        _rightSelectionLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightSelectionLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _rightSelectionSection.AddChild(_rightSelectionLabel);
+
+        _rightFillButton = EditorTheme.PrimaryButton("Rellenar con textura");
+        _rightFillButton.Disabled = true;
+        _rightFillButton.Pressed += () => _viewport?.FillSelection();
+        _rightSelectionSection.AddChild(_rightFillButton);
+
+        var blockAllBtn = EditorTheme.MakeButton("Bloquear todos los tiles");
+        blockAllBtn.Pressed += () => BlockSelection(true);
+        _rightSelectionSection.AddChild(blockAllBtn);
+
+        var unblockAllBtn = EditorTheme.MakeButton("Desbloquear todos los tiles");
+        unblockAllBtn.Pressed += () => BlockSelection(false);
+        _rightSelectionSection.AddChild(unblockAllBtn);
+
+        _rightMoveAreaButton = EditorTheme.MakeButton("Mover área");
+        _rightMoveAreaButton.ToggleMode = true;
+        _rightMoveAreaButton.Pressed += () =>
+        {
+            if (_state.ActiveTool == EditorTool.Move)
+                SetActiveTool(EditorTool.Select);
+            else
+                SetActiveTool(EditorTool.Move);
+        };
+        _rightSelectionSection.AddChild(_rightMoveAreaButton);
+
+        var clearAllBtn = EditorTheme.MakeButton("Borrar todo");
+        clearAllBtn.Pressed += () => ClearSelectionTiles_Confirm1();
+        _rightSelectionSection.AddChild(clearAllBtn);
+
+        _rightDeselectButton = EditorTheme.MakeButton("Deseleccionar");
+        _rightDeselectButton.Pressed += OnDeselectSelection;
+        _rightSelectionSection.AddChild(_rightDeselectButton);
+
+        // Insert Map specific buttons (hidden by default)
+        _rightInsertTrimButton = EditorTheme.MakeButton("Cortar bordes...");
+        _rightInsertTrimButton.Visible = false;
+        _rightInsertTrimButton.Pressed += ShowTrimBordersDialog;
+        _rightSelectionSection.AddChild(_rightInsertTrimButton);
+
+        _rightInsertApplyButton = EditorTheme.PrimaryButton("Aplicar mapa insertado");
+        _rightInsertApplyButton.Visible = false;
+        _rightInsertApplyButton.Pressed += () => { _state.InsertedMapSelection = false; _viewport?.QueueRedraw(); SetStatus("Mapa insertado aplicado"); };
+        _rightSelectionSection.AddChild(_rightInsertApplyButton);
+
+        rightVBox.AddChild(_rightSelectionSection);
+
+        // ── Light tool section ──
+        _rightLightSeparator = new HSeparator();
+        _rightLightSeparator.AddThemeConstantOverride("separation", 12);
+        _rightLightSeparator.Visible = false;
+        rightVBox.AddChild(_rightLightSeparator);
+
+        _rightLightSection = new VBoxContainer();
+        _rightLightSection.AddThemeConstantOverride("separation", 4);
+        _rightLightSection.Visible = false;
+        _rightLightSection.AddChild(EditorTheme.SectionLabel("LUZ"));
+
+        // Color preview
+        _lightPreviewRect = new ColorRect
+        {
+            CustomMinimumSize = new Vector2(0, 24),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+            Color = new Color(_state.LightR / 255f, _state.LightG / 255f, _state.LightB / 255f),
+        };
+        _rightLightSection.AddChild(_lightPreviewRect);
+
+        // R slider
+        _lightLabelR = EditorTheme.MakeLabel($"R: {_state.LightR}", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightLightSection.AddChild(_lightLabelR);
+        _lightSliderR = CreateLightSlider(0, 255, _state.LightR, v => { _state.LightR = (int)v; _lightLabelR.Text = $"R: {(int)v}"; UpdateLightPreview(); });
+        _rightLightSection.AddChild(_lightSliderR);
+
+        // G slider
+        _lightLabelG = EditorTheme.MakeLabel($"G: {_state.LightG}", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightLightSection.AddChild(_lightLabelG);
+        _lightSliderG = CreateLightSlider(0, 255, _state.LightG, v => { _state.LightG = (int)v; _lightLabelG.Text = $"G: {(int)v}"; UpdateLightPreview(); });
+        _rightLightSection.AddChild(_lightSliderG);
+
+        // B slider
+        _lightLabelB = EditorTheme.MakeLabel($"B: {_state.LightB}", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightLightSection.AddChild(_lightLabelB);
+        _lightSliderB = CreateLightSlider(0, 255, _state.LightB, v => { _state.LightB = (int)v; _lightLabelB.Text = $"B: {(int)v}"; UpdateLightPreview(); });
+        _rightLightSection.AddChild(_lightSliderB);
+
+        // Range slider
+        _lightLabelRange = EditorTheme.MakeLabel($"Rango: {_state.LightRange}", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightLightSection.AddChild(_lightLabelRange);
+        _lightSliderRange = CreateLightSlider(1, 20, _state.LightRange, v => { _state.LightRange = (int)v; _lightLabelRange.Text = $"Rango: {(int)v}"; });
+        _rightLightSection.AddChild(_lightSliderRange);
+
+        // Erase light button
+        _lightEraseButton = EditorTheme.MakeButton("Borrar luz (click derecho)");
+        _lightEraseButton.Disabled = true; // informational
+        _rightLightSection.AddChild(_lightEraseButton);
+
+        rightVBox.AddChild(_rightLightSection);
+
+        // ── Tile info section (Hand tool click) ──
+        _rightTileSeparator = new HSeparator();
+        _rightTileSeparator.AddThemeConstantOverride("separation", 12);
+        _rightTileSeparator.Visible = false;
+        rightVBox.AddChild(_rightTileSeparator);
+
+        _rightTileSection = new VBoxContainer();
+        _rightTileSection.AddThemeConstantOverride("separation", 4);
+        _rightTileSection.Visible = false;
+        _rightTileSection.AddChild(EditorTheme.SectionLabel("TILE SELECCIONADO"));
+
+        _rightTileInfoLabel = EditorTheme.MakeLabel("", EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        _rightTileInfoLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _rightTileSection.AddChild(_rightTileInfoLabel);
+
+        rightVBox.AddChild(_rightTileSection);
+
+        _rightSidebar.AddChild(rightVBox);
+        AddChild(_rightSidebar);
 
         // --- Status bar (professional, with top border and pill indicators) ---
         _statusOuter = new VBoxContainer();
@@ -490,7 +660,8 @@ public partial class EditorMain : Control
             Title = "Abrir Mapa",
             Size = new Vector2I(600, 400),
         };
-        _openDialog.AddFilter("*.map", "Mapa AO");
+        _openDialog.AddFilter("*.aomap", "Mapa AO (nuevo)");
+        _openDialog.AddFilter("*.map", "Mapa AO (legacy)");
         _openDialog.FileSelected += OnMapFileSelected;
         AddChild(_openDialog);
 
@@ -501,7 +672,7 @@ public partial class EditorMain : Control
             Title = "Guardar Mapa Como",
             Size = new Vector2I(600, 400),
         };
-        _saveDialog.AddFilter("*.map", "Mapa AO");
+        _saveDialog.AddFilter("*.aomap", "Mapa AO");
         _saveDialog.FileSelected += OnSaveFileSelected;
         AddChild(_saveDialog);
 
@@ -524,6 +695,61 @@ public partial class EditorMain : Control
         };
         _serverPathDialog.DirSelected += OnServerPathSelected;
         AddChild(_serverPathDialog);
+
+        // Insert Map: compact centered format selector window
+        _insertFormatWindow = new Window();
+        _insertFormatWindow.Title = "Insertar Mapa";
+        _insertFormatWindow.Size = new Vector2I(320, 180);
+        _insertFormatWindow.Exclusive = true;
+        _insertFormatWindow.Unresizable = true;
+        _insertFormatWindow.Visible = false;
+        _insertFormatWindow.WrapControls = true;
+        _insertFormatWindow.Transient = true;
+        _insertFormatWindow.CloseRequested += () => _insertFormatWindow.Hide();
+
+        var insertMargin = new MarginContainer();
+        insertMargin.AddThemeConstantOverride("margin_left", 20);
+        insertMargin.AddThemeConstantOverride("margin_right", 20);
+        insertMargin.AddThemeConstantOverride("margin_top", 16);
+        insertMargin.AddThemeConstantOverride("margin_bottom", 16);
+        insertMargin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
+        var insertVbox = new VBoxContainer();
+        insertVbox.AddThemeConstantOverride("separation", 12);
+
+        var insertLabel = new Label { Text = "Formato del mapa:" };
+        insertLabel.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        insertVbox.AddChild(insertLabel);
+
+        _insertFormatSelect = new OptionButton();
+        _insertFormatSelect.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        _insertFormatSelect.AddItem("Auto-detectar", (int)LegacyMapFormat.AutoDetect);
+        _insertFormatSelect.AddItem("0.99z (fijo)", (int)LegacyMapFormat.Fixed_099z);
+        _insertFormatSelect.AddItem("11.5 - 13.3 (variable)", (int)LegacyMapFormat.Variable_Int16);
+        _insertFormatSelect.Selected = 0;
+        insertVbox.AddChild(_insertFormatSelect);
+
+        var insertBtn = new Button { Text = "Seleccionar Mapa..." };
+        insertBtn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        insertBtn.CustomMinimumSize = new Vector2(0, 36);
+        insertBtn.Pressed += OnInsertSelectMapPressed;
+        insertVbox.AddChild(insertBtn);
+
+        insertMargin.AddChild(insertVbox);
+        _insertFormatWindow.AddChild(insertMargin);
+        AddChild(_insertFormatWindow);
+
+        // Insert Map: file selector dialog (only .map files)
+        _insertFileDialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenFile,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Title = "Seleccionar archivo .map",
+            Size = new Vector2I(600, 400),
+        };
+        _insertFileDialog.AddFilter("*.map", "Mapa AO Legacy (.map)");
+        _insertFileDialog.FileSelected += OnInsertMapFileSelected;
+        AddChild(_insertFileDialog);
 
         BuildMapPropsDialog();
         BuildUnsavedDialog();
@@ -549,15 +775,7 @@ public partial class EditorMain : Control
             _toolBar.ZIndex = 2;
         }
 
-        float navTop = tbTop + ToolBarHeight;
-        if (_mapNavPanel != null)
-        {
-            _mapNavPanel.Position = new Vector2(0, navTop);
-            _mapNavPanel.Size = new Vector2(win.X, NavBarHeight);
-            _mapNavPanel.ZIndex = 2;
-        }
-
-        float contentTop = navTop + NavBarHeight;
+        float contentTop = tbTop + ToolBarHeight;
         float contentBottom = win.Y - StatusHeight;
         float contentH = contentBottom - contentTop;
 
@@ -578,6 +796,7 @@ public partial class EditorMain : Control
         {
             _sidebarTabs.Position = new Vector2(0, contentTop);
             _sidebarTabs.Size = new Vector2(PaletteWidth, paletteH);
+            _sidebarTabs.ZIndex = 2;
         }
 
         if (_tileInfoPanel != null)
@@ -593,12 +812,21 @@ public partial class EditorMain : Control
             _sidebarBorder.Size = new Vector2(SidebarBorderWidth, contentH);
         }
 
-        // Viewport
+        // Right sidebar
+        if (_rightSidebar != null)
+        {
+            _rightSidebar.Position = new Vector2(win.X - RightSidebarWidth, contentTop);
+            _rightSidebar.Size = new Vector2(RightSidebarWidth, contentH);
+            _rightSidebar.ZIndex = 2;
+        }
+
+        // Viewport (between left and right sidebars)
         if (_viewport != null)
         {
             float vpX = PaletteWidth + SidebarBorderWidth;
+            float vpW = win.X - vpX - RightSidebarWidth;
             _viewport.Position = new Vector2(vpX, contentTop);
-            _viewport.Size = new Vector2(win.X - vpX, contentH);
+            _viewport.Size = new Vector2(vpW, contentH);
         }
 
         // Status bar (outer container with border line + bar)
@@ -608,12 +836,8 @@ public partial class EditorMain : Control
             _statusOuter.Size = new Vector2(win.X, StatusHeight);
         }
 
-        // Preload overlay — covers entire window to block all interaction
-        if (_preloadOverlay != null)
-        {
-            _preloadOverlay.Position = Vector2.Zero;
-            _preloadOverlay.Size = win;
-        }
+        // Loading screen overlay
+        LayoutLoadingScreen();
     }
 
     private void BuildMapPropsDialog()
@@ -697,32 +921,328 @@ public partial class EditorMain : Control
         AddChild(_unsavedDialog);
     }
 
+    private void BuildLoadingScreen()
+    {
+        _preloadOverlay = new Panel();
+        _preloadOverlay.Visible = true; // visible from first frame — preload shows progress
+        _preloadOverlay.ZIndex = 100;
+        var style = new StyleBoxFlat();
+        style.BgColor = new Color(0.08f, 0.08f, 0.10f, 1f);
+        _preloadOverlay.AddThemeStyleboxOverride("panel", style);
+        AddChild(_preloadOverlay);
+
+        _loadingBg = new ColorRect();
+        _loadingBg.Color = new Color(0.08f, 0.08f, 0.10f, 1f);
+        _loadingBg.MouseFilter = MouseFilterEnum.Stop;
+        _preloadOverlay.AddChild(_loadingBg);
+
+        _loadingTitle = new Label();
+        _loadingTitle.Text = "World Editor";
+        _loadingTitle.HorizontalAlignment = HorizontalAlignment.Center;
+        _loadingTitle.AddThemeFontSizeOverride("font_size", 24);
+        _loadingTitle.AddThemeColorOverride("font_color", EditorTheme.TEXT_PRIMARY);
+        _preloadOverlay.AddChild(_loadingTitle);
+
+        _loadingLabel = new Label();
+        _loadingLabel.Text = "Cargando texturas...";
+        _loadingLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        _loadingLabel.AddThemeFontSizeOverride("font_size", 12);
+        _loadingLabel.AddThemeColorOverride("font_color", EditorTheme.TEXT_SECONDARY);
+        _preloadOverlay.AddChild(_loadingLabel);
+
+        _loadingBar = new ProgressBar();
+        _loadingBar.MinValue = 0;
+        _loadingBar.MaxValue = 100;
+        _loadingBar.Value = 0;
+        _loadingBar.ShowPercentage = false;
+        var barBg = new StyleBoxFlat();
+        barBg.BgColor = new Color(0.15f, 0.15f, 0.20f);
+        barBg.SetCornerRadiusAll(4);
+        _loadingBar.AddThemeStyleboxOverride("background", barBg);
+        var barFill = new StyleBoxFlat();
+        barFill.BgColor = EditorTheme.ACCENT;
+        barFill.SetCornerRadiusAll(4);
+        _loadingBar.AddThemeStyleboxOverride("fill", barFill);
+        _preloadOverlay.AddChild(_loadingBar);
+    }
+
+    private void LayoutLoadingScreen()
+    {
+        if (_preloadOverlay == null) return;
+        var win = GetViewportRect().Size;
+        _preloadOverlay.Position = Vector2.Zero;
+        _preloadOverlay.Size = win;
+        if (_loadingBg != null) { _loadingBg.Position = Vector2.Zero; _loadingBg.Size = win; }
+
+        float barW = 400;
+        float barH = 20;
+        float cx = (win.X - barW) / 2;
+        float cy = win.Y / 2;
+
+        if (_loadingTitle != null) { _loadingTitle.Position = new Vector2(cx, cy - 80); _loadingTitle.Size = new Vector2(barW, 30); }
+        if (_loadingLabel != null) { _loadingLabel.Position = new Vector2(cx, cy - 20); _loadingLabel.Size = new Vector2(barW, 24); }
+        if (_loadingBar != null) { _loadingBar.Position = new Vector2(cx, cy + 20); _loadingBar.Size = new Vector2(barW, barH); }
+    }
+
     #region Data Loading
+
+    private const string ConfigFileName = "editor_config.ini";
+
+    private string GetConfigPath()
+    {
+        // Save config next to project.godot (or exe)
+        string resPath = ProjectSettings.GlobalizePath("res://");
+        return Path.Combine(resPath, ConfigFileName);
+    }
+
+    private void SaveConfig()
+    {
+        try
+        {
+            var lines = new List<string>
+            {
+                $"client_data={_dataPath}",
+                $"server_maps={_serverMapDir}",
+                $"server_dat={_serverDatDir}"
+            };
+            File.WriteAllLines(GetConfigPath(), lines);
+            GD.Print($"[Editor] Config saved: {GetConfigPath()}");
+        }
+        catch (Exception ex) { GD.PrintErr($"[Editor] Failed to save config: {ex.Message}"); }
+    }
+
+    private string? LoadConfigValue(string key)
+    {
+        try
+        {
+            string cfgPath = GetConfigPath();
+            if (!File.Exists(cfgPath)) return null;
+            foreach (string line in File.ReadAllLines(cfgPath))
+            {
+                int eq = line.IndexOf('=');
+                if (eq > 0 && line[..eq] == key)
+                    return line[(eq + 1)..];
+            }
+        }
+        catch { }
+        return null;
+    }
+
+    private bool _dataLoaded;
 
     private void TryAutoDetectDataPath()
     {
-        // Try relative paths from the editor project
-        string[] candidates = {
-            "../../client/Data",
-            "../../../client/Data",
-            Path.Combine(OS.GetUserDataDir(), "Data"),
-        };
+        if (_dataLoaded) return;
+
+        // 1. Try saved config first
+        string? savedPath = LoadConfigValue("client_data");
+        if (savedPath != null && Directory.Exists(savedPath) && File.Exists(Path.Combine(savedPath, "INIT", "Graficos.ind")))
+        {
+            GD.Print($"[Editor] Using saved config: {savedPath}");
+            string? savedServerMaps = LoadConfigValue("server_maps");
+            if (savedServerMaps != null && Directory.Exists(savedServerMaps))
+                _serverMapDir = savedServerMaps;
+            string? savedServerDat = LoadConfigValue("server_dat");
+            if (savedServerDat != null && Directory.Exists(savedServerDat))
+                _serverDatDir = savedServerDat;
+            LoadDataPath(savedPath);
+            return;
+        }
+
+        // 2. Auto-detect from multiple base directories
+        var candidates = new List<string>();
+        string resPath = ProjectSettings.GlobalizePath("res://");
+        string exeDir = OS.GetExecutablePath().GetBaseDir();
+        string cwd = Directory.GetCurrentDirectory();
+
+        // From res:// (tools/world-editor/)
+        candidates.Add(Path.Combine(resPath, "../../client/Data"));
+        candidates.Add(Path.Combine(resPath, "../../../client/Data"));
+        // From cwd
+        candidates.Add(Path.Combine(cwd, "../../client/Data"));
+        candidates.Add(Path.Combine(cwd, "../../../client/Data"));
+        candidates.Add(Path.Combine(cwd, "client/Data"));
+        // From exe
+        candidates.Add(Path.Combine(exeDir, "../../client/Data"));
+        candidates.Add(Path.Combine(exeDir, "../../../client/Data"));
+        candidates.Add(Path.Combine(exeDir, "Data"));
+        // User data
+        candidates.Add(Path.Combine(OS.GetUserDataDir(), "Data"));
+
+        GD.Print($"[Editor] Auto-detect: res={resPath} cwd={cwd} exe={exeDir}");
 
         foreach (var candidate in candidates)
         {
-            string full = Path.GetFullPath(candidate);
-            if (Directory.Exists(full) && File.Exists(Path.Combine(full, "INIT", "Graficos.ind")))
+            try
             {
-                LoadDataPath(full);
-                return;
+                string full = Path.GetFullPath(candidate);
+                if (Directory.Exists(full) && File.Exists(Path.Combine(full, "INIT", "Graficos.ind")))
+                {
+                    GD.Print($"[Editor] Auto-detected Data path: {full}");
+                    LoadDataPath(full);
+                    SaveConfig();
+                    return;
+                }
             }
+            catch { }
         }
 
-        SetStatus("Data/ no encontrada. Archivo > Configurar Ruta de Datos");
+        GD.Print("[Editor] Auto-detect failed, showing setup form");
+        SetStatus("Data/ no encontrada. Configure las rutas.");
+        // Hide loading bar, show setup form instead
+        if (_loadingBar != null) _loadingBar.Visible = false;
+        if (_loadingLabel != null) _loadingLabel.Visible = false;
+        if (_loadingTitle != null) _loadingTitle.Visible = false;
+        if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+        _loadingFadeAlpha = 1f;
+        _preloadPhase = 0;
+        CallDeferred(MethodName.ShowSetupForm);
+    }
+
+    // ── Setup form (shown when data paths not found) ──
+    private Window? _setupWindow;
+    private LineEdit? _setupClientPath;
+    private LineEdit? _setupServerPath;
+
+    private void ShowSetupForm()
+    {
+        if (_setupWindow != null) { _setupWindow.Show(); return; }
+
+        _setupWindow = new Window();
+        _setupWindow.Title = "Configuración Inicial";
+        _setupWindow.Size = new Vector2I(500, 260);
+        _setupWindow.Exclusive = false;
+        _setupWindow.Unresizable = true;
+        _setupWindow.CloseRequested += () => _setupWindow.Hide();
+
+        var panel = new PanelContainer();
+        panel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        panel.AddThemeStyleboxOverride("panel", EditorTheme.FlatBox(EditorTheme.BG_PANEL));
+        _setupWindow.AddChild(panel);
+
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_top", 16);
+        margin.AddThemeConstantOverride("margin_left", 20);
+        margin.AddThemeConstantOverride("margin_right", 20);
+        margin.AddThemeConstantOverride("margin_bottom", 16);
+        panel.AddChild(margin);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 10);
+        margin.AddChild(vbox);
+
+        vbox.AddChild(EditorTheme.Heading("Configurar Rutas"));
+
+        // Client path
+        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Cliente"));
+        var clientRow = new HBoxContainer();
+        clientRow.AddThemeConstantOverride("separation", 6);
+        _setupClientPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/client" };
+        _setupClientPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        clientRow.AddChild(_setupClientPath);
+        var clientBrowse = EditorTheme.MakeButton("...");
+        clientBrowse.Pressed += () =>
+        {
+            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta Data/ del cliente" };
+            dlg.DirSelected += (path) => { _setupClientPath.Text = path; dlg.QueueFree(); };
+            dlg.Canceled += () => dlg.QueueFree();
+            _setupWindow.AddChild(dlg);
+            dlg.PopupCentered(new Vector2I(600, 400));
+        };
+        clientRow.AddChild(clientBrowse);
+        vbox.AddChild(clientRow);
+
+        // Server path
+        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Server"));
+        var serverRow = new HBoxContainer();
+        serverRow.AddThemeConstantOverride("separation", 6);
+        _setupServerPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/server" };
+        _setupServerPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        serverRow.AddChild(_setupServerPath);
+        var serverBrowse = EditorTheme.MakeButton("...");
+        serverBrowse.Pressed += () =>
+        {
+            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta dat/ del server" };
+            dlg.DirSelected += (path) => { _setupServerPath.Text = path; dlg.QueueFree(); };
+            dlg.Canceled += () => dlg.QueueFree();
+            _setupWindow.AddChild(dlg);
+            dlg.PopupCentered(new Vector2I(600, 400));
+        };
+        serverRow.AddChild(serverBrowse);
+        vbox.AddChild(serverRow);
+
+        // Buttons
+        var btnRow = new HBoxContainer();
+        btnRow.AddThemeConstantOverride("separation", 10);
+        btnRow.Alignment = BoxContainer.AlignmentMode.End;
+        var applyBtn = EditorTheme.PrimaryButton("Aplicar");
+        applyBtn.Pressed += OnSetupApply;
+        btnRow.AddChild(applyBtn);
+        var closeBtn = EditorTheme.MakeButton("Cerrar");
+        closeBtn.Pressed += () => _setupWindow.Hide();
+        btnRow.AddChild(closeBtn);
+        vbox.AddChild(btnRow);
+
+        AddChild(_setupWindow);
+        _setupWindow.PopupCentered();
+    }
+
+    private void OnSetupApply()
+    {
+        string clientPath = _setupClientPath?.Text.Trim() ?? "";
+        string serverPath = _setupServerPath?.Text.Trim() ?? "";
+
+        if (clientPath.Length == 0 || !Directory.Exists(clientPath))
+        {
+            SetStatus("La carpeta del cliente no existe.");
+            return;
+        }
+
+        // Resolve Data/ subfolder automatically
+        string dataPath = clientPath;
+        string dataSubDir = Path.Combine(clientPath, "Data");
+        if (Directory.Exists(dataSubDir))
+            dataPath = dataSubDir;
+
+        // Verify required files exist
+        string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
+        if (!File.Exists(graficosInd))
+        {
+            SetStatus($"No se encontró Graficos.ind en {dataPath}/INIT/");
+            return;
+        }
+
+        if (_setupWindow != null) _setupWindow.Hide();
+        // Restore loading screen elements
+        if (_loadingBar != null) _loadingBar.Visible = true;
+        if (_loadingLabel != null) _loadingLabel.Visible = true;
+        if (_loadingTitle != null) _loadingTitle.Visible = true;
+        _dataLoaded = false; // User explicitly applying new paths — allow reload
+        LoadDataPath(dataPath);
+
+        // Server path — resolve dat/ subfolder
+        if (serverPath.Length > 0 && Directory.Exists(serverPath))
+        {
+            string datSub = Path.Combine(serverPath, "dat");
+            _serverDatDir = Directory.Exists(datSub) ? datSub : serverPath;
+            string mapsSub = Path.Combine(serverPath, "maps");
+            if (Directory.Exists(mapsSub)) _serverMapDir = mapsSub;
+        }
+
+        // Persist paths for next launch
+        SaveConfig();
     }
 
     private void LoadDataPath(string dataPath)
     {
+        // Prevent duplicate loads — data should load exactly once
+        if (_dataLoaded)
+        {
+            GD.Print($"[Editor] LoadDataPath SKIPPED (already loaded): {dataPath}");
+            return;
+        }
+        GD.Print($"[Editor] LoadDataPath: {dataPath}");
+        _dataLoaded = true; // Set early to prevent re-entrant calls
         _dataPath = dataPath;
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
@@ -749,9 +1269,14 @@ public partial class EditorMain : Control
 
         if (!File.Exists(graficosInd))
         {
+            GD.PrintErr($"[Editor] Graficos.ind NOT FOUND at: {graficosInd}");
             SetStatus($"ERROR: {graficosInd} no encontrado");
+            _dataLoaded = false; // Allow retry on failure
+            _preloadPhase = 0;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
             return;
         }
+        GD.Print($"[Editor] Found Graficos.ind: {graficosInd}");
 
         _grhs = GrhLoader.Load(graficosInd);
         _textures = new TextureManager(graficosDir);
@@ -819,6 +1344,8 @@ public partial class EditorMain : Control
             string npcDat = Path.Combine(_serverDatDir, "NPCs.dat");
             (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
             _npcDb = NpcDatabase.Load(_serverDatDir);
+            string objDatForDb = Path.Combine(_serverDatDir, "Obj.dat");
+            _objDb = ObjectDatabase.Load(objDatForDb);
             GD.Print($"[Editor] Server data: {_serverDatDir}");
         }
         else
@@ -833,8 +1360,9 @@ public partial class EditorMain : Control
         _palette.IndicesPath = System.IO.Path.Combine(_dataPath, "INIT", "indices.ini");
         _palette.Rebuild();
 
-        // Push data to NPC palette
+        // Push data to NPC + Object palettes
         SyncNpcPaletteData();
+        SyncObjPaletteData();
 
         // Push data to viewport
         SyncViewportData();
@@ -859,130 +1387,72 @@ public partial class EditorMain : Control
         else
             CreateNewMap(1);
 
-        // Start background texture preload (non-blocking, N per frame)
-        StartTexturePreload();
-    }
-
-    private void StartTexturePreload()
-    {
-        if (_textures == null || _grhs == null) return;
-
-        _preloadIter = _textures.PreloadAll(_grhs);
-        _preloadPhase = 1;
-
-        // Create full-screen loading overlay (blocks interaction, centered content)
-        _preloadOverlay = new Panel();
-        _preloadOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _preloadOverlay.MouseFilter = MouseFilterEnum.Stop; // block all clicks
-        _preloadOverlay.ZIndex = 100; // above everything
-        _preloadOverlay.FocusMode = FocusModeEnum.All; // capture keyboard focus
-        var overlayStyle = new StyleBoxFlat
+        // Start preload — Phase 1 generates previews directly (which also loads textures on demand).
+        // No separate texture-preload pass needed: GeneratePreview calls Textures.GetTexture()
+        // internally, so textures are loaded as each preview is generated — one pass, 0→100%.
+        if (_palette != null)
         {
-            BgColor = new Color(0.1f, 0.1f, 0.12f, 0.92f),
-        };
-        _preloadOverlay.AddThemeStyleboxOverride("panel", overlayStyle);
-
-        // Center container for content
-        var center = new CenterContainer();
-        center.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _preloadOverlay.AddChild(center);
-
-        var vbox = new VBoxContainer();
-        vbox.Alignment = BoxContainer.AlignmentMode.Center;
-        vbox.CustomMinimumSize = new Vector2(320, 80);
-        center.AddChild(vbox);
-
-        _preloadLabel = new Label { Text = "Cargando texturas..." };
-        _preloadLabel.HorizontalAlignment = HorizontalAlignment.Center;
-        _preloadLabel.AddThemeFontSizeOverride("font_size", 13);
-        _preloadLabel.AddThemeColorOverride("font_color", Colors.White);
-        vbox.AddChild(_preloadLabel);
-
-        _preloadBar = new ProgressBar();
-        _preloadBar.CustomMinimumSize = new Vector2(300, 18);
-        _preloadBar.ShowPercentage = true;
-        vbox.AddChild(_preloadBar);
-
-        AddChild(_preloadOverlay);
-        _preloadOverlay.GrabFocus(); // block keyboard shortcuts during preload
+            _preloadPhase = 1;
+            _previewPreloadIter = _palette.PreloadAllPreviews();
+            if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+            if (_loadingTitle != null) { _loadingTitle.Visible = true; _loadingTitle.Text = "World Editor"; }
+            if (_loadingLabel != null) { _loadingLabel.Visible = true; _loadingLabel.Text = "Cargando..."; }
+            if (_loadingBar != null) { _loadingBar.Visible = true; _loadingBar.Value = 0; }
+            int total = _palette.PreviewPreloadTotal;
+            GD.Print($"[Editor] Starting preload: {total} texture refs");
+        }
+        else
+        {
+            _preloadPhase = 0;
+            if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+            SetStatus("Editor listo");
+        }
     }
 
     private void TickTexturePreload()
     {
-        if (_preloadPhase == 0) return;
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-
-        if (_preloadPhase == 1 && _preloadIter != null && _textures != null)
+        // Phase 1: load textures + generate previews in a single time-budgeted pass
+        if (_preloadPhase == 1 && _previewPreloadIter != null)
         {
-            // Phase 1: load texture files from disk
-            bool done = _textures.TickPreload(_preloadIter, 8.0);
-
-            if (done)
-            {
-                _preloadIter.Dispose();
-                _preloadIter = null;
-
-                // Start phase 2: preview generation
-                _previewPreloadIter = _palette?.PreloadAllPreviews();
-                if (_previewPreloadIter != null)
-                {
-                    _preloadPhase = 2;
-                }
-                else
-                {
-                    FinishPreload();
-                    return;
-                }
-            }
-
-            // Update progress UI — phase 1
-            if (_preloadBar != null && _textures.PreloadTotal > 0)
-            {
-                float pct = (float)_textures.PreloadDone / _textures.PreloadTotal * 100f;
-                _preloadBar.Value = pct;
-            }
-            if (_preloadLabel != null)
-                _preloadLabel.Text = $"Cargando texturas... {_textures.PreloadDone}/{_textures.PreloadTotal}";
-        }
-        else if (_preloadPhase == 2 && _previewPreloadIter != null)
-        {
-            // Phase 2: generate preview thumbnails (time-budgeted)
-            double budgetMs = 8.0;
-            int total = _palette?.PreviewPreloadTotal ?? 1;
-            int count = 0;
-
-            while (sw.Elapsed.TotalMilliseconds < budgetMs)
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (sw.Elapsed.TotalMilliseconds < 12.0)
             {
                 if (!_previewPreloadIter.MoveNext())
                 {
-                    _previewPreloadIter.Dispose();
+                    GD.Print("[Editor] Preload complete");
                     _previewPreloadIter = null;
-                    FinishPreload();
+                    _preloadPhase = 2;
+                    _loadingFadingOut = true;
+                    _loadingFadeAlpha = 1f;
+                    if (_loadingBar != null) _loadingBar.Value = 100;
+                    if (_loadingLabel != null) _loadingLabel.Text = "Listo!";
+                    SetStatus("Editor listo");
+                    _palette?.UpdateGridHighlights();
                     return;
                 }
-                count = _previewPreloadIter.Current;
             }
-
-            // Update progress UI — phase 2
-            if (_preloadBar != null && total > 0)
-            {
-                float pct = (float)count / total * 100f;
-                _preloadBar.Value = pct;
-            }
-            if (_preloadLabel != null)
-                _preloadLabel.Text = $"Generando previews... {count}/{total}";
+            int previewTotal = _palette?.PreviewPreloadTotal ?? 1;
+            int previewDone  = _previewPreloadIter.Current;
+            double ratio = previewDone / (double)Math.Max(1, previewTotal);
+            if (_loadingBar  != null) _loadingBar.Value  = 100.0 * ratio;
+            if (_loadingLabel != null) _loadingLabel.Text = $"Cargando... ({previewDone}/{previewTotal})";
         }
-    }
-
-    private void FinishPreload()
-    {
-        _preloadPhase = 0;
-        _preloadOverlay?.QueueFree();
-        _preloadOverlay = null;
-        _preloadLabel = null;
-        _preloadBar = null;
-        SetStatus("Texturas y previews precargados");
+        // Phase 2: fade out overlay
+        else if (_preloadPhase == 2 && _loadingFadingOut)
+        {
+            _loadingFadeAlpha -= 0.05f;
+            if (_loadingFadeAlpha <= 0f)
+            {
+                _loadingFadeAlpha = 0f;
+                _loadingFadingOut = false;
+                _preloadPhase = 0;
+                if (_preloadOverlay != null) _preloadOverlay.Visible = false;
+            }
+            else if (_preloadOverlay != null)
+            {
+                _preloadOverlay.Modulate = new Color(1, 1, 1, _loadingFadeAlpha);
+            }
+        }
     }
 
     private void SyncViewportData()
@@ -1017,6 +1487,7 @@ public partial class EditorMain : Control
             case 5: ToggleTileProperties(); break;
             case 6: _dataPathDialog?.Popup(); break;
             case 7: _serverPathDialog?.Popup(); break;
+            case 8: InsertMap(); break;
         }
     }
 
@@ -1112,12 +1583,12 @@ public partial class EditorMain : Control
 
     private void CreateNewMap(int mapNumber)
     {
-        _map = new MapData();
+        _map = new MapData(1000, 1000);
         _map.MapNumber = mapNumber;
         _map.Name = $"Mapa {mapNumber}";
 
-        for (int y = 1; y <= 100; y++)
-            for (int x = 1; x <= 100; x++)
+        for (int y = 1; y <= 1000; y++)
+            for (int x = 1; x <= 1000; x++)
                 _map.Tiles[x, y].Layer1 = 1;
 
         _state.CurrentMapNumber = mapNumber;
@@ -1131,10 +1602,11 @@ public partial class EditorMain : Control
     private void LoadMapByNumber(int mapNumber)
     {
         if (string.IsNullOrEmpty(_state.MapDir)) return;
+        string aomapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.aomap");
         string mapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.map");
-        if (!File.Exists(mapFile))
+        if (!File.Exists(aomapFile) && !File.Exists(mapFile))
         {
-            SetStatus($"Mapa{mapNumber}.map no existe en {_state.MapDir}");
+            SetStatus($"Mapa{mapNumber} no existe en {_state.MapDir}");
             return;
         }
 
@@ -1142,10 +1614,14 @@ public partial class EditorMain : Control
         _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
         _state.ResetDirty();
+        // Load zone data for this map
+        _mapZones = MapZoneData.Load(_state.MapDir, mapNumber);
+        if (_zonePanel != null) { _zonePanel.ZoneData = _mapZones; _zonePanel.RebuildList(); }
+        if (_viewport != null) _viewport.ZoneData = _mapZones;
         UpdateViewport();
         UpdateNavBar();
-        if (_mapNumSpin != null) _mapNumSpin.Value = mapNumber;
-        SetStatus($"Mapa {mapNumber} cargado — {_map.Name}");
+        int zoneCount = _mapZones?.Zones.Count ?? 0;
+        SetStatus($"Mapa {mapNumber} cargado ({_map.Width}x{_map.Height}) — {_map.Name} — {zoneCount} zonas");
     }
 
     private void OnMapFileSelected(string path)
@@ -1165,7 +1641,6 @@ public partial class EditorMain : Control
                 _state.ResetDirty();
                 UpdateViewport();
                 UpdateNavBar();
-                if (_mapNumSpin != null) _mapNumSpin.Value = mapNum;
                 SetStatus($"Mapa {mapNum} cargado — {_map.Name}");
                 return;
             }
@@ -1177,42 +1652,44 @@ public partial class EditorMain : Control
     {
         if (_map == null) return;
         if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
+        if (_map.MapNumber <= 0) _map.MapNumber = _state.CurrentMapNumber > 0 ? _state.CurrentMapNumber : 1;
 
-        // Save to primary map dir (server if available — all 3 files)
-        MapLoader.Save(_state.MapDir, _map);
-
-        // Dual-save: client gets .map only, server gets all 3
-        string secondaryDir = "";
-        bool secondaryMapOnly = false;
-        if (_state.MapDir == _serverMapDir && _clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+        // Save .aomap to client Maps dir
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
         {
-            secondaryDir = _clientMapDir;
-            secondaryMapOnly = true;  // Client only needs .map
-        }
-        else if (_state.MapDir == _clientMapDir && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-        {
-            secondaryDir = _serverMapDir;
-            secondaryMapOnly = false; // Server needs all 3
+            MapLoader.Save(_clientMapDir, _map);
+            GD.Print($"[Editor] Saved to client: {_clientMapDir}");
         }
 
-        if (secondaryDir.Length > 0)
+        // Save .aomap + .aoinf + .dat to server maps dir
+        if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
         {
-            MapLoader.Save(secondaryDir, _map, mapOnly: secondaryMapOnly);
-            GD.Print($"[Editor] Dual-save: also saved to {secondaryDir} (mapOnly={secondaryMapOnly})");
+            MapLoader.Save(_serverMapDir, _map);
+            GD.Print($"[Editor] Saved to server: {_serverMapDir}");
+        }
+
+        // Save .aozone to both client and server dirs
+        if (_mapZones != null && _map.MapNumber > 0)
+        {
+            if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+                _mapZones.Save(_clientMapDir, _map.MapNumber);
+            if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+                _mapZones.Save(_serverMapDir, _map.MapNumber);
+            GD.Print($"[Editor] Saved {_mapZones.Zones.Count} zones for map {_map.MapNumber}");
         }
 
         _state.ResetDirty();
         _state.ScanAvailableMaps(_state.MapDir);
         UpdateNavBar();
-        string dualMsg = secondaryDir.Length > 0 ? " (cliente .map + server .map/.inf/.dat)" : "";
-        SetStatus($"Mapa {_map.MapNumber} guardado{dualMsg}");
+        bool dual = _clientMapDir.Length > 0 && _serverMapDir.Length > 0;
+        SetStatus($"Mapa {_map.MapNumber} guardado" + (dual ? " (cliente + server)" : ""));
     }
 
     private void OnSaveAsMap()
     {
         if (!string.IsNullOrEmpty(_state.MapDir))
             _saveDialog!.CurrentDir = _state.MapDir;
-        _saveDialog!.CurrentFile = $"Mapa{_map?.MapNumber ?? 1}.map";
+        _saveDialog!.CurrentFile = $"Mapa{_map?.MapNumber ?? 1}.aomap";
         _saveDialog.Popup();
     }
 
@@ -1221,32 +1698,37 @@ public partial class EditorMain : Control
         if (_map == null) return;
         string dir = Path.GetDirectoryName(path) ?? _state.MapDir;
         _state.MapDir = dir;
-        MapLoader.Save(dir, _map);
 
-        // Dual-save: client gets .map only, server gets all 3
-        string otherDir = "";
-        bool otherMapOnly = false;
-        if (dir != _clientMapDir && _clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+        // Extract map number from filename (e.g. "Mapa1.map" → 1)
+        string filename = Path.GetFileNameWithoutExtension(path);
+        if (filename.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(filename.Substring(4), out int parsedNum) && parsedNum > 0)
         {
-            otherDir = _clientMapDir;
-            otherMapOnly = true;  // Client only needs .map
+            _map.MapNumber = parsedNum;
+            _state.CurrentMapNumber = parsedNum;
         }
-        else if (dir != _serverMapDir && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-        {
-            otherDir = _serverMapDir;
-            otherMapOnly = false; // Server needs all 3
-        }
-        if (otherDir.Length > 0)
-            MapLoader.Save(otherDir, _map, mapOnly: otherMapOnly);
 
+        // Save to both client and server dirs
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+            MapLoader.Save(_clientMapDir, _map);
+        if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+            MapLoader.Save(_serverMapDir, _map);
+        // Also save to the explicitly chosen dir if different
+        if (dir != _clientMapDir && dir != _serverMapDir)
+            MapLoader.Save(dir, _map);
+
+        _state.MapDir = dir;
         _state.ResetDirty();
         _state.ScanAvailableMaps(dir);
         UpdateNavBar();
-        string dualMsg = otherDir.Length > 0 ? " (cliente .map + server .map/.inf/.dat)" : "";
-        SetStatus($"Mapa {_map.MapNumber} guardado en {dir}{dualMsg}");
+        SetStatus($"Mapa {_map.MapNumber} guardado (cliente + server)");
     }
 
-    private void OnDataPathSelected(string path) => LoadDataPath(path);
+    private void OnDataPathSelected(string path)
+    {
+        _dataLoaded = false; // User explicitly chose a new path — allow reload
+        LoadDataPath(path);
+    }
 
     private void OnServerPathSelected(string path)
     {
@@ -1275,8 +1757,10 @@ public partial class EditorMain : Control
         string npcDat = Path.Combine(datDir, "NPCs.dat");
         (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
         _npcDb = NpcDatabase.Load(datDir);
+        _objDb = ObjectDatabase.Load(objDat);
 
         SyncNpcPaletteData();
+        SyncObjPaletteData();
         SyncViewportData();
         UpdateNavBar();
         SetStatus($"Server configurado: {path}");
@@ -1297,12 +1781,28 @@ public partial class EditorMain : Control
         _npcPalette.Rebuild();
     }
 
+    private void SyncObjPaletteData()
+    {
+        if (_objPalette == null) return;
+        _objPalette.Database = _objDb;
+        _objPalette.Grhs = _grhs;
+        _objPalette.Textures = _textures;
+        _objPalette.ObjGrhs = _objGrhs;
+        _objPalette.Rebuild();
+    }
+
     private void OnNpcPaletteSelected(int npcNumber)
     {
-        // Set NPC tool as active and update tile properties for quick placement
         SetActiveTool(EditorTool.Npc);
         _state.SelectedNpcNumber = npcNumber;
         SetStatus($"NPC #{npcNumber} seleccionado — click en el mapa para colocar");
+    }
+
+    private void OnObjectPaletteSelected(int objNumber)
+    {
+        SetActiveTool(EditorTool.Object);
+        _state.SelectedObjectNumber = objNumber;
+        SetStatus($"Objeto #{objNumber} seleccionado — click en el mapa para colocar");
     }
 
     private void OnExitFollow(int mapNum, int x, int y)
@@ -1484,6 +1984,83 @@ public partial class EditorMain : Control
         _viewport?.QueueRedraw();
     }
 
+    private void InsertMap()
+    {
+        if (_map == null) return;
+        if (_state.Pending.Active) return;
+        _insertFormat = LegacyMapFormat.AutoDetect;
+        if (_insertFormatSelect != null) _insertFormatSelect.Selected = 0;
+        _insertFormatWindow!.PopupCentered();
+    }
+
+    private void OnInsertSelectMapPressed()
+    {
+        if (_insertFormatSelect == null) return;
+        _insertFormat = (LegacyMapFormat)_insertFormatSelect.GetSelectedId();
+        _insertFormatWindow!.Hide();
+        _insertFileDialog!.Popup();
+    }
+
+    private void OnInsertMapFileSelected(string path)
+    {
+        if (_map == null || _state.Pending.Active) return;
+
+        MapData imported;
+        string formatInfo;
+
+        try
+        {
+            var resolvedFormat = _insertFormat;
+            if (resolvedFormat == LegacyMapFormat.AutoDetect)
+            {
+                resolvedFormat = LegacyMapLoader.DetectFormat(path);
+                GD.Print($"[InsertMap] Auto-detected format: {LegacyMapLoader.FormatLabel(resolvedFormat)}");
+            }
+            imported = LegacyMapLoader.Load(path, resolvedFormat);
+            formatInfo = LegacyMapLoader.FormatLabel(resolvedFormat);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"ERROR: no se pudo cargar '{Path.GetFileName(path)}': {ex.Message}");
+            GD.PrintErr($"[InsertMap] Failed to load {path}: {ex}");
+            return;
+        }
+
+        int w = imported.Width;
+        int h = imported.Height;
+        if (w <= 0 || h <= 0)
+        {
+            SetStatus("ERROR: el mapa importado está vacío");
+            return;
+        }
+
+        // Convert 1-indexed MapData tiles to 0-indexed buffer for PendingPlacement
+        var buf = new MapTile[w, h];
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                buf[x, y] = imported.Tiles[x + 1, y + 1];
+
+        // Place centered on current viewport
+        int originX, originY;
+        if (_viewport != null)
+        {
+            float invZoom = 1f / Math.Max(_state.Zoom, 0.01f);
+            int viewCenterX = (int)((-_state.CameraOffset.X * invZoom + _viewport.Size.X * invZoom / 2) / 32);
+            int viewCenterY = (int)((-_state.CameraOffset.Y * invZoom + _viewport.Size.Y * invZoom / 2) / 32);
+            originX = Math.Max(1, viewCenterX - w / 2);
+            originY = Math.Max(1, viewCenterY - h / 2);
+        }
+        else
+        {
+            originX = 1;
+            originY = 1;
+        }
+
+        _state.Pending.Begin(buf, w, h, originX, originY, isInsert: true);
+        SetStatus($"Insertando mapa {w}x{h} ({formatInfo}) — arrastrá y ✓ para aceptar, ✗ para cancelar");
+        _viewport?.QueueRedraw();
+    }
+
     /// <summary>
     /// Commit the pending placement to the map (called from viewport accept button).
     /// </summary>
@@ -1551,7 +2128,20 @@ public partial class EditorMain : Control
 
         _state.MarkDirty();
         SetStatus($"Aplicado {p.Width}x{p.Height} tiles en ({p.OriginX},{p.OriginY})");
+        bool wasMove = p.IsMove;
+        bool wasInsert = p.IsInsert;
+
+        // After inserting a map, create a selection on the applied area
+        if (wasInsert)
+        {
+            _state.SetSelection(p.OriginX, p.OriginY,
+                p.OriginX + p.Width - 1, p.OriginY + p.Height - 1);
+            _state.InsertedMapSelection = true;
+        }
+
         p.Cancel();
+        if (wasMove) SetActiveTool(EditorTool.Select);
+        if (wasInsert) SetActiveTool(EditorTool.Select);
         _viewport?.QueueRedraw();
     }
 
@@ -1563,76 +2153,143 @@ public partial class EditorMain : Control
         if (!_state.Pending.Active) return;
 
         var p = _state.Pending;
-        if (p.IsMove && p.MoveSnapshot != null && _map != null)
-        {
-            // Restore original map state
+        bool wasMove = p.IsMove;
+        if (wasMove && p.MoveSnapshot != null && _map != null)
             Array.Copy(p.MoveSnapshot, _map.Tiles, _map.Tiles.Length);
-        }
         p.Cancel();
         SetStatus("Cancelado");
+        if (wasMove) SetActiveTool(EditorTool.Select);
         _viewport?.QueueRedraw();
     }
 
+
+    private void OnDeselectSelection()
+    {
+        // Cancel floating insert before it's committed
+        if (_state.Pending.Active && _state.Pending.IsInsert)
+        {
+            CancelPendingPlacement();
+            return;
+        }
+
+        if (_state.InsertedMapSelection)
+        {
+            // Undo the insert — revert the tiles that were stamped
+            _undo.Undo(_map!);
+            _state.InsertedMapSelection = false;
+            SetStatus("Mapa insertado descartado");
+        }
+        _state.ClearSelection();
+        _viewport?.QueueRedraw();
+    }
+
+    private void OnSelectionCompleted()
+    {
+        // If a zone edit popup requested map selection, feed the coords back
+        if (_pendingZonePopup != null && _state.HasSelection)
+        {
+            _pendingZonePopup.SetBoundsFromSelection(
+                _state.SelX1, _state.SelY1, _state.SelX2, _state.SelY2);
+            _pendingZonePopup = null;
+        }
+    }
+
+    private void ShowTrimBordersDialog()
+    {
+        if (_trimBordersWindow == null) BuildTrimBordersDialog();
+        _trimBordersSpin!.Value = 6;
+        _trimBordersWindow!.PopupCentered();
+    }
+
+    private void BuildTrimBordersDialog()
+    {
+        _trimBordersWindow = new Window();
+        _trimBordersWindow.Title = "Cortar Bordes";
+        _trimBordersWindow.Size = new Vector2I(300, 160);
+        _trimBordersWindow.Exclusive = true;
+        _trimBordersWindow.Unresizable = true;
+        _trimBordersWindow.Visible = false;
+        _trimBordersWindow.Transient = true;
+        _trimBordersWindow.WrapControls = true;
+        _trimBordersWindow.CloseRequested += () => _trimBordersWindow.Hide();
+
+        var margin = new MarginContainer();
+        margin.AddThemeConstantOverride("margin_left", 20);
+        margin.AddThemeConstantOverride("margin_right", 20);
+        margin.AddThemeConstantOverride("margin_top", 16);
+        margin.AddThemeConstantOverride("margin_bottom", 16);
+        margin.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 12);
+
+        var label = new Label { Text = "Tiles a cortar de cada borde:" };
+        label.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_MD);
+        vbox.AddChild(label);
+
+        _trimBordersSpin = EditorTheme.MakeSpinBox(1, 50, 1);
+        _trimBordersSpin.Value = 6;
+        vbox.AddChild(_trimBordersSpin);
+
+        var applyBtn = EditorTheme.PrimaryButton("Aplicar recorte");
+        applyBtn.Pressed += OnTrimBordersApply;
+        vbox.AddChild(applyBtn);
+
+        margin.AddChild(vbox);
+        _trimBordersWindow.AddChild(margin);
+        AddChild(_trimBordersWindow);
+    }
+
+    private void OnTrimBordersApply()
+    {
+        _trimBordersWindow?.Hide();
+        if (_map == null || !_state.HasSelection) return;
+
+        int trim = (int)(_trimBordersSpin?.Value ?? 6);
+        int newX1 = _state.SelX1 + trim;
+        int newY1 = _state.SelY1 + trim;
+        int newX2 = _state.SelX2 - trim;
+        int newY2 = _state.SelY2 - trim;
+
+        if (newX1 > newX2 || newY1 > newY2)
+        {
+            SetStatus("ERROR: recorte demasiado grande, no queda área");
+            return;
+        }
+
+        // Clear the border tiles
+        _undo.BeginBatch("Trim borders");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (x >= newX1 && x <= newX2 && y >= newY1 && y <= newY2) continue;
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                _map.Tiles[x, y] = new MapTile();
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+
+        // Shrink selection to trimmed area
+        _state.SetSelection(newX1, newY1, newX2, newY2);
+        _state.MarkDirty();
+        SetStatus($"Recortados {trim} tiles de cada borde — selección ahora {newX2 - newX1 + 1}x{newY2 - newY1 + 1}");
+        _viewport?.QueueRedraw();
+    }
 
     #endregion
 
     #region Map Navigation Bar
 
-    private int _navOffset; // offset for paging through maps
-
-    private void UpdateNavBar()
-    {
-        if (_mapNavButtons.Length == 0) return;
-        int center = _state.CurrentMapNumber + _navOffset;
-        int half = NavButtonCount / 2;
-
-        for (int i = 0; i < NavButtonCount; i++)
-        {
-            int mapNum = center - half + i;
-            var btn = _mapNavButtons[i];
-            if (mapNum < 1)
-            {
-                btn.Text = "";
-                btn.Disabled = true;
-                btn.Visible = false;
-                btn.Modulate = Colors.White;
-                continue;
-            }
-
-            btn.Text = mapNum.ToString();
-            btn.Disabled = false;
-            btn.Visible = true;
-            bool isCurrent = mapNum == _state.CurrentMapNumber;
-            bool exists = _state.AvailableMaps.Contains(mapNum);
-            EditorTheme.StyleNavButtonCompact(btn, isCurrent, exists);
-        }
-    }
-
-    private void OnNavButtonPressed(int buttonIndex)
-    {
-        int center = _state.CurrentMapNumber + _navOffset;
-        int half = NavButtonCount / 2;
-        int mapNum = center - half + buttonIndex;
-        if (mapNum < 1) return;
-
-        if (_state.AvailableMaps.Contains(mapNum))
-            RequestLoadMap(mapNum);
-        else
-            SetStatus($"Mapa{mapNum}.map no existe");
-    }
-
-    private void NavigateMapOffset(int delta)
-    {
-        _navOffset += delta;
-        UpdateNavBar();
-    }
+    // Map nav bar removed — single map mode. UpdateNavBar kept as no-op for callers.
+    private void UpdateNavBar() { }
 
     #endregion
 
     #region Input
 
     private static readonly string[] ToolNames = {
-        "Mano", "Pintar", "Borrar", "Seleccionar", "Mover", "Agarrar",
+        "Mano", "Pintar", "Borrar", "Seleccionar", "Agarrar",
         "Rellenar", "Cuentagotas", "Bloquear", "Luz", "Salida", "NPC", "Objeto", "Trigger"
     };
 
@@ -1656,6 +2313,7 @@ public partial class EditorMain : Control
                 case Key.X: CutSelection(); break;
                 case Key.C: _state.CopySelection(_map!); SetStatus($"Copiado {_state.ClipWidth}x{_state.ClipHeight} tiles"); break;
                 case Key.V: PasteClipboard(); break;
+                case Key.I: InsertMap(); break;
             }
         }
         else
@@ -1666,7 +2324,6 @@ public partial class EditorMain : Control
                 case Key.P: newTool = EditorTool.Paint; break;
                 case Key.E: newTool = EditorTool.Erase; break;
                 case Key.R: newTool = EditorTool.Select; break;
-                case Key.M: newTool = EditorTool.Move; break;
                 case Key.V: newTool = EditorTool.Pick; break;
                 case Key.F:
                     if (_state.HoverValid && _viewport != null)
@@ -1682,10 +2339,10 @@ public partial class EditorMain : Control
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
-                case Key.Key1: _state.ActiveLayer = 1; break;
-                case Key.Key2: _state.ActiveLayer = 2; break;
-                case Key.Key3: _state.ActiveLayer = 3; break;
-                case Key.Key4: _state.ActiveLayer = 4; break;
+                case Key.Key1: _state.ActiveLayer = 1; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key2: _state.ActiveLayer = 2; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key3: _state.ActiveLayer = 3; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
+                case Key.Key4: _state.ActiveLayer = 4; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
                 case Key.Delete:
                     DeleteSelection();
                     break;
@@ -1724,10 +2381,11 @@ public partial class EditorMain : Control
     {
         _state.ActiveTool = tool;
         _state.Pick.Clear();
-        // Clear selection when switching away from Select/Move
+        // Keep selection when in Select or Move (Move requires an active selection)
         if (tool != EditorTool.Select && tool != EditorTool.Move)
             _state.ClearSelection();
         SyncToolBar();
+        UpdateLightSection();
     }
 
     private void SyncLayerTabs()
@@ -1739,11 +2397,10 @@ public partial class EditorMain : Control
     // Maps toolbar button index to EditorTool
     private static readonly EditorTool[] ToolBarOrder = {
         EditorTool.Hand, EditorTool.Paint, EditorTool.Erase,
-        EditorTool.Select, EditorTool.Move, EditorTool.Fill,
+        EditorTool.Select,
         EditorTool.Pick, EditorTool.Eyedrop, EditorTool.Block,
         // property tools (after separator)
-        EditorTool.Light, EditorTool.Exit, EditorTool.Npc,
-        EditorTool.Object, EditorTool.Trigger,
+        EditorTool.Light, EditorTool.Exit, EditorTool.Trigger,
     };
 
     private void SyncToolBar()
@@ -1753,6 +2410,74 @@ public partial class EditorMain : Control
             bool active = _state.ActiveTool == ToolBarOrder[i];
             _toolBarButtons[i].ButtonPressed = active;
         }
+    }
+
+    private void BlockSelection(bool blocked)
+    {
+        if (_map == null || !_state.HasSelection) return;
+        _undo.BeginBatch(blocked ? "Block Selection" : "Unblock Selection");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                _map.Tiles[x, y].Blocked = blocked;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+        _viewport?.QueueRedraw();
+    }
+
+    private void ClearSelectionTiles_Confirm1()
+    {
+        if (_map == null || !_state.HasSelection) return;
+        int w = _state.SelX2 - _state.SelX1 + 1;
+        int h = _state.SelY2 - _state.SelY1 + 1;
+        var dlg = new ConfirmationDialog
+        {
+            Title = "Borrar todo",
+            DialogText = $"¿Borrar TODOS los tiles en el área seleccionada ({w}×{h} tiles)?\nEsto limpia las 4 capas, NPCs, objetos, exits, triggers, luces y partículas.",
+            OkButtonText = "Sí, borrar",
+            CancelButtonText = "Cancelar",
+            Size = new Vector2I(400, 180),
+        };
+        dlg.Confirmed += () => { dlg.QueueFree(); ClearSelectionTiles_Confirm2(w, h); };
+        dlg.Canceled += () => dlg.QueueFree();
+        AddChild(dlg);
+        dlg.PopupCentered();
+    }
+
+    private void ClearSelectionTiles_Confirm2(int w, int h)
+    {
+        var dlg = new ConfirmationDialog
+        {
+            Title = "Confirmar borrado",
+            DialogText = $"¿Estás SEGURO? Se borrarán {w * h} tiles. Esta acción se puede deshacer con Ctrl+Z.",
+            OkButtonText = "Borrar definitivamente",
+            CancelButtonText = "Cancelar",
+            Size = new Vector2I(400, 160),
+        };
+        dlg.Confirmed += () => { dlg.QueueFree(); ClearSelectionTiles(); };
+        dlg.Canceled += () => dlg.QueueFree();
+        AddChild(dlg);
+        dlg.PopupCentered();
+    }
+
+    private void ClearSelectionTiles()
+    {
+        if (_map == null || !_state.HasSelection) return;
+        _undo.BeginBatch("Clear Selection");
+        for (int y = _state.SelY1; y <= _state.SelY2; y++)
+            for (int x = _state.SelX1; x <= _state.SelX2; x++)
+            {
+                if (!_map.InBounds(x, y)) continue;
+                var before = _map.Tiles[x, y];
+                _map.Tiles[x, y] = default;
+                _undo.RecordTileChange(x, y, before, _map.Tiles[x, y]);
+            }
+        _undo.EndBatch();
+        _state.MarkDirty();
+        _viewport?.QueueRedraw();
     }
 
     private void OnDirtyChanged(bool isDirty)
@@ -1843,12 +2568,75 @@ public partial class EditorMain : Control
         _tileInfoLabel.Text = lines.ToString().TrimEnd();
     }
 
+    private int _lastSelectedTileX = -2, _lastSelectedTileY = -2;
+
+    private void UpdateSelectedTileInfo()
+    {
+        bool hasTile = _state.HasSelectedTile && _map != null;
+        bool visible = hasTile;
+
+        if (_rightTileSection != null && _rightTileSection.Visible != visible)
+        {
+            _rightTileSection.Visible = visible;
+            if (_rightTileSeparator != null) _rightTileSeparator.Visible = visible;
+        }
+
+        if (!visible || _rightTileInfoLabel == null) return;
+
+        int x = _state.SelectedTileX, y = _state.SelectedTileY;
+
+        // Only update text when the selected tile changes
+        if (x == _lastSelectedTileX && y == _lastSelectedTileY) return;
+        _lastSelectedTileX = x;
+        _lastSelectedTileY = y;
+
+        if (!_map!.InBounds(x, y))
+        {
+            _rightTileInfoLabel.Text = "Fuera del mapa";
+            return;
+        }
+
+        ref var tile = ref _map.Tiles[x, y];
+        var lines = new System.Text.StringBuilder();
+        lines.AppendLine($"({x}, {y})");
+        lines.AppendLine($"L1: {(tile.Layer1 > 0 ? tile.Layer1.ToString() : "--")}");
+        lines.AppendLine($"L2: {(tile.Layer2 > 0 ? tile.Layer2.ToString() : "--")}");
+        lines.AppendLine($"L3: {(tile.Layer3 > 0 ? tile.Layer3.ToString() : "--")}");
+        lines.AppendLine($"L4: {(tile.Layer4 > 0 ? tile.Layer4.ToString() : "--")}");
+        if (tile.Blocked) lines.AppendLine("Bloqueado: ✓");
+        if (tile.Trigger > 0)
+        {
+            string trigName = tile.Trigger switch {
+                1 => "Indoor", 3 => "Pos inválida", 4 => "Zona segura",
+                5 => "Anti-bloqueo", 6 => "Combate", _ => tile.Trigger.ToString()
+            };
+            lines.AppendLine($"Trigger: {trigName}");
+        }
+        if (tile.HasExit) lines.AppendLine($"Salida: M{tile.ExitMap} ({tile.ExitX},{tile.ExitY})");
+        if (tile.HasNpc)
+        {
+            string npcName = _npcDb?.Get(tile.NpcIndex)?.Name ?? "";
+            lines.AppendLine(npcName.Length > 0
+                ? $"NPC: #{tile.NpcIndex} {npcName}"
+                : $"NPC: #{tile.NpcIndex}");
+        }
+        if (tile.HasObject) lines.AppendLine($"Obj: #{tile.ObjIndex} x{tile.ObjAmount}");
+        if (tile.HasLight) lines.AppendLine($"Luz: R{tile.LightRange} ({tile.LightR},{tile.LightG},{tile.LightB})");
+        if (tile.ParticleGroup > 0) lines.AppendLine($"Partícula: {tile.ParticleGroup}");
+
+        _rightTileInfoLabel.Text = lines.ToString().TrimEnd();
+    }
+
     public override void _Process(double delta)
     {
         DoLayout();
 
-        // Tick texture preload (N images per frame, non-blocking)
-        TickTexturePreload();
+        // Blocking preload — nothing else runs until textures + previews are done
+        if (_preloadPhase > 0)
+        {
+            TickTexturePreload();
+            return;
+        }
 
         // Open tile properties when clicked with property tools
         if (_state.ShowTileProperties && _propsPanel != null && _map != null)
@@ -1887,11 +2675,230 @@ public partial class EditorMain : Control
 
         // Update tile info
         UpdateTileInfo();
+        UpdateSelectedTileInfo();
 
         _palette?.SyncLayerUI();
         SyncToolBar();
         SyncLayerTabs();
+        UpdateRightSidebar();
+        UpdateSelectionSection();
         _viewport?.QueueRedraw();
+    }
+
+    private TextureRef? _lastRightSidebarTexRef;
+    private int _lastRightSidebarEyedrop;
+    private bool _lastRightSidebarHasSel;
+    private int _lastSelX1, _lastSelY1, _lastSelX2, _lastSelY2;
+    private EditorTool _lastSelActiveTool = EditorTool.Hand;
+
+    private void UpdateRightSidebar()
+    {
+        if (_rightPreview == null || _rightNameLabel == null || _rightInfoLabel == null) return;
+
+        var texRef = _state.SelectedTexture;
+        int eyedrop = _state.EyedropGrh;
+
+        // Avoid rebuilding every frame — only when selection changes
+        if (texRef == _lastRightSidebarTexRef && eyedrop == _lastRightSidebarEyedrop) return;
+        _lastRightSidebarTexRef = texRef;
+        _lastRightSidebarEyedrop = eyedrop;
+
+        if (texRef != null)
+        {
+            _rightNameLabel.Text = texRef.Name;
+            _rightInfoLabel.Text = $"GRH: {texRef.GrhIndex}\nLayer: {Math.Max(texRef.Layer, 1)}\nSize: {Math.Max(texRef.TileWidth, 1)}x{Math.Max(texRef.TileHeight, 1)}";
+            _rightPreview.Texture = _palette?.GetPreviewTexture(texRef);
+        }
+        else if (eyedrop > 0)
+        {
+            _rightNameLabel.Text = "Eyedrop";
+            _rightInfoLabel.Text = $"GRH: {eyedrop}\nLayer: {_state.ActiveLayer}";
+            _rightPreview.Texture = GenerateGrhPreview(eyedrop);
+        }
+        else
+        {
+            _rightNameLabel.Text = "(none)";
+            _rightInfoLabel.Text = "";
+            _rightPreview.Texture = null;
+        }
+
+        // Update fill button enabled state when texture changes
+        UpdateSelectionSection();
+    }
+
+    private void UpdateSelectionSection()
+    {
+        if (_rightSelectionSection == null || _rightSelectionLabel == null || _rightFillButton == null) return;
+
+        bool hasSel = _state.HasSelection;
+        bool hasPendingInsert = _state.Pending.Active && _state.Pending.IsInsert;
+
+        _rightSelectionSection.Visible = hasSel || hasPendingInsert;
+        if (_rightSelSeparator != null) _rightSelSeparator.Visible = hasSel || hasPendingInsert;
+
+        // Show insert info during floating phase (before commit)
+        if (hasPendingInsert && !hasSel)
+        {
+            var p = _state.Pending;
+            _rightSelectionLabel.Text = $"MAPA A INSERTAR\nPosición: ({p.OriginX},{p.OriginY})\n{p.Width}x{p.Height} tiles\nArrastrá para mover, ✓ para aplicar";
+            _rightFillButton.Visible = false;
+            if (_rightMoveAreaButton != null) _rightMoveAreaButton.Visible = false;
+            if (_rightInsertApplyButton != null) _rightInsertApplyButton.Visible = false;
+            if (_rightInsertTrimButton != null) _rightInsertTrimButton.Visible = false;
+            if (_rightDeselectButton != null) _rightDeselectButton.Visible = true;
+            return;
+        }
+
+        if (hasSel)
+        {
+            bool coordsChanged = hasSel != _lastRightSidebarHasSel ||
+                _state.SelX1 != _lastSelX1 || _state.SelY1 != _lastSelY1 ||
+                _state.SelX2 != _lastSelX2 || _state.SelY2 != _lastSelY2;
+
+            // Only update label text when coordinates change
+            if (coordsChanged)
+            {
+                int w = _state.SelX2 - _state.SelX1 + 1;
+                int h = _state.SelY2 - _state.SelY1 + 1;
+                string prefix = _state.InsertedMapSelection ? "MAPA INSERTADO\n" : "";
+                _rightSelectionLabel.Text = $"{prefix}({_state.SelX1},{_state.SelY1}) \u2192 ({_state.SelX2},{_state.SelY2})\n{w}x{h} tiles";
+                UpdateSelectionThumbnail();
+            }
+
+            // Restore normal button visibility (may have been hidden during floating phase)
+            _rightFillButton.Visible = true;
+            if (_rightMoveAreaButton != null) _rightMoveAreaButton.Visible = true;
+            if (_rightDeselectButton != null) _rightDeselectButton.Visible = true;
+
+            // Always re-evaluate fill button (texture may have changed)
+            bool hasTexture = _state.SelectedTexture != null || _state.EyedropGrh > 0;
+            _rightFillButton.Disabled = !hasTexture;
+
+            // Sync move button toggle state when tool changes
+            if (_state.ActiveTool != _lastSelActiveTool)
+                _rightMoveAreaButton?.SetPressedNoSignal(_state.ActiveTool == EditorTool.Move);
+
+            // Show/hide insert-specific buttons
+            bool isInsert = _state.InsertedMapSelection;
+            if (_rightInsertApplyButton != null) _rightInsertApplyButton.Visible = isInsert;
+            if (_rightInsertTrimButton != null) _rightInsertTrimButton.Visible = isInsert;
+        }
+
+        _lastRightSidebarHasSel = hasSel;
+        _lastSelX1 = _state.SelX1;
+        _lastSelY1 = _state.SelY1;
+        _lastSelX2 = _state.SelX2;
+        _lastSelY2 = _state.SelY2;
+        _lastSelActiveTool = _state.ActiveTool;
+    }
+
+    private void UpdateSelectionThumbnail()
+    {
+        if (_rightSelPreview == null || _map == null || _grhs == null || _textures == null) return;
+
+        const int TileRender = 8;   // pixels per tile in the thumbnail
+        const int MaxTiles = 16;    // cap both axes
+
+        int selW = Math.Min(_state.SelX2 - _state.SelX1 + 1, MaxTiles);
+        int selH = Math.Min(_state.SelY2 - _state.SelY1 + 1, MaxTiles);
+        int imgW = selW * TileRender;
+        int imgH = selH * TileRender;
+
+        if (imgW <= 0 || imgH <= 0) { _rightSelPreview.Texture = null; return; }
+
+        var img = Image.CreateEmpty(imgW, imgH, false, Image.Format.Rgba8);
+
+        for (int ty = 0; ty < selH; ty++)
+        {
+            for (int tx = 0; tx < selW; tx++)
+            {
+                int mx = _state.SelX1 + tx;
+                int my = _state.SelY1 + ty;
+                if (!_map.InBounds(mx, my)) continue;
+
+                var tile = _map.Tiles[mx, my];
+
+                // Render L1 and L2 (base layers) into the thumbnail
+                int[] grhIds = { tile.Layer1, tile.Layer2 };
+                foreach (int grhId in grhIds)
+                {
+                    if (grhId <= 0 || grhId >= _grhs.Length) continue;
+                    var grh = _grhs[grhId];
+                    if (grh.NumFrames <= 0) continue;
+                    if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+                    {
+                        int fIdx = grh.Frames[0];
+                        if (fIdx > 0 && fIdx < _grhs.Length) grh = _grhs[fIdx];
+                    }
+                    if (grh.FileNum <= 0) continue;
+
+                    var srcImg = _textures.GetImageCached(grh.FileNum);
+                    if (srcImg == null) continue;
+
+                    int srcX = Math.Max(0, (int)grh.SX);
+                    int srcY = Math.Max(0, (int)grh.SY);
+                    int srcW = Math.Max(1, Math.Min((int)grh.PixelWidth, srcImg.GetWidth() - srcX));
+                    int srcH = Math.Max(1, Math.Min((int)grh.PixelHeight, srcImg.GetHeight() - srcY));
+
+                    var region = srcImg.GetRegion(new Rect2I(srcX, srcY, srcW, srcH));
+                    region.Resize(TileRender, TileRender, Image.Interpolation.Nearest);
+
+                    img.BlitRect(region, new Rect2I(0, 0, TileRender, TileRender),
+                        new Vector2I(tx * TileRender, ty * TileRender));
+                }
+            }
+        }
+
+        _rightSelPreview.Texture = ImageTexture.CreateFromImage(img);
+    }
+
+    private HSlider CreateLightSlider(float min, float max, float value, Action<float> onChange)
+    {
+        var slider = new HSlider
+        {
+            MinValue = min,
+            MaxValue = max,
+            Value = value,
+            Step = 1,
+            CustomMinimumSize = new Vector2(0, 20),
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        slider.ValueChanged += v => onChange((float)v);
+        return slider;
+    }
+
+    private void UpdateLightPreview()
+    {
+        if (_lightPreviewRect != null)
+            _lightPreviewRect.Color = new Color(_state.LightR / 255f, _state.LightG / 255f, _state.LightB / 255f);
+    }
+
+    private void UpdateLightSection()
+    {
+        bool show = _state.ActiveTool == EditorTool.Light;
+        if (_rightLightSection != null) _rightLightSection.Visible = show;
+        if (_rightLightSeparator != null) _rightLightSeparator.Visible = show;
+    }
+
+    private Texture2D? GenerateGrhPreview(int grhIndex)
+    {
+        if (_grhs == null || _textures == null || grhIndex <= 0 || grhIndex >= _grhs.Length) return null;
+        var grh = _grhs[grhIndex];
+        if (grh.NumFrames <= 0) return null;
+        if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+        {
+            int fIdx = grh.Frames[0];
+            if (fIdx > 0 && fIdx < _grhs.Length) grh = _grhs[fIdx];
+        }
+        if (grh.FileNum <= 0) return null;
+        var srcTex = _textures.GetTexture(grh.FileNum);
+        if (srcTex == null) return null;
+        var atlas = new AtlasTexture();
+        atlas.Atlas = srcTex;
+        atlas.Region = new Rect2(grh.SX, grh.SY,
+            Math.Min(grh.PixelWidth, srcTex.GetWidth() - grh.SX),
+            Math.Min(grh.PixelHeight, srcTex.GetHeight() - grh.SY));
+        return atlas;
     }
 
     public override void _Notification(int what)
@@ -1899,6 +2906,7 @@ public partial class EditorMain : Control
         // Intercept window close to check for unsaved changes
         if (what == NotificationWMCloseRequest)
         {
+            _textures?.Cleanup(); // Free GPU textures before exit
             if (_state.IsDirty)
             {
                 CheckDirtyThen(() => GetTree().Quit());
@@ -1908,4 +2916,32 @@ public partial class EditorMain : Control
     }
 
     #endregion
+
+    // ── Zone editing ─────────────────────────────────────────────
+
+    private void ShowZoneEditPopup(ZoneInfo? zone)
+    {
+        if (zone == null) return;
+
+        var popup = new ZoneEditPopup
+        {
+            Zone = zone,
+            ZoneData = _mapZones,
+        };
+        popup.OnSaved += () =>
+        {
+            _zonePanel?.RebuildList();
+            _viewport?.QueueRedraw();
+            _state.MarkDirty();
+        };
+        popup.OnRequestMapSelect += () =>
+        {
+            // Activate Select tool — when user finishes selection, fill bounds back
+            SetActiveTool(EditorTool.Select);
+            _pendingZonePopup = popup;
+            SetStatus("Seleccioná el área de la zona en el mapa, luego suelta para confirmar");
+        };
+        AddChild(popup);
+        popup.PopupCentered();
+    }
 }

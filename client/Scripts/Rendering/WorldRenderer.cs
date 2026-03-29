@@ -46,20 +46,28 @@ public partial class WorldRenderer : Node2D
 
 	private const int TileSize = 32;
 
-	// VB6 viewport: 544x416 px (MainViewPic ScaleWidth/ScaleHeight)
-	private const int ViewportWidth = 544;
-	private const int ViewportHeight = 416;
+	// Viewport dimensions — dynamic, read from ResolutionManager
+	private static int ViewportWidth => ResolutionManager.ViewportW;
+	private static int ViewportHeight => ResolutionManager.ViewportH;
 
-	// How many tiles from center to edge (visible range)
-	private const int HalfWindowTileWidth = 8;
-	private const int HalfWindowTileHeight = 6;
+	// How many tiles from center to edge (visible range) — dynamic
+	private static int HalfWindowTileWidth => ResolutionManager.HalfTilesX;
+	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
-	// VB6: TileBufferSize = 9
-	private const int TileBufferSize = 9;
+	// Buffer sizes beyond visible area
+	private const int TerrainBufferSize = 16; // L1-L4: supports GRHs up to 512px (16 tiles)
+	private const int CharBufferSize = 1;     // Characters/NPCs: +1 tile for smooth fade at viewport edge
 
-	// VB6: bTechoAB — roof alpha
+	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)
 	private float _roofAlpha = 255f;
-	private const float RoofFadeRate = 6f;
+	private const float RoofFadeSpeed = 400f; // units per second (255→20 in ~0.6s)
+	private const float RoofMinAlpha = 45f; // ~18% opacity — visible ghost of the roof
+
+	// Pre-computed roof region map: each L4 tile belongs to a connected region (1-based ID).
+	// Tiles without L4 have regionId = 0. Built once per map load.
+	private int[,]? _roofRegionMap;
+	private int _activeRoofRegion;  // region the player is currently inside (0 = outdoors)
+	private int _fadingRoofRegion;  // region currently being faded (persists during fade-out)
 
 	// Delta time in ms for current frame (set in _Process, used in _Draw)
 	private float _deltaMs;
@@ -90,11 +98,35 @@ public partial class WorldRenderer : Node2D
 	// Whether any reflection was drawn this frame (used by PASS 1b mask)
 	private bool _frameAnyReflection;
 
+	// Dirty flag — set whenever map data, character state, or light state changes.
+	// _Process only calls QueueRedraw when this is true, avoiding per-frame redraws
+	// when nothing has changed (e.g., paused game, no movement, no animation tick).
+	private bool _renderDirty = true;
+
+	/// <summary>
+	/// Mark the renderer as needing a redraw on the next _Process tick.
+	/// Call this whenever map data, characters, lights, or animations change.
+	/// </summary>
+	public void MarkRenderDirty() => _renderDirty = true;
+
+	/// <summary>
+	/// Camera values for the current frame. Updated in _Process before any Draw calls.
+	/// Other layers (FloatingTextLayer, SafeZoneBorderLayer) read this instead of recomputing.
+	/// </summary>
+	public static CameraSnapshot CurrentCamera { get; private set; }
+
+	// Pre-computed water tile map — built on map load, avoids per-frame GRH range checks.
+	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
+	private bool[,]? _waterMap;
+
+
+
 	// Per-frame camera data (computed in _Draw, used by child layer callbacks)
 	private int _frameUserX, _frameUserY;
 	private float _framePixelOffsetX, _framePixelOffsetY;
-	private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;
-	private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY;
+	private int _frameMinX, _frameMaxX, _frameMinY, _frameMaxY;       // terrain L1-L4 (large buffer)
+	private int _frameL1MinX, _frameL1MaxX, _frameL1MinY, _frameL1MaxY; // L1 water (small buffer for perf)
+	private int _frameCharMinX, _frameCharMaxX, _frameCharMinY, _frameCharMaxY; // characters (viewport only)
 	private bool _frameHasLights;
 
 	// GPU lightmap shader — samples a 101×101 texture for smooth per-vertex lighting.
@@ -107,6 +139,7 @@ public partial class WorldRenderer : Node2D
 shader_type canvas_item;
 uniform sampler2D lightmap : filter_linear, repeat_disable;
 uniform vec2 world_origin;
+uniform vec2 map_size_px;
 uniform bool use_lightmap;
 varying vec2 v_world_px;
 
@@ -116,7 +149,7 @@ void vertex() {
 
 void fragment() {
 	if (use_lightmap) {
-		vec2 uv = (v_world_px - 32.0) / 3200.0;
+		vec2 uv = (v_world_px - 32.0) / map_size_px;
 		vec3 light = texture(lightmap, uv).rgb;
 		COLOR.rgb *= light;
 	}
@@ -127,6 +160,88 @@ void fragment() {
 	/// Called by Main after RecalculateLights() to trigger lightmap texture rebuild.
 	/// </summary>
 	public void MarkLightmapDirty() => _lightmapDirty = true;
+
+	/// <summary>
+	/// Rebuild the pre-computed water tile map from current MapData.
+	/// Called by Main after loading a new map.
+	/// </summary>
+	public void RebuildWaterMap()
+	{
+		if (_state?.MapData == null)
+		{
+			_waterMap = null;
+			return;
+		}
+		int w = _state.MapData.Width;
+		int h = _state.MapData.Height;
+		_waterMap = new bool[w + 1, h + 1];
+		for (int y = 1; y <= h; y++)
+		{
+			for (int x = 1; x <= w; x++)
+			{
+				int g = _state.MapData.Tiles[x, y].Layer1;
+				_waterMap[x, y] = IsWaterGrh(g);
+			}
+		}
+	}
+
+	/// <summary>
+	/// Pre-compute connected roof regions from Layer4 tiles.
+	/// Uses flood-fill (BFS) to assign a regionId to each connected group of L4 tiles.
+	/// Called once per map load. O(mapW * mapH).
+	/// </summary>
+	private static readonly (int dx, int dy)[] _floodDirs = { (1, 0), (-1, 0), (0, 1), (0, -1) };
+
+	/// <summary>
+	/// Pre-compute connected roof regions based on trigger tiles (1/2/4) AND Layer4 tiles.
+	/// BFS flood-fill expands through any tile that has a roof trigger OR a roof graphic (L4).
+	/// This ensures a house with triggers on interior tiles and L4 on border/exterior tiles
+	/// all belong to the same region. Called once per map load. O(mapW * mapH).
+	/// </summary>
+	public void BuildRoofRegions()
+	{
+		if (_state?.MapData == null) { _roofRegionMap = null; return; }
+		int w = _state.MapData.Width;
+		int h = _state.MapData.Height;
+		_roofRegionMap = new int[w + 1, h + 1]; // 1-based, all 0 by default
+		_activeRoofRegion = 0;
+		int nextRegion = 0;
+		var queue = new Queue<(int x, int y)>();
+
+		for (int y = 1; y <= h; y++)
+		{
+			for (int x = 1; x <= w; x++)
+			{
+				if (_roofRegionMap[x, y] != 0) continue;
+				ref var tile = ref _state.MapData.Tiles[x, y];
+				bool isTrigger = tile.Trigger == 1 || tile.Trigger == 2 || tile.Trigger == 4;
+				bool hasL4 = tile.Layer4 > 0;
+				if (!isTrigger && !hasL4) continue;
+
+				// New region — BFS flood fill through triggers AND L4 tiles
+				nextRegion++;
+				queue.Enqueue((x, y));
+				_roofRegionMap[x, y] = nextRegion;
+
+				while (queue.Count > 0)
+				{
+					var (cx, cy) = queue.Dequeue();
+					foreach (var (dx, dy) in _floodDirs)
+					{
+						int nx = cx + dx, ny = cy + dy;
+						if (nx < 1 || nx > w || ny < 1 || ny > h) continue;
+						if (_roofRegionMap[nx, ny] != 0) continue;
+						ref var nt = ref _state.MapData.Tiles[nx, ny];
+						bool nTrigger = nt.Trigger == 1 || nt.Trigger == 2 || nt.Trigger == 4;
+						bool nL4 = nt.Layer4 > 0;
+						if (!nTrigger && !nL4) continue;
+						_roofRegionMap[nx, ny] = nextRegion;
+						queue.Enqueue((nx, ny));
+					}
+				}
+			}
+		}
+	}
 
 	public void Init(GameState state, GameData data, GrhAnimator animator)
 	{
@@ -139,10 +254,12 @@ void fragment() {
 		shader.Code = LightmapShaderCode;
 		_lightmapMaterial = new ShaderMaterial();
 		_lightmapMaterial.Shader = shader;
+		// Initial lightmap size — will be rebuilt when map loads
 		_lightmapTexture = ImageTexture.CreateFromImage(
 			Image.CreateEmpty(101, 101, false, Image.Format.Rgb8));
 		_lightmapMaterial.SetShaderParameter("lightmap", _lightmapTexture);
 		_lightmapMaterial.SetShaderParameter("use_lightmap", false);
+		_lightmapMaterial.SetShaderParameter("map_size_px", new Vector2(3200f, 3200f));
 
 		// Apply lightmap shader to terrain layers (self, mask, L2, roof)
 		Material = _lightmapMaterial;
@@ -238,6 +355,17 @@ void fragment() {
 		_weatherRenderer.ZIndex = 5;
 		AddChild(_weatherRenderer);
 
+		// Safe zone border: z=6 (red fog at safe zone edges to warn players)
+		var safeZoneBorder = new SafeZoneBorderLayer(_state);
+		safeZoneBorder.Name = "SafeZoneBorder";
+		safeZoneBorder.ZIndex = 6;
+		AddChild(safeZoneBorder);
+
+		// Fog overlay: z=7 (darkens extended viewport edges beyond core 17x13)
+		var fogOverlay = new FogOverlayLayer();
+		fogOverlay.Name = "FogOverlay";
+		fogOverlay.ZIndex = 7;
+		AddChild(fogOverlay);
 	}
 
 	/// <summary>
@@ -258,8 +386,60 @@ void fragment() {
 		if (_state?.MapData == null) return;
 		_deltaMs = (float)delta * 1000f;
 		UpdateRoofFade();
-		UpdateAmbientLight();
-		QueueRedraw();
+		UpdateStatusTimers();
+		UpdateAllCharacterTimers();
+		// Auto-mark dirty while a map is loaded and the game is not paused.
+		// GRH tile animations advance every frame so a redraw is always needed
+		// during active gameplay. When the game is paused, callers should avoid
+		// calling MarkRenderDirty() so the flag stays false and no redraw happens.
+		if (!(_state.Paused))
+			_renderDirty = true;
+		if (_renderDirty)
+		{
+			_renderDirty = false;
+			QueueRedraw();
+		}
+	}
+
+	/// <summary>
+	/// Advance status timers once per frame. Must run in _Process, not _Draw,
+	/// because _Draw can be called multiple times per frame.
+	/// </summary>
+	private void UpdateStatusTimers()
+	{
+		if (_state == null) return;
+
+		// Paralysis countdown
+		if (_state.UserParalyzed && _state.ParalysisTimer > 0)
+		{
+			_state.ParalysisTimer -= _deltaMs / 1000f;
+			if (_state.ParalysisTimer < 0) _state.ParalysisTimer = 0;
+		}
+
+		// Invisibility countdown (self character)
+		if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
+		{
+			if (selfCh.InvisibleCountdown > 0)
+			{
+				selfCh.InvisibleCountdownTimer += _deltaMs;
+				if (selfCh.InvisibleCountdownTimer >= 1000f)
+				{
+					selfCh.InvisibleCountdownTimer -= 1000f;
+					selfCh.InvisibleCountdown--;
+				}
+			}
+		}
+	}
+
+	/// <summary>
+	/// Advance per-character timers (FOV fade, transparency, FX, dialog) for all characters.
+	/// Must run in _Process, once per frame, before any draw calls.
+	/// </summary>
+	private void UpdateAllCharacterTimers()
+	{
+		if (_state == null || _data == null) return;
+		foreach (var ch in _state.Characters.Values)
+			CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
 	}
 
 	/// <summary>
@@ -268,7 +448,6 @@ void fragment() {
 	/// </summary>
 	private void UpdateAmbientLight()
 	{
-		// When day/night is disabled, force full brightness
 		if (!(_state!.Config?.ShowDayNight ?? true))
 		{
 			Modulate = Colors.White;
@@ -286,20 +465,45 @@ void fragment() {
 
 		int ux = _state.UserPosX;
 		int uy = _state.UserPosY;
-		if (ux < 1 || ux > 100 || uy < 1 || uy > 100) return;
+		int w = _state.MapData.Width;
+		int h = _state.MapData.Height;
+		if (ux < 1 || ux > w || uy < 1 || uy > h) return;
 
-		short trigger = _state.MapData.Tiles[ux, uy].Trigger;
-		bool underRoof = trigger == 1 || trigger == 2 || trigger == 4;
-
-		if (underRoof)
-		{
-			_roofAlpha -= RoofFadeRate;
-			if (_roofAlpha < 0) _roofAlpha = 0;
-		}
+		// Determine which roof region the player is inside (0 = none)
+		if (_roofRegionMap != null)
+			_activeRoofRegion = _roofRegionMap[ux, uy];
 		else
+			_activeRoofRegion = 0;
+
+		// Track which region to apply fade to
+		if (_activeRoofRegion > 0)
 		{
-			_roofAlpha += RoofFadeRate;
-			if (_roofAlpha > 255) _roofAlpha = 255;
+			if (_fadingRoofRegion != _activeRoofRegion)
+			{
+				// Entered a new/different region — start fade-out from full opacity
+				_fadingRoofRegion = _activeRoofRegion;
+				_roofAlpha = 255f;
+			}
+		}
+		// When outside: keep _fadingRoofRegion so the fade-in transition applies to it
+
+		// Fade control: delta-time based (frame-rate independent)
+		float fadeDelta = RoofFadeSpeed * (_deltaMs / 1000f);
+		if (_activeRoofRegion > 0)
+		{
+			// Inside a roof region → fade out to min alpha
+			_roofAlpha -= fadeDelta;
+			if (_roofAlpha < RoofMinAlpha) _roofAlpha = RoofMinAlpha;
+		}
+		else if (_fadingRoofRegion > 0)
+		{
+			// Outside but a region is still fading back in
+			_roofAlpha += fadeDelta;
+			if (_roofAlpha >= 255f)
+			{
+				_roofAlpha = 255f;
+				_fadingRoofRegion = 0; // fade-in complete, clear
+			}
 		}
 	}
 
@@ -382,23 +586,34 @@ void fragment() {
 		_framePixelOffsetX = (float)Math.Round(-_state.ScreenOffsetX);
 		_framePixelOffsetY = (float)Math.Round(-_state.ScreenOffsetY);
 
+		CurrentCamera = new CameraSnapshot(_frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+
 		// Visible tile range
 		int screenMinX = _frameUserX - HalfWindowTileWidth;
 		int screenMaxX = _frameUserX + HalfWindowTileWidth;
 		int screenMinY = _frameUserY - HalfWindowTileHeight;
 		int screenMaxY = _frameUserY + HalfWindowTileHeight;
 
-		// Extended bounds with tile buffer
-		_frameMinX = Math.Max(1, screenMinX - TileBufferSize);
-		_frameMaxX = Math.Min(100, screenMaxX + TileBufferSize);
-		_frameMinY = Math.Max(1, screenMinY - TileBufferSize);
-		_frameMaxY = Math.Min(100, screenMaxY + TileBufferSize);
+		int mapW = _state.MapData.Width;
+		int mapH = _state.MapData.Height;
 
-		// L1 bounds (visible +2 margin) — used by mask layer too
-		_frameL1MinX = Math.Max(1, screenMinX - 2);
-		_frameL1MaxX = Math.Min(100, screenMaxX + 2);
-		_frameL1MinY = Math.Max(1, screenMinY - 2);
-		_frameL1MaxY = Math.Min(100, screenMaxY + 2);
+		// L2/L3 terrain bounds (large buffer for 512px sprites)
+		_frameMinX = Math.Max(1, screenMinX - TerrainBufferSize);
+		_frameMaxX = Math.Min(mapW, screenMaxX + TerrainBufferSize);
+		_frameMinY = Math.Max(1, screenMinY - TerrainBufferSize);
+		_frameMaxY = Math.Min(mapH, screenMaxY + TerrainBufferSize);
+
+		// L1 water bounds (+3 to account for pixel offset during smooth scroll)
+		_frameL1MinX = Math.Max(1, screenMinX - 3);
+		_frameL1MaxX = Math.Min(mapW, screenMaxX + 3);
+		_frameL1MinY = Math.Max(1, screenMinY - 3);
+		_frameL1MaxY = Math.Min(mapH, screenMaxY + 3);
+
+		// Character bounds (viewport only + 1 tile for smooth edge)
+		_frameCharMinX = Math.Max(1, screenMinX - CharBufferSize);
+		_frameCharMaxX = Math.Min(mapW, screenMaxX + CharBufferSize);
+		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
+		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
 
 		_frameHasLights = (_state.Config?.ShowLights ?? true)
 						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
@@ -410,11 +625,23 @@ void fragment() {
 		{
 			if (_lightmapDirty && _state.TileLightColors != null)
 			{
-				var img = LightSystem.BuildLightmapImage(_state.TileLightColors);
-				_lightmapTexture?.Update(img);
+				var img = LightSystem.BuildLightmapImage(_state.TileLightColors, mapW, mapH);
+				// Recreate texture if dimensions changed, otherwise update in-place
+				if (_lightmapTexture == null
+					|| _lightmapTexture.GetWidth() != img.GetWidth()
+					|| _lightmapTexture.GetHeight() != img.GetHeight())
+				{
+					_lightmapTexture = ImageTexture.CreateFromImage(img);
+					_lightmapMaterial?.SetShaderParameter("lightmap", _lightmapTexture);
+				}
+				else
+				{
+					_lightmapTexture.Update(img);
+				}
 				_lightmapDirty = false;
 			}
 			_lightmapMaterial?.SetShaderParameter("use_lightmap", true);
+			_lightmapMaterial?.SetShaderParameter("map_size_px", new Vector2(mapW * TileSize, mapH * TileSize));
 			float originX = (_frameUserX - HalfWindowTileWidth) * TileSize - _framePixelOffsetX;
 			float originY = (_frameUserY - HalfWindowTileHeight) * TileSize - _framePixelOffsetY;
 			_lightmapMaterial?.SetShaderParameter("world_origin", new Vector2(originX, originY));
@@ -449,12 +676,14 @@ void fragment() {
 			for (int x = _frameL1MinX; x <= _frameL1MaxX; x++)
 			{
 				ref var tile = ref _state.MapData.Tiles[x, y];
-				if (tile.Layer1 < 1505 || tile.Layer1 > 1520) continue; // only water
+				if (!IsWaterGrh(tile.Layer1)) continue; // only water
 
 				Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
 				DrawTileGrh(tile.Layer1, pos, center: false);
 			}
 		}
+
+
 
 		// ==========================================
 		// PASS 1.5: Character reflections on water
@@ -472,19 +701,20 @@ void fragment() {
 				if (ch.Invisible) continue;
 
 				// Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
-				// has water (L1 GRH 1505-1520). Checking 3 rows allows the reflection
+				// has water. Uses pre-computed _waterMap for O(1) lookups instead of
+				// per-frame GRH range checks. Checking 3 rows allows the reflection
 				// to smoothly fade out as the character walks away from water.
 				// NonWaterMaskLayer ensures reflections only show on water tiles.
-				if (ch.PosY < 1 || ch.PosY > 97) continue;
+				if (ch.PosY < 1 || ch.PosY > mapH - 3) continue;
+				if (_waterMap == null) continue;
 				bool hasNearbyWater = false;
 				int checkRangeX = ch.Mounted ? 3 : 2;
-				for (int cy = ch.PosY + 1; cy <= Math.Min(100, ch.PosY + 5) && !hasNearbyWater; cy++)
+				for (int cy = ch.PosY + 1; cy <= Math.Min(mapH, ch.PosY + 5) && !hasNearbyWater; cy++)
 				{
 					for (int cx = Math.Max(1, ch.PosX - checkRangeX);
-						 cx <= Math.Min(100, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
+						 cx <= Math.Min(mapW, ch.PosX + checkRangeX) && !hasNearbyWater; cx++)
 					{
-						ref var wt = ref _state.MapData.Tiles[cx, cy];
-						if (wt.Layer1 >= 1505 && wt.Layer1 <= 1520)
+						if (_waterMap[cx, cy])
 							hasNearbyWater = true;
 					}
 				}
@@ -590,10 +820,10 @@ void fragment() {
 			}
 		}
 
-		// Collect roof draws — shader handles light, only need alpha for fade
-		if (_roofAlpha > 0)
+		// Collect roof draws — per-region fade using _fadingRoofRegion (persists during fade-out AND fade-in)
 		{
-			float roofA = _roofAlpha / 255f;
+			float fadeA = _roofAlpha / 255f;
+			Color fadingRoofColor = new Color(1, 1, 1, fadeA); // computed once per frame, reused per fading tile
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
@@ -602,8 +832,22 @@ void fragment() {
 					ref var tile = ref _state.MapData.Tiles[x, y];
 					if (tile.Layer4 <= 0) continue;
 
+					// Determine color: tiles in the fading region get fade, others stay opaque
+					Color roofColor;
+					if (_fadingRoofRegion > 0 && _roofRegionMap != null
+						&& x >= 1 && x <= mapW && y >= 1 && y <= mapH
+						&& _roofRegionMap[x, y] == _fadingRoofRegion)
+					{
+						if (fadeA <= 0f) continue; // fully hidden, skip draw
+						roofColor = fadingRoofColor;
+					}
+					else
+					{
+						roofColor = Colors.White; // other roofs always visible
+					}
+
 					Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
-					_pendingRoofDraws.Add((tile.Layer4, pos, new Color(1, 1, 1, roofA)));
+					_pendingRoofDraws.Add((tile.Layer4, pos, roofColor));
 				}
 			}
 		}
@@ -645,17 +889,28 @@ void fragment() {
 	}
 
 	/// <summary>
-	/// VB6 HayAgua(): checks if a tile is water (3 graphic ranges and Layer2 == 0).
+	/// Check if a GRH index is a water graphic (any of the known water tile ranges).
+	/// </summary>
+	public static bool IsWaterGrh(int g)
+	{
+		return (g >= 1505  && g <= 1520)   // (Animación)(AGUA) — 4×4
+			|| (g >= 5665  && g <= 5680)   // Agua Clarita — 4×4
+			|| (g >= 13547 && g <= 13562)  // classic variant — 4×4
+			|| (g >= 28268 && g <= 28283)  // Agua verde — 4×4
+			|| (g >= 30762 && g <= 30777)  // Agua azul — 4×4
+			|| (g >= 32498 && g <= 32513)  // Agua celeste — 4×4
+			|| (g >= 44520 && g <= 44711)  // Agua v2 — 16×12
+			|| (g >= 53678 && g <= 53869); // Agua v3 — 16×12
+	}
+
+	/// <summary>
+	/// VB6 HayAgua(): checks if a tile is water (known water GRH ranges and Layer2 == 0).
 	/// </summary>
 	public static bool IsWater(MapData? mapData, int x, int y)
 	{
-		if (mapData == null || x < 1 || x > 100 || y < 1 || y > 100) return false;
+		if (mapData == null || x < 1 || x > mapData.Width || y < 1 || y > mapData.Height) return false;
 		ref var tile = ref mapData.Tiles[x, y];
-		int g = tile.Layer1;
-		bool isWater = (g >= 1505 && g <= 1520)
-			|| (g >= 5665 && g <= 5680)
-			|| (g >= 13547 && g <= 13562);
-		return isWater && tile.Layer2 <= 0;
+		return IsWaterGrh(tile.Layer1);
 	}
 
 	/// <summary>
@@ -673,4 +928,22 @@ void fragment() {
 			   grhIndex == 8489 || grhIndex == 8483;
 	}
 
+}
+
+/// <summary>
+/// Camera values snapshot for the current frame.
+/// Computed once in WorldRenderer._Process and shared with other rendering layers.
+/// </summary>
+public readonly struct CameraSnapshot
+{
+	public readonly float UserX;
+	public readonly float UserY;
+	public readonly float PixelOffsetX;
+	public readonly float PixelOffsetY;
+
+	public CameraSnapshot(float userX, float userY, float pixelOffsetX, float pixelOffsetY)
+	{
+		UserX = userX; UserY = userY;
+		PixelOffsetX = pixelOffsetX; PixelOffsetY = pixelOffsetY;
+	}
 }

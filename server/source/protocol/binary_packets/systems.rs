@@ -94,7 +94,7 @@ pub fn write_npc_inv_reset() -> Vec<u8> {
 /// slot = 1-based NPC inv slot, trade_type = 0 (buy) or 1 (sell).
 pub fn write_trans_ok(slot: u8, trade_type: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::TransOK.to_byte());
+    pkt.write_byte(ServerPacketID::TransactionOK.to_byte());
     pkt.write_byte(slot);
     pkt.write_byte(trade_type);
     pkt.into_bytes()
@@ -183,7 +183,7 @@ pub fn write_init_account(num_chars: u8, notice: &str) -> Vec<u8> {
 /// ID 64: Add character to selection list (typed binary fields).
 pub fn write_add_pj(name: &str, index: u8, head: i16, body: i16, weapon: i16, shield: i16, helmet: i16, level: u8, class: &str, dead: bool, race: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
-    pkt.write_byte(ServerPacketID::AddPJ.to_byte());
+    pkt.write_byte(ServerPacketID::AddCharPreview.to_byte());
     pkt.write_ascii_string(name);
     pkt.write_byte(index);
     pkt.write_integer(head);

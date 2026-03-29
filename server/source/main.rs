@@ -52,7 +52,6 @@ async fn main() {
             info!("  Max users: {}", cfg.max_users);
             info!("  Version: {}", cfg.version);
             info!("  Start position: Map {} ({}, {})", cfg.start_map, cfg.start_x, cfg.start_y);
-            info!("  Encryption: {}", if cfg.encrypt { "enabled" } else { "disabled" });
             info!("  EXP multiplier: {}x", cfg.exp_multiplier);
             info!("  Can create characters: {}", cfg.can_create_characters);
             info!("  Multi-login: {}", if cfg.allow_multi_logins { "allowed" } else { "blocked" });
@@ -104,12 +103,13 @@ async fn main() {
     let bans = db::bans::BanList::load(&pool).await;
 
     // Initialize game state
-    let mut state = GameState::new(config.clone(), base_path, game_data, pool, bans);
+    let mut state = GameState::new(config.clone(), base_path.clone(), game_data, pool, bans);
     info!("Game state initialized");
 
-    // Spawn NPCs from map data
+    // Spawn NPCs from map data + zone definitions
     let npc_count = state.spawn_map_npcs();
-    info!("Spawned {} NPCs from map data", npc_count);
+    let zone_npc_count = state.spawn_zone_npcs();
+    info!("Spawned {} NPCs from maps + {} from zones", npc_count, zone_npc_count);
 
     // Load static map objects (doors, items from .inf files) into world grid
     let obj_count = state.load_map_objects();
@@ -151,7 +151,15 @@ async fn main() {
     // Game tick (40ms — anti-cheat interval decrements, matches VB6 TimerRestoTiempo)
     let mut game_tick = tokio::time::interval(std::time::Duration::from_millis(40));
     // AI tick timer — VB6: TIMER_AI.Interval = IntervaloNpcAI (default 1300ms from server.ini)
-    let ai_interval_ms = config.npc_ai_interval_ms.max(100); // floor at 100ms
+    // Load NPC AI interval from Intervalos.ini (needed before GameState)
+    let ai_interval_ms = {
+        let ini_path = base_path.join("dat").join("Intervalos.ini");
+        crate::config::IniFile::load(&ini_path).ok()
+            .and_then(|ini| ini.get("INTERVALOS", "IntervaloNpcAI"))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(1300)
+            .max(100)
+    };
     let mut ai_tick = tokio::time::interval(std::time::Duration::from_millis(ai_interval_ms));
     info!("NPC AI interval: {}ms", ai_interval_ms);
     // Respawn timer (every 30 seconds check for dead NPCs to respawn)

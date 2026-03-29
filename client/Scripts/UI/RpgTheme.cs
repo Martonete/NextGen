@@ -257,9 +257,9 @@ public static class RpgTheme
                 else
                     GD.PrintErr($"[RpgTheme] FAILED to load: {resPath} (err={err})");
             }
-            _texCache[filename] = tex;
+            _texCache[filename] = tex!;
         }
-        return tex;
+        return tex!;
     }
 
     private static ImageTexture GetScaledTex(string filename, Vector2I targetSize)
@@ -398,7 +398,7 @@ public static class RpgTheme
         scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         scroll.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         scroll.VerticalScrollMode = ScrollContainer.ScrollMode.ShowNever;
-        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Auto;
+        scroll.HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled;
         wrapper.AddChild(scroll);
         FillParent(scroll);
 
@@ -757,6 +757,7 @@ public static class RpgTheme
     {
         var btn = new TextureButton();
         btn.MouseDefaultCursorShape = Control.CursorShape.PointingHand;
+        btn.FocusMode = Control.FocusModeEnum.None; // Never grab keyboard focus — prevents arrow keys from being captured by Godot focus navigation
         if (isLong)
         {
             btn.TextureNormal = GetTex("long_button.png");
@@ -788,16 +789,8 @@ public static class RpgTheme
         btn.AddChild(label);
         FillParent(label);
 
-        btn.ButtonDown += () =>
-        {
-            btn.Modulate = new Color(0.8f, 0.75f, 0.7f);
-            var pos = btn.Position; pos.Y += 1; btn.Position = pos;
-        };
-        btn.ButtonUp += () =>
-        {
-            btn.Modulate = new Color(1, 1, 1);
-            var pos = btn.Position; pos.Y -= 1; btn.Position = pos;
-        };
+        btn.ButtonDown += () => { btn.Modulate = new Color(0.8f, 0.75f, 0.7f); };
+        btn.ButtonUp += () => { btn.Modulate = new Color(1, 1, 1); };
 
         return btn;
     }

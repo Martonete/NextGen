@@ -1,4 +1,5 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
@@ -69,11 +70,18 @@ public partial class RpgBaseForm : Control
         }
     }
 
+    /// <summary>Scale factor for pre-game forms (login, char select).
+    /// Grows slower than UIScale to avoid oversized windows.</summary>
+    public static float FormScale => 1f + (ResolutionManager.UIScale - 1f) * 0.5f;
+
     private void BuildForm()
     {
         Visible = false;
         CustomMinimumSize = FormSize;
         Size = FormSize;
+        // Scale the entire form proportionally (fonts, inputs, buttons all scale together)
+        float s = FormScale;
+        Scale = new Vector2(s, s);
         ClipContents = true;
         MouseFilter = MouseFilterEnum.Stop;
 
@@ -220,8 +228,21 @@ public partial class RpgBaseForm : Control
     {
         Visible = true;
         Modulate = new Color(1, 1, 1, _globalFormAlpha);
-        var vpSize = GetViewportRect().Size;
-        Position = (vpSize - Size) / 2.0f;
+        // Use the logical coordinate space for centering.
+        // When ContentScaleMode is active (fullscreen), ContentScaleSize defines
+        // the logical space that ALL canvas items render in (including CanvasLayer).
+        // When in windowed mode (ContentScaleSize=0), use the viewport rect.
+        Vector2 areaSize;
+        var root = GetTree()?.Root;
+        if (root != null && root.ContentScaleSize != Vector2I.Zero)
+        {
+            areaSize = (Vector2)root.ContentScaleSize;
+        }
+        else
+        {
+            areaSize = GetViewportRect().Size;
+        }
+        Position = (areaSize - Size * Scale) / 2.0f;
         MoveToFront();
     }
 

@@ -25,6 +25,9 @@ pub async fn tick_intervals(state: &mut GameState) {
         if user.interval_pu > 0 { user.interval_pu -= 1; }
         if user.warp_immunity_ticks > 0 { user.warp_immunity_ticks -= 1; }
 
+        // VB6: Meditation concentration delay — 2-second warmup before regen starts
+        if user.meditation_start_tick > 0 { user.meditation_start_tick -= 1; }
+
         // VB6: EfectoParalisisUser — count down paralysis timer each tick
         if user.paralyzed {
             if user.counter_paralisis > 0 {
@@ -46,7 +49,7 @@ pub async fn tick_intervals(state: &mut GameState) {
 
     // VB6: EfectoInvisibilidad — count up invisibility timer each tick.
     // Only for spell invisibility (not admin_invisible which is permanent).
-    let intervalo_invis = state.config.intervalo_invisible;
+    let intervalo_invis = state.intervals.invisible;
     let mut uninvis: Vec<(ConnectionId, i16, i32, i32, i32, bool, bool)> = Vec::new();
     for (&conn_id, user) in state.users.iter_mut() {
         if user.invisible && !user.admin_invisible {
@@ -67,10 +70,12 @@ pub async fn tick_intervals(state: &mut GameState) {
             state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
             if !navigating {
                 // Re-broadcast CC so others see us again
-                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
-                let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
+                if let Some(user) = state.users.get(&conn_id) {
+                    let cc = user.build_cc_binary();
+                    let cd = crate::game::handlers::common::build_cd_binary(user);
+                    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+                    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
+                }
                 // Tell self we're visible again
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
                 state.send_bytes(conn_id, &nover);
@@ -104,11 +109,24 @@ pub async fn tick_intervals(state: &mut GameState) {
         if !still_invisible {
             state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
             if !navigating {
-                let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
-                let cd = crate::game::handlers::common::build_cd_binary(state.users.get(&conn_id).unwrap());
-                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cd);
+                // Send CC+CD only to non-clanmates (they had CharacterRemove and need
+                // the full character recreated). Clanmates already have the character
+                // so they just need SetInvisible(false) — avoids animation reset.
+                let (cc, cd) = match state.users.get(&conn_id) {
+                    Some(user) => (user.build_cc_binary(), build_cd_binary(user)),
+                    None => continue,
+                };
                 let nover = binary_packets::write_set_invisible(ci, false, 0);
+                let area_users = state.get_area_users(map, x, y, conn_id);
+                for other_id in area_users {
+                    if same_clan(state, conn_id, other_id) {
+                        state.send_bytes(other_id, &nover);
+                    } else {
+                        state.send_bytes(other_id, &cc);
+                        state.send_bytes(other_id, &cd);
+                    }
+                }
+                // Tell self we're visible again (no CC needed — preserves animation)
                 state.send_bytes(conn_id, &nover);
             }
         }
@@ -343,7 +361,7 @@ pub async fn tick_clean_world(state: &mut GameState) {
                     tile.ground_item.amount = 0;
                 }
                 // Broadcast BO (remove object from ground) to area
-                let pkt = binary_packets::write_object_delete(x as u8, y as u8);
+                let pkt = binary_packets::write_object_delete(x as i16, y as i16);
                 state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
             }
 

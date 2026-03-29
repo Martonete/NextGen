@@ -45,40 +45,48 @@ public partial class LoadingScreen : Control
         _background = new ColorRect();
         _background.Color = new Color(0, 0, 0, 1f);
         _background.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _background.Size = new Vector2(800, 600);
+        _background.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         _background.MouseFilter = MouseFilterEnum.Stop;
         AddChild(_background);
 
         // Optional background image
         _bgImage = new TextureRect();
         _bgImage.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _bgImage.Size = new Vector2(800, 600);
+        _bgImage.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
         _bgImage.StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered;
         _bgImage.MouseFilter = MouseFilterEnum.Ignore;
         _bgImage.Modulate = new Color(0.3f, 0.3f, 0.3f, 0.5f);
         AddChild(_bgImage);
 
-        // Map name label (top center) — uses RpgTheme
-        _mapNameLabel = RpgTheme.CreateTitleLabel("", 18);
-        _mapNameLabel.Position = new Vector2(200, 220);
-        _mapNameLabel.Size = new Vector2(400, 30);
+        int winW = ResolutionManager.WindowWidth;
+        int winH = ResolutionManager.WindowHeight;
+        int barW = ResolutionManager.S(400);
+        int barH = ResolutionManager.S(22);
+        int barX = (winW - barW) / 2;
+        int centerY = winH / 2;
+
+        // Map name label (centered) — uses RpgTheme
+        _mapNameLabel = RpgTheme.CreateTitleLabel("", ResolutionManager.S(18));
+        _mapNameLabel.Position = new Vector2(barX, centerY - ResolutionManager.S(80));
+        _mapNameLabel.Size = new Vector2(barW, ResolutionManager.S(30));
+        _mapNameLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _mapNameLabel.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(_mapNameLabel);
 
         // "Cargando..." label — uses RpgTheme
-        _loadingLabel = RpgTheme.CreateInfoLabel("Cargando...", 14);
-        _loadingLabel.Position = new Vector2(300, 280);
-        _loadingLabel.Size = new Vector2(200, 24);
+        _loadingLabel = RpgTheme.CreateInfoLabel("Cargando...", ResolutionManager.S(14));
+        _loadingLabel.Position = new Vector2(barX, centerY - ResolutionManager.S(20));
+        _loadingLabel.Size = new Vector2(barW, ResolutionManager.S(24));
         _loadingLabel.HorizontalAlignment = HorizontalAlignment.Center;
         _loadingLabel.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(_loadingLabel);
 
         // Progress bar — uses RpgTheme
-        _progressBar = RpgTheme.CreateRpgProgressBar(400, 22,
+        _progressBar = RpgTheme.CreateRpgProgressBar(barW, barH,
             fillColor: new Color(0.6f, 0.5f, 0.2f),
             bgColor: new Color(0.15f, 0.15f, 0.2f));
-        _progressBar.Position = new Vector2(200, 320);
-        _progressBar.Size = new Vector2(400, 22);
+        _progressBar.Position = new Vector2(barX, centerY + ResolutionManager.S(20));
+        _progressBar.Size = new Vector2(barW, barH);
         _progressBar.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(_progressBar);
     }

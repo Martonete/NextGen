@@ -313,8 +313,9 @@ pub(super) async fn handle_slash_trigger(state: &mut GameState, conn_id: Connect
 
     // Set trigger on map tile
     let map_idx = map as usize;
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
+        if x >= 1 && x <= grid_w && y >= 1 && y <= grid_h {
             let trigger = match trigger_val {
                 0 => crate::data::maps::Trigger::None,
                 1 => crate::data::maps::Trigger::Indoor,
@@ -326,7 +327,9 @@ pub(super) async fn handle_slash_trigger(state: &mut GameState, conn_id: Connect
                 7 => crate::data::maps::Trigger::NoElevation,
                 _ => crate::data::maps::Trigger::None,
             };
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].trigger = trigger;
+            if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+                tile.trigger = trigger;
+            }
         }
     }
 

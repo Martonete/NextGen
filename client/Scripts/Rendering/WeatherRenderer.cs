@@ -20,8 +20,8 @@ public partial class WeatherRenderer : Node2D
     private const float RainWindSpeed = 120f;    // pixels/sec horizontal (diagonal)
     private const float RainDropLength = 12f;    // length of each rain line
     private const float RainDropWidth = 1.2f;
-    private const int ViewW = 544;
-    private const int ViewH = 416;
+    private static int ViewW => ResolutionManager.ViewportW;
+    private static int ViewH => ResolutionManager.ViewportH;
     // Spawn margin: drops spawn outside viewport so they enter from top/left
     private const float SpawnMarginX = 160f;
 
@@ -42,6 +42,9 @@ public partial class WeatherRenderer : Node2D
     // Rain tint overlay
     private const float RainTintAlpha = 0.08f;
     private static readonly Color RainTintColor = new(0.3f, 0.4f, 0.7f, RainTintAlpha);
+
+    // Rain drop base color (RGB only — alpha is applied per-drop based on _dropAlpha[i])
+    private static readonly Color RainDropBaseColor = new(0.7f, 0.75f, 0.9f, 1f);
 
     // Rain sound
     private AudioStreamPlayer? _rainSoundPlayer;
@@ -75,16 +78,6 @@ public partial class WeatherRenderer : Node2D
 
         // Look for rain sound file in Data/Sounds/WAV/
         string[] candidates = { "lluviaout.wav", "lluvia.wav", "rain.wav" };
-
-        // Walk up to find Data/ folder
-        var parent = GetParent();
-        while (parent != null)
-        {
-            if (parent is Node2D)
-                parent = parent.GetParent();
-            else
-                break;
-        }
 
         // Try common paths
         string[] basePaths = {
@@ -141,7 +134,7 @@ public partial class WeatherRenderer : Node2D
             if (chunkSize < 0) break;
             int chunkDataStart = pos + 8;
 
-            if (chunkId == "fmt " && chunkSize >= 16)
+            if (chunkId == "fmt " && chunkSize >= 16 && chunkDataStart + 16 <= raw.Length)
             {
                 audioFormat = BitConverter.ToInt16(raw, chunkDataStart);
                 channels = BitConverter.ToInt16(raw, chunkDataStart + 2);
@@ -281,7 +274,9 @@ public partial class WeatherRenderer : Node2D
             _lightningFlashAlpha = 0f;
         }
 
-        QueueRedraw();
+        // Only redraw when there's something to draw (rain or lightning flash)
+        if (_rainIntensity > 0f || _lightningFlashAlpha > 0f)
+            QueueRedraw();
     }
 
     public override void _Draw()
@@ -295,11 +290,10 @@ public partial class WeatherRenderer : Node2D
         DrawRect(new Rect2(0, 0, ViewW, ViewH), tint);
 
         // Rain drops (diagonal lines)
-        var dropColor = new Color(0.7f, 0.75f, 0.9f, 1f);
         for (int i = 0; i < MaxRainDrops; i++)
         {
             float a = _dropAlpha[i] * alpha;
-            var color = new Color(dropColor.R, dropColor.G, dropColor.B, a);
+            var color = new Color(RainDropBaseColor.R, RainDropBaseColor.G, RainDropBaseColor.B, a);
             float x = _dropX[i];
             float y = _dropY[i];
             // Diagonal line: top-left to bottom-right

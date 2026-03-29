@@ -49,6 +49,7 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Calculate the new visibility strip based on heading (VB6 ModAreas lines 158-198)
+    // This strip is for characters/NPCs (standard 27x27 area system).
     let (min_x, max_x, min_y, max_y, new_min_x, new_min_y) = if heading == 255 {
         // USER_NUEVO (login/warp): full 27x27 area
         let nmin_y = (pos_y / 9 - 1) * 9;
@@ -77,10 +78,22 @@ pub(crate) async fn check_update_needed_user(
     };
 
     // Clamp to map bounds
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_x = min_x.max(1);
     let min_y = min_y.max(1);
-    let max_x = max_x.min(100);
-    let max_y = max_y.min(100);
+    let max_x = max_x.min(grid_w);
+    let max_y = max_y.min(grid_h);
+
+    // Extended bounds for objects/particles/lights — covers expanded viewport (up to 1920x1080).
+    // Always sends the full extended area centered on the player. This only fires on zone
+    // crossings (every ~9 tiles), and ObjectCreate packets are idempotent (duplicates are
+    // harmless), so the simplicity/correctness tradeoff is worth the minimal extra bandwidth.
+    let obj_half_w = world::OBJ_X_BORDER;
+    let obj_half_h = world::OBJ_Y_BORDER;
+    let obj_min_x = (pos_x - obj_half_w).max(1);
+    let obj_min_y = (pos_y - obj_half_h).max(1);
+    let obj_max_x = (pos_x + obj_half_w).min(grid_w);
+    let obj_max_y = (pos_y + obj_half_h).min(grid_h);
 
     // Update user's area tracking
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -90,7 +103,7 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Send AreaChanged packet — tells client to erase out-of-range entities
-    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as u8, pos_y as u8));
+    state.send_bytes(conn_id, &binary_packets::write_area_changed(pos_x as i16, pos_y as i16));
 
     // Build our CC (binary) for sending to newly visible users
     let my_cc = match state.users.get(&conn_id) {
@@ -98,14 +111,10 @@ pub(crate) async fn check_update_needed_user(
         None => return,
     };
 
-    // Collect users, NPCs, ground items, particles, and lights in the new strip
-    // (collect first to avoid borrow conflicts)
+    // Collect users and NPCs in the STANDARD strip (27x27 area system).
+    // Characters/NPCs use standard visibility — client FOV fade handles the rest.
     let mut new_users: Vec<ConnectionId> = Vec::new();
     let mut new_npcs: Vec<usize> = Vec::new();
-    let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
-    let mut new_door_bqs: Vec<(i32, i32, bool)> = Vec::new(); // (x, y, blocked) for door tiles
-    let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
-    let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
 
     if let Some(grid) = state.world.grid(map) {
         for sx in min_x..=max_x {
@@ -119,8 +128,25 @@ pub(crate) async fn check_update_needed_user(
                     if tile.npc_index > 0 {
                         new_npcs.push(tile.npc_index as usize);
                     }
+                }
+            }
+        }
+    }
+
+    // Collect ground items, particles, lights, and doors in the EXTENDED area.
+    // This covers the expanded viewport (up to 1920x1080) so objects like doors,
+    // trees, and ground items are visible in the fog zone beyond the core viewport.
+    let mut new_items: Vec<(i32, i32, i32)> = Vec::new(); // (grh, x, y)
+    let mut new_door_bqs: Vec<(i32, i32, bool)> = Vec::new(); // (x, y, blocked) for door tiles
+    let mut new_particles: Vec<(i16, i32, i32)> = Vec::new(); // (particle_group_index, x, y)
+    let mut new_lights: Vec<(i32, i32, i16, i16, i16, i16)> = Vec::new(); // (x, y, range, r, g, b)
+
+    // Runtime ground items (dropped by players, spawned by server)
+    if let Some(grid) = state.world.grid(map) {
+        for sx in obj_min_x..=obj_max_x {
+            for sy in obj_min_y..=obj_max_y {
+                if let Some(tile) = grid.tile(sx, sy) {
                     if tile.ground_item.obj_index > 0 {
-                        // Look up GRH for the object
                         if let Some(obj) = state.get_object(tile.ground_item.obj_index) {
                             new_items.push((obj.grh_index, sx, sy));
                         }
@@ -130,13 +156,12 @@ pub(crate) async fn check_update_needed_user(
         }
     }
 
-    // Collect particles, lights, and static .inf objects from static map data
+    // Static .inf objects (doors, furniture), particles, and lights from map data
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        for sx in min_x..=max_x {
-            for sy in min_y..=max_y {
-                if sx >= 1 && sx <= 100 && sy >= 1 && sy <= 100 {
-                    let tile = &game_map.tiles[(sy - 1) as usize][(sx - 1) as usize];
+        for sx in obj_min_x..=obj_max_x {
+            for sy in obj_min_y..=obj_max_y {
+                if let Some(tile) = game_map.tiles.get((sx - 1) as usize, (sy - 1) as usize) {
                     if tile.particle_group_index > 0 {
                         new_particles.push((tile.particle_group_index, sx, sy));
                     }
@@ -156,9 +181,9 @@ pub(crate) async fn check_update_needed_user(
                             // This ensures correct blocked state regardless of what .map file says
                             if obj.obj_type == crate::data::objects::ObjType::Door {
                                 let blocked_at = |ty: i32, tx: i32| -> bool {
-                                    if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                                        game_map.tiles[(ty - 1) as usize][(tx - 1) as usize].blocked
-                                    } else { false }
+                                    game_map.tiles.get((tx - 1) as usize, (ty - 1) as usize)
+                                        .map(|t| t.blocked)
+                                        .unwrap_or(false)
                                 };
 
                                 // Always send BQ for door tile + x-1 (single door minimum)
@@ -232,22 +257,22 @@ pub(crate) async fn check_update_needed_user(
 
     // Send ground items (HO = ObjectCreate packet) — VB6 ModAreas.bas line 264
     for (grh, ix, iy) in new_items {
-        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as u8, iy as u8, grh as i16));
+        state.send_bytes(conn_id, &binary_packets::write_object_create(ix as i16, iy as i16, grh as i16));
     }
 
     // Send door BQ packets (BlockPosition) — VB6 ModAreas.bas lines 273-300
     for (bx, by, blocked) in new_door_bqs {
-        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as u8, by as u8, blocked));
+        state.send_bytes(conn_id, &binary_packets::write_block_position(bx as i16, by as i16, blocked));
     }
 
     // Send particle effects (PCF) — VB6 ModAreas.bas line 255
     for (pg, px, py) in new_particles {
-        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as u8, py as u8, 0));
+        state.send_bytes(conn_id, &binary_packets::write_particle_create(pg, px as i16, py as i16, 0));
     }
 
     // Send lighting effects (PCL) — VB6 ModAreas.bas line 259
     for (lx, ly, range, r, g, b) in new_lights {
-        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as u8, ly as u8, range as u8, r as u8, g as u8, b as u8));
+        state.send_bytes(conn_id, &binary_packets::write_light_create(lx as i16, ly as i16, range as u8, r as u8, g as u8, b as u8));
     }
 }
 
@@ -364,7 +389,7 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
         let (dx, dy) = world::heading_to_offset(dir);
         let nx = x + dx;
         let ny = y + dy;
-        if !world::in_map_bounds(nx, ny) { continue; }
+        if !state.world.grid(map).map(|g| world::in_map_bounds_grid(g, nx, ny)).unwrap_or(false) { continue; }
         if state.is_tile_blocked(map, nx, ny) { continue; }
         let tile_free = state.world.grid(map)
             .map(|g| g.is_tile_free(nx, ny))
@@ -392,10 +417,10 @@ pub(crate) async fn mover_casper(state: &mut GameState, map: i32, x: i32, y: i32
     }
 
     // Send position update to ghost (PU) and movement broadcast to area
-    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as u8, push_y as u8));
+    state.send_bytes(ghost_conn, &binary_packets::write_pos_update(push_x as i16, push_y as i16));
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: ghost_conn, map, x: push_x, y: push_y },
-        &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as u8, push_y as u8),
+        &binary_packets::write_character_move(ghost_char_index.0 as i16, push_x as i16, push_y as i16),
     );
 }
 
@@ -410,14 +435,20 @@ pub(crate) async fn warp_user(state: &mut GameState, conn_id: ConnectionId, new_
 }
 
 pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId, new_map: i32, new_x: i32, new_y: i32, exact: bool) {
+    // Validate target map exists — if not, reject with error
+    if state.world.grid(new_map).is_none() {
+        state.send_console(conn_id, &format!("Mapa {} no existe.", new_map), crate::protocol::font_index::INFO);
+        return;
+    }
+
     let old_data = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.area_min_x, u.area_min_y),
         None => return,
     };
     let (old_map, old_x, old_y, char_index, area_min_x, area_min_y) = old_data;
 
-    // 1. BKW — fade to black (VB6 line 2262)
-    state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
+    // VB6 13.3: WarpUserChar does NOT send PauseToggle (no fade to black).
+    // Only FileIO (world save) and server shutdown use PauseToggle.
 
     // 2. QDL + BP — remove dialog and character from the full 27×27 area.
     // VB6 ToPCArea uses the 27×27 zone group, not just the viewport (±8x, ±6y).
@@ -430,8 +461,9 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     if area_min_x > 0 || area_min_y > 0 {
         let amx = area_min_x.max(1);
         let amy = area_min_y.max(1);
-        let axx = (area_min_x + 26).min(100);
-        let axy = (area_min_y + 26).min(100);
+        let (old_grid_w, old_grid_h) = state.grid_dimensions(old_map);
+        let axx = (area_min_x + 26).min(old_grid_w);
+        let axy = (area_min_y + 26).min(old_grid_h);
         if let Some(grid) = state.world.grid(old_map) {
             let mut targets: Vec<ConnectionId> = Vec::new();
             for sy in amy..=axy {
@@ -464,11 +496,16 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     state.world.remove_user(old_map, old_x, old_y);
 
     // Cancel resting and meditating on map change (VB6: WarpUserChar)
+    let was_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.resting = false;
         if user.meditating {
             user.meditating = false;
         }
+    }
+    // VB6: Send meditate toggle to client so it clears the meditation UI state
+    if was_meditating {
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
     }
 
     // VB6: Remove invisibility when entering InviSinEfecto map
@@ -507,7 +544,17 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // 4. Find a free tile if destination is occupied (VB6 DamePos)
     // GMs with exact=true skip this — they can stand on blocked tiles.
-    let (final_x, final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
+    let (mut final_x, mut final_y) = if exact { (new_x, new_y) } else { find_free_pos(state, new_map, new_x, new_y) };
+
+    // Bounds-check: clamp coordinates to valid map range regardless of exact flag.
+    // GM teleports (exact=true) bypass find_free_pos but still need bounds validation.
+    {
+        let (grid_w, grid_h) = state.grid_dimensions(new_map);
+        if final_x < 1 || final_x > grid_w || final_y < 1 || final_y > grid_h {
+            final_x = final_x.clamp(1, grid_w);
+            final_y = final_y.clamp(1, grid_h);
+        }
+    }
 
     // 5. Update user position
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -522,23 +569,27 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     // 6. Place on new grid
     state.world.place_user(new_map, final_x, final_y, conn_id);
 
-    // 7. Send map change packets (only if map changed, but we send always for safety)
-    let map_idx = new_map as usize;
-    let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        (
-            game_map.info.r,
-            game_map.info.g,
-            game_map.info.b,
-            game_map.info.music,
-            game_map.info.name.clone(),
-        )
-    } else {
-        (200, 200, 200, 0, format!("Mapa {}", new_map))
-    };
+    // 7. Send map change packets ONLY if map actually changed.
+    // Same-map warps skip this — avoids reloading the entire map file on client.
+    let map_changed = old_map != new_map;
+    if map_changed {
+        let map_idx = new_map as usize;
+        let (r, g, b, music, map_name) = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+            (
+                game_map.info.r,
+                game_map.info.g,
+                game_map.info.b,
+                game_map.info.music,
+                game_map.info.name.clone(),
+            )
+        } else {
+            (200, 200, 200, 0, format!("Mapa {}", new_map))
+        };
 
-    state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8));
-    state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
-    state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
+        state.send_bytes(conn_id, &binary_packets::write_change_map(new_map as i16, 0, r as u8, g as u8, b as u8));
+        state.send_bytes(conn_id, &binary_packets::write_play_midi(music as u8));
+        state.send_bytes(conn_id, &binary_packets::write_map_name(&map_name));
+    }
 
     // 8. Send IP (self char index) + own CC + [CD so client renders self at new position
     let (ci, own_cc, own_cd) = match state.users.get(&conn_id) {
@@ -561,17 +612,23 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     if let Some(u) = state.users.get(&conn_id) {
         if u.invisible {
             let remaining = if u.admin_invisible { 0 } else {
-                ((state.config.intervalo_invisible - u.counter_invisible) as f32 * 0.04) as i16
+                ((state.intervals.invisible - u.counter_invisible) as f32 * 0.04) as i16
             };
             state.send_bytes(conn_id, &binary_packets::write_set_invisible(ci.0 as i16, true, remaining));
         }
     }
 
     // 9. PU (position update — tells client where to center camera)
-    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as u8, final_y as u8));
+    state.send_bytes(conn_id, &binary_packets::write_pos_update(final_x as i16, final_y as i16));
 
     // 10. Send area visibility (CA + strip CCs/NPCs/items)
     make_user_visible(state, conn_id).await;
+
+    // 10b. Zone change detection — reset zone_id to force ZoneChange packet
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.current_zone_id = u16::MAX; // Force mismatch so check_zone_change always fires
+    }
+    check_zone_change(state, conn_id).await;
 
     // 11. Send CC + [CD to other players in new area so they see us
     //     Skip if invisible (GM or spell) — others must NOT see us (except clanmates).
@@ -607,8 +664,7 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
 
     // Door BQ/HO sync is handled by make_user_visible() → check_update_needed_user()
 
-    // 13. BKW — fade back in (VB6 end of WarpUserChar)
-    state.send_bytes(conn_id, &binary_packets::write_pause_toggle());
+    // VB6 13.3: No PauseToggle at end either — warp is instant.
 
     // 14. Warp pets to new map (VB6: WarpMascotas)
     warp_mascotas(state, conn_id, new_map, final_x, final_y).await;
@@ -623,7 +679,7 @@ pub(crate) async fn send_warp_fx(state: &mut GameState, conn_id: ConnectionId) {
         None => return,
     };
     if !invisible {
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(3, x as i16, y as i16));
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_create_fx(ci as i16, 1, 0));
     }
 }

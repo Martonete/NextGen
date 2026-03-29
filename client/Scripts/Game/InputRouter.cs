@@ -52,6 +52,9 @@ public class InputRouter
     public Action? OnEnterFullscreen;
     public Action? OnExitFullscreen;
 
+    /// <summary>Callback to toggle spell macro (Tab key — VB6 parity).</summary>
+    public Action? OnSpellMacroToggle;
+
     public InputRouter(GameState state)
     {
         _state = state;
@@ -144,6 +147,14 @@ public class InputRouter
                     if (_state.OptionsPanelOpen) _optionsPanel.Close();
                     else _optionsPanel.Open();
                 }
+                viewport.SetInputAsHandled();
+                return true;
+            }
+
+            // Tab: toggle spell macro (VB6 parity)
+            if (key.Keycode == Key.Tab && !_state.ChatActive)
+            {
+                OnSpellMacroToggle?.Invoke();
                 viewport.SetInputAsHandled();
                 return true;
             }
@@ -294,13 +305,12 @@ public class InputRouter
     private void HandleMouseClick(InputEventMouseButton mb, Viewport viewport)
     {
         // Translate click position relative to the game viewport.
-        // VB6: MainViewLeft=13, MainViewTop=149 (MainViewPic position on frmMain).
-        // Scene: SubViewportContainer offset_left=13, offset_top=149.
-        float clickX = mb.Position.X - 13;
-        float clickY = mb.Position.Y - 149;
+        // SubViewportContainer is at (LeftMargin, TopMargin).
+        float clickX = mb.Position.X - ResolutionManager.LeftMargin;
+        float clickY = mb.Position.Y - ResolutionManager.TopMargin;
 
         // Only handle clicks within the game viewport area
-        if (clickX < 0 || clickX >= 544 || clickY < 0 || clickY >= 416) return;
+        if (clickX < 0 || clickX >= ResolutionManager.ViewportW || clickY < 0 || clickY >= ResolutionManager.ViewportH) return;
 
         var viewPos = new Vector2(clickX, clickY);
 
@@ -342,7 +352,7 @@ public class InputRouter
         if (!mb.Pressed)
         {
             // Skip the release after a double-click or shift+click
-            if (_dblClickHandled && mb.ButtonIndex == MouseButton.Left)
+            if (_dblClickHandled)
             {
                 _dblClickHandled = false;
                 return;

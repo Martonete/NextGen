@@ -1,0 +1,148 @@
+# Deployment & Configuration
+
+## 1. PostgreSQL Setup
+
+The server uses **PostgreSQL** for persistent storage. Migrations run automatically on startup.
+
+**Docker:** PostgreSQL is included in `docker-compose.yml` -- no manual setup needed.
+
+**From source:** Create the database as shown in the [README](../../README.md) platform-specific instructions.
+
+---
+
+## 2. Database Schema (auto-migrated)
+
+| Table | Description |
+|-------|-------------|
+| `accounts` | Login credentials, banking, ban status |
+| `account_bank` | Account-level bank storage (max 40 slots) |
+| `characters` | Full character state (stats, position, skills, flags, equipment) |
+| `character_inventory` | Inventory items (max 25 slots, tracks equipped status) |
+| `character_bank` | Character bank items (max 40 slots) |
+| `guilds` | Guild metadata, level, points, castle ownership |
+| `guild_members` | Guild membership |
+| `guild_applicants` | Pending guild applications |
+| `guild_bank_items` | Guild bank storage (not active) |
+| `banned_ips` | IP ban list |
+| `banned_hds` | Hardware ID ban list |
+| `rankings` | Leaderboard data (9 categories x 10 positions) |
+
+---
+
+## 3. server.ini Reference
+
+The server reads `server/server.ini` on startup. All settings are in INI format.
+
+### Network
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `ServerIp` | `127.0.0.1` | Bind address (use `0.0.0.0` for external access) |
+| `StartPort` | `5028` | Game server TCP port |
+| `MaxUsers` | `400` | Maximum concurrent player connections |
+
+### Game
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `PuedeCrearPersonajes` | `1` | Allow new character creation |
+| `AllowMultiLogins` | `1` | Allow multiple characters from same account |
+| `ServerSoloGMs` | `0` | Restrict server to GM accounts only |
+
+### Multipliers
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MultiplicadordeExp` | `1` | Experience gain multiplier (e.g., `2` = double XP) |
+| `MultiplicadordeOro` | `1` | Gold drop multiplier |
+| `MultiplicadordeDrop` | `1` | Item drop rate multiplier |
+
+### Starting Position
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `StartMap` | `89` | Map number for new characters |
+| `StartX` | `78` | X coordinate for new characters |
+| `StartY` | `85` | Y coordinate for new characters |
+
+### Version
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `Version` | `0.14.0` | Server version string |
+| `ClientVersion` | `1.0.0` | Expected client version |
+| `Notice` | (text) | Login screen notice message |
+
+---
+
+## 4. Privilege Levels (GM hierarchy)
+
+Configured in `server.ini` `[INIT]` section. Comma-separated character names per role key. Hierarchy from highest to lowest:
+
+| Key | Level | Value | Permission scope |
+|-----|-------|-------|-----------------|
+| `Admins` | ADMINISTRADOR | 12 | All commands, server management |
+| `SubAdmins` | SUB_ADMINISTRADOR | 11 | Most commands, no server shutdown |
+| `Devs` | DEVELOPER | 10 | Debug commands, item/NPC creation |
+| `Directors` | DIRECTOR | 9 | Event management, moderate commands |
+| `GranDioses` | GRAN_DIOS | 8 | Advanced moderation |
+| `Dioses` | DIOS | 4 | Standard moderation |
+| `Events` | EVENT_MASTER | 3 | Event-only commands |
+| `SemiDioses` | SEMIDIOS | 2 | Limited moderation |
+| `Consejeros` | CONSEJERO | 1 | Help and advisory role |
+
+```ini
+; Comma-separated character names (e.g. Admins=Shay,Shay2)
+Admins=Shay
+SubAdmins=
+Devs=
+Dioses=GameMaster1,GameMaster2
+```
+
+Reload at runtime with `/RELOADSINI`.
+
+---
+
+## 5. Intervalos.ini
+
+`dat/Intervalos.ini` is the **single source of truth** for ALL interval/cooldown settings. Values are in **milliseconds** (converted to ticks /40ms at load):
+
+| Setting | Default (ms) | Ticks | Description |
+|---------|-------------|-------|-------------|
+| `Golpe` | `1520` | 38 | Melee attack cooldown |
+| `Flechas` | `1400` | 35 | Ranged attack cooldown |
+| `LanzarHechizo` | `1400` | 35 | Spell cast cooldown |
+| `MagiaGolpe` | `2000` | 50 | Cross-cooldown: spell → melee |
+| `GolpeMagia` | `2000` | 50 | Cross-cooldown: melee → spell |
+| `PoteoU` | `1200` | 30 | Potion use cooldown |
+| `PoteoClick` | `240` | 6 | Click action cooldown |
+| `Work` | `720` | 18 | Crafting/resource cooldown |
+| `IntervaloParalizado` | `20000` | 500 | Paralysis duration (20s) |
+| `IntervaloInvisible` | `20000` | 500 | Spell invisibility duration (20s) |
+| `IntervaloOculto` | `20000` | 500 | Hide duration base (20s) |
+| `IntervaloNpcAI` | `1300` | -- | NPC AI tick (ms, used directly) |
+
+---
+
+## 6. Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgres://ao:ao_secret@localhost:5432/ao_server` | PostgreSQL connection string |
+| `POSTGRES_PASSWORD` | `ao_secret` | Used by docker-compose for the PostgreSQL container |
+| `RUST_LOG` | `ao_server=info` | Log verbosity (`debug`, `info`, `warn`, `error`) |
+
+---
+
+## 7. Backup & Restore
+
+```bash
+# Backup (Docker)
+docker compose exec postgres pg_dump -U ao ao_server > backup.sql
+
+# Backup (local)
+pg_dump -U ao ao_server > backup.sql
+
+# Restore
+psql -U ao ao_server < backup.sql
+```

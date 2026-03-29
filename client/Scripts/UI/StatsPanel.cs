@@ -231,13 +231,16 @@ public partial class StatsPanel : RpgBaseForm
 
         var bar = RpgTheme.CreateRpgProgressBar(120, 18, new Color(0.6f, 0.5f, 0.2f));
         bar.MaxValue = 50; // VB6 max attrib ~50
+        bar.ClipContents = false;
         hbox.AddChild(bar);
 
+        // Value label centered INSIDE the progress bar
         var valLabel = RpgTheme.CreateInfoLabel("0", 12);
-        valLabel.CustomMinimumSize = new Vector2(30, 0);
-        valLabel.HorizontalAlignment = HorizontalAlignment.Right;
+        valLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        valLabel.VerticalAlignment = VerticalAlignment.Center;
         valLabel.AddThemeColorOverride("font_color", Colors.White);
-        hbox.AddChild(valLabel);
+        valLabel.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        bar.AddChild(valLabel);
 
         return (valLabel, bar);
     }
@@ -288,15 +291,17 @@ public partial class StatsPanel : RpgBaseForm
             var bar = RpgTheme.CreateRpgProgressBar(70, 14, new Color(0.2f, 0.5f, 0.8f));
             bar.MaxValue = 100;
             bar.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+            bar.ClipContents = false;
             row.AddChild(bar);
             _skillBars[i] = bar;
 
-            // Value label — fixed width
+            // Value label centered INSIDE the progress bar
             var valLabel = RpgTheme.CreateInfoLabel("0", 10);
-            valLabel.CustomMinimumSize = new Vector2(22, 0);
-            valLabel.HorizontalAlignment = HorizontalAlignment.Right;
+            valLabel.HorizontalAlignment = HorizontalAlignment.Center;
+            valLabel.VerticalAlignment = VerticalAlignment.Center;
             valLabel.AddThemeColorOverride("font_color", Colors.White);
-            row.AddChild(valLabel);
+            valLabel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            bar.AddChild(valLabel);
             _lblSkillValues[i] = valLabel;
 
             // [+] button

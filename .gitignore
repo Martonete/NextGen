@@ -16,3 +16,16 @@ dist/
 *.dll
 *.pdb
 *.cache
+
+# Claude Code local settings
+.claude/
+
+# Junk — never track these
+.agents/
+13.3-argentum/
+argentum-online-worldeditor/
+FACTION_SYSTEM_RESEARCH.md
+QUEST_SYSTEM_RESEARCH.md
+skills-lock.json
+tools/swap_water_textures.py
+*.sln

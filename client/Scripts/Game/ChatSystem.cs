@@ -172,8 +172,10 @@ public class ChatSystem
         if (_console == null) return;
 
         bool hadNew = false;
-        while (_state.ChatMessages.Count > 0)
+        int processed = 0;
+        while (_state.ChatMessages.Count > 0 && processed < 50)
         {
+            processed++;
             var msg = _state.ChatMessages.Dequeue();
             PartyPanel?.TryParsePartyMessage(msg.Text);
             _state.ChatHistory.Add(msg);
@@ -182,7 +184,8 @@ public class ChatSystem
 
             if (PassesChatFilter(msg, _state.ActiveChatFilter))
             {
-                _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
+                string safeText = EscapeBbcode(msg.Text);
+                _console.AppendText($"[b][color=#{msg.Color}]{safeText}[/color][/b]\n");
             }
             hadNew = true;
         }
@@ -251,6 +254,12 @@ public class ChatSystem
         }
     }
 
+    private static string EscapeBbcode(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return string.Empty;
+        return text.Replace("[", "[lb]");
+    }
+
     private static bool PassesChatFilter(ChatMessage msg, int filter)
     {
         if (filter < 0) return true;
@@ -265,7 +274,8 @@ public class ChatSystem
         {
             if (PassesChatFilter(msg, _state.ActiveChatFilter))
             {
-                _console.AppendText($"[b][color=#{msg.Color}]{msg.Text}[/color][/b]\n");
+                string safeText = EscapeBbcode(msg.Text);
+                _console.AppendText($"[b][color=#{msg.Color}]{safeText}[/color][/b]\n");
             }
         }
     }

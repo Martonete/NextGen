@@ -32,8 +32,10 @@ pub const CANA_PESCA_NEWBIE: i32 = 468;
 // Weapon / equipment special objects
 // =====================================================================
 
-/// Dragon Slayer sword — enables DoGolpeCritico for Bandido (VB6: ESPADA_VIKINGA)
-pub const ESPADA_VIKINGA: i32 = 402;
+/// Viking Sword — enables DoGolpeCritico for Bandido (VB6: ESPADA_VIKINGA = 123)
+pub const ESPADA_VIKINGA: i32 = 123;
+/// Dragon Slayer sword — 1 damage to players, instakill dragons (VB6: EspadaMataDragonesIndex = 402)
+pub const ESPADA_MATA_DRAGONES: i32 = 402;
 /// Pickpocket gloves — enables steal and hand-immobilization (VB6: GUANTE_HURTO)
 pub const GUANTE_HURTO: i32 = 873;
 

@@ -7,6 +7,7 @@ use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::protocol::{font_index, binary_packets};
 use super::{warp_user, send_warp_fx, check_user_level, naked_body,
     send_stats_hp, send_stats_mana, send_stats_sta, send_stats_gold, send_stats_exp};
+use super::common::MAX_GOLD;
 
 // =============================================================================
 
@@ -26,8 +27,10 @@ pub(super) async fn handle_slash_invisible(state: &mut GameState, conn_id: Conne
             user.invisible = false;
         }
         // Re-broadcast appearance (body/head never changed — still intact)
-        let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+        if let Some(user) = state.users.get(&conn_id) {
+            let cc = user.build_cc_binary();
+            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+        }
         // NOVER packet (visible)
         let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &nover);
@@ -400,7 +403,7 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
-                user.gold = value;
+                user.gold = value.max(0).min(MAX_GOLD);
             }
             send_stats_gold(state, target).await;
             state.send_msg_id(conn_id, 572, &value.to_string());
@@ -419,24 +422,26 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
             }
             state.send_msg_id(conn_id, 573, &value.to_string());
             // VB6: ChangeUserChar → CP to map
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, value as i16, u.head as i16, u.heading as u8,
-                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, value as i16, u.head as i16, u.heading as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
         }
         "HEAD" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.head = value as i32;
             }
             state.send_msg_id(conn_id, 574, &value.to_string());
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, u.body as i16, value as i16, u.heading as u8,
-                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, u.body as i16, value as i16, u.heading as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
         }
         "CRI" => {
             if let Some(user) = state.users.get_mut(&target) {
@@ -504,34 +509,37 @@ pub(super) async fn apply_mod_self(state: &mut GameState, conn_id: ConnectionId,
             if let Some(user) = state.users.get_mut(&target) {
                 user.shield_anim = value as i32;
             }
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
-                u.weapon_anim as i16, value as i16, u.casco_anim as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
+                    u.weapon_anim as i16, value as i16, u.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
         }
         "CASCO" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.casco_anim = value as i32;
             }
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
-                u.weapon_anim as i16, u.shield_anim as i16, value as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, value as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
         }
         "ARMA" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.weapon_anim = value as i32;
             }
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
-                value as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, u.body as i16, u.head as i16, u.heading as u8,
+                    value as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
         }
         _ => {
             state.send_msg_id(conn_id, 584, "");
@@ -558,7 +566,7 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
         }
         "ORO" => {
             if let Some(user) = state.users.get_mut(&target) {
-                user.gold = value;
+                user.gold = value.max(0).min(MAX_GOLD);
             }
             send_stats_gold(state, target).await;
             state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@oro@{}@{}", gm_name, target_name, value));
@@ -575,24 +583,26 @@ pub(super) async fn apply_mod_other(state: &mut GameState, gm_conn: ConnectionId
             if let Some(user) = state.users.get_mut(&target) {
                 user.body = value as i32;
             }
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, value as i16, u.head as i16, u.heading as u8,
-                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, value as i16, u.head as i16, u.heading as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
             state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@body@{}@{}", gm_name, target_name, value));
         }
         "HEAD" => {
             if let Some(user) = state.users.get_mut(&target) {
                 user.head = value as i32;
             }
-            let u = state.users.get(&target).unwrap();
-            let cp = binary_packets::write_character_change(
-                char_index as i16, u.body as i16, value as i16, u.heading as u8,
-                u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
-            );
-            state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            if let Some(u) = state.users.get(&target) {
+                let cp = binary_packets::write_character_change(
+                    char_index as i16, u.body as i16, value as i16, u.heading as u8,
+                    u.weapon_anim as i16, u.shield_anim as i16, u.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToMap(map), &cp);
+            }
             state.send_msg_id_to(SendTarget::ToAdmins, 591, &format!("{}@head@{}@{}", gm_name, target_name, value));
         }
         "CRI" => {

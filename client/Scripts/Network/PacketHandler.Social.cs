@@ -6,7 +6,7 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Network;
 
 /// <summary>
-/// Binary packet handlers: Chat / Guild / Party / Forum / Mail / Quest
+/// Binary packet handlers: Chat / Guild / Party / Forum / Quest
 /// </summary>
 public partial class PacketHandler
 {
@@ -80,7 +80,7 @@ public partial class PacketHandler
         short msgId = bq.ReadInteger();
         string args = bq.ReadString();
 
-        if (msgId > 0 && msgId < _state.TextMessages.Length)
+        if (msgId >= 0 && msgId < _state.TextMessages.Length)
         {
             var tmpl = _state.TextMessages[msgId];
             string text = tmpl.Text;
@@ -118,9 +118,6 @@ public partial class PacketHandler
         // GM broadcasts show in red bold in console
         _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = "FF0000", Type = ChatType.Global });
     }
-
-    // ── Chat variants (binary) ──────────────────────────────────
-
 
     // ── Chat variants (binary) ──────────────────────────────────
 
@@ -196,9 +193,6 @@ public partial class PacketHandler
         _state.ChatMessages.Enqueue(new ChatMessage { Text = msg, Color = color, Type = ChatType.Clan });
     }
 
-    // ── Stat variants ─────────────────────────────────────────────
-
-
     // ── Guild ─────────────────────────────────────────────────────
 
     /// <summary>
@@ -208,7 +202,6 @@ public partial class PacketHandler
     private void HandleBinGuildInfoStr(ByteQueue bq, string tag)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] GuildInfo{tag} (binary): {data.Length} chars");
         _state.GuildInfoData = data;
         _state.GuildInfoType = tag;
         _state.ShowGuildPanel = true;
@@ -218,25 +211,13 @@ public partial class PacketHandler
     /// GuildBankPermsResp (ID 195) — guild bank permissions.
     /// Wire: bool canObj, bool canGold
     /// </summary>
-
-
-    /// <summary>
-    /// GuildBankPermsResp (ID 195) — guild bank permissions.
-    /// Wire: bool canObj, bool canGold
-    /// </summary>
     private void HandleBinGuildBankPermsResp(ByteQueue bq)
     {
         bool canObj = bq.ReadBoolean();
         bool canGold = bq.ReadBoolean();
-        GD.Print($"[PKT] GuildBankPermsResp: canObj={canObj} canGold={canGold}");
         _state.GuildBankCanObj = canObj;
         _state.GuildBankCanGold = canGold;
     }
-
-    /// <summary>
-    /// ClanChatResp (ID 196) — clan chat message. Wire: string msg, u8 fontIndex
-    /// </summary>
-
 
     /// <summary>
     /// ClanChatResp (ID 196) — clan chat message. Wire: string msg, u8 fontIndex
@@ -254,20 +235,13 @@ public partial class PacketHandler
     /// Wire: u8 slot, i16 objIdx, string name, i16 amount, i16 grh,
     ///        u8 objType, i16 maxHit, i16 minHit, i16 maxDef, i32 bankGold, i32 userGold
     /// </summary>
-
-
-    /// <summary>
-    /// GuildBankSlotData (ID 197) — full guild bank slot (SBG opcode).
-    /// Wire: u8 slot, i16 objIdx, string name, i16 amount, i16 grh,
-    ///        u8 objType, i16 maxHit, i16 minHit, i16 maxDef, i32 bankGold, i32 userGold
-    /// </summary>
     private void HandleBinGuildBankSlotData(ByteQueue bq)
     {
         byte slot = bq.ReadByte();
         short objIdx = bq.ReadInteger();
         string name = bq.ReadString();
         short amount = bq.ReadInteger();
-        short grh = bq.ReadInteger();
+        int grh = (ushort)bq.ReadInteger();
         byte objType = bq.ReadByte();
         short maxHit = bq.ReadInteger();
         short minHit = bq.ReadInteger();
@@ -289,11 +263,7 @@ public partial class PacketHandler
             _state.GuildBankItems[idx].MaxDef = maxDef;
         }
         _state.GuildBankGold = bankGold;
-        GD.Print($"[PKT] GuildBankSlotData slot={slot} {name} x{amount} bankGold={bankGold}");
     }
-
-    // ── Quest ─────────────────────────────────────────────────────
-
 
     // ── Quest ─────────────────────────────────────────────────────
 
@@ -302,94 +272,7 @@ public partial class PacketHandler
         string data = bq.ReadString();
         _state.QuestDataTag = tag;
         _state.QuestDataPayload = data;
-        GD.Print($"[PKT] QuestData tag={tag} len={data.Length}");
     }
-
-    // ── Mail ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// MailList / MailPlayerInfo / MailContent / MailItems — mail data.
-    /// Wire: string data
-    /// </summary>
-
-
-    // ── Mail ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// MailList / MailPlayerInfo / MailContent / MailItems — mail data.
-    /// Wire: string data
-    /// </summary>
-    private void HandleBinMailData(ByteQueue bq, string tag)
-    {
-        string data = bq.ReadString();
-        GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
-
-        if (tag == "MailList")
-        {
-            // Parse inbox: "id,sender,subject,date,read;id2,sender2,..."
-            _state.MailInbox.Clear();
-            if (!string.IsNullOrEmpty(data))
-            {
-                string[] entries = data.Split(';', System.StringSplitOptions.RemoveEmptyEntries);
-                foreach (string entry in entries)
-                {
-                    string[] parts = entry.Split(',');
-                    if (parts.Length >= 4)
-                    {
-                        int.TryParse(parts[0], out int id);
-                        var mail = new MailEntry
-                        {
-                            Id = id,
-                            Sender = parts[1],
-                            Subject = parts[2],
-                            Date = parts[3],
-                            Read = parts.Length >= 5 && parts[4] == "1"
-                        };
-                        _state.MailInbox.Add(mail);
-                    }
-                }
-            }
-            _state.MailInboxDirty = true;
-            _state.ShowMailPanel = true;
-        }
-        else if (tag == "MailContent")
-        {
-            // Parse full message: "id,sender,subject,body,date,gold,itemId,itemAmt"
-            string[] parts = data.Split(',');
-            if (parts.Length >= 5)
-            {
-                int.TryParse(parts[0], out int id);
-                var mail = new MailEntry
-                {
-                    Id = id,
-                    Sender = parts[1],
-                    Subject = parts[2],
-                    Body = parts[3],
-                    Date = parts[4],
-                    Read = true
-                };
-                if (parts.Length >= 6) int.TryParse(parts[5], out mail.AttachedGold);
-                if (parts.Length >= 7) int.TryParse(parts[6], out mail.AttachedItemId);
-                if (parts.Length >= 8) int.TryParse(parts[7], out mail.AttachedItemAmount);
-                _state.MailCurrentMessage = mail;
-
-                // Mark as read in inbox
-                foreach (var m in _state.MailInbox)
-                {
-                    if (m.Id == id) m.Read = true;
-                }
-                _state.MailInboxDirty = true;
-            }
-        }
-    }
-
-    // ── Misc data ─────────────────────────────────────────────────
-
-    /// <summary>
-    /// MenuData (ID 221) — right-click context menu (MENU opcode).
-    /// Wire: string name, u8 priv
-    /// </summary>
-
 
     // ── Misc data ─────────────────────────────────────────────────
 
@@ -399,9 +282,9 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinMenuData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string name = bq.ReadString();
         byte priv = bq.ReadByte();
-        GD.Print($"[PKT] MenuData: {name} priv={priv}");
         // TODO: show right-click context menu when implemented
     }
 
@@ -409,16 +292,10 @@ public partial class PacketHandler
     /// SelectData (ID 222) — selection list data (SELE opcode).
     /// Wire: string data
     /// </summary>
-
-
-    /// <summary>
-    /// SelectData (ID 222) — selection list data (SELE opcode).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinSelectData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
-        GD.Print($"[PKT] SelectData (binary): {data}");
         // TODO: show selection dialog when implemented
     }
 
@@ -426,24 +303,12 @@ public partial class PacketHandler
     /// MiniTopData (ID 223) — mini ranking data (MTOP opcode).
     /// Wire: string data
     /// </summary>
-
-
-    /// <summary>
-    /// MiniTopData (ID 223) — mini ranking data (MTOP opcode).
-    /// Wire: string data
-    /// </summary>
     private void HandleBinMiniTopData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
-        GD.Print($"[PKT] MiniTopData (binary): {data.Length} chars");
         // TODO: show mini ranking when implemented
     }
-
-    /// <summary>
-    /// FestData (ID 227) — character stats summary from /EST command.
-    /// Wire: string "crimMatados,ciudMatados,level,class,status,0,guildIndex,reputation"
-    /// </summary>
-
 
     /// <summary>
     /// Generic single-string packets (ImageData, BkwData, GinfData,
@@ -453,13 +318,7 @@ public partial class PacketHandler
     private void HandleBinStringOnly(ByteQueue bq, string tag)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] {tag} (binary): {data.Length} chars");
     }
-
-    /// <summary>
-    /// EnchatData (ID 228) — enter chat room. Wire: string name
-    /// </summary>
-
 
     /// <summary>
     /// EnchatData (ID 228) — enter chat room. Wire: string name
@@ -467,13 +326,7 @@ public partial class PacketHandler
     private void HandleBinEnchatData(ByteQueue bq)
     {
         string name = bq.ReadString();
-        GD.Print($"[PKT] EnchatData: {name}");
     }
-
-    /// <summary>
-    /// IrchatData (ID 229) — IRC-style chat message. Wire: string sender, string msg
-    /// </summary>
-
 
     /// <summary>
     /// IrchatData (ID 229) — IRC-style chat message. Wire: string sender, string msg
@@ -502,16 +355,7 @@ public partial class PacketHandler
     {
         byte raza = bq.ReadByte();
         byte genero = bq.ReadByte();
-        GD.Print($"[PKT] CosmeticSurgery raza={raza} genero={genero}");
     }
-
-    // ── Guild bank ────────────────────────────────────────────────
-
-    /// <summary>
-    /// GuildBankInitResp (ID 247) — guild bank init (INITCBANK opcode).
-    /// Wire: bool canObj, bool canGold
-    /// </summary>
-
 
     // ── Guild bank ────────────────────────────────────────────────
 
@@ -526,14 +370,7 @@ public partial class PacketHandler
         _state.GuildBankCanObj = canObj;
         _state.GuildBankCanGold = canGold;
         _state.ShowGuildBank = true;
-        GD.Print($"[PKT] GuildBankInitResp canObj={canObj} canGold={canGold}");
     }
-
-    /// <summary>
-    /// GuildBankSlotResp (ID 248) — guild bank slot (BANCOBK opcode).
-    /// Wire: u8 slot, u8 objType
-    /// </summary>
-
 
     /// <summary>
     /// GuildBankSlotResp (ID 248) — guild bank slot (BANCOBK opcode).
@@ -543,15 +380,7 @@ public partial class PacketHandler
     {
         byte slot = bq.ReadByte();
         byte objType = bq.ReadByte();
-        GD.Print($"[PKT] GuildBankSlotResp slot={slot} type={objType}");
     }
-
-    // ── Ping ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// Ping (ID 250) — server→client ping request. Respond immediately with Pong.
-    /// </summary>
-
 
     // ── Ping ──────────────────────────────────────────────────────
 
@@ -561,13 +390,9 @@ public partial class PacketHandler
     private void HandleBinPingRequest()
     {
         // Send pong back to server (using existing binary ping/pong infrastructure)
-        GD.Print("[PKT] Ping received — sending Pong");
         // The TcpClient's SendPing() method sends the pong response.
         _state.PingSentMs = Time.GetTicksMsec();
     }
-
-    // ── Arena ─────────────────────────────────────────────────────
-
 
     // ── Arena ─────────────────────────────────────────────────────
 
@@ -576,16 +401,6 @@ public partial class PacketHandler
         bq.ReadString();
         return;
     }
-
-    // ── ForceCharMove ─────────────────────────────────────────────
-
-    /// <summary>
-    /// ForceCharMove (ID 32) — server pushes the player in a direction.
-    /// Used for ghost push, spell knockback, etc.
-    /// Wire: u8 heading (1=N, 2=E, 3=S, 4=W)
-    /// Same logic as InputHandler.TryMove but without LegalPos check or packet send.
-    /// </summary>
-
 
     // ── Forum ───────────────────────────────────────────────────
 
@@ -617,12 +432,6 @@ public partial class PacketHandler
     /// ShowForumForm (ID 118) — server signals to open the forum UI.
     /// Wire: u8 visibility (bitflags: 1=General, 2=Caos, 4=Real), u8 canMakeSticky
     /// </summary>
-
-
-    /// <summary>
-    /// ShowForumForm (ID 118) — server signals to open the forum UI.
-    /// Wire: u8 visibility (bitflags: 1=General, 2=Caos, 4=Real), u8 canMakeSticky
-    /// </summary>
     private void HandleBinShowForumForm(ByteQueue bq)
     {
         byte visibility = bq.ReadByte();
@@ -631,28 +440,7 @@ public partial class PacketHandler
         _state.ForumVisibility = visibility;
         _state.ForumCanMakeSticky = canMakeSticky;
         _state.ShowForumPanel = true;
-
-        GD.Print($"[PKT] ShowForumForm visibility={visibility} canMakeSticky={canMakeSticky} posts={_state.ForumPosts.Count}");
     }
 
-    // ── GenericText fallback ──────────────────────────────────────
-
-    /// <summary>
-    /// GenericText (ID 255) — legacy text packet bridge.
-    /// Wire: u16 LE length, then ASCII text bytes.
-    /// Dispatches through the legacy text handler.
-    /// </summary>
-    private void HandleGenericTextPacket(ByteQueue bq)
-    {
-        short len = bq.ReadInteger();
-        if (len <= 0) return;
-
-        var bytes = new byte[len];
-        for (int i = 0; i < len; i++)
-            bytes[i] = bq.ReadByte();
-
-        string text = System.Text.Encoding.ASCII.GetString(bytes);
-        HandlePacket(text);
-    }
 
 }

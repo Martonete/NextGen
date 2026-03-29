@@ -17,30 +17,11 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
     let (char_idx, x, y, map, heading, area_min_x, area_min_y) = data;
 
     // VB6 movement packet: *charindex,x,y → binary CharacterMove
-    let pkt = binary_packets::write_character_move(char_idx as i16, x as u8, y as u8);
+    let pkt = binary_packets::write_character_move(char_idx as i16, x as i16, y as i16);
 
-    // VB6 SendToNpcArea: sends to all users in the NPC's 27x27 area zone
-    // (NOT the smaller 17x13 client window used by SendTarget::ToArea)
-    let area_max_x = (area_min_x + 26).min(100);
-    let area_max_y = (area_min_y + 26).min(100);
-    let area_min_x_clamped = area_min_x.max(1);
-    let area_min_y_clamped = area_min_y.max(1);
-
-    let mut targets: Vec<ConnectionId> = Vec::new();
-    if let Some(grid) = state.world.grid(map) {
-        for sy in area_min_y_clamped..=area_max_y {
-            for sx in area_min_x_clamped..=area_max_x {
-                if let Some(tile) = grid.tile(sx, sy) {
-                    if let Some(conn) = tile.user_conn {
-                        targets.push(conn);
-                    }
-                }
-            }
-        }
-    }
-    for conn in targets {
-        state.send_bytes(conn, &pkt);
-    }
+    // Send to all players in viewport range (17x13 tiles) — replaces the old
+    // 27x27 tile scan (729 tiles) with the standard area broadcast (221 tiles).
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
 
     // Check if NPC crossed a 9x9 area boundary — if so, send CC to newly visible players
     check_update_needed_npc(state, npc_idx, heading).await;
@@ -48,9 +29,9 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
 
 /// Send packets for a ghost push (position update to ghost + movement broadcast to area).
 pub(crate) async fn send_ghost_push(state: &mut GameState, push: crate::game::handlers::npcs::GhostPush) {
-    let pu_pkt = binary_packets::write_pos_update(push.new_x as u8, push.new_y as u8);
+    let pu_pkt = binary_packets::write_pos_update(push.new_x as i16, push.new_y as i16);
     state.send_bytes(push.ghost_conn, &pu_pkt);
-    let move_pkt = binary_packets::write_character_move(push.ghost_char_index as i16, push.new_x as u8, push.new_y as u8);
+    let move_pkt = binary_packets::write_character_move(push.ghost_char_index as i16, push.new_x as i16, push.new_y as i16);
     state.send_data_bytes(
         SendTarget::ToAreaButIndex { conn_id: push.ghost_conn, map: push.map, x: push.new_x, y: push.new_y },
         &move_pkt,
@@ -104,10 +85,11 @@ pub(crate) async fn check_update_needed_npc(state: &mut GameState, npc_idx: usiz
     };
 
     // Clamp to map bounds
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_x = min_x.max(1);
     let min_y = min_y.max(1);
-    let max_x = max_x.min(100);
-    let max_y = max_y.min(100);
+    let max_x = max_x.min(grid_w);
+    let max_y = max_y.min(grid_h);
 
     // Update NPC's area tracking
     if let Some(npc) = state.get_npc_mut(npc_idx) {
@@ -173,10 +155,11 @@ pub(super) fn find_adjacent_player(state: &GameState, map: i32, x: i32, y: i32) 
 pub(super) fn find_nearest_player(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     let mut best: Option<(ConnectionId, i32)> = None;
 
@@ -225,10 +208,11 @@ pub(super) fn chase_heading(x: i32, y: i32, tx: i32, ty: i32) -> i32 {
 pub(super) fn find_nearest_criminal(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     let mut best: Option<(ConnectionId, i32)> = None;
 
@@ -259,10 +243,11 @@ pub(super) fn find_nearest_criminal(state: &GameState, map: i32, x: i32, y: i32)
 pub(super) fn find_nearest_citizen(state: &GameState, map: i32, x: i32, y: i32) -> Option<ConnectionId> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     let mut best: Option<(ConnectionId, i32)> = None;
 
@@ -293,10 +278,11 @@ pub(super) fn find_nearest_citizen(state: &GameState, map: i32, x: i32, y: i32) 
 pub(super) fn find_player_by_name(state: &GameState, map: i32, x: i32, y: i32, name: &str) -> Option<ConnectionId> {
     if name.is_empty() { return None; }
     let range = 15;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - range).max(1);
-    let max_x = (x + range).min(100);
+    let max_x = (x + range).min(gw);
     let min_y = (y - range).max(1);
-    let max_y = (y + range).min(100);
+    let max_y = (y + range).min(gh);
 
     if let Some(grid) = state.world.grid(map) {
         for cy in min_y..=max_y {
@@ -321,10 +307,11 @@ pub(super) fn find_player_by_name(state: &GameState, map: i32, x: i32, y: i32, n
 pub(super) fn find_target_npc_in_vision(state: &GameState, map: i32, x: i32, y: i32, target_npc_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     if let Some(grid) = state.world.grid(map) {
         for cy in min_y..=max_y {
@@ -347,10 +334,11 @@ pub(super) fn find_target_npc_in_vision(state: &GameState, map: i32, x: i32, y: 
 pub(super) fn find_nearest_hostile_npc(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     let mut best: Option<(usize, i32, i32, i32)> = None; // (idx, x, y, dist)
 
@@ -389,10 +377,11 @@ pub(super) fn is_pretoriano(movement: i32) -> bool {
 pub(super) fn find_wounded_pretoriano_ally(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     let mut best: Option<(usize, i32, i32, f32)> = None; // (idx, x, y, hp_ratio)
 
@@ -426,10 +415,11 @@ pub(super) fn find_wounded_pretoriano_ally(state: &GameState, map: i32, x: i32, 
 pub(super) fn find_paralyzed_pretoriano_ally(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> Option<(usize, i32, i32)> {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     if let Some(grid) = state.world.grid(map) {
         for cy in min_y..=max_y {
@@ -455,10 +445,11 @@ pub(super) fn find_paralyzed_pretoriano_ally(state: &GameState, map: i32, x: i32
 pub(super) fn has_pretoriano_allies(state: &GameState, map: i32, x: i32, y: i32, self_idx: usize) -> bool {
     let half_x = npc::NPC_VISION_X / 2;
     let half_y = npc::NPC_VISION_Y / 2;
+    let (gw, gh) = state.grid_dimensions(map);
     let min_x = (x - half_x).max(1);
-    let max_x = (x + half_x).min(100);
+    let max_x = (x + half_x).min(gw);
     let min_y = (y - half_y).max(1);
-    let max_y = (y + half_y).min(100);
+    let max_y = (y + half_y).min(gh);
 
     if let Some(grid) = state.world.grid(map) {
         for cy in min_y..=max_y {
@@ -494,15 +485,27 @@ pub(super) fn restore_old_movement(state: &mut GameState, npc_idx: usize) {
 /// NPC vs NPC combat (VB6: NpcAtacaNpc — used by pets attacking target NPCs).
 pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, target_idx: usize) {
     let attacker_data = match state.get_npc(attacker_idx) {
-        Some(n) if n.is_alive() => (n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.maestro_user),
+        Some(n) if n.is_alive() => (n.min_hit, n.max_hit, n.char_index, n.map, n.x, n.y, n.maestro_user, n.poder_ataque),
         _ => return,
     };
-    let (a_min_hit, a_max_hit, _a_char, a_map, a_x, a_y, a_master) = attacker_data;
+    let (a_min_hit, a_max_hit, _a_char, a_map, a_x, a_y, a_master, a_poder_ataque) = attacker_data;
 
-    let target_alive = state.get_npc(target_idx).map(|n| n.is_alive()).unwrap_or(false);
-    if !target_alive { return; }
+    let target_data = match state.get_npc(target_idx) {
+        Some(n) if n.is_alive() => (n.poder_evasion,),
+        _ => return,
+    };
+    let (t_poder_evasion,) = target_data;
 
-    // Simple damage — no armor for NPC vs NPC
+    // VB6: NpcImpactoNpc — hit/miss roll
+    let prob_exito = ((50.0 + (a_poder_ataque - t_poder_evasion) as f64 * 0.4) as i32).clamp(10, 90);
+    if rand_range(1, 100) > prob_exito {
+        // Miss — play swing sound
+        let snd_pkt = binary_packets::write_play_wave(2, a_x as i16, a_y as i16);
+        state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt);
+        return;
+    }
+
+    // VB6: NpcDañoNpc — damage (no armor for NPC vs NPC)
     let damage = rand_range(a_min_hit.max(1), a_max_hit.max(1));
 
     let target_dead = {
@@ -516,7 +519,7 @@ pub(crate) async fn npc_attack_npc(state: &mut GameState, attacker_idx: usize, t
     };
 
     // Impact sound
-    let snd_pkt = binary_packets::write_play_wave(10, a_x as u8, a_y as u8);
+    let snd_pkt = binary_packets::write_play_wave(10, a_x as i16, a_y as i16);
     state.send_data_bytes(SendTarget::ToArea { map: a_map, x: a_x, y: a_y }, &snd_pkt);
 
     if target_dead {

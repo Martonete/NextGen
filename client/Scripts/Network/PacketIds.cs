@@ -7,22 +7,22 @@ namespace ArgentumNextgen.Network;
 public static class ClientPacketId
 {
     // Pre-login (0-9)
-    public const byte KERD22 = 0;
-    public const byte ALOGIN = 1;
-    public const byte NLOGIN = 2;
-    public const byte OOLOGI = 3;
-    public const byte THCJXD = 4;
-    public const byte NACCNT = 5;
-    public const byte REPASS = 6;
-    public const byte REECUH = 7;
-    public const byte TIRDAD = 8;
-    public const byte TBRP = 9;
+    public const byte HardwareCheck = 0;
+    public const byte AccountLogin = 1;
+    public const byte CreateCharacter = 2;
+    public const byte CharacterLogin = 3;
+    public const byte CharacterSelect = 4;
+    public const byte CreateAccount = 5;
+    public const byte ChangePassword = 6;
+    public const byte AccountRecovery = 7;
+    public const byte RollDice = 8;
+    public const byte DeleteCharacter = 9;
 
     // Movement (10-14)
     public const byte Walk = 10;
     public const byte ChangeHeading = 11;
     public const byte RequestPos = 12;
-    public const byte Actualizar = 13;
+    public const byte SyncPosition = 13;
 
     // Combat (20-24)
     public const byte Attack = 20;
@@ -109,12 +109,6 @@ public static class ClientPacketId
     // Forum (123)
     public const byte ForumPost = 123;
 
-    // Mail (125-128)
-    public const byte MailSend = 125;
-    public const byte MailOpen = 126;
-    public const byte MailExtract = 127;
-    public const byte MailDelete = 128;
-
     // Chat rooms (132-133)
     public const byte InitChat = 132;
     public const byte ChatMsg = 133;
@@ -129,29 +123,10 @@ public static class ClientPacketId
     public const byte ToInfo = 146;
 
     // Misc (150+)
-    public const byte HouseQuery = 150;
-    public const byte HouseBuy = 151;
     public const byte PetRename = 152;
-    public const byte GemExchange = 153;
-    public const byte MedalExchange = 154;
-    public const byte DivineOffer = 155;
-    public const byte TsShop = 156;
-    public const byte UpgradeQuery = 157;
-    public const byte UpgradeDo = 158;
-    public const byte ArenaSpectate = 159;
-    public const byte DragDrop = 160;
-    public const byte Vote = 161;
-    public const byte Report = 162;
     public const byte SosView = 163;
     public const byte SosSend = 164;
     public const byte SosRespond = 165;
-    public const byte DonationMenu = 166;
-    public const byte DonationPreview = 167;
-    public const byte DonationRedeem = 168;
-    public const byte TournamentMenu = 169;
-    public const byte PrizeInfo = 170;
-    public const byte PrizeBuy = 171;
-    public const byte FpzReport = 172;
     public const byte ClanInvalidName = 173;
     public const byte PCGF = 174;
     public const byte PCWC = 175;
@@ -198,7 +173,7 @@ public static class ServerPacketId
     public const byte ObjectCreate = 34;
     public const byte ObjectDelete = 35;
     public const byte BlockPosition = 36;
-    public const byte PlayMIDI = 37;
+    public const byte PlayMusic = 37;
     public const byte PlayWave = 38;
     public const byte GuildList = 39;
     public const byte AreaChanged = 40;
@@ -210,26 +185,26 @@ public static class ServerPacketId
     public const byte ChangeInventorySlot = 46;
     public const byte ChangeBankSlot = 47;
     public const byte ChangeSpellSlot = 48;
-    public const byte Atributes = 49;
+    public const byte Attributes = 49;
     public const byte SendSkills = 50;
     public const byte ChangeNPCInventorySlot = 51;
-    public const byte RestOK = 54;
+    public const byte RestToggle = 54;
     public const byte ErrorShow = 55;
     public const byte Blind = 56;
-    public const byte Dumb = 57;
+    public const byte Silence = 57;
     public const byte ShowSignal = 58;
     public const byte DiceRoll = 59;
     public const byte UpdateHungerAndThirst = 60;
     public const byte Fame = 61;
     public const byte MiniStats = 62;
     public const byte LevelUp = 63;
-    public const byte AddPJ = 64;
+    public const byte AddCharPreview = 64;
     public const byte SecurityCode = 65;
     public const byte SetInvisible = 66;
     public const byte InitAccount = 67;
     public const byte MeditateToggle = 69;
     public const byte BlindNoMore = 70;
-    public const byte DumbNoMore = 71;
+    public const byte SilenceEnd = 71;
     public const byte TrainerCreatureList = 72;
     public const byte GuildNews = 73;
     public const byte PrivilegeLevel = 74;
@@ -240,8 +215,8 @@ public static class ServerPacketId
     public const byte RemoveDialogs = 79;
     public const byte RemoveCharDialog = 80;
     public const byte NavigateToggle = 81;
-    public const byte ParalizeOK = 82;
-    public const byte ShowGuildFundationForm = 83;
+    public const byte ParalyzeOK = 82;
+    public const byte ShowGuildFoundationForm = 83;
     public const byte TradeOK = 84;
     public const byte BankOK = 85;
     public const byte ChangeUserTradeSlot = 86;
@@ -449,8 +424,8 @@ public static class ServerPacketId
     /// CarpItems — carpentry item list. ID 160.
     public const byte CarpItems = 160;
 
-    /// MedOK — meditation OK. ID 161.
-    public const byte MedOK = 161;
+    /// MeditateOK — meditation OK. ID 161.
+    public const byte MeditateOK = 161;
 
     /// Navigation — navigation mode data. ID 162.
     public const byte Navigation = 162;
@@ -489,8 +464,8 @@ public static class ServerPacketId
     /// InitCommerceLegacy — legacy commerce init. ID 173.
     public const byte InitCommerceLegacy = 173;
 
-    /// TransOK — NPC commerce transaction OK. ID 174.
-    public const byte TransOK = 174;
+    /// TransactionOK — NPC commerce transaction OK. ID 174.
+    public const byte TransactionOK = 174;
 
     /// CommerceCloseOK — commerce close confirmation. ID 175.
     public const byte CommerceCloseOK = 175;
@@ -568,20 +543,6 @@ public static class ServerPacketId
 
     /// QuestNpcList — quest NPC list trigger. ID 203.
     public const byte QuestNpcList = 203;
-
-    // ── Mail ─────────────────────────────────────────────────
-
-    /// MailList — mail list data. ID 205.
-    public const byte MailList = 205;
-
-    /// MailPlayerInfo — mail recipient player info. ID 206.
-    public const byte MailPlayerInfo = 206;
-
-    /// MailContent — mail message content. ID 208.
-    public const byte MailContent = 208;
-
-    /// MailItems — mail attached items. ID 209.
-    public const byte MailItems = 209;
 
     // ── Misc data packets ────────────────────────────────────
 
@@ -663,17 +624,10 @@ public static class ServerPacketId
     /// TravelsOpen — open travels/teleport panel. ID 251.
     public const byte TravelsOpen = 251;
 
-    /// MailOpenTrigger — open mail UI (CORREO). ID 252.
-    public const byte MailOpenTrigger = 252;
+    /// ZoneChange — player entered a different zone. ID 252.
+    public const byte ZoneChange = 252;
 
     /// ArenaData — arena duel list (MAR). ID 254.
     public const byte ArenaData = 254;
 
-    /// <summary>
-    /// GenericText packet (opcode 255): wraps a legacy text-format packet.
-    /// Format: [255][len:u16 LE][text_bytes]
-    /// Used by the server's bridge layer during protocol migration.
-    /// The client should parse the text content using the old text dispatch logic.
-    /// </summary>
-    public const byte GenericText = 255;
 }

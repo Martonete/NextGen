@@ -29,19 +29,17 @@ public class InputHandler
 		4, 5, 6, 16, 42, 43, 44, 45, 103, 104, 105
 	};
 
-	// Water tile GRH range (VB6: Layer1 1505-1520 with no Layer2 = water)
-	private const int WaterGrhMin = 1505;
-	private const int WaterGrhMax = 1520;
+	// Water tile detection delegated to WorldRenderer.IsWaterGrh()
 
-	// VB6 map borders (InMapBounds)
-	private const int MinXBorder = 9;
-	private const int MaxXBorder = 92;
-	private const int MinYBorder = 7;
-	private const int MaxYBorder = 94;
+	// VB6 map borders (InMapBounds) — offset from map edges
+	private const int BorderMarginLeft = 9;
+	private const int BorderMarginRight = 8;
+	private const int BorderMarginTop = 7;
+	private const int BorderMarginBottom = 6;
 
-	// VB6 attack cooldown: tAt = 1000ms
-	private const float AttackCooldownMs = 1000f;
-	private float _attackTimer;
+	// VB6 attack cooldown: tAt = 1000ms (timestamp-based, frame-rate independent)
+	private const long AttackCooldownMs = 1000;
+	private long _attackUntilMs;
 
 	// VB6 position refresh cooldown
 	private float _refreshTimer;
@@ -49,14 +47,17 @@ public class InputHandler
 
 	// Generic key repeat cooldown (VB6 CheckKeys runs at ~32ms tick rate)
 	// Prevent rapid-fire sends when holding a key at 60fps.
-	private const float KeyCooldownMs = 300f;
-	private float _keyCooldown;
+	private const long KeyCooldownMs = 300;
+	private long _keyCooldownUntilMs;
 
 	// Track Ctrl state for release detection (both left and right Ctrl)
 	private bool _ctrlWasPressed;
 
 	/// <summary>Callback invoked when the player presses the music toggle key.</summary>
 	public Action? OnToggleMusic;
+
+	/// <summary>Callback to play a sound at position (soundId, tileX, tileY).</summary>
+	public Action<int, int, int>? OnPlaySoundAt;
 
 	public InputHandler(AoTcpClient tcp, GameState state, KeyBindings keys, Viewport viewport)
 	{
@@ -74,15 +75,16 @@ public class InputHandler
 		if (_state.AnyFormOpen) return;
 
 		// Block if a GUI text field has focus (e.g. LineEdit in any panel)
+		// When BlockWalkOnChat is disabled, only block non-movement input (handled below)
 		var focused = _viewport.GuiGetFocusOwner();
-		if (focused is LineEdit) return;
+		bool lineEditFocused = focused is LineEdit;
+		if (lineEditFocused && _state.Config.BlockWalkOnChat) return;
 
 		float deltaMs = (float)delta * 1000f;
+		long nowMs = System.Environment.TickCount64;
 
-		// Advance cooldown timers
-		if (_attackTimer > 0) _attackTimer -= deltaMs;
+		// Advance refresh timer (still delta-based, non-critical)
 		if (_refreshTimer > 0) _refreshTimer -= deltaMs;
-		if (_keyCooldown > 0) _keyCooldown -= deltaMs;
 
 		// Detect Ctrl release by polling (supports both left and right Ctrl reliably)
 		if (_keys.GetKey(GameAction.Attack) == Key.Ctrl)
@@ -90,10 +92,10 @@ public class InputHandler
 			bool ctrlNow = Input.IsKeyPressed(Key.Ctrl);
 			if (_ctrlWasPressed && !ctrlNow && !_state.ChatActive)
 			{
-				if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
+				if (nowMs >= _attackUntilMs && !_state.Resting && !_state.Meditating && !_state.Dead)
 				{
 					_tcp.SendPacket(ClientPackets.WriteAttack());
-					_attackTimer = AttackCooldownMs;
+					_attackUntilMs = nowMs + AttackCooldownMs;
 				}
 			}
 			_ctrlWasPressed = ctrlNow;
@@ -102,13 +104,17 @@ public class InputHandler
 		// VB6: paralyzed users can attack and cast spells, only movement is blocked
 		if (!_state.UserParalyzed)
 		{
-			// Decrement PT correction cooldown (blocks moves after server rejected one)
-			if (_state.PtCooldownFrames > 0)
+			// Time-based PT correction cooldown (blocks moves after server rejected one)
+			if (System.Environment.TickCount64 < _state.PtCooldownUntilMs)
 			{
-				_state.PtCooldownFrames--;
+				// Still in cooldown — skip movement
 			}
 			else if (!_state.UserMoving && _state.PendingMoves < 2)
 			{
+				// When BlockWalkOnChat is enabled, block all movement while chatting
+				bool blockMovement = _state.ChatActive && _state.Config.BlockWalkOnChat;
+				if (!blockMovement)
+				{
 				// Arrow keys: always available (hardcoded, not rebindable — VB6 same)
 				if (Input.IsKeyPressed(Key.Up))
 					TryMove(1); // North
@@ -130,22 +136,24 @@ public class InputHandler
 					else if (_keys.IsActionPressed(GameAction.MoveLeft))
 						TryMove(4);
 				}
+				}
 			}
 		}
 
 		// Everything below is blocked when chat is active (letter keys would type into chat)
 		if (_state.ChatActive) return;
+		if (lineEditFocused) return;
 
 		// Attack is handled in HandleInputEvent() on key RELEASE (VB6 Form_KeyUp parity)
 
 		// All action keys below share a cooldown to prevent rapid-fire when held.
-		if (_keyCooldown > 0) return;
+		if (nowMs < _keyCooldownUntilMs) return;
 
 		// Pick up item (VB6: AG)
 		if (_keys.IsActionPressed(GameAction.PickUp))
 		{
 			_tcp.SendPacket(ClientPackets.WritePickUp());
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Use item from selected inventory slot
 		else if (_keys.IsActionPressed(GameAction.UseItem))
@@ -154,7 +162,7 @@ public class InputHandler
 			if (slot >= 0 && slot < 25)
 			{
 				_tcp.SendPacket(ClientPackets.WriteUseItem((byte)(slot + 1)));
-				_keyCooldown = KeyCooldownMs;
+				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 			}
 		}
 		// Equip item from selected inventory slot
@@ -164,62 +172,51 @@ public class InputHandler
 			if (slot >= 0 && slot < 25)
 			{
 				_tcp.SendPacket(ClientPackets.WriteEquipItem((byte)(slot + 1)));
-				_keyCooldown = KeyCooldownMs;
+				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 			}
 		}
 		// Drop item from selected inventory slot
 		else if (_keys.IsActionPressed(GameAction.Drop))
 		{
-			if (_state.ItemSafety)
+			int slot = _state.SelectedInvSlot;
+			if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
 			{
-				_state.ChatMessages.Enqueue(new ChatMessage
+				if (_state.Inventory[slot].Amount == 1)
 				{
-					Text = "Desactiva el seguro de items primero.",
-					Color = "FF0000"
-				});
-			}
-			else
-			{
-				int slot = _state.SelectedInvSlot;
-				if (slot >= 0 && slot < 25 && _state.Inventory[slot].ObjIndex > 0)
+					_tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
+				}
+				else if (_state.Inventory[slot].Amount > 1)
 				{
-					if (_state.Inventory[slot].Amount == 1)
-					{
-						_tcp.SendPacket(ClientPackets.WriteDropItem((byte)(slot + 1), 1));
-					}
-					else if (_state.Inventory[slot].Amount > 1)
-					{
-						_state.DropDialogSlot = slot;
-						_state.DropDialogOpen = true;
-					}
+					_state.DropDialogSlot = slot;
+					_state.DropDialogOpen = true;
 				}
 			}
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Toggle names display (client-side only)
 		else if (_keys.IsActionPressed(GameAction.ShowNames))
 		{
 			_state.ShowNames = !_state.ShowNames;
 			_state.Config.ShowNames = _state.ShowNames;
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Toggle music
 		else if (_keys.IsActionPressed(GameAction.ToggleMusic))
 		{
 			OnToggleMusic?.Invoke();
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Steal (VB6: UK12 — eSkill.Robar)
 		else if (_keys.IsActionPressed(GameAction.Steal))
 		{
 			_tcp.SendPacket(ClientPackets.WriteUseSkill(12));
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Hide/Stealth (VB6: UK9 — eSkill.Ocultarse)
 		else if (_keys.IsActionPressed(GameAction.Hide))
 		{
 			_tcp.SendPacket(ClientPackets.WriteUseSkill(8));
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Refresh position (VB6: RPU)
 		else if (_keys.IsActionPressed(GameAction.RefreshPos))
@@ -229,7 +226,7 @@ public class InputHandler
 				_tcp.SendPacket(ClientPackets.WriteRequestPos());
 				_refreshTimer = RefreshCooldownMs;
 			}
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Screenshot
 		else if (_keys.IsActionPressed(GameAction.Screenshot))
@@ -243,38 +240,31 @@ public class InputHandler
 					Color = "00FF00"
 				});
 			}
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Meditate (VB6: /MEDITAR)
 		else if (_keys.IsActionPressed(GameAction.Meditate))
 		{
 			_tcp.SendPacket(ClientPackets.WriteMeditate());
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
+		}
+		// Rest (VB6: /DESCANSAR)
+		else if (_keys.IsActionPressed(GameAction.Rest))
+		{
+			_tcp.SendPacket(ClientPackets.WriteTalk("/DESCANSAR"));
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// PvP safety toggle (VB6: /SEG)
 		else if (_keys.IsActionPressed(GameAction.SafetyToggle))
 		{
 			_tcp.SendPacket(ClientPackets.WriteSafeToggle());
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Resurrection safety toggle (VB6: /SEGR) — accepts both keyboard minus and numpad minus
 		else if (_keys.IsActionPressed(GameAction.ResSafety) || Input.IsKeyPressed(Key.KpSubtract))
 		{
 			_tcp.SendPacket(ClientPackets.WriteTalk("/SEGR"));
-			_keyCooldown = KeyCooldownMs;
-		}
-		// Item safety toggle (VB6: ISItem)
-		else if (_keys.IsActionPressed(GameAction.ItemSafety))
-		{
-			_state.ItemSafety = !_state.ItemSafety;
-			_state.ChatMessages.Enqueue(new ChatMessage
-			{
-				Text = _state.ItemSafety
-					? ">>SEGURO DE ITEMS ACTIVADO<<"
-					: ">>SEGURO DE ITEMS DESACTIVADO<<",
-				Color = _state.ItemSafety ? "00FF00" : "FF0000"
-			});
-			_keyCooldown = KeyCooldownMs;
+			_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 		}
 		// Macro keys: 1-9, 0 (hardcoded — these are always number keys, not rebindable)
 		else if (!_state.MacroPanelOpen)
@@ -294,7 +284,7 @@ public class InputHandler
 			if (macroIdx >= 0)
 			{
 				ExecuteMacro(macroIdx);
-				_keyCooldown = KeyCooldownMs;
+				_keyCooldownUntilMs = nowMs + KeyCooldownMs;
 			}
 		}
 	}
@@ -360,6 +350,23 @@ public class InputHandler
 			_state.UserMoving = true;
 			_state.ScreenOffsetX = 0;
 			_state.ScreenOffsetY = 0;
+
+			// VB6: DoPasosFx — footstep sound for own character
+			// VB6: no sound for priv 1,2,3,5,25 (admin types)
+			if (!ch.Dead && ch.Privileges != 1 && ch.Privileges != 2
+				&& ch.Privileges != 3 && ch.Privileges != 5 && ch.Privileges != 25)
+			{
+				if (_state.UserNavigating)
+				{
+					OnPlaySoundAt?.Invoke(SoundManager.SND_NAVEGANDO, newX, newY);
+				}
+				else
+				{
+					ch.FootToggle = !ch.FootToggle;
+					int sndId = ch.FootToggle ? SoundManager.SND_PASOS1 : SoundManager.SND_PASOS2;
+					OnPlaySoundAt?.Invoke(sndId, newX, newY);
+				}
+			}
 		}
 		else
 		{
@@ -378,7 +385,9 @@ public class InputHandler
 	/// </summary>
 	private bool LegalPos(int x, int y)
 	{
-		if (x < MinXBorder || x > MaxXBorder || y < MinYBorder || y > MaxYBorder)
+		int maxX = (_state.MapData?.Width ?? 100) - BorderMarginRight;
+		int maxY = (_state.MapData?.Height ?? 100) - BorderMarginBottom;
+		if (x < BorderMarginLeft || x > maxX || y < BorderMarginTop || y > maxY)
 			return false;
 
 		if (_state.MapData == null) return true;
@@ -395,7 +404,7 @@ public class InputHandler
 				return false;
 		}
 
-		bool isWater = tile.Layer1 >= WaterGrhMin && tile.Layer1 <= WaterGrhMax && tile.Layer2 == 0;
+		bool isWater = ArgentumNextgen.Rendering.WorldRenderer.IsWaterGrh(tile.Layer1);
 		if (!_state.UserNavigating && isWater)
 			return false;
 		if (_state.UserNavigating && !isWater)
@@ -409,8 +418,8 @@ public class InputHandler
 	/// </summary>
 	private (int tileX, int tileY) ViewportToTile(Vector2 viewportPos, int userX, int userY)
 	{
-		int tileX = userX + (int)viewportPos.X / 32 - 8;
-		int tileY = userY + (int)viewportPos.Y / 32 - 6;
+		int tileX = userX + (int)viewportPos.X / 32 - ResolutionManager.HalfTilesX;
+		int tileY = userY + (int)viewportPos.Y / 32 - ResolutionManager.HalfTilesY;
 		return (tileX, tileY);
 	}
 
@@ -423,6 +432,7 @@ public class InputHandler
 		if (!_state.IsLogged || _state.Paused) return;
 		if (_state.AnyFormOpen) return;
 		if (_state.ChatActive) return;
+		long nowMs = System.Environment.TickCount64;
 
 		if (@event is InputEventKey keyEvent && !keyEvent.Pressed && !keyEvent.Echo)
 		{
@@ -431,35 +441,51 @@ public class InputHandler
 			var key = keyEvent.Keycode;
 			if (key == _keys.GetKey(GameAction.Attack) || key == Key.Space)
 			{
-				if (_attackTimer <= 0 && !_state.Resting && !_state.Meditating && !_state.Dead)
+				if (nowMs >= _attackUntilMs && !_state.Resting && !_state.Meditating && !_state.Dead)
 				{
 					_tcp.SendPacket(ClientPackets.WriteAttack());
-					_attackTimer = AttackCooldownMs;
+					_attackUntilMs = nowMs + AttackCooldownMs;
 				}
 			}
 		}
 	}
 
+	/// <summary>
+	/// Check if a click position is inside the illuminated core viewport (17x13).
+	/// Clicks in the fog area (extra tiles at higher resolutions) are blocked.
+	/// </summary>
+	private bool IsInCoreViewport(Vector2 viewportPos)
+	{
+		// Core area is centered in the SubViewport
+		float coreLeft = (ResolutionManager.ViewportW - 544f) / 2f;
+		float coreTop = (ResolutionManager.ViewportH - 416f) / 2f;
+		return viewportPos.X >= coreLeft && viewportPos.X < coreLeft + 544
+			&& viewportPos.Y >= coreTop && viewportPos.Y < coreTop + 416;
+	}
+
 	public void HandleLeftClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-			_tcp.SendPacket(ClientPackets.WriteLeftClick((byte)tileX, (byte)tileY));
+		if (IsInMapBounds(tileX, tileY))
+			_tcp.SendPacket(ClientPackets.WriteLeftClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
 	public void HandleRightClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
-			_tcp.SendPacket(ClientPackets.WriteRightClick((byte)tileX, (byte)tileY));
+		if (IsInMapBounds(tileX, tileY))
+			_tcp.SendPacket(ClientPackets.WriteRightClick((short)tileX, (short)tileY, _state.CoordCipher));
 	}
 
 	public void HandleSpellClick(Vector2 viewportPos, int userX, int userY)
 	{
+		if (!IsInCoreViewport(viewportPos)) return; // block clicks in fog area
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+		if (IsInMapBounds(tileX, tileY))
 		{
-			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((byte)tileX, (byte)tileY, (byte)_state.UsingSkill));
+			_tcp.SendPacket(ClientPackets.WriteWorkLeftClick((short)tileX, (short)tileY, (byte)_state.UsingSkill, _state.CoordCipher));
 			_state.UsingSkill = 0;
 		}
 	}
@@ -467,8 +493,17 @@ public class InputHandler
 	public void HandleGmTeleport(Vector2 viewportPos, int userX, int userY, int currentMap)
 	{
 		var (tileX, tileY) = ViewportToTile(viewportPos, userX, userY);
-		if (tileX >= 1 && tileX <= 100 && tileY >= 1 && tileY <= 100)
+		if (IsInMapBounds(tileX, tileY))
 			_tcp.SendPacket(ClientPackets.WriteTalk($"/TELEP YO {currentMap} {tileX} {tileY}"));
+	}
+
+	/// <summary>
+	/// Check if tile coordinates are within the current map bounds (1..Width, 1..Height).
+	/// </summary>
+	private bool IsInMapBounds(int x, int y)
+	{
+		if (_state.MapData == null) return x >= 1 && x <= 100 && y >= 1 && y <= 100;
+		return x >= 1 && x <= _state.MapData.Width && y >= 1 && y <= _state.MapData.Height;
 	}
 
 	/// <summary>

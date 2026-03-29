@@ -59,71 +59,6 @@ pub(super) async fn handle_slash_salir(state: &mut GameState, conn_id: Connectio
     close_connection(state, conn_id).await;
 }
 
-/// /MEDITAR — Toggle meditation. VB6: level-based FX, GMs get instant full mana.
-/// FX IDs: chico=4 (<15), mediano=5 (15-29), grande=6 (30-49), xgrande=43 (50-59),
-/// neutral=103/alianza=104/horda=105 (60+).
-pub(super) async fn handle_slash_meditar(state: &mut GameState, conn_id: ConnectionId) {
-    let (dead, privileges, meditating, max_mana) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.privileges, u.meditating, u.max_mana),
-        _ => return,
-    };
-
-    if dead {
-        state.send_msg_id(conn_id, 3, "");
-        return;
-    }
-
-    if max_mana == 0 {
-        state.send_msg_id(conn_id, 4, "");
-        return;
-    }
-
-    if privileges > privilege_level::USER {
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            let max = user.max_mana;
-            user.min_mana = max;
-        }
-        state.send_msg_id(conn_id, 393, "");
-        send_stats_mana(state, conn_id).await;
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
-        return;
-    }
-
-    let was_meditating = meditating;
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        user.meditating = !was_meditating;
-    }
-
-    if !was_meditating {
-        state.send_msg_id(conn_id, 394, "");
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
-
-        let min_mana = state.users.get(&conn_id).map(|u| u.min_mana).unwrap_or(0);
-        if min_mana >= max_mana { return; }
-
-        let (ci, map, x, y, level) = match state.users.get(&conn_id) {
-            Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y, u.level),
-            None => return,
-        };
-
-        let fx_id = super::ticks::meditation_fx_for_level(level);
-
-        let pkt = binary_packets::write_create_fx(ci as i16, fx_id, 999);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
-    } else {
-        state.send_msg_id(conn_id, 205, "");
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
-
-        let (ci, map, x, y) = match state.users.get(&conn_id) {
-            Some(u) => (u.char_index.0, u.pos_map, u.pos_x, u.pos_y),
-            None => return,
-        };
-        let pkt = binary_packets::write_create_fx(ci as i16, 0, 0);
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
-    }
-}
-
-
 /// /DESCANSAR — Toggle resting near a campfire.
 /// VB6: HandleRest (Protocol.bas). Requires FOGATA (obj 63) in view area.
 /// Resting doubles HP/STA regen rate in tick_player_passive.
@@ -180,9 +115,10 @@ fn hay_obj_area(state: &GameState, map: i32, cx: i32, cy: i32, obj_index: i16) -
 
     for y in (cy - RANGE_Y)..=(cy + RANGE_Y) {
         for x in (cx - RANGE_X)..=(cx + RANGE_X) {
-            if x < 1 || x > 100 || y < 1 || y > 100 { continue; }
-            if game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index == obj_index {
-                return true;
+            if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+                if tile.obj.obj_index == obj_index {
+                    return true;
+                }
             }
         }
     }
@@ -227,10 +163,11 @@ const PF_MAX_STEPS: usize = 30;
 /// Uses 4-directional adjacency on a 100x100 grid.
 pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i32, ty: i32) -> Vec<(i32, i32)> {
     if sx == tx && sy == ty { return Vec::new(); }
-    if sx < 1 || sx > 100 || sy < 1 || sy > 100 { return Vec::new(); }
-    if tx < 1 || tx > 100 || ty < 1 || ty > 100 { return Vec::new(); }
+    let (grid_w, grid_h) = state.grid_dimensions(map);
+    if sx < 1 || sx > grid_w || sy < 1 || sy > grid_h { return Vec::new(); }
+    if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h { return Vec::new(); }
 
-    let mut visited = vec![vec![0u8; 102]; 102];
+    let mut visited = vec![vec![0u8; (grid_w + 2) as usize]; (grid_h + 2) as usize];
     let mut queue: std::collections::VecDeque<(i32, i32, usize)> = std::collections::VecDeque::new();
 
     visited[sy as usize][sx as usize] = 5;
@@ -252,7 +189,7 @@ pub(super) fn pathfind_bfs(state: &GameState, map: i32, sx: i32, sy: i32, tx: i3
         for &(dx, dy, dir_code) in &dirs {
             let nx = cx + dx;
             let ny = cy + dy;
-            if nx < 1 || nx > 100 || ny < 1 || ny > 100 { continue; }
+            if nx < 1 || nx > grid_w || ny < 1 || ny > grid_h { continue; }
             if visited[ny as usize][nx as usize] != 0 { continue; }
 
             if state.is_tile_blocked(map, nx, ny) { continue; }
@@ -370,7 +307,8 @@ pub(super) async fn crear_clan_pretoriano(state: &mut GameState, map: i32, x: i3
 
     for i in 0..MAX_PRETORIANOS_CLAN {
         let (px, py) = positions[i];
-        if px >= 1 && px <= 100 && py >= 1 && py <= 100 {
+        let (pret_w, pret_h) = state.grid_dimensions(map);
+        if px >= 1 && px <= pret_w && py >= 1 && py <= pret_h {
             if let Some(npc_idx) = state.spawn_npc(npc_types[i], map, px, py) {
                 state.pretoriano_clan.push(npc_idx);
 

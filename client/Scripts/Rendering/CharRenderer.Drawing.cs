@@ -41,10 +41,11 @@ public static partial class CharRenderer
         int nickY = (int)pos.Y + 30;
 
         // VB6: dead -> alpha 80, invisible -> pulsing alpha, else 255
-        byte alpha = ch.Dead ? (byte)80
-                   : ch.Invisible ? (byte)(ch.TransparenciaBody * 255 / 100)
-                   : (byte)255;
-        Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, alpha / 255f);
+        // FovAlpha applied so name fades with character at viewport edge
+        float baseAlpha = ch.Dead ? 80f / 255f
+                   : ch.Invisible ? ch.TransparenciaBody / 100f
+                   : 1f;
+        Color nickColor = new Color(nameColor.R, nameColor.G, nameColor.B, baseAlpha * ch.FovAlpha);
         font.DrawText(canvas, centerX, nickY, nick, nickColor, center: true);
 
         // VB6: rank badge at Y+45 for admins, clan for non-admins
@@ -79,57 +80,37 @@ public static partial class CharRenderer
                                     Vector2 headOffset, GameData data, float deltaMs,
                                     WorldRenderer? worldRenderer = null)
     {
+        // Timer advancement (DialogRiseCounter, DialogAlpha, DialogFading, DialogText clear)
+        // is handled by UpdateCharacterTimers in _Process. This method only reads current state.
         if (string.IsNullOrEmpty(ch.DialogText)) return;
 
         var font = data.Fonts[1]; // font1 for dialog
         if (font == null) return;
 
-        long now = System.Environment.TickCount64;
-        long elapsed = now - ch.DialogStartMs;
-
-        // Delta-time factor: VB6 ran at ~60fps -> 16.67ms per frame.
-        // All per-frame increments are scaled by (deltaMs / 16.67).
-        float dtFactor = deltaMs / 16.667f;
-
-        // VB6 Sube logic: decrements 1 per frame (60/sec), fades in +12/frame (720/sec)
-        if (ch.DialogDurationMs >= 292)
-        {
-            if (ch.DialogRiseCounter > 0)
-                ch.DialogRiseCounter = Math.Max(0, ch.DialogRiseCounter - dtFactor);
-            if (ch.DialogRiseCounter > 0)
-            {
-                ch.DialogAlpha = Math.Min(255f, ch.DialogAlpha + 12f * dtFactor);
-            }
-        }
-
-        // VB6: check lifetime -> set Tiempito
-        if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
-            ch.DialogFading = true;
-
-        // VB6: fade-out -10/frame (600/sec), remove at <= 9
-        if (ch.DialogFading)
-        {
-            ch.DialogAlpha = Math.Max(0, ch.DialogAlpha - 10f * dtFactor);
-            if (ch.DialogAlpha <= 9f)
-            {
-                ch.DialogText = "";
-                return;
-            }
-        }
-
-        byte alpha = (byte)Math.Clamp((int)ch.DialogAlpha, 0, 255);
+        // Apply FovAlpha so dialog fades with the character at viewport edge
+        float combinedAlpha = ch.DialogAlpha * ch.FovAlpha;
+        byte alpha = (byte)Math.Clamp((int)combinedAlpha, 0, 255);
         if (alpha == 0) return;
 
-        var lines = WrapText(ch.DialogText, 24);
+        // Cache WrapText result — only re-wrap when DialogText changes
+        if (ch.CachedDialogText != ch.DialogText)
+        {
+            ch.CachedDialogLines = WrapText(ch.DialogText, 24);
+            ch.CachedDialogText = ch.DialogText;
+        }
+        var lines = ch.CachedDialogLines!;
         int numLines = lines.Length;
 
         // Parse hex color
         Color color;
         if (ch.DialogColor.Length == 6)
         {
-            int r = Convert.ToInt32(ch.DialogColor[..2], 16);
-            int g = Convert.ToInt32(ch.DialogColor[2..4], 16);
-            int b = Convert.ToInt32(ch.DialogColor[4..6], 16);
+            int colorVal = 0;
+            if (!int.TryParse(ch.DialogColor, System.Globalization.NumberStyles.HexNumber, null, out colorVal))
+                colorVal = 0xFFFFFF;
+            int r = (colorVal >> 16) & 0xFF;
+            int g = (colorVal >> 8) & 0xFF;
+            int b = colorVal & 0xFF;
             color = new Color(r / 255f, g / 255f, b / 255f, alpha / 255f);
         }
         else

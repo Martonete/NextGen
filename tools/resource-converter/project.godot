@@ -1,0 +1,29 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="AO Resource Converter"
+run/main_scene="res://Scenes/Main.tscn"
+config/features=PackedStringArray("4.3", "C#")
+
+[display]
+
+window/size/viewport_width=900
+window/size/viewport_height=640
+
+[dotnet]
+
+project/assembly_name="AOResourceConverter"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.112, 0.114, 0.128, 1)

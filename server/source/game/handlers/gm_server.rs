@@ -293,7 +293,7 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
             // VB6: /MODMAPINFO PART <particle_id> — Set particle at player tile
             let particle_id: i32 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
             if particle_id == 0 { return; }
-            let pkt = binary_packets::write_particle_create(particle_id as i16, x as u8, y as u8, 0);
+            let pkt = binary_packets::write_particle_create(particle_id as i16, x as i16, y as i16, 0);
             state.send_data_bytes(SendTarget::ToMap(map), &pkt);
         }
         "LUZ" => {
@@ -303,7 +303,7 @@ pub(super) async fn handle_slash_modmapinfo(state: &mut GameState, conn_id: Conn
             let r: i32 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
             let g: i32 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0);
             let b: i32 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0);
-            let pkt = binary_packets::write_light_create(x as u8, y as u8, range as u8, r as u8, g as u8, b as u8);
+            let pkt = binary_packets::write_light_create(x as i16, y as i16, range as u8, r as u8, g as u8, b as u8);
             state.send_data_bytes(SendTarget::ToMap(map), &pkt);
         }
         "RGB" => {
@@ -637,8 +637,10 @@ pub(super) async fn handle_slash_showname(state: &mut GameState, conn_id: Connec
     }
 
     // Re-broadcast CC so clients see updated name visibility
-    let cc = state.users.get(&conn_id).unwrap().build_cc_binary();
-    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+    if let Some(user) = state.users.get(&conn_id) {
+        let cc = user.build_cc_binary();
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
+    }
 
     let status = if new_val { "visible" } else { "oculto" };
     state.send_console(conn_id, &format!("Tu nombre ahora es {}.", status), font_index::INFO);

@@ -28,24 +28,171 @@ pub(super) fn same_clan(state: &GameState, a: ConnectionId, b: ConnectionId) -> 
 }
 
 // =====================================================================
+// Zone change detection
+// =====================================================================
+
+/// Check if player changed zone after moving, and send ZoneChange packet if so.
+pub(super) async fn check_zone_change(state: &mut GameState, conn_id: ConnectionId) {
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+
+    let new_zone_id = get_zone_id_at(state, map, x, y);
+    let old_zone_id = state.users.get(&conn_id).map(|u| u.current_zone_id).unwrap_or(0);
+
+    if new_zone_id == old_zone_id { return; }
+
+    // Update zone ID
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.current_zone_id = new_zone_id;
+    }
+
+    // Build and send ZoneChange packet
+    let map_idx = map as usize;
+    let pkt = if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+        if let Some(zone) = game_map.zones.as_ref()
+            .and_then(|zs| zs.zones.iter().find(|z| z.id == new_zone_id))
+        {
+            binary_packets::write_zone_change(
+                &zone.name,
+                zone.zone_type as u8,
+                zone.segura,
+                zone.musica as i16,
+                zone.lluvia, zone.nieve, zone.niebla,
+                zone.x1 as i16, zone.y1 as i16, zone.x2 as i16, zone.y2 as i16,
+            )
+        } else {
+            // Wilderness — no zone
+            let is_safe = !game_map.info.pk;
+            let music = game_map.info.music as i16;
+            binary_packets::write_zone_change_wilderness(&game_map.info.name, is_safe, music)
+        }
+    } else {
+        binary_packets::write_zone_change_wilderness(&format!("Mapa {}", map), false, 0)
+    };
+
+    state.send_bytes(conn_id, &pkt);
+}
+
+// =====================================================================
 // Map tile helpers
 // =====================================================================
 
 pub(super) fn get_map_tile_trigger(state: &GameState, map: i32, x: i32, y: i32) -> Trigger {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].trigger;
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.trigger;
         }
     }
     Trigger::None
 }
 
+/// Check if a position is safe (no PvP) using Trigger > Zone > Map priority.
+/// Returns true if the tile is in a safe area.
+pub(super) fn is_safe_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    let trigger = get_map_tile_trigger(state, map, x, y);
+    // Trigger wins: SafeZone tile = always safe
+    if trigger == Trigger::SafeZone { return true; }
+    // Trigger wins: CombatZone tile = never safe (ring)
+    if trigger == Trigger::CombatZone { return false; }
+
+    // Zone check
+    let map_idx = map as usize;
+    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
+            return zone.segura;
+        }
+    }
+
+    // Map fallback: pk=false means map is safe, pk=true means unsafe
+    state.game_data.maps.get(map as usize)
+        .and_then(|m| m.as_ref())
+        .map(|m| !m.info.pk)
+        .unwrap_or(false)
+}
+
+/// Shared implementation for all zone-based action-blocking checks.
+///
+/// Each check reads a different boolean from `ZoneInfo` (via `zone_field`) and a
+/// different boolean from `MapInfo` (via `map_field`). Callers use the five typed
+/// wrappers below so call sites remain self-documenting.
+fn is_action_blocked_at<F, G>(
+    state: &GameState,
+    map: i32, x: i32, y: i32,
+    zone_field: F,
+    map_field: G,
+) -> bool
+where
+    F: Fn(&crate::data::zones::ZoneData) -> bool,
+    G: Fn(&crate::data::maps::MapInfo) -> bool,
+{
+    let map_idx = map as usize;
+    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
+            return zone_field(zone);
+        }
+    }
+    state.game_data.maps.get(map_idx)
+        .and_then(|m| m.as_ref())
+        .map(|m| map_field(&m.info))
+        .unwrap_or(false)
+}
+
+/// Check if magic is blocked at a position (Zone > Map).
+pub(super) fn is_magic_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    is_action_blocked_at(state, map, x, y, |z| z.sin_magia, |m| m.magia_sin_efecto)
+}
+
+/// Check if invisibility is blocked at a position (Zone > Map).
+pub(super) fn is_invi_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    is_action_blocked_at(state, map, x, y, |z| z.sin_invi, |m| m.invi_sin_efecto)
+}
+
+/// Check if invocation is blocked at a position (Zone > Map).
+pub(super) fn is_invocar_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    is_action_blocked_at(state, map, x, y, |z| z.sin_invocar, |m| m.invocar_sin_efecto)
+}
+
+/// Check if hiding (ocultar) is blocked at a position (Zone > Map).
+pub(super) fn is_ocultar_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    is_action_blocked_at(state, map, x, y, |z| z.sin_ocultar, |m| m.ocultar_sin_efecto)
+}
+
+/// Check if resurrection is blocked at a position (Zone > Map).
+pub(super) fn is_resu_blocked_at(state: &GameState, map: i32, x: i32, y: i32) -> bool {
+    is_action_blocked_at(state, map, x, y, |z| z.sin_resucitar, |m| m.resu_sin_efecto)
+}
+
+/// Get the zone ID at a tile position (0 = no zone).
+pub(super) fn get_zone_id_at(state: &GameState, map: i32, x: i32, y: i32) -> u16 {
+    let map_idx = map as usize;
+    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.zone_id;
+        }
+    }
+    0
+}
+
+/// Get the zone name at a position, or the map name if no zone.
+pub(super) fn get_zone_name_at(state: &GameState, map: i32, x: i32, y: i32) -> String {
+    let map_idx = map as usize;
+    if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
+        if let Some(zone) = game_map.get_zone_at(x - 1, y - 1) {
+            return zone.name.clone();
+        }
+        return game_map.info.name.clone();
+    }
+    format!("Mapa {}", map)
+}
+
 pub(super) fn get_map_tile_obj(state: &GameState, map: i32, x: i32, y: i32) -> i32 {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index as i32;
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.obj.obj_index as i32;
         }
     }
     0
@@ -54,8 +201,8 @@ pub(super) fn get_map_tile_obj(state: &GameState, map: i32, x: i32, y: i32) -> i
 pub(super) fn get_map_tile_particle(state: &GameState, map: i32, x: i32, y: i32) -> i16 {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            return game_map.tiles[(y - 1) as usize][(x - 1) as usize].particle_group_index;
+        if let Some(tile) = game_map.tiles.get((x - 1) as usize, (y - 1) as usize) {
+            return tile.particle_group_index;
         }
     }
     0
@@ -64,8 +211,8 @@ pub(super) fn get_map_tile_particle(state: &GameState, map: i32, x: i32, y: i32)
 pub(super) fn set_map_tile_obj(state: &mut GameState, map: i32, x: i32, y: i32, new_obj: i16) {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].obj.obj_index = new_obj;
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+            tile.obj.obj_index = new_obj;
         }
     }
 }
@@ -73,8 +220,8 @@ pub(super) fn set_map_tile_obj(state: &mut GameState, map: i32, x: i32, y: i32, 
 pub(super) fn set_map_tile_blocked(state: &mut GameState, map: i32, x: i32, y: i32, blocked: bool) {
     let map_idx = map as usize;
     if let Some(Some(game_map)) = state.game_data.maps.get_mut(map_idx) {
-        if x >= 1 && x <= 100 && y >= 1 && y <= 100 {
-            game_map.tiles[(y - 1) as usize][(x - 1) as usize].blocked = blocked;
+        if let Some(tile) = game_map.tiles.get_mut((x - 1) as usize, (y - 1) as usize) {
+            tile.blocked = blocked;
         }
     }
 }
@@ -198,13 +345,14 @@ pub(super) fn find_free_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32
         return (x, y);
     }
 
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     for radius in 1i32..=10 {
         for dy in -radius..=radius {
             for dx in -radius..=radius {
                 if dx.abs() != radius && dy.abs() != radius { continue; }
                 let nx = x + dx;
                 let ny = y + dy;
-                if nx < 1 || nx > 100 || ny < 1 || ny > 100 { continue; }
+                if nx < 1 || nx > grid_w || ny < 1 || ny > grid_h { continue; }
                 let tile_blocked = state.is_tile_blocked(map, nx, ny);
                 if tile_blocked { continue; }
                 let tile_free = state.world.grid(map)
@@ -218,7 +366,11 @@ pub(super) fn find_free_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32
         }
     }
 
-    (x, y)
+    // Fallback: return the original position only if it's within bounds; clamp otherwise.
+    let (grid_w, grid_h) = state.grid_dimensions(map);
+    let safe_x = x.clamp(1, grid_w.max(1));
+    let safe_y = y.clamp(1, grid_h.max(1));
+    (safe_x, safe_y)
 }
 
 pub(super) fn find_free_tile(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
@@ -248,10 +400,11 @@ pub(super) fn find_free_tile(state: &GameState, map: i32, x: i32, y: i32) -> (i3
 }
 
 pub(super) fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32) -> (i32, i32) {
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     for ring in 0..=12 {
         for ty in (y - ring)..=(y + ring) {
             for tx in (x - ring)..=(x + ring) {
-                if tx < 1 || tx > 100 || ty < 1 || ty > 100 { continue; }
+                if tx < 1 || tx > grid_w || ty < 1 || ty > grid_h { continue; }
                 if !state.is_tile_blocked(map, tx, ty) {
                     return (tx, ty);
                 }
@@ -262,10 +415,11 @@ pub(super) fn find_closest_legal_pos(state: &GameState, map: i32, x: i32, y: i32
 }
 
 pub(super) fn zona_cura(state: &GameState, map: i32, px: i32, py: i32) -> bool {
+    let (grid_w, grid_h) = state.grid_dimensions(map);
     let min_x = (px - world::MIN_X_BORDER + 1).max(1);
-    let max_x = (px + world::MIN_X_BORDER - 1).min(100);
+    let max_x = (px + world::MIN_X_BORDER - 1).min(grid_w);
     let min_y = (py - world::MIN_Y_BORDER + 1).max(1);
-    let max_y = (py + world::MIN_Y_BORDER - 1).min(100);
+    let max_y = (py + world::MIN_Y_BORDER - 1).min(grid_h);
 
     if let Some(grid) = state.world.grid(map) {
         for cy in min_y..=max_y {
@@ -378,7 +532,7 @@ pub(super) fn rand_simple_u32() -> u32 {
     nanos.wrapping_mul(1103515245).wrapping_add(12345) % 1000
 }
 
-pub(super) fn rand_range(min: i32, max: i32) -> i32 {
+pub(crate) fn rand_range(min: i32, max: i32) -> i32 {
     if min >= max {
         return min;
     }
@@ -970,7 +1124,7 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as i16, y as i16));
         send_stats_hp(state, conn_id).await;
         send_stats_sta(state, conn_id).await;
     } else if hp_low {
@@ -983,7 +1137,7 @@ pub(super) async fn auto_cura_user(state: &mut GameState, conn_id: ConnectionId)
             Some(u) => (u.pos_map, u.pos_x, u.pos_y),
             None => return,
         };
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(20, x as i16, y as i16));
         send_stats_hp(state, conn_id).await;
     }
 

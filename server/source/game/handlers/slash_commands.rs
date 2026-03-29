@@ -203,7 +203,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper == "/SALIR" {
         handle_slash_salir(state, conn_id).await;
     } else if cmd_upper == "/MEDITAR" {
-        handle_slash_meditar(state, conn_id).await;
+        ticks::handle_meditate(state, conn_id).await;
     } else if cmd_upper == "/DESCANSAR" {
         handle_slash_descansar(state, conn_id).await;
     } else if cmd_upper == "/SEG" {
@@ -305,8 +305,7 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/MIRAR ") {
         // /MIRAR <name> — look at character info (routes to DAMINF handler)
         let target = cmd[7..].trim();
-        let text = format!("DAMINF{}", target);
-        handle_daminf(state, conn_id, &text).await;
+        handle_daminf(state, conn_id, target).await;
     // =====================================================================
     // Duel system
     // =====================================================================

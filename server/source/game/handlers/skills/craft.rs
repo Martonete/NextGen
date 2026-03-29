@@ -3,13 +3,14 @@
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::{ObjData, ObjType};
 use crate::game::handlers::common::*;
 use crate::game::handlers::{send_inventory_slot, send_full_inventory, check_user_level};
 use crate::game::constants::*;
 use super::{skill_id, luck_denominator, max_items_extraibles, grant_crafting_rep,
     has_items, remove_items, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj, has_tool_equipped,
+    mod_herreria, mod_carpinteria, mod_fundicion,
 };
 
 pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
@@ -39,8 +40,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     let is_anvil = is_anvil || state.game_data.maps.get(map as usize)
         .and_then(|m| m.as_ref())
         .map(|m| {
-            if tx >= 1 && tx <= 100 && ty >= 1 && ty <= 100 {
-                let tile = &m.tiles[(ty - 1) as usize][(tx - 1) as usize];
+            if let Some(tile) = m.tiles.get((tx - 1) as usize, (ty - 1) as usize) {
                 if tile.obj.obj_index > 0 {
                     state.get_object(tile.obj.obj_index as i32)
                         .map(|o| o.obj_type == ObjType::Anvil)
@@ -60,14 +60,17 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     }
 
     // Send buildable items lists (VB6 13.3 binary format)
-    let skill_herreria = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // Herreria = 15 (1-based 16)
+    let (skill_herreria, class) = state.users.get(&conn_id)
+        .map(|u| (u.skills[15], u.class))
+        .unwrap_or((0, PlayerClass::Guerrero)); // Herreria = 15 (1-based 16)
+    let effective_skill = (skill_herreria as f32 / mod_herreria(class)) as i32;
 
     let mut weapons = Vec::new();
     let mut armors = Vec::new();
     // VB6: Use parsed ArmasHerrero.dat / ArmadurasHerrero.dat lists instead of scanning all objects
     for &idx in &state.game_data.crafting.smith_weapons {
         if let Some(obj) = state.get_object(idx) {
-            if obj.sk_herreria > 0 && obj.sk_herreria <= skill_herreria {
+            if obj.sk_herreria > 0 && obj.sk_herreria <= effective_skill {
                 weapons.push(binary_packets::CraftItem {
                     name: obj.name.clone(),
                     grh_index: obj.grh_index as i16,
@@ -82,7 +85,7 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
     }
     for &idx in &state.game_data.crafting.smith_armors {
         if let Some(obj) = state.get_object(idx) {
-            if obj.sk_herreria > 0 && obj.sk_herreria <= skill_herreria {
+            if obj.sk_herreria > 0 && obj.sk_herreria <= effective_skill {
                 armors.push(binary_packets::CraftItem {
                     name: obj.name.clone(),
                     grh_index: obj.grh_index as i16,
@@ -107,13 +110,16 @@ pub(crate) async fn do_herreria(state: &mut GameState, conn_id: ConnectionId, tx
 /// Carpenter (open UI — sends buildable items list + ShowCarpenterForm).
 /// VB6: triggered by double-clicking equipped serrucho.
 pub(crate) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId) {
-    let skill_carpinteria = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0); // Carpinteria=14 (1-based 15)
+    let (skill_carpinteria, class) = state.users.get(&conn_id)
+        .map(|u| (u.skills[14], u.class))
+        .unwrap_or((0, PlayerClass::Guerrero)); // Carpinteria=14 (1-based 15)
+    let effective_skill = (skill_carpinteria as f32 / mod_carpinteria(class)) as i32;
 
     let mut items = Vec::new();
     // VB6: Use parsed ObjCarpintero.dat list instead of scanning all objects
     for &idx in &state.game_data.crafting.carpenter_items {
         if let Some(obj) = state.get_object(idx) {
-            if obj.sk_carpinteria > 0 && obj.sk_carpinteria <= skill_carpinteria {
+            if obj.sk_carpinteria > 0 && obj.sk_carpinteria <= effective_skill {
                 items.push(binary_packets::CraftItem {
                     name: obj.name.clone(),
                     grh_index: obj.grh_index as i16,
@@ -162,6 +168,19 @@ pub(crate) async fn do_fundir(state: &mut GameState, conn_id: ConnectionId) {
             return;
         }
     };
+
+    // VB6 13.3: Check mining skill with class modifier (ModFundicion)
+    let (skill_mineria, class) = state.users.get(&conn_id)
+        .map(|u| (u.skills[13], u.class))
+        .unwrap_or((0, PlayerClass::Guerrero)); // Mineria=13 (1-based 14)
+    let effective_skill = (skill_mineria as f32 / mod_fundicion(class)) as i32;
+
+    // VB6: ObjData(mineral).MinSkill <= Skills(Mineria) / ModFundicion(clase)
+    let min_skill = state.get_object(mineral_obj).map(|o| o.min_skill).unwrap_or(0);
+    if effective_skill < min_skill {
+        state.send_console(conn_id, "No tienes suficiente habilidad de minería para fundir esto.", font_index::INFO);
+        return;
+    }
 
     // VB6 13.3: Minerals per ingot (HierroCrudo=14, PlataCruda=20, OroCrudo=35)
     let minerals_needed = match mineral_obj {
@@ -266,9 +285,12 @@ pub(crate) async fn do_fundir_arma(state: &mut GameState, conn_id: ConnectionId,
         return;
     }
 
-    // Check Herrería skill
-    let user_skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // SK16 = Herreria
-    if user_skill < sk_needed {
+    // Check Herrería skill (VB6: skill / ModHerreria)
+    let (user_skill, class) = state.users.get(&conn_id)
+        .map(|u| (u.skills[15], u.class))
+        .unwrap_or((0, PlayerClass::Guerrero)); // SK16 = Herreria
+    let effective_skill = (user_skill as f32 / mod_herreria(class)) as i32;
+    if effective_skill < sk_needed {
         state.send_console(conn_id, &format!("Necesitas {} de herrería para fundir esto.", sk_needed), font_index::INFO);
         return;
     }
@@ -393,13 +415,16 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         return;
     }
 
-    // VB6: PORCENTAJE_MATERIALES_UPGRADE — materials needed = upgrade mats - (current mats * 0.5)
-    let pct = 0.5f64;
+    // VB6: PORCENTAJE_MATERIALES_UPGRADE — materials needed = upgrade mats - (current mats * 0.85)
+    let pct = 0.85f64;
 
     if is_smith {
-        // Herrería path: weapons, shields, helmets, armor
-        let user_skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0);
-        if user_skill < up_sk_herreria {
+        // Herrería path: weapons, shields, helmets, armor (VB6: skill / ModHerreria)
+        let (user_skill, class) = state.users.get(&conn_id)
+            .map(|u| (u.skills[15], u.class))
+            .unwrap_or((0, PlayerClass::Guerrero));
+        let effective_skill = (user_skill as f32 / mod_herreria(class)) as i32;
+        if effective_skill < up_sk_herreria {
             state.send_console(conn_id, &format!("Necesitas {} de herrería.", up_sk_herreria), font_index::INFO);
             return;
         }
@@ -428,9 +453,12 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
             try_level_skill(u, 15); // Herreria
         }
     } else {
-        // Carpintería path: arrows, weapons (wood), boats
-        let user_skill = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0);
-        if user_skill < up_sk_carpinteria {
+        // Carpintería path: arrows, weapons (wood), boats (VB6: skill / ModCarpinteria)
+        let (user_skill, class) = state.users.get(&conn_id)
+            .map(|u| (u.skills[14], u.class))
+            .unwrap_or((0, PlayerClass::Guerrero));
+        let effective_skill = (user_skill as f32 / mod_carpinteria(class)) as i32;
+        if effective_skill < up_sk_carpinteria {
             state.send_console(conn_id, &format!("Necesitas {} de carpintería.", up_sk_carpinteria), font_index::INFO);
             return;
         }
@@ -500,12 +528,16 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
     }
 }
 
-pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let obj_index: i32 = match payload.trim().parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: ConnectionId, item_index: i32) {
+    // VB6: must have MARTILLO_HERRERO or MARTILLO_HERRERO_NEWBIE equipped
+    let weapon_idx = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+    if weapon_idx != MARTILLO_HERRERO && weapon_idx != MARTILLO_HERRERO_NEWBIE {
+        state.send_console(conn_id, "Necesitas un martillo de herrero equipado.", font_index::INFO);
+        return;
+    }
+
+    let obj_index: i32 = item_index;
+    if obj_index < 1 { return; }
 
     let obj = match state.get_object(obj_index) {
         Some(o) => o.clone(),
@@ -517,9 +549,12 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
     // VB6: Validate item is in ArmasHerrero or ArmadurasHerrero list
     if !state.game_data.crafting.is_smith_item(obj_index) { return; }
 
-    // Check skill
-    let skill = state.users.get(&conn_id).map(|u| u.skills[15]).unwrap_or(0); // Herreria=15 (1-based 16)
-    if skill < obj.sk_herreria {
+    // Check skill (VB6: skill / ModHerreria)
+    let (skill, class) = state.users.get(&conn_id)
+        .map(|u| (u.skills[15], u.class))
+        .unwrap_or((0, PlayerClass::Guerrero)); // Herreria=15 (1-based 16)
+    let effective_skill = (skill as f32 / mod_herreria(class)) as i32;
+    if effective_skill < obj.sk_herreria {
         state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO);
         return;
     }
@@ -549,7 +584,7 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-    let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as u8, y as u8);
+    let snd = binary_packets::write_play_wave(SND_HERRERO as u8, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
     state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
@@ -561,12 +596,9 @@ pub(crate) async fn handle_construct_smith(state: &mut GameState, conn_id: Conne
 }
 
 /// CNC — Construct carpentry item.
-pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let obj_index: i32 = match payload.trim().parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: ConnectionId, item_index: i32) {
+    let obj_index: i32 = item_index;
+    if obj_index < 1 { return; }
 
     let obj = match state.get_object(obj_index) {
         Some(o) => o.clone(),
@@ -578,16 +610,19 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
     // VB6: Validate item is in ObjCarpintero list
     if !state.game_data.crafting.is_carpenter_item(obj_index) { return; }
 
-    // Check equipped carpentry tool (VB6: SERRUCHO_CARPINTERO must be equipped)
+    // VB6: SERRUCHO_CARPINTERO or SERRUCHO_CARPINTERO_NEWBIE must be equipped
     let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
-    if weapon != SERRUCHO_CARPINTERO {
+    if weapon != SERRUCHO_CARPINTERO && weapon != SERRUCHO_CARPINTERO_NEWBIE {
         state.send_console(conn_id, "Necesitas un serrucho de carpintero", font_index::INFO);
         return;
     }
 
-    // Check skill
-    let skill = state.users.get(&conn_id).map(|u| u.skills[14]).unwrap_or(0); // Carpinteria=14 (1-based 15)
-    if skill < obj.sk_carpinteria {
+    // Check skill (VB6: skill / ModCarpinteria)
+    let (skill, class) = state.users.get(&conn_id)
+        .map(|u| (u.skills[14], u.class))
+        .unwrap_or((0, PlayerClass::Guerrero)); // Carpinteria=14 (1-based 15)
+    let effective_skill = (skill as f32 / mod_carpinteria(class)) as i32;
+    if effective_skill < obj.sk_carpinteria {
         state.send_console(conn_id, "No tienes suficiente habilidad", font_index::INFO);
         return;
     }
@@ -615,7 +650,7 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 
     // Play sound
     let (map, x, y) = state.users.get(&conn_id).map(|u| (u.pos_map, u.pos_x, u.pos_y)).unwrap_or((0,0,0));
-    let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as u8, y as u8);
+    let snd = binary_packets::write_play_wave(SND_CARPINTERO as u8, x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
     state.send_console(conn_id, &format!("Has construido {}", obj.name), font_index::INFO);
@@ -649,9 +684,8 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
         return;
     }
 
-    // Check tile trigger — no campfires in safe zones (trigger 1)
-    let tile_trigger = get_map_tile_trigger(state, map, x, y);
-    if tile_trigger == crate::data::maps::Trigger::SafeZone {
+    // Zone-aware safe check — no campfires in safe zones
+    if is_safe_at(state, map, x, y) {
         state.send_console(conn_id, "No puedes crear fogatas en zona segura.", font_index::INFO);
         return;
     }
@@ -712,7 +746,7 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
 
             // Get campfire GRH for visual
             let grh = state.get_object(FOGATA_OBJ).map(|o| o.grh_index).unwrap_or(0);
-            let ho_pkt = binary_packets::write_object_create(x as u8, y as u8, grh as i16);
+            let ho_pkt = binary_packets::write_object_create(x as i16, y as i16, grh as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
 
             // Add to cleanup list (temporary — VB6 uses garbage collector)

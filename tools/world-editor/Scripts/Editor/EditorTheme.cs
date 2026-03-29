@@ -71,6 +71,7 @@ public static class EditorTheme
     public static readonly Color OVERLAY_TRIGGER   = new(0.8f, 0.8f, 0.3f, 0.25f);
 
     // ── Font sizes ───────────────────────────────────────────────────
+    public const int FONT_XS = 10;
     public const int FONT_SM = 12;
     public const int FONT_MD = 14;
     public const int FONT_LG = 16;
@@ -214,51 +215,94 @@ public static class EditorTheme
     }
 
     /// <summary>
-    /// Creates a compact 36x36 icon-only tool toggle button (vector icon, no text).
+    /// Creates a compact icon tool toggle button. When <paramref name="label"/> is provided,
+    /// the button grows to 52px tall and shows the label below the icon.
     /// </summary>
-    public static Button ToolToggleCompact(string icon, string tooltip)
+    public static Button ToolToggleCompact(string icon, string tooltip, string label = "")
     {
+        bool hasLabel = label.Length > 0;
+        float h = hasLabel ? 52 : 36;
         var btn = new Button
         {
             TooltipText = tooltip,
             ToggleMode = true,
-            CustomMinimumSize = new Vector2(36, 36),
+            CustomMinimumSize = new Vector2(54, h),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             Text = "",
             ClipText = true,
         };
-        btn.AddThemeStyleboxOverride("normal",  FlatBox(BG_TOOL_NORMAL, 6, 0, 0));
-        btn.AddThemeStyleboxOverride("hover",   FlatBox(BG_TOOL_HOVER, 6, 0, 0, BORDER, 1));
-        btn.AddThemeStyleboxOverride("pressed", FlatBox(BG_TOOL_ACTIVE, 6, 0, 0, ACCENT_DIM, 1));
+        var empty = new StyleBoxEmpty();
+        var activeBox  = FlatBox(BG_TOOL_ACTIVE, 6, 0, 0, ACCENT_DIM, 1);
+        var activeHBox = FlatBox(new Color(BG_TOOL_ACTIVE.R + 0.04f, BG_TOOL_ACTIVE.G + 0.04f, BG_TOOL_ACTIVE.B + 0.04f), 6, 0, 0, ACCENT_DIM, 1);
+        btn.AddThemeStyleboxOverride("normal",         empty);
+        btn.AddThemeStyleboxOverride("hover",          FlatBox(BG_TOOL_HOVER, 6, 0, 0));
+        btn.AddThemeStyleboxOverride("pressed",        activeBox);
+        btn.AddThemeStyleboxOverride("hover_pressed",  activeHBox);
+        btn.AddThemeStyleboxOverride("focus",          empty);
 
         var iconCanvas = new ToolIconCanvas(icon);
         iconCanvas.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        if (hasLabel) iconCanvas.OffsetBottom = -13f;
         iconCanvas.MouseFilter = Control.MouseFilterEnum.Ignore;
         btn.AddChild(iconCanvas);
+
+        if (hasLabel)
+        {
+            var lbl = new Label { Text = label };
+            lbl.AddThemeFontSizeOverride("font_size", 9);
+            lbl.HorizontalAlignment = HorizontalAlignment.Center;
+            lbl.VerticalAlignment = VerticalAlignment.Bottom;
+            lbl.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+            lbl.OffsetTop = -13f;
+            lbl.AddThemeColorOverride("font_color", TEXT_SECONDARY);
+            lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
+            btn.AddChild(lbl);
+        }
 
         return btn;
     }
 
     /// <summary>
-    /// Creates a compact action button (36x36, vector icon, non-toggle) for file ops / undo / redo.
+    /// Creates a compact action button (non-toggle). When <paramref name="label"/> is provided,
+    /// the button grows to 62px tall and shows the label below the icon.
     /// </summary>
-    public static Button ActionButtonCompact(string icon, string tooltip, Action? cb = null)
+    public static Button ActionButtonCompact(string icon, string tooltip, Action? cb = null, string label = "")
     {
+        bool hasLabel = label.Length > 0;
+        float h = hasLabel ? 52 : 36;
         var btn = new Button
         {
             TooltipText = tooltip,
             ToggleMode = false,
-            CustomMinimumSize = new Vector2(36, 36),
+            CustomMinimumSize = new Vector2(54, h),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             Text = "",
             ClipText = true,
         };
-        btn.AddThemeStyleboxOverride("normal",  FlatBox(BG_TOOL_NORMAL, 6, 0, 0));
-        btn.AddThemeStyleboxOverride("hover",   FlatBox(BG_TOOL_HOVER, 6, 0, 0, BORDER, 1));
-        btn.AddThemeStyleboxOverride("pressed", FlatBox(BG_TOOL_ACTIVE, 6, 0, 0));
+        var empty = new StyleBoxEmpty();
+        btn.AddThemeStyleboxOverride("normal",   empty);
+        btn.AddThemeStyleboxOverride("hover",    FlatBox(BG_TOOL_HOVER, 6, 0, 0));
+        btn.AddThemeStyleboxOverride("pressed",  FlatBox(BG_TOOL_ACTIVE, 6, 0, 0));
+        btn.AddThemeStyleboxOverride("focus",    empty);
 
         var iconCanvas = new ToolIconCanvas(icon);
         iconCanvas.SetAnchorsPreset(Control.LayoutPreset.FullRect);
+        if (hasLabel) iconCanvas.OffsetBottom = -13f;
         iconCanvas.MouseFilter = Control.MouseFilterEnum.Ignore;
         btn.AddChild(iconCanvas);
+
+        if (hasLabel)
+        {
+            var lbl = new Label { Text = label };
+            lbl.AddThemeFontSizeOverride("font_size", 9);
+            lbl.HorizontalAlignment = HorizontalAlignment.Center;
+            lbl.VerticalAlignment = VerticalAlignment.Bottom;
+            lbl.SetAnchorsPreset(Control.LayoutPreset.BottomWide);
+            lbl.OffsetTop = -13f;
+            lbl.AddThemeColorOverride("font_color", TEXT_SECONDARY);
+            lbl.MouseFilter = Control.MouseFilterEnum.Ignore;
+            btn.AddChild(lbl);
+        }
 
         if (cb != null) btn.Pressed += cb;
         return btn;
@@ -269,15 +313,15 @@ public static class EditorTheme
     /// </summary>
     public static Control ToolBarGroupSeparator()
     {
-        var container = new Control { CustomMinimumSize = new Vector2(9, 36) };
+        var container = new Control { CustomMinimumSize = new Vector2(14, 52) };
         var line = new ColorRect
         {
             Color = BORDER_SUBTLE,
-            CustomMinimumSize = new Vector2(1, 20),
+            CustomMinimumSize = new Vector2(1, 32),
         };
         line.SetAnchorsPreset(Control.LayoutPreset.Center);
-        line.Size = new Vector2(1, 20);
-        line.Position = new Vector2(4f, 8);
+        line.Size = new Vector2(1, 28);
+        line.Position = new Vector2(5f, 12);
         container.AddChild(line);
         return container;
     }
@@ -288,8 +332,8 @@ public static class EditorTheme
     public static PanelContainer ToolBarGroup()
     {
         var panel = new PanelContainer();
-        var bg = new Color(BG_PANEL.R + 0.015f, BG_PANEL.G + 0.015f, BG_PANEL.B + 0.015f);
-        panel.AddThemeStyleboxOverride("panel", FlatBox(bg, 5, 2, 2));
+        panel.AddThemeStyleboxOverride("panel", new StyleBoxEmpty());
+        panel.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
         return panel;
     }
 
@@ -321,6 +365,7 @@ public static class EditorTheme
             Text = label,
             ToggleMode = true,
             CustomMinimumSize = new Vector2(44, 28),
+            SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             TooltipText = $"Capa {layerNum} ({fullName}) — tecla {layerNum}",
         };
         btn.AddThemeFontSizeOverride("font_size", FONT_SM);
@@ -541,38 +586,51 @@ public static class EditorTheme
             case "save":     DrawIconSave(canvas, center, s, color, w); break;
             case "undo":     DrawIconUndo(canvas, center, s, color, w); break;
             case "redo":     DrawIconRedo(canvas, center, s, color, w); break;
+            case "folder":   DrawIconFolder(canvas, center, s, color, w); break;
+            case "file_new": DrawIconFileNew(canvas, center, s, color, w); break;
         }
     }
 
-    // --- Hand: open palm with five fingers ---
+    // --- Hand: open palm facing viewer (stop-hand style, thumb on the right) ---
     private static void DrawIconHand(Control c, Vector2 p, float s, Color col, float w)
     {
-        float palmW = s * 0.58f;
-        float palmH = s * 0.48f;
-        float palmY = p.Y + s * 0.10f;
+        // 4 wide fingers + thumb on right side.
+        // Finger cluster is shifted left so the whole icon stays centered on p.
 
-        // Palm (rounded rect outline)
-        c.DrawLine(new Vector2(p.X - palmW, palmY - palmH * 0.2f),
-                   new Vector2(p.X - palmW, palmY + palmH), col, w);
-        c.DrawLine(new Vector2(p.X - palmW, palmY + palmH),
-                   new Vector2(p.X + palmW, palmY + palmH), col, w);
-        c.DrawLine(new Vector2(p.X + palmW, palmY + palmH),
-                   new Vector2(p.X + palmW, palmY - palmH * 0.2f), col, w);
+        float fw     = s * 0.090f;   // finger half-width
+        float fSep   = s * 0.075f;   // gap between adjacent fingers
+        float step   = fw * 2 + fSep;
+        float fBase  = p.Y + s * 0.10f;  // y where fingers meet the palm
+        float palmBot = p.Y + s * 0.58f; // palm bottom
 
-        // Five fingers as lines rising from palm top
-        float[] xOff = { -0.48f, -0.24f, 0f, 0.24f, 0.48f };
-        float[] heights = { 0.48f, 0.70f, 0.78f, 0.66f, 0.40f };
-        for (int i = 0; i < 5; i++)
+        // Shift fingers left by half the thumb protrusion so icon is centered
+        float fLeft = p.X - step * 1.5f - s * 0.12f;
+        float[] fX  = { fLeft, fLeft + step, fLeft + step * 2, fLeft + step * 3 };
+        float[] fH  = { s * 0.60f, s * 0.72f, s * 0.64f, s * 0.46f }; // index→pinky
+
+        for (int i = 0; i < 4; i++)
         {
-            float fx = p.X + xOff[i] * s;
-            float baseY = palmY - palmH * 0.2f;
-            float topY = baseY - heights[i] * s;
-            c.DrawLine(new Vector2(fx, baseY), new Vector2(fx, topY), col, w);
-            c.DrawCircle(new Vector2(fx, topY), w * 0.55f, col);
+            float tipY = fBase - fH[i];
+            c.DrawLine(new Vector2(fX[i] - fw, fBase),    new Vector2(fX[i] - fw, tipY + fw), col, w);
+            c.DrawLine(new Vector2(fX[i] + fw, fBase),    new Vector2(fX[i] + fw, tipY + fw), col, w);
+            c.DrawArc( new Vector2(fX[i], tipY + fw), fw, MathF.PI, MathF.Tau, 8, col, w);
         }
-        // Connect finger bases
-        c.DrawLine(new Vector2(p.X - 0.48f * s, palmY - palmH * 0.2f),
-                   new Vector2(p.X + 0.48f * s, palmY - palmH * 0.2f), col, w);
+
+        // Palm: left edge, bottom, right edge, top bar
+        float pL = fX[0] - fw;
+        float pR = fX[3] + fw;
+        c.DrawLine(new Vector2(pL, fBase),   new Vector2(pL, palmBot),   col, w);
+        c.DrawLine(new Vector2(pL, palmBot), new Vector2(pR, palmBot),   col, w);
+        c.DrawLine(new Vector2(pR, fBase),   new Vector2(pR, palmBot),   col, w);
+        c.DrawLine(new Vector2(pL, fBase),   new Vector2(pR, fBase),     col, w);
+
+        // Thumb — right side of palm, angles outward-upward
+        float tbX = pR,              tbY = fBase + s * 0.26f;
+        float ttX = pR + s * 0.26f,  ttY = fBase + s * 0.02f;
+        float tfw = fw * 0.85f;
+        c.DrawLine(new Vector2(tbX, tbY),            new Vector2(ttX, ttY + tfw),  col, w);
+        c.DrawLine(new Vector2(tbX, tbY - tfw * 1.4f), new Vector2(ttX, ttY - tfw), col, w);
+        c.DrawArc( new Vector2(ttX, ttY), tfw, -MathF.PI * 0.5f, MathF.PI * 0.5f, 6, col, w);
     }
 
     // --- Pencil: angled pencil with sharp tip ---
@@ -924,48 +982,143 @@ public static class EditorTheme
         c.DrawLine(p + new Vector2(-dw, hs * 0.20f), p + new Vector2(-dw, hs), col, w * 0.8f);
     }
 
-    // --- Undo: curved left arrow ---
+    // --- Undo: circular counterclockwise arrow inside ring ---
     private static void DrawIconUndo(Control c, Vector2 p, float s, Color col, float w)
     {
-        float r = s * 0.42f;
-        // Arc (right half of circle)
-        int segs = 10;
-        for (int i = 0; i < segs; i++)
+        float outerR = s * 0.82f;
+        float arrowR = s * 0.46f;
+
+        // Outer ring
+        int circSegs = 24;
+        for (int i = 0; i < circSegs; i++)
         {
-            float a1 = MathF.PI * 0.1f + i * MathF.PI * 1.2f / segs;
-            float a2 = MathF.PI * 0.1f + (i + 1) * MathF.PI * 1.2f / segs;
+            float a1 = i * MathF.Tau / circSegs;
+            float a2 = (i + 1) * MathF.Tau / circSegs;
             c.DrawLine(
-                p + new Vector2(MathF.Cos(a1) * r, MathF.Sin(a1) * r),
-                p + new Vector2(MathF.Cos(a2) * r, MathF.Sin(a2) * r),
+                p + new Vector2(MathF.Cos(a1) * outerR, MathF.Sin(a1) * outerR),
+                p + new Vector2(MathF.Cos(a2) * outerR, MathF.Sin(a2) * outerR),
                 col, w);
         }
-        // Arrow at start
-        float startA = MathF.PI * 0.1f;
-        var arrowPt = p + new Vector2(MathF.Cos(startA) * r, MathF.Sin(startA) * r);
-        float ah = s * 0.22f;
-        c.DrawLine(arrowPt, arrowPt + new Vector2(-ah, -ah * 0.5f), col, w);
-        c.DrawLine(arrowPt, arrowPt + new Vector2(ah * 0.3f, -ah), col, w);
+
+        // Inner arrow arc (~280° counterclockwise, gap at top-left)
+        float startAngle = -MathF.PI * 0.6f;
+        float sweep = MathF.PI * 1.55f;
+        int arcSegs = 16;
+        for (int i = 0; i < arcSegs; i++)
+        {
+            float a1 = startAngle + i * sweep / arcSegs;
+            float a2 = startAngle + (i + 1) * sweep / arcSegs;
+            c.DrawLine(
+                p + new Vector2(MathF.Cos(a1) * arrowR, MathF.Sin(a1) * arrowR),
+                p + new Vector2(MathF.Cos(a2) * arrowR, MathF.Sin(a2) * arrowR),
+                col, w * 1.6f);
+        }
+
+        // Arrowhead at arc start (points counterclockwise)
+        var tip = p + new Vector2(MathF.Cos(startAngle) * arrowR, MathF.Sin(startAngle) * arrowR);
+        float ah = s * 0.26f;
+        float tang = startAngle - MathF.PI * 0.5f;
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang + 0.45f), MathF.Sin(tang + 0.45f)) * ah, col, w * 1.6f);
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang - 0.65f), MathF.Sin(tang - 0.65f)) * ah, col, w * 1.6f);
     }
 
-    // --- Redo: curved right arrow (mirror of undo) ---
+    // --- Redo: circular clockwise arrow inside ring (mirror of undo) ---
     private static void DrawIconRedo(Control c, Vector2 p, float s, Color col, float w)
     {
-        float r = s * 0.42f;
-        int segs = 10;
-        for (int i = 0; i < segs; i++)
+        float outerR = s * 0.82f;
+        float arrowR = s * 0.46f;
+
+        // Outer ring
+        int circSegs = 24;
+        for (int i = 0; i < circSegs; i++)
         {
-            float a1 = -(MathF.PI * 0.1f + i * MathF.PI * 1.2f / segs);
-            float a2 = -(MathF.PI * 0.1f + (i + 1) * MathF.PI * 1.2f / segs);
+            float a1 = i * MathF.Tau / circSegs;
+            float a2 = (i + 1) * MathF.Tau / circSegs;
             c.DrawLine(
-                p + new Vector2(-MathF.Cos(-a1) * r, MathF.Sin(-a1) * r),
-                p + new Vector2(-MathF.Cos(-a2) * r, MathF.Sin(-a2) * r),
+                p + new Vector2(MathF.Cos(a1) * outerR, MathF.Sin(a1) * outerR),
+                p + new Vector2(MathF.Cos(a2) * outerR, MathF.Sin(a2) * outerR),
                 col, w);
         }
-        float startA = MathF.PI * 0.1f;
-        var arrowPt = p + new Vector2(-MathF.Cos(startA) * r, MathF.Sin(startA) * r);
-        float ah = s * 0.22f;
-        c.DrawLine(arrowPt, arrowPt + new Vector2(ah, -ah * 0.5f), col, w);
-        c.DrawLine(arrowPt, arrowPt + new Vector2(-ah * 0.3f, -ah), col, w);
+
+        // Inner arrow arc (~280° clockwise, gap at top-right)
+        float startAngle = -MathF.PI * 0.4f;
+        float sweep = -MathF.PI * 1.55f;
+        int arcSegs = 16;
+        for (int i = 0; i < arcSegs; i++)
+        {
+            float a1 = startAngle + i * sweep / arcSegs;
+            float a2 = startAngle + (i + 1) * sweep / arcSegs;
+            c.DrawLine(
+                p + new Vector2(MathF.Cos(a1) * arrowR, MathF.Sin(a1) * arrowR),
+                p + new Vector2(MathF.Cos(a2) * arrowR, MathF.Sin(a2) * arrowR),
+                col, w * 1.6f);
+        }
+
+        // Arrowhead at arc start (points clockwise)
+        var tip = p + new Vector2(MathF.Cos(startAngle) * arrowR, MathF.Sin(startAngle) * arrowR);
+        float ah = s * 0.26f;
+        float tang = startAngle + MathF.PI * 0.5f;
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang - 0.45f), MathF.Sin(tang - 0.45f)) * ah, col, w * 1.6f);
+        c.DrawLine(tip, tip + new Vector2(MathF.Cos(tang + 0.65f), MathF.Sin(tang + 0.65f)) * ah, col, w * 1.6f);
+    }
+
+    // --- Folder: simple folder shape (rectangle with tab on top-left) ---
+    private static void DrawIconFolder(Control c, Vector2 p, float s, Color col, float w)
+    {
+        float hs = s * 0.58f;
+        float tabW = hs * 0.45f;
+        float tabH = hs * 0.25f;
+
+        // Main body
+        var tl = p + new Vector2(-hs, -hs * 0.4f);
+        var tr = p + new Vector2(hs, -hs * 0.4f);
+        var br = p + new Vector2(hs, hs);
+        var bl = p + new Vector2(-hs, hs);
+
+        // Tab on top-left
+        var tabTL = tl + new Vector2(0, -tabH);
+        var tabTR = tl + new Vector2(tabW, -tabH);
+        var tabBR = tl + new Vector2(tabW + tabH * 0.5f, 0);
+
+        c.DrawLine(tabTL, tabTR, col, w);
+        c.DrawLine(tabTR, tabBR, col, w);
+        c.DrawLine(tabTL, tl, col, w);
+
+        // Body outline
+        c.DrawLine(tl, tr, col, w);
+        c.DrawLine(tr, br, col, w);
+        c.DrawLine(br, bl, col, w);
+        c.DrawLine(bl, tl, col, w);
+    }
+
+    // --- FileNew: document with + sign ---
+    private static void DrawIconFileNew(Control c, Vector2 p, float s, Color col, float w)
+    {
+        float hs = s * 0.52f;
+        float fold = hs * 0.35f;
+
+        // Document outline with folded corner
+        var tl = p + new Vector2(-hs, -hs);
+        var tr = p + new Vector2(hs - fold, -hs);
+        var foldPt = p + new Vector2(hs, -hs + fold);
+        var br = p + new Vector2(hs, hs);
+        var bl = p + new Vector2(-hs, hs);
+
+        c.DrawLine(tl, tr, col, w);
+        c.DrawLine(tr, foldPt, col, w);
+        c.DrawLine(foldPt, br, col, w);
+        c.DrawLine(br, bl, col, w);
+        c.DrawLine(bl, tl, col, w);
+
+        // Fold crease
+        c.DrawLine(tr, tr + new Vector2(0, fold), col, w * 0.7f);
+        c.DrawLine(tr + new Vector2(0, fold), foldPt, col, w * 0.7f);
+
+        // Plus sign in center
+        float ps = hs * 0.35f;
+        var center = p + new Vector2(0, s * 0.1f);
+        c.DrawLine(center + new Vector2(0, -ps), center + new Vector2(0, ps), col, w);
+        c.DrawLine(center + new Vector2(-ps, 0), center + new Vector2(ps, 0), col, w);
     }
 
     // ── Drawing utilities ────────────────────────────────────────────
@@ -1022,9 +1175,13 @@ public static class EditorTheme
             "\u265f" => "npc",        // chess pawn
             "\u25c6" => "object",     // black diamond
             "\u26a1" => "trigger",    // lightning
-            "\U0001F4BE" => "save",   // floppy disk
-            "\u21B6" => "undo",       // undo arrow
-            "\u21B7" => "redo",       // redo arrow
+            "\U0001F4BE" => "save",   // floppy disk 💾
+            "\U0001F4C2" => "folder", // open folder 📂
+            "\U0001F4C1" => "folder", // folder 📁
+            "\u21B6" => "undo",       // undo arrow ↶
+            "\u21B7" => "redo",       // redo arrow ↷
+            "\u21a9" => "undo",       // leftwards arrow with hook ↩
+            "\u21aa" => "redo",       // rightwards arrow with hook ↪
             _ => unicodeIcon.Length > 0 ? ResolveByContent(unicodeIcon) : "pencil",
         };
     }
@@ -1035,11 +1192,35 @@ public static class EditorTheme
     private static string ResolveByContent(string text)
     {
         string lower = text.ToLowerInvariant();
-        if (lower.Contains("save") || lower.Contains("guardar")) return "save";
-        if (lower.Contains("undo") || lower.Contains("deshacer")) return "undo";
-        if (lower.Contains("redo") || lower.Contains("rehacer")) return "redo";
+        // File operations
+        if (lower.Contains("guardar") || lower.Contains("save")) return "save";
+        if (lower.Contains("deshacer") || lower.Contains("undo")) return "undo";
+        if (lower.Contains("rehacer") || lower.Contains("redo")) return "redo";
+        if (lower.Contains("abrir") || lower.Contains("open")) return "folder";
+        if (lower.Contains("nuevo") || lower.Contains("new")) return "file_new";
+        // Tool names (Spanish)
+        if (lower.Contains("pintar") || lower.Contains("paint")) return "pencil";
+        if (lower.Contains("borrar") || lower.Contains("erase")) return "eraser";
+        if (lower.Contains("seleccionar") || lower.Contains("select")) return "select";
+        if (lower.Contains("mover") || lower.Contains("move")) return "move";
+        if (lower.Contains("rellenar") || lower.Contains("fill")) return "fill";
+        if (lower.Contains("cuentagotas") || lower.Contains("eyedrop")) return "eyedrop";
+        if (lower.Contains("bloquear") || lower.Contains("block")) return "block";
+        if (lower.Contains("luz") || lower.Contains("light")) return "light";
+        if (lower.Contains("salida") || lower.Contains("exit")) return "exit";
+        if (lower.Contains("trigger")) return "trigger";
         return "pencil"; // final fallback
     }
+
+    /// <summary>Returns a color for zone type labels in the zone panel list.</summary>
+    public static Color GetZoneBorderColor(string zoneType) => zoneType switch
+    {
+        "Safe" => new Color(0.2f, 0.8f, 0.2f),
+        "PvP" or "CombatZone" => new Color(0.9f, 0.2f, 0.2f),
+        "Indoor" => new Color(0.6f, 0.6f, 0.9f),
+        "AntiBlock" => new Color(0.9f, 0.7f, 0.2f),
+        _ => new Color(0.7f, 0.7f, 0.7f),
+    };
 }
 
 // ══════════════════════════════════════════════════════════════════════
@@ -1059,6 +1240,8 @@ public partial class ToolIconCanvas : Control
     public ToolIconCanvas(string unicodeIcon)
     {
         _iconName = EditorTheme.ResolveIconName(unicodeIcon);
+        MouseFilter = MouseFilterEnum.Ignore; // Don't absorb clicks — let parent Button handle them
+        Godot.GD.Print($"[ToolIcon] '{unicodeIcon}' → '{_iconName}'");
     }
 
     public override void _Draw()

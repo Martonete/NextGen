@@ -1,4 +1,5 @@
 using System;
+using System.Reflection;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -6,11 +7,27 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Network;
 
 /// <summary>
-/// Binary packet dispatch — handles native binary packets (non-GenericText).
+/// Binary packet dispatch — handles all inbound binary packets by opcode.
 /// Each case reads exact typed fields from ByteQueue matching server binary_packets.rs.
 /// </summary>
 public partial class PacketHandler
 {
+    // Known opcodes from ServerPacketId — populated once via reflection.
+    // Opcodes in this set but not in the switch are "unimplemented" (skip gracefully).
+    // Opcodes NOT in this set are truly unknown (stream corrupted).
+    private static readonly bool[] _knownOpcodes = BuildKnownOpcodes();
+
+    private static bool[] BuildKnownOpcodes()
+    {
+        var known = new bool[256];
+        foreach (var field in typeof(ServerPacketId).GetFields(BindingFlags.Public | BindingFlags.Static))
+        {
+            if (field.FieldType == typeof(byte))
+                known[(byte)field.GetValue(null)!] = true;
+        }
+        return known;
+    }
+
     /// <summary>
     /// Dispatch a native binary packet by opcode.
     /// Throws InvalidOperationException if not enough bytes (partial packet — caller rolls back).
@@ -50,6 +67,7 @@ public partial class PacketHandler
                 _state.BovedaAbierta = false;
                 break;
             case ServerPacketId.CommerceInit: // 8
+                if (_state.Trading) _state.Trading = false; // mutual exclusion
                 _state.Comerciando = true;
                 break;
             case ServerPacketId.BankInit: // 9
@@ -67,17 +85,14 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.UserOfferConfirm: // 12
                 _state.TradePartnerAccepted = true;
-                GD.Print("[PKT] UserOfferConfirm");
                 break;
             case ServerPacketId.CommerceChat: // 13
                 HandleBinCommerceChat(bq);
                 break;
             case ServerPacketId.ShowBlacksmithForm: // 14
-                GD.Print("[PKT] ShowBlacksmithForm");
                 _state.ShowBlacksmithForm = true;
                 break;
             case ServerPacketId.ShowCarpenterForm: // 15
-                GD.Print("[PKT] ShowCarpenterForm");
                 _state.ShowCarpenterForm = true;
                 break;
 
@@ -146,7 +161,7 @@ public partial class PacketHandler
                 break;
 
             // ── Sound / Music ─────────────────────────────────────
-            case ServerPacketId.PlayMIDI: // 37
+            case ServerPacketId.PlayMusic: // 37
                 HandleBinPlayMidi(bq);
                 break;
             case ServerPacketId.PlayWave: // 38
@@ -160,7 +175,6 @@ public partial class PacketHandler
                     _state.GuildListData = data;
                     _state.ShowGuildPanel = true;
                     _state.GuildInfoType = "List";
-                    GD.Print($"[PKT] GuildList (binary): {data.Length} chars");
                 }
                 break;
 
@@ -186,7 +200,6 @@ public partial class PacketHandler
                     _state.UsingSkill = skill;
                     // VB6: frmMain.MousePointer = 2 (crosshair)
                     Input.SetDefaultCursorShape(Input.CursorShape.Cross);
-                    GD.Print($"[PKT] WorkRequestTarget skill={skill} — entering target mode");
                 }
                 break;
 
@@ -200,7 +213,7 @@ public partial class PacketHandler
             case ServerPacketId.ChangeSpellSlot: // 48
                 HandleBinChangeSpellSlot(bq);
                 break;
-            case ServerPacketId.Atributes: // 49
+            case ServerPacketId.Attributes: // 49
                 HandleBinAtributes(bq);
                 break;
             case ServerPacketId.SendSkills: // 50
@@ -211,7 +224,7 @@ public partial class PacketHandler
                 break;
 
             // ── Status / Toggles ──────────────────────────────────
-            case ServerPacketId.RestOK: // 54
+            case ServerPacketId.RestToggle: // 54
                 _state.Resting = !_state.Resting;
                 break;
             case ServerPacketId.ErrorShow: // 55
@@ -220,11 +233,12 @@ public partial class PacketHandler
             case ServerPacketId.Blind: // 56
                 _state.UserBlind = true;
                 break;
-            case ServerPacketId.Dumb: // 57
+            case ServerPacketId.Silence: // 57
                 _state.UserDumb = true;
                 break;
             case ServerPacketId.ShowSignal: // 58
-                { string text = bq.ReadString(); short grh = bq.ReadInteger(); GD.Print($"[PKT] ShowSignal: {text} grh={grh}"); }
+                // STUB: reads wire bytes but not yet implemented
+                { string text = bq.ReadString(); int grh = (ushort)bq.ReadInteger(); }
                 break;
             case ServerPacketId.DiceRoll: // 59
                 HandleBinDiceRoll(bq);
@@ -241,7 +255,7 @@ public partial class PacketHandler
             case ServerPacketId.LevelUp: // 63
                 HandleBinLevelUp(bq);
                 break;
-            case ServerPacketId.AddPJ: // 64
+            case ServerPacketId.AddCharPreview: // 64
                 HandleBinAddPJ(bq);
                 break;
             case ServerPacketId.SecurityCode: // 65
@@ -259,7 +273,7 @@ public partial class PacketHandler
             case ServerPacketId.BlindNoMore: // 70
                 _state.UserBlind = false;
                 break;
-            case ServerPacketId.DumbNoMore: // 71
+            case ServerPacketId.SilenceEnd: // 71
                 _state.UserDumb = false;
                 break;
             case ServerPacketId.TrainerCreatureList: // 72
@@ -267,7 +281,6 @@ public partial class PacketHandler
                     string creatures = bq.ReadString();
                     _state.TrainerCreatureData = creatures;
                     _state.ShowTrainerPanel = true;
-                    GD.Print($"[PKT] TrainerCreatureList len={creatures.Length}");
                 }
                 break;
             case ServerPacketId.GuildNews: // 73
@@ -278,7 +291,6 @@ public partial class PacketHandler
                     _state.GuildNewsText = news;
                     _state.GuildMotdText = motd;
                     _state.GuildCodexText = codex;
-                    GD.Print($"[PKT] GuildNews: news={news.Length}c motd={motd.Length}c codex={codex.Length}c");
                 }
                 break;
             case ServerPacketId.PrivilegeLevel: // 74
@@ -288,7 +300,6 @@ public partial class PacketHandler
                 HandleBinCharacterInfo(bq);
                 break;
             case ServerPacketId.FinishOK: // 77
-                GD.Print("[GAME] FINOK: Graceful logout (binary)");
                 break;
             case ServerPacketId.Dead: // 78
                 HandleBinDead();
@@ -302,18 +313,16 @@ public partial class PacketHandler
             case ServerPacketId.NavigateToggle: // 81
                 _state.UserNavigating = !_state.UserNavigating;
                 break;
-            case ServerPacketId.ParalizeOK: // 82
+            case ServerPacketId.ParalyzeOK: // 82
                 HandleBinParalizeOk(bq);
                 break;
-            case ServerPacketId.ShowGuildFundationForm: // 83
+            case ServerPacketId.ShowGuildFoundationForm: // 83
                 _state.ShowGuildFoundation = true;
-                GD.Print("[PKT] ShowGuildFundationForm (binary)");
                 break;
             case ServerPacketId.TradeOK: // 84
                 HandleBinTradeOk();
                 break;
             case ServerPacketId.BankOK: // 85
-                GD.Print("[PKT] BankOK (binary)");
                 break;
             case ServerPacketId.ChangeUserTradeSlot: // 86
                 HandleBinChangeUserTradeSlot(bq);
@@ -328,22 +337,26 @@ public partial class PacketHandler
                 HandleBinUpdateTagAndStatus(bq);
                 break;
             case ServerPacketId.SpawnList: // 90
-                { string _ = bq.ReadString(); GD.Print("[PKT] SpawnList (binary)"); }
+                // STUB: reads wire bytes but not yet implemented
+                { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowSOSForm: // 91
-                { string _ = bq.ReadString(); GD.Print("[PKT] ShowSOSForm (binary)"); }
+                // STUB: reads wire bytes but not yet implemented
+                { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowMOTDEditionForm: // 92
-                { string _ = bq.ReadString(); GD.Print("[PKT] ShowMOTDEditionForm (binary)"); }
+                // STUB: reads wire bytes but not yet implemented
+                { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowGMPanelForm: // 93
-                GD.Print("[PKT] ShowGMPanelForm (binary)");
+                // STUB: no payload — GM panel not yet implemented
                 break;
             case ServerPacketId.UserNameList: // 94
-                { string _ = bq.ReadString(); GD.Print("[PKT] UserNameList (binary)"); }
+                // STUB: reads wire bytes but not yet implemented
+                { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowGuildAlign: // 95
-                GD.Print("[PKT] ShowGuildAlign (binary)");
+                // STUB: no payload — guild alignment panel not yet implemented
                 break;
             case ServerPacketId.MapMusic: // 96
                 HandleBinMapMusic(bq);
@@ -368,7 +381,8 @@ public partial class PacketHandler
                 _state.BankGold = bq.ReadLong();
                 break;
             case ServerPacketId.AddSlots: // 103
-                { byte slots = bq.ReadByte(); GD.Print($"[PKT] AddSlots: {slots}"); }
+                // STUB: reads wire bytes but not yet implemented
+                { byte slots = bq.ReadByte(); }
                 break;
             case ServerPacketId.MultiMessage: // 104
                 HandleBinMultiMessage(bq);
@@ -380,7 +394,6 @@ public partial class PacketHandler
                 {
                     byte pType = bq.ReadByte();
                     _state.ShowPartyPanel = true;
-                    GD.Print($"[PKT] ShowPartyForm type={pType}");
                 }
                 break;
 
@@ -533,10 +546,10 @@ public partial class PacketHandler
                 HandleBinWorkMode(bq);
                 break;
             case ServerPacketId.OpenSmith: // 156
-                GD.Print("[PKT] OpenSmith");
+                _state.ShowBlacksmithForm = true;
                 break;
             case ServerPacketId.OpenCarp: // 157
-                GD.Print("[PKT] OpenCarp");
+                _state.ShowCarpenterForm = true;
                 break;
             case ServerPacketId.SmithWeapons: // 158
                 HandleBinCraftList(bq, _state.SmithWeapons, true);
@@ -547,8 +560,8 @@ public partial class PacketHandler
             case ServerPacketId.CarpItems: // 160
                 HandleBinCraftList(bq, _state.CarpItems, false);
                 break;
-            case ServerPacketId.MedOK: // 161
-                GD.Print("[PKT] MedOK");
+            case ServerPacketId.MeditateOK: // 161
+                // STUB: no payload — acknowledgement, not yet visually handled
                 break;
             case ServerPacketId.Navigation: // 162
                 HandleBinNavigationData(bq);
@@ -573,7 +586,6 @@ public partial class PacketHandler
             case ServerPacketId.BankCloseOK: // 168
                 _state.Banqueando = false;
                 _state.BovedaAbierta = false;
-                GD.Print("[PKT] BankCloseOK");
                 break;
 
             // ── Commerce (legacy) ─────────────────────────────────
@@ -587,14 +599,14 @@ public partial class PacketHandler
                 HandleBinChangeNpcInvSlot(bq);
                 break;
             case ServerPacketId.InitCommerceLegacy: // 173
+                if (_state.Trading) _state.Trading = false; // mutual exclusion
                 _state.Comerciando = true;
                 break;
-            case ServerPacketId.TransOK: // 174
+            case ServerPacketId.TransactionOK: // 174
                 HandleBinTransOk(bq);
                 break;
             case ServerPacketId.CommerceCloseOK: // 175
                 _state.Comerciando = false;
-                GD.Print("[PKT] CommerceCloseOK");
                 break;
 
             // ── Tournament / Response / Auction ───────────────────
@@ -605,6 +617,7 @@ public partial class PacketHandler
                 HandleBinResponseMsg(bq);
                 break;
             case ServerPacketId.AuctionInit: // 178
+                // STUB: no payload — auction UI not yet implemented
                 break;
             case ServerPacketId.AuctionBid: // 179
                 HandleBinAuctionBid(bq);
@@ -633,12 +646,12 @@ public partial class PacketHandler
                 _state.MyTradeGold = 0;
                 _state.PartnerTradeGold = 0;
                 _state.ChatMessages.Enqueue(new ChatMessage { Text = "Comercio cancelado.", Color = "FF0000" });
-                GD.Print("[PKT] TradeCancelOK");
                 break;
 
             // ── Guild (legacy) ────────────────────────────────────
             case ServerPacketId.GuildListLegacy: // 190
-                { string _ = bq.ReadString(); GD.Print("[PKT] GuildListLegacy"); }
+                // STUB: reads wire bytes but not yet implemented (legacy opcode)
+                { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.GuildInfoLeader: // 191
                 HandleBinGuildInfoStr(bq, "Leader");
@@ -647,7 +660,7 @@ public partial class PacketHandler
                 HandleBinGuildInfoStr(bq, "Member");
                 break;
             case ServerPacketId.GuildShowForm: // 193
-                GD.Print("[PKT] GuildShowForm");
+                // STUB: no payload — guild show form not yet implemented
                 break;
             case ServerPacketId.GuildDetailsResp: // 194
                 HandleBinGuildInfoStr(bq, "Details");
@@ -673,20 +686,7 @@ public partial class PacketHandler
                 HandleBinQuestData(bq, "QuestSelected");
                 break;
             case ServerPacketId.QuestNpcList: // 203
-                break;
-
-            // ── Mail ──────────────────────────────────────────────
-            case ServerPacketId.MailList: // 205
-                HandleBinMailData(bq, "MailList");
-                break;
-            case ServerPacketId.MailPlayerInfo: // 206
-                HandleBinMailData(bq, "MailPlayerInfo");
-                break;
-            case ServerPacketId.MailContent: // 208
-                HandleBinMailData(bq, "MailContent");
-                break;
-            case ServerPacketId.MailItems: // 209
-                HandleBinMailData(bq, "MailItems");
+                // STUB: no payload — quest NPC list not yet implemented
                 break;
 
             // ── Misc data ─────────────────────────────────────────
@@ -767,17 +767,12 @@ public partial class PacketHandler
                 break;
             case ServerPacketId.TravelsOpen: // 251
                 _state.ShowTravelPanel = true;
-                GD.Print("[PKT] TravelsOpen");
                 break;
-            case ServerPacketId.MailOpenTrigger: // 252
-                GD.Print("[PKT] MailOpenTrigger");
-                _state.ShowMailPanel = true;
+            case ServerPacketId.ZoneChange: // 252
+                HandleBinZoneChange(bq);
                 break;
             case ServerPacketId.ArenaData: // 254
                 HandleBinArenaData(bq);
-                break;
-            case ServerPacketId.GenericText: // 255
-                HandleGenericTextPacket(bq);
                 break;
 
             // ── Movement / Appearance ─────────────────────────────
@@ -836,10 +831,12 @@ public partial class PacketHandler
                 break;
 
             default:
-                // Unknown opcode — fatal for this packet stream since we don't know
-                // the packet length. Log and skip this single byte, hoping to resync.
-                GD.PrintErr($"[PKT] Unknown binary opcode={opcode}, skipping byte");
-                break;
+                if (_knownOpcodes[opcode])
+                    GD.PrintErr($"[PKT] Unimplemented binary opcode={opcode}, payload unknown — disconnecting");
+                else
+                    GD.PrintErr($"[PKT] Unknown binary opcode={opcode}, stream corrupted — disconnecting");
+                StreamCorrupted = true;
+                return;
         }
     }
 }

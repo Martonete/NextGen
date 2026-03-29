@@ -1,10 +1,11 @@
 using Godot;
+using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.UI;
 
 /// <summary>
 /// Draws the game HUD frame using RpgTheme assets.
-/// big_bar.png stretched as the ENTIRE 800x600 frame.
+/// big_bar.png stretched to the current window size.
 /// Dark insets ONLY where we need black backgrounds (console, viewport).
 /// Sidebar content (labels, buttons, stat bars) sits directly on big_bar.
 /// An overlay copy of big_bar.png draws ON TOP of everything (high ZIndex)
@@ -17,58 +18,97 @@ public partial class GameHudFrame : Control
     /// </summary>
     public Control? FrameOverlay { get; private set; }
 
+    // Saved references for runtime resize
+    private TextureRect? _bgFrame;
+    private TextureRect? _overlayTex;
+    private Panel? _consoleInset;
+    private ColorRect? _viewportInset;
+
+    private static int S(int v) => ResolutionManager.S(v);
+
+    /// <summary>Resize the HUD frame to match current ResolutionManager dimensions.</summary>
+    public void ResizeToWindow()
+    {
+        int winW = ResolutionManager.WindowWidth;
+        int winH = ResolutionManager.WindowHeight;
+        Size = new Vector2(winW, winH);
+        if (_bgFrame != null) _bgFrame.Size = new Vector2(winW, winH);
+        if (FrameOverlay != null) FrameOverlay.Size = new Vector2(winW, winH);
+        if (_overlayTex != null) _overlayTex.Size = new Vector2(winW, winH);
+
+        // Reposition dark insets
+        if (_consoleInset != null)
+        {
+            int consoleW = ResolutionManager.ConsoleRight - S(18);
+            _consoleInset.Position = new Vector2(S(18), S(14));
+            _consoleInset.Size = new Vector2(consoleW, S(128));
+        }
+        if (_viewportInset != null)
+        {
+            _viewportInset.Position = new Vector2(ResolutionManager.LeftMargin, ResolutionManager.TopMargin);
+            _viewportInset.Size = new Vector2(ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+        }
+    }
+
     public override void _Ready()
     {
+        int winW = ResolutionManager.WindowWidth;
+        int winH = ResolutionManager.WindowHeight;
+
         Position = Vector2.Zero;
-        Size = new Vector2(800, 600);
+        Size = new Vector2(winW, winH);
         MouseFilter = MouseFilterEnum.Ignore;
 
         // === BACKGROUND: big_bar_bg.png (fills behind content) ===
-        var bgFrame = new TextureRect();
-        bgFrame.Texture = RpgTheme.GetTex("big_bar_bg.png");
-        bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        bgFrame.StretchMode = TextureRect.StretchModeEnum.Scale;
-        bgFrame.Position = Vector2.Zero;
-        bgFrame.Size = new Vector2(800, 600);
-        bgFrame.MouseFilter = MouseFilterEnum.Ignore;
-        AddChild(bgFrame);
+        _bgFrame = new TextureRect();
+        _bgFrame.Texture = RpgTheme.GetTex("big_bar_bg.png");
+        _bgFrame.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        _bgFrame.StretchMode = TextureRect.StretchModeEnum.Scale;
+        _bgFrame.Position = Vector2.Zero;
+        _bgFrame.Size = new Vector2(winW, winH);
+        _bgFrame.MouseFilter = MouseFilterEnum.Ignore;
+        AddChild(_bgFrame);
 
         // === DARK INSETS — only where we need black behind content ===
 
-        // Console area — semi-transparent with border (extended up for minimap breathing room)
-        AddStyledInset(18, 14, 536, 128);
+        // Console area — semi-transparent with border (extends to near sidebar)
+        int consoleW = ResolutionManager.ConsoleRight - S(18);
+        _consoleInset = CreateStyledInset(S(18), S(14), consoleW, S(128));
+        AddChild(_consoleInset);
 
-        // Game viewport — the world renders here (13,149 to 557,565)
-        AddDarkInset(13, 149, 544, 416);
+        // Game viewport — the world renders here
+        _viewportInset = CreateDarkInset(ResolutionManager.LeftMargin, ResolutionManager.TopMargin,
+                     ResolutionManager.ViewportW, ResolutionManager.ViewportH);
+        AddChild(_viewportInset);
 
         // === OVERLAY: big_bar_frame.png (borders only) on top of everything ===
         FrameOverlay = new Control();
         FrameOverlay.Position = Vector2.Zero;
-        FrameOverlay.Size = new Vector2(800, 600);
+        FrameOverlay.Size = new Vector2(winW, winH);
         FrameOverlay.MouseFilter = MouseFilterEnum.Ignore;
         FrameOverlay.ZIndex = 50;
 
-        var overlayTex = new TextureRect();
-        overlayTex.Texture = RpgTheme.GetTex("big_bar_frame.png");
-        overlayTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
-        overlayTex.StretchMode = TextureRect.StretchModeEnum.Scale;
-        overlayTex.Position = Vector2.Zero;
-        overlayTex.Size = new Vector2(800, 600);
-        overlayTex.MouseFilter = MouseFilterEnum.Ignore;
-        FrameOverlay.AddChild(overlayTex);
+        _overlayTex = new TextureRect();
+        _overlayTex.Texture = RpgTheme.GetTex("big_bar_frame.png");
+        _overlayTex.ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize;
+        _overlayTex.StretchMode = TextureRect.StretchModeEnum.Scale;
+        _overlayTex.Position = Vector2.Zero;
+        _overlayTex.Size = new Vector2(winW, winH);
+        _overlayTex.MouseFilter = MouseFilterEnum.Ignore;
+        FrameOverlay.AddChild(_overlayTex);
     }
 
-    private void AddDarkInset(float x, float y, float w, float h)
+    private static ColorRect CreateDarkInset(float x, float y, float w, float h)
     {
         var rect = new ColorRect();
         rect.Color = new Color(0f, 0f, 0f, 0.9f);
         rect.Position = new Vector2(x, y);
         rect.Size = new Vector2(w, h);
         rect.MouseFilter = MouseFilterEnum.Ignore;
-        AddChild(rect);
+        return rect;
     }
 
-    private void AddStyledInset(float x, float y, float w, float h)
+    private static Panel CreateStyledInset(float x, float y, float w, float h)
     {
         var panel = new Panel();
         panel.Position = new Vector2(x, y);
@@ -80,6 +120,6 @@ public partial class GameHudFrame : Control
         style.SetBorderWidthAll(1);
         style.SetCornerRadiusAll(2);
         panel.AddThemeStyleboxOverride("panel", style);
-        AddChild(panel);
+        return panel;
     }
 }

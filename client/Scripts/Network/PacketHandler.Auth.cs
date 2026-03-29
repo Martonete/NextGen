@@ -20,15 +20,18 @@ public partial class PacketHandler
     private void HandleBinLogged(ByteQueue bq)
     {
         byte charClass = bq.ReadByte();
+        uint coordSeed = (uint)bq.ReadLong();
         _state.IsLogged = true;
         _state.UserClass = charClass;
-        GD.Print($"[GAME] Login successful — LOGGED (binary, class={charClass})");
+
+        // Initialize anti-cheat coordinate cipher with server-provided seed
+        _state.CoordCipher = new CoordCipher();
+        _state.CoordCipher.Init(coordSeed);
     }
 
 
     private void HandleBinDisconnect(ByteQueue bq)
     {
-        GD.Print("[GAME] Disconnect received (binary)");
         _state.IsLogged = false;
     }
 
@@ -38,7 +41,6 @@ public partial class PacketHandler
         string msg = bq.ReadString();
         _state.LoginError = msg;
         _state.MensajeText = msg;
-        GD.Print($"[LOGIN] ERR (binary): {msg}");
     }
 
 
@@ -46,14 +48,12 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         _state.MensajeText = msg;
-        GD.Print($"[GM] Message box (binary): {msg}");
     }
 
 
     private void HandleBinUserIndex(ByteQueue bq)
     {
         short index = bq.ReadInteger();
-        GD.Print($"[GAME] UserIndexInServer: {index}");
     }
 
 
@@ -61,7 +61,6 @@ public partial class PacketHandler
     {
         short index = bq.ReadInteger();
         _state.UserCharIndex = index;
-        GD.Print($"[GAME] Self char index (binary): {index}");
     }
 
     // ── Commerce / Bank ───────────────────────────────────────────
@@ -77,14 +76,12 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         _state.MensajeText = msg;
-        GD.Print($"[GM] MessageBox2 (binary): {msg}");
     }
 
 
     private void HandleBinUserIndexAlt(ByteQueue bq)
     {
         short index = bq.ReadInteger();
-        GD.Print($"[GAME] UserIndexAlt: {index}");
     }
 
 
@@ -92,7 +89,6 @@ public partial class PacketHandler
     {
         short index = bq.ReadInteger();
         _state.UserCharIndex = index;
-        GD.Print($"[GAME] UserCharIndexAlt: {index}");
     }
 
 
@@ -129,7 +125,6 @@ public partial class PacketHandler
     private void HandleBinAccountData(ByteQueue bq)
     {
         string data = bq.ReadString();
-        GD.Print($"[PKT] AccountData (binary): {data}");
     }
 
     // ── Movement / Projectiles ────────────────────────────────────
@@ -171,7 +166,6 @@ public partial class PacketHandler
             Race = race,
         };
         _state.CharacterList.Add(preview);
-        GD.Print($"[LOGIN] ADDPJ (binary): {name} Lvl {level} ({charClass}) body={body} head={head} weapon={weapon} shield={shield} helmet={helmet}");
     }
 
 
@@ -180,7 +174,6 @@ public partial class PacketHandler
         string code = bq.ReadString();
         _state.SecurityCode = code;
         _state.CurrentScreen = Screen.CharSelect;
-        GD.Print("[LOGIN] CODEH (binary): switching to char select");
     }
 
 
@@ -192,13 +185,25 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
         {
             ch.Invisible = invisible;
-            // Start from max alpha (135) fading down for a smooth entrance
-            ch.TransparenciaBody = invisible ? 53f : 0f;
-            ch.Llegoalatransp = invisible;
-            // Countdown timer (0 = permanent/GM, >0 = spell seconds remaining)
-            ch.InvisibleCountdown = invisible ? durationSecs : 0;
-            ch.InvisibleMaxCountdown = invisible ? durationSecs : 0;
-            ch.InvisibleCountdownTimer = 0f;
+            if (invisible)
+            {
+                // Start pulsing from max alpha fading down
+                ch.TransparenciaBody = 53f;
+                ch.Llegoalatransp = true;
+                ch.InvisibleCountdown = durationSecs;
+                ch.InvisibleMaxCountdown = durationSecs;
+                ch.InvisibleCountdownTimer = 0f;
+            }
+            else
+            {
+                // Becoming visible — reset transparency but preserve movement state
+                // (MoveOffsetX/Y, Moving, WalkFrame stay untouched to avoid animation tosqueo)
+                ch.TransparenciaBody = 0f;
+                ch.Llegoalatransp = false;
+                ch.InvisibleCountdown = 0;
+                ch.InvisibleMaxCountdown = 0;
+                ch.InvisibleCountdownTimer = 0f;
+            }
         }
     }
 
@@ -209,7 +214,6 @@ public partial class PacketHandler
         string notice = bq.ReadString();
         _state.CharacterList.Clear();
         _state.ServerNotice = notice;
-        GD.Print($"[LOGIN] INIAC (binary): {numChars} chars, notice={notice}");
     }
 
     // ── Death & status ────────────────────────────────────────────
@@ -221,7 +225,6 @@ public partial class PacketHandler
     {
         string msg = bq.ReadString();
         _state.MensajeText = msg;
-        GD.Print($"[GAME] ERO (binary): {msg}");
     }
 
 
@@ -236,7 +239,6 @@ public partial class PacketHandler
     {
         byte opt1 = bq.ReadByte();
         byte opt2 = bq.ReadByte();
-        GD.Print($"[PKT] ClassOptions opt1={opt1} opt2={opt2} (bonus selection UI not yet implemented)");
     }
 
     // ── Particles / Lights ───────────────────────────────────────────

@@ -7,6 +7,7 @@ pub mod fields;
 pub mod byte_queue;
 pub mod packets;
 pub mod binary_packets;
+pub mod coord_cipher;
 
 #[allow(unused_imports)]
 pub use fields::ReadField;

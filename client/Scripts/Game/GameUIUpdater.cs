@@ -46,7 +46,7 @@ public class GameUIUpdater
         Label expLabel, Label goldLabel, Label levelLabel, Label nameLabel,
         Label onlineLabel, Label coordsLabel,
         Label armorLabel, Label helmLabel, Label shieldLabel, Label weaponLabel,
-        Label fuerzaLabel, Label agilidadLabel, Label repLabel,
+        Label fuerzaLabel, Label agilidadLabel, Label? repLabel,
         Label fpsLabel, Label? macroStatusLabel,
         Control? btnCastiGM, StatBarOverlay? statBarOverlay)
     {
@@ -96,8 +96,9 @@ public class GameUIUpdater
         _levelLabel!.Text = $"{_state.Level}";
         _nameLabel!.Text = _state.UserName;
         _onlineLabel!.Text = $"Onlines: {_state.OnlineCount}";
-        // VB6: Coord.Caption = NombreMapa on first line, (Map, X, Y) on second
-        _coordsLabel!.Text = $"{_state.MapName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
+        // Zone name replaces map name when inside a zone
+        string locationName = _state.CurrentZoneName.Length > 0 ? _state.CurrentZoneName : _state.MapName;
+        _coordsLabel!.Text = $"{locationName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
 
         // GM button visibility
         if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;
@@ -153,6 +154,9 @@ public class GameUIUpdater
         {
             var a = _state.ActiveArrows[i];
             if (!a.Active) { _state.ActiveArrows.RemoveAt(i); continue; }
+
+            a.LifetimeMs += delta * 1000f;
+            if (a.LifetimeMs > 3000f) { _state.ActiveArrows.RemoveAt(i); continue; }
 
             // Update target position from live character data (target may be moving)
             if (_state.Characters.TryGetValue((short)a.TargetCharIndex, out var tgt))

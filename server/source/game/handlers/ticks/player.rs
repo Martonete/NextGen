@@ -12,6 +12,7 @@ use crate::game::handlers::world;
 use crate::game::handlers::{
     user_die, revive_user, warp_user,
 };
+use crate::game::handlers::skills::try_level_skill_with_hit;
 
 // =====================================================================
 // Meditation FX constants (VB6: Declares.bas)
@@ -38,7 +39,7 @@ const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
 const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s (resting, we use 1s min)
 const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
 const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
-const POISON_INTERVAL: i32 = 50;    // VB6: IntervaloVeneno=500 ticks (~50s)
+const POISON_INTERVAL: i32 = 25;    // VB6: IntervaloVeneno=500 ticks × 50ms = 25s
 const COLD_LAVA_INTERVAL: i32 = 2;  // VB6: IntervaloFrio=15 ticks (~2s at 1s tick)
 
 pub(crate) fn meditation_fx_for_level(level: i32) -> i16 {
@@ -49,46 +50,74 @@ pub(crate) fn meditation_fx_for_level(level: i32) -> i16 {
     else { FXMEDITARXXGRANDE }
 }
 
-/// ME — Toggle meditation on/off.
+/// ME / /MEDITAR — Toggle meditation on/off.
+/// VB6 parity: Protocol.bas HandleMeditate (lines 5507-5579).
 pub(crate) async fn handle_meditate(state: &mut GameState, conn_id: ConnectionId) {
-    let user = match state.users.get(&conn_id) {
-        Some(u) if u.logged && !u.dead => u,
-        _ => return,
-    };
+    use crate::game::types::privilege_level;
 
-    let meditating = user.meditating;
-    let char_index = user.char_index;
-    let map = user.pos_map;
-    let x = user.pos_x;
-    let y = user.pos_y;
-    let level = user.level;
+    // Extract all needed fields upfront to avoid holding an immutable borrow on state.
+    let (dead, max_mana, min_mana, privileges, meditating, char_index, map, x, y, level) =
+        match state.users.get(&conn_id) {
+            Some(u) if u.logged => (
+                u.dead, u.max_mana, u.min_mana, u.privileges, u.meditating,
+                u.char_index, u.pos_map, u.pos_x, u.pos_y, u.level,
+            ),
+            _ => return,
+        };
+
+    // VB6: dead check
+    if dead {
+        state.send_msg_id(conn_id, 3, "");
+        return;
+    }
+
+    // VB6: MaxMAN == 0 — non-magic class
+    if max_mana == 0 {
+        state.send_msg_id(conn_id, 4, "");
+        return;
+    }
+
+    // VB6: GMs get instant full mana, no actual meditation
+    if privileges > privilege_level::USER {
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            let max = user.max_mana;
+            user.min_mana = max;
+        }
+        state.send_msg_id(conn_id, 393, "");
+        send_stats_mana(state, conn_id).await;
+        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
+        return;
+    }
+
+    // VB6: WriteMeditateToggle before toggling
+    state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
 
     if meditating {
-        // Stop meditation — clear FX
+        // Stop meditation
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = false;
         }
-        state.send_msg_id(conn_id, 205, ""); // Dejas de meditar
-        state.send_bytes(conn_id, &binary_packets::write_meditate_toggle());
+        state.send_msg_id(conn_id, 205, "");
         let fx_clear = binary_packets::write_create_fx(char_index.0 as i16, 0, 0);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_clear);
     } else {
-        // Check if mana is already full
-        if user.min_mana >= user.max_mana {
-            state.send_msg_id(conn_id, 393, ""); // Mana restaurado
+        // Don't start meditation if mana is already full
+        if min_mana >= max_mana {
+            state.send_msg_id(conn_id, 829, "");
             return;
         }
 
+        // Start meditation
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.meditating = true;
+            user.meditation_start_tick = 50; // 2000ms / 40ms = 50 ticks
         }
 
-        // VB6: meditation FX scales by level (5 tiers), 999 loops = forever
+        state.send_msg_id(conn_id, 394, ""); // Comenzas a meditar
+
         let med_fx = meditation_fx_for_level(level);
         let fx_pkt = binary_packets::write_create_fx(char_index.0 as i16, med_fx, 999);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &fx_pkt);
-
-        state.send_msg_id(conn_id, 394, ""); // Comenzas a meditar
     }
 }
 
@@ -171,10 +200,16 @@ pub async fn tick_player_passive(state: &mut GameState) {
         if min_sta < max_sta && min_ham > 0 && min_agua > 0 && !desnudo {
             if cnt_sta >= sta_interval {
                 let five_pct = ((max_sta as f64 * 5.0) / 100.0).max(1.0) as i32;
-                let regen = rand_range(1, five_pct);
+                // VB6: Resting interval is 5 ticks (0.5s) vs 10 ticks (1s) standing.
+                // Since our tick is 1s, compensate by giving 2x regen when resting.
+                let regen_rolls = if resting { 2 } else { 1 };
+                let mut total_regen = 0;
+                for _ in 0..regen_rolls {
+                    total_regen += rand_range(1, five_pct);
+                }
                 if let Some(u) = state.users.get_mut(&conn_id) {
                     u.counter_stamina = 0;
-                    u.min_sta = (u.min_sta + regen).min(u.max_sta);
+                    u.min_sta = (u.min_sta + total_regen).min(u.max_sta);
                 }
                 send_stats_sta(state, conn_id).await;
             } else {
@@ -268,9 +303,8 @@ pub async fn tick_player_passive(state: &mut GameState) {
             let on_lava = state.game_data.maps.get(pos_map as usize)
                 .and_then(|m| m.as_ref())
                 .and_then(|m| {
-                    if pos_x > 0 && pos_x <= 100 && pos_y > 0 && pos_y <= 100 {
-                        Some(m.tiles[(pos_y - 1) as usize][(pos_x - 1) as usize].graphic[0])
-                    } else { None }
+                    m.tiles.get((pos_x - 1) as usize, (pos_y - 1) as usize)
+                        .map(|t| t.graphic[0])
                 })
                 .map(|g| g >= 5837 && g <= 5852)
                 .unwrap_or(false);
@@ -428,34 +462,56 @@ pub async fn tick_player_passive(state: &mut GameState) {
         // Anti-cheat intervals now decremented in tick_intervals (40ms tick)
 
         // --- Meditation (mana regen) — VB6: Trabajo.bas DoMeditar ---
+        // VB6 runs at ~100ms tick; our passive tick runs every 1s, so roll 10x per call.
         if meditating && min_mana < max_mana {
-            // VB6: Skill-based "1 in N" chance per tick (lower N = better)
-            let suerte = match meditate_skill {
-                0..=10 => 35,
-                11..=20 => 30,
-                21..=30 => 28,
-                31..=40 => 24,
-                41..=50 => 22,
-                51..=60 => 20,
-                61..=70 => 18,
-                71..=80 => 15,
-                81..=90 => 10,
-                91..=99 => 7,
-                _ => 5, // skill 100
-            };
+            // VB6: 2-second concentration delay — skip regen while warming up
+            let warmup = state.users.get(&conn_id).map(|u| u.meditation_start_tick).unwrap_or(0);
+            if warmup <= 0 {
+                // VB6: Skill-based "1 in N" chance per tick (lower N = better)
+                let suerte = match meditate_skill {
+                    0..=10 => 35,
+                    11..=20 => 30,
+                    21..=30 => 28,
+                    31..=40 => 24,
+                    41..=50 => 22,
+                    51..=60 => 20,
+                    61..=70 => 18,
+                    71..=80 => 15,
+                    81..=90 => 10,
+                    91..=99 => 7,
+                    _ => 5, // skill 100
+                };
 
-            if rand_range(1, suerte) == 1 {
-                // VB6: cant = Porcentaje(MaxMAN, PorcentajeRecuperoMana)
-                // PorcentajeRecuperoMana is typically 5 from Balance.dat
-                let regen = ((max_mana as f64 * 5.0) / 100.0) as i32;
-                let regen = regen.max(1);
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    u.min_mana = (u.min_mana + regen).min(u.max_mana);
-                    if u.min_mana >= u.max_mana {
-                        u.meditating = false;
+                let mut did_regen = false;
+                for _ in 0..10 {
+                    if rand_range(1, suerte) == 1 {
+                        // VB6: cant = Porcentaje(MaxMAN, PorcentajeRecuperoMana)
+                        // PorcentajeRecuperoMana is typically 5 from Balance.dat
+                        let regen = ((max_mana as f64 * 5.0) / 100.0) as i32;
+                        let regen = regen.max(1);
+                        if let Some(u) = state.users.get_mut(&conn_id) {
+                            u.min_mana = (u.min_mana + regen).min(u.max_mana);
+                            // MED3: Skill up on successful regen proc
+                            try_level_skill_with_hit(u, 7, true); // skill_idx 7 → skills[6] = Meditar
+                            if u.min_mana >= u.max_mana {
+                                u.meditating = false;
+                            }
+                        }
+                        did_regen = true;
+                        // Break early if mana is full
+                        let full = state.users.get(&conn_id).map(|u| u.min_mana >= u.max_mana).unwrap_or(true);
+                        if full { break; }
+                    } else {
+                        // MED3: Skill up attempt on failed regen proc
+                        if let Some(u) = state.users.get_mut(&conn_id) {
+                            try_level_skill_with_hit(u, 7, false); // skill_idx 7 → skills[6] = Meditar
+                        }
                     }
                 }
-                send_stats_mana(state, conn_id).await;
+
+                if did_regen {
+                    send_stats_mana(state, conn_id).await;
+                }
 
                 // Stop meditation when full — clear FX + notify
                 let stopped = state.users.get(&conn_id).map(|u| !u.meditating).unwrap_or(false);
@@ -590,7 +646,6 @@ pub fn build_char_save_data(user: &UserState) -> charfile::CharSaveData {
         fecha_ingreso: user.fecha_ingreso.clone(),
         matados_ingreso: user.matados_ingreso,
         next_recompensa: user.next_recompensa,
-        email: user.email.clone(),
         counter_pena: user.counter_pena,
         skills_asignados: user.skills_asignados,
         last_map: user.last_map,

@@ -16,6 +16,7 @@ public class TextureManager
 {
     private readonly string _graficosPath;
     private readonly Dictionary<int, Texture2D> _cache = new();
+    private readonly Dictionary<int, Image> _imageCache = new(); // CPU-side cache to avoid GetImage() stalls
     private readonly LinkedList<int> _lruOrder = new();
     private readonly Dictionary<int, LinkedListNode<int>> _lruNodes = new(); // O(1) LRU removal
     private const int MaxCacheSize = 4096; // Large cache — preloaded textures stay resident
@@ -101,6 +102,19 @@ public class TextureManager
         return LoadAndCache(fileNum);
     }
 
+    /// <summary>
+    /// Get the CPU-side Image for a texture, from cache. No GPU readback.
+    /// </summary>
+    public Image? GetImageCached(int fileNum)
+    {
+        if (fileNum <= 0) return null;
+        if (_imageCache.TryGetValue(fileNum, out var img)) return img;
+        // Fallback: load texture (which also caches the image)
+        LoadAndCache(fileNum);
+        _imageCache.TryGetValue(fileNum, out img);
+        return img;
+    }
+
     public Rect2 GetGrhRect(GrhData grh)
     {
         return new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
@@ -119,6 +133,7 @@ public class TextureManager
         if (image == null) return null;
 
         ApplyBlackColorKeyFast(image);
+        _imageCache[fileNum] = image; // Cache CPU-side image to avoid GetImage() GPU stalls
         var texture = ImageTexture.CreateFromImage(image);
 
         // Evict LRU if over capacity
@@ -128,6 +143,7 @@ public class TextureManager
             _lruOrder.RemoveLast();
             _lruNodes.Remove(evict);
             _cache.Remove(evict);
+            _imageCache.Remove(evict);
         }
 
         _cache[fileNum] = texture;
@@ -187,5 +203,14 @@ public class TextureManager
             image.SetData(image.GetWidth(), image.GetHeight(),
                 false, Image.Format.Rgba8, data);
         }
+    }
+
+    /// <summary>Free all cached textures to release GPU memory.</summary>
+    public void Cleanup()
+    {
+        _cache.Clear();
+        _imageCache.Clear();
+        _lruOrder.Clear();
+        _lruNodes.Clear();
     }
 }

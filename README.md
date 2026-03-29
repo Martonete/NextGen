@@ -62,23 +62,13 @@ Docker Compose reads this file automatically. Change `ao_secret` to your own pas
 
 ## Documentation
 
-Detailed docs live in [`docs/`](docs/):
+Full documentation in [`docs/`](docs/README.md):
 
-| Document | Description |
-|----------|-------------|
-| [Architecture](docs/01-ARCHITECTURE.md) | Module structure, event loop, data flow |
-| [Protocol](docs/02-PROTOCOL.md) | Packet format, opcodes |
-| [Game Systems](docs/03-GAME-SYSTEMS.md) | Combat, spells, crafting, guilds, GM commands |
-| [Data Formats](docs/04-DATA-FORMATS.md) | File formats (maps, objects, charfiles) |
-| [VB6 Parity](docs/05-VB6-PARITY.md) | VB6-specific behaviors |
-| [Migration Status](docs/06-MIGRATION-STATUS.md) | What's done, what's remaining |
-| [Server Config](docs/SERVER-CONFIG.md) | server.ini, environment variables |
-| [Database](docs/DATABASE.md) | PostgreSQL schema, backup/restore |
-| [Linux Deploy](docs/LINUX_DEPLOY.md) | Linux/VPS deployment |
-| [Roadmap](docs/ROADMAP.md) | Remaining work and priorities |
-| [Project Layout](docs/PROJECT-LAYOUT.md) | Folder structure reference |
-| [Client Build Guide](docs/CLIENT-BUILD.md) | Standalone .exe export, patching, distribution |
-| [Troubleshooting](docs/TROUBLESHOOTING.md) | Common errors and fixes |
+**Operations:** [Linux Deploy](docs/LINUX_DEPLOY.md) | [Client Build](docs/CLIENT-BUILD.md) | [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+**Architecture:** [Server](docs/architecture/server-architecture.md) | [Protocol](docs/architecture/protocol.md) | [Game Systems](docs/architecture/game-systems.md) | [Data Formats](docs/architecture/data-formats.md) | [Rendering](docs/architecture/rendering.md) | [Assets](docs/architecture/assets.md) | [Deployment](docs/architecture/deployment.md)
+
+**Skills:** [Combat](docs/skills/ao-combat.md) | [Spells](docs/skills/ao-spells.md) | [NPCs](docs/skills/ao-npc-ai.md) | [Crafting](docs/skills/ao-skills-crafting.md) | [Rendering](docs/skills/ao-rendering.md) | [Protocol](docs/skills/ao-protocol.md) | [Sprites](docs/skills/ao-sprite-indexing.md) | [UI Kit](docs/skills/ao-ui-kit.md) | [Maps](docs/skills/mapper.md)
 
 ---
 

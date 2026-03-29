@@ -7,10 +7,10 @@ namespace AOWorldEditor.Data;
 public struct MapTile
 {
     public bool Blocked;
-    public short Layer1;  // Ground terrain GRH
-    public short Layer2;  // Mask/overlay GRH (transitions, details)
-    public short Layer3;  // Objects/trees GRH
-    public short Layer4;  // Roof GRH
+    public int Layer1;  // Ground terrain GRH
+    public int Layer2;  // Mask/overlay GRH (transitions, details)
+    public int Layer3;  // Objects/trees GRH
+    public int Layer4;  // Roof GRH
     public short Trigger; // 0=None, 1=Indoor, 3=InvalidPos, 4=SafeZone, 5=AntiBlock, 6=CombatZone
     public short ParticleGroup;
     public short LightRange;

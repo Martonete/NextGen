@@ -28,6 +28,9 @@ public class GrhAnimator
 	// Per-GRH state only for one-shot (non-looping) animations like FX.
 	private readonly Dictionary<int, AnimState> _fxStates = new();
 
+	// Reusable buffer for iterating _fxStates keys — avoids a new List<int> allocation every frame
+	private readonly List<int> _keysBuffer = new();
+
 	public struct AnimState
 	{
 		public float FrameCounter;
@@ -49,20 +52,38 @@ public class GrhAnimator
 	/// <summary>
 	/// Advance the global clock and any one-shot FX animations.
 	/// </summary>
+	// Wrap period: LCM-friendly value (100 * 200 * 300 * 400 * 500 * 600 = divisible by all common speeds).
+	// 3_600_000_000 ms = 1000 hours. Double has 15-digit precision → safe up to ~10^15 ms (31K years).
+	// At 1000h, precision is ~0.001ms — no visible glitch. No animation discontinuity because
+	// frame calc already uses (globalTime * N / speed) % N, making the wrap transparent.
+	private const double ModuloPeriod = 3_600_000_000.0;
+
 	public void Update(float delta, GameData data)
 	{
 		float deltaMs = delta * 1000f;
 		_globalTimeMs += deltaMs;
+		if (_globalTimeMs >= ModuloPeriod)
+			_globalTimeMs -= ModuloPeriod;
 
-		// Advance one-shot FX animations
+		// Advance one-shot FX animations and remove completed ones
 		if (_fxStates.Count > 0)
 		{
-			var keys = new List<int>(_fxStates.Keys);
+			_keysBuffer.Clear();
+			_keysBuffer.AddRange(_fxStates.Keys);
+			var keys = _keysBuffer;
 			foreach (int key in keys)
 			{
-				if (key <= 0 || key >= data.Grhs.Length) continue;
+				if (key <= 0 || key >= data.Grhs.Length)
+				{
+					_fxStates.Remove(key);
+					continue;
+				}
 				var grh = data.Grhs[key];
-				if (grh.NumFrames <= 1) continue;
+				if (grh.NumFrames <= 1)
+				{
+					_fxStates.Remove(key);
+					continue;
+				}
 
 				var state = _fxStates[key];
 				float speed = grh.Speed > 0 ? grh.Speed : 100f;
@@ -70,8 +91,12 @@ public class GrhAnimator
 
 				if (state.FrameCounter >= grh.NumFrames)
 				{
-					// One-shot: stop at last frame
-					state.FrameCounter = grh.NumFrames - 1;
+					if (!state.Loop)
+					{
+						// One-shot completed — remove from dictionary
+						_fxStates.Remove(key);
+						continue;
+					}
 				}
 				_fxStates[key] = state;
 			}

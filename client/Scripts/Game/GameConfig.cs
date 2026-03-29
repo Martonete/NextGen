@@ -62,10 +62,15 @@ public class GameConfig
 	public bool MouseDoubleClick = true;    // VB6: MouseActions_DClick
 	public bool MouseRightClick = true;     // VB6: MouseActions_RClick
 	public bool MouseContextMenu = true;    // VB6: MouseActions_Activate
+	public bool BlockWalkOnChat = true;     // Block movement while chat input is open
+	public bool DragWindowEnabled = true;   // Allow dragging the borderless window
+	public bool ShowItemTooltip = true;     // Show tooltip on inventory hover
 
 	// ── Display ──────────────────────────────────────────
 	public bool Fullscreen;                 // false=windowed, true=fullscreen
 	public int AspectRatioMode = 0;         // 0=4:3 (keep ratio, black bars), 1=16:9 (stretch to fill)
+	public int ResolutionWidth = 800;       // Window width (default 800)
+	public int ResolutionHeight = 600;      // Window height (default 600)
 
 	/// <summary>True if Options.ao existed on disk when loaded (used to skip startup dialog).</summary>
 	[System.NonSerialized] public bool LoadedFromFile;
@@ -126,9 +131,14 @@ public class GameConfig
 		MouseDoubleClick = other.MouseDoubleClick;
 		MouseRightClick = other.MouseRightClick;
 		MouseContextMenu = other.MouseContextMenu;
+		BlockWalkOnChat = other.BlockWalkOnChat;
+		DragWindowEnabled = other.DragWindowEnabled;
+		ShowItemTooltip = other.ShowItemTooltip;
 
 		Fullscreen = other.Fullscreen;
 		AspectRatioMode = other.AspectRatioMode;
+		ResolutionWidth = other.ResolutionWidth;
+		ResolutionHeight = other.ResolutionHeight;
 	}
 
 	// ── Persistence ───────────────────────────────────────
@@ -225,10 +235,15 @@ public class GameConfig
 					case "MouseDoubleClick": cfg.MouseDoubleClick = val == "1"; break;
 					case "MouseRightClick": cfg.MouseRightClick = val == "1"; break;
 					case "MouseContextMenu": cfg.MouseContextMenu = val == "1"; break;
+					case "BlockWalkOnChat": cfg.BlockWalkOnChat = val == "1"; break;
+					case "DragWindowEnabled": cfg.DragWindowEnabled = val == "1"; break;
+					case "ShowItemTooltip": cfg.ShowItemTooltip = val == "1"; break;
 
 					// Display
 					case "Fullscreen": cfg.Fullscreen = val == "1"; break;
 					case "AspectRatioMode": if (int.TryParse(val, out int arm)) cfg.AspectRatioMode = Math.Clamp(arm, 0, 1); break;
+					case "ResolutionWidth": if (int.TryParse(val, out int rw)) cfg.ResolutionWidth = Math.Clamp(rw, 800, 3840); break;
+					case "ResolutionHeight": if (int.TryParse(val, out int rh)) cfg.ResolutionHeight = Math.Clamp(rh, 600, 2160); break;
 				}
 			}
 
@@ -306,10 +321,15 @@ public class GameConfig
 			sb.AppendLine($"MouseDoubleClick={(MouseDoubleClick ? "1" : "0")}");
 			sb.AppendLine($"MouseRightClick={(MouseRightClick ? "1" : "0")}");
 			sb.AppendLine($"MouseContextMenu={(MouseContextMenu ? "1" : "0")}");
+			sb.AppendLine($"BlockWalkOnChat={(BlockWalkOnChat ? "1" : "0")}");
+			sb.AppendLine($"DragWindowEnabled={(DragWindowEnabled ? "1" : "0")}");
+			sb.AppendLine($"ShowItemTooltip={(ShowItemTooltip ? "1" : "0")}");
 
 			// Display
 			sb.AppendLine($"Fullscreen={(Fullscreen ? "1" : "0")}");
 			sb.AppendLine($"AspectRatioMode={AspectRatioMode}");
+			sb.AppendLine($"ResolutionWidth={ResolutionWidth}");
+			sb.AppendLine($"ResolutionHeight={ResolutionHeight}");
 
 			File.WriteAllText(path, sb.ToString());
 			GD.Print($"[CFG] Saved options to {path}");

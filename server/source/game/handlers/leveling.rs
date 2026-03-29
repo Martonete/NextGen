@@ -49,10 +49,12 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         if let Some(user) = state.users.get_mut(&conn_id) {
             let new_level = level + 1;
             user.level = new_level;
-            user.exp = 0;
+            // VB6 parity: Exp = Exp - ELU (carry over excess exp)
+            user.exp = user.exp - exp_needed;
 
-            // HP: add gain
+            // HP: add gain, cap at STAT_MAXHP (VB6: 999)
             user.max_hp += hp_gain;
+            if user.max_hp > STAT_MAXHP { user.max_hp = STAT_MAXHP; }
 
             // Mana: add with cap (VB6: <36 → STAT_MAXMAN, >=36 → 9999)
             user.max_mana += mana_gain;
@@ -86,7 +88,7 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         let y = state.users.get(&conn_id).map(|u| u.pos_y).unwrap_or(0);
 
         // Level up sound + FX
-        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as u8, y as u8));
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &binary_packets::write_play_wave(6, x as i16, y as i16));
         state.send_data_bytes(
             SendTarget::ToArea { map, x, y },
             &binary_packets::write_char_particle_create(char_index as i16, 58),
@@ -110,12 +112,15 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             state.send_msg_id(conn_id, 75, &hit_gain.to_string());
         }
 
-        // VB6: +5 skill points per level
+        // VB6: If .Stats.ELV = 1 Then Pts = 10 Else Pts = Pts + 5
+        let pts = if level == 1 { 10 } else { 5 };
         if let Some(user) = state.users.get_mut(&conn_id) {
-            user.skill_pts_libres += 5;
+            user.skill_pts_libres += pts;
         }
 
-        // Send updated stats
+        // Send LevelUp packet with skill points (VB6: WriteLevelUp → client accumulates)
+        state.send_bytes(conn_id, &binary_packets::write_level_up(pts as i16));
+        // Send updated level
         state.send_bytes(conn_id, &binary_packets::write_level_update(new_level as u8));
         send_stats_hp(state, conn_id).await;
         send_stats_mana(state, conn_id).await;
@@ -126,21 +131,15 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         info!("[LEVEL] '{}' reached level {} (HP+{}, MANA+{}, STA+{}, HIT+{})",
             name, new_level, hp_gain, mana_gain, sta_gain, hit_gain);
 
-        // VB6: Gold bonus for levels < 10 (600 × level)
-        if new_level < 10 {
-            let gold_bonus = 600 * new_level;
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.gold += gold_bonus as i64;
-            }
-            state.send_msg_id(conn_id, 63, &gold_bonus.to_string());
-            send_stats_gold(state, conn_id).await;
-        }
-
-        // 13.3: Level 50 — announcement + skill points (one-time)
+        // 13.3: Level 50 — announcement + 50 bonus skill points (one-time)
         if new_level == 50 {
             state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535);
             state.send_msg_id(conn_id, 57, "50");
-            // TODO: AgregarPuntos(50) — add 50 free skill points
+            // VB6: AgregarPuntos(50) — 50 bonus free skill points at level 50
+            if let Some(user) = state.users.get_mut(&conn_id) {
+                user.skill_pts_libres += 50;
+            }
+            state.send_bytes(conn_id, &binary_packets::write_level_up(50));
         }
 
         // Continue looping in case of multi-level jumps
@@ -148,6 +147,7 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
 }
 
 // VB6 13.3 constants (Declares.bas)
+const STAT_MAXHP: i32 = 999;             // VB6: STAT_MAXHP = 999
 const AUMENTO_ST_DEF: i32 = 15;
 const AUMENTO_ST_LADRON: i32 = 18;    // AumentoSTDef + 3
 const AUMENTO_ST_BANDIDO: i32 = 18;   // AumentoSTDef + 3

@@ -17,7 +17,7 @@ use super::{
 // =====================================================================
 
 /// M<heading> — Character movement.
-pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, heading: i32) {
     // Movement packets are very frequent, don't log them
     // Check logged in
     let user_data = match state.users.get(&conn_id) {
@@ -29,7 +29,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // VB6: Dead users CAN move (they walk as ghosts). Only paralyzed blocks.
     if paralyzed {
         // Force client back to server position (prevents ghost movement on client)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8));
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
         return;
     }
 
@@ -37,11 +37,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // Movement speed is controlled entirely client-side by animation timing.
     // No server-side anti-flood for movement.
 
-    // Parse heading from payload (single digit after "M")
-    let heading_str = strip_opcode(data, 1);
-    let heading: i32 = heading_str.parse().unwrap_or(0);
+    // Validate heading (1=north, 2=east, 3=south, 4=west)
     if heading < 1 || heading > 4 {
-        warn!("[WALK] #{} bad heading '{}' parsed={}", conn_id, heading_str, heading);
+        warn!("[WALK] #{} bad heading {}", conn_id, heading);
         return;
     }
 
@@ -123,7 +121,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
 
         // Reject movement — send position correction
         // Walk rejected — don't log (too frequent)
-        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as u8, old_y as u8));
+        state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
         return;
     }
 
@@ -145,18 +143,27 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
                 user.hidden = false;
                 user.counter_oculto = 0;
             }
-            // Only send SetInvisible(false) if spell invisibility is NOT active
+            // Only send unhide if spell invisibility is NOT active
             if !is_spell_invis && !navigating_for_hide {
                 state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
-                // Re-broadcast CC+CD so non-clanmates (who had CharacterRemove) see us again
+                // CC+CD only to non-clanmates (they had CharacterRemove).
+                // Clanmates get SetInvisible(false) — avoids animation reset.
+                let ci = char_index.0 as i16;
+                let nover = binary_packets::write_set_invisible(ci, false, 0);
                 if let Some(u) = state.users.get(&conn_id) {
                     let cc = u.build_cc_binary();
                     let cd = build_cd_binary(u);
                     let (px, py) = (u.pos_x, u.pos_y);
-                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc);
-                    state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd);
+                    let area_users = state.get_area_users(map, px, py, conn_id);
+                    for other_id in area_users {
+                        if same_clan(state, conn_id, other_id) {
+                            state.send_bytes(other_id, &nover);
+                        } else {
+                            state.send_bytes(other_id, &cc);
+                            state.send_bytes(other_id, &cd);
+                        }
+                    }
                 }
-                let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
                 state.send_bytes(conn_id, &nover);
             }
         }
@@ -177,7 +184,7 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
     // When invisible, still send movement to same-clan members.
     let is_invisible = state.users.get(&conn_id).map(|u| u.invisible || u.hidden).unwrap_or(false);
     {
-        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as u8, new_y as u8);
+        let move_pkt = binary_packets::write_character_move(char_index.0 as i16, new_x as i16, new_y as i16);
         let (area_min_x, area_min_y) = match state.users.get(&conn_id) {
             Some(u) => (u.area_min_x, u.area_min_y),
             None => (0, 0),
@@ -185,8 +192,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
         if area_min_x > 0 || area_min_y > 0 {
             let amx = area_min_x.max(1);
             let amy = area_min_y.max(1);
-            let axx = (area_min_x + 26).min(100);
-            let axy = (area_min_y + 26).min(100);
+            let (grid_w, grid_h) = state.grid_dimensions(map);
+            let axx = (area_min_x + 26).min(grid_w);
+            let axy = (area_min_y + 26).min(grid_h);
             let mut targets: Vec<ConnectionId> = Vec::new();
             if let Some(grid) = state.world.grid(map) {
                 for sy in amy..=axy {
@@ -221,6 +229,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
         auto_cura_user(state, conn_id).await;
     }
 
+    // Zone change detection — send ZoneChange packet if player crossed into a different zone
+    check_zone_change(state, conn_id).await;
+
     // Area boundary visibility (VB6: ModAreas.CheckUpdateNeededUser)
     // Only fires when crossing a 9x9 zone boundary — sends CA + new strip CCs
     check_update_needed_user(state, conn_id, heading).await;
@@ -242,14 +253,13 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, da
 }
 
 /// CHEA<heading> — Change heading without moving.
-pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: ConnectionId, heading: i32) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index),
         _ => return,
     };
     let (map, x, y, char_index) = user_data;
 
-    let heading: i32 = strip_opcode(data, 4).parse().unwrap_or(0);
     if heading < 1 || heading > 4 {
         return;
     }
@@ -269,7 +279,7 @@ pub(super) async fn handle_change_heading(state: &mut GameState, conn_id: Connec
 pub(super) async fn handle_request_pos(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(user) = state.users.get(&conn_id) {
         if user.logged {
-            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as u8, user.pos_y as u8));
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(user.pos_x as i16, user.pos_y as i16));
         }
     }
 }

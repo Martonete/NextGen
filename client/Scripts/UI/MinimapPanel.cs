@@ -13,13 +13,13 @@ namespace ArgentumNextgen.UI;
 /// </summary>
 public partial class MinimapPanel : Control
 {
-    private const int TileGrid = 100; // AO maps are 100x100
-    private const int MapSize = 100;  // rendered size in pixels (1:1 with tiles)
+    private const int DesignMapSize = 100;  // design-space size in pixels
+    private static int MapSize => ResolutionManager.S(DesignMapSize);
 
-    // Marker sizes (radius)
-    private const float SelfMarkerRadius = 2.5f;
-    private const float PlayerMarkerRadius = 1.5f;
-    private const float NpcMarkerRadius = 1.0f;
+    // Marker sizes (radius), scaled
+    private static float SelfMarkerRadius => ResolutionManager.Sf(2.5f);
+    private static float PlayerMarkerRadius => ResolutionManager.Sf(1.5f);
+    private static float NpcMarkerRadius => ResolutionManager.Sf(1.0f);
 
     // Marker colors
     private static readonly Color SelfColor = new(1f, 0f, 0f);        // Red
@@ -33,6 +33,7 @@ public partial class MinimapPanel : Control
     private GameData? _data;
     private ImageTexture? _terrainTexture;
     private int _lastRenderedMap = -1;
+    private const int ViewRadius = 50; // display ±50 tiles around player
 
     // Cache of source images by file number (avoids reloading PNGs per tile)
     private readonly Dictionary<int, Image?> _imageCache = new();
@@ -56,8 +57,9 @@ public partial class MinimapPanel : Control
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(MapSize, MapSize);
-        Size = new Vector2(MapSize, MapSize);
+        int sz = MapSize;
+        CustomMinimumSize = new Vector2(sz, sz);
+        Size = new Vector2(sz, sz);
         ClipContents = true;
         MouseFilter = MouseFilterEnum.Ignore;
     }
@@ -131,26 +133,27 @@ public partial class MinimapPanel : Control
     }
 
     /// <summary>
-    /// Rebuild the 100x100 terrain texture by sampling each tile's Layer1 color.
+    /// Build the full terrain texture once per map load. Each pixel = 1 tile.
+    /// Uses Get() so no chunks are allocated for empty areas.
+    /// The _Draw method then shows a 100x100 slice centered on the player.
     /// </summary>
     private void RebuildTerrainTexture()
     {
         if (_state?.MapData == null) return;
 
         _lastRenderedMap = _state.CurrentMap;
-        _imageCache.Clear(); // clear source image cache for new map
+        _imageCache.Clear();
 
-        var mapImg = Image.CreateEmpty(TileGrid, TileGrid, false, Image.Format.Rgba8);
+        int mapW = _state.MapData.Width;
+        int mapH = _state.MapData.Height;
+        var mapImg = Image.CreateEmpty(mapW, mapH, false, Image.Format.Rgba8);
 
-        for (int y = 1; y <= TileGrid; y++)
-        {
-            for (int x = 1; x <= TileGrid; x++)
+        for (int y = 1; y <= mapH; y++)
+            for (int x = 1; x <= mapW; x++)
             {
-                var tile = _state.MapData.Tiles[x, y];
-                Color c = SampleGrhColor(tile.Layer1);
-                mapImg.SetPixel(x - 1, y - 1, c);
+                var tile = _state.MapData.Tiles.Get(x, y);
+                mapImg.SetPixel(x - 1, y - 1, SampleGrhColor(tile.Layer1));
             }
-        }
 
         _terrainTexture = ImageTexture.CreateFromImage(mapImg);
     }
@@ -159,28 +162,41 @@ public partial class MinimapPanel : Control
     {
         if (_state == null) return;
 
-        // Rebuild terrain when map changes
+        // Build full terrain texture once per map
         if (_state.CurrentMap != _lastRenderedMap || _terrainTexture == null)
             RebuildTerrainTexture();
 
-        // Draw terrain — 100x100 pixels, one pixel per tile
+        int mapW = _state.MapData?.Width ?? 100;
+        int mapH = _state.MapData?.Height ?? 100;
+
+        // Calculate the 100x100 viewport slice centered on the player
+        int viewW = Math.Min(mapW, ViewRadius * 2);
+        int viewH = Math.Min(mapH, ViewRadius * 2);
+        int minX = Math.Clamp(_state.UserPosX - ViewRadius, 0, Math.Max(0, mapW - viewW));
+        int minY = Math.Clamp(_state.UserPosY - ViewRadius, 0, Math.Max(0, mapH - viewH));
+
+        // Draw the slice of the full texture — source rect moves with the player
         if (_terrainTexture != null)
-            DrawTextureRect(_terrainTexture, new Rect2(0, 0, MapSize, MapSize), false);
+        {
+            var srcRect = new Rect2(minX, minY, viewW, viewH);
+            DrawTextureRectRegion(_terrainTexture, new Rect2(0, 0, MapSize, MapSize), srcRect);
+        }
 
-        // Scale: tile coords (1-100) → pixel coords
-        float scale = MapSize / (float)TileGrid; // = 1.0
+        // Scale: viewport tile coords → 100px display
+        float scaleX = MapSize / (float)viewW;
+        float scaleY = MapSize / (float)viewH;
 
-        // Draw NPCs (below players)
+        // Draw NPCs
         foreach (var kv in _state.Characters)
         {
             var ch = kv.Value;
             if (ch.CharIndex == _state.UserCharIndex) continue;
             if (ch.NpcNumber <= 0) continue;
 
-            float px = (ch.PosX - 1) * scale;
-            float py = (ch.PosY - 1) * scale;
-            Color npcColor = ch.Criminal ? NpcHostileColor : NpcFriendlyColor;
-            DrawCircle(new Vector2(px, py), NpcMarkerRadius, npcColor);
+            float px = (ch.PosX - 1 - minX) * scaleX;
+            float py = (ch.PosY - 1 - minY) * scaleY;
+            if (px < 0 || px > MapSize || py < 0 || py > MapSize) continue;
+            DrawCircle(new Vector2(px, py), NpcMarkerRadius, ch.Criminal ? NpcHostileColor : NpcFriendlyColor);
         }
 
         // Draw other players
@@ -191,8 +207,9 @@ public partial class MinimapPanel : Control
             if (ch.CharIndex == _state.UserCharIndex) continue;
             if (ch.NpcNumber > 0) continue;
 
-            float px = (ch.PosX - 1) * scale;
-            float py = (ch.PosY - 1) * scale;
+            float px = (ch.PosX - 1 - minX) * scaleX;
+            float py = (ch.PosY - 1 - minY) * scaleY;
+            if (px < 0 || px > MapSize || py < 0 || py > MapSize) continue;
 
             string baseName = ExtractBaseName(ch.Name);
             Color color;
@@ -206,12 +223,40 @@ public partial class MinimapPanel : Control
             DrawCircle(new Vector2(px, py), PlayerMarkerRadius, color);
         }
 
-        // Draw self (on top)
+        // Draw self as directional arrow based on heading
         {
-            float px = (_state.UserPosX - 1) * scale;
-            float py = (_state.UserPosY - 1) * scale;
-            DrawCircle(new Vector2(px, py), SelfMarkerRadius + 1f, new Color(0, 0, 0, 0.6f));
-            DrawCircle(new Vector2(px, py), SelfMarkerRadius, SelfColor);
+            float px = (_state.UserPosX - 1 - minX) * scaleX;
+            float py = (_state.UserPosY - 1 - minY) * scaleY;
+            var center = new Vector2(px, py);
+
+            // Heading: 1=N, 2=E, 3=S, 4=W → rotation angle in radians
+            int heading = 3; // default south
+            if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh))
+                heading = selfCh.Heading;
+            float angle = heading switch
+            {
+                1 => -Mathf.Pi / 2f,  // North (up)
+                2 => 0f,               // East (right)
+                3 => Mathf.Pi / 2f,   // South (down)
+                4 => Mathf.Pi,         // West (left)
+                _ => Mathf.Pi / 2f,
+            };
+
+            // Arrow: 3 points (tip, left wing, right wing)
+            float size = SelfMarkerRadius + 2f;
+            var tip = new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * size;
+            var left = new Vector2(Mathf.Cos(angle + 2.5f), Mathf.Sin(angle + 2.5f)) * size * 0.7f;
+            var right = new Vector2(Mathf.Cos(angle - 2.5f), Mathf.Sin(angle - 2.5f)) * size * 0.7f;
+
+            // Shadow
+            var shadow = new Color(0, 0, 0, 0.6f);
+            var shadowOff = new Vector2(0.5f, 0.5f);
+            DrawLine(center + left + shadowOff, center + tip + shadowOff, shadow, 1.5f);
+            DrawLine(center + right + shadowOff, center + tip + shadowOff, shadow, 1.5f);
+            DrawLine(center + left + shadowOff, center + right + shadowOff, shadow, 1.5f);
+
+            // Arrow fill
+            DrawColoredPolygon(new Vector2[] { center + tip, center + left, center + right }, SelfColor);
         }
     }
 

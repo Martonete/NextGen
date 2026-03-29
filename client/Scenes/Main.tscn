@@ -30,7 +30,6 @@ offset_left = 13.0
 offset_top = 149.0
 offset_right = 557.0
 offset_bottom = 565.0
-stretch = true
 
 [node name="GameViewport" type="SubViewport" parent="GameUI/GameViewportContainer"]
 handle_input_locally = false

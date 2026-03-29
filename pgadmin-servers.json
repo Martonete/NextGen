@@ -1,0 +1,14 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "AO Server",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "ao_server",
+      "Username": "ao",
+      "SSLMode": "prefer",
+      "PassFile": "/var/lib/pgadmin/.pgpass"
+    }
+  }
+}

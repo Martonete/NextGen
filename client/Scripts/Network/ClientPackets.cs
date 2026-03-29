@@ -8,27 +8,27 @@ public static class ClientPackets
 {
     // ── Pre-login ──────────────────────────────────────────────
 
-    public static byte[] WriteKerd22(string hdSerial = "")
+    public static byte[] WriteHardwareCheck(string hdSerial = "")
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.KERD22);
+        bq.WriteByte(ClientPacketId.HardwareCheck);
         bq.WriteString(hdSerial);
         return bq.ToArray();
     }
 
-    public static byte[] WriteAlogin(string account, string password)
+    public static byte[] WriteAccountLogin(string account, string password)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.ALOGIN);
+        bq.WriteByte(ClientPacketId.AccountLogin);
         bq.WriteString(account);
         bq.WriteString(password);
         return bq.ToArray();
     }
 
-    public static byte[] WriteNlogin(string charName, byte race, byte gender, byte charClass, short head, byte homeland, string account)
+    public static byte[] WriteCreateCharacter(string charName, byte race, byte gender, byte charClass, short head, byte homeland, string account)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.NLOGIN);
+        bq.WriteByte(ClientPacketId.CreateCharacter);
         bq.WriteString(charName);
         bq.WriteByte(race);
         bq.WriteByte(gender);
@@ -39,65 +39,65 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    public static byte[] WriteOologi(string charName, string account, string codex)
+    public static byte[] WriteCharacterLogin(string charName, string account, string codex)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.OOLOGI);
+        bq.WriteByte(ClientPacketId.CharacterLogin);
         bq.WriteString(charName);
         bq.WriteString(account);
         bq.WriteString(codex);
         return bq.ToArray();
     }
 
-    public static byte[] WriteThcjxd(string charName, string account, string codex)
+    public static byte[] WriteCharacterSelect(string charName, string account, string codex)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.THCJXD);
+        bq.WriteByte(ClientPacketId.CharacterSelect);
         bq.WriteString(charName);
         bq.WriteString(account);
         bq.WriteString(codex);
         return bq.ToArray();
     }
 
-    public static byte[] WriteNaccnt(string account, string password, string pin)
+    public static byte[] WriteCreateAccount(string account, string password, string pin)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.NACCNT);
+        bq.WriteByte(ClientPacketId.CreateAccount);
         bq.WriteString(account);
         bq.WriteString(password);
         bq.WriteString(pin);
         return bq.ToArray();
     }
 
-    public static byte[] WriteRepass(string oldPass, string newPass)
+    public static byte[] WriteChangePassword(string oldPass, string newPass)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.REPASS);
+        bq.WriteByte(ClientPacketId.ChangePassword);
         bq.WriteString(oldPass);
         bq.WriteString(newPass);
         return bq.ToArray();
     }
 
-    public static byte[] WriteReecuh(string account, string pin)
+    public static byte[] WriteAccountRecovery(string account, string pin)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.REECUH);
+        bq.WriteByte(ClientPacketId.AccountRecovery);
         bq.WriteString(account);
         bq.WriteString(pin);
         return bq.ToArray();
     }
 
-    public static byte[] WriteTirdad()
+    public static byte[] WriteRollDice()
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.TIRDAD);
+        bq.WriteByte(ClientPacketId.RollDice);
         return bq.ToArray();
     }
 
-    public static byte[] WriteTbrp(string charName)
+    public static byte[] WriteDeleteCharacter(string charName)
     {
         var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.TBRP);
+        bq.WriteByte(ClientPacketId.DeleteCharacter);
         bq.WriteString(charName);
         return bq.ToArray();
     }
@@ -125,9 +125,9 @@ public static class ClientPackets
         return new byte[] { ClientPacketId.RequestPos };
     }
 
-    public static byte[] WriteActualizar()
+    public static byte[] WriteSyncPosition()
     {
-        return new byte[] { ClientPacketId.Actualizar };
+        return new byte[] { ClientPacketId.SyncPosition };
     }
 
     // ── Combat ─────────────────────────────────────────────────
@@ -145,19 +145,35 @@ public static class ClientPackets
         return bq.ToArray();
     }
 
-    public static byte[] WriteLeftClick(byte x, byte y)
+    public static byte[] WriteLeftClick(short x, short y, CoordCipher? cipher = null)
     {
-        return new byte[] { ClientPacketId.LeftClick, x, y };
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.LeftClick);
+        if (cipher != null) { var (ex, ey) = cipher.Encode(x, y); x = ex; y = ey; }
+        bq.WriteInteger(x);
+        bq.WriteInteger(y);
+        return bq.ToArray();
     }
 
-    public static byte[] WriteRightClick(byte x, byte y)
+    public static byte[] WriteRightClick(short x, short y, CoordCipher? cipher = null)
     {
-        return new byte[] { ClientPacketId.RightClick, x, y };
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.RightClick);
+        if (cipher != null) { var (ex, ey) = cipher.Encode(x, y); x = ex; y = ey; }
+        bq.WriteInteger(x);
+        bq.WriteInteger(y);
+        return bq.ToArray();
     }
 
-    public static byte[] WriteWorkLeftClick(byte x, byte y, byte skill)
+    public static byte[] WriteWorkLeftClick(short x, short y, byte skill, CoordCipher? cipher = null)
     {
-        return new byte[] { ClientPacketId.WorkLeftClick, x, y, skill };
+        var bq = new ByteQueue();
+        bq.WriteByte(ClientPacketId.WorkLeftClick);
+        if (cipher != null) { var (ex, ey) = cipher.Encode(x, y); x = ex; y = ey; }
+        bq.WriteInteger(x);
+        bq.WriteInteger(y);
+        bq.WriteByte(skill);
+        return bq.ToArray();
     }
 
     // ── Chat ───────────────────────────────────────────────────
@@ -553,55 +569,6 @@ public static class ClientPackets
     public static byte[] WriteTrain(int creatureIndex)
     {
         return new byte[] { ClientPacketId.TrainCreature, (byte)creatureIndex };
-    }
-
-    // ── Mail ──────────────────────────────────────────────────────
-
-    /// <summary>
-    /// MailSend (ID 125) — send a mail message.
-    /// Wire: u8 opcode, string recipient, string subject, string body
-    /// </summary>
-    public static byte[] WriteMailSend(string recipient, string subject, string body)
-    {
-        var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.MailSend);
-        bq.WriteString(recipient);
-        bq.WriteString(subject);
-        bq.WriteString(body);
-        return bq.ToArray();
-    }
-
-    /// <summary>
-    /// MailOpen (ID 126) — request to open mail inbox.
-    /// Wire: u8 opcode
-    /// </summary>
-    public static byte[] WriteMailOpen()
-    {
-        return new byte[] { ClientPacketId.MailOpen };
-    }
-
-    /// <summary>
-    /// MailExtract (ID 127) — extract attached items/gold from a mail.
-    /// Wire: u8 opcode, i16 mailId
-    /// </summary>
-    public static byte[] WriteMailExtract(int mailId)
-    {
-        var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.MailExtract);
-        bq.WriteInteger((short)mailId);
-        return bq.ToArray();
-    }
-
-    /// <summary>
-    /// MailDelete (ID 128) — delete a mail message.
-    /// Wire: u8 opcode, i16 mailId
-    /// </summary>
-    public static byte[] WriteMailDelete(int mailId)
-    {
-        var bq = new ByteQueue();
-        bq.WriteByte(ClientPacketId.MailDelete);
-        bq.WriteInteger((short)mailId);
-        return bq.ToArray();
     }
 
 }

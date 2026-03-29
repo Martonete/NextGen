@@ -31,10 +31,10 @@ public static class BodyLoader
 
         for (int i = 1; i <= count; i++)
         {
-            bodies[i].Walk[1] = reader.ReadInt16(); // North
-            bodies[i].Walk[2] = reader.ReadInt16(); // East
-            bodies[i].Walk[3] = reader.ReadInt16(); // South
-            bodies[i].Walk[4] = reader.ReadInt16(); // West
+            bodies[i].Walk[1] = reader.ReadUInt16(); // North
+            bodies[i].Walk[2] = reader.ReadUInt16(); // East
+            bodies[i].Walk[3] = reader.ReadUInt16(); // South
+            bodies[i].Walk[4] = reader.ReadUInt16(); // West
             bodies[i].HeadOffsetX = reader.ReadInt16();
             bodies[i].HeadOffsetY = reader.ReadInt16();
         }
@@ -62,11 +62,11 @@ public static class BodyLoader
 
         for (int i = 1; i <= count; i++)
         {
-            heads[i].Head = new short[5]; // 1-indexed
-            heads[i].Head[1] = reader.ReadInt16();
-            heads[i].Head[2] = reader.ReadInt16();
-            heads[i].Head[3] = reader.ReadInt16();
-            heads[i].Head[4] = reader.ReadInt16();
+            heads[i].Head = new int[5]; // 1-indexed
+            heads[i].Head[1] = reader.ReadUInt16();
+            heads[i].Head[2] = reader.ReadUInt16();
+            heads[i].Head[3] = reader.ReadUInt16();
+            heads[i].Head[4] = reader.ReadUInt16();
         }
 
         GD.Print($"[HEAD] Loaded {count} heads");
@@ -92,11 +92,11 @@ public static class BodyLoader
 
         for (int i = 1; i <= count; i++)
         {
-            cascos[i].Head = new short[5];
-            cascos[i].Head[1] = reader.ReadInt16();
-            cascos[i].Head[2] = reader.ReadInt16();
-            cascos[i].Head[3] = reader.ReadInt16();
-            cascos[i].Head[4] = reader.ReadInt16();
+            cascos[i].Head = new int[5];
+            cascos[i].Head[1] = reader.ReadUInt16();
+            cascos[i].Head[2] = reader.ReadUInt16();
+            cascos[i].Head[3] = reader.ReadUInt16();
+            cascos[i].Head[4] = reader.ReadUInt16();
         }
 
         GD.Print($"[CASCO] Loaded {count} helmets");
@@ -106,12 +106,12 @@ public static class BodyLoader
 
 public class BodyData
 {
-    public short[] Walk = new short[5];  // GRH indices per direction [1..4], 0 unused
+    public int[] Walk = new int[5];  // GRH indices per direction [1..4], 0 unused
     public short HeadOffsetX;
     public short HeadOffsetY;
 }
 
 public class HeadData
 {
-    public short[] Head = new short[5];  // GRH indices per direction [1..4], 0 unused
+    public int[] Head = new int[5];  // GRH indices per direction [1..4], 0 unused
 }

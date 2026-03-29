@@ -302,7 +302,7 @@ pub(super) async fn handle_slash_viajar(state: &mut GameState, conn_id: Connecti
             let map = user.pos_map;
             let x = user.pos_x;
             let y = user.pos_y;
-            let snd_pkt = binary_packets::write_play_wave(3, x as u8, y as u8); // SND_WARP = 3
+            let snd_pkt = binary_packets::write_play_wave(3, x as i16, y as i16); // SND_WARP = 3
             let fx_pkt = binary_packets::write_create_fx(char_idx as i16, 1, 0); // FXWARP = 1
             // Send to area (others see it) AND directly to self (ensure self always gets it)
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd_pkt);
@@ -469,8 +469,7 @@ pub(super) async fn handle_slash_cirujia(state: &mut GameState, conn_id: Connect
 // ini_get, ini_write, user_has_items — moved to common.rs
 
 /// FWO — Query house owner and price from Casas.dat.
-pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let num_casa = read_field(1, payload, ',');
 
     let casas_path = state.base_path.join("dat").join("Casas.dat");
@@ -488,8 +487,7 @@ pub(super) async fn handle_fwo(state: &mut GameState, conn_id: ConnectionId, dat
 }
 
 /// CUC — Buy a house.
-pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let num_casa: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
 
     let casas_path = state.base_path.join("dat").join("Casas.dat");
@@ -540,8 +538,7 @@ pub(super) async fn handle_cuc(state: &mut GameState, conn_id: ConnectionId, dat
 }
 
 /// CNM — Rename pet/creature.
-pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let nick = read_field(1, payload, ',');
 
     let pet_idx = state.users.get(&conn_id)

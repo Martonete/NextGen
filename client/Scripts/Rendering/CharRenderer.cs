@@ -23,6 +23,26 @@ public static partial class CharRenderer
 	// Helmets are drawn at HeadOffset + OFFSET_HEAD (head uses just HeadOffset).
 	private const int OFFSET_HEAD = -34;
 
+	// Static buffers for DrawShadowProjected — reused every call to avoid per-frame allocations
+	private static readonly Vector2[] _shadowVerts = new Vector2[4];
+	private static readonly Color[] _shadowColors = new Color[4];
+
+	/// <summary>
+	/// Fade speed: characters transition from visible to invisible over ~250ms.
+	/// Rate = 1.0 / 250ms = 4.0 per second.
+	/// </summary>
+	private const float FovFadeRate = 4.0f;
+
+	/// <summary>
+	/// Check if a character is inside the core 17x13 viewport (the original 800x600 area).
+	/// Characters outside this area should fade out smoothly.
+	/// </summary>
+	private static bool IsInsideCoreViewport(int charPosX, int charPosY, int userX, int userY)
+	{
+		return Math.Abs(charPosX - userX) <= ResolutionManager.CoreHalfX
+			&& Math.Abs(charPosY - userY) <= ResolutionManager.CoreHalfY;
+	}
+
 	public static void DrawCharacter(
 		Node2D canvas,
 		Character ch,
@@ -33,8 +53,13 @@ public static partial class CharRenderer
 		GameState? state = null,
 		WorldRenderer? worldRenderer = null,
 		int charTileX = 0,
-		int charTileY = 0)
+		int charTileY = 0,
+		int charIdx = -1)
 	{
+		// FOV fade — timers are advanced by UpdateCharacterTimers in _Process.
+		// For UI previews (state == null), always fully visible.
+		if (state != null && ch.FovAlpha <= 0.01f) return; // fully faded out, skip drawing
+
 		int heading = ch.Heading;
 		if (heading < 1 || heading > 4) heading = 3;
 
@@ -47,77 +72,34 @@ public static partial class CharRenderer
 			? new Vector2(body.HeadOffsetX, body.HeadOffsetY)
 			: new Vector2(0, -30);
 
-		// Debug: log character draw info once (with rendering diagnostics)
-		if (!ch._debugLogged)
-		{
-			ch._debugLogged = true;
-			string bodyInfo = "N/A";
-			if (ch.Body > 0 && ch.Body < data.Bodies.Length)
-			{
-				var b = data.Bodies[ch.Body];
-				int walkGrh = b.Walk[heading];
-				var resolved = walkGrh > 0 ? data.ResolveGrh(walkGrh, 0) : null;
-				bool hasTex = resolved != null && resolved.FileNum > 0 &&
-							  data.Textures?.GetTexture(resolved.FileNum) != null;
-				bodyInfo = $"Walk[{heading}]={walkGrh} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}";
-			}
-			else
-			{
-				bodyInfo = ch.Body <= 0 ? "body<=0" : $"body>={data.Bodies.Length} (out of range)";
-			}
-			string shieldInfo = ch.ShieldAnim > 0 && ch.ShieldAnim < data.Shields.Length
-				? $"grh={data.Shields[ch.ShieldAnim].Walk[heading]}" : "none";
-			string cascoInfo = ch.CascoAnim > 0 && ch.CascoAnim < data.Cascos.Length
-				? $"grh={data.Cascos[ch.CascoAnim].Head[heading]}" : "none";
-			Godot.GD.Print($"[CHAR] '{ch.Name}' idx={ch.CharIndex}: body={ch.Body}({bodyInfo}) head={ch.Head} weapon={ch.WeaponAnim} shield={ch.ShieldAnim}({shieldInfo}) casco={ch.CascoAnim}({cascoInfo})");
-		}
-
-		// Pulsing transparency for dead and invisible (self) chars.
-		// Time-based: full cycle ~2s. Range 18→53 (alpha ~45→135 of 255).
-		if (ch.Dead || ch.Invisible)
-		{
-			float speed = deltaMs * 0.035f; // 35 / 1000ms = 0.035 per ms
-			if (!ch.Llegoalatransp)
-			{
-				ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 53f);
-				if (ch.TransparenciaBody >= 53f) ch.Llegoalatransp = true;
-			}
-			else
-			{
-				ch.TransparenciaBody = Math.Max(ch.TransparenciaBody - speed, 18f);
-				if (ch.TransparenciaBody <= 18f) ch.Llegoalatransp = false;
-			}
-		}
+		// TransparenciaBody pulsing — advanced by UpdateCharacterTimers in _Process.
 
 		// Water reflections are now drawn by WorldRenderer (PASS 1.5) between
 		// Layer 1 and Layer 2, so they clip naturally to water tiles.
 
+		float fovAlpha = ch.FovAlpha;
+
 		// Shadow: diagonal projection (light from lower-left → shadow upper-right)
-		// Single body shadow only — no separate head (avoids doubling artifacts)
-		bool drawShadow = state != null; // No shadows in preview (state=null)
+		bool drawShadow = state != null;
 		if (state?.Config != null)
 		{
 			bool isNpc = ch.CharIndex != state.UserCharIndex && ch.NpcNumber > 0;
 			drawShadow = isNpc ? state.Config.ShowNpcShadows : state.Config.ShowShadows;
 		}
-		if (drawShadow && !ch.Invisible)
+		if (drawShadow && !ch.Invisible && fovAlpha > 0.3f)
 			DrawShadow(canvas, ch, screenPos, heading, data, animator);
 
-		// Auras use additive blend (D3DBLEND_ONE/ONE). Draws are collected in
-		// WorldRenderer._Draw() and rendered by AuraAdditiveLayer ABOVE ContentLayer (z=1 > z=0).
-
 		// VB6: invisible self = pulsing transparency (TransparenciaBody 0-100)
+		// Combined with FOV fade alpha for smooth boundary transitions
 		Color? invisOverride = null;
 		if (ch.Invisible)
-			invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f);
+			invisOverride = new Color(1, 1, 1, ch.TransparenciaBody / 100f * fovAlpha);
+		else if (fovAlpha < 1f)
+			invisOverride = new Color(1, 1, 1, fovAlpha);
 
 		// Heading-dependent draw order (VB6: dibujarPersonaje)
 		DrawCharParts(canvas, ch, screenPos, headOffset, heading, data, animator, state,
 					  colorOverride: invisOverride);
-
-		// Mark equipment debug as logged (after first full draw)
-		if (!ch._equipDebugLogged && (ch.ShieldAnim > 0 || ch.CascoAnim > 0))
-			ch._equipDebugLogged = true;
 
 		// FX overlays — not drawn when invisible (VB6: entire char skipped in invisible branch)
 		if (!ch.Invisible)
@@ -125,7 +107,7 @@ public static partial class CharRenderer
 
 		// Character-attached particles — not drawn when invisible
 		if (!ch.Invisible && state != null && (state.Config?.ShowParticles ?? true))
-			DrawCharParticles(canvas, ch, screenPos, state, data, animator?.GlobalTimeMs ?? 0, worldRenderer);
+			DrawCharParticles(canvas, ch, screenPos, state, data, animator?.GlobalTimeMs ?? 0, worldRenderer, charIdx);
 
 		// Name + clan above head (VB6: uses font1 bitmap font, toggled by N key)
 		// VB6: name IS drawn for invisible self (visible to self/GMs)
@@ -135,6 +117,7 @@ public static partial class CharRenderer
 		// Dialog bubble — queued to overlay layer (above all characters/NPCs)
 		DrawDialog(canvas, ch, screenPos, headOffset, data, deltaMs, worldRenderer);
 	}
+
 
 	/// <summary>
 	/// Character shadow: body + head projected from a shared anchor point (body feet).
@@ -305,9 +288,12 @@ public static partial class CharRenderer
 		float vBot = (float)(sy + ph) / texH;
 
 		// CCW: BL → BR → TR → TL
+		_shadowVerts[0] = bl; _shadowVerts[1] = br; _shadowVerts[2] = tr; _shadowVerts[3] = tl;
+		_shadowColors[0] = shadowColor; _shadowColors[1] = shadowColor;
+		_shadowColors[2] = shadowColor; _shadowColors[3] = shadowColor;
 		canvas.DrawPolygon(
-			new[] { bl, br, tr, tl },
-			new[] { shadowColor, shadowColor, shadowColor, shadowColor },
+			_shadowVerts,
+			_shadowColors,
 			new[] { new Vector2(u0, vBot), new Vector2(u1, vBot),
 					new Vector2(u1, vTop), new Vector2(u0, vTop) },
 			texture);
@@ -411,30 +397,11 @@ public static partial class CharRenderer
 		Node2D canvas, Character ch, Vector2 bodyPos, Vector2 headOffset,
 		int heading, GameData data, Color? colorOverride = null)
 	{
-		if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length)
-		{
-			if (!ch._equipDebugLogged && ch.CascoAnim > 0)
-			{
-				Godot.GD.PrintErr($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} OUT OF RANGE (max={data.Cascos.Length-1})");
-			}
-			return;
-		}
+		if (ch.CascoAnim <= 0 || ch.CascoAnim >= data.Cascos.Length) return;
 		var casco = data.Cascos[ch.CascoAnim];
-		if (casco.Head == null || casco.Head[heading] == 0)
-		{
-			if (!ch._equipDebugLogged)
-				Godot.GD.PrintErr($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} Head[{heading}]=0 (no GRH)");
-			return;
-		}
+		if (casco.Head == null || casco.Head[heading] == 0) return;
 
 		int grhIdx = casco.Head[heading];
-		if (!ch._equipDebugLogged)
-		{
-			var resolved = data.ResolveGrh(grhIdx, 0);
-			bool hasTex = resolved != null && resolved.FileNum > 0 &&
-						  data.Textures?.GetTexture(resolved.FileNum) != null;
-			Godot.GD.Print($"[HELMET] '{ch.Name}' CascoAnim={ch.CascoAnim} heading={heading} grh={grhIdx} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
-		}
 
 		// VB6: no per-heading X adjustment; mounted gets X+1
 		float xAdj = ch.Mounted ? 1f : 0f;
@@ -463,28 +430,10 @@ public static partial class CharRenderer
 		int heading, GameData data, GrhAnimator animator,
 		Color? colorOverride = null)
 	{
-		if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length)
-		{
-			if (!ch._equipDebugLogged && ch.ShieldAnim > 0)
-				Godot.GD.PrintErr($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} OUT OF RANGE (max={data.Shields.Length-1})");
-			return;
-		}
+		if (ch.ShieldAnim <= 0 || ch.ShieldAnim >= data.Shields.Length) return;
 		var shield = data.Shields[ch.ShieldAnim];
 		int grhIndex = shield.Walk[heading];
-		if (grhIndex <= 0)
-		{
-			if (!ch._equipDebugLogged)
-				Godot.GD.PrintErr($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} Walk[{heading}]=0 (no GRH)");
-			return;
-		}
-
-		if (!ch._equipDebugLogged)
-		{
-			var resolved = data.ResolveGrh(grhIndex, 0);
-			bool hasTex = resolved != null && resolved.FileNum > 0 &&
-						  data.Textures?.GetTexture(resolved.FileNum) != null;
-			Godot.GD.Print($"[SHIELD] '{ch.Name}' ShieldAnim={ch.ShieldAnim} heading={heading} grh={grhIndex} fileNum={resolved?.FileNum ?? 0} hasTex={hasTex}");
-		}
+		if (grhIndex <= 0) return;
 
 		// VB6: Escudo.ShieldWalk drawn at PixelOffsetX, PixelOffsetY (same as body), center=1
 		int frame = ch.Moving ? (int)ch.WalkFrame : 0;
@@ -558,6 +507,8 @@ public static partial class CharRenderer
 		Node2D canvas, Character ch, Vector2 pos,
 		GameData data, GrhAnimator animator, float deltaMs)
 	{
+		// Timer advancement (FxFrameCounter, FxLoops) is done by UpdateCharacterTimers in _Process.
+		// This method only reads the current frame state for rendering.
 		for (int i = 0; i < 3; i++)
 		{
 			int fxIdx = ch.ActiveFxSlots[i];
@@ -566,61 +517,12 @@ public static partial class CharRenderer
 			var fx = data.Fxs[fxIdx];
 			if (fx.Animacion <= 0) continue;
 
-			// Resolve GRH to get numFrames and speed
 			int grhIndex = fx.Animacion;
 			if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) continue;
 			var grh = data.Grhs[grhIndex];
 			int numFrames = grh.NumFrames;
-			float speed = grh.Speed > 0 ? grh.Speed : 100f;
 
-			if (numFrames <= 1)
-			{
-				// Static FX — draw once per loop, then clear (VB6: .Started=0 after Draw_Grh)
-				if (ch.FxLoops[i] != -1)
-				{
-					ch.FxLoops[i]--;
-					if (ch.FxLoops[i] <= 0)
-					{
-						ch.ActiveFxSlots[i] = 0;
-						ch.FxLoops[i] = 0;
-						ch.FxFrameCounter[i] = 0;
-						continue;
-					}
-				}
-				Vector2 fxPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
-				DrawGrh(canvas, data, grhIndex, 0, fxPos, true,
-						new Color(1, 1, 1, 150f / 255f));
-				continue;
-			}
-
-			// Advance per-slot frame counter
-			ch.FxFrameCounter[i] += deltaMs * numFrames / speed;
-
-			// Check for animation cycle completion
-			if (ch.FxFrameCounter[i] >= numFrames)
-			{
-				if (ch.FxLoops[i] == -1)
-				{
-					// Infinite loop — wrap around
-					ch.FxFrameCounter[i] %= numFrames;
-				}
-				else
-				{
-					ch.FxLoops[i]--;
-					if (ch.FxLoops[i] <= 0)
-					{
-						// Animation finished — clear slot
-						ch.ActiveFxSlots[i] = 0;
-						ch.FxLoops[i] = 0;
-						ch.FxFrameCounter[i] = 0;
-						continue;
-					}
-					// More loops remaining — wrap around
-					ch.FxFrameCounter[i] %= numFrames;
-				}
-			}
-
-			int frame = (int)ch.FxFrameCounter[i];
+			int frame = numFrames <= 1 ? 0 : (int)Math.Min(ch.FxFrameCounter[i], numFrames - 1);
 			Vector2 fxDrawPos = pos + new Vector2(fx.OffsetX, fx.OffsetY);
 			DrawGrh(canvas, data, grhIndex, frame, fxDrawPos, true,
 					new Color(1, 1, 1, 150f / 255f));
@@ -634,18 +536,9 @@ public static partial class CharRenderer
 	private static void DrawCharParticles(Node2D canvas, Character ch, Vector2 pos,
 										   GameState state, GameData data,
 										   double globalTimeMs,
-										   WorldRenderer? worldRenderer = null)
+										   WorldRenderer? worldRenderer = null,
+										   int charIdx = -1)
 	{
-		// Find char index for this character in state.Characters
-		int charIdx = -1;
-		foreach (var kvp in state.Characters)
-		{
-			if (ReferenceEquals(kvp.Value, ch))
-			{
-				charIdx = kvp.Key;
-				break;
-			}
-		}
 		if (charIdx < 0) return;
 
 		foreach (var stream in state.MapParticles)
@@ -684,6 +577,129 @@ public static partial class CharRenderer
 					// Fallback: draw directly (no additive blend)
 					DrawGrh(canvas, data, p.GrhIndex, frame, pPos, true, color);
 				}
+			}
+		}
+	}
+
+	/// <summary>
+	/// Advance all per-character timers once per frame. Must be called from _Process
+	/// (or equivalent), NOT from _Draw, to prevent double-advancing when _Draw is
+	/// called multiple times per frame.
+	/// Covers: FovAlpha, TransparenciaBody, FxFrameCounter/FxLoops, dialog timers.
+	/// </summary>
+	public static void UpdateCharacterTimers(Character ch, float deltaMs, GameState state, GameData data)
+	{
+		// ── FOV fade ──
+		int userX = state.UserPosX;
+		int userY = state.UserPosY;
+		bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, userX, userY);
+		float fovTarget = insideCore ? 1f : 0f;
+		float fovStep = FovFadeRate * deltaMs / 1000f;
+		if (ch.FovAlpha < fovTarget)
+			ch.FovAlpha = Math.Min(ch.FovAlpha + fovStep, fovTarget);
+		else if (ch.FovAlpha > fovTarget)
+			ch.FovAlpha = Math.Max(ch.FovAlpha - fovStep, fovTarget);
+
+		// ── Transparency pulse (dead / invisible) ──
+		if (ch.Dead || ch.Invisible)
+		{
+			float speed = deltaMs * 0.035f;
+			if (!ch.Llegoalatransp)
+			{
+				ch.TransparenciaBody = Math.Min(ch.TransparenciaBody + speed, 53f);
+				if (ch.TransparenciaBody >= 53f) ch.Llegoalatransp = true;
+			}
+			else
+			{
+				ch.TransparenciaBody = Math.Max(ch.TransparenciaBody - speed, 18f);
+				if (ch.TransparenciaBody <= 18f) ch.Llegoalatransp = false;
+			}
+		}
+
+		// ── FX frame counters ──
+		if (data.Fxs != null && data.Grhs != null)
+		{
+			for (int i = 0; i < 3; i++)
+			{
+				int fxIdx = ch.ActiveFxSlots[i];
+				if (fxIdx <= 0 || fxIdx >= data.Fxs.Length) continue;
+
+				var fx = data.Fxs[fxIdx];
+				if (fx.Animacion <= 0) continue;
+
+				int grhIndex = fx.Animacion;
+				if (grhIndex <= 0 || grhIndex >= data.Grhs.Length) continue;
+				var grh = data.Grhs[grhIndex];
+				int numFrames = grh.NumFrames;
+				float speed = grh.Speed > 0 ? grh.Speed : 100f;
+
+				if (numFrames <= 1)
+				{
+					// Static FX — decrement loop counter once per frame
+					if (ch.FxLoops[i] != -1)
+					{
+						ch.FxLoops[i]--;
+						if (ch.FxLoops[i] <= 0)
+						{
+							ch.ActiveFxSlots[i] = 0;
+							ch.FxLoops[i] = 0;
+							ch.FxFrameCounter[i] = 0;
+						}
+					}
+				}
+				else
+				{
+					// Animated FX — advance frame counter
+					ch.FxFrameCounter[i] += deltaMs * numFrames / speed;
+
+					if (ch.FxFrameCounter[i] >= numFrames)
+					{
+						if (ch.FxLoops[i] == -1)
+						{
+							ch.FxFrameCounter[i] %= numFrames;
+						}
+						else
+						{
+							ch.FxLoops[i]--;
+							if (ch.FxLoops[i] <= 0)
+							{
+								ch.ActiveFxSlots[i] = 0;
+								ch.FxLoops[i] = 0;
+								ch.FxFrameCounter[i] = 0;
+							}
+							else
+							{
+								ch.FxFrameCounter[i] %= numFrames;
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// ── Dialog timers ──
+		if (!string.IsNullOrEmpty(ch.DialogText))
+		{
+			float dtFactor = deltaMs / 16.667f;
+			long now = System.Environment.TickCount64;
+			long elapsed = now - ch.DialogStartMs;
+
+			if (ch.DialogDurationMs >= 292)
+			{
+				if (ch.DialogRiseCounter > 0)
+					ch.DialogRiseCounter = Math.Max(0, ch.DialogRiseCounter - dtFactor);
+				if (ch.DialogRiseCounter > 0)
+					ch.DialogAlpha = Math.Min(255f, ch.DialogAlpha + 12f * dtFactor);
+			}
+
+			if (elapsed >= ch.DialogDurationMs && !ch.DialogFading)
+				ch.DialogFading = true;
+
+			if (ch.DialogFading)
+			{
+				ch.DialogAlpha = Math.Max(0, ch.DialogAlpha - 10f * dtFactor);
+				if (ch.DialogAlpha <= 9f)
+					ch.DialogText = "";
 			}
 		}
 	}

@@ -5,7 +5,7 @@ use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field};
+use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
@@ -22,7 +22,18 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     };
     let (map, x, y) = user_data;
 
-    // Check if there's a ground item on the user's tile
+    // Check if there's a ground item on the user's tile.
+    //
+    // RACE ANALYSIS (H5): No race condition exists here in single-threaded Tokio.
+    // We read ground_item as a value copy (no reference held), then perform all
+    // synchronous checks (is_fixed, obj type, inventory slot search) before
+    // removing the item from the tile. There is NO `.await` between the check
+    // on line below and the tile-clear at `tile.ground_item = default()` further
+    // down. Because Tokio's single-threaded executor cannot interleave two
+    // handlers in the gap between two synchronous statements, a second player
+    // cannot observe or consume the same item in that window.
+    // If this ever moves to a multi-threaded executor or acquires an await between
+    // check and clear, revisit with `Option::take()` atomic-take pattern.
     let ground_item = state.world.grid(map)
         .and_then(|g| g.tile(x, y))
         .map(|t| t.ground_item)
@@ -60,7 +71,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
             }
         }
         // Broadcast BO (erase object) to area
-        let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
+        let pkt_bo = binary_packets::write_object_delete(x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo);
 
         // Add directly to gold counter (VB6: Stats.GLD += Amount)
@@ -111,7 +122,7 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
     }
 
     // Broadcast BO (erase object) to area
-    let pkt_bo = binary_packets::write_object_delete(x as u8, y as u8);
+    let pkt_bo = binary_packets::write_object_delete(x as i16, y as i16);
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_bo);
 
     // Add to inventory
@@ -140,22 +151,12 @@ pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId)
 }
 
 /// TI<slot>,<amount> — Drop item from inventory to ground.
-pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 2);
-    let slot_raw: i32 = read_field(1, payload, ',').parse().unwrap_or(0);
-    let amount: i32 = read_field(2, payload, ',').parse().unwrap_or(1);
-
+pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionId, slot: usize, amount: i32) {
     if amount <= 0 {
         return;
     }
 
-    // FLAGORO = -1 means drop gold
-    if slot_raw == -1 {
-        handle_drop_gold(state, conn_id, amount).await;
-        return;
-    }
-
-    let slot = slot_raw as usize;
+    // slot must be 1..=max_slots (FLAGORO=-1 gold drops are handled by caller)
     let max_slots = state.users.get(&conn_id).map(|u| u.current_inventory_slots).unwrap_or(MAX_INVENTORY_SLOTS);
     if slot < 1 || slot > max_slots {
         return;
@@ -390,7 +391,7 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
 
     // Broadcast HO (show object) to area if new item on tile
     if is_new && grh_index > 0 {
-        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+        let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
     }
 
@@ -462,7 +463,7 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
         };
 
         if is_new && grh_index > 0 {
-            let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, grh_index as i16);
+            let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
         }
 

@@ -11,12 +11,26 @@ use std::collections::HashMap;
 use std::path::Path;
 
 /// Role overrides from server.ini — maps lowercase character names to privilege levels.
-/// VB6: EsAdministrador, EsDios, EsSemiDios, EsConsejero, etc. in FileIO.bas
 pub type RoleMap = HashMap<String, i32>;
 
-/// Load role assignments from server.ini sections.
-/// Each section ([Administradores], [Dioses], etc.) lists character names.
+/// Load role assignments from server.ini [INIT] section.
+///
+/// Format: comma-separated character names per role key.
+/// ```ini
+/// [INIT]
+/// Admins=Shay,Shay2
+/// SubAdmins=
+/// Devs=
+/// Directors=
+/// GranDioses=
+/// Dioses=
+/// Events=
+/// SemiDioses=
+/// Consejeros=
+/// ```
+///
 /// Returns a map of lowercase_name → privilege_level.
+/// Processed highest-first so if a name appears in multiple roles, the highest wins.
 pub fn load_roles(base_path: &Path) -> RoleMap {
     let ini_path = base_path.join("server.ini");
     let ini = match IniFile::load(&ini_path) {
@@ -24,44 +38,33 @@ pub fn load_roles(base_path: &Path) -> RoleMap {
         Err(_) => return HashMap::new(),
     };
 
-    // VB6 section → key prefix → privilege level (priority order: highest first)
-    let role_sections: &[(&str, &str, i32)] = &[
-        ("Administradores",    "administrador",    super::game::types::privilege_level::ADMINISTRADOR),
-        ("SubAdministradores", "subadministrador",  super::game::types::privilege_level::SUB_ADMINISTRADOR),
-        ("Desarrolladores",    "desarrollador",     super::game::types::privilege_level::DEVELOPER),
-        ("Directores",         "director",          super::game::types::privilege_level::DIRECTOR),
-        ("GranDioses",         "grandios",          super::game::types::privilege_level::GRAN_DIOS),
-        ("Dioses",             "dios",              super::game::types::privilege_level::DIOS),
-        ("Events",             "event",             super::game::types::privilege_level::EVENT_MASTER),
-        ("SemiDioses",         "semidios",          super::game::types::privilege_level::SEMIDIOS),
-        ("Consejeros",         "consejero",         super::game::types::privilege_level::CONSEJERO),
+    // INI key → privilege level (priority order: highest first)
+    let role_keys: &[(&str, i32)] = &[
+        ("Admins",      super::game::types::privilege_level::ADMINISTRADOR),
+        ("SubAdmins",   super::game::types::privilege_level::SUB_ADMINISTRADOR),
+        ("Devs",        super::game::types::privilege_level::DEVELOPER),
+        ("Directors",   super::game::types::privilege_level::DIRECTOR),
+        ("GranDioses",  super::game::types::privilege_level::GRAN_DIOS),
+        ("Dioses",      super::game::types::privilege_level::DIOS),
+        ("Events",      super::game::types::privilege_level::EVENT_MASTER),
+        ("SemiDioses",  super::game::types::privilege_level::SEMIDIOS),
+        ("Consejeros",  super::game::types::privilege_level::CONSEJERO),
     ];
 
     let mut roles = HashMap::new();
 
-    for &(section, _prefix, priv_level) in role_sections {
-        // Read the count from [INIT] section
-        let count: usize = ini.get("INIT", section)
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
+    for &(key, priv_level) in role_keys {
+        let value = match ini.get("INIT", key) {
+            Some(v) => v,
+            None => continue,
+        };
 
-        if count == 0 {
-            continue;
-        }
-
-        // Read all values from the section — iterate keys and extract non-empty names
-        let keys = ini.keys(section);
-        for key in &keys {
-            if let Some(name) = ini.get(section, key) {
-                let name = name.trim().to_string();
-                if !name.is_empty() {
-                    // VB6 strips leading * and + from names
-                    let clean = name.trim_start_matches('*').trim_start_matches('+').to_lowercase();
-                    if !clean.is_empty() {
-                        // First match wins (highest priority section is processed first)
-                        roles.entry(clean).or_insert(priv_level);
-                    }
-                }
+        // Split by comma and insert each non-empty name
+        for name in value.split(',') {
+            let clean = name.trim().to_lowercase();
+            if !clean.is_empty() {
+                // First match wins (highest priority key is processed first)
+                roles.entry(clean).or_insert(priv_level);
             }
         }
     }
@@ -77,25 +80,17 @@ pub struct ServerConfig {
     pub max_users: u32,
     pub version: String,
     pub client_version: String,
-    pub idle_limit: u32,
     pub allow_multi_logins: bool,
     pub can_create_characters: bool,
     pub server_only_gms: bool,
-    pub encrypt: bool,
     pub exp_multiplier: u32,
     pub gold_multiplier: u32,
     pub drop_multiplier: u32,
     pub start_map: i32,
     pub start_x: i32,
     pub start_y: i32,
-    pub char_dir: String,
-    pub log_dir: String,
     pub notice: String,
     pub pretoriano_map: i32,
-    pub intervalo_paralizado: i32,  // VB6: IntervaloParalizado (ticks at 40ms — default 500 = 20s)
-    pub intervalo_invisible: i32,   // VB6: IntervaloInvisible (ticks at 40ms — default 500 = 20s)
-    pub intervalo_oculto: i32,      // VB6: IntervaloOculto (ticks at 40ms — default 500 = 20s)
-    pub npc_ai_interval_ms: u64,    // VB6: IntervaloNpcAI (ms — default 1300)
     // Security settings (loaded from [Security] section)
     pub max_packets_per_second: Option<u32>,  // Per-connection packet rate limit (default 60)
     pub ip_max_connections: Option<u32>,       // Max simultaneous connections per IP (default 10)
@@ -122,10 +117,7 @@ impl ServerConfig {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(400),
             version: ini.get("INIT", "Version").unwrap_or("0.11.5".into()),
-            client_version: ini.get("INIT", "ClientVersion").unwrap_or("1.0.1".into()),
-            idle_limit: ini.get("INIT", "IdleLimit")
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(10),
+            client_version: ini.get("INIT", "ClientVersion").unwrap_or("1.0.0".into()),
             allow_multi_logins: ini.get("INIT", "AllowMultiLogins")
                 .map(|s| s == "1")
                 .unwrap_or(true),
@@ -135,9 +127,6 @@ impl ServerConfig {
             server_only_gms: ini.get("INIT", "ServerSoloGMs")
                 .map(|s| s != "0")
                 .unwrap_or(false),
-            encrypt: ini.get("INIT", "Encriptar")
-                .map(|s| s == "1")
-                .unwrap_or(true),
             exp_multiplier: ini.get("INIT", "MultiplicadordeExp")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1),
@@ -156,24 +145,10 @@ impl ServerConfig {
             start_y: parts.get(2)
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(45),
-            char_dir: ini.get("AOSSLib", "chardir").unwrap_or("charfile".into()),
-            log_dir: ini.get("AOSSLib", "logdir").unwrap_or("logs".into()),
             notice: ini.get("INIT", "Notice").unwrap_or_default(),
             pretoriano_map: ini.get("INIT", "MapaPretoriano")
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(163),
-            intervalo_paralizado: ini.get("INTERVALOS", "IntervaloParalizado")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(500),
-            intervalo_invisible: ini.get("INTERVALOS", "IntervaloInvisible")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(500),
-            intervalo_oculto: ini.get("INTERVALOS", "IntervaloOculto")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(500),
-            npc_ai_interval_ms: ini.get("INTERVALOS", "IntervaloNpcAI")
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(1300),
             max_packets_per_second: ini.get("Security", "MaxPacketsPerSecond")
                 .and_then(|s| s.trim().parse().ok()),
             ip_max_connections: ini.get("Security", "IpMaxConnections")

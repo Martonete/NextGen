@@ -117,7 +117,7 @@ public partial class TooltipPanel : PanelContainer
 
         var viewportSize = GetViewportRect().Size;
         if (x + Size.X > viewportSize.X) x = mousePos.X - Size.X - 4;
-        if (y + Size.Y > viewportSize.Y) y = mousePos.Y - Size.Y - 4;
+        if (y + Size.Y > viewportSize.Y) y = viewportSize.Y - Size.Y - 4;
         if (x < 0) x = 0;
         if (y < 0) y = 0;
 

@@ -62,7 +62,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
 
         // Send HO packet with the NEW object's graphic (VB6: after changing ObjIndex)
         let new_grh = state.get_object(new_obj_idx).map(|o| o.grh_index).unwrap_or(0);
-        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, new_grh as i16);
+        let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, new_grh as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
 
         // Read door type from the NEW object (VB6 reads after ObjIndex change)
@@ -82,12 +82,12 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Unblock tiles and send BQ packets to entire map (VB6: Bloquear SendTarget.toMap)
         for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, false);
-            let pkt_bq = binary_packets::write_block_position(*tx as u8, y as u8, false);
+            let pkt_bq = binary_packets::write_block_position(*tx as i16, y as i16, false);
             state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq);
         }
 
         // Play door sound (VB6: SND_PUERTA = 5)
-        let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
+        let pkt_wave = binary_packets::write_play_wave(5, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
     } else {
         // Door is OPEN → close it
@@ -108,7 +108,7 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Send HO packet with the NEW object's graphic
         let closed_obj = state.get_object(new_obj_idx).cloned();
         let new_grh = closed_obj.as_ref().map(|o| o.grh_index).unwrap_or(0);
-        let pkt_ho = binary_packets::write_object_create(x as u8, y as u8, new_grh as i16);
+        let pkt_ho = binary_packets::write_object_create(x as i16, y as i16, new_grh as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_ho);
 
         // Read door type from the NEW (closed) object
@@ -127,12 +127,12 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         // Block tiles and send BQ packets to entire map
         for tx in &tiles {
             set_map_tile_blocked(state, map, *tx, y, true);
-            let pkt_bq = binary_packets::write_block_position(*tx as u8, y as u8, true);
+            let pkt_bq = binary_packets::write_block_position(*tx as i16, y as i16, true);
             state.send_data_bytes(SendTarget::ToMap(map), &pkt_bq);
         }
 
         // Play door sound (VB6: SND_PUERTA = 5)
-        let pkt_wave = binary_packets::write_play_wave(5, x as u8, y as u8);
+        let pkt_wave = binary_packets::write_play_wave(5, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt_wave);
     }
 

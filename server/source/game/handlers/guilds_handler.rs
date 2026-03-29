@@ -1,6 +1,7 @@
 //! Guild system handlers: guild management, codex, member management.
 //! Extracted from mod.rs to reduce file size.
 
+use tracing::warn;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
@@ -148,9 +149,8 @@ pub(super) async fn handle_guild_info(state: &mut GameState, conn_id: Connection
 }
 
 /// CIG — Submit guild creation form (after SHOWFUN was sent).
-/// Data format: CIG<desc><BF><name><BF><url><BF><cantcodex><BF><codex1><BF>...
-pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+/// Data format: <desc><BF><name><BF><url><BF><cantcodex><BF><codex1><BF>...
+pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let parts: Vec<&str> = payload.split(BF).collect();
 
     if parts.len() < 4 {
@@ -363,18 +363,35 @@ pub(super) async fn handle_slash_salirclan(state: &mut GameState, conn_id: Conne
 /// Handle a member leaving a guild (used by /SALIRCLAN and /CERRARCLAN for subliders)
 pub(super) async fn handle_member_leave(state: &mut GameState, conn_id: ConnectionId, char_name: &str, guild_index: i32) {
 
+    // Validate: the calling connection must match char_name OR be a GM
+    let caller_ok = state.users.get(&conn_id).map(|u| {
+        u.char_name.to_uppercase() == char_name.to_uppercase() || u.privileges > 0
+    }).unwrap_or(false);
+    if !caller_ok {
+        warn!("[GUILD] handle_member_leave: conn #{} tried to remove '{}' but is not that character or a GM", conn_id, char_name);
+        return;
+    }
+
     let guild = match guilds::load_guild(&state.pool, guild_index).await {
         Some(g) => g,
         None => return,
     };
+
+    // Validate: char_name must actually be a member of this guild
+    let members = guilds::load_members(&state.pool, &guild.name).await;
+    let is_member = members.iter().any(|m| m.to_uppercase() == char_name.to_uppercase());
+    if !is_member {
+        warn!("[GUILD] handle_member_leave: '{}' is not a member of guild '{}'", char_name, guild.name);
+        return;
+    }
 
     // If sublider, clear the slot
     let is_sub1 = guild.sub_lider1.to_uppercase() == char_name.to_uppercase();
     let is_sub2 = guild.sub_lider2.to_uppercase() == char_name.to_uppercase();
     if is_sub1 || is_sub2 {
         let mut updated = guild.clone();
-        if is_sub1 { updated.sub_lider1 = "Fermin".to_string(); }
-        if is_sub2 { updated.sub_lider2 = "Fermin".to_string(); }
+        if is_sub1 { updated.sub_lider1 = String::new(); }
+        if is_sub2 { updated.sub_lider2 = String::new(); }
         guilds::save_guild(&state.pool, &updated).await;
 
         // Notify guild
@@ -466,9 +483,9 @@ pub(super) async fn handle_slash_sublider(state: &mut GameState, conn_id: Connec
     }
 
     let mut updated = guild;
-    if updated.sub_lider1 == "Fermin" || updated.sub_lider1.is_empty() {
+    if updated.sub_lider1.is_empty() {
         updated.sub_lider1 = target_name.to_string();
-    } else if updated.sub_lider2 == "Fermin" || updated.sub_lider2.is_empty() {
+    } else if updated.sub_lider2.is_empty() {
         updated.sub_lider2 = target_name.to_string();
     } else {
         state.send_msg_id(conn_id, 513, "");
@@ -500,9 +517,9 @@ pub(super) async fn handle_slash_qsublidr(state: &mut GameState, conn_id: Connec
 
     let mut updated = guild;
     if updated.sub_lider1.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider1 = "Fermin".to_string();
+        updated.sub_lider1 = String::new();
     } else if updated.sub_lider2.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider2 = "Fermin".to_string();
+        updated.sub_lider2 = String::new();
     } else {
         state.send_msg_id(conn_id, 516, "");
         return;
@@ -610,8 +627,7 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
 }
 
 /// DESCOD — Update guild codex and description.
-pub(super) async fn handle_guild_update_codex(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 6);
+pub(super) async fn handle_guild_update_codex(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let parts: Vec<&str> = payload.split(BF).collect();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
@@ -650,8 +666,8 @@ pub(super) async fn handle_guild_update_codex(state: &mut GameState, conn_id: Co
 }
 
 /// ACEPTARI — Accept applicant into guild.
-pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let applicant_name = strip_opcode(data, 8).trim().to_string();
+pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let applicant_name = name.trim().to_string();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -676,6 +692,14 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
     let members = guilds::load_members(&state.pool, &guild.name).await;
     if members.len() >= 50 {
         state.send_msg_id(conn_id, 500, "");
+        return;
+    }
+
+    // Prevent adding someone who is already a member
+    let already_member = members.iter().any(|m| m.to_uppercase() == applicant_name.to_uppercase());
+    if already_member {
+        warn!("[GUILD] handle_guild_accept: '{}' is already a member of guild '{}'", applicant_name, guild.name);
+        guilds::remove_applicant(&state.pool, &guild.name, &applicant_name).await;
         return;
     }
 
@@ -706,10 +730,9 @@ pub(super) async fn handle_guild_accept(state: &mut GameState, conn_id: Connecti
 }
 
 /// RECHAZAR — Reject applicant.
-pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 8);
-    let name = read_field(1, payload, ',');
-    let reason = read_field(2, payload, ',');
+pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let reject_name = read_field(1, name, ',');
+    let reason = read_field(2, name, ',');
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -728,17 +751,17 @@ pub(super) async fn handle_guild_reject(state: &mut GameState, conn_id: Connecti
         || guild.sub_lider2.to_uppercase() == char_name.to_uppercase();
     if !is_leader && !is_sublider { return; }
 
-    guilds::remove_applicant(&state.pool, &guild.name, &name).await;
+    guilds::remove_applicant(&state.pool, &guild.name, &reject_name).await;
 
     // If online, notify
-    if let Some(&target_conn) = state.online_names.get(&name.to_uppercase()) {
+    if let Some(&target_conn) = state.online_names.get(&reject_name.to_uppercase()) {
         state.send_console(target_conn, &format!("Tu solicitud fue rechazada: {}", reason), font_index::INFO);
     }
 }
 
 /// ECHARCLA — Expel member from guild.
-pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let target_name = strip_opcode(data, 8).trim().to_string();
+pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let target_name = name.trim().to_string();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -762,13 +785,17 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
         return;
     }
 
-    // If target is sublider, clear slot
+    // If target is sublider, clear slot (save once)
     let mut updated = guild.clone();
+    let mut sub_changed = false;
     if updated.sub_lider1.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider1 = "Fermin".to_string();
-        guilds::save_guild(&state.pool, &updated).await;
+        updated.sub_lider1 = String::new();
+        sub_changed = true;
     } else if updated.sub_lider2.to_uppercase() == target_name.to_uppercase() {
-        updated.sub_lider2 = "Fermin".to_string();
+        updated.sub_lider2 = String::new();
+        sub_changed = true;
+    }
+    if sub_changed {
         guilds::save_guild(&state.pool, &updated).await;
     }
 
@@ -789,8 +816,8 @@ pub(super) async fn handle_guild_expel(state: &mut GameState, conn_id: Connectio
 }
 
 /// ACTGNEWS — Update guild news.
-pub(super) async fn handle_guild_news(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let news = strip_opcode(data, 8).to_string();
+pub(super) async fn handle_guild_news(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
+    let news = payload.to_string();
 
     let (guild_index, char_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
@@ -813,8 +840,7 @@ pub(super) async fn handle_guild_news(state: &mut GameState, conn_id: Connection
 }
 
 /// SOLICITUD — Apply to join a guild.
-pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 9);
+pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: ConnectionId, payload: &str) {
     let guild_name = read_field(1, payload, ',');
     let petition = read_field(2, payload, ',');
 
@@ -856,8 +882,8 @@ pub(super) async fn handle_guild_apply(state: &mut GameState, conn_id: Connectio
 }
 
 /// CLANDETAILS — Request details about a guild.
-pub(super) async fn handle_guild_details(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let guild_name = strip_opcode(data, 11).trim().to_string();
+pub(super) async fn handle_guild_details(state: &mut GameState, conn_id: ConnectionId, name: &str) {
+    let guild_name = name.trim().to_string();
 
     if !state.users.get(&conn_id).map(|u| u.logged).unwrap_or(false) {
         return;

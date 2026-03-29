@@ -26,6 +26,7 @@ public class EditorState
 
     // Selection rectangle (tile coords, inclusive)
     public bool HasSelection;
+    public bool InsertedMapSelection; // True when selection was created by Insert Map
     public int SelX1, SelY1, SelX2, SelY2;
 
     // Clipboard (copied tiles)
@@ -55,6 +56,17 @@ public class EditorState
     // Selected NPC from palette (for quick-place with NPC tool)
     public int SelectedNpcNumber;
 
+    // Selected Object from palette (for quick-place with Object tool)
+    public int SelectedObjectNumber;
+
+    // Light tool config
+    public int LightR = 255, LightG = 220, LightB = 180;
+    public int LightRange = 6;
+
+    // Zone system (editor metadata for sub-regions)
+    public List<MapZone> Zones { get; } = new();
+    public int SelectedZoneIndex = -1;
+
     // Pick tool state
     public readonly PickState Pick = new();
 
@@ -65,6 +77,12 @@ public class EditorState
     // Hover tile (under cursor)
     public int HoverX, HoverY;
     public bool HoverValid;
+
+    // Selected tile (Hand tool click)
+    public int SelectedTileX = -1;
+    public int SelectedTileY = -1;
+    public bool HasSelectedTile => SelectedTileX >= 0 && SelectedTileY >= 0;
+    public void ClearSelectedTile() { SelectedTileX = -1; SelectedTileY = -1; }
 
     // Dirty state
     public bool IsDirty { get; private set; }
@@ -109,13 +127,17 @@ public class EditorState
         MapDir = mapDir;
         if (!Directory.Exists(mapDir)) return;
 
-        foreach (var file in Directory.GetFiles(mapDir, "Mapa*.map"))
+        // Scan both .map (legacy) and .aomap (new format)
+        foreach (var pattern in new[] { "Mapa*.map", "Mapa*.aomap" })
         {
-            string name = Path.GetFileNameWithoutExtension(file);
-            if (name.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase))
+            foreach (var file in Directory.GetFiles(mapDir, pattern))
             {
-                if (int.TryParse(name.Substring(4), out int num) && num > 0)
-                    AvailableMaps.Add(num);
+                string name = Path.GetFileNameWithoutExtension(file);
+                if (name.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (int.TryParse(name.Substring(4), out int num) && num > 0)
+                        AvailableMaps.Add(num);
+                }
             }
         }
     }
@@ -127,11 +149,13 @@ public class EditorState
         SelY1 = Math.Min(y1, y2);
         SelX2 = Math.Max(x1, x2);
         SelY2 = Math.Max(y1, y2);
+        ClearSelectedTile(); // Area selection and tile selection are mutually exclusive
     }
 
     public void ClearSelection()
     {
         HasSelection = false;
+        InsertedMapSelection = false;
     }
 
     public void CopySelection(MapData map)
@@ -182,12 +206,13 @@ public class PendingPlacement
     public int Width, Height;
     public int OriginX, OriginY;   // Current top-left position on the map
     public bool IsMove;            // True if this came from a move (clears source on commit)
+    public bool IsInsert;           // True if this came from Insert Map (shows selection panel after commit)
     public int SourceX, SourceY;   // Original position of moved tiles (for clearing source)
     public MapTile[,]? MoveSnapshot; // Original map state for move operations
 
     public void Begin(MapTile[,] tiles, int w, int h, int ox, int oy,
                       bool isMove = false, MapTile[,]? snapshot = null,
-                      int srcX = 0, int srcY = 0)
+                      int srcX = 0, int srcY = 0, bool isInsert = false)
     {
         Active = true;
         Tiles = tiles;
@@ -196,6 +221,7 @@ public class PendingPlacement
         OriginX = ox;
         OriginY = oy;
         IsMove = isMove;
+        IsInsert = isInsert;
         SourceX = srcX;
         SourceY = srcY;
         MoveSnapshot = snapshot;
@@ -204,9 +230,24 @@ public class PendingPlacement
     public void Cancel()
     {
         Active = false;
+        IsInsert = false;
         Tiles = null;
         MoveSnapshot = null;
     }
+}
+
+/// Zone metadata for sub-regions within a map (editor-only, serialized in .dat).
+public class MapZone
+{
+    public string Name = "";
+    public string Type = "Normal";
+    public int X1 = 1, Y1 = 1, X2 = 100, Y2 = 100;
+    public int NpcWanderRadius;
+    public bool NoMagic;
+    public bool NoInvis;
+    public bool NoResurrect;
+    public bool NoHide;
+    public bool NoSummon;
 }
 
 public enum EditorTool
@@ -214,8 +255,8 @@ public enum EditorTool
     Hand,     // Pan: click+drag moves the camera
     Paint,    // Draw: click+drag paints with selected texture
     Erase,    // Erase: click+drag clears active layer
-    Select,   // Rectangle select for copy/paste/move
-    Move,     // Drag selected rectangle to new position
+    Select,   // Rectangle select for copy/paste
+    Move,     // Drag selected rectangle to new position (activated from selection panel)
     Pick,     // Click on entity (L3/NPC/obj) → drag to move
     Fill,     // Flood fill with texture
     Eyedrop,  // Sample GRH from tile

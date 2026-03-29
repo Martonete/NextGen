@@ -28,9 +28,10 @@ public enum GameAction
     MoveDown = 14,    // VB6 idx 15: Abajo (↓ / S)
     MoveLeft = 15,    // VB6 idx 16: Izquierda (← / A)
     MoveRight = 16,   // VB6 idx 17: Derecha (→ / D)
+    Rest = 17,        // Descansar (F8)
     ToggleMusic = 18, // VB6 idx 19: Música (M → P in WASD)
     ShowMap = 19,     // VB6 idx 20: Mapa (currently unused)
-    ItemSafety = 20,  // VB6 idx 21: Seguro de Items (Numpad *)
+    ItemSafety = 20,  // Unused — item drop safety removed
     Meditate = 21,    // VB6 idx 22: Meditar (F6)
 }
 
@@ -80,10 +81,10 @@ public class KeyBindings
         "Mover abajo",                    // 14
         "Mover izquierda",               // 15
         "Mover derecha",                  // 16
-        "(Libre)",                        // 17 — was Emoticons, removed
+        "Descansar",                      // 17 — Rest toggle
         "Música on/off",                  // 18
         "Mostrar mapa",                   // 19
-        "Seguro de items",                // 20
+        "(Libre)",                        // 20 — was Seguro de items, removed
         "Meditar",                        // 21
     };
 
@@ -127,9 +128,10 @@ public class KeyBindings
         Binds[(int)GameAction.MoveDown]    = new KeyBind(Key.Down, "Abajo");        // VB6: mKeyDown = vbKeyDown
         Binds[(int)GameAction.MoveLeft]    = new KeyBind(Key.Left, "Izquierda");    // VB6: mKeyLeft = vbKeyLeft
         Binds[(int)GameAction.MoveRight]   = new KeyBind(Key.Right, "Derecha");     // VB6: mKeyRight = vbKeyRight
+        Binds[(int)GameAction.Rest]        = new KeyBind(Key.F8, "F8");              // Descansar toggle
         Binds[(int)GameAction.ToggleMusic] = new KeyBind(Key.M, "M");               // VB6: mKeyToggleMusic = vbKeyM
         Binds[(int)GameAction.ShowMap]     = new KeyBind(Key.F7, "F7");              // VB6: mKeyCastSpellMacro = vbKeyF7
-        Binds[(int)GameAction.ItemSafety]  = new KeyBind(Key.KpMultiply, "Numpad *"); // (no VB6 equivalent, kept)
+        Binds[(int)GameAction.ItemSafety]  = new KeyBind(Key.None, "");               // Unused — item safety removed
         Binds[(int)GameAction.Meditate]    = new KeyBind(Key.F6, "F6");              // VB6: mKeyMeditate = vbKeyF6
     }
 

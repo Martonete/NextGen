@@ -5,15 +5,16 @@ use crate::protocol::packets::ServerPacketID;
 
 // ── Auth / Login ───────────────────────────────────────────
 
-/// ID 0: Login successful.
-pub fn write_logged(class: u8) -> Vec<u8> {
+/// ID 0: Login successful. Includes coord cipher seed for anti-cheat.
+pub fn write_logged(class: u8, coord_seed: u32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::Logged.to_byte());
     pkt.write_byte(class);
+    pkt.write_long(coord_seed as i32);
     pkt.into_bytes()
 }
 
-/// ID 55: Error message (disconnects after showing).
+/// ID 2: Error message (disconnects after showing).
 pub fn write_error_msg(msg: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ErrorMsg.to_byte());
@@ -21,7 +22,7 @@ pub fn write_error_msg(msg: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 28: User char index in server.
+/// ID 5: User char index in server.
 pub fn write_user_char_index(index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UserCharIndexInServer.to_byte());
@@ -29,7 +30,7 @@ pub fn write_user_char_index(index: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 67: Dice roll result for character creation.
+/// ID 59: Dice roll result for character creation.
 pub fn write_dice_roll(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::DiceRoll.to_byte());
@@ -56,20 +57,20 @@ pub fn write_change_map(map_num: i16, map_version: i16, r: u8, g: u8, b: u8) -> 
 }
 
 /// ID 22: Position update.
-pub fn write_pos_update(x: u8, y: u8) -> Vec<u8> {
+pub fn write_pos_update(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::PosUpdate.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
-/// ID 41: Area changed.
-pub fn write_area_changed(x: u8, y: u8) -> Vec<u8> {
+/// ID 40: Area changed.
+pub fn write_area_changed(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::AreaChanged.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
@@ -78,7 +79,7 @@ pub fn write_area_changed(x: u8, y: u8) -> Vec<u8> {
 /// ID 29: Character create (appears in view).
 pub fn write_character_create(
     char_index: i16, body: i16, head: i16, heading: u8,
-    x: u8, y: u8, weapon: i16, shield: i16, helmet: i16,
+    x: i16, y: i16, weapon: i16, shield: i16, helmet: i16,
     fx_index: i16, fx_loops: i16, name: &str,
     nick_color: u8, privileges: u8,
 ) -> Vec<u8> {
@@ -88,8 +89,8 @@ pub fn write_character_create(
     pkt.write_integer(body);
     pkt.write_integer(head);
     pkt.write_byte(heading);
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_integer(weapon);
     pkt.write_integer(shield);
     pkt.write_integer(helmet);
@@ -110,16 +111,16 @@ pub fn write_character_remove(char_index: i16) -> Vec<u8> {
 }
 
 /// ID 31: Character move.
-pub fn write_character_move(char_index: i16, x: u8, y: u8) -> Vec<u8> {
+pub fn write_character_move(char_index: i16, x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CharacterMove.to_byte());
     pkt.write_integer(char_index);
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
-/// ID 34: Character change (appearance update).
+/// ID 33: Character change (appearance update).
 pub fn write_character_change(
     char_index: i16, body: i16, head: i16, heading: u8,
     weapon: i16, shield: i16, helmet: i16,
@@ -149,7 +150,7 @@ pub fn write_set_invisible(char_index: i16, invisible: bool, duration_secs: i16)
     pkt.into_bytes()
 }
 
-/// ID 44: Create FX on character.
+/// ID 43: Create FX on character.
 pub fn write_create_fx(char_index: i16, fx_index: i16, fx_loops: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::CreateFX.to_byte());
@@ -161,31 +162,31 @@ pub fn write_create_fx(char_index: i16, fx_index: i16, fx_loops: i16) -> Vec<u8>
 
 // ── Objects on ground ──────────────────────────────────────
 
-/// ID 35: Object create on ground.
-pub fn write_object_create(x: u8, y: u8, grh_index: i16) -> Vec<u8> {
+/// ID 34: Object create on ground.
+pub fn write_object_create(x: i16, y: i16, grh_index: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectCreate.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_integer(grh_index);
     pkt.into_bytes()
 }
 
-/// ID 36: Object delete from ground.
-pub fn write_object_delete(x: u8, y: u8) -> Vec<u8> {
+/// ID 35: Object delete from ground.
+pub fn write_object_delete(x: i16, y: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::ObjectDelete.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.into_bytes()
 }
 
-/// ID 37: Block position update.
-pub fn write_block_position(x: u8, y: u8, blocked: bool) -> Vec<u8> {
+/// ID 36: Block position update.
+pub fn write_block_position(x: i16, y: i16, blocked: bool) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::BlockPosition.to_byte());
-    pkt.write_byte(x);
-    pkt.write_byte(y);
+    pkt.write_integer(x);
+    pkt.write_integer(y);
     pkt.write_boolean(blocked);
     pkt.into_bytes()
 }
@@ -266,7 +267,7 @@ pub fn write_guild_chat(chat: &str) -> Vec<u8> {
 
 // ── Stats ──────────────────────────────────────────────────
 
-/// ID 17: Update HP (VB6: [H]MaxHP,MinHP).
+/// ID 18: Update HP (VB6: [H]MaxHP,MinHP).
 pub fn write_update_hp(max_hp: i16, min_hp: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateHP.to_byte());
@@ -275,7 +276,7 @@ pub fn write_update_hp(max_hp: i16, min_hp: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 16: Update Mana (VB6: [M]MaxMAN,MinMAN).
+/// ID 17: Update Mana (VB6: [M]MaxMAN,MinMAN).
 pub fn write_update_mana(max_mana: i16, min_mana: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateMana.to_byte());
@@ -284,7 +285,7 @@ pub fn write_update_mana(max_mana: i16, min_mana: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 15: Update Stamina (VB6: [E]MaxSta,MinSta).
+/// ID 16: Update Stamina (VB6: [E]MaxSta,MinSta).
 pub fn write_update_sta(max_sta: i16, min_sta: i16) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateSta.to_byte());
@@ -293,7 +294,7 @@ pub fn write_update_sta(max_sta: i16, min_sta: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 18: Update Gold.
+/// ID 19: Update Gold.
 pub fn write_update_gold(gold: i32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateGold.to_byte());
@@ -301,7 +302,7 @@ pub fn write_update_gold(gold: i32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 19: Update Bank Gold.
+/// ID 102: Update Bank Gold.
 pub fn write_update_bank_gold(bank_gold: i32) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
     pkt.write_byte(ServerPacketID::UpdateBankGold.to_byte());
@@ -317,7 +318,7 @@ pub fn write_update_exp(exp: i32) -> Vec<u8> {
     pkt.into_bytes()
 }
 
-/// ID 45: Update full user stats (login bulk).
+/// ID 44: Update full user stats (login bulk).
 pub fn write_update_user_stats(
     max_hp: i16, min_hp: i16, max_mana: i16, min_mana: i16,
     max_sta: i16, min_sta: i16, gold: i32, level: u8,
@@ -358,3 +359,34 @@ pub fn write_level_up(skill_points: i16) -> Vec<u8> {
 }
 
 
+
+/// ID 252: Zone change notification.
+/// Sent when player enters a new zone or on login/map change.
+/// Wire: string zone_name, byte zone_type, byte is_safe, i16 music,
+///       byte lluvia, byte nieve, byte niebla,
+///       i16 x1, i16 y1, i16 x2, i16 y2 (zone bounds for client fog rendering)
+pub fn write_zone_change(
+    zone_name: &str, zone_type: u8, is_safe: bool, music: i16,
+    lluvia: bool, nieve: bool, niebla: bool,
+    x1: i16, y1: i16, x2: i16, y2: i16,
+) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::ZoneChange.to_byte());
+    pkt.write_ascii_string(zone_name);
+    pkt.write_byte(zone_type);
+    pkt.write_byte(is_safe as u8);
+    pkt.write_integer(music);
+    pkt.write_byte(lluvia as u8);
+    pkt.write_byte(nieve as u8);
+    pkt.write_byte(niebla as u8);
+    pkt.write_integer(x1);
+    pkt.write_integer(y1);
+    pkt.write_integer(x2);
+    pkt.write_integer(y2);
+    pkt.into_bytes()
+}
+
+/// ID 252: Zone change to "wilderness" (no zone — map defaults).
+pub fn write_zone_change_wilderness(map_name: &str, is_safe: bool, music: i16) -> Vec<u8> {
+    write_zone_change(map_name, 0, is_safe, music, false, false, false, 0, 0, 0, 0)
+}

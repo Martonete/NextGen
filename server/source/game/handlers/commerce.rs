@@ -4,7 +4,7 @@
 use tracing::{info, warn};
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, InventorySlot, MAX_BANK_SLOTS};
-use crate::protocol::{fields::read_field, binary_packets, font_index};
+use crate::protocol::{binary_packets, font_index};
 use crate::data::objects::ObjType;
 use super::common::*;
 use super::{send_inventory_slot, send_full_inventory};
@@ -134,18 +134,9 @@ pub(super) async fn enviar_npc_inv(state: &mut GameState, conn_id: ConnectionId,
 }
 
 /// COMP — User buys from NPC (VB6: NPCVentaItem / UserCompraObj).
-pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 5); // "COMP," = 5 chars (VB6 strips 5)
-    info!("[COMP] #{} raw='{}' payload='{}'", conn_id, data, payload);
-    let slot: usize = match read_field(1, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => { info!("[COMP] #{} bad slot field: '{}'", conn_id, read_field(1, payload, ',')); return; },
-    };
-    let cantidad: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => { info!("[COMP] #{} bad cantidad field: '{}'", conn_id, read_field(2, payload, ',')); return; },
-    };
+pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: ConnectionId, slot: usize, cantidad: i32) {
     info!("[COMP] #{} slot={} qty={}", conn_id, slot, cantidad);
+    if slot < 1 || cantidad < 1 { return; }
 
     // Anti-cheat: max stack check
     if cantidad > MAX_INVENTORY_OBJS {
@@ -316,16 +307,8 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
 }
 
 /// VEND — User sells to NPC (VB6: NPCCompraItem / NpcCompraObj).
-pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 5); // "VEND," = 5 chars (VB6 strips 5)
-    let slot: usize = match read_field(1, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
-    let cantidad: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: ConnectionId, slot: usize, cantidad: i32) {
+    if slot < 1 || cantidad < 1 { return; }
 
     // Validate user state
     let (dead, comerciando, target_npc) = match state.users.get(&conn_id) {
@@ -529,11 +512,31 @@ pub(super) fn reload_npc_inventory(state: &mut GameState, npc_idx: usize) {
 
 /// Initiate trade from right-click menu (/COMERCIAR).
 pub(super) async fn iniciar_comercio_usuario(state: &mut GameState, conn_id: ConnectionId, target_conn: ConnectionId) {
-    // Check both users alive
-    let user_ok = state.users.get(&conn_id).map(|u| !u.dead && u.logged && !u.trading).unwrap_or(false);
-    let target_ok = state.users.get(&target_conn).map(|u| !u.dead && u.logged && !u.trading).unwrap_or(false);
+    // H6 fix: also block trade initiation while the user (or target) is in the bank
+    // (comerciando=true). Allowing trade while banking could cause inventory corruption
+    // since the same items could be simultaneously in a trade offer and in a bank
+    // transaction, leading to duplication or loss on completion/cancellation.
+    let user_ok = state.users.get(&conn_id)
+        .map(|u| !u.dead && u.logged && !u.trading && !u.comerciando)
+        .unwrap_or(false);
+    let target_ok = state.users.get(&target_conn)
+        .map(|u| !u.dead && u.logged && !u.trading && !u.comerciando)
+        .unwrap_or(false);
 
-    if !user_ok || !target_ok { return; }
+    if !user_ok {
+        let pkt = binary_packets::write_error_show(
+            "No puedes iniciar un comercio mientras tienes otra ventana de comercio abierta."
+        );
+        state.send_bytes(conn_id, &pkt);
+        return;
+    }
+    if !target_ok {
+        let pkt = binary_packets::write_error_show(
+            "El otro jugador no puede comerciar ahora mismo."
+        );
+        state.send_bytes(conn_id, &pkt);
+        return;
+    }
 
     // Set both in trading mode
     if let Some(u) = state.users.get_mut(&conn_id) {
@@ -563,12 +566,8 @@ pub(super) async fn iniciar_comercio_usuario(state: &mut GameState, conn_id: Con
 }
 
 /// UOR — Offer gold in trade.
-pub(super) async fn handle_trade_offer_gold(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let gold: i64 = match payload.trim().parse() {
-        Ok(v) if v >= 0 => v,
-        _ => return,
-    };
+pub(super) async fn handle_trade_offer_gold(state: &mut GameState, conn_id: ConnectionId, gold: i64) {
+    if gold < 0 { return; }
 
     let (trading, partner, user_gold) = match state.users.get(&conn_id) {
         Some(u) if u.trading => (true, u.trade_partner, u.gold),
@@ -599,16 +598,8 @@ pub(super) async fn handle_trade_offer_gold(state: &mut GameState, conn_id: Conn
 }
 
 /// UOC — Offer items in trade.
-pub(super) async fn handle_trade_offer_item(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let slot: usize = match read_field(1, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
-    let cantidad: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+pub(super) async fn handle_trade_offer_item(state: &mut GameState, conn_id: ConnectionId, slot: usize, cantidad: i32) {
+    if slot < 1 || cantidad < 1 { return; }
 
     let (trading, partner) = match state.users.get(&conn_id) {
         Some(u) if u.trading => (true, u.trade_partner),
@@ -664,12 +655,7 @@ pub(super) async fn handle_trade_offer_item(state: &mut GameState, conn_id: Conn
 }
 
 /// TDR — Trade response (0=accept, 1=reject).
-pub(super) async fn handle_trade_response(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
-    let response: i32 = match payload.trim().parse() {
-        Ok(v) => v,
-        _ => return,
-    };
+pub(super) async fn handle_trade_response(state: &mut GameState, conn_id: ConnectionId, response: i32) {
 
     let partner = match state.users.get(&conn_id) {
         Some(u) if u.trading => u.trade_partner,
@@ -712,13 +698,39 @@ pub(super) async fn execute_trade(state: &mut GameState, user1: ConnectionId, us
         None => return,
     };
 
+    // Re-validate that none of the offered items are currently equipped BEFORE any transfer.
+    // A user could have equipped an item between offering it and accepting the trade,
+    // which would lead to transferring an item that is actively worn.
+    let user1_has_equipped = items1.iter().any(|item| {
+        state.users.get(&user1)
+            .map(|u| u.inventory.iter().any(|slot| {
+                slot.obj_index == item.obj_index && slot.equipped
+            }))
+            .unwrap_or(false)
+    });
+    let user2_has_equipped = items2.iter().any(|item| {
+        state.users.get(&user2)
+            .map(|u| u.inventory.iter().any(|slot| {
+                slot.obj_index == item.obj_index && slot.equipped
+            }))
+            .unwrap_or(false)
+    });
+
+    if user1_has_equipped || user2_has_equipped {
+        // Abort the trade and notify both parties — no gold or items have moved yet.
+        cancel_trade(state, user1, user2).await;
+        state.send_console(user1, "El trato fue cancelado: un objeto ofrecido está equipado.", font_index::INFO);
+        state.send_console(user2, "El trato fue cancelado: un objeto ofrecido está equipado.", font_index::INFO);
+        return;
+    }
+
     // Transfer gold
     if let Some(u) = state.users.get_mut(&user1) {
-        let new_gold = (u.gold - gold1 + gold2).max(0).min(MAX_GOLD);
+        let new_gold = u.gold.saturating_sub(gold1).saturating_add(gold2).min(MAX_GOLD);
         u.gold = new_gold;
     }
     if let Some(u) = state.users.get_mut(&user2) {
-        let new_gold = (u.gold - gold2 + gold1).max(0).min(MAX_GOLD);
+        let new_gold = u.gold.saturating_sub(gold2).saturating_add(gold1).min(MAX_GOLD);
         u.gold = new_gold;
     }
 
@@ -783,15 +795,14 @@ pub(super) async fn handle_trade_cancel(state: &mut GameState, conn_id: Connecti
 }
 
 /// VHC — Trade chat message.
-pub(super) async fn handle_trade_chat(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3);
+pub(super) async fn handle_trade_chat(state: &mut GameState, conn_id: ConnectionId, msg: &str) {
     let partner = match state.users.get(&conn_id) {
         Some(u) if u.trading => u.trade_partner,
         _ => return,
     };
     if let Some(p) = partner {
         let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-        let msg = format!("{}: {}", name, payload);
+        let msg = format!("{}: {}", name, msg);
         let pkt = binary_packets::write_commerce_chat(&msg);
         state.send_bytes(p, &pkt);
     }
@@ -804,6 +815,21 @@ pub(super) async fn handle_trade_chat(state: &mut GameState, conn_id: Connection
 /// Maximum bank item stack.
 const MAX_BANK_STACK: i32 = 999;
 
+/// Check if another character from the same account is currently using the bank.
+/// Defense-in-depth against item duplication via concurrent bank access.
+fn is_same_account_banking(state: &GameState, conn_id: ConnectionId) -> bool {
+    let my_account = match state.users.get(&conn_id) {
+        Some(u) if !u.account_name.is_empty() => u.account_name.clone(),
+        _ => return false,
+    };
+    state.users.values().any(|u| {
+        u.conn_id != conn_id
+            && u.logged
+            && u.comerciando
+            && u.account_name.eq_ignore_ascii_case(&my_account)
+    })
+}
+
 /// Open bank window (VB6: IniciarDeposito).
 pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) {
     if let Some(u) = state.users.get(&conn_id) {
@@ -812,6 +838,28 @@ pub(super) async fn iniciar_banco(state: &mut GameState, conn_id: ConnectionId) 
             state.send_bytes(conn_id, &pkt);
             return;
         }
+    }
+
+    // H6 fix: block bank access while the user is in a player-to-player trade.
+    // Opening the bank during an active trade could allow inventory corruption:
+    // items could be simultaneously offered in trade and deposited/withdrawn from
+    // the bank, resulting in item duplication or loss.
+    if state.users.get(&conn_id).map(|u| u.trading).unwrap_or(false) {
+        let pkt = binary_packets::write_error_show(
+            "No puedes acceder a la bóveda mientras estás comerciando con otro jugador."
+        );
+        state.send_bytes(conn_id, &pkt);
+        return;
+    }
+
+    // Safety: block bank access if another character from the same account is already banking.
+    // Prevents item duplication via race condition if two chars from same account are online.
+    if is_same_account_banking(state, conn_id) {
+        let pkt = binary_packets::write_error_show(
+            "No puedes acceder a la bóveda porque otro personaje de tu cuenta la está usando."
+        );
+        state.send_bytes(conn_id, &pkt);
+        return;
     }
 
     // VB6 IniciarDeposito: UpdateBanUserInv(True) → bank slots, SendUserGLD, INITBANCO, Comerciando=True
@@ -879,18 +927,9 @@ pub(super) async fn enviar_banco_inv(state: &mut GameState, conn_id: ConnectionI
 
 /// DEPO,<slot>,<cantidad> — Deposit item to bank.
 /// VB6: Right(rData, Len(rData) - 5) then ReadField with chr(44)
-pub(super) async fn handle_bank_deposit(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 5); // "DEPO," = 5 chars (VB6 strips 5)
-    info!("[DEPO] #{} raw='{}' payload='{}'", conn_id, data, payload);
-    let slot: usize = match read_field(1, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => { info!("[DEPO] #{} bad slot: '{}'", conn_id, read_field(1, payload, ',')); return; },
-    };
-    let cantidad: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => { info!("[DEPO] #{} bad qty: '{}'", conn_id, read_field(2, payload, ',')); return; },
-    };
+pub(super) async fn handle_bank_deposit(state: &mut GameState, conn_id: ConnectionId, slot: usize, cantidad: i32) {
     info!("[DEPO] #{} slot={} qty={}", conn_id, slot, cantidad);
+    if slot < 1 || cantidad < 1 { return; }
 
     let slot_idx = slot - 1;
 
@@ -979,16 +1018,8 @@ pub(super) async fn handle_bank_deposit(state: &mut GameState, conn_id: Connecti
 
 /// RETI,<slot>,<cantidad> — Withdraw item from bank.
 /// VB6: Right(rData, Len(rData) - 5) then ReadField with chr(44)
-pub(super) async fn handle_bank_withdraw(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 5); // "RETI," = 5 chars (VB6 strips 5)
-    let slot: usize = match read_field(1, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
-    let cantidad: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) if v >= 1 => v,
-        _ => return,
-    };
+pub(super) async fn handle_bank_withdraw(state: &mut GameState, conn_id: ConnectionId, slot: usize, cantidad: i32) {
+    if slot < 1 || cantidad < 1 { return; }
 
     let slot_idx = slot - 1;
 

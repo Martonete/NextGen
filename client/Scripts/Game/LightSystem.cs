@@ -23,7 +23,6 @@ namespace ArgentumNextgen.Game;
 /// </summary>
 public class LightSystem
 {
-    private const int MapSize = 100;
     private const int TileSize = 32;
 
     /// <summary>
@@ -34,11 +33,8 @@ public class LightSystem
     /// </summary>
     public void RecalculateLights(GameState state)
     {
-        // Allocate grid if needed (1-indexed, 101x101, 4 corners)
-        if (state.TileLightColors == null || state.TileLightColors.GetLength(2) != 4)
-            state.TileLightColors = new Color[MapSize + 1, MapSize + 1, 4];
-
-        var grid = state.TileLightColors;
+        int mapW = state.MapData?.Width ?? 100;
+        int mapH = state.MapData?.Height ?? 100;
 
         // Use the map's actual RGB as ambient. When lights are active,
         // WorldRenderer.Modulate = white, so the light system handles all tinting.
@@ -48,13 +44,12 @@ public class LightSystem
         float AmbB = state.MapColorB / 255f;
         var ambient = new Color(AmbR, AmbG, AmbB, 1f);
 
-        // Initialize all tiles to AMBIENT (not black).
-        // In VB6, unlit tiles use base_light which is the ambient color.
-        // This prevents black tiles at light edges and discontinuities.
-        for (int y = 1; y <= MapSize; y++)
-            for (int x = 1; x <= MapSize; x++)
-                for (int c = 0; c < 4; c++)
-                    grid[x, y, c] = ambient;
+        // Allocate chunked grid if needed, reset all allocated chunks to ambient
+        if (state.TileLightColors == null)
+            state.TileLightColors = new ChunkedLightColors();
+        state.TileLightColors.ResetAll(ambient);
+
+        var grid = state.TileLightColors;
 
         // Apply each active light (VB6: LightRender per light)
         foreach (var light in state.MapLights)
@@ -69,17 +64,15 @@ public class LightSystem
             float lightPxX = light.X * TileSize;
             float lightPxY = light.Y * TileSize;
 
-            int minX = light.X - light.Range;
-            int maxX = light.X + light.Range;
-            int minY = light.Y - light.Range;
-            int maxY = light.Y + light.Range;
+            int minX = Math.Max(1, light.X - light.Range);
+            int maxX = Math.Min(mapW, light.X + light.Range);
+            int minY = Math.Max(1, light.Y - light.Range);
+            int maxY = Math.Min(mapH, light.Y + light.Range);
 
             for (int ty = minY; ty <= maxY; ty++)
             {
                 for (int tx = minX; tx <= maxX; tx++)
                 {
-                    if (tx < 1 || tx > MapSize || ty < 1 || ty > MapSize) continue;
-
                     // VB6 corner positions and their light_value indices:
                     // light_value(1) = NW: (tx*32,     ty*32)
                     // light_value(3) = NE: (tx*32+32,  ty*32)
@@ -89,20 +82,20 @@ public class LightSystem
                     float tileY = ty * TileSize;
 
                     // Corner 1 (NW) → index 1
-                    grid[tx, ty, 1] = CalcCorner(lightPxX, lightPxY, tileX, tileY,
-                        rangePx, grid[tx, ty, 1], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                    grid.Set(tx, ty, 1, CalcCorner(lightPxX, lightPxY, tileX, tileY,
+                        rangePx, grid.Get(tx, ty, 1), lightR, lightG, lightB, AmbR, AmbG, AmbB));
 
                     // Corner 3 (NE) → index 3
-                    grid[tx, ty, 3] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY,
-                        rangePx, grid[tx, ty, 3], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                    grid.Set(tx, ty, 3, CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY,
+                        rangePx, grid.Get(tx, ty, 3), lightR, lightG, lightB, AmbR, AmbG, AmbB));
 
                     // Corner 0 (SW) → index 0
-                    grid[tx, ty, 0] = CalcCorner(lightPxX, lightPxY, tileX, tileY + TileSize,
-                        rangePx, grid[tx, ty, 0], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                    grid.Set(tx, ty, 0, CalcCorner(lightPxX, lightPxY, tileX, tileY + TileSize,
+                        rangePx, grid.Get(tx, ty, 0), lightR, lightG, lightB, AmbR, AmbG, AmbB));
 
                     // Corner 2 (SE) → index 2
-                    grid[tx, ty, 2] = CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY + TileSize,
-                        rangePx, grid[tx, ty, 2], lightR, lightG, lightB, AmbR, AmbG, AmbB);
+                    grid.Set(tx, ty, 2, CalcCorner(lightPxX, lightPxY, tileX + TileSize, tileY + TileSize,
+                        rangePx, grid.Get(tx, ty, 2), lightR, lightG, lightB, AmbR, AmbG, AmbB));
                 }
             }
         }
@@ -152,12 +145,14 @@ public class LightSystem
     public static Color GetTileLight(GameState state, int x, int y)
     {
         if (state.TileLightColors == null) return Colors.White;
-        if (x < 1 || x > MapSize || y < 1 || y > MapSize) return Colors.White;
+        int mapW = state.MapData?.Width ?? 100;
+        int mapH = state.MapData?.Height ?? 100;
+        if (x < 1 || x > mapW || y < 1 || y > mapH) return Colors.White;
 
-        var c0 = state.TileLightColors[x, y, 0];
-        var c1 = state.TileLightColors[x, y, 1];
-        var c2 = state.TileLightColors[x, y, 2];
-        var c3 = state.TileLightColors[x, y, 3];
+        var c0 = state.TileLightColors.Get(x, y, 0);
+        var c1 = state.TileLightColors.Get(x, y, 1);
+        var c2 = state.TileLightColors.Get(x, y, 2);
+        var c3 = state.TileLightColors.Get(x, y, 3);
 
         float r = (c0.R + c1.R + c2.R + c3.R) * 0.25f;
         float g = (c0.G + c1.G + c2.G + c3.G) * 0.25f;
@@ -167,45 +162,46 @@ public class LightSystem
     }
 
     /// <summary>
-    /// Build a 101×101 lightmap Image from TileLightColors.
+    /// Build a (W+1)x(H+1) lightmap Image from TileLightColors.
     /// Each pixel represents a tile corner. GPU bilinear interpolation
     /// between corner pixels produces smooth per-vertex-equivalent lighting.
     ///
     /// Pixel layout:
     ///   pixel(x, y) = NW corner of tile (x+1, y+1)
-    ///   Right edge (x=100): NE corner of tile (100, y+1)
-    ///   Bottom edge (y=100): SW corner of tile (x+1, 100)
-    ///   Corner (100,100): SE corner of tile (100, 100)
+    ///   Right edge (x=W): NE corner of tile (W, y+1)
+    ///   Bottom edge (y=H): SW corner of tile (x+1, H)
+    ///   Corner (W,H): SE corner of tile (W, H)
     /// </summary>
-    public static Image BuildLightmapImage(Color[,,] tileLightColors)
+    public static Image BuildLightmapImage(ChunkedLightColors tileLightColors, int mapWidth, int mapHeight)
     {
-        const int Size = MapSize + 1; // 101
-        var img = Image.CreateEmpty(Size, Size, false, Image.Format.Rgb8);
+        int sizeX = mapWidth + 1;
+        int sizeY = mapHeight + 1;
+        var img = Image.CreateEmpty(sizeX, sizeY, false, Image.Format.Rgb8);
 
-        for (int py = 0; py < Size; py++)
+        for (int py = 0; py < sizeY; py++)
         {
-            for (int px = 0; px < Size; px++)
+            for (int px = 0; px < sizeX; px++)
             {
                 Color c;
-                if (px < MapSize && py < MapSize)
+                if (px < mapWidth && py < mapHeight)
                 {
                     // NW corner of tile (px+1, py+1) = index 1
-                    c = tileLightColors[px + 1, py + 1, 1];
+                    c = tileLightColors.Get(px + 1, py + 1, 1);
                 }
-                else if (px == MapSize && py < MapSize)
+                else if (px == mapWidth && py < mapHeight)
                 {
-                    // Right edge: NE corner of tile (100, py+1) = index 3
-                    c = tileLightColors[MapSize, py + 1, 3];
+                    // Right edge: NE corner of tile (W, py+1) = index 3
+                    c = tileLightColors.Get(mapWidth, py + 1, 3);
                 }
-                else if (px < MapSize && py == MapSize)
+                else if (px < mapWidth && py == mapHeight)
                 {
-                    // Bottom edge: SW corner of tile (px+1, 100) = index 0
-                    c = tileLightColors[px + 1, MapSize, 0];
+                    // Bottom edge: SW corner of tile (px+1, H) = index 0
+                    c = tileLightColors.Get(px + 1, mapHeight, 0);
                 }
                 else
                 {
-                    // Corner (100,100): SE corner of tile (100, 100) = index 2
-                    c = tileLightColors[MapSize, MapSize, 2];
+                    // Corner (W,H): SE corner of tile (W, H) = index 2
+                    c = tileLightColors.Get(mapWidth, mapHeight, 2);
                 }
 
                 img.SetPixel(px, py, new Color(c.R, c.G, c.B, 1f));

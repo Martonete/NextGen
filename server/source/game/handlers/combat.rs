@@ -36,17 +36,7 @@ use super::skills::{
 /// `skill` = UserSkills(eSkill.Armas), `agility` = UserAtributos(Agilidad),
 /// `level` = ELV, `class_mod` = ModClase(clase).AtaqueArmas
 pub(super) fn poder_ataque_arma(skill: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    let temp = if skill < 31 {
-        skill as i64 * class_mod as i64
-    } else if skill < 61 {
-        (skill + agility) as i64 * class_mod as i64
-    } else if skill < 91 {
-        (skill + 2 * agility) as i64 * class_mod as i64
-    } else {
-        (skill + 3 * agility) as i64 * class_mod as i64
-    };
-    // VB6: integer arithmetic — cast class_mod to i64 truncates like VB6's Long multiplication
-    // Actually VB6 multiplies by Single (float), so let's be more precise:
+    // VB6: PoderAtaqueArma — use f64 arithmetic to match VB6 Single multiplication precision.
     let temp = if skill < 31 {
         (skill as f64 * class_mod as f64) as i64
     } else if skill < 61 {
@@ -73,9 +63,10 @@ pub(super) fn poder_ataque_wrestling(skill: i32, agility: i32, level: i32, class
 }
 
 /// VB6: PoderEvasion — evasion power.
-/// Formula: (Tacticas + Tacticas/33 * Agility) * ModClase.Evasion + 2.5 * max(0, Level-12)
+/// Formula: (Tacticas + (Tacticas\33) * Agility) * ModClase.Evasion + 2.5 * max(0, Level-12)
+/// Note: VB6 uses integer division (backslash operator) for Tacticas\33.
 pub(super) fn poder_evasion(tacticas: i32, agility: i32, level: i32, class_mod: f32) -> i64 {
-    let temp = (tacticas as f64 + (tacticas as f64 / 33.0 * agility as f64)) * class_mod as f64;
+    let temp = (tacticas as f64 + ((tacticas / 33) as f64 * agility as f64)) * class_mod as f64;
     temp as i64 + (2.5 * (level - 12).max(0) as f64) as i64
 }
 
@@ -201,10 +192,9 @@ pub(super) fn do_apunalar(
 }
 
 /// VB6: PuedeApuñalar — check if user can backstab.
-/// Requirements: same heading as victim, Apuñalar skill > 0, behind the target.
-pub(super) fn puede_apunalar(_class: PlayerClass, attacker_heading: i32, victim_heading: i32) -> bool {
-    // VB6: Must be facing the same direction (behind the target)
-    attacker_heading == victim_heading
+/// Requirements: weapon.Apuñala == 1 AND (skill >= MIN_APUÑALAR OR class == Asesino).
+pub(super) fn puede_apunalar(class: PlayerClass, weapon_apunala: bool, skill_apunalar: i32) -> bool {
+    weapon_apunala && (skill_apunalar > 0 || class == PlayerClass::Asesino)
 }
 
 // =====================================================================
@@ -243,22 +233,24 @@ pub(super) fn do_golpe_critico(
 // VB6 DoDesequipar — unequip victim's item (shield → weapon → helmet)
 // =====================================================================
 
-/// VB6: DoDesequipar — try to unequip victim's shield, weapon, or helmet (in that order).
+/// VB6: DoDesequipar — try to unequip victim's shield, weapon, or helmet.
+/// Uses 3 sequential rolls: first shield, if miss try weapon, if miss try helmet.
+/// VB6 formula: prob = wrestling * 0.2 + level * 0.66
 /// Returns true if something was unequipped.
-async fn do_desequipar(state: &mut GameState, victim_id: ConnectionId) -> bool {
+async fn do_desequipar(state: &mut GameState, victim_id: ConnectionId, prob: i32) -> bool {
     if let Some(victim) = state.users.get_mut(&victim_id) {
-        // Try shield first
-        if victim.equip.shield > 0 {
+        // Roll 1: Try shield
+        if victim.equip.shield > 0 && rand_range(1, 100) <= prob {
             victim.equip.shield = 0;
             return true;
         }
-        // Then weapon
-        if victim.equip.weapon > 0 {
+        // Roll 2: Try weapon
+        if victim.equip.weapon > 0 && rand_range(1, 100) <= prob {
             victim.equip.weapon = 0;
             return true;
         }
-        // Then helmet
-        if victim.equip.helmet > 0 {
+        // Roll 3: Try helmet
+        if victim.equip.helmet > 0 && rand_range(1, 100) <= prob {
             victim.equip.helmet = 0;
             return true;
         }
@@ -302,6 +294,7 @@ pub(super) struct WeaponInfo {
     pub ammo_min_hit: i32,
     pub ammo_max_hit: i32,
     pub acuchilla: bool,
+    pub apunala: bool,
 }
 
 pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> WeaponInfo {
@@ -310,7 +303,7 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         None => return WeaponInfo {
             obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
             refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false,
+            acuchilla: false, apunala: false,
         },
     };
 
@@ -318,7 +311,7 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         return WeaponInfo {
             obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
             refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false,
+            acuchilla: false, apunala: false,
         };
     }
 
@@ -327,13 +320,13 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         return WeaponInfo {
             obj_index: 0, is_proyectil: false, min_hit: 0, max_hit: 0,
             refuerzo: 0, envenena: false, has_ammo: false, ammo_min_hit: 0, ammo_max_hit: 0,
-            acuchilla: false,
+            acuchilla: false, apunala: false,
         };
     }
 
-    let (is_proy, w_min, w_max, refuerzo, envenena, uses_ammo, acuchilla) = match state.get_object(obj_idx) {
-        Some(o) => (o.proyectil, o.min_hit, o.max_hit, o.refuerzo, o.envenena, o.municion > 0, o.acuchilla),
-        None => (false, 0, 0, 0, false, false, false),
+    let (is_proy, w_min, w_max, refuerzo, envenena, uses_ammo, acuchilla, apunala) = match state.get_object(obj_idx) {
+        Some(o) => (o.proyectil, o.min_hit, o.max_hit, o.refuerzo, o.envenena, o.municion > 0, o.acuchilla, o.apunala),
+        None => (false, 0, 0, 0, false, false, false, false),
     };
 
     let (has_ammo, ammo_min, ammo_max) = if is_proy && uses_ammo {
@@ -361,10 +354,12 @@ pub(super) fn get_weapon_info(state: &GameState, conn_id: ConnectionId) -> Weapo
         ammo_min_hit: ammo_min,
         ammo_max_hit: ammo_max,
         acuchilla,
+        apunala,
     }
 }
 
-/// Get ring/glove info for wrestling bonus
+/// Get ring/glove info for wrestling bonus.
+/// VB6: If ring slot has GUANTE_HURTO (873), its MinHIT/MaxHIT add to wrestling damage.
 pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, bool, i32, i32) {
     let user = match state.users.get(&conn_id) {
         Some(u) => u,
@@ -374,9 +369,15 @@ pub(super) fn get_ring_info(state: &GameState, conn_id: ConnectionId) -> (i32, b
         return (0, false, 0, 0);
     }
     let obj_idx = user.inventory[user.equip.ring - 1].obj_index;
-    // VB6: ObjData(ObjIndex).Guante = 1 — we check if the ring is a "guante" type
-    // Since we don't have a guante field, skip for now
-    (obj_idx, false, 0, 0)
+    // VB6: GUANTE_HURTO (873) adds min_hit/max_hit to wrestling base damage (4-9)
+    if obj_idx == GUANTE_HURTO {
+        let (g_min, g_max) = state.get_object(obj_idx)
+            .map(|o| (o.min_hit, o.max_hit))
+            .unwrap_or((0, 0));
+        (obj_idx, true, g_min, g_max)
+    } else {
+        (obj_idx, false, 0, 0)
+    }
 }
 
 // =====================================================================
@@ -412,6 +413,12 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
+    // VB6: HandleAttack exits early if Meditando
+    let is_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
+    if is_meditating {
+        return;
+    }
+
     // VB6: Attacking ALWAYS reveals hidden users (no chance check).
     let (was_hidden, was_invisible) = state.users.get(&conn_id)
         .map(|u| (u.hidden && !u.admin_invisible, u.invisible && !u.admin_invisible))
@@ -423,14 +430,24 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             user.invisible = false;
             user.counter_invisible = 0;
         }
+        // Send CC+CD only to non-clanmates (they had CharacterRemove).
+        // Clanmates get SetInvisible(false) — avoids animation reset/tosqueo.
+        let ci = char_index.0 as i16;
+        let nover = binary_packets::write_set_invisible(ci, false, 0);
         if let Some(u) = state.users.get(&conn_id) {
             let cc = u.build_cc_binary();
             let cd = build_cd_binary(u);
             let (px, py) = (u.pos_x, u.pos_y);
-            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cc);
-            state.send_data_bytes(SendTarget::ToArea { map, x: px, y: py }, &cd);
+            let area_users = state.get_area_users(map, px, py, conn_id);
+            for other_id in area_users {
+                if same_clan(state, conn_id, other_id) {
+                    state.send_bytes(other_id, &nover);
+                } else {
+                    state.send_bytes(other_id, &cc);
+                    state.send_bytes(other_id, &cd);
+                }
+            }
         }
-        let nover = binary_packets::write_set_invisible(char_index.0 as i16, false, 0);
         state.send_bytes(conn_id, &nover);
         state.send_console(conn_id, "Has vuelto a ser visible.", font_index::INFO);
     }
@@ -466,7 +483,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         .and_then(|t| t.user_conn);
 
     // Play attack sound/animation to area
-    let swing_pkt = binary_packets::write_play_wave(2, x as u8, y as u8);
+    let swing_pkt = binary_packets::write_play_wave(2, x as i16, y as i16);
     state.send_data_bytes(
         SendTarget::ToArea { map, x, y },
         &swing_pkt,
@@ -499,14 +516,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             && state.users.get(&victim_id).map(|u| u.atacable_por == conn_id).unwrap_or(false);
 
         if !in_duel {
-            let attacker_trigger = get_map_tile_trigger(state, map, x, y);
-            if attacker_trigger == crate::data::maps::Trigger::SafeZone {
+            // Zone-aware safe check (Trigger > Zone > Map hierarchy)
+            if is_safe_at(state, map, x, y) {
                 state.send_msg_id(conn_id, 163, "");
                 return;
             }
             let victim_pos = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
-            let victim_trigger = get_map_tile_trigger(state, map, victim_pos.0, victim_pos.1);
-            if victim_trigger == crate::data::maps::Trigger::SafeZone {
+            if is_safe_at(state, map, victim_pos.0, victim_pos.1) {
                 state.send_msg_id(conn_id, 163, "");
                 return;
             }
@@ -585,6 +601,23 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         let hit = rand_range(1, 100) <= prob_exito;
 
+        // VB6: Desarmar (Ladrón class — disarm) runs regardless of hit or miss
+        if class == PlayerClass::Ladron {
+            let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
+            if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
+                if let Some(victim) = state.users.get_mut(&victim_id) {
+                    if victim.equip.weapon > 0 {
+                        victim.equip.weapon = 0;
+                    }
+                }
+                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
+                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                if let Some(u) = state.users.get_mut(&conn_id) {
+                    try_level_skill(u, 20);
+                }
+            }
+        }
+
         if !hit {
             // VB6: Shield block check — separate from evasion
             if v_has_shield {
@@ -595,7 +628,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 if rechazo {
                     // Shield block — VB6: SND_ESCUDO + messages
                     let (vx, vy) = state.users.get(&victim_id).map(|v| (v.pos_x, v.pos_y)).unwrap_or((0, 0));
-                    let snd = binary_packets::write_play_wave(37, vx as u8, vy as u8); // SND_ESCUDO
+                    let snd = binary_packets::write_play_wave(37, vx as i16, vy as i16); // SND_ESCUDO
                     state.send_data_bytes(SendTarget::ToArea { map, x: vx, y: vy }, &snd);
 
                     let pkt_atk = binary_packets::write_multi_msg_simple(crate::protocol::packets::MultiMessageID::BlockedWithShieldOther);
@@ -616,7 +649,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // Miss
-            let snd = binary_packets::write_play_wave(2, x as u8, y as u8);
+            let snd = binary_packets::write_play_wave(2, x as i16, y as i16);
             state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
             let pkt = binary_packets::write_multi_user_attacked_swing(char_index.0 as i16);
             state.send_bytes(victim_id, &pkt);
@@ -638,43 +671,40 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // HIT — VB6: UsuarioAtacaUsuario flow after UsuarioImpacto = True
 
         // VB6: SND_IMPACTO to area
-        let snd = binary_packets::write_play_wave(10, x as u8, y as u8);
+        let snd = binary_packets::write_play_wave(10, x as i16, y as i16);
         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &snd);
 
         // VB6: Blood FX on victim (if not navigating)
         // (client handles this via MultiMessage)
 
-        // VB6: DoDesequipar — requires pickpocket gloves (ring=873) + unarmed
+        // VB6: DoDesequipar — requires Bandido class + pickpocket gloves (ring=873) + unarmed
         {
-            let (has_gloves, is_unarmed, wrestling_sk, attacker_level) = state.users.get(&conn_id)
+            let (has_gloves, is_unarmed, wrestling_sk, attacker_level, is_bandido) = state.users.get(&conn_id)
                 .map(|u| {
                     let ring_idx = if u.equip.ring > 0 && u.equip.ring <= MAX_INVENTORY_SLOTS {
                         u.inventory[u.equip.ring - 1].obj_index
                     } else { 0 };
-                    (ring_idx == GUANTE_HURTO, u.equip.weapon == 0, u.skills[20], u.level)
+                    (ring_idx == GUANTE_HURTO, u.equip.weapon == 0, u.skills[20], u.level, u.class == PlayerClass::Bandido)
                 })
-                .unwrap_or((false, false, 0, 0));
+                .unwrap_or((false, false, 0, 0, false));
 
-            if has_gloves && is_unarmed {
+            if is_bandido && has_gloves && is_unarmed {
                 // VB6: Probabilidad = Wrestling*0.2 + Level*0.66
                 let prob = (wrestling_sk as f64 * 0.2 + attacker_level as f64 * 0.66) as i32;
-                let roll = rand_range(1, 100);
 
-                if roll <= prob {
-                    // Try unequip: shield → weapon → helmet
-                    let unequipped = do_desequipar(state, victim_id).await;
-                    if unequipped {
-                        // Send CP to area to update victim appearance
-                        if let Some(v) = state.users.get(&victim_id) {
-                            let cp = binary_packets::write_character_change(
-                                v.char_index.0 as i16, v.body as i16, v.head as i16, v.heading as u8,
-                                v.weapon_anim as i16, v.shield_anim as i16, v.casco_anim as i16, 0, 0,
-                            );
-                            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
-                        }
-                        state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
-                        state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
+                // VB6: 3 sequential rolls (shield, weapon, helmet) inside do_desequipar
+                let unequipped = do_desequipar(state, victim_id, prob).await;
+                if unequipped {
+                    // Send CP to area to update victim appearance
+                    if let Some(v) = state.users.get(&victim_id) {
+                        let cp = binary_packets::write_character_change(
+                            v.char_index.0 as i16, v.body as i16, v.head as i16, v.heading as u8,
+                            v.weapon_anim as i16, v.shield_anim as i16, v.casco_anim as i16, 0, 0,
+                        );
+                        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cp);
                     }
+                    state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
+                    state.send_console(victim_id, "Te han quitado un equipo!", font_index::FIGHT);
                 }
             }
 
@@ -685,7 +715,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                     // VB6: prob = Wrestling / 4
                     let prob = wrestling_sk / 4;
                     if rand_range(0, 100) < prob {
-                        let half_para = state.config.intervalo_paralizado / 2;
+                        let half_para = state.intervals.paralizado / 2;
                         if let Some(victim) = state.users.get_mut(&victim_id) {
                             victim.paralyzed = true;
                             victim.counter_paralisis = half_para;
@@ -694,7 +724,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         let pkt = binary_packets::write_paralize_ok(para_secs);
                         state.send_bytes(victim_id, &pkt);
                         if let Some(u) = state.users.get(&victim_id) {
-                            let pu = binary_packets::write_pos_update(u.pos_x as u8, u.pos_y as u8);
+                            let pu = binary_packets::write_pos_update(u.pos_x as i16, u.pos_y as i16);
                             state.send_bytes(victim_id, &pu);
                         }
                         state.send_console(conn_id, &format!("Has paralizado a {}!", victim_name), font_index::FIGHT);
@@ -733,7 +763,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         );
 
         // VB6: EspadaMataDragonesIndex (402) — always deals 1 damage to players
-        if weapon.obj_index == ESPADA_VIKINGA {
+        if weapon.obj_index == ESPADA_MATA_DRAGONES {
             damage = 1;
         } else {
             // VB6: Weapon Refuerzo (penetration) adds to damage
@@ -744,7 +774,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         let lugar = rand_range(BODY_PART_HEAD, BODY_PART_TORSO);
 
         // VB6: Armor absorption (skip for Dragon Slayer — always 1)
-        if weapon.obj_index != ESPADA_VIKINGA {
+        if weapon.obj_index != ESPADA_MATA_DRAGONES {
             let (head_defense, body_defense) = calc_pvp_armor_absorption(state, victim_id, lugar);
             damage = damage - head_defense as i64 - body_defense as i64;
         }
@@ -763,7 +793,25 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
 
         // Apply damage to victim
         if let Some(victim) = state.users.get_mut(&victim_id) {
-            victim.min_hp -= damage as i32;
+            victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
+        }
+
+        // VB6: Any PvP hit cancels victim meditation unconditionally
+        {
+            let victim_meditating = state.users.get(&victim_id).map(|u| u.meditating).unwrap_or(false);
+            if victim_meditating {
+                if let Some(victim) = state.users.get_mut(&victim_id) {
+                    victim.meditating = false;
+                }
+                state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
+                if let Some(v) = state.users.get(&victim_id) {
+                    let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
+                    state.send_data_bytes(
+                        SendTarget::ToArea { map: v.pos_map, x: v.pos_x, y: v.pos_y },
+                        &fx_clear,
+                    );
+                }
+            }
         }
 
         // VB6: Weapon poison application (60% chance if weapon has Envenena=1)
@@ -799,10 +847,10 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
 
             // VB6: DoApuñalar (backstab attempt)
-            if puede_apunalar(class, heading, v_heading) && skill_apunalar > 0 {
+            if puede_apunalar(class, weapon.apunala, skill_apunalar) {
                 if let Some(stab_dmg) = do_apunalar(skill_apunalar, class, damage, false) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp -= stab_dmg as i32;
+                        victim.min_hp = victim.min_hp.saturating_sub(stab_dmg as i32);
                     }
                     state.send_console(conn_id, &format!("Has apuñalado a {} por {}", victim_name, stab_dmg), font_index::FIGHT);
                     state.send_console(victim_id, &format!("Te ha apuñalado {} por {}", attacker_name, stab_dmg), font_index::FIGHT);
@@ -817,44 +865,38 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                 }
             }
 
+            // Early death check — stop further damage if victim already dead after backstab
+            if state.users.get(&victim_id).map(|u| u.min_hp <= 0).unwrap_or(false) {
+                // Skip remaining special attacks (crit + cut) — victim is already dead
+            } else {
+
             // VB6: DoGolpeCritico (Bandido + Espada Vikinga only)
             let wrestling_sk = state.users.get(&conn_id).map(|u| u.skills[20]).unwrap_or(0);
             if let Some(crit_dmg) = do_golpe_critico(class, weapon.obj_index, wrestling_sk, damage) {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
-                    victim.min_hp -= crit_dmg as i32;
+                    victim.min_hp = victim.min_hp.saturating_sub(crit_dmg as i32);
                 }
                 state.send_console(conn_id, &format!("Has golpeado críticamente a {} por {}.", victim_name, crit_dmg), font_index::FIGHT);
                 state.send_console(victim_id, &format!("{} te ha golpeado críticamente por {}.", attacker_name, crit_dmg), font_index::FIGHT);
             }
+
+            // Early death check — stop further damage if victim already dead after crit
+            if !state.users.get(&victim_id).map(|u| u.min_hp <= 0).unwrap_or(false) {
 
             // VB6: DoAcuchillar (Pirate throat cut — projectile PvP + melee NPC)
             // In PvP: only on projectile attacks (VB6 SistemaCombate.bas:1272)
             if weapon.is_proyectil && puede_acuchillar(class, weapon.acuchilla) {
                 if let Some(cut_dmg) = do_acuchillar(damage) {
                     if let Some(victim) = state.users.get_mut(&victim_id) {
-                        victim.min_hp -= cut_dmg as i32;
+                        victim.min_hp = victim.min_hp.saturating_sub(cut_dmg as i32);
                     }
                     state.send_console(conn_id, &format!("Has acuchillado a {} por {}", victim_name, cut_dmg), font_index::FIGHT);
                     state.send_console(victim_id, &format!("{} te ha acuchillado por {}", attacker_name, cut_dmg), font_index::FIGHT);
                 }
             }
-        }
 
-        // VB6: Desarmar (Ladrón class — disarm)
-        if class == PlayerClass::Ladron {
-            let wresterling_skill = state.users.get(&conn_id).and_then(|u| u.skills.get(20).copied()).unwrap_or(0);
-            if wresterling_skill > 0 && try_desarmar(wresterling_skill) {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    if victim.equip.weapon > 0 {
-                        victim.equip.weapon = 0;
-                    }
-                }
-                state.send_console(victim_id, "Te han desarmado!", font_index::FIGHT);
-                state.send_console(conn_id, &format!("Has desarmado a {}!", victim_name), font_index::FIGHT);
-                if let Some(u) = state.users.get_mut(&conn_id) {
-                    try_level_skill(u, 20);
-                }
-            }
+            } // end early death check after crit
+            } // end early death check after backstab
         }
 
         // VB6: Fire Elemental reacts to PvP
@@ -869,9 +911,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             user_die(state, victim_id, Some(conn_id)).await;
         }
     } else {
-        // Safe zone check for NPC attacks too
-        let attacker_trigger = get_map_tile_trigger(state, map, x, y);
-        if attacker_trigger == crate::data::maps::Trigger::SafeZone {
+        // Zone-aware safe check for NPC attacks
+        if is_safe_at(state, map, x, y) {
             state.send_msg_id(conn_id, 164, "");
             return;
         }
@@ -973,18 +1014,6 @@ pub(super) fn calc_defense_power(tacticas: i32, agility: i32, level: i32) -> f64
     poder_evasion(tacticas, agility, level, 1.0) as f64
 }
 
-/// Calculate defense/evasion power with balance modifier (legacy API).
-pub(super) fn calc_defense_power_with_balance(
-    tacticas: i32, agility: i32, level: i32, class_mod: f32,
-    has_shield: bool, _shield_max_def: i32, shield_class_mod: f32,
-    _is_mago: bool,
-) -> f64 {
-    let base = poder_evasion(tacticas, agility, level, class_mod) as f64;
-    // For NPC combat, shield evasion uses the old formula
-    // (npcs don't have Defensa skill)
-    base
-}
-
 /// Get armor absorption for NPC combat (unchanged from before).
 pub(super) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, body_part: i32) -> i32 {
     let user = match state.users.get(&conn_id) {
@@ -1064,24 +1093,6 @@ pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: Playe
     state.game_data.balance.class_mod_dano_armas_e(class) as f64
 }
 
-/// Fallback class-based damage modifier (no longer used in PvP but kept for reference).
-pub(super) fn class_damage_modifier(class: PlayerClass) -> f64 {
-    match class {
-        PlayerClass::Guerrero => 1.1,
-        PlayerClass::Cazador => 0.9,
-        PlayerClass::Paladin => 1.0,
-        PlayerClass::Asesino => 1.0,
-        PlayerClass::Ladron => 0.8,
-        PlayerClass::Bardo => 0.8,
-        PlayerClass::Clerigo => 0.8,
-        PlayerClass::Mago => 0.5,
-        PlayerClass::Druida => 0.7,
-        PlayerClass::Pirata => 1.0,
-        PlayerClass::Trabajador => 0.8,
-        PlayerClass::Bandido => 0.9,
-    }
-}
-
 // =====================================================================
 // Player death
 // =====================================================================
@@ -1159,6 +1170,34 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         }
     }
 
+    // VB6: Restore attributes if TomoPocion (Modulo_UsUaRiOs.bas:1558-1563)
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        if u.tomo_pocion {
+            u.attributes = u.attributes_backup;
+            u.tomo_pocion = false;
+            u.duracion_efecto = 0;
+        }
+    }
+
+    // VB6: Kill all pets on death (Modulo_UsUaRiOs.bas:1576-1585)
+    let pets = state.users.get(&conn_id).map(|u| u.mascotas_index).unwrap_or([0; 3]);
+    for i in 0..3 {
+        let pet_idx = pets[i];
+        if pet_idx > 0 {
+            // Kill pet NPC — send removal to area first
+            if let Some(n) = state.get_npc(pet_idx) {
+                let bp = binary_packets::write_character_remove(n.char_index.0 as i16);
+                state.send_data_bytes(SendTarget::ToArea { map: n.map, x: n.x, y: n.y }, &bp);
+            }
+            state.kill_npc(pet_idx);
+        }
+    }
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.mascotas_index = [0; 3];
+        u.mascotas_type = [0; 3];
+        u.nro_mascotas = 0;
+    }
+
     // Deequip all items and drop inventory
     if let Some(user) = state.users.get_mut(&conn_id) {
         user.equip.weapon = 0;
@@ -1172,18 +1211,30 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         }
     }
 
-    // Drop non-newbie items on the ground (VB6 TirarTodo)
-    let is_newbie = victim_level < 13;
-    let is_criminal = state.users.get(&conn_id).map(|u| u.criminal).unwrap_or(false);
-    if !is_newbie || is_criminal {
+    // VB6 parity: item drops on death
+    // - ZONAPELEA (trigger 6): NO item drops at all
+    // - Non-newbie (level > 12): TirarTodo — drop ALL items
+    // - Newbie (level <= 12): TirarTodosLosItemsNoNewbies — drop only non-newbie items
+    // Note: VB6 does NOT check criminal status for drops
+    let tile_trigger = get_map_tile_trigger(state, map, x, y);
+    let in_arena = tile_trigger == crate::data::maps::Trigger::CombatZone;
+    let is_newbie = victim_level <= 12;
+
+    if !in_arena {
         let mut items_to_drop: Vec<(i32, i32)> = Vec::new();
         if let Some(user) = state.users.get(&conn_id) {
             for slot in user.inventory.iter() {
                 if slot.obj_index > 0 && slot.amount > 0 {
-                    let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
-                        .map(|o| o.newbie)
-                        .unwrap_or(false);
-                    if !is_newbie_item {
+                    if is_newbie {
+                        // Newbie: only drop non-newbie items
+                        let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
+                            .map(|o| o.newbie)
+                            .unwrap_or(false);
+                        if !is_newbie_item {
+                            items_to_drop.push((slot.obj_index, slot.amount));
+                        }
+                    } else {
+                        // Non-newbie: drop ALL items (TirarTodo)
                         items_to_drop.push((slot.obj_index, slot.amount));
                     }
                 }
@@ -1193,10 +1244,16 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         if let Some(user) = state.users.get_mut(&conn_id) {
             for slot in user.inventory.iter_mut() {
                 if slot.obj_index > 0 {
-                    let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
-                        .map(|o| o.newbie)
-                        .unwrap_or(false);
-                    if !is_newbie_item {
+                    if is_newbie {
+                        let is_newbie_item = state.game_data.objects.get((slot.obj_index - 1) as usize)
+                            .map(|o| o.newbie)
+                            .unwrap_or(false);
+                        if !is_newbie_item {
+                            slot.obj_index = 0;
+                            slot.amount = 0;
+                        }
+                    } else {
+                        // Non-newbie: clear ALL items
                         slot.obj_index = 0;
                         slot.amount = 0;
                     }
@@ -1206,6 +1263,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
 
         let offsets = [(0,0),(1,0),(0,1),(-1,0),(0,-1),(1,1),(-1,1),(1,-1),(-1,-1)];
         let mut off_idx = 0;
+        let (drop_grid_w, drop_grid_h) = state.grid_dimensions(map);
         for (obj_idx, amount) in items_to_drop {
             if let Some(obj) = state.game_data.objects.get((obj_idx - 1) as usize) {
                 let grh = obj.grh_index;
@@ -1215,7 +1273,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                     let (ox, oy) = offsets[idx];
                     let tx = x + ox as i32;
                     let ty = y + oy as i32;
-                    if tx < 1 || tx > 100 || ty < 1 || ty > 100 { continue; }
+                    if tx < 1 || tx > drop_grid_w || ty < 1 || ty > drop_grid_h { continue; }
                     let tile_free = state.world.grid(map)
                         .and_then(|g| g.tile(tx, ty))
                         .map(|t| t.ground_item.obj_index == 0)
@@ -1228,7 +1286,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                                 tile.ground_item.amount = amount;
                             }
                         }
-                        let ho_pkt = binary_packets::write_object_create(tx as u8, ty as u8, grh as i16);
+                        let ho_pkt = binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
                         state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
                         off_idx = (idx + 1) % offsets.len();
                         placed = true;
@@ -1276,7 +1334,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
 
     // Award experience to killer
     if let Some(killer) = killer_id {
-        let exp_gain = victim_level as i64;
+        let exp_gain = (victim_level as i64) * state.multiplicador_exp as i64;
         let killer_name = state.users.get(&killer).map(|u| u.char_name.clone()).unwrap_or_default();
 
         if let Some(k) = state.users.get_mut(&killer) {
@@ -1333,5 +1391,20 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         check_user_level(state, killer).await;
 
         info!("[COMBAT] '{}' killed '{}' (+{} exp)", killer_name, victim_name, exp_gain);
+    }
+
+    // Zone exit point: if the player died inside a zone with a defined exit point,
+    // warp their ghost to that exit instead of leaving them at the death tile.
+    // VB6 parity: zones with salida_map > 0 expel dead players to the exit coords.
+    let zone_exit = state.game_data.maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())
+        .and_then(|game_map| game_map.get_zone_at(x - 1, y - 1))
+        .filter(|z| z.salida_map > 0)
+        .map(|z| (z.salida_map, z.salida_x, z.salida_y));
+
+    if let Some((exit_map, exit_x, exit_y)) = zone_exit {
+        info!("[COMBAT] '{}' died in zone with exit — warping to map {} ({},{})", victim_name, exit_map, exit_x, exit_y);
+        warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
     }
 }

@@ -26,7 +26,11 @@ public partial class PacketHandler
         _state.MapColorG = mapG;
         _state.MapColorB = mapB;
 
-        // Save self aura state before clearing (charIndex changes between maps)
+        // Cancel macros on map change/teleport
+        _state.SpellMacro.Stop();
+        _state.WorkMacro.Stop();
+
+        // Save self aura + FX state before clearing (charIndex changes between maps)
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var self))
             _savedSelfAuras = self;
 
@@ -62,14 +66,13 @@ public partial class PacketHandler
         }
 
         OnMapLoad?.Invoke();
-        GD.Print($"[GAME] Change map (binary): {mapNum} v{mapVersion}");
     }
 
 
     private void HandleBinPosUpdate(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
 
         _state.UserPosX = x;
         _state.UserPosY = y;
@@ -90,29 +93,31 @@ public partial class PacketHandler
         _state.AddToUserPosY = 0;
         _state.UserMoving = false;
         _state.PendingMoves = 0;
-
-        // Stop stale area sounds from the previous position (warp within same map)
-        OnStopSfx?.Invoke();
     }
 
 
     private void HandleBinAreaChanged(ByteQueue bq)
     {
-        byte playerX = bq.ReadByte();
-        byte playerY = bq.ReadByte();
+        int playerX = bq.ReadInteger();
+        int playerY = bq.ReadInteger();
 
-        // VB6: CambioDeArea 9x9 grid zones
+        // VB6: CambioDeArea 9x9 grid zones — standard bounds for characters
         int minLimX = (playerX / 9 - 1) * 9;
         int maxLimX = minLimX + 26;
         int minLimY = (playerY / 9 - 1) * 9;
         int maxLimY = minLimY + 26;
 
-        const int HalfW = 8, HalfH = 6, VisMargin = 3;
-        int visMinX = playerX - HalfW - VisMargin;
-        int visMaxX = playerX + HalfW + VisMargin;
-        int visMinY = playerY - HalfH - VisMargin;
-        int visMaxY = playerY + HalfH + VisMargin;
+        // Grace zone covers the full extended viewport so characters that are
+        // visible in the fog area (higher resolutions) don't get removed and
+        // re-created, which would cause a flash (FovAlpha resets to 1.0).
+        int visHalfX = Math.Max(ResolutionManager.HalfTilesX, 8) + 2;
+        int visHalfY = Math.Max(ResolutionManager.HalfTilesY, 6) + 2;
+        int visMinX = playerX - visHalfX;
+        int visMaxX = playerX + visHalfX;
+        int visMinY = playerY - visHalfY;
+        int visMaxY = playerY + visHalfY;
 
+        // Characters use standard 27x27 area bounds
         var toRemove = new System.Collections.Generic.List<int>();
         foreach (var kvp in _state.Characters)
         {
@@ -128,11 +133,24 @@ public partial class PacketHandler
         foreach (int key in toRemove)
             _state.Characters.Remove(key);
 
+        // Objects use EXTENDED bounds with a grace margin beyond the server's
+        // OBJ_X/Y_BORDER (23x14). The margin prevents flickering: the server
+        // sends AreaChanged + ObjectCreate in the same batch, but AreaChanged
+        // processes first. Without margin, objects at the edge get removed then
+        // immediately re-created, causing a 1-frame gap (flicker).
+        // Grace of +9 (one full zone) ensures we never remove objects the server
+        // is about to re-send in the same packet batch.
+        const int ObjHalfW = 23 + 9, ObjHalfH = 14 + 9;
+        int objMinX = playerX - ObjHalfW;
+        int objMaxX = playerX + ObjHalfW;
+        int objMinY = playerY - ObjHalfH;
+        int objMaxY = playerY + ObjHalfH;
+
         var objToRemove = new System.Collections.Generic.List<(int, int)>();
         foreach (var kvp in _state.GroundObjects)
         {
-            if (kvp.Key.Item1 < minLimX || kvp.Key.Item1 > maxLimX ||
-                kvp.Key.Item2 < minLimY || kvp.Key.Item2 > maxLimY)
+            if (kvp.Key.Item1 < objMinX || kvp.Key.Item1 > objMaxX ||
+                kvp.Key.Item2 < objMinY || kvp.Key.Item2 > objMaxY)
                 objToRemove.Add(kvp.Key);
         }
         foreach (var key in objToRemove)
@@ -150,8 +168,8 @@ public partial class PacketHandler
         short body = bq.ReadInteger();
         short head = bq.ReadInteger();
         byte heading = bq.ReadByte();
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         short weapon = bq.ReadInteger();
         short shield = bq.ReadInteger();
         short helmet = bq.ReadInteger();
@@ -179,11 +197,11 @@ public partial class PacketHandler
 
         ch.Dead = IsDeadHead(head);
 
-        // Apply FX if present
+        // Apply FX if present (VB6: loops 0 = play once, treat as 1)
         if (fxIndex > 0)
         {
             ch.ActiveFxSlots[0] = fxIndex;
-            ch.FxLoops[0] = fxLoops >= 999 ? -1 : fxLoops;
+            ch.FxLoops[0] = fxLoops >= 999 ? -1 : Math.Max((int)fxLoops, 1);
             ch.FxFrameCounter[0] = 0;
         }
 
@@ -211,7 +229,25 @@ public partial class PacketHandler
             ch.NpcAura = auraSource.NpcAura;        ch.NpcAuraAngle = auraSource.NpcAuraAngle;
             ch.Levitating = auraSource.Levitating;
             ch.Navigating = auraSource.Navigating;
+
+            // Preserve active FX across map changes (warp FX should keep playing)
+            for (int i = 0; i < 3; i++)
+            {
+                if (auraSource.ActiveFxSlots[i] > 0)
+                {
+                    ch.ActiveFxSlots[i] = auraSource.ActiveFxSlots[i];
+                    ch.FxLoops[i] = auraSource.FxLoops[i];
+                    ch.FxFrameCounter[i] = auraSource.FxFrameCounter[i];
+                }
+            }
         }
+
+        // Characters inside the core viewport appear instantly (map load, area change).
+        // Characters outside fade in when they enter the viewport (movement).
+        bool insideCore = charIndex == _state.UserCharIndex
+            || (Math.Abs(x - _state.UserPosX) <= ResolutionManager.CoreHalfX
+                && Math.Abs(y - _state.UserPosY) <= ResolutionManager.CoreHalfY);
+        ch.FovAlpha = insideCore ? 1f : 0f;
 
         _state.Characters[charIndex] = ch;
 
@@ -222,8 +258,6 @@ public partial class PacketHandler
             _state.UserGuildName = ltIdx >= 0 ? name[(ltIdx + 1)..] : "";
         }
 
-        GD.Print($"[CC] {name} idx={charIndex} body={body} head={head} weapon={weapon} shield={shield} casco={helmet} (binary)");
-
         if (body <= 0)
             GD.PrintErr($"[CC] WARNING: char {name} (idx={charIndex}) has body=0!");
     }
@@ -232,8 +266,8 @@ public partial class PacketHandler
     private void HandleBinCharacterMove(ByteQueue bq)
     {
         short charIndex = bq.ReadInteger();
-        byte newX = bq.ReadByte();
-        byte newY = bq.ReadByte();
+        int newX = bq.ReadInteger();
+        int newY = bq.ReadInteger();
 
         if (!_state.Characters.TryGetValue(charIndex, out var ch))
             return;
@@ -242,6 +276,14 @@ public partial class PacketHandler
             return;
 
         ClearMeditationFx(ch);
+
+        // VB6: DoPasosFx — play footstep sounds for other characters
+        // Only if not dead and not admin (priv 1,2,3,5,25)
+        if (!ch.Dead && ch.Privileges != 1 && ch.Privileges != 2
+            && ch.Privileges != 3 && ch.Privileges != 5 && ch.Privileges != 25)
+        {
+            DoPasosFx(ch);
+        }
 
         int dx = newX - ch.PosX;
         int dy = newY - ch.PosY;
@@ -258,6 +300,24 @@ public partial class PacketHandler
         ch.PosX = newX;
         ch.PosY = newY;
         ch.Moving = true;
+    }
+
+    /// <summary>
+    /// VB6: DoPasosFx — alternates between SND_PASOS1 (23) and SND_PASOS2 (24).
+    /// If user is navigating, plays SND_NAVEGANDO (50) instead.
+    /// </summary>
+    private void DoPasosFx(Character ch)
+    {
+        if (_state.UserNavigating)
+        {
+            OnPlaySoundAt?.Invoke(SoundManager.SND_NAVEGANDO, ch.PosX, ch.PosY);
+        }
+        else
+        {
+            ch.FootToggle = !ch.FootToggle;
+            int sndId = ch.FootToggle ? SoundManager.SND_PASOS1 : SoundManager.SND_PASOS2;
+            OnPlaySoundAt?.Invoke(sndId, ch.PosX, ch.PosY);
+        }
     }
 
 
@@ -314,52 +374,44 @@ public partial class PacketHandler
             {
                 _state.Dead = true;
                 OnPlaySound?.Invoke(SoundManager.SND_DEATH);
-                GD.Print($"[CP] User died (head={head}, binary)");
             }
             else if (!nowDead && wasDead)
             {
                 _state.Dead = false;
                 OnPlaySound?.Invoke(SoundManager.SND_REVIVE);
-                GD.Print($"[CP] User revived (binary)");
             }
         }
     }
 
     // ── Objects on ground ─────────────────────────────────────────
 
-
-    // ── Objects on ground ─────────────────────────────────────────
-
     private void HandleBinObjectCreate(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
-        short grhIndex = bq.ReadInteger();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
         _state.GroundObjects[(x, y)] = grhIndex;
     }
 
 
     private void HandleBinObjectDelete(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         _state.GroundObjects.Remove((x, y));
     }
 
 
     private void HandleBinBlockPosition(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         bool blocked = bq.ReadBoolean();
-        if (_state.MapData != null && x >= 1 && x <= 100 && y >= 1 && y <= 100)
+        if (_state.MapData != null && x >= 1 && x <= _state.MapData.Width && y >= 1 && y <= _state.MapData.Height)
         {
             _state.MapData.Tiles[x, y].Blocked = blocked;
         }
     }
-
-    // ── Sound / Music ─────────────────────────────────────────────
-
 
     // ── Sound / Music ─────────────────────────────────────────────
 
@@ -374,8 +426,8 @@ public partial class PacketHandler
     private void HandleBinPlayWave(ByteQueue bq)
     {
         byte waveIndex = bq.ReadByte();
-        byte srcX = bq.ReadByte();
-        byte srcY = bq.ReadByte();
+        int srcX = bq.ReadInteger();
+        int srcY = bq.ReadInteger();
         if (waveIndex > 0)
             OnPlaySoundAt?.Invoke(waveIndex, srcX, srcY);
     }
@@ -426,15 +478,6 @@ public partial class PacketHandler
     /// Wire: i16 charIndex, bool mounted
     /// Matches VB6 USM opcode.
     /// </summary>
-
-
-    // ── Mount / Levitate ─────────────────────────────────────────────
-
-    /// <summary>
-    /// UserMount (ID 142) — mount/dismount a character.
-    /// Wire: i16 charIndex, bool mounted
-    /// Matches VB6 USM opcode.
-    /// </summary>
     private void HandleBinUserMount(ByteQueue bq)
     {
         short charIndex = bq.ReadInteger();
@@ -467,16 +510,6 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
             ch.Levitating = levitating;
     }
-
-    // ── Animation / Equipment stats ──────────────────────────────────
-
-    /// <summary>
-    /// AnimData (ID 225) — equipment hitbox stats (20 comma-separated fields).
-    /// Wire: string data (CSV: armaMin,armaMax,armorMin,armorMax,escuMin,escuMax,
-    ///        cascMin,cascMax,herrMin,herrMax, then 10 magic defense fields)
-    /// Matches VB6 ANM opcode.
-    /// </summary>
-
 
     // ── Animation / Equipment stats ──────────────────────────────────
 
@@ -520,14 +553,6 @@ public partial class PacketHandler
         _state.MagDefMax = magMax + magMaxa + magMaxb + magMaxc + magMaxd;
     }
 
-    // ── Timer ────────────────────────────────────────────────────────
-
-    /// <summary>
-    /// TimerInfo (ID 246) — scroll/timer slot (TIS opcode). Ignored for now.
-    /// Wire: u8 id, i32 time1, i32 time2
-    /// </summary>
-
-
     // ── Movement / Projectiles ────────────────────────────────────
 
     /// <summary>
@@ -538,7 +563,7 @@ public partial class PacketHandler
     {
         short srcIndex = bq.ReadInteger();
         short tgtIndex = bq.ReadInteger();
-        short grhIndex = bq.ReadInteger();
+        int grhIndex = (ushort)bq.ReadInteger();
 
         // Create visual arrow projectile (same as text FLECHI handler)
         if (_state.Characters.TryGetValue(srcIndex, out var srcCh) &&
@@ -559,14 +584,7 @@ public partial class PacketHandler
                 Active = true,
             });
         }
-        GD.Print($"[PKT] Arrow: src={srcIndex} tgt={tgtIndex} grh={grhIndex}");
     }
-
-    /// <summary>
-    /// NavigateBroadcast (ID 109) — broadcast navigation state for a char (NVG opcode).
-    /// Wire: i16 charIndex, bool navigating
-    /// </summary>
-
 
     /// <summary>
     /// NavigateBroadcast (ID 109) — broadcast navigation state for a char (NVG opcode).
@@ -579,9 +597,6 @@ public partial class PacketHandler
         if (_state.Characters.TryGetValue(charIndex, out var ch))
             ch.Navigating = navigating;
     }
-
-    // ── Chat (continued) ──────────────────────────────────────────
-
 
     // ── ForceCharMove ─────────────────────────────────────────────
 
@@ -633,17 +648,9 @@ public partial class PacketHandler
         _state.ScreenOffsetX = 0;
         _state.ScreenOffsetY = 0;
 
-        GD.Print($"[PKT] ForceCharMove heading={heading} -> ({newX},{newY})");
     }
 
     // ── Forum ───────────────────────────────────────────────────
-
-    /// <summary>
-    /// AddForumMsg (ID 117) — server sends a forum post to accumulate before showing the form.
-    /// Wire: u8 forumType, string title, string author, string message
-    /// forumType: 0=General, 1=GeneralSticky, 2=Caos, 3=CaosSticky, 4=Real, 5=RealSticky
-    /// </summary>
-
 
     private void HandleBinCharData(ByteQueue bq)
     {
@@ -691,6 +698,12 @@ public partial class PacketHandler
 
     private void HandleBinCharacterInfo(ByteQueue bq)
     {
+        // LEGACY / UNIMPLEMENTED (opcode 75 — CharacterInfo)
+        // Reads 10 fields to advance the byte queue and prevent stream corruption,
+        // but stores nothing. The newer FullCharInfo (opcode 245) supersedes this
+        // packet and populates _state.CharInfoCurrent via HandleBinFullCharInfo.
+        // TODO: either remove from server send list or populate CharInfoCurrent here
+        // once it is confirmed opcode 75 is still sent by 13.3+ servers.
         string name = bq.ReadString();
         byte race = bq.ReadByte();
         byte charClass = bq.ReadByte();
@@ -701,7 +714,7 @@ public partial class PacketHandler
         int reputation = bq.ReadLong();
         string description = bq.ReadString();
         string guildName = bq.ReadString();
-        GD.Print($"[PKT] CharacterInfo (binary): {name} Lvl {level} Guild={guildName}");
+        GD.Print($"[PKT] CharacterInfo (opcode 75) received for '{name}' — legacy, data discarded");
     }
 
     // ── Console message by ID ─────────────────────────────────────
@@ -744,8 +757,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinNavigationData(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
-        GD.Print($"[PKT] Navigation data (binary): {data}");
     }
 
     /// <summary>
@@ -800,8 +813,8 @@ public partial class PacketHandler
     private void HandleBinParticleCreate(ByteQueue bq)
     {
         short particleGroup = bq.ReadInteger();
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         byte layer = bq.ReadByte();
         ParticleSystem.CreateMapStream(_state, particleGroup, x, y);
     }
@@ -818,8 +831,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinLightCreate(ByteQueue bq)
     {
-        byte x = bq.ReadByte();
-        byte y = bq.ReadByte();
+        int x = bq.ReadInteger();
+        int y = bq.ReadInteger();
         byte range = bq.ReadByte();
         byte r = bq.ReadByte();
         byte g = bq.ReadByte();
@@ -853,8 +866,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinWorkMode(ByteQueue bq)
     {
+        // STUB: reads wire bytes but not yet implemented
         byte skill = bq.ReadByte();
-        GD.Print($"[PKT] WorkMode skill={skill}");
     }
 
     /// <summary>
@@ -863,4 +876,35 @@ public partial class PacketHandler
     /// Carp:  count, per item: name(str), grh(i16), madera(i16), maderaElf(i16), objIdx(i16), upgrade(i16)
     /// </summary>
 
+    // ── Zone Change ─────────────────────────────────────────────
+
+    private void HandleBinZoneChange(ByteQueue bq)
+    {
+        string zoneName = bq.ReadString();
+        byte zoneType = bq.ReadByte();
+        bool isSafe = bq.ReadByte() != 0;
+        short music = bq.ReadInteger();
+        bool lluvia = bq.ReadByte() != 0;
+        bool nieve = bq.ReadByte() != 0;
+        bool niebla = bq.ReadByte() != 0;
+        short zoneX1 = bq.ReadInteger();
+        short zoneY1 = bq.ReadInteger();
+        short zoneX2 = bq.ReadInteger();
+        short zoneY2 = bq.ReadInteger();
+
+        _state.CurrentZoneName = zoneName;
+        _state.CurrentZoneType = zoneType;
+        _state.CurrentZoneSafe = isSafe;
+        _state.CurrentZoneMusic = music;
+        _state.CurrentZoneX1 = zoneX1;
+        _state.CurrentZoneY1 = zoneY1;
+        _state.CurrentZoneX2 = zoneX2;
+        _state.CurrentZoneY2 = zoneY2;
+        _state.ZoneChanged = true;
+
+        // Update weather
+        _state.ZoneLluvia = lluvia;
+        _state.ZoneNieve = nieve;
+        _state.ZoneNiebla = niebla;
+    }
 }

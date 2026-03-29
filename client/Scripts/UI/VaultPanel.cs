@@ -177,13 +177,26 @@ public partial class VaultPanel : RpgBaseForm
         ShowForm();
     }
 
-    public void CloseVault()
+    public override void HideForm()
     {
-        HideForm();
+        base.HideForm();
+        // Always clear both bank flags to prevent input freeze.
+        // Without this, closing via X button leaves Banqueando/BovedaAbierta=true
+        // and AnyFormOpen blocks all game input permanently.
+        if (_state != null)
+        {
+            _state.Banqueando = false;
+            _state.BovedaAbierta = false;
+        }
         _selectedVaultIdx = -1;
         _selectedInvIdx = -1;
         HideGoldInputDialog();
         RichTooltip?.Hide();
+    }
+
+    public void CloseVault()
+    {
+        HideForm();
     }
 
     public override void _Notification(int what)
@@ -479,6 +492,7 @@ public partial class VaultPanel : RpgBaseForm
     private void OnSalirPressed()
     {
         _tcp?.SendPacket(ClientPackets.WriteBankClose());
+        HideForm(); // Clear flags locally — don't wait for server response
     }
 
     private int GetQuantity()

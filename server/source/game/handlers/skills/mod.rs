@@ -22,7 +22,7 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::game::world;
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
@@ -60,16 +60,16 @@ use crate::game::constants::*;
 
 /// Stamina costs.
 pub(crate) const ESFUERZO_TALAR_RECOLECTOR: i32 = 2;
-pub(crate) const ESFUERZO_TALAR_GENERAL: i32 = 4;
-pub(crate) const ESFUERZO_PESCAR_RECOLECTOR: i32 = 1;
-pub(crate) const ESFUERZO_PESCAR_GENERAL: i32 = 3;
+pub(crate) const ESFUERZO_TALAR_GENERAL: i32 = 6;
+pub(crate) const ESFUERZO_PESCAR_RECOLECTOR: i32 = 2;
+pub(crate) const ESFUERZO_PESCAR_GENERAL: i32 = 6;
 pub(crate) const ESFUERZO_EXCAVAR_RECOLECTOR: i32 = 2;
-pub(crate) const ESFUERZO_EXCAVAR_GENERAL: i32 = 5;
+pub(crate) const ESFUERZO_EXCAVAR_GENERAL: i32 = 6;
 
 /// VB6: vlProleta = 2 — reputation gain per crafting action (non-criminals only)
 const VL_PROLETA: i32 = 2;
-/// VB6: MAXREP = 500000 — max reputation cap
-const MAX_REP: i32 = 500000;
+/// VB6: MAXREP = 6000000 — max reputation cap
+const MAX_REP: i32 = 6_000_000;
 
 /// VB6: Grant crafting reputation (+2 Proleta) if user is not criminal.
 fn grant_crafting_rep(user: &mut UserState) {
@@ -215,6 +215,24 @@ pub(super) fn is_recolector(class: PlayerClass) -> bool {
     class.is_recolector()
 }
 
+/// VB6: ModFundicion — mining/smelting class modifier.
+/// Worker=1x, Others=3x (non-workers need 3x more skill).
+pub(super) fn mod_fundicion(class: PlayerClass) -> f32 {
+    if class.is_recolector() { 1.0 } else { 3.0 }
+}
+
+/// VB6: ModHerreria — smithing class modifier.
+/// Worker=1x, Others=4x (non-workers need 4x more skill).
+pub(super) fn mod_herreria(class: PlayerClass) -> f32 {
+    if class.is_recolector() { 1.0 } else { 4.0 }
+}
+
+/// VB6: ModCarpinteria — carpentry class modifier.
+/// Worker=1x, Others=3x (non-workers need 3x more skill).
+pub(super) fn mod_carpinteria(class: PlayerClass) -> f32 {
+    if class.is_recolector() { 1.0 } else { 3.0 }
+}
+
 /// Helper: check if user has at least `amount` of an item.
 fn has_items(state: &GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> bool {
     if amount <= 0 { return true; }
@@ -257,20 +275,7 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
 }
 
 /// WLC — Work Left Click (main skill dispatch).
-pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, data: &str) {
-    let payload = strip_opcode(data, 3); // "WLC" = 3 chars
-    let target_x: i32 = match read_field(1, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let target_y: i32 = match read_field(2, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
-    let skill_type: i32 = match read_field(3, payload, ',').parse() {
-        Ok(v) => v,
-        _ => return,
-    };
+pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, target_x: i32, target_y: i32, skill_type: i32) {
 
     // Validate user
     let (dead, meditating, map, ux, uy) = match state.users.get(&conn_id) {
