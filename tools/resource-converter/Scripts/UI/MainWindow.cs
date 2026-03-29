@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.IO;
+using System.Threading.Tasks;
 using Godot;
 using AOResourceConverter.Converters;
 using AOResourceConverter.UI;
@@ -192,7 +193,9 @@ public partial class MainWindow : Control
         return margin;
     }
 
-    private void OnConvertGraphics()
+    private bool _converting; // prevents re-entry during async conversion
+
+    private async void OnConvertGraphics()
     {
         string input = _gfxInputPath?.Text ?? "";
         string output = _gfxOutputPath?.Text ?? "";
@@ -202,6 +205,8 @@ public partial class MainWindow : Control
             SetGfxStatus("Seleccioná origen y destino", true);
             return;
         }
+        if (_converting) return;
+        _converting = true;
 
         bool isArchive = _gfxIsArchive?.ButtonPressed == true;
         SetGfxStatus("Convirtiendo...", false);
@@ -211,23 +216,25 @@ public partial class MainWindow : Control
         {
             if (isArchive)
             {
-                var result = GraphicsAOExtractor.ExtractAndConvert(input, output,
-                    (cur, total, name) =>
-                    {
-                        _gfxProgress.Value = (double)cur / total * 100;
-                        _gfxStatus!.Text = $"[{cur}/{total}] {name}";
-                    });
+                var result = await Task.Run(() =>
+                    GraphicsAOExtractor.ExtractAndConvert(input, output,
+                        (cur, total, name) => Callable.From(() =>
+                        {
+                            _gfxProgress.Value = (double)cur / total * 100;
+                            _gfxStatus!.Text = $"[{cur}/{total}] {name}";
+                        }).CallDeferred()));
                 _gfxProgress.Value = 100;
                 SetGfxStatus($"Listo: {result.Extracted} extraidos, {result.Errors} errores de {result.Total} total", false);
             }
             else
             {
-                var result = GraphicsConverter.Convert(input, output,
-                    (cur, total, name) =>
-                    {
-                        _gfxProgress.Value = (double)cur / total * 100;
-                        _gfxStatus!.Text = $"[{cur}/{total}] {name}";
-                    });
+                var result = await Task.Run(() =>
+                    GraphicsConverter.Convert(input, output,
+                        (cur, total, name) => Callable.From(() =>
+                        {
+                            _gfxProgress.Value = (double)cur / total * 100;
+                            _gfxStatus!.Text = $"[{cur}/{total}] {name}";
+                        }).CallDeferred()));
                 _gfxProgress.Value = 100;
                 SetGfxStatus($"Listo: {result.Converted} convertidos, {result.Skipped} omitidos, {result.Errors} errores de {result.Total} total", false);
             }
@@ -237,6 +244,7 @@ public partial class MainWindow : Control
             SetGfxStatus($"ERROR: {ex.Message}", true);
             GD.PrintErr($"[GFX] {ex}");
         }
+        finally { _converting = false; }
 
         SetStatus("Conversión de gráficos completada");
     }
@@ -327,7 +335,7 @@ public partial class MainWindow : Control
             found == expected.Length ? Theme.TEXT_SUCCESS : Theme.TEXT_DANGER);
     }
 
-    private void OnConvertInits()
+    private async void OnConvertInits()
     {
         string input = _initInputPath?.Text ?? "";
         string output = _initOutputPath?.Text ?? "";
@@ -337,18 +345,22 @@ public partial class MainWindow : Control
             SetInitStatus("Seleccioná origen y destino", true);
             return;
         }
+        if (_converting) return;
+        _converting = true;
 
         SetInitStatus("Convirtiendo...", false);
         _initProgress!.Value = 0;
 
         try
         {
-            var result = InitConverter.Convert(input, output, _selectedVersion,
-                (cur, total, name) =>
-                {
-                    _initProgress.Value = (double)cur / total * 100;
-                    _initStatus!.Text = $"[{cur}/{total}] {name}";
-                });
+            var version = _selectedVersion;
+            var result = await Task.Run(() =>
+                InitConverter.Convert(input, output, version,
+                    (cur, total, name) => Callable.From(() =>
+                    {
+                        _initProgress.Value = (double)cur / total * 100;
+                        _initStatus!.Text = $"[{cur}/{total}] {name}";
+                    }).CallDeferred()));
             _initProgress.Value = 100;
 
             string missingInfo = result.Missing.Length > 0
@@ -361,6 +373,7 @@ public partial class MainWindow : Control
             SetInitStatus($"ERROR: {ex.Message}", true);
             GD.PrintErr($"[INIT] {ex}");
         }
+        finally { _converting = false; }
 
         SetStatus("Conversión de INITs completada");
     }
@@ -420,7 +433,7 @@ public partial class MainWindow : Control
         return margin;
     }
 
-    private void OnConvertMaps()
+    private async void OnConvertMaps()
     {
         string input = _mapInputPath?.Text ?? "";
         string output = _mapOutputPath?.Text ?? "";
@@ -430,18 +443,22 @@ public partial class MainWindow : Control
             SetMapStatus("Seleccioná origen y destino", true);
             return;
         }
+        if (_converting) return;
+        _converting = true;
 
         SetMapStatus("Convirtiendo...", false);
         _mapProgress!.Value = 0;
 
         try
         {
-            var result = MapConverter.Convert(input, output, _selectedVersion,
-                (cur, total, name) =>
-                {
-                    _mapProgress.Value = (double)cur / total * 100;
-                    _mapStatus!.Text = $"[{cur}/{total}] {name}";
-                });
+            var version = _selectedVersion;
+            var result = await Task.Run(() =>
+                MapConverter.Convert(input, output, version,
+                    (cur, total, name) => Callable.From(() =>
+                    {
+                        _mapProgress.Value = (double)cur / total * 100;
+                        _mapStatus!.Text = $"[{cur}/{total}] {name}";
+                    }).CallDeferred()));
             _mapProgress.Value = 100;
             SetMapStatus($"Listo: {result.Converted} convertidos, {result.Skipped} omitidos, {result.Errors} errores de {result.Total} total", result.Errors > 0);
         }
@@ -450,6 +467,7 @@ public partial class MainWindow : Control
             SetMapStatus($"ERROR: {ex.Message}", true);
             GD.PrintErr($"[MAP] {ex}");
         }
+        finally { _converting = false; }
 
         SetStatus("Conversión de mapas completada");
     }
@@ -478,8 +496,10 @@ public partial class MainWindow : Control
 
     private void UpdateVersionDependentUI()
     {
-        if (_gfxIsArchive != null)
-            _gfxIsArchive.ButtonPressed = VersionConfig.UsesGraphicsArchive(_selectedVersion);
+        if (_gfxIsArchive == null) return;
+        bool usesArchive = VersionConfig.UsesGraphicsArchive(_selectedVersion);
+        _gfxIsArchive.ButtonPressed = usesArchive;
+        _gfxIsArchive.Disabled = !usesArchive;
     }
 
     private void SetStatus(string text)
@@ -524,7 +544,10 @@ public partial class MainWindow : Control
                 if (string.Equals(Path.GetFileName(f), fileName, StringComparison.OrdinalIgnoreCase))
                     return true;
         }
-        catch { }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            GD.PrintErr($"[FindFileCI] Error accessing {dir}: {ex.Message}");
+        }
         return false;
     }
 
