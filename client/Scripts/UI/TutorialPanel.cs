@@ -105,11 +105,8 @@ public partial class TutorialPanel : Control
 
         // Central panel with NinePatch frame
         _panel = new Control();
-        _panel.Size = new Vector2(500, 400);
-        _panel.CustomMinimumSize = new Vector2(500, 400);
-        _panel.Position = new Vector2(
-            (ResolutionManager.WindowWidth - 500) / 2f,
-            (ResolutionManager.WindowHeight - 400) / 2f);
+        _panel.Size = new Vector2(360, 300);
+        _panel.CustomMinimumSize = new Vector2(360, 300);
         _panel.ClipContents = true;
         _panel.MouseFilter = MouseFilterEnum.Stop;
 
@@ -231,10 +228,19 @@ public partial class TutorialPanel : Control
     /// </summary>
     public void Open()
     {
-        if (_completed) return; // Already completed, don't show again
+        if (_completed) return;
         _currentStep = 0;
         RefreshStep();
         Visible = true;
+
+        // Center panel in viewport
+        if (_panel != null)
+        {
+            var vp = GetViewportRect().Size;
+            _panel.Position = new Vector2(
+                (vp.X - _panel.Size.X) / 2f,
+                (vp.Y - _panel.Size.Y) / 2f);
+        }
     }
 
     /// <summary>
