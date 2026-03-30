@@ -1304,12 +1304,17 @@ public partial class Main : Control
 	/// <summary>
 	/// Resolve data path when running inside the Godot editor.
 	/// Priority:
-	/// 1. res://Data/ if it contains .aopak files (dev with packed archives)
-	/// 2. tools/resource-manager/data/ if it exists (dev with loose files)
+	/// 1. ARGENTUM_DATA_PATH env var (explicit override)
+	/// 2. res://Data/ if it contains .aopak files
 	/// 3. res://Data/ as fallback
 	/// </summary>
 	private static string ResolveEditorDataPath()
 	{
+		// Explicit override via environment variable
+		string? envPath = System.Environment.GetEnvironmentVariable("ARGENTUM_DATA_PATH");
+		if (!string.IsNullOrEmpty(envPath) && System.IO.Directory.Exists(envPath))
+			return envPath;
+
 		string editorData = ProjectSettings.GlobalizePath("res://Data");
 
 		// Check for .aopak files already present in editor Data/
@@ -1318,13 +1323,6 @@ public partial class Main : Control
 		{
 			return editorData;
 		}
-
-		// Check resource-manager/data/ — resources live there during development
-		// editorData = <repo>/client/Data, so ../../ reaches <repo>/
-		string resourceManagerData = System.IO.Path.GetFullPath(
-			System.IO.Path.Combine(editorData, "..", "..", "tools", "resource-manager", "data"));
-		if (System.IO.Directory.Exists(resourceManagerData))
-			return resourceManagerData;
 
 		return editorData;
 	}
