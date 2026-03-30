@@ -385,10 +385,12 @@ public partial class EditorMain : Control
 
         _npcPalette = new NpcPalette { Name = "NPCs", State = _state };
         _npcPalette.NpcSelected += OnNpcPaletteSelected;
+        _npcPalette.RequestServerPath += () => _serverPathDialog?.Popup();
         _sidebarTabs.AddChild(_npcPalette);
 
         _objPalette = new ObjectPalette { Name = "Objetos", State = _state };
         _objPalette.ObjectSelected += OnObjectPaletteSelected;
+        _objPalette.RequestServerPath += () => _serverPathDialog?.Popup();
         _sidebarTabs.AddChild(_objPalette);
 
         _zonePanel = new ZonePanel { Name = "Zonas", State = _state, ZoneData = _mapZones };

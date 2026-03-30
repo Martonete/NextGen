@@ -13,6 +13,7 @@ namespace AOWorldEditor.Editor;
 public partial class ObjectPalette : VBoxContainer
 {
     [Signal] public delegate void ObjectSelectedEventHandler(int objNumber);
+    [Signal] public delegate void RequestServerPathEventHandler();
 
     public ObjectDatabase? Database;
     public GrhData[]? Grhs;
@@ -25,6 +26,7 @@ public partial class ObjectPalette : VBoxContainer
     private ScrollContainer? _scroll;
     private VBoxContainer? _listContainer;
     private Label? _infoLabel;
+    private VBoxContainer? _emptyState;
 
     private int _selectedObj;
     private readonly List<ObjRecord> _filteredList = new();
@@ -82,6 +84,25 @@ public partial class ObjectPalette : VBoxContainer
         _listContainer.AddThemeConstantOverride("separation", 1);
         _listContainer.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         _scroll.AddChild(_listContainer);
+
+        // Empty state
+        _emptyState = new VBoxContainer();
+        _emptyState.AddThemeConstantOverride("separation", 8);
+        _emptyState.SizeFlagsVertical = SizeFlags.ExpandFill;
+        _emptyState.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        _emptyState.Visible = false;
+
+        var emptyLabel = EditorTheme.MakeLabel("Selecciona la carpeta del servidor\npara cargar objetos.",
+            EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        emptyLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        emptyLabel.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _emptyState.AddChild(emptyLabel);
+
+        var serverBtn = EditorTheme.PrimaryButton("Seleccionar Server...");
+        serverBtn.Pressed += () => EmitSignal(SignalName.RequestServerPath);
+        _emptyState.AddChild(serverBtn);
+
+        AddChild(_emptyState);
     }
 
     /// <summary>Rebuild the object list after data is loaded or filter changes.</summary>
@@ -106,9 +127,13 @@ public partial class ObjectPalette : VBoxContainer
 
         if (Database == null || Database.All.Count == 0)
         {
-            _infoLabel!.Text = "Sin datos de objetos — configura la ruta del server";
+            _infoLabel!.Text = "";
+            if (_emptyState != null) _emptyState.Visible = true;
+            if (_scroll != null) _scroll.Visible = false;
             return;
         }
+        if (_emptyState != null) _emptyState.Visible = false;
+        if (_scroll != null) _scroll.Visible = true;
 
         string search = _searchBox?.Text?.Trim().ToLowerInvariant() ?? "";
         int filterIdx = (int)(_filterType?.Selected ?? 0);
