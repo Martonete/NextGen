@@ -1373,43 +1373,28 @@ public partial class EditorMain : Control
         _clientMapDir = mapsDir;
         _state.MapDir = mapsDir;
 
-        // Find server directory (auto-detect relative to client Data/)
-        string serverDir = _serverDatDir.Length > 0
-            ? Path.GetDirectoryName(_serverDatDir) ?? ""
-            : "";
-        if (serverDir.Length == 0)
+        // Find server/ directory (auto-detect relative to dataPath = tools/resources/data)
+        if (_serverDatDir.Length == 0)
         {
-            // Primary: tools/resources/dats (relative to repo root, detected via dataPath)
-            foreach (var rel in new[] { "../..", "../../.." })
+            foreach (var rel in new[] { "../../..", "../../../.." })
             {
-                string resourcesDats = Path.GetFullPath(Path.Combine(dataPath, rel, "tools/resources/dats"));
-                if (Directory.Exists(resourcesDats)) { _serverDatDir = resourcesDats; break; }
-            }
-            // Fallback: legacy server/ directory
-            if (_serverDatDir.Length == 0)
-            {
-                foreach (var rel in new[] { "..", "../.." })
+                string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
+                if (Directory.Exists(Path.Combine(candidate, "dat")))
                 {
-                    string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
-                    if (Directory.Exists(candidate)) { serverDir = candidate; break; }
+                    _serverDatDir = Path.Combine(candidate, "dat");
+                    break;
                 }
-                if (serverDir.Length > 0)
-                    _serverDatDir = Path.Combine(serverDir, "dat");
             }
         }
 
-        // Store server paths
+        // Server maps = server/maps/ (sibling of server/dat/)
         if (_serverDatDir.Length > 0)
         {
-            // Primary: maps alongside resources/data/Maps (new structure)
-            string serverMapsDir = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(_serverDatDir)) ?? "", "resources/data/Maps");
-            // Fallback: maps/ sibling of dat dir (legacy server/ layout)
-            if (!Directory.Exists(serverMapsDir))
-                serverMapsDir = Path.Combine(Path.GetDirectoryName(_serverDatDir) ?? "", "maps");
+            string serverMapsDir = Path.Combine(Path.GetDirectoryName(_serverDatDir) ?? "", "maps");
             if (Directory.Exists(serverMapsDir))
             {
                 _serverMapDir = serverMapsDir;
-                _state.MapDir = serverMapsDir; // Prefer server maps for loading
+                _state.MapDir = serverMapsDir; // Load maps from server
                 GD.Print($"[Editor] Server maps: {serverMapsDir}");
             }
         }
@@ -1746,34 +1731,31 @@ public partial class EditorMain : Control
         if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
         if (_map.MapNumber <= 0) _map.MapNumber = _state.CurrentMapNumber > 0 ? _state.CurrentMapNumber : 1;
 
-        // Save .aomap — loose files to both client and server dirs
-        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
-        {
-            MapLoader.Save(_clientMapDir, _map);
-            GD.Print($"[Editor] Saved to client: {_clientMapDir}");
-        }
-
+        // Server: save full set (.aomap + .aoinf + .dat)
         if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
         {
             MapLoader.Save(_serverMapDir, _map);
             GD.Print($"[Editor] Saved to server: {_serverMapDir}");
         }
 
-        // Save .aozone to both client and server dirs
-        if (_mapZones != null && _map.MapNumber > 0)
+        // Client data: save .aomap ONLY (will be packed into maps.aopak)
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
         {
-            if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
-                _mapZones.Save(_clientMapDir, _map.MapNumber);
-            if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-                _mapZones.Save(_serverMapDir, _map.MapNumber);
+            MapLoader.Save(_clientMapDir, _map, mapOnly: true);
+            GD.Print($"[Editor] Saved .aomap to client data: {_clientMapDir}");
+        }
+
+        // Save .aozone to server
+        if (_mapZones != null && _map.MapNumber > 0 && _serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+        {
+            _mapZones.Save(_serverMapDir, _map.MapNumber);
             GD.Print($"[Editor] Saved {_mapZones.Zones.Count} zones for map {_map.MapNumber}");
         }
 
         _state.ResetDirty();
         _state.ScanAvailableMaps(_state.MapDir);
         UpdateNavBar();
-        bool dual = _clientMapDir.Length > 0 && _serverMapDir.Length > 0;
-        SetStatus($"Mapa {_map.MapNumber} guardado" + (dual ? " (cliente + server)" : ""));
+        SetStatus($"Mapa {_map.MapNumber} guardado (server + data)");
         _exportConfirmDialog?.PopupCentered();
     }
 
