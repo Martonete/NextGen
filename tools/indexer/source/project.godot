@@ -19,6 +19,10 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 window/size/viewport_width=1400
 window/size/viewport_height=900
 
+[autoload]
+
+AoPakBridge="*res://Scripts/AoPakBridge.cs"
+
 [dotnet]
 
 project/assembly_name="Argentum Sprite Indexer"

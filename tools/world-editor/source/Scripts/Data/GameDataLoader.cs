@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using AoPak;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -93,6 +94,16 @@ public static class GameDataLoader
         return (bodies, heads);
     }
 
+    /// <summary>Load Personajes.ind from an AopakReader (INIT/Personajes.ind entry).</summary>
+    public static (int[] grhs, int[] headOfsX, int[] headOfsY) LoadBodyData(AopakReader initsReader)
+    {
+        const string entryName = "INIT/Personajes.ind";
+        if (!initsReader.Contains(entryName))
+            return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
+        var data = initsReader.ReadEntry(entryName);
+        return ParseBodyData(data);
+    }
+
     /// <summary>
     /// Load Personajes.ind binary — returns south-facing walk GRH and head offsets.
     /// Format: 263B header + i16 count + (i16[4] walk + i16 headOfsX + i16 headOfsY) per entry.
@@ -101,8 +112,11 @@ public static class GameDataLoader
     {
         if (!File.Exists(personajesPath))
             return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
+        return ParseBodyData(File.ReadAllBytes(personajesPath));
+    }
 
-        var data = File.ReadAllBytes(personajesPath);
+    private static (int[] grhs, int[] headOfsX, int[] headOfsY) ParseBodyData(byte[] data)
+    {
         using var reader = new BinaryReader(new MemoryStream(data));
 
         reader.BaseStream.Seek(263, SeekOrigin.Begin); // MiCabecera
@@ -127,6 +141,14 @@ public static class GameDataLoader
         return (grhs, ofsX, ofsY);
     }
 
+    /// <summary>Load Cabezas.ind from an AopakReader (INIT/Cabezas.ind entry).</summary>
+    public static int[] LoadHeadGrhs(AopakReader initsReader)
+    {
+        const string entryName = "INIT/Cabezas.ind";
+        if (!initsReader.Contains(entryName)) return Array.Empty<int>();
+        return ParseHeadGrhs(initsReader.ReadEntry(entryName));
+    }
+
     /// <summary>
     /// Load Cabezas.ind binary — returns south-facing head GRH for each head index.
     /// Format: 263B header + i16 count + (i16[4] per direction) per entry.
@@ -134,8 +156,11 @@ public static class GameDataLoader
     public static int[] LoadHeadGrhs(string cabezasPath)
     {
         if (!File.Exists(cabezasPath)) return Array.Empty<int>();
+        return ParseHeadGrhs(File.ReadAllBytes(cabezasPath));
+    }
 
-        var data = File.ReadAllBytes(cabezasPath);
+    private static int[] ParseHeadGrhs(byte[] data)
+    {
         using var reader = new BinaryReader(new MemoryStream(data));
 
         reader.BaseStream.Seek(263, SeekOrigin.Begin);

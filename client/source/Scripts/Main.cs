@@ -475,7 +475,7 @@ public partial class Main : Control
 		string dataPath;
 		if (OS.HasFeature("editor"))
 		{
-			dataPath = ProjectSettings.GlobalizePath("res://Data");
+			dataPath = ResolveEditorDataPath();
 		}
 		else
 		{
@@ -1299,6 +1299,34 @@ public partial class Main : Control
 
 		// Delegate game-screen input to InputRouter
 		_inputRouter?.HandleGameInput(@event, GetViewport(), GetTree());
+	}
+
+	/// <summary>
+	/// Resolve data path when running inside the Godot editor.
+	/// Priority:
+	/// 1. res://Data/ if it contains .aopak files (dev with packed archives)
+	/// 2. tools/resource-manager/data/ if it exists (dev with loose files)
+	/// 3. res://Data/ as fallback
+	/// </summary>
+	private static string ResolveEditorDataPath()
+	{
+		string editorData = ProjectSettings.GlobalizePath("res://Data");
+
+		// Check for .aopak files already present in editor Data/
+		if (System.IO.Directory.Exists(editorData) &&
+		    System.IO.Directory.GetFiles(editorData, "*.aopak").Length > 0)
+		{
+			return editorData;
+		}
+
+		// Check resource-manager/data/ — resources live there during development
+		// editorData = <repo>/client/source/Data, so ../../../ reaches <repo>/
+		string resourceManagerData = System.IO.Path.GetFullPath(
+			System.IO.Path.Combine(editorData, "..", "..", "..", "tools", "resource-manager", "data"));
+		if (System.IO.Directory.Exists(resourceManagerData))
+			return resourceManagerData;
+
+		return editorData;
 	}
 
 	public override void _ExitTree()

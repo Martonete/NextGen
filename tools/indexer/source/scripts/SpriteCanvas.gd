@@ -102,6 +102,24 @@ var frame_bg_alpha: float = 0.15
 var frame_border_color: Color = Color(0.3, 0.6, 1.0)
 var frame_border_width: float = 1.0
 
+# ── AoPak bridge (optional) ──────────────────────────────────────────────────
+# Set via set_bridge() to enable loading PNG textures from an archive.
+
+var _aopak_bridge = null  # AoPakBridge node reference (or null for loose files)
+
+func set_bridge(bridge) -> void:
+	_aopak_bridge = bridge
+
+## Load a PNG texture by archive entry name. Returns an ImageTexture or null.
+func load_texture_from_archive(name: String) -> ImageTexture:
+	if _aopak_bridge == null:
+		return null
+	var img = _aopak_bridge.ReadImage(name)
+	if img == null:
+		return null
+	return ImageTexture.create_from_image(img)
+
+
 func set_texture_overlays(overlays: Array) -> void:
 	_texture_overlays = overlays
 	queue_redraw()

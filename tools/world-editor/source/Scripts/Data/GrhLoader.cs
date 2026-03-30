@@ -1,6 +1,7 @@
 #nullable enable
 using System;
 using System.IO;
+using AoPak;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -8,14 +9,28 @@ namespace AOWorldEditor.Data;
 /// <summary>
 /// Parses Graficos.ind binary file (same format as client).
 /// Auto-detects header variants (with/without MiCabecera).
+/// Supports loading from a loose file or an AopakReader (inits.aopak).
 /// </summary>
 public static class GrhLoader
 {
     private const int MiCabeceraSize = 263;
 
+    /// <summary>Load Graficos.ind from an AopakReader (INIT/Graficos.ind entry).</summary>
+    public static GrhData[] Load(AopakReader initsReader)
+    {
+        const string entryName = "INIT/Graficos.ind";
+        byte[] fileData = initsReader.ReadEntry(entryName);
+        return ParseGrhData(fileData);
+    }
+
     public static GrhData[] Load(string path)
     {
         byte[] fileData = File.ReadAllBytes(path);
+        return ParseGrhData(fileData);
+    }
+
+    private static GrhData[] ParseGrhData(byte[] fileData)
+    {
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         int version = reader.ReadInt32();

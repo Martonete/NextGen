@@ -7,6 +7,41 @@ extends RefCounted
 
 const MI_CABECERA_SIZE := 263  # 255 desc + 4 crc + 4 magic
 
+# ── AoPak bridge (optional) ──────────────────────────────────────────────────
+# Set via set_bridge() to enable reading/writing .ind files from an archive.
+
+var _aopak_bridge = null  # AoPakBridge node reference (or null for loose files)
+
+func set_bridge(bridge) -> void:
+	_aopak_bridge = bridge
+
+## Load an .ind file — tries archive first, then falls back to loose file.
+func load_ind_bridged(path: String) -> Dictionary:
+	if _aopak_bridge != null and _aopak_bridge.HasEntry(path):
+		var raw: PackedByteArray = _aopak_bridge.ReadEntry(path)
+		if raw.size() > 0:
+			var tmp_path := "user://~grh_tmp.ind"
+			var tmp := FileAccess.open(tmp_path, FileAccess.WRITE)
+			if tmp:
+				tmp.store_buffer(raw)
+				tmp.close()
+				var result := GrhIO.load_ind(tmp_path)
+				DirAccess.remove_absolute(tmp_path)
+				return result
+	return GrhIO.load_ind(path)
+
+## Save an .ind file — writes to archive if bridge is set, always writes loose file.
+func save_ind_bridged(path: String, data: Dictionary) -> bool:
+	var ok := GrhIO.save_ind(path, data)
+	if ok and _aopak_bridge != null:
+		# Re-read the file we just wrote to get its bytes for the archive
+		var tmp := FileAccess.open(path, FileAccess.READ)
+		if tmp:
+			var raw := tmp.get_buffer(tmp.get_length())
+			tmp.close()
+			_aopak_bridge.WriteEntry(path, raw)
+	return ok
+
 # Retorna Dictionary con:
 #   version: int
 #   max_index: int
