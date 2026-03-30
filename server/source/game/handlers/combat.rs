@@ -3,6 +3,14 @@
 //! VB6 13.3 parity: UsuarioImpacto, UsuarioAtacaUsuario, UserDañoUser, CalcularDaño,
 //! PoderAtaqueArma, PoderEvasion, PoderEvasionEscudo, DoApuñalar, DoGolpeCritico.
 
+#[path = "combat_pvp.rs"]
+mod combat_pvp;
+#[path = "combat_npc.rs"]
+mod combat_npc;
+
+pub(super) use combat_pvp::*;
+pub(super) use combat_npc::*;
+
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
@@ -928,167 +936,6 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
     }
 }
 
-// =====================================================================
-// PvP armor absorption (VB6: UserDañoUser)
-// =====================================================================
-
-/// VB6: PvP armor absorption — separate from NPC combat.
-/// Head hits use helmet only, body hits use armor + shield.
-/// Returns (head_defense, body_defense).
-fn calc_pvp_armor_absorption(state: &GameState, victim_id: ConnectionId, lugar: i32) -> (i32, i32) {
-    let user = match state.users.get(&victim_id) {
-        Some(u) => u,
-        None => return (0, 0),
-    };
-
-    match lugar {
-        BODY_PART_HEAD => {
-            // Helmet absorbs head hits
-            let helmet_def = if user.equip.helmet > 0 && user.equip.helmet <= MAX_INVENTORY_SLOTS {
-                let obj_idx = user.inventory[user.equip.helmet - 1].obj_index;
-                match state.get_object(obj_idx) {
-                    Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-                        rand_range(obj.min_def.max(0), obj.max_def.max(1))
-                    }
-                    _ => 0,
-                }
-            } else {
-                0
-            };
-            (helmet_def, 0)
-        }
-        _ => {
-            // Body hits — armor + shield defense combined
-            let mut min_def = 0i32;
-            let mut max_def = 0i32;
-
-            // Armor
-            if user.equip.armor > 0 && user.equip.armor <= MAX_INVENTORY_SLOTS {
-                let obj_idx = user.inventory[user.equip.armor - 1].obj_index;
-                if let Some(obj) = state.get_object(obj_idx) {
-                    min_def += obj.min_def;
-                    max_def += obj.max_def;
-                }
-            }
-
-            // Shield (also absorbs body hits in VB6)
-            if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
-                let obj_idx = user.inventory[user.equip.shield - 1].obj_index;
-                if let Some(obj) = state.get_object(obj_idx) {
-                    min_def += obj.min_def;
-                    max_def += obj.max_def;
-                }
-            }
-
-            let body_def = if max_def > 0 {
-                rand_range(min_def.max(0), max_def.max(1))
-            } else {
-                0
-            };
-            (0, body_def)
-        }
-    }
-}
-
-// =====================================================================
-// Legacy API compatibility (used by npcs.rs)
-// =====================================================================
-
-/// Calculate attack power for NPC combat — uses balance class modifiers.
-pub(super) fn calc_attack_power(skill: i32, agility: i32, level: i32) -> f64 {
-    // Legacy — called from npcs.rs where we don't know the weapon type yet
-    // Returns approximate value without class modifier (mod=1.0)
-    poder_ataque_arma(skill, agility, level, 1.0) as f64
-}
-
-/// Calculate attack power with balance modifier.
-pub(super) fn calc_attack_power_with_balance(skill: i32, agility: i32, level: i32, class_mod: f32) -> f64 {
-    poder_ataque_arma(skill, agility, level, class_mod) as f64
-}
-
-/// Calculate defense/evasion power (legacy API for npcs.rs).
-pub(super) fn calc_defense_power(tacticas: i32, agility: i32, level: i32) -> f64 {
-    poder_evasion(tacticas, agility, level, 1.0) as f64
-}
-
-/// Get armor absorption for NPC combat (unchanged from before).
-pub(super) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, body_part: i32) -> i32 {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return 0,
-    };
-
-    let armor_slot = if body_part == 1 {
-        user.equip.helmet
-    } else {
-        user.equip.armor
-    };
-
-    if armor_slot == 0 || armor_slot > MAX_INVENTORY_SLOTS {
-        return 0;
-    }
-
-    let obj_index = user.inventory[armor_slot - 1].obj_index;
-    if obj_index <= 0 {
-        return 0;
-    }
-
-    match state.get_object(obj_index) {
-        Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-            rand_range(obj.min_def.max(0), obj.max_def.max(1))
-        }
-        _ => 0,
-    }
-}
-
-/// Get armor absorption with weapon penetration (for NPC combat).
-pub(super) fn calc_armor_absorption_with_penetration(state: &GameState, conn_id: ConnectionId, body_part: i32, refuerzo: i32) -> i32 {
-    let user = match state.users.get(&conn_id) {
-        Some(u) => u,
-        None => return 0,
-    };
-
-    let armor_slot = if body_part == 1 {
-        user.equip.helmet
-    } else {
-        user.equip.armor
-    };
-
-    if armor_slot == 0 || armor_slot > MAX_INVENTORY_SLOTS {
-        return 0;
-    }
-
-    let obj_index = user.inventory[armor_slot - 1].obj_index;
-    if obj_index <= 0 {
-        return 0;
-    }
-
-    let armor_def = match state.get_object(obj_index) {
-        Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-            rand_range(obj.min_def.max(0), obj.max_def.max(1))
-        }
-        _ => 0,
-    };
-
-    let shield_def = if user.equip.shield > 0 && user.equip.shield <= MAX_INVENTORY_SLOTS {
-        let shield_idx = user.inventory[user.equip.shield - 1].obj_index;
-        match state.get_object(shield_idx) {
-            Some(obj) if obj.min_def > 0 || obj.max_def > 0 => {
-                rand_range(obj.min_def.max(0), obj.max_def.max(1))
-            }
-            _ => 0,
-        }
-    } else {
-        0
-    };
-
-    (armor_def + shield_def - refuerzo).max(0)
-}
-
-/// Class-based damage modifier from balance data.
-pub(super) fn class_damage_modifier_from_balance(state: &GameState, class: PlayerClass) -> f64 {
-    state.game_data.balance.class_mod_dano_armas_e(class) as f64
-}
 
 // =====================================================================
 // Player death

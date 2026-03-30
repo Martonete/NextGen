@@ -23,6 +23,7 @@ use super::{
     do_acuchillar, puede_acuchillar,
     pretoriano_check_death, es_pretoriano,
     remove_pet_from_owner,
+    party_share_exp,
 };
 use super::skills::try_level_skill_with_hit;
 use crate::game::constants::*;
@@ -155,16 +156,6 @@ pub(super) async fn puede_atacar_npc(
         return false;
     }
 
-    // VB6: ARAM team restrictions (NPC 963 = blue tower, 964 = red tower)
-    // Can't attack your own team's tower
-    // TODO: when ARAM event team field is added to UserState, check:
-    //   if npc_number == 963 && user.aram_team == ARAM_RED { block }
-    //   if npc_number == 964 && user.aram_team == ARAM_BLUE { block }
-
-    // VB6: Mithrandir status restrictions (NPCs 966/967)
-    // TODO: when Mithrandir system is implemented, check:
-    //   if npc_number == 966 && (user.status_mith == 1 || is_alianza) { block }
-    //   if npc_number == 967 && (user.status_mith == 2 || is_horda) { block }
 
     // VB6: Castle King / NPC 615 — guild ownership checks
     if npc_type == crate::data::npcs::NpcType::CastleKing || npc_number == 615 {
@@ -432,27 +423,6 @@ pub(super) async fn user_attack_npc(
     // Re-check dead status after backstab/crit
     let npc_dead = state.get_npc(npc_idx).map(|n| n.min_hp <= 0).unwrap_or(false);
 
-    // Per-hit EXP (VB6: CalcularDarExp — gives proportional exp on EVERY hit, not just on death)
-    // VB6: ExpaDar = CLng(ElDaño * (GiveEXP / MaxHp)) — NO multiplier per hit
-    if npc_give_exp > 0 && npc_max_hp > 0 {
-        let exp_award = ((npc_give_exp as f64 / npc_max_hp as f64) * damage as f64) as i64;
-
-        // Level cap check
-        let can_level = state.users.get(&conn_id)
-            .map(|u| u.logged && u.level < MAX_LEVEL as i32)
-            .unwrap_or(false);
-
-        if can_level && exp_award > 0 {
-            if let Some(user) = state.users.get_mut(&conn_id) {
-                user.exp += exp_award;
-            }
-            // Send msg 170 notification (VB6: "Has ganado %1 puntos de experiencia")
-            state.send_msg_id(conn_id, 170, &exp_award.to_string());
-            send_stats_exp(state, conn_id).await;
-            check_user_level(state, conn_id).await;
-        }
-    }
-
     if npc_dead {
         // VB6: Dragon Slayer sword is consumed when killing a dragon
         if npc_is_dragon && weapon_info.obj_index == ESPADA_MATA_DRAGONES {
@@ -522,8 +492,25 @@ pub(super) async fn npc_die(
         pretoriano_check_death(state, npc_idx);
     }
 
-    // EXP is now given per-hit via CalcularDarExp in user_attack_npc().
-    // No death-time exp distribution needed (VB6 parity: exp per hit, not per kill).
+    // 5) Distribute EXP on death (VB6: PARTY_EXPERIENCIAPORGOLPE = False — exp is awarded at kill time)
+    // If killer is in a party, share among nearby members; otherwise give directly to killer.
+    let give_exp_i64 = give_exp as i64;
+    let in_party = state.users.get(&killer_id).map(|u| u.party_index > 0).unwrap_or(false);
+    if in_party {
+        party_share_exp(state, killer_id, give_exp_i64).await;
+    } else {
+        let can_level = state.users.get(&killer_id)
+            .map(|u| u.logged && u.level < MAX_LEVEL as i32)
+            .unwrap_or(false);
+        if can_level && give_exp_i64 > 0 {
+            if let Some(user) = state.users.get_mut(&killer_id) {
+                user.exp += give_exp_i64;
+            }
+            state.send_msg_id(killer_id, 170, &give_exp_i64.to_string());
+            send_stats_exp(state, killer_id).await;
+            check_user_level(state, killer_id).await;
+        }
+    }
 
     // 6) Gold drops to floor at NPC position (VB6: TirarOro in MuereNpc)
     let gold_mult = state.multiplicador_oro;
@@ -544,7 +531,7 @@ pub(super) async fn npc_die(
     }
 
     // 9) Notify killer (VB6: ||50 + ||56@gold)
-    // Note: ||50 already sent at step 2. ||170 exp is now per-hit (CalcularDarExp).
+    // Note: ||50 already sent at step 2. ||170 exp notification sent in step 5 for solo kills.
     if gold_award > 0 {
         state.send_msg_id(killer_id, 56, &gold_award.to_string()); // TEXTO56: La criatura ha dejado %1 monedas
     }

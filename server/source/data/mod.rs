@@ -1,5 +1,8 @@
 // Data module — filesystem-based game data loaders.
 //
+// VB6-parity stubs: many struct fields mirror VB6 data but aren't all consumed yet.
+#![allow(dead_code)]
+//
 // Handles loading of all static game data at startup:
 // - Experience table (dat/Experiencia.dat)
 // - Objects database (dat/Obj.dat)

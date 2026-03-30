@@ -457,14 +457,9 @@ static byte[] GetAmk(string[] args)
             return SHA256.HashData(Encoding.UTF8.GetBytes(args[i + 1]));
     }
 
-#if DEBUG
-    // Development fallback — NEVER available in release builds
+    // Default key — matches AopakKeyStore.cs in the client.
+    // Override with AOPAK_KEY env var or --key flag if you change the key.
     return SHA256.HashData(Encoding.UTF8.GetBytes("argentum-nextgen-dev-key-2026"));
-#else
-    Console.Error.WriteLine("ERROR: No key provided. Set AOPAK_KEY env var or use --key <passphrase>");
-    Environment.Exit(1);
-    return Array.Empty<byte>(); // unreachable
-#endif
 }
 
 static void PrintUsage()

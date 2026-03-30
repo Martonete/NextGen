@@ -6,7 +6,7 @@
 use std::path::Path;
 use crate::config::IniFile;
 
-pub const MAX_LEVEL: usize = 50;
+pub const MAX_LEVEL: usize = 255;
 
 /// Load the experience table from Experiencia.dat.
 /// Returns a Vec where index 0 = level 1 exp, index 1 = level 2 exp, etc.

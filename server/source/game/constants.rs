@@ -1,5 +1,7 @@
 // Centralized game constants — item IDs, object IDs, sound IDs, and other magic
 // numbers that were previously duplicated across handler files.
+// VB6-parity stubs: not all constants are consumed yet.
+#![allow(dead_code)]
 
 // =====================================================================
 // Tool object indices (VB6 constants)

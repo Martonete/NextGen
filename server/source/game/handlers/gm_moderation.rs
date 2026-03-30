@@ -495,7 +495,10 @@ pub(super) async fn handle_slash_cheat(state: &mut GameState, conn_id: Connectio
                 user.min_ham = mham;
             }
             // Send stat updates
-            let u = state.users.get(&tc).unwrap();
+            let Some(u) = state.users.get(&tc) else {
+                tracing::warn!(conn_id = conn_id, "user not found after cheat restore");
+                return;
+            };
             let hp_pkt = binary_packets::write_update_hp(u.max_hp as i16, u.min_hp as i16);
             let mana_pkt = binary_packets::write_update_mana(u.max_mana as i16, u.min_mana as i16);
             let sta_pkt = binary_packets::write_update_sta(u.max_sta as i16, u.min_sta as i16);
@@ -782,7 +785,11 @@ pub(super) async fn handle_slash_perdon(state: &mut GameState, conn_id: Connecti
     }
 
     // Re-broadcast appearance with updated nick color (citizen = blue)
-    let cc = state.users.get(&target_id).unwrap().build_cc_binary();
+    let Some(u) = state.users.get(&target_id) else {
+        tracing::warn!(conn_id = conn_id, "user not found for cc broadcast after pardon");
+        return;
+    };
+    let cc = u.build_cc_binary();
     state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc);
 
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();

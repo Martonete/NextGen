@@ -763,7 +763,7 @@ pub(super) async fn handle_slash_edit(state: &mut GameState, conn_id: Connection
             Some(u) => u.level,
             None => return,
         };
-        if level >= 50 { break; } // Max level cap
+        if level >= 255 { break; } // Max level cap
 
         // Get ELU for current level and set exp to trigger level-up
         let elu = state.exp_for_level(level);

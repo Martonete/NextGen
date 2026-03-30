@@ -56,7 +56,10 @@ pub(super) async fn handle_slash_montar(state: &mut GameState, conn_id: Connecti
     }
 
     let cp = {
-        let user = state.users.get(&conn_id).unwrap();
+        let Some(user) = state.users.get(&conn_id) else {
+            tracing::warn!(conn_id = conn_id, "user not found after mount body change");
+            return;
+        };
         binary_packets::write_character_change(
             user.char_index.0 as i16, user.body as i16, user.head as i16, user.heading as u8,
             super::common::NINGUN_ARMA as i16, super::common::NINGUN_ESCUDO as i16,
@@ -104,7 +107,10 @@ pub(super) async fn handle_slash_desmontar(state: &mut GameState, conn_id: Conne
     }
 
     let cp = {
-        let user = state.users.get(&conn_id).unwrap();
+        let Some(user) = state.users.get(&conn_id) else {
+            tracing::warn!(conn_id = conn_id, "user not found after dismount body restore");
+            return;
+        };
         binary_packets::write_character_change(
             user.char_index.0 as i16, user.body as i16, user.head as i16, user.heading as u8,
             user.weapon_anim as i16, user.shield_anim as i16, user.casco_anim as i16, 0, 0,

@@ -1,7 +1,3 @@
-// Allow dead_code globally: VB6-parity infrastructure (protocol, data) declares
-// functions/constants that mirror VB6 but aren't all wired up yet.
-#![allow(dead_code)]
-
 mod net;
 mod protocol;
 mod config;

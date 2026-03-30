@@ -2,7 +2,7 @@
 //
 // Replaces data/guilds.rs (INI file I/O).
 
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 
 pub const MAX_GUILDS: i32 = 1000;
 pub const MAX_CODEX_LINES: usize = 8;
@@ -233,6 +233,30 @@ pub async fn save_guild(pool: &PgPool, guild: &GuildInfo) {
     }
 }
 
+/// Save members list (replace all) — runs inside the provided transaction.
+async fn save_members_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    db_id: i32,
+    members: &[String],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM guild_members WHERE guild_id = $1")
+        .bind(db_id)
+        .execute(&mut **tx)
+        .await?;
+
+    for name in members {
+        sqlx::query(
+            "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)
+             ON CONFLICT DO NOTHING",
+        )
+        .bind(db_id)
+        .bind(name)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
 /// Save members list (replace all).
 pub async fn save_members(pool: &PgPool, guild_name: &str, members: &[String]) {
     let db_id = match sqlx::query_scalar::<_, i32>(
@@ -242,22 +266,18 @@ pub async fn save_members(pool: &PgPool, guild_name: &str, members: &[String]) {
         _ => return,
     };
 
-    if let Err(e) = sqlx::query("DELETE FROM guild_members WHERE guild_id = $1")
-        .bind(db_id).execute(pool).await
-    {
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => { tracing::error!("Guild DB error: {e}"); return; }
+    };
+
+    if let Err(e) = save_members_tx(&mut tx, db_id, members).await {
         tracing::error!("Guild DB error: {e}");
+        return;
     }
 
-    for name in members {
-        if let Err(e) = sqlx::query(
-            "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)
-             ON CONFLICT DO NOTHING"
-        )
-        .bind(db_id).bind(name)
-        .execute(pool).await
-        {
-            tracing::error!("Guild DB error: {e}");
-        }
+    if let Err(e) = tx.commit().await {
+        tracing::error!("Guild DB error: {e}");
     }
 }
 
@@ -300,6 +320,30 @@ pub async fn remove_member(pool: &PgPool, guild_name: &str, char_name: &str) {
     }
 }
 
+/// Save applicants (replace all) — runs inside the provided transaction.
+async fn save_applicants_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    db_id: i32,
+    applicants: &[GuildApplicant],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM guild_applicants WHERE guild_id = $1")
+        .bind(db_id)
+        .execute(&mut **tx)
+        .await?;
+
+    for app in applicants {
+        sqlx::query(
+            "INSERT INTO guild_applicants (guild_id, char_name, detail) VALUES ($1, $2, $3)",
+        )
+        .bind(db_id)
+        .bind(&app.name)
+        .bind(&app.detail)
+        .execute(&mut **tx)
+        .await?;
+    }
+    Ok(())
+}
+
 /// Save applicants (replace all).
 pub async fn save_applicants(pool: &PgPool, guild_name: &str, applicants: &[GuildApplicant]) {
     let db_id = match sqlx::query_scalar::<_, i32>(
@@ -309,21 +353,18 @@ pub async fn save_applicants(pool: &PgPool, guild_name: &str, applicants: &[Guil
         _ => return,
     };
 
-    if let Err(e) = sqlx::query("DELETE FROM guild_applicants WHERE guild_id = $1")
-        .bind(db_id).execute(pool).await
-    {
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => { tracing::error!("Guild DB error: {e}"); return; }
+    };
+
+    if let Err(e) = save_applicants_tx(&mut tx, db_id, applicants).await {
         tracing::error!("Guild DB error: {e}");
+        return;
     }
 
-    for app in applicants {
-        if let Err(e) = sqlx::query(
-            "INSERT INTO guild_applicants (guild_id, char_name, detail) VALUES ($1, $2, $3)"
-        )
-        .bind(db_id).bind(&app.name).bind(&app.detail)
-        .execute(pool).await
-        {
-            tracing::error!("Guild DB error: {e}");
-        }
+    if let Err(e) = tx.commit().await {
+        tracing::error!("Guild DB error: {e}");
     }
 }
 
@@ -433,6 +474,34 @@ pub async fn load_bank_items(pool: &PgPool, guild_name: &str) -> Vec<GuildBankSl
     items
 }
 
+/// Save guild bank items — runs inside the provided transaction.
+async fn save_bank_items_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    db_id: i32,
+    items: &[GuildBankSlot],
+) -> Result<(), sqlx::Error> {
+    sqlx::query("DELETE FROM guild_bank_items WHERE guild_id = $1")
+        .bind(db_id)
+        .execute(&mut **tx)
+        .await?;
+
+    for (i, slot) in items.iter().enumerate() {
+        if slot.obj_index > 0 {
+            sqlx::query(
+                "INSERT INTO guild_bank_items (guild_id, slot, obj_index, amount)
+                 VALUES ($1, $2, $3, $4)",
+            )
+            .bind(db_id)
+            .bind(i as i16)
+            .bind(slot.obj_index)
+            .bind(slot.amount)
+            .execute(&mut **tx)
+            .await?;
+        }
+    }
+    Ok(())
+}
+
 /// Save guild bank items.
 pub async fn save_bank_items(pool: &PgPool, guild_name: &str, items: &[GuildBankSlot]) {
     let db_id = match sqlx::query_scalar::<_, i32>(
@@ -442,31 +511,70 @@ pub async fn save_bank_items(pool: &PgPool, guild_name: &str, items: &[GuildBank
         _ => return,
     };
 
-    if let Err(e) = sqlx::query("DELETE FROM guild_bank_items WHERE guild_id = $1")
-        .bind(db_id).execute(pool).await
-    {
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => { tracing::error!("Guild DB error: {e}"); return; }
+    };
+
+    if let Err(e) = save_bank_items_tx(&mut tx, db_id, items).await {
         tracing::error!("Guild DB error: {e}");
+        return;
     }
 
-    for (i, slot) in items.iter().enumerate() {
-        if slot.obj_index > 0 {
-            if let Err(e) = sqlx::query(
-                "INSERT INTO guild_bank_items (guild_id, slot, obj_index, amount)
-                 VALUES ($1, $2, $3, $4)"
-            )
-            .bind(db_id)
-            .bind(i as i16)
-            .bind(slot.obj_index)
-            .bind(slot.amount)
-            .execute(pool).await
-            {
-                tracing::error!("Guild DB error: {e}");
-            }
-        }
+    if let Err(e) = tx.commit().await {
+        tracing::error!("Guild DB error: {e}");
     }
 }
 
-/// Create a new guild. Returns the guild number.
+/// Create a new guild — inner logic runs inside a transaction.
+async fn create_guild_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    name: &str,
+    founder: &str,
+    alignment: i32,
+    desc: &str,
+    url: &str,
+    codex: &[String],
+) -> Result<i32, sqlx::Error> {
+    let max_num: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(MAX(guild_number), 0) FROM guilds"
+    )
+    .fetch_one(&mut **tx)
+    .await?;
+
+    let guild_num = (max_num + 1) as i32;
+
+    let db_id: i32 = sqlx::query_scalar(
+        "INSERT INTO guilds (
+            guild_number, name, founder, date, alignment,
+            leader, codex, description, url
+        ) VALUES ($1, $2, $3, '01/01/2026', $4, $5, $6, $7, $8)
+        RETURNING id",
+    )
+    .bind(guild_num)
+    .bind(name)
+    .bind(founder)
+    .bind(alignment)
+    .bind(founder)
+    .bind(codex)
+    .bind(desc)
+    .bind(url)
+    .fetch_one(&mut **tx)
+    .await?;
+
+    // Add founder as first member — within the same transaction.
+    sqlx::query(
+        "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)",
+    )
+    .bind(db_id)
+    .bind(founder)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(guild_num)
+}
+
+/// Create a new guild. Returns the guild number, or 0 on error.
 pub async fn create_guild(
     pool: &PgPool,
     name: &str,
@@ -476,46 +584,24 @@ pub async fn create_guild(
     url: &str,
     codex: Vec<String>,
 ) -> i32 {
-    // Get next guild number
-    let max_num: i64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(guild_number), 0) FROM guilds"
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(e) => { tracing::error!("Guild DB error: {e}"); return 0; }
+    };
 
-    let guild_num = (max_num + 1) as i32;
-
-    let db_id: i32 = sqlx::query_scalar(
-        "INSERT INTO guilds (
-            guild_number, name, founder, date, alignment,
-            leader, codex, description, url
-        ) VALUES ($1, $2, $3, '01/01/2026', $4, $5, $6, $7, $8)
-        RETURNING id"
-    )
-    .bind(guild_num)
-    .bind(name)
-    .bind(founder)
-    .bind(alignment)
-    .bind(founder)
-    .bind(&codex)
-    .bind(desc)
-    .bind(url)
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
-
-    // Add founder as first member
-    if let Err(e) = sqlx::query(
-        "INSERT INTO guild_members (guild_id, char_name) VALUES ($1, $2)"
-    )
-    .bind(db_id).bind(founder)
-    .execute(pool).await
-    {
-        tracing::error!("Guild DB error: {e}");
+    match create_guild_tx(&mut tx, name, founder, alignment, desc, url, &codex).await {
+        Ok(guild_num) => {
+            if let Err(e) = tx.commit().await {
+                tracing::error!("Guild DB error: {e}");
+                return 0;
+            }
+            guild_num
+        }
+        Err(e) => {
+            tracing::error!("Guild DB error: {e}");
+            0
+        }
     }
-
-    guild_num
 }
 
 /// Dissolve a guild.

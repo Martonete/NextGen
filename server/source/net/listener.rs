@@ -2,7 +2,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info, error};
 
 use super::connection::{self, ConnectionId, ConnectionWriter};
 
@@ -51,9 +51,13 @@ impl TcpServer {
                     Ok((stream, addr)) => {
                         let current_active = active_count.load(Ordering::Relaxed);
                         if current_active >= max_connections {
-                            warn!(
-                                "Max active connections ({}/{}) reached, rejecting {}",
-                                current_active, max_connections, addr
+                            let channel_backlog = tx.max_capacity() - tx.capacity();
+                            tracing::info!(
+                                active = current_active,
+                                max = max_connections,
+                                channel_backlog = channel_backlog,
+                                channel_capacity = tx.max_capacity(),
+                                "connection limit reached — rejecting new connection"
                             );
                             drop(stream);
                             continue;

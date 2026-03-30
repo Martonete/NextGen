@@ -12,6 +12,11 @@ pub type ConnectionId = u32;
 /// from slow-parse or partial-packet flooding.
 pub const MAX_RECV_BUFFER: usize = 65_536;
 
+/// Maximum pending outgoing bytes per connection (256 KB).
+/// If a slow client causes the write buffer to grow beyond this limit,
+/// the connection is flagged for removal to prevent unbounded memory growth.
+const MAX_PENDING_BYTES: usize = 256 * 1024;
+
 /// Read timeout: if no data arrives within this duration, the connection
 /// is considered dead and dropped. Prevents slowloris attacks where
 /// connections are opened and held idle to exhaust the connection pool.
@@ -93,12 +98,28 @@ pub struct ConnectionWriter {
     /// Application-level write buffer. Packets accumulate here during a tick
     /// and are flushed to the socket in one write_all() call.
     buf: Vec<u8>,
+    /// Set to true when the output buffer exceeds MAX_PENDING_BYTES.
+    /// The game loop should remove this connection on the next tick.
+    pub closed: bool,
 }
 
 impl ConnectionWriter {
     /// Buffer raw binary bytes for sending. Data is not written to the socket
     /// until flush() is called (once per game tick).
+    ///
+    /// If the pending buffer exceeds MAX_PENDING_BYTES the connection is
+    /// flagged as closed and the data is discarded. The game loop must check
+    /// `self.closed` and remove the connection on the next tick.
     pub fn send_packet(&mut self, data: &[u8]) {
+        if self.buf.len() > MAX_PENDING_BYTES {
+            tracing::warn!(
+                conn_id = ?self.id,
+                pending = self.buf.len(),
+                "output buffer overflow — dropping connection"
+            );
+            self.closed = true;
+            return;
+        }
         self.buf.extend_from_slice(data);
     }
 
@@ -154,6 +175,7 @@ pub fn split_connection(
         addr,
         writer: write_half,
         buf: Vec::with_capacity(1024),
+        closed: false,
     };
 
     (reader, writer)

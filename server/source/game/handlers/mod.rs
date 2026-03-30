@@ -95,6 +95,11 @@ use crate::db::charfile;
 use super::types::{GameState, privilege_level};
 use super::world;
 
+// ─── BINARY PROTOCOL DISPATCH ──────────────────────────────────────────────
+// Modern 13.3-style binary protocol: 1-byte opcode + typed fields via ByteQueue.
+// Entry point: handle_packet_stream (called from network layer)
+// ────────────────────────────────────────────────────────────────────────────
+
 /// Decode coordinate-bearing packet using the per-connection rolling cipher.
 /// Returns None if cipher is not active (pre-login) or decoding fails validation.
 fn decode_coords(state: &mut GameState, conn_id: ConnectionId, enc_x: i16, enc_y: i16) -> Option<(i16, i16)> {
@@ -583,39 +588,17 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         }
 
         // Misc
-        ClientPacketID::HouseQuery => {
-            // TODO: client never sends this opcode — dead handler
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            handle_fwo(state, conn_id, &data_str).await;
-        }
-        ClientPacketID::HouseBuy => {
-            // TODO: client never sends this opcode — dead handler
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            handle_cuc(state, conn_id, &data_str).await;
+        ClientPacketID::HouseQuery | ClientPacketID::HouseBuy => {
+            // UNSUPPORTED: client never sends these opcodes — drain bytes and ignore
+            let _ = bq.read_ascii_string();
         }
         ClientPacketID::PetRename => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
             handle_cnm(state, conn_id, &data_str).await;
         }
-        ClientPacketID::DragDrop => {
-            // TODO: client never sends this opcode — dead handler
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let slot: usize = read_field(1, &data_str, ',').parse().unwrap_or(0);
-            let amount: i32 = read_field(2, &data_str, ',').parse().unwrap_or(0);
-            handle_dydtra(state, conn_id, slot, amount).await;
-        }
-        ClientPacketID::Vote => {
-            // TODO: client never sends this opcode — dead handler
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let option: usize = data_str.trim().parse().unwrap_or(0);
-            handle_nvot(state, conn_id, option).await;
-        }
-        ClientPacketID::Report => {
-            // TODO: client never sends this opcode — dead handler
-            let data_str = bq.read_ascii_string().unwrap_or_default();
-            let target_name = read_field(1, &data_str, ',');
-            let reason = read_field(2, &data_str, ',');
-            handle_newd(state, conn_id, &target_name, &reason).await;
+        ClientPacketID::DragDrop | ClientPacketID::Vote | ClientPacketID::Report => {
+            // UNSUPPORTED: client never sends these opcodes — drain bytes and ignore
+            let _ = bq.read_ascii_string();
         }
         ClientPacketID::SosView => {
             handle_consul(state, conn_id).await;
@@ -635,6 +618,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
 
     PacketResult::Ok
 }
+
+// ─── LEGACY TEXT PROTOCOL DISPATCH ─────────────────────────────────────────
+// VB6-era text/opcode protocol: string prefix matching via client_opcodes constants.
+// Entry point: handle_packet (called from network layer for pre-13.3 clients)
+// ────────────────────────────────────────────────────────────────────────────
 
 /// Route a decrypted packet to the appropriate handler.
 pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &str) {
@@ -925,6 +913,8 @@ pub async fn handle_packet(state: &mut GameState, conn_id: ConnectionId, data: &
     }
 }
 
+
+// ─── SHARED HELPERS ─────────────────────────────────────────────────────────
 
 // Slash commands — extracted to slash_commands.rs for readability.
 include!("slash_commands.rs");

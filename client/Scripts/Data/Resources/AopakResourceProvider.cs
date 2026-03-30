@@ -125,7 +125,15 @@ public class AopakResourceProvider : IResourceProvider, IDisposable
 
         byte[] data = reader.ReadEntry(entryName);
         var image = new Image();
-        var error = image.LoadPngFromBuffer(data);
+
+        string ext = System.IO.Path.GetExtension(relativePath).ToLowerInvariant();
+        Error error = ext switch
+        {
+            ".jpg" or ".jpeg" => image.LoadJpgFromBuffer(data),
+            ".webp"           => image.LoadWebpFromBuffer(data),
+            _                 => image.LoadPngFromBuffer(data),
+        };
+
         if (error != Error.Ok)
         {
             GD.PrintErr($"[AoPak] Failed to load image {relativePath}: {error}");

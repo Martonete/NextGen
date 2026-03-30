@@ -2,6 +2,9 @@
 //
 // Binary protocol (13.3): 1-byte opcode + typed fields via ByteQueue.
 // No encryption. Little-endian. Mirrors VB6 clsByteQueue.
+//
+// VB6-parity stubs: many constants/opcodes mirror VB6 but aren't fully wired yet.
+#![allow(dead_code)]
 
 pub mod fields;
 pub mod byte_queue;

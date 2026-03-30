@@ -13,7 +13,7 @@ use super::common::*;
 // Level up system
 // =====================================================================
 
-const MAX_LEVEL: i32 = 50;
+const MAX_LEVEL: i32 = 255;
 
 /// Check if user has enough exp to level up, and apply it.
 /// VB6 parity: two separate paths for levels 1-49 vs 50+.
@@ -132,7 +132,7 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
             name, new_level, hp_gain, mana_gain, sta_gain, hit_gain);
 
         // 13.3: Level 50 — announcement + 50 bonus skill points (one-time)
-        if new_level == 50 {
+        if new_level == 255 {
             state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535);
             state.send_msg_id(conn_id, 57, "50");
             // VB6: AgregarPuntos(50) — 50 bonus free skill points at level 50

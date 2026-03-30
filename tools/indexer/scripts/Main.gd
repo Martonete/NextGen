@@ -74,6 +74,12 @@ var _dlg_index_confirm: Window
 var _index_preview_label: RichTextLabel
 var _index_pending_entries: Array = []
 
+# Export INIT.aopak dialogs
+var _dlg_export_confirm: ConfirmationDialog = null
+var _dlg_export_folder: FileDialog = null
+var _export_init_dest: String = ""
+var _export_thread: Thread = null
+
 # Prefs
 const PREFS_PATH := "user://indexer_prefs.cfg"
 const MAX_RECENT := 8
@@ -139,6 +145,15 @@ func _process(delta: float) -> void:
 			_apply_analysis_results(
 				result["blob_data"], result["content_regions"],
 				result["rects"], result["file_num"])
+
+	# Check if AOPAK export thread finished
+	if _export_thread != null and not _export_thread.is_alive():
+		var export_result: Dictionary = _export_thread.wait_to_finish()
+		_export_thread = null
+		if export_result.get("exit_code", -1) == 0:
+			_update_status("init.aopak exportado ✓")
+		else:
+			_update_status("Error al exportar init.aopak (código %d)" % export_result.get("exit_code", -1))
 
 	# Thumbnail lazy-loading
 	_file_list.process_thumbnails(5)
@@ -337,6 +352,22 @@ func _build_dialogs() -> void:
 	btn_confirm.text = "Confirmar e indexar"
 	btn_confirm.pressed.connect(_on_index_confirmed)
 	btn_row.add_child(btn_confirm)
+
+	# Export INIT.aopak — confirmation dialog
+	_dlg_export_confirm = ConfirmationDialog.new()
+	_dlg_export_confirm.title = "Exportar INIT.aopak"
+	_dlg_export_confirm.dialog_text = "¿Exportar INIT.aopak al cliente?\n\nSe empaquetarán todos los archivos INIT/ en un archivo .aopak comprimido."
+	_dlg_export_confirm.ok_button_text = "Exportar"
+	_dlg_export_confirm.confirmed.connect(_on_export_confirmed)
+	add_child(_dlg_export_confirm)
+
+	# Export INIT.aopak — destination folder picker
+	_dlg_export_folder = FileDialog.new()
+	_dlg_export_folder.access = FileDialog.ACCESS_FILESYSTEM
+	_dlg_export_folder.file_mode = FileDialog.FILE_MODE_OPEN_DIR
+	_dlg_export_folder.title = "Carpeta de destino para INIT.aopak"
+	_dlg_export_folder.dir_selected.connect(_on_export_folder_selected)
+	add_child(_dlg_export_folder)
 
 
 func _connect_signals() -> void:
@@ -1644,6 +1675,8 @@ func _on_save_confirmed() -> void:
 		_update_status("Error al guardar — ver popup de errores")
 	elif saved.size() > 0:
 		_update_status("Guardado: %s" % ", ".join(saved))
+		if not _init_folder.is_empty():
+			_dlg_export_confirm.popup_centered()
 	else:
 		_update_status("No se guardó ningún archivo.")
 
@@ -1658,6 +1691,45 @@ func _safe_save(label: String, save_callable: Callable) -> String:
 	if result is bool and result == false:
 		return "fallo al escribir archivo"
 	return ""
+
+
+## Called when the user confirms the "Exportar INIT.aopak" dialog.
+## Uses the previously saved destination folder if it still exists; otherwise shows the folder picker.
+func _on_export_confirmed() -> void:
+	if not _export_init_dest.is_empty() and DirAccess.dir_exists_absolute(_export_init_dest):
+		_export_init_aopak(_export_init_dest)
+	else:
+		if not _export_init_dest.is_empty():
+			_dlg_export_folder.current_dir = _export_init_dest
+		_dlg_export_folder.popup_centered_ratio(0.7)
+
+
+## Called when the user picks an export destination folder.
+func _on_export_folder_selected(path: String) -> void:
+	_export_init_dest = path
+	_prefs.set_value("session", "export_init_dest", path)
+	_prefs.save(PREFS_PATH)
+	_export_init_aopak(path)
+
+
+## Pack all INIT/ files into init.aopak at dest_path using the AoPak CLI (async via thread).
+func _export_init_aopak(dest_path: String) -> void:
+	if _init_folder.is_empty():
+		_update_status("No hay carpeta INIT cargada.")
+		return
+	if _export_thread != null and _export_thread.is_alive():
+		_update_status("Ya hay una exportación en curso.")
+		return
+	var tool_dir: String = ProjectSettings.globalize_path("res://")
+	var cli_project: String = tool_dir.path_join("../../resources/compressor/lib/CLI/AoPakCli.csproj")
+	var args: PackedStringArray = ["run", "--project", cli_project, "--", "pack", _init_folder, "--outputDir", dest_path]
+	_update_status("Exportando init.aopak...")
+	_export_thread = Thread.new()
+	_export_thread.start(func() -> Dictionary:
+		var output: Array = []
+		var exit_code: int = OS.execute("dotnet", args, output, true)
+		return {"exit_code": exit_code, "output": output}
+	)
 
 
 ## Show a modal error popup with a message.
@@ -2127,6 +2199,7 @@ func _load_prefs() -> void:
 	if _prefs.load(PREFS_PATH) != OK:
 		return
 	_recent_clients = _prefs.get_value("general", "recent_clients", [])
+	_export_init_dest = _prefs.get_value("session", "export_init_dest", "")
 
 
 func _push_recent_client(path: String) -> void:
