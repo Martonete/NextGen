@@ -1,8 +1,10 @@
 #nullable enable
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using Godot;
 using AOWorldEditor.Data;
 
@@ -54,6 +56,11 @@ public partial class EditorMain : Control
     private FileDialog? _insertFileDialog;
     private LegacyMapFormat _insertFormat;
     private PopupMenu? _viewMenu;
+
+    // Export dialogs
+    private ConfirmationDialog? _exportConfirmDialog;
+    private FileDialog? _exportFolderDialog;
+    private string _exportClientDataPath = "";
 
     // Walk mode
     private Window? _walkWindow;
@@ -748,6 +755,7 @@ public partial class EditorMain : Control
 
         BuildMapPropsDialog();
         BuildUnsavedDialog();
+        BuildExportDialogs();
     }
 
     private void DoLayout()
@@ -916,6 +924,110 @@ public partial class EditorMain : Control
         AddChild(_unsavedDialog);
     }
 
+    private void BuildExportDialogs()
+    {
+        _exportConfirmDialog = new ConfirmationDialog
+        {
+            Title = "Exportar Mapa",
+            DialogText = "¿Exportar maps.aopak para el cliente?",
+            Size = new Vector2I(380, 130),
+            OkButtonText = "Sí",
+        };
+        _exportConfirmDialog.CancelButtonText = "No";
+        _exportConfirmDialog.Confirmed += OnExportConfirmed;
+        AddChild(_exportConfirmDialog);
+
+        _exportFolderDialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenDir,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Title = "Seleccionar carpeta Data del cliente",
+            Size = new Vector2I(600, 400),
+        };
+        _exportFolderDialog.DirSelected += OnExportFolderSelected;
+        AddChild(_exportFolderDialog);
+    }
+
+    private void OnExportConfirmed()
+    {
+        if (_exportClientDataPath.Length > 0 && Directory.Exists(_exportClientDataPath))
+        {
+            ExportMapsAopak(_exportClientDataPath);
+        }
+        else
+        {
+            _exportFolderDialog!.Popup();
+        }
+    }
+
+    private void OnExportFolderSelected(string path)
+    {
+        _exportClientDataPath = path;
+        SaveConfig();
+        ExportMapsAopak(path);
+    }
+
+    private void ExportMapsAopak(string clientDataPath)
+    {
+        if (string.IsNullOrEmpty(_dataPath))
+        {
+            SetStatus("ERROR: ruta de datos no configurada");
+            return;
+        }
+
+        string cliProject = Path.GetFullPath(Path.Combine(_dataPath, "..", "compressor", "CLI", "AoPakCli.csproj"));
+        string mapsDir = Path.Combine(_dataPath, "Maps");
+
+        GD.Print($"[Editor] ExportMapsAopak: cli={cliProject} maps={mapsDir} outputDir={clientDataPath}");
+
+        SetStatus("Exportando maps.aopak...");
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = $"run --project \"{cliProject}\" -- pack \"{mapsDir}\" --outputDir \"{clientDataPath}\"",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        Task.Run(() =>
+        {
+            try
+            {
+                using var proc = Process.Start(psi);
+                if (proc == null)
+                {
+                    CallDeferred(MethodName.SetStatus, "ERROR: no se pudo iniciar el compressor");
+                    return;
+                }
+                // Read both streams concurrently to avoid deadlock
+                var stdoutTask = proc.StandardOutput.ReadToEndAsync();
+                var stderrTask = proc.StandardError.ReadToEndAsync();
+                proc.WaitForExit();
+                string stdout = stdoutTask.Result;
+                string stderr = stderrTask.Result;
+                if (proc.ExitCode == 0)
+                {
+                    GD.Print($"[Editor] Compressor output: {stdout}");
+                    CallDeferred(MethodName.SetStatus, "maps.aopak exportado ✓");
+                }
+                else
+                {
+                    string err = stderr.Length > 0 ? stderr : stdout;
+                    GD.PrintErr($"[Editor] Compressor error (exit {proc.ExitCode}): {err}");
+                    CallDeferred(MethodName.SetStatus, $"ERROR al exportar: {err.Split('\n')[0].Trim()}");
+                }
+            }
+            catch (Exception ex)
+            {
+                GD.PrintErr($"[Editor] ExportMapsAopak exception: {ex.Message}");
+                CallDeferred(MethodName.SetStatus, $"ERROR: {ex.Message}");
+            }
+        });
+    }
+
     private void BuildLoadingScreen()
     {
         _preloadOverlay = new Panel();
@@ -998,7 +1110,8 @@ public partial class EditorMain : Control
             {
                 $"client_data={_dataPath}",
                 $"server_maps={_serverMapDir}",
-                $"server_dat={_serverDatDir}"
+                $"server_dat={_serverDatDir}",
+                $"export_client_data={_exportClientDataPath}"
             };
             File.WriteAllLines(GetConfigPath(), lines);
             GD.Print($"[Editor] Config saved: {GetConfigPath()}");
@@ -1040,6 +1153,9 @@ public partial class EditorMain : Control
             string? savedServerDat = LoadConfigValue("server_dat");
             if (savedServerDat != null && Directory.Exists(savedServerDat))
                 _serverDatDir = savedServerDat;
+            string? savedExportData = LoadConfigValue("export_client_data");
+            if (savedExportData != null && Directory.Exists(savedExportData))
+                _exportClientDataPath = savedExportData;
             LoadDataPath(savedPath);
             return;
         }
@@ -1662,6 +1778,7 @@ public partial class EditorMain : Control
         UpdateNavBar();
         bool dual = _clientMapDir.Length > 0 && _serverMapDir.Length > 0;
         SetStatus($"Mapa {_map.MapNumber} guardado" + (dual ? " (cliente + server)" : ""));
+        _exportConfirmDialog?.PopupCentered();
     }
 
     private void OnSaveAsMap()
@@ -1701,6 +1818,7 @@ public partial class EditorMain : Control
         _state.ScanAvailableMaps(dir);
         UpdateNavBar();
         SetStatus($"Mapa {_map.MapNumber} guardado (cliente + server)");
+        _exportConfirmDialog?.PopupCentered();
     }
 
     private void OnDataPathSelected(string path)

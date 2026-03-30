@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 
 // Usage:
-// aopak pack <input-dir> <output.aopak> [--key <passphrase>]
+// aopak pack <input-dir> [<output.aopak>] [--outputDir <dir>] [--key <passphrase>]
 // aopak unpack <input.aopak> <output-dir> [--key <passphrase>]
 // aopak list <input.aopak> [--key <passphrase>]
 // aopak verify <input.aopak> [--key <passphrase>]
@@ -61,11 +61,37 @@ catch (Exception ex)
 
 static int Pack(string[] args, byte[] amk)
 {
-    if (args.Length < 3) { Console.Error.WriteLine("Usage: aopak pack <input-dir> <output.aopak>"); return 1; }
+    if (args.Length < 2) { Console.Error.WriteLine("Usage: aopak pack <input-dir> [<output.aopak>] [--outputDir <dir>]"); return 1; }
     string inputDir = args[1];
-    string outputFile = args[2];
 
     if (!Directory.Exists(inputDir)) { Console.Error.WriteLine($"Directory not found: {inputDir}"); return 1; }
+
+    // Determine output file path
+    string outputFile;
+    string? outputDir = null;
+    for (int i = 2; i < args.Length - 1; i++)
+    {
+        if (args[i] == "--outputDir") { outputDir = args[i + 1]; i++; }
+    }
+
+    if (outputDir != null)
+    {
+        // --outputDir mode: derive filename from input dir name (Maps → maps.aopak)
+        string dirName = Path.GetFileName(Path.GetFullPath(inputDir).TrimEnd(Path.DirectorySeparatorChar));
+        outputFile = Path.Combine(outputDir, dirName.ToLowerInvariant() + ".aopak");
+    }
+    else if (args.Length >= 3 && !args[2].StartsWith("--"))
+    {
+        // Explicit output path: aopak pack <input> <output.aopak>
+        outputFile = args[2];
+    }
+    else
+    {
+        // Default: output alongside the input dir's parent (resources/data/Maps → resources/maps.aopak)
+        string parentDir = Path.GetDirectoryName(Path.GetFullPath(inputDir)) ?? ".";
+        string dirName = Path.GetFileName(Path.GetFullPath(inputDir).TrimEnd(Path.DirectorySeparatorChar));
+        outputFile = Path.Combine(parentDir, dirName.ToLowerInvariant() + ".aopak");
+    }
 
     Console.WriteLine($"Packing {inputDir} → {outputFile}");
     AopakWriter.Pack(inputDir, outputFile, amk, progress: (cur, total, name) =>
@@ -73,7 +99,7 @@ static int Pack(string[] args, byte[] amk)
         Console.Write($"\r[{cur}/{total}] {name}".PadRight(80));
     });
     Console.WriteLine();
-    Console.WriteLine("Done.");
+    Console.WriteLine($"Done: {outputFile}");
     return 0;
 }
 
@@ -444,7 +470,7 @@ static void PrintUsage()
     Console.WriteLine("AoPak — Encrypted Resource Archive Tool");
     Console.WriteLine();
     Console.WriteLine("Usage:");
-    Console.WriteLine("  aopak pack <input-dir> <output.aopak> [--key <passphrase>]");
+    Console.WriteLine("  aopak pack <input-dir> [<output.aopak>] [--outputDir <dir>] [--key <passphrase>]");
     Console.WriteLine("  aopak unpack <input.aopak> <output-dir> [--key <passphrase>]");
     Console.WriteLine("  aopak list <input.aopak> [--key <passphrase>]");
     Console.WriteLine("  aopak verify <input.aopak> [--key <passphrase>]");
