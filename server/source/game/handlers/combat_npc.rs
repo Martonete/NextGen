@@ -5,27 +5,15 @@ use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, MAX_INVENTORY_SLOTS};
 use super::super::common::rand_range;
-use super::{poder_ataque_arma, poder_evasion};
+use super::poder_ataque_arma;
 
 // =====================================================================
-// Legacy API compatibility (used by npcs.rs)
+// NPC combat helpers (used by npcs.rs)
 // =====================================================================
 
-/// Calculate attack power for NPC combat — uses balance class modifiers.
-pub(super) fn calc_attack_power(skill: i32, agility: i32, level: i32) -> f64 {
-    // Legacy — called from npcs.rs where we don't know the weapon type yet
-    // Returns approximate value without class modifier (mod=1.0)
-    poder_ataque_arma(skill, agility, level, 1.0) as f64
-}
-
-/// Calculate attack power with balance modifier.
+/// Calculate attack power with balance class modifier.
 pub(super) fn calc_attack_power_with_balance(skill: i32, agility: i32, level: i32, class_mod: f32) -> f64 {
     poder_ataque_arma(skill, agility, level, class_mod) as f64
-}
-
-/// Calculate defense/evasion power (legacy API for npcs.rs).
-pub(super) fn calc_defense_power(tacticas: i32, agility: i32, level: i32) -> f64 {
-    poder_evasion(tacticas, agility, level, 1.0) as f64
 }
 
 /// Get armor absorption for NPC combat (unchanged from before).

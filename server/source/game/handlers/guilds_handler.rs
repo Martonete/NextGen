@@ -84,7 +84,9 @@ pub(super) async fn handle_guild_info(state: &mut GameState, conn_id: Connection
         data.push_str(&guild.sub_lider1);
         data.push(BF);
         data.push_str(&guild.sub_lider2);
-        // Castle positions (empty for now)
+        // Castle positions — VB6 sends 4 castle map numbers here.
+        // Not implemented: no castle ownership data in DB schema yet.
+        // When castles are added, query guild_castles table for owned positions.
         for _ in 0..4 { data.push(BF); data.push('0'); }
         data.push(BF);
         data.push_str(&guild.reputation.to_string());

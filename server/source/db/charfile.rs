@@ -1031,3 +1031,60 @@ fn starter_head(race: &str, gender: i32) -> i32 {
 }
 
 // starter_stats removed — VB6 13.3 calculates HP/Mana/Sta from attributes inline
+
+/// Ranking entry returned by DB queries.
+#[derive(Debug, Clone)]
+pub struct RankingEntry {
+    pub name: String,
+    pub level: i32,
+    pub kills: i32,
+    pub gold: i64,
+}
+
+/// Query top characters by level from DB (VB6: HandleRecordListRequest).
+pub async fn query_rankings_by_level(pool: &PgPool, limit: i32) -> Vec<RankingEntry> {
+    let rows: Vec<(String, i32, i32, i32, i64)> = sqlx::query_as(
+        "SELECT name, level, criminales_matados, ciudadanos_matados, gold
+         FROM characters ORDER BY level DESC, (criminales_matados + ciudadanos_matados) DESC LIMIT $1"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter().map(|(name, level, crim, ciud, gold)| RankingEntry {
+        name, level, kills: crim + ciud, gold,
+    }).collect()
+}
+
+/// Query top characters by kills from DB.
+pub async fn query_rankings_by_kills(pool: &PgPool, limit: i32) -> Vec<RankingEntry> {
+    let rows: Vec<(String, i32, i32, i32, i64)> = sqlx::query_as(
+        "SELECT name, level, criminales_matados, ciudadanos_matados, gold
+         FROM characters ORDER BY (criminales_matados + ciudadanos_matados) DESC, level DESC LIMIT $1"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter().map(|(name, level, crim, ciud, gold)| RankingEntry {
+        name, level, kills: crim + ciud, gold,
+    }).collect()
+}
+
+/// Query top characters by gold from DB.
+pub async fn query_rankings_by_gold(pool: &PgPool, limit: i32) -> Vec<RankingEntry> {
+    let rows: Vec<(String, i32, i32, i32, i64)> = sqlx::query_as(
+        "SELECT name, level, criminales_matados, ciudadanos_matados, gold
+         FROM characters ORDER BY gold DESC, level DESC LIMIT $1"
+    )
+    .bind(limit)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    rows.into_iter().map(|(name, level, crim, ciud, gold)| RankingEntry {
+        name, level, kills: crim + ciud, gold,
+    }).collect()
+}

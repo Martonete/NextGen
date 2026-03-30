@@ -534,6 +534,29 @@ pub async fn tick_player_passive(state: &mut GameState) {
         state.auto_save_counter = 60;
         auto_save_all_users(state).await;
     }
+
+    // --- Guild election timeout: expire elections older than 24 hours ---
+    let expired_elections: Vec<i32> = state.guild_elections.iter()
+        .filter(|(_, e)| e.started_at.elapsed().as_secs() > 86400)
+        .map(|(&idx, _)| idx)
+        .collect();
+    for guild_idx in expired_elections {
+        state.guild_elections.remove(&guild_idx);
+        // Notify online guild members
+        let msg = "Las elecciones del clan han expirado sin resultado.";
+        let member_conns: Vec<crate::net::ConnectionId> = state.users.values()
+            .filter(|u| u.logged && u.guild_index == guild_idx)
+            .map(|u| u.conn_id)
+            .collect();
+        for mc in member_conns {
+            state.send_console(mc, msg, crate::protocol::font_index::GUILD);
+        }
+        // Clear DB flag
+        if let Some(mut gi) = crate::db::guilds::load_guild(&state.pool, guild_idx).await {
+            gi.elecciones_abiertas = false;
+            crate::db::guilds::save_guild(&state.pool, &gi).await;
+        }
+    }
 }
 
 /// Save all logged-in users to DB (periodic auto-save).

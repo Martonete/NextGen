@@ -427,26 +427,20 @@ pub(super) async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, cr
 
 
 /// RANKIN — Rankings list request. VB6: Protocol.bas HandleRecordListRequest
-/// The client sends a single ASCII string with the ranking type number (1=level, 2=kills, 3=gold).
+/// Queries ALL characters from DB (not just online). Type: 1=level, 2=kills, 3=gold.
 pub(super) async fn handle_rankings(state: &mut GameState, conn_id: ConnectionId, data: &str) {
     let ranking_type = data.trim().parse::<i32>().unwrap_or(1);
+    let pool = state.pool.clone();
 
-    let mut entries: Vec<(String, i32, i32, i64)> = state.users.values()
-        .filter(|u| u.logged && !u.char_name.is_empty())
-        .map(|u| (u.char_name.clone(), u.level, u.criminales_matados + u.ciudadanos_matados, u.gold))
-        .collect();
-
-    match ranking_type {
-        2 => entries.sort_by(|a, b| b.2.cmp(&a.2)),  // By kills (desc)
-        3 => entries.sort_by(|a, b| b.3.cmp(&a.3)),  // By gold (desc)
-        _ => entries.sort_by(|a, b| b.1.cmp(&a.1)),  // Default: by level (desc)
-    }
-
-    entries.truncate(25);
+    let entries = match ranking_type {
+        2 => crate::db::charfile::query_rankings_by_kills(&pool, 25).await,
+        3 => crate::db::charfile::query_rankings_by_gold(&pool, 25).await,
+        _ => crate::db::charfile::query_rankings_by_level(&pool, 25).await,
+    };
 
     let mut response = format!("{},", entries.len());
-    for (name, level, kills, gold) in &entries {
-        response.push_str(&format!("{},{},{},{},", name, level, kills, gold));
+    for e in &entries {
+        response.push_str(&format!("{},{},{},{},", e.name, e.level, e.kills, e.gold));
     }
 
     let pkt = binary_packets::write_rankings(&response);
