@@ -278,7 +278,7 @@ async fn remove_items(state: &mut GameState, conn_id: ConnectionId, obj_index: i
 pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: ConnectionId, target_x: i32, target_y: i32, skill_type: i32) {
 
     // Validate user
-    let (dead, meditating, map, ux, uy) = match state.users.get(&conn_id) {
+    let (dead, meditating, _map, ux, uy) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.dead, u.meditating, u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };

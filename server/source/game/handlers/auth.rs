@@ -1137,7 +1137,7 @@ pub(super) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionI
 }
 
 /// DeleteCharacter — Delete character.
-pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account_name: &str, password: &str) {
+pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, char_name: &str, _account_name: &str, password: &str) {
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
 
     // Rate limit: 5-second cooldown between delete attempts

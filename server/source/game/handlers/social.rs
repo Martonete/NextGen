@@ -99,7 +99,7 @@ pub(super) async fn handle_slash_enlistar(state: &mut GameState, conn_id: Connec
         ),
         _ => return,
     };
-    let (armada, caos, criminal, crim_killed, ciud_killed, reenlistadas, char_name, guild_index) = user_data;
+    let (armada, caos, criminal, crim_killed, ciud_killed, reenlistadas, char_name, _guild_index) = user_data;
 
     if armada || caos {
         state.send_console(conn_id, "Ya perteneces a una faccion.", font_index::INFO);
@@ -252,7 +252,7 @@ pub(super) async fn handle_slash_recompensa(state: &mut GameState, conn_id: Conn
         ),
         _ => return,
     };
-    let (armada, caos, crim_killed, ciud_killed, rec_real, rec_caos, char_name) = user_data;
+    let (armada, caos, crim_killed, ciud_killed, rec_real, rec_caos, _char_name) = user_data;
 
     if !armada && !caos {
         state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
@@ -316,7 +316,7 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
         ),
         _ => return,
     };
-    let (armada, caos, char_name, guild_index) = user_data;
+    let (armada, caos, _char_name, _guild_index) = user_data;
 
     if !armada && !caos {
         state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);

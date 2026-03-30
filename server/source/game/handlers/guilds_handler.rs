@@ -572,7 +572,7 @@ pub(super) async fn handle_slash_clan_list(state: &mut GameState, conn_id: Conne
 
 /// /SEGUROCLAN — Toggle clan safe mode (prevents attacking clanmates).
 pub(super) async fn handle_slash_seguroclan(state: &mut GameState, conn_id: ConnectionId) {
-    let guild_index = match state.users.get(&conn_id) {
+    let _guild_index = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.guild_index > 0 => u.guild_index,
         _ => {
             state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);

@@ -406,7 +406,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
     };
     let (map, x, y, heading, char_index, dead, safe_on, level,
          strength, agility, min_hit, max_hit,
-         skill_armas, skill_proyectiles, skill_tacticas, skill_defensa, skill_wrestling, skill_apunalar,
+         skill_armas, skill_proyectiles, _skill_tacticas, _skill_defensa, skill_wrestling, skill_apunalar,
          attacker_name, class) = user_data;
 
     if dead {
@@ -543,7 +543,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             _ => return,
         };
         let (v_dead, v_privs, victim_name, v_level, v_agility, v_tacticas, v_defensa,
-             v_max_hp, v_min_hp, v_class, v_heading, v_char_index, v_meditating) = victim_data;
+             _v_max_hp, _v_min_hp, v_class, _v_heading, v_char_index, v_meditating) = victim_data;
 
         if v_dead {
             state.send_msg_id(conn_id, 154, "");

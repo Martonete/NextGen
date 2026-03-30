@@ -1,0 +1,12 @@
+<Project Sdk="Godot.NET.Sdk/4.3.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <RootNamespace>AoIndexer</RootNamespace>
+    <AssemblyName>AoIndexer</AssemblyName>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\aopak\AoPakLib.csproj" />
+  </ItemGroup>
+</Project>

@@ -4,13 +4,14 @@ FROM rust:1.85-slim AS builder
 WORKDIR /build
 
 # Cache dependencies: copy manifests first, then do a dummy build
-COPY server/source/Cargo.toml server/source/Cargo.lock ./
-RUN mkdir -p server/source && echo "fn main() {}" > main.rs \
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir -p server/source && echo "fn main() {}" > server/source/main.rs \
     && cargo build --release \
-    && rm -rf main.rs target/release/deps/ao_server* target/release/ao-server
+    && rm -rf server/source target/release/deps/ao_server* target/release/ao-server
 
 # Now copy real source and build
-COPY server/source/ ./
+COPY server/source/ server/source/
+COPY server/migrations/ server/migrations/
 RUN cargo build --release
 
 # ── Stage 2: Runtime ────────────────────────────────────────────

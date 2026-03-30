@@ -161,7 +161,7 @@ pub(crate) async fn do_ranged_attack(state: &mut GameState, conn_id: ConnectionI
         _ => return,
     };
     let (map, ux, uy, char_index, weapon_slot, municion_slot, sta,
-         safe_toggle, target_user, target_npc_idx) = user_data;
+         _safe_toggle, _target_user, _target_npc_idx) = user_data;
 
     // VB6: MAXDISTANCIAARCO range check
     let dist = ((ux - tx).abs()).max((uy - ty).abs());
@@ -335,8 +335,8 @@ async fn resolve_ranged_attack_npc(
         }
         _ => return,
     };
-    let (map, x, y, char_index, level, strength, agility,
-         min_hit, max_hit, skill_proyectiles, attacker_name, class) = user_data;
+    let (map, x, y, _char_index, level, strength, agility,
+         min_hit, max_hit, skill_proyectiles, _attacker_name, class) = user_data;
 
     let npc_data = match state.get_npc(npc_idx) {
         Some(n) if n.active && n.attackable => {
@@ -346,7 +346,7 @@ async fn resolve_ranged_attack_npc(
         _ => return,
     };
     let (npc_char, npc_def, npc_evasion, _npc_hp, _npc_max_hp,
-         npc_exp, npc_number, _npc_name) = npc_data;
+         npc_exp, _npc_number, _npc_name) = npc_data;
 
     // Hit check — VB6: PoderAtaqueProyectil uses Proyectiles skill + ModClase.AtaqueProyectiles
     let atk_mod = state.game_data.balance.class_mod_ataque_proyectiles_e(class);

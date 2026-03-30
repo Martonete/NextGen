@@ -5,25 +5,11 @@ dist/
 *.import
 remembered.dat
 
-# Build outputs (keep .gitkeep, ignore everything else)
-client/build/**
-!client/build/**/.gitkeep
-server/build/**
-!server/build/**/.gitkeep
-tools/world-editor/build/**
-!tools/world-editor/build/**/.gitkeep
-tools/indexer/build/**
-!tools/indexer/build/**/.gitkeep
-tools/resource-manager/build/**
-!tools/resource-manager/build/**/.gitkeep
-tools/aopak/build/**
-!tools/aopak/build/**/.gitkeep
-
 # Server runtime data
-server/source/logs/*.log
-server/source/charfile/*.chr
-server/source/Accounts/*.act
-server/source/guilds/Bancos/
+server/logs/*.log
+server/charfile/*.chr
+server/Accounts/*.act
+server/guilds/Bancos/
 
 # Environment secrets
 .env

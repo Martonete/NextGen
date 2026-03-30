@@ -530,7 +530,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
             (npc.is_alive(), npc.comercia, npc.name.clone(), npc.npc_type, npc.desc.clone(), npc.npc_number)
         });
 
-        if let Some((alive, comercia, npc_name, npc_type, npc_desc, npc_num)) = npc_info {
+        if let Some((alive, comercia, _npc_name, npc_type, _npc_desc, _npc_num)) = npc_info {
             if alive {
                 // Set target NPC
                 if let Some(user) = state.users.get_mut(&conn_id) {
