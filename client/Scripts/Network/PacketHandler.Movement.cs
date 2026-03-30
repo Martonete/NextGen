@@ -757,8 +757,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinNavigationData(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         string data = bq.ReadString();
+        _state.NavigationData = data;
     }
 
     /// <summary>
@@ -866,8 +866,8 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinWorkMode(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
         byte skill = bq.ReadByte();
+        _state.CurrentWorkMode = skill;
     }
 
     /// <summary>

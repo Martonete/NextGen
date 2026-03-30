@@ -244,8 +244,9 @@ public class GameState
 	public string HelmLabel = "0/0";
 
 
-	// Inventory (25 slots)
+	// Inventory (25 slots, expandable via AddSlots packet)
 	public InventorySlot[] Inventory = new InventorySlot[25];
+	public int MaxInventorySlots = 25;
 	public int SelectedInvSlot = -1; // Currently selected inventory slot (0-based, -1 = none)
 
 	// Spells (20 slots)
@@ -307,6 +308,11 @@ public class GameState
 	public string GuildInfoType = ""; // "Leader", "Member", "Details" — which panel to show
 	public string GuildListData = ""; // raw guild list from server
 	public bool ShowGuildPanel;       // Trigger to open guild panel
+	// Signal display (map signs/signals)
+	public bool ShowSignal;
+	public string SignalText = "";
+	public int SignalGrh;
+
 	public bool ShowGuildFoundation;  // Trigger to open guild creation form
 	public bool SeguroClan = true;    // Clan safe toggle (local mirror)
 	public string UserGuildName = ""; // Current user's guild name (from CC tag)
@@ -376,10 +382,18 @@ public class GameState
 	// GM Panel
 	public bool GmPanelOpen;
 
+	// Spawn list (GM)
+	public bool ShowSpawnList;
+	public string SpawnListData = "";
+
+	// User name list for GM panel
+	public string UserNameListData = "";
+
 	// SOS / Help system
 	public bool ShowSosPanel;
 	public string SosPlayerName = "";
 	public string SosMessage = "";
+	public string SosListData = "";
 
 	// Peace proposal
 	public bool ShowPeaceProposal;
@@ -391,6 +405,7 @@ public class GameState
 
 	// MOTD editor
 	public bool ShowMotdEditor;
+	public string MotdEditorContent = "";
 
 	// Guild member detail
 	public bool ShowGuildMember;
@@ -409,6 +424,36 @@ public class GameState
 	// Tutorial
 	public bool ShowTutorial;
 	public bool TutorialCompleted;
+
+	// Context menu (MenuData ID 221)
+	public bool ShowContextMenu;
+	public string MenuTargetName = "";
+	public byte MenuTargetPriv;
+
+	// Selection list (SelectData ID 222)
+	public bool ShowSelectList;
+	public string SelectListData = "";
+
+	// Mini ranking (MiniTopData ID 223)
+	public bool ShowMiniTop;
+	public string MiniTopData = "";
+
+	// Navigation (NavigationData ID 162)
+	public string NavigationData = "";
+
+	// Work mode (WorkMode ID 155)
+	public byte CurrentWorkMode;
+
+	// Timer info (TimerInfo ID 246)
+	public byte TimerInfoId;
+	public int TimerInfoTime1;
+	public int TimerInfoTime2;
+
+	// Battle team scores (BattleTeamScores ID 163)
+	public int BattleScoreT1;
+	public int BattleScoreT2;
+	public int BattleScoreT3;
+	public int BattleScoreT4;
 
 	public GameState()
 	{

@@ -237,8 +237,13 @@ public partial class PacketHandler
                 _state.UserDumb = true;
                 break;
             case ServerPacketId.ShowSignal: // 58
-                // UNSUPPORTED: ShowSignal — reads wire bytes only
-                { string text = bq.ReadString(); int grh = (ushort)bq.ReadInteger(); }
+                {
+                    string text = bq.ReadString();
+                    int grh = (ushort)bq.ReadInteger();
+                    _state.SignalText = text;
+                    _state.SignalGrh = grh;
+                    _state.ShowSignal = true;
+                }
                 break;
             case ServerPacketId.DiceRoll: // 59
                 HandleBinDiceRoll(bq);
@@ -337,26 +342,37 @@ public partial class PacketHandler
                 HandleBinUpdateTagAndStatus(bq);
                 break;
             case ServerPacketId.SpawnList: // 90
-                // UNSUPPORTED: SpawnList — reads wire bytes only
-                { string _ = bq.ReadString(); }
+                {
+                    string data = bq.ReadString();
+                    _state.SpawnListData = data;
+                    _state.ShowSpawnList = true;
+                }
                 break;
             case ServerPacketId.ShowSOSForm: // 91
-                // UNSUPPORTED: ShowSOSForm — reads wire bytes only
-                { string _ = bq.ReadString(); }
+                {
+                    string data = bq.ReadString();
+                    _state.SosListData = data;
+                    _state.ShowSosPanel = true;
+                }
                 break;
             case ServerPacketId.ShowMOTDEditionForm: // 92
-                // UNSUPPORTED: ShowMOTDEditionForm — reads wire bytes only
-                { string _ = bq.ReadString(); }
+                {
+                    string data = bq.ReadString();
+                    _state.MotdEditorContent = data;
+                    _state.ShowMotdEditor = true;
+                }
                 break;
             case ServerPacketId.ShowGMPanelForm: // 93
-                // UNSUPPORTED: ShowGMPanelForm — reads wire bytes only
+                _state.GmPanelOpen = true;
                 break;
             case ServerPacketId.UserNameList: // 94
-                // UNSUPPORTED: UserNameList — reads wire bytes only
-                { string _ = bq.ReadString(); }
+                {
+                    string data = bq.ReadString();
+                    _state.UserNameListData = data;
+                }
                 break;
             case ServerPacketId.ShowGuildAlign: // 95
-                // UNSUPPORTED: ShowGuildAlign — reads wire bytes only
+                _state.ShowGuildAlignment = true;
                 break;
             case ServerPacketId.MapMusic: // 96
                 HandleBinMapMusic(bq);
@@ -381,8 +397,10 @@ public partial class PacketHandler
                 _state.BankGold = bq.ReadLong();
                 break;
             case ServerPacketId.AddSlots: // 103
-                // UNSUPPORTED: AddSlots — reads wire bytes only
-                { byte slots = bq.ReadByte(); }
+                {
+                    byte slots = bq.ReadByte();
+                    _state.MaxInventorySlots = slots;
+                }
                 break;
             case ServerPacketId.MultiMessage: // 104
                 HandleBinMultiMessage(bq);

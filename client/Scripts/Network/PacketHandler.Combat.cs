@@ -549,12 +549,12 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinTimerInfo(ByteQueue bq)
     {
-        // STUB: reads wire bytes but not yet implemented
-        // Bytes must still be consumed to keep the stream in sync.
         byte id = bq.ReadByte();
         int time1 = bq.ReadLong();
         int time2 = bq.ReadLong();
-        // Scroll timers not yet implemented on the client.
+        _state.TimerInfoId = id;
+        _state.TimerInfoTime1 = time1;
+        _state.TimerInfoTime2 = time2;
     }
 
     // ── Class options ────────────────────────────────────────────────
@@ -596,8 +596,10 @@ public partial class PacketHandler
     /// </summary>
     private void HandleBinBattleTeamScores(ByteQueue bq)
     {
-        // Drain 4 ints — scoreboard UI is not yet implemented, data discarded
-        bq.ReadLong(); bq.ReadLong(); bq.ReadLong(); bq.ReadLong();
+        _state.BattleScoreT1 = bq.ReadLong();
+        _state.BattleScoreT2 = bq.ReadLong();
+        _state.BattleScoreT3 = bq.ReadLong();
+        _state.BattleScoreT4 = bq.ReadLong();
     }
 
     /// <summary>
