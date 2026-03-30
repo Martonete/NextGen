@@ -1140,7 +1140,12 @@ pub(super) async fn iniciar_banco_clan(state: &mut GameState, conn_id: Connectio
         }
     }
 
-    let pkt = binary_packets::write_guild_bank_gold(bank_gold as i32);
+    // Note: bank_gold is i64 from DB but protocol wire format is i32 (4-byte signed).
+    // Saturate to prevent silent wraparound on servers with very high gold.
+    let gold_i32 = (bank_gold.min(i32::MAX as i64)) as i32;
+
+    // VB6 order: slots (above) → gold → set comerciando → init (matches iniciar_banco)
+    let pkt = binary_packets::write_guild_bank_gold(gold_i32);
     state.send_bytes(conn_id, &pkt);
 
     if let Some(user) = state.users.get_mut(&conn_id) {
@@ -1148,7 +1153,7 @@ pub(super) async fn iniciar_banco_clan(state: &mut GameState, conn_id: Connectio
         user.comerciando = true;
     }
 
-    let pkt = binary_packets::write_guild_bank_init(bank_gold as i32);
+    let pkt = binary_packets::write_guild_bank_init(gold_i32);
     state.send_bytes(conn_id, &pkt);
 }
 

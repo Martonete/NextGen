@@ -313,10 +313,15 @@ pub(super) async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, cr
         return;
     }
 
-    let (target_npc, _map, _x, _y, nro_mascotas, _gold) = match state.users.get(&conn_id) {
-        Some(u) => (u.target_npc, u.pos_map, u.pos_x, u.pos_y, u.nro_mascotas, u.gold),
+    let (target_npc, nro_mascotas, dead) = match state.users.get(&conn_id) {
+        Some(u) => (u.target_npc, u.nro_mascotas, u.dead),
         None => return,
     };
+
+    if dead {
+        state.send_msg_id(conn_id, 3, "");
+        return;
+    }
 
     if target_npc == 0 {
         state.send_console(conn_id, "No estas interactuando con un NPC.", font_index::INFO);
