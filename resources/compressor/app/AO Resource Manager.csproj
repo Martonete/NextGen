@@ -7,6 +7,6 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\compressor\AoPakLib.csproj" />
+    <ProjectReference Include="..\lib\AoPakLib.csproj" />
   </ItemGroup>
 </Project>

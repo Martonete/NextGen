@@ -500,8 +500,8 @@ func _load_client_folder(path: String) -> void:
 	_client_graficos_path = path
 	_push_recent_client(path)
 
-	var try_graficos := [path.path_join("tools/resources/data/Graficos"), path.path_join("Data/Graficos"), path.path_join("Graficos")]
-	var try_init := [path.path_join("tools/resources/data/INIT"), path.path_join("Data/INIT"), path.path_join("INIT")]
+	var try_graficos := [path.path_join("resources/data/Graficos"), path.path_join("Data/Graficos"), path.path_join("Graficos")]
+	var try_init := [path.path_join("resources/data/INIT"), path.path_join("Data/INIT"), path.path_join("INIT")]
 
 	_graficos_folder_path = ""
 	for p in try_graficos:

@@ -984,7 +984,7 @@ public partial class EditorMain : Control
             return;
         }
 
-        string cliProject = Path.GetFullPath(Path.Combine(_dataPath, "..", "compressor", "CLI", "AoPakCli.csproj"));
+        string cliProject = Path.GetFullPath(Path.Combine(_dataPath, "..", "compressor", "lib", "CLI", "AoPakCli.csproj"));
         string mapsDir = Path.Combine(_dataPath, "Maps");
 
         GD.Print($"[Editor] ExportMapsAopak: cli={cliProject} maps={mapsDir} outputDir={clientDataPath}");
@@ -1175,10 +1175,10 @@ public partial class EditorMain : Control
         string exeDir = OS.GetExecutablePath().GetBaseDir();
         string cwd = Directory.GetCurrentDirectory();
 
-        // From res:// (tools/world-editor/) → primary: tools/resources/data/
-        candidates.Add(Path.Combine(resPath, "../../tools/resources/data"));
+        // From res:// (tools/world-editor/) → primary: resources/data/
+        candidates.Add(Path.Combine(resPath, "../../resources/data"));
         // From cwd (repo root)
-        candidates.Add(Path.Combine(cwd, "tools/resources/data"));
+        candidates.Add(Path.Combine(cwd, "resources/data"));
         // Fallbacks for backwards compat
         candidates.Add(Path.Combine(resPath, "../../client/Data"));
         candidates.Add(Path.Combine(cwd, "client/Data"));
@@ -1255,7 +1255,7 @@ public partial class EditorMain : Control
         vbox.AddChild(EditorTheme.MakeLabel("Carpeta de Recursos"));
         var clientRow = new HBoxContainer();
         clientRow.AddThemeConstantOverride("separation", 6);
-        _setupClientPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/tools/resources/data" };
+        _setupClientPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/resources/data" };
         _setupClientPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         clientRow.AddChild(_setupClientPath);
         var clientBrowse = EditorTheme.MakeButton("...");
