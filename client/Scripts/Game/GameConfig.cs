@@ -144,7 +144,7 @@ public class GameConfig
 	// ── Persistence ───────────────────────────────────────
 
 	private static string FilePath(string dataPath) =>
-		Path.Combine(dataPath, "INIT", "Options.ao");
+		Path.Combine(dataPath, "Options.ao");
 
 	/// <summary>
 	/// Load configuration from INI file. Missing keys use defaults.
