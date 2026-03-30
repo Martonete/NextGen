@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -13,13 +14,15 @@ namespace ArgentumNextgen.Data;
 /// </summary>
 public static class TextosLoader
 {
-    public static TextMessage[] Load(string path)
+    public static TextMessage[] Load(IResourceProvider resources)
     {
         // Read with Latin1 encoding (VB6 strings)
         string[] lines;
         try
         {
-            lines = File.ReadAllLines(path, Encoding.GetEncoding("iso-8859-1"));
+            byte[] data = resources.ReadBytes("INIT/Textos.ao");
+            string content = Encoding.GetEncoding("iso-8859-1").GetString(data);
+            lines = content.Split('\n');
         }
         catch (Exception ex)
         {

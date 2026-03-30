@@ -90,8 +90,7 @@ public class GameData
 
         try
         {
-            string textosPath = System.IO.Path.Combine(resources.BasePath, "INIT", "Textos.ao");
-            TextMessages = TextosLoader.Load(textosPath);
+            TextMessages = TextosLoader.Load(resources);
         }
         catch (Exception ex)
         {
