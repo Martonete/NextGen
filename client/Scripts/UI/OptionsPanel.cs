@@ -26,7 +26,6 @@ public partial class OptionsPanel : RpgBaseForm
     private HBoxContainer? _tabBar;
     private Control? _gameTab;
     private Control? _renderTab;
-    private Control? _clanTab;
     private int _activeTab;
 
     // ── Clan tab controls ──

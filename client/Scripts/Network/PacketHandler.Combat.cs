@@ -510,20 +510,14 @@ public partial class PacketHandler
     // ── Map extras ────────────────────────────────────────────────
 
 
-    private void HandleBinHungerThirst(ByteQueue bq)
-    {
-        _state.MaxAgua = bq.ReadByte();
-        _state.MinAgua = bq.ReadByte();
-        _state.MaxHam = bq.ReadByte();
-        _state.MinHam = bq.ReadByte();
-    }
-
+    private void HandleBinHungerThirst(ByteQueue bq) => ApplyHungerThirst(bq);
 
     /// <summary>
-    /// HungerThirst (ID 128) — same layout as UpdateHungerAndThirst (ID 60).
-    /// Wire: u8 maxAgua, u8 minAgua, u8 maxHam, u8 minHam
+    /// HungerThirst (ID 128) — same wire layout as ID 60.
     /// </summary>
-    private void HandleBinHungerThirst128(ByteQueue bq)
+    private void HandleBinHungerThirst128(ByteQueue bq) => ApplyHungerThirst(bq);
+
+    private void ApplyHungerThirst(ByteQueue bq)
     {
         _state.MaxAgua = bq.ReadByte();
         _state.MinAgua = bq.ReadByte();

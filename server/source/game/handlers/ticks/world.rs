@@ -228,7 +228,10 @@ pub async fn tick_intervals(state: &mut GameState) {
         .collect();
     for npc_idx in pet_indices {
         let (owner_conn, npc_map, npc_x, npc_y) = match state.get_npc(npc_idx) {
-            Some(n) => (n.maestro_user.unwrap(), n.map, n.x, n.y),
+            Some(n) => match n.maestro_user {
+                Some(owner) => (owner, n.map, n.x, n.y),
+                None => continue, // filtered to is_some above — shouldn't happen
+            },
             None => continue,
         };
         let owner_nearby = state.users.get(&owner_conn)
