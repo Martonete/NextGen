@@ -133,6 +133,15 @@ public partial class TutorialPanel : Control
         titleBg.AddChild(titleLabel);
         RpgTheme.FillParent(titleLabel);
 
+        // Close X button (top-right)
+        var closeBtn = RpgTheme.CreateMiniButton("Mini_exit.png", "Mini_exit_t.png", new Vector2(28, 28));
+        closeBtn.Pressed += CompleteTutorial;
+        _panel.AddChild(closeBtn);
+        closeBtn.AnchorLeft = 1.0f; closeBtn.AnchorRight = 1.0f;
+        closeBtn.AnchorTop = 0.0f;  closeBtn.AnchorBottom = 0.0f;
+        closeBtn.OffsetLeft = -38;   closeBtn.OffsetTop = 13;
+        closeBtn.OffsetRight = -8;   closeBtn.OffsetBottom = 36;
+
         AddChild(_panel);
 
         // Content area with V2 margins
@@ -193,21 +202,21 @@ public partial class TutorialPanel : Control
     {
         if (!Visible || _panel == null) return;
 
-        if (@event is InputEventMouseButton mb)
+        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
         {
-            if (mb.ButtonIndex == MouseButton.Left)
+            if (mb.Pressed)
             {
-                var panelRect = new Rect2(_panel.GlobalPosition, _panel.Size);
-                if (mb.Pressed && panelRect.HasPoint(mb.GlobalPosition))
+                // Only drag from the title bar area (top 48px of the panel)
+                var titleRect = new Rect2(_panel.GlobalPosition, new Vector2(_panel.Size.X, 48));
+                if (titleRect.HasPoint(mb.GlobalPosition))
                 {
                     _dragging = true;
                     _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
-                    GetViewport().SetInputAsHandled();
                 }
-                else if (!mb.Pressed)
-                {
-                    _dragging = false;
-                }
+            }
+            else
+            {
+                _dragging = false;
             }
         }
         else if (@event is InputEventMouseMotion mm && _dragging)
