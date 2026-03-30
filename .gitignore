@@ -3,7 +3,6 @@
 **/.godot/
 dist/
 *.import
-*.aopak
 
 # Build outputs (keep .gitkeep, ignore everything else)
 client/build/**
