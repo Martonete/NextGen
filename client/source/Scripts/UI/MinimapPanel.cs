@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.UI;
 
@@ -38,14 +39,16 @@ public partial class MinimapPanel : Control
     // Cache of source images by file number (avoids reloading PNGs per tile)
     private readonly Dictionary<int, Image?> _imageCache = new();
     private string _graficosPath = "";
+    private IResourceProvider? _resources;
 
     public HashSet<string> PartyMemberNames { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public void Init(GameState state, GameData? data = null, string graficosPath = "")
+    public void Init(GameState state, GameData? data = null, string graficosPath = "", IResourceProvider? resources = null)
     {
         _state = state;
         _data = data;
         _graficosPath = graficosPath;
+        _resources = resources;
     }
 
     public void Toggle()
@@ -86,13 +89,19 @@ public partial class MinimapPanel : Control
         // Get source image (cached)
         if (!_imageCache.TryGetValue(grh.FileNum, out var img))
         {
-            string filePath = System.IO.Path.Combine(_graficosPath, $"{grh.FileNum}.png");
-            if (System.IO.File.Exists(filePath))
+            string relativePath = $"Graficos/{grh.FileNum}.png";
+            if (_resources != null)
             {
-                img = Image.LoadFromFile(filePath);
-                if (img != null && img.GetFormat() != Image.Format.Rgba8)
-                    img.Convert(Image.Format.Rgba8);
+                img = _resources.ReadImage(relativePath);
             }
+            else
+            {
+                string filePath = System.IO.Path.Combine(_graficosPath, $"{grh.FileNum}.png");
+                if (System.IO.File.Exists(filePath))
+                    img = Image.LoadFromFile(filePath);
+            }
+            if (img != null && img.GetFormat() != Image.Format.Rgba8)
+                img.Convert(Image.Format.Rgba8);
             _imageCache[grh.FileNum] = img;
         }
 

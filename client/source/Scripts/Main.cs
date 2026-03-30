@@ -2,6 +2,7 @@ using Godot;
 using System;
 using System.Collections.Generic;
 using ArgentumNextgen.Data;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
 using ArgentumNextgen.Rendering;
@@ -306,6 +307,7 @@ public partial class Main : Control
 	private Label? _macroStatusLabel; // Shows "MACRO" when work/spell macro is active
 
 	private string _dataPath = ""; // cached for macro file I/O
+	private IResourceProvider? _resources;
 
 	// Custom stat bar overlay (draws colored fill rects at VB6 positions)
 	private StatBarOverlay? _statBarOverlay;
@@ -487,12 +489,12 @@ public partial class Main : Control
 
 		GD.Print($"[MAIN] Data path: {dataPath}");
 		_dataPath = dataPath;
+		_resources = ResourceProviderFactory.Create(dataPath);
 		_gameData.LoadAll(dataPath);
 		_state.TextMessages = _gameData.TextMessages;
 
 		// Load particle definitions
-		string particlesPath = System.IO.Path.Combine(dataPath, "INIT", "Particles.ini");
-		_particleSystem.LoadDefinitions(particlesPath, _state);
+		_particleSystem.LoadDefinitions(_resources, "INIT/Particles.ini", _state);
 
 		// Load user configuration (Options.ao)
 		_state.Config = GameConfig.Load(dataPath);
@@ -545,14 +547,14 @@ public partial class Main : Control
 		// Setup sound manager
 		_soundManager = new SoundManager();
 		AddChild(_soundManager);
-		_soundManager.Init(dataPath);
+		_soundManager.Init(dataPath, _resources);
 		_soundManager.MusicEnabled = _state.Config.MusicEnabled;
 		_soundManager.SoundEnabled = _state.Config.SfxEnabled;
 		_soundManager.SetMusicVolume(_state.Config.MusicVolume);
 		_soundManager.SetSfxVolume(_state.Config.SfxVolume);
 
 		// Initialize weather renderer with sound manager (rain sound)
-		_worldRenderer?.InitWeather(_soundManager);
+		_worldRenderer?.InitWeather(_soundManager, _resources);
 
 		// Set Linear texture filtering on UI layers so fonts/text scale smoothly.
 		// Game viewport keeps Nearest (pixel art) via project default_texture_filter=0.
@@ -793,6 +795,7 @@ public partial class Main : Control
 		// Custom stat bar overlay — draws colored fill rects at VB6 positions
 		_statBarOverlay = new StatBarOverlay();
 		_statBarOverlay.DataPath = dataPath;
+		_statBarOverlay.Resources = _resources;
 		_statBarOverlay.Position = Vector2.Zero;
 		_statBarOverlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
 		_statBarOverlay.MouseFilter = Control.MouseFilterEnum.Ignore;
@@ -1008,9 +1011,33 @@ public partial class Main : Control
 				_tcp = null;
 				_packetHandler = null;
 				_inputHandler = null;
-				// Only show generic disconnect if no specific error is pending
-				if (string.IsNullOrEmpty(_state.LoginError))
+
+				// After draining packets, show any error/success message from the server
+				if (!string.IsNullOrEmpty(_state.LoginError))
+				{
+					string msg = _state.LoginError;
+					_state.LoginError = "";
+
+					// Check for account creation success
+					if (_state.CurrentScreen == Screen.AccountCreate &&
+						msg.Contains("exito", StringComparison.OrdinalIgnoreCase))
+					{
+						_state.CurrentScreen = Screen.Login;
+						HandleScreenChange(Screen.Login);
+						_lastScreen = Screen.Login;
+						_dialogManager?.ShowMensaje("Cuenta creada exitosamente. Ingrese sus datos.", GetViewportRect().Size);
+					}
+					else
+					{
+						// Show the actual error message from the server
+						_dialogManager?.ShowMensaje(msg, GetViewportRect().Size);
+					}
+				}
+				else
+				{
 					_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
+				}
+
 				if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
 				return;
 			}

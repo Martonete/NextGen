@@ -1,5 +1,6 @@
 using Godot;
 using ArgentumNextgen.Game;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.UI;
 
@@ -52,6 +53,9 @@ public partial class StatBarOverlay : Control
     /// <summary>Data path set by Main.cs before AddChild (so _Ready can find bar images).</summary>
     public string DataPath = "";
 
+    /// <summary>Resource provider set by Main.cs before AddChild. Takes precedence over DataPath.</summary>
+    public IResourceProvider? Resources;
+
     public override void _Ready()
     {
         var sysFont = new SystemFont();
@@ -60,31 +64,36 @@ public partial class StatBarOverlay : Control
         _font = sysFont;
 
         // Load bar images from extracted VB6 resources (runtime file path, not res://)
-        string principalDir = System.IO.Path.Combine(DataPath, "Graficos", "Principal");
-        _hpTex   = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_hp.jpg"));
-        _manaTex = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_mana.jpg"));
-        _staTex  = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_sta.jpg"));
-        _aguaTex = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_agua.jpg"));
-        _hamTex  = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_ham.jpg"));
-        _expTex  = LoadBarTexture(System.IO.Path.Combine(principalDir, "bar_exp.jpg"));
+        _hpTex   = LoadBarTexture("Graficos/Principal/bar_hp.jpg");
+        _manaTex = LoadBarTexture("Graficos/Principal/bar_mana.jpg");
+        _staTex  = LoadBarTexture("Graficos/Principal/bar_sta.jpg");
+        _aguaTex = LoadBarTexture("Graficos/Principal/bar_agua.jpg");
+        _hamTex  = LoadBarTexture("Graficos/Principal/bar_ham.jpg");
+        _expTex  = LoadBarTexture("Graficos/Principal/bar_exp.jpg");
     }
 
-    private static Texture2D? LoadBarTexture(string filePath)
+    private Texture2D? LoadBarTexture(string relativePath)
     {
-        if (!System.IO.File.Exists(filePath))
+        Godot.Image? image;
+        if (Resources != null)
         {
-            return null;
+            image = Resources.ReadImage(relativePath);
+        }
+        else
+        {
+            string filePath = System.IO.Path.Combine(DataPath, relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
+            if (!System.IO.File.Exists(filePath)) return null;
+            image = Image.LoadFromFile(filePath);
         }
 
-        var image = Image.LoadFromFile(filePath);
         if (image == null)
         {
-            GD.Print($"[UI] Bar image failed to load: {filePath} — using color fallback");
+            GD.Print($"[UI] Bar image failed to load: {relativePath} — using color fallback");
             return null;
         }
 
         var tex = ImageTexture.CreateFromImage(image);
-        GD.Print($"[UI] Loaded bar image: {filePath} ({tex.GetWidth()}x{tex.GetHeight()})");
+        GD.Print($"[UI] Loaded bar image: {relativePath} ({tex.GetWidth()}x{tex.GetHeight()})");
         return tex;
     }
 

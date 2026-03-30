@@ -1,6 +1,7 @@
 using System;
 using Godot;
 using ArgentumNextgen.Game;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.Rendering;
 
@@ -13,6 +14,7 @@ public partial class WeatherRenderer : Node2D
 {
     private GameState? _state;
     private SoundManager? _soundManager;
+    private IResourceProvider? _resources;
 
     // Rain particle system
     private const int MaxRainDrops = 300;
@@ -56,10 +58,11 @@ public partial class WeatherRenderer : Node2D
     private const float FadeInSpeed = 1.5f;  // per second
     private const float FadeOutSpeed = 2.0f;
 
-    public void Init(GameState state, SoundManager? soundManager)
+    public void Init(GameState state, SoundManager? soundManager, IResourceProvider? resources = null)
     {
         _state = state;
         _soundManager = soundManager;
+        _resources = resources;
         _lightningTimer = (float)(_rng.NextDouble() * (LightningIntervalMax - LightningIntervalMin) + LightningIntervalMin);
 
         // Create rain sound player (looping)
@@ -79,33 +82,61 @@ public partial class WeatherRenderer : Node2D
         // Look for rain sound file in Data/Sounds/WAV/
         string[] candidates = { "lluviaout.wav", "lluvia.wav", "rain.wav" };
 
-        // Try common paths
-        string[] basePaths = {
-            System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Data"),
-            "Data"
-        };
-
-        foreach (string basePath in basePaths)
+        if (_resources != null)
         {
             foreach (string candidate in candidates)
             {
-                string fullPath = System.IO.Path.Combine(basePath, "Sounds", "WAV", candidate);
-                if (System.IO.File.Exists(fullPath))
+                string relativePath = $"Sounds/WAV/{candidate}";
+                if (_resources.Exists(relativePath))
                 {
                     try
                     {
-                        byte[] raw = System.IO.File.ReadAllBytes(fullPath);
+                        byte[] raw = _resources.ReadBytes(relativePath);
                         var stream = ParseWavLooping(raw);
                         if (stream != null)
                         {
                             _rainSoundPlayer.Stream = stream;
-                            GD.Print($"[WEATHER] Rain sound loaded: {fullPath}");
+                            GD.Print($"[WEATHER] Rain sound loaded: {relativePath}");
                             return;
                         }
                     }
                     catch (Exception e)
                     {
-                        GD.Print($"[WEATHER] Failed to load rain sound {fullPath}: {e.Message}");
+                        GD.Print($"[WEATHER] Failed to load rain sound {relativePath}: {e.Message}");
+                    }
+                }
+            }
+        }
+        else
+        {
+            // Fallback: try common filesystem paths
+            string[] basePaths = {
+                System.IO.Path.Combine(System.AppDomain.CurrentDomain.BaseDirectory, "Data"),
+                "Data"
+            };
+
+            foreach (string basePath in basePaths)
+            {
+                foreach (string candidate in candidates)
+                {
+                    string fullPath = System.IO.Path.Combine(basePath, "Sounds", "WAV", candidate);
+                    if (System.IO.File.Exists(fullPath))
+                    {
+                        try
+                        {
+                            byte[] raw = System.IO.File.ReadAllBytes(fullPath);
+                            var stream = ParseWavLooping(raw);
+                            if (stream != null)
+                            {
+                                _rainSoundPlayer.Stream = stream;
+                                GD.Print($"[WEATHER] Rain sound loaded: {fullPath}");
+                                return;
+                            }
+                        }
+                        catch (Exception e)
+                        {
+                            GD.Print($"[WEATHER] Failed to load rain sound {fullPath}: {e.Message}");
+                        }
                     }
                 }
             }

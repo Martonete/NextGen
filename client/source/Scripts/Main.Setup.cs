@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
 using ArgentumNextgen.Rendering;
@@ -476,7 +477,7 @@ public partial class Main
         _gameUI.AddChild(minimapBorder);
 
         _minimapPanel = new MinimapPanel();
-        _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"));
+        _minimapPanel.Init(_state, _gameData, System.IO.Path.Combine(_dataPath, "Graficos"), _resources);
         _minimapPanel.Position = new Vector2(mmBorderX + S(9), S(28));
         _minimapPanel.Size = new Vector2(S(100), S(100));
         _minimapPanel.Visible = _state.Config.ShowMinimap;

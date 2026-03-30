@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -40,21 +41,21 @@ public class AoFont
     /// Load a font from .dat + .png files.
     /// VB6: Engine_Init_FontSettings + Engine_Init_FontTextures
     /// </summary>
-    public static AoFont? Load(string datPath, string pngPath)
+    public static AoFont? Load(IResourceProvider resources, string datRelativePath, string pngRelativePath)
     {
-        if (!File.Exists(datPath))
+        if (!resources.Exists(datRelativePath))
         {
-            GD.PrintErr($"[FONT] DAT not found: {datPath}");
+            GD.PrintErr($"[FONT] DAT not found: {datRelativePath}");
             return null;
         }
-        if (!File.Exists(pngPath))
+        if (!resources.Exists(pngRelativePath))
         {
-            GD.PrintErr($"[FONT] PNG not found: {pngPath}");
+            GD.PrintErr($"[FONT] PNG not found: {pngRelativePath}");
             return null;
         }
 
         var font = new AoFont();
-        byte[] data = File.ReadAllBytes(datPath);
+        byte[] data = resources.ReadBytes(datRelativePath);
         if (data.Length < 273)
         {
             GD.PrintErr($"[FONT] DAT too small: {data.Length} bytes (expected 273)");
@@ -75,14 +76,14 @@ public class AoFont
         font.RowFactor = (float)font.CellHeight / font.BitmapHeight;
 
         // Load image texture with color key (black = transparent)
-        // font files may be BMP with .png extension — try LoadFromFile first,
+        // font files may be BMP with .png extension — try ReadImage first,
         // then fall back to loading raw bytes as BMP if PNG parse fails.
-        var image = Image.LoadFromFile(pngPath);
+        var image = resources.ReadImage(pngRelativePath);
         if (image == null)
         {
             // Godot's LoadFromFile detects format by magic bytes and may fail
             // for BMP files with .png extension. Try loading as BMP explicitly.
-            var rawBytes = File.ReadAllBytes(pngPath);
+            var rawBytes = resources.ReadBytes(pngRelativePath);
             image = new Image();
             var err = image.LoadBmpFromBuffer(rawBytes);
             if (err != Error.Ok)
@@ -92,7 +93,7 @@ public class AoFont
             }
             if (err != Error.Ok)
             {
-                GD.PrintErr($"[FONT] Failed to load image: {pngPath}");
+                GD.PrintErr($"[FONT] Failed to load image: {pngRelativePath}");
                 return null;
             }
         }
@@ -101,7 +102,7 @@ public class AoFont
         ApplyColorKey(image);
 
         font.Texture = ImageTexture.CreateFromImage(image);
-        GD.Print($"[FONT] Loaded: {datPath} ({font.CellWidth}x{font.CellHeight}, base={font.BaseCharOffset})");
+        GD.Print($"[FONT] Loaded: {datRelativePath} ({font.CellWidth}x{font.CellHeight}, base={font.BaseCharOffset})");
         return font;
     }
 

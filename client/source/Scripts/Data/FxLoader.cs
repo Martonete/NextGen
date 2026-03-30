@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -12,9 +13,9 @@ public static class FxLoader
 {
     private const int MiCabeceraSize = 263;
 
-    public static FxData[] Load(string path)
+    public static FxData[] Load(IResourceProvider resources)
     {
-        byte[] fileData = File.ReadAllBytes(path);
+        byte[] fileData = resources.ReadBytes("INIT/Fxs.ind");
         using var reader = new BinaryReader(new MemoryStream(fileData));
 
         reader.BaseStream.Seek(MiCabeceraSize, SeekOrigin.Begin);

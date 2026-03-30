@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ArgentumNextgen.Data.Resources;
 using Godot;
 
 namespace ArgentumNextgen.Data;
@@ -15,9 +16,9 @@ public static class GrhLoader
 {
 	private const int MiCabeceraSize = 263; // 255 desc + 4 crc + 4 magic
 
-	public static GrhData[] Load(string path)
+	public static GrhData[] Load(IResourceProvider resources)
 	{
-		byte[] fileData = File.ReadAllBytes(path);
+		byte[] fileData = resources.ReadBytes("INIT/Graficos.ind");
 		using var reader = new BinaryReader(new MemoryStream(fileData));
 
 		// Auto-detect header: try without MiCabecera first

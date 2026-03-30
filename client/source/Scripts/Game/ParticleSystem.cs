@@ -1,8 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using Godot;
 using ArgentumNextgen.Game;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.Game;
 
@@ -15,18 +15,20 @@ public class ParticleSystem
     private static readonly Random Rng = new();
 
     /// <summary>
-    /// Load all particle definitions from Particles.ini into state.ParticleDefs.
-    /// Format: [INIT] Total=N, then [1]..[N] with particle properties.
+    /// Load all particle definitions from Particles.ini using IResourceProvider.
+    /// relativePath is relative to the Data directory (e.g. "INIT/Particles.ini").
     /// </summary>
-    public void LoadDefinitions(string filePath, GameState state)
+    public void LoadDefinitions(IResourceProvider resources, string relativePath, GameState state)
     {
-        if (!File.Exists(filePath))
+        if (!resources.Exists(relativePath))
         {
-            GD.PrintErr($"[PARTICLE] Particles.ini not found: {filePath}");
+            GD.PrintErr($"[PARTICLE] Particles.ini not found: {relativePath}");
             return;
         }
 
-        var lines = File.ReadAllLines(filePath);
+        byte[] rawBytes = resources.ReadBytes(relativePath);
+        string rawText = System.Text.Encoding.UTF8.GetString(rawBytes);
+        var lines = rawText.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
         int total = 0;
 
         // First pass: find total

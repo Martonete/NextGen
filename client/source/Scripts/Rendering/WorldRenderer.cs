@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Godot;
 using ArgentumNextgen.Data;
+using ArgentumNextgen.Data.Resources;
 using ArgentumNextgen.Game;
 
 namespace ArgentumNextgen.Rendering;
@@ -371,9 +372,9 @@ void fragment() {
 	/// <summary>
 	/// Initialize weather renderer with sound manager (called from Main after Init).
 	/// </summary>
-	public void InitWeather(SoundManager? soundManager)
+	public void InitWeather(SoundManager? soundManager, IResourceProvider? resources = null)
 	{
-		_weatherRenderer?.Init(_state!, soundManager);
+		_weatherRenderer?.Init(_state!, soundManager, resources);
 	}
 
 	/// <summary>

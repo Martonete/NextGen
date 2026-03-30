@@ -2,6 +2,7 @@ using Godot;
 using System;
 using ArgentumNextgen.Game;
 using ArgentumNextgen.Network;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.UI;
 
@@ -63,12 +64,14 @@ public partial class TravelPanel : Control
     private string _descText = "";
 
     private string _dataPath = "";
+    private IResourceProvider? _resources;
 
-    public void Init(GameState state, AoTcpClient tcp, string dataPath)
+    public void Init(GameState state, AoTcpClient tcp, string dataPath, IResourceProvider? resources = null)
     {
         _state = state;
         _tcp = tcp;
         _dataPath = dataPath;
+        _resources = resources;
         LoadTextures();
     }
 
@@ -82,26 +85,31 @@ public partial class TravelPanel : Control
 
     private void LoadTextures()
     {
-        // Load textures from Principal directory (filesystem)
-        string basePath = System.IO.Path.Combine(_dataPath, "Graficos", "Principal");
-        _bgTexture = LoadJpg(System.IO.Path.Combine(basePath, "Viajar_Main.jpg"));
+        _bgTexture = LoadJpg("Graficos/Principal/Viajar_Main.jpg");
 
         string[] fileNames = { "Tanaris", "Thir", "Jhumbel", "Inthak", "Anvilmar", "Kahlimdor", "Ruvendel", "Helka" };
         for (int i = 0; i < 8; i++)
         {
-            _btnNormal[i] = LoadJpg(System.IO.Path.Combine(basePath, $"Viajar_B{fileNames[i]}N.jpg"));
-            _btnHover[i] = LoadJpg(System.IO.Path.Combine(basePath, $"Viajar_B{fileNames[i]}I.jpg"));
+            _btnNormal[i] = LoadJpg($"Graficos/Principal/Viajar_B{fileNames[i]}N.jpg");
+            _btnHover[i] = LoadJpg($"Graficos/Principal/Viajar_B{fileNames[i]}I.jpg");
         }
         QueueRedraw();
     }
 
-    private static Texture2D? LoadJpg(string path)
+    private Texture2D? LoadJpg(string relativePath)
     {
+        if (_resources != null)
+        {
+            var img = _resources.ReadImage(relativePath);
+            if (img == null) return null;
+            return ImageTexture.CreateFromImage(img);
+        }
+        string path = System.IO.Path.Combine(_dataPath, relativePath.Replace('/', System.IO.Path.DirectorySeparatorChar));
         if (!System.IO.File.Exists(path)) return null;
-        var img = new Image();
-        var err = img.Load(path);
+        var fsImg = new Image();
+        var err = fsImg.Load(path);
         if (err != Error.Ok) return null;
-        return ImageTexture.CreateFromImage(img);
+        return ImageTexture.CreateFromImage(fsImg);
     }
 
     public void OpenTravel()

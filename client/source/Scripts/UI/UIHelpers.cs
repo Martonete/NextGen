@@ -1,5 +1,6 @@
 using Godot;
 using System;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.UI;
 
@@ -81,6 +82,25 @@ public static class UIHelpers
         catch (Exception ex)
         {
             GD.PrintErr($"[UIHelpers] Failed to load {path}: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Load a JPG/PNG image via IResourceProvider as an ImageTexture.
+    /// relativePath is relative to the Data directory (e.g. "Graficos/Principal/foo.jpg").
+    /// </summary>
+    public static ImageTexture? LoadJpgTexture(IResourceProvider resources, string relativePath)
+    {
+        try
+        {
+            var img = resources.ReadImage(relativePath);
+            if (img == null) return null;
+            return ImageTexture.CreateFromImage(img);
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[UIHelpers] Failed to load {relativePath}: {ex.Message}");
             return null;
         }
     }
