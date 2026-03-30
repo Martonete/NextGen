@@ -379,17 +379,38 @@ pub(super) async fn handle_slash_centinela(state: &mut GameState, conn_id: Conne
     super::parity_gm::handle_centinela_improved(state, conn_id, code).await;
 }
 
-/// /IR — Premium travel.
+/// /IR — Premium travel. VB6: requires target Traveler NPC, distance <= 5.
+/// Destinations match VB6 13.3 travel system.
 pub(super) async fn handle_slash_ir(state: &mut GameState, conn_id: ConnectionId, destination: &str) {
-    // Check premium status (not fully implemented — just accept for now)
+    // VB6: must not be dead
+    if state.users.get(&conn_id).map(|u| u.dead).unwrap_or(true) {
+        state.send_msg_id(conn_id, 3, "");
+        return;
+    }
+
+    // VB6: must be interacting with a Traveler NPC (target_npc set by click)
+    let target_npc = state.users.get(&conn_id).map(|u| u.target_npc).unwrap_or(0);
+    if target_npc == 0 {
+        state.send_console(conn_id, "Debes hablar con un viajero primero.", font_index::INFO);
+        return;
+    }
+    let npc_type = state.get_npc(target_npc).map(|n| n.npc_type).unwrap_or(crate::data::npcs::NpcType::Common);
+    if npc_type != crate::data::npcs::NpcType::Traveler {
+        state.send_console(conn_id, "Debes hablar con un viajero primero.", font_index::INFO);
+        return;
+    }
+
     let dest_upper = destination.trim().to_uppercase();
 
+    // VB6 13.3 travel destinations (map, x, y)
     let (dest_map, dest_x, dest_y) = match dest_upper.as_str() {
-        "INTHAK" => (1, 50, 50),
-        "THIR" => (6, 50, 50),
-        "RUVENDEL" => (11, 50, 50),
+        "ULLATHORPE" => (1, 45, 47),
+        "NIX" => (3, 45, 50),
+        "BANDERBILL" => (4, 50, 50),
+        "LINDOS" => (5, 50, 50),
+        "ARGHAL" => (6, 50, 50),
         _ => {
-            state.send_console(conn_id, "Destino desconocido.", font_index::INFO);
+            state.send_console(conn_id, "Destino desconocido. Destinos: Ullathorpe, Nix, Banderbill, Lindos, Arghal.", font_index::INFO);
             return;
         }
     };
@@ -563,15 +584,103 @@ pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, pay
 
 
 /// /VOTO — Vote for guild leader candidate.
-pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, _candidate: &str) {
-    let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
-    if guild_idx <= 0 {
-        state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);
+pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, candidate: &str) {
+    let (guild_idx, voter_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
+        _ => {
+            state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);
+            return;
+        }
+    };
+
+    let candidate = candidate.trim();
+    if candidate.is_empty() {
+        state.send_console(conn_id, "Usa: /VOTO <nombre del candidato>", font_index::INFO);
         return;
     }
 
-    // Simplified: just acknowledge the vote (full guild elections not implemented yet)
-    state.send_msg_id(conn_id, 439, "");
+    // Check election exists
+    let election_exists = state.guild_elections.contains_key(&guild_idx);
+    if !election_exists {
+        state.send_console(conn_id, "No hay elecciones abiertas en tu clan.", font_index::INFO);
+        return;
+    }
+
+    // Check already voted
+    if state.guild_elections[&guild_idx].votes.contains_key(&voter_name) {
+        state.send_console(conn_id, "Ya has votado en estas elecciones.", font_index::INFO);
+        return;
+    }
+
+    // Check candidate is valid
+    let candidate_name = {
+        let election = state.guild_elections.get(&guild_idx).unwrap();
+        election.candidates.iter()
+            .find(|c| c.to_uppercase() == candidate.to_uppercase())
+            .cloned()
+    };
+    let candidate_name = match candidate_name {
+        Some(name) => name,
+        None => {
+            state.send_console(conn_id, "Ese candidato no es miembro del clan.", font_index::INFO);
+            return;
+        }
+    };
+
+    // Record vote
+    state.guild_elections.get_mut(&guild_idx).unwrap()
+        .votes.insert(voter_name, candidate_name.clone());
+    state.send_console(conn_id, &format!("Has votado por {}.", candidate_name), font_index::INFO);
+
+    // Collect online members to check if all voted
+    let online_members: Vec<String> = state.users.values()
+        .filter(|u| u.logged && u.guild_index == guild_idx)
+        .map(|u| u.char_name.clone())
+        .collect();
+
+    let all_voted = {
+        let election = state.guild_elections.get(&guild_idx).unwrap();
+        !online_members.is_empty() && online_members.iter().all(|m| election.votes.contains_key(m))
+    };
+
+    if all_voted {
+        // Tally votes
+        let tally = {
+            let election = state.guild_elections.get(&guild_idx).unwrap();
+            let mut counts: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+            for name in election.votes.values() {
+                *counts.entry(name.clone()).or_insert(0) += 1;
+            }
+            counts
+        };
+
+        let winner = tally.into_iter()
+            .max_by_key(|(_, count)| *count)
+            .map(|(name, _)| name);
+
+        if let Some(winner_name) = winner {
+            // Update guild leader in DB
+            let pool = state.pool.clone();
+            if let Some(mut gi) = crate::db::guilds::load_guild(&pool, guild_idx).await {
+                gi.leader = winner_name.clone();
+                gi.elecciones_abiertas = false;
+                crate::db::guilds::save_guild(&pool, &gi).await;
+            }
+
+            // Notify all online guild members
+            let msg = format!("{} ha sido elegido como nuevo lider del clan!", winner_name);
+            let member_conns: Vec<ConnectionId> = state.users.values()
+                .filter(|u| u.logged && u.guild_index == guild_idx)
+                .map(|u| u.conn_id)
+                .collect();
+            for mc in member_conns {
+                state.send_console(mc, &msg, font_index::GUILD);
+            }
+        }
+
+        // Remove election state
+        state.guild_elections.remove(&guild_idx);
+    }
 }
 
 

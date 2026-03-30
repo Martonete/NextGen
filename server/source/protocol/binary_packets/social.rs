@@ -13,6 +13,15 @@ pub fn write_fest_data(data: &str) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 234: Rankings list response (SbrData).
+/// Wire: ascii string with CSV data — count,name1,level1,kills1,gold1,...
+pub fn write_rankings(data: &str) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SbrData.to_byte());
+    pkt.write_ascii_string(data);
+    pkt.into_bytes()
+}
+
 /// ID 245: Full character info (FINI).
 pub fn write_full_char_info(data: &str) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
@@ -232,5 +241,45 @@ pub fn write_carp_items(items: &[CraftItem]) -> Vec<u8> {
         pkt.write_integer(item.obj_index);
         pkt.write_integer(item.upgrade);
     }
+    pkt.into_bytes()
+}
+
+// ── Guild Bank ──────────────────────────────────────────────
+
+/// ID 247: Guild bank init response.
+pub fn write_guild_bank_init(bank_gold: i32) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::GuildBankInitResp.to_byte());
+    pkt.write_long(bank_gold);
+    pkt.into_bytes()
+}
+
+/// ID 248: Guild bank slot data.
+pub fn write_guild_bank_slot(
+    slot: u8, obj_index: i16, name: &str, amount: i16,
+    grh_index: i16, obj_type: u8,
+    max_hit: i16, min_hit: i16, max_def: i16, min_def: i16, value: f32,
+) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::GuildBankSlotResp.to_byte());
+    pkt.write_byte(slot);
+    pkt.write_integer(obj_index);
+    pkt.write_ascii_string(name);
+    pkt.write_integer(amount);
+    pkt.write_integer(grh_index);
+    pkt.write_byte(obj_type);
+    pkt.write_integer(max_hit);
+    pkt.write_integer(min_hit);
+    pkt.write_integer(max_def);
+    pkt.write_integer(min_def);
+    pkt.write_single(value);
+    pkt.into_bytes()
+}
+
+/// ID 249: Guild bank gold update.
+pub fn write_guild_bank_gold(gold: i32) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::GuildBankGoldResp.to_byte());
+    pkt.write_long(gold);
     pkt.into_bytes()
 }

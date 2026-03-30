@@ -328,11 +328,125 @@ pub(super) async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, cr
         return;
     }
 
-    // Simple: spawn a pet NPC near the player
-    // In VB6 this reads from the trainer's creature list — for now, just acknowledge
-    state.send_console(conn_id, "Criatura entrenada.", font_index::INFO);
+    // Get trainer NPC number and type
+    let (npc_number, npc_type) = match state.get_npc(target_npc) {
+        Some(npc) => (npc.npc_number, npc.npc_type.clone()),
+        None => return,
+    };
+
+    if npc_type != crate::data::npcs::NpcType::Trainer {
+        return;
+    }
+
+    // Check distance to NPC (VB6: <= 10 tiles)
+    let (npc_map, npc_x, npc_y) = match state.get_npc(target_npc) {
+        Some(n) => (n.map, n.x, n.y),
+        None => return,
+    };
+    let (u_map, u_x, u_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if u_map != npc_map || (u_x - npc_x).abs() > 10 || (u_y - npc_y).abs() > 10 {
+        state.send_console(conn_id, "Estas demasiado lejos.", font_index::INFO);
+        return;
+    }
+
+    // Validate creature_slot against trainer's creature list
+    let slot_idx = (creature_slot - 1) as usize;
+    let creature_npc_index = {
+        let npc_data = match state.game_data.npcs.get(npc_number) {
+            Some(nd) => nd,
+            None => return,
+        };
+        if slot_idx >= npc_data.criaturas.len() || slot_idx >= npc_data.nro_criaturas as usize {
+            state.send_console(conn_id, "Criatura invalida.", font_index::INFO);
+            return;
+        }
+        let creature = &npc_data.criaturas[slot_idx];
+        if creature.npc_index <= 0 {
+            return;
+        }
+        creature.npc_index
+    };
+
+    // Check max 2 of same type (VB6: PuedeDomarMascota)
+    let pet_indices = state.users.get(&conn_id)
+        .map(|u| u.mascotas_index)
+        .unwrap_or([0; 3]);
+    let same_type_count = pet_indices.iter()
+        .filter(|&&idx| idx > 0 && state.get_npc(idx).map(|n| n.npc_number == creature_npc_index as usize).unwrap_or(false))
+        .count();
+    if same_type_count >= 2 {
+        state.send_console(conn_id, "Ya tienes demasiadas mascotas de ese tipo.", font_index::INFO);
+        return;
+    }
+
+    // Spawn creature at player's position
+    let (map, x, y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    let npc_idx = match state.spawn_npc(creature_npc_index as usize, map, x, y) {
+        Some(idx) => idx,
+        None => {
+            state.send_console(conn_id, "No se pudo entrenar la criatura.", font_index::INFO);
+            return;
+        }
+    };
+
+    // Register as pet
+    if let Some(npc) = state.get_npc_mut(npc_idx) {
+        npc.maestro_user = Some(conn_id);
+        npc.hostile = false;
+        npc.target = None;
+    }
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        for slot in 0..3 {
+            if user.mascotas_index[slot] == 0 {
+                user.mascotas_index[slot] = npc_idx;
+                user.mascotas_type[slot] = creature_npc_index;
+                user.nro_mascotas += 1;
+                break;
+            }
+        }
+    }
+
+    // Broadcast NPC creation to the area
+    let cc_pkt = state.get_npc(npc_idx).map(|n| n.build_cc_binary());
+    if let Some(pkt) = cc_pkt {
+        state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
+    }
+    state.send_console(conn_id, "Has entrenado a la criatura!", font_index::INFO);
 }
 
+
+/// RANKIN — Rankings list request. VB6: Protocol.bas HandleRecordListRequest
+/// The client sends a single ASCII string with the ranking type number (1=level, 2=kills, 3=gold).
+pub(super) async fn handle_rankings(state: &mut GameState, conn_id: ConnectionId, data: &str) {
+    let ranking_type = data.trim().parse::<i32>().unwrap_or(1);
+
+    let mut entries: Vec<(String, i32, i32, i64)> = state.users.values()
+        .filter(|u| u.logged && !u.char_name.is_empty())
+        .map(|u| (u.char_name.clone(), u.level, u.criminales_matados + u.ciudadanos_matados, u.gold))
+        .collect();
+
+    match ranking_type {
+        2 => entries.sort_by(|a, b| b.2.cmp(&a.2)),  // By kills (desc)
+        3 => entries.sort_by(|a, b| b.3.cmp(&a.3)),  // By gold (desc)
+        _ => entries.sort_by(|a, b| b.1.cmp(&a.1)),  // Default: by level (desc)
+    }
+
+    entries.truncate(25);
+
+    let mut response = format!("{},", entries.len());
+    for (name, level, kills, gold) in &entries {
+        response.push_str(&format!("{},{},{},{},", name, level, kills, gold));
+    }
+
+    let pkt = binary_packets::write_rankings(&response);
+    state.send_bytes(conn_id, &pkt);
+}
 
 /// ACTUALIZAR — Position re-sync.
 pub(super) async fn handle_actualizar(state: &mut GameState, conn_id: ConnectionId) {

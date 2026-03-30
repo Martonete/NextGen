@@ -651,8 +651,30 @@ pub(super) async fn handle_slash_elecciones(state: &mut GameState, conn_id: Conn
         return;
     }
 
-    // Notify all guild members
+    // Check no election already active
+    if state.guild_elections.contains_key(&guild_idx) {
+        state.send_console(conn_id, "Ya hay elecciones abiertas en tu clan.", font_index::INFO);
+        return;
+    }
+
+    // Set elecciones_abiertas in DB
+    if let Some(mut gi) = guild_info {
+        gi.elecciones_abiertas = true;
+        crate::db::guilds::save_guild(&state.pool, &gi).await;
+    }
+
+    // Load all guild members as candidates
     let guild_name = state.users.get(&conn_id).map(|u| u.guild_name.clone()).unwrap_or_default();
+    let members = crate::db::guilds::load_members(&state.pool, &guild_name).await;
+
+    // Initialize election
+    state.guild_elections.insert(guild_idx, crate::game::types::GuildElection {
+        candidates: members,
+        votes: std::collections::HashMap::new(),
+        started_at: std::time::Instant::now(),
+    });
+
+    // Notify all online guild members
     let msg = format!("Se han abierto elecciones en el clan {}. Usa /VOTO <nombre> para votar.", guild_name);
     let member_conns: Vec<ConnectionId> = state.users.values()
         .filter(|u| u.logged && u.guild_index == guild_idx)
@@ -704,6 +726,18 @@ pub(super) async fn handle_centinela_improved(state: &mut GameState, conn_id: Co
             state.send_console(conn_id, &format!("Respuesta incorrecta. Intentos restantes: {}.", 3 - fails), font_index::WARNING);
         }
     }
+}
+
+/// Send centinela challenge to a specific player.
+/// VB6: Centinela module sends a random number that the player must type back via /CENTINELA.
+pub(super) async fn send_centinela_challenge(state: &mut GameState, target_conn: ConnectionId) {
+    let number = super::common::rand_range(1000, 9999);
+    if let Some(u) = state.users.get_mut(&target_conn) {
+        u.centinela_number = number;
+        u.centinela_timer = 60; // 60 ticks to respond (decremented in tick_player_passive)
+        // Don't reset fails — accumulate across challenges
+    }
+    state.send_console(target_conn, &format!("CENTINELA: Escribe /CENTINELA {} para verificar que no eres un macro.", number), font_index::CENTINELA);
 }
 
 /// AlertarFaccionarios — Alert all online faction members.

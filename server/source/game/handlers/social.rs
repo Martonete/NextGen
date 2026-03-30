@@ -7,6 +7,7 @@ use crate::protocol::font_index;
 use crate::data::balance;
 use super::common::*;
 use super::{send_inventory_slot, handle_slash_command};
+use crate::protocol::binary_packets;
 
 /// VB6: GiveFactionArmours — give 3 tiers of faction armor based on class+race+faction+rank.
 async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_caos: bool) {
@@ -44,8 +45,35 @@ async fn give_faction_armours(state: &mut GameState, conn_id: ConnectionId, is_c
 
         if let Some(slot_idx) = added {
             super::send_inventory_slot(state, conn_id, slot_idx).await;
+        } else {
+            // No inventory space — VB6: drop on floor at player's position
+            let (map, x, y) = match state.users.get(&conn_id) {
+                Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+                None => continue,
+            };
+            let grh_index = state.get_object(obj_index).map(|o| o.grh_index).unwrap_or(0);
+            let grid = state.world.grid_mut(map);
+            let placed = if let Some(tile) = grid.tile_mut(x, y) {
+                if tile.ground_item.obj_index == 0 || tile.ground_item.obj_index == obj_index {
+                    if tile.ground_item.obj_index == obj_index {
+                        tile.ground_item.amount += amount;
+                    } else {
+                        tile.ground_item.obj_index = obj_index;
+                        tile.ground_item.amount = amount;
+                    }
+                    true
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            if placed && grh_index > 0 {
+                let pkt = binary_packets::write_object_create(x as i16, y as i16, grh_index as i16);
+                state.send_data_bytes(SendTarget::ToArea { map, x, y }, &pkt);
+                clean_world_add_item(state, map, x, y, 10, obj_index);
+            }
         }
-        // If no space, VB6 drops on floor — skip for simplicity (rare edge case)
     }
 }
 

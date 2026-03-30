@@ -583,8 +583,8 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             handle_cabezi(state, conn_id, data_str.parse().unwrap_or(0)).await;
         }
         ClientPacketID::Rankings => {
-            // Rankings not implemented — ignore
-            let _data_str = bq.read_ascii_string().unwrap_or_default();
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_rankings(state, conn_id, &data_str).await;
         }
 
         // Misc
@@ -596,7 +596,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let data_str = bq.read_ascii_string().unwrap_or_default();
             handle_cnm(state, conn_id, &data_str).await;
         }
-        ClientPacketID::DragDrop | ClientPacketID::Vote | ClientPacketID::Report => {
+        ClientPacketID::Vote => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_slash_voto(state, conn_id, &data_str).await;
+        }
+        ClientPacketID::DragDrop | ClientPacketID::Report => {
             // UNSUPPORTED: client never sends these opcodes — drain bytes and ignore
             let _ = bq.read_ascii_string();
         }

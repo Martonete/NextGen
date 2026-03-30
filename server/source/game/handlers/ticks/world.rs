@@ -57,7 +57,7 @@ pub async fn tick_intervals(state: &mut GameState) {
                 // Timer expired — remove invisibility
                 // VB6: .Counters.Invisibilidad = RandomNumber(-100, 100) — variable next duration
                 user.invisible = false;
-                user.counter_invisible = rand_range(-10, 10); // Scaled: VB6 -100..100 ticks → -10..10 seconds
+                user.counter_invisible = rand_range(-250, 250); // VB6: RandomNumber(-100,100) at 10Hz → ±10s; Rust: ±250 at 25Hz (40ms) → same ±10s
                 // VB6: only send SetInvisible(false) if Oculto=0 (still hidden → no visibility change)
                 uninvis.push((conn_id, user.char_index.0 as i16, user.pos_map, user.pos_x, user.pos_y, user.navigating, user.hidden));
             }

@@ -33,7 +33,7 @@ const THIRST_INTERVAL: i32 = 600;  // VB6: 6000 ticks = ~600 seconds (~10 min)
 const HUNGER_DRAIN: i32 = 10;      // VB6: 10 per interval
 const THIRST_DRAIN: i32 = 10;      // VB6: 10 per interval
 const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
-const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s (resting, we use 1s min)
+const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s — compensated by 2x regen amount per tick
 const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
 const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
 const POISON_INTERVAL: i32 = 25;    // VB6: IntervaloVeneno=500 ticks × 50ms = 25s

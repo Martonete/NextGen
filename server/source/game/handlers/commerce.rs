@@ -1082,4 +1082,74 @@ pub(super) async fn handle_bank_close(state: &mut GameState, conn_id: Connection
     state.send_bytes(conn_id, &pkt);
 }
 
+/// Open guild bank window (BoveClan NPC).
+pub(super) async fn iniciar_banco_clan(state: &mut GameState, conn_id: ConnectionId) {
+    if state.users.get(&conn_id).map(|u| u.dead).unwrap_or(true) {
+        state.send_msg_id(conn_id, 3, "");
+        return;
+    }
+
+    if state.users.get(&conn_id).map(|u| u.trading).unwrap_or(false) {
+        let pkt = binary_packets::write_error_show(
+            "No puedes acceder a la bóveda de clan mientras comercias."
+        );
+        state.send_bytes(conn_id, &pkt);
+        return;
+    }
+
+    let guild_name = match state.users.get(&conn_id) {
+        Some(u) if u.guild_index > 0 && !u.guild_name.is_empty() => u.guild_name.clone(),
+        _ => {
+            state.send_console(conn_id, "No perteneces a un clan.", crate::protocol::font_index::INFO);
+            return;
+        }
+    };
+
+    let pool = state.pool.clone();
+    let bank_items = crate::db::guilds::load_bank_items(&pool, &guild_name).await;
+    let bank_gold = crate::db::guilds::load_bank_gold(&pool, &guild_name).await;
+
+    for idx in 0..crate::db::guilds::MAX_GUILD_BANK_SLOTS {
+        let slot_num = (idx + 1) as u8;
+        let (obj_index, amount) = {
+            let slot = &bank_items[idx];
+            (slot.obj_index, slot.amount)
+        };
+
+        if obj_index > 0 {
+            let obj_data = state.get_object(obj_index).map(|o| {
+                (o.name.clone(), o.grh_index as i16, o.obj_type as u8,
+                 o.max_hit as i16, o.min_hit as i16, o.max_def as i16, o.min_def as i16, o.valor as f32)
+            });
+            if let Some((name, grh, obj_type, max_hit, min_hit, max_def, min_def, valor)) = obj_data {
+                let pkt = binary_packets::write_guild_bank_slot(
+                    slot_num,
+                    obj_index as i16,
+                    &name,
+                    amount as i16,
+                    grh, obj_type, max_hit, min_hit, max_def, min_def, valor,
+                );
+                state.send_bytes(conn_id, &pkt);
+            } else {
+                let pkt = binary_packets::write_guild_bank_slot(slot_num, 0, "", 0, 0, 0, 0, 0, 0, 0, 0.0);
+                state.send_bytes(conn_id, &pkt);
+            }
+        } else {
+            let pkt = binary_packets::write_guild_bank_slot(slot_num, 0, "", 0, 0, 0, 0, 0, 0, 0, 0.0);
+            state.send_bytes(conn_id, &pkt);
+        }
+    }
+
+    let pkt = binary_packets::write_guild_bank_gold(bank_gold as i32);
+    state.send_bytes(conn_id, &pkt);
+
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.guild_bank_open = true;
+        user.comerciando = true;
+    }
+
+    let pkt = binary_packets::write_guild_bank_init(bank_gold as i32);
+    state.send_bytes(conn_id, &pkt);
+}
+
 

@@ -836,6 +836,17 @@ pub struct GameState {
     // Maps IP → (failure_count, first_failure_time).
     // After MAX_AUTH_FAILURES consecutive failures the IP is locked out for AUTH_LOCKOUT_SECS.
     pub auth_failures: HashMap<String, (u32, std::time::Instant)>,
+
+    /// Active guild elections: guild_index → election data
+    pub guild_elections: HashMap<i32, GuildElection>,
+}
+
+/// Runtime election state for a guild.
+#[derive(Debug, Clone)]
+pub struct GuildElection {
+    pub candidates: Vec<String>,        // All eligible members
+    pub votes: HashMap<String, String>, // voter_name → candidate_name
+    pub started_at: std::time::Instant,
 }
 
 /// SOS message (help request from player)
@@ -979,6 +990,7 @@ impl GameState {
             shutdown_countdown: 0,
             shutdown_restart: false,
             auth_failures: HashMap::new(),
+            guild_elections: HashMap::new(),
         }
     }
 

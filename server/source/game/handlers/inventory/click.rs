@@ -8,7 +8,7 @@ use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
-    warp_user, iniciar_comercio_npc, iniciar_banco,
+    warp_user, iniciar_comercio_npc, iniciar_banco, iniciar_banco_clan,
 };
 use super::doors::{accion_para_puerta, accion_para_foro};
 
@@ -554,7 +554,11 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
-                            // Guild bank (not implemented)
+                            if dead { state.send_msg_id(conn_id, 3, ""); return; }
+                            if dist > 10 {
+                                state.send_msg_id(conn_id, 13, ""); return;
+                            }
+                            iniciar_banco_clan(state, conn_id).await;
                         }
                         NpcType::Traveler => {
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
@@ -619,7 +623,11 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                         NpcType::HouseSeller => {
                             // VB6: ShowCasas (type 15) — house seller NPC
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            // TODO: implement house system UI trigger
+                            if dist > 5 {
+                                state.send_msg_id(conn_id, 13, ""); return;
+                            }
+                            // VB6: sends house listing UI. Rust: use /CASAINFO <num> and /CASACOMPRAR <num>
+                            state.send_console(conn_id, "Bienvenido a la inmobiliaria. Usa /CASAINFO <numero> para ver detalles o /CASACOMPRAR <numero> para comprar.", font_index::INFO);
                         }
                         NpcType::Arena => { }
                         NpcType::GodNpc => {
