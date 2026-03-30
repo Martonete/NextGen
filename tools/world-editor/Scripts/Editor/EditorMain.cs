@@ -1069,16 +1069,17 @@ public partial class EditorMain : Control
         string exeDir = OS.GetExecutablePath().GetBaseDir();
         string cwd = Directory.GetCurrentDirectory();
 
-        // From res:// (tools/world-editor/)
+        // From res:// (tools/world-editor/) → resource-manager/data/ has loose files
+        candidates.Add(Path.Combine(resPath, "../resource-manager/data"));
+        candidates.Add(Path.Combine(resPath, "../../tools/resource-manager/data"));
+        // Legacy: client/Data (if loose files still exist there)
         candidates.Add(Path.Combine(resPath, "../../client/Data"));
-        candidates.Add(Path.Combine(resPath, "../../../client/Data"));
         // From cwd
-        candidates.Add(Path.Combine(cwd, "../../client/Data"));
-        candidates.Add(Path.Combine(cwd, "../../../client/Data"));
+        candidates.Add(Path.Combine(cwd, "tools/resource-manager/data"));
+        candidates.Add(Path.Combine(cwd, "../../tools/resource-manager/data"));
         candidates.Add(Path.Combine(cwd, "client/Data"));
         // From exe
-        candidates.Add(Path.Combine(exeDir, "../../client/Data"));
-        candidates.Add(Path.Combine(exeDir, "../../../client/Data"));
+        candidates.Add(Path.Combine(exeDir, "../../tools/resource-manager/data"));
         candidates.Add(Path.Combine(exeDir, "Data"));
         // User data
         candidates.Add(Path.Combine(OS.GetUserDataDir(), "Data"));
