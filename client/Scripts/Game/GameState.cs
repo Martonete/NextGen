@@ -244,8 +244,8 @@ public class GameState
 	public string HelmLabel = "0/0";
 
 
-	// Inventory (25 slots, expandable via AddSlots packet)
-	public InventorySlot[] Inventory = new InventorySlot[25];
+	// Inventory (36 slots max, visible count driven by MaxInventorySlots / AddSlots packet)
+	public InventorySlot[] Inventory = new InventorySlot[36];
 	public int MaxInventorySlots = 25;
 	public int SelectedInvSlot = -1; // Currently selected inventory slot (0-based, -1 = none)
 

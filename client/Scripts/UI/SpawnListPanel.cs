@@ -53,6 +53,28 @@ public partial class SpawnListPanel : RpgBaseForm
         ApplyFilter("");
     }
 
+    /// <summary>
+    /// Populate from server SpawnList packet data (VB6 frmSpawnList flow).
+    /// Format: CSV "index1,name1,index2,name2,..." or "count,name1,name2,..."
+    /// </summary>
+    public void PopulateFromServerData(string data)
+    {
+        _allNpcs.Clear();
+        if (string.IsNullOrEmpty(data)) return;
+
+        var parts = data.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        // Try pairs: index,name,index,name,...
+        for (int i = 0; i + 1 < parts.Length; i += 2)
+        {
+            if (int.TryParse(parts[i].Trim(), out int idx))
+            {
+                _allNpcs.Add((idx, parts[i + 1].Trim()));
+            }
+        }
+        _allNpcs.Sort((a, b) => a.index.CompareTo(b.index));
+        ApplyFilter("");
+    }
+
     protected override void BuildContent()
     {
         var vbox = RpgTheme.CreateColumn(RpgTheme.SpacingSm);

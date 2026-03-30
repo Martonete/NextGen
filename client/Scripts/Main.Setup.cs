@@ -544,7 +544,7 @@ public partial class Main
             _changePasswordPanel, _charInfoPopup, _deathPanel, _optionsPanel,
             _tooltipPanel, _blindOverlay);
         _panelSync.UpdateDropDialogVisibility = () => _dialogManager?.UpdateDropDialogVisibility();
-        _panelSync.BindNewPanels(_gmPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
+        _panelSync.BindNewPanels(_gmPanel, _spawnListPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
             _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel);
 
         // Input router

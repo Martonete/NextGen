@@ -37,6 +37,7 @@ public class PanelStateSync
 
     // New panels
     private GmPanel? _gmPanel;
+    private SpawnListPanel? _spawnListPanel;
     private SosPanel? _sosPanel;
     private PeaceProposalPanel? _peaceProposalPanel;
     private GuildAlignmentPanel? _guildAlignmentPanel;
@@ -98,13 +99,14 @@ public class PanelStateSync
 
     /// <summary>Bind new feature panels added in parity update.</summary>
     public void BindNewPanels(
-        GmPanel? gmPanel, SosPanel? sosPanel,
+        GmPanel? gmPanel, SpawnListPanel? spawnListPanel, SosPanel? sosPanel,
         PeaceProposalPanel? peaceProposalPanel, GuildAlignmentPanel? guildAlignmentPanel,
         MotdEditorPanel? motdEditorPanel, GuildMemberPanel? guildMemberPanel,
         DayNightCycle? dayNightCycle, LoadingScreen? loadingScreen,
         TutorialPanel? tutorialPanel)
     {
         _gmPanel = gmPanel;
+        _spawnListPanel = spawnListPanel;
         _sosPanel = sosPanel;
         _peaceProposalPanel = peaceProposalPanel;
         _guildAlignmentPanel = guildAlignmentPanel;
@@ -304,7 +306,14 @@ public class PanelStateSync
         if (_state.ShowSosPanel)
         {
             _state.ShowSosPanel = false;
-            _sosPanel?.AddSosEntry(_state.SosPlayerName, _state.SosMessage);
+            if (!string.IsNullOrEmpty(_state.SosListData))
+            {
+                _sosPanel?.PopulateFromServerList(_state.SosListData);
+            }
+            else
+            {
+                _sosPanel?.AddSosEntry(_state.SosPlayerName, _state.SosMessage);
+            }
             _sosPanel?.Open();
         }
 
@@ -326,7 +335,14 @@ public class PanelStateSync
         if (_state.ShowMotdEditor)
         {
             _state.ShowMotdEditor = false;
-            _motdEditorPanel?.Open();
+            if (!string.IsNullOrEmpty(_state.MotdEditorContent))
+            {
+                _motdEditorPanel?.OpenWithContent(_state.MotdEditorContent);
+            }
+            else
+            {
+                _motdEditorPanel?.Open();
+            }
         }
 
         // Guild member detail
@@ -358,6 +374,39 @@ public class PanelStateSync
         {
             _state.ShowTutorial = false;
             _tutorialPanel?.Open();
+        }
+
+        // User name list — triggered by UserNameList packet; populate GM panel user tab
+        if (!string.IsNullOrEmpty(_state.UserNameListData))
+        {
+            string listData = _state.UserNameListData;
+            _state.UserNameListData = "";
+            _gmPanel?.PopulateUserList(listData);
+        }
+
+        // GM Panel — triggered by ShowGMPanelForm packet
+        if (_state.GmPanelOpen && _gmPanel != null && !_gmPanel.Visible)
+        {
+            _gmPanel.Open();
+        }
+
+        // Spawn list — triggered by SpawnList packet
+        if (_state.ShowSpawnList)
+        {
+            _state.ShowSpawnList = false;
+            if (_spawnListPanel != null && !string.IsNullOrEmpty(_state.SpawnListData))
+            {
+                _spawnListPanel.PopulateFromServerData(_state.SpawnListData);
+                _spawnListPanel.ShowForm();
+            }
+        }
+
+        // Show signal / cartel
+        if (_state.ShowSignal)
+        {
+            _state.ShowSignal = false;
+            // Signal popup: show text overlay briefly (no dedicated panel yet — use console as fallback)
+            // TODO: create SignalPanel for full VB6 InitCartel parity
         }
 
         // Safety net: if AnyFormOpen is true but no panel is actually visible,

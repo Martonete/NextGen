@@ -95,6 +95,26 @@ public partial class SosPanel : RpgBaseForm
         RefreshList();
     }
 
+    /// <summary>
+    /// Populate from server ShowSOSForm packet (VB6 flow: full SOS list from server).
+    /// Format: "playerName1,message1,playerName2,message2,..."
+    /// </summary>
+    public void PopulateFromServerList(string data)
+    {
+        _entries.Clear();
+        if (string.IsNullOrEmpty(data)) { RefreshList(); return; }
+
+        var parts = data.Split(',');
+        for (int i = 0; i + 1 < parts.Length; i += 2)
+        {
+            string name = parts[i].Trim();
+            string msg = parts[i + 1].Trim();
+            if (!string.IsNullOrEmpty(name))
+                _entries.Add((name, msg));
+        }
+        RefreshList();
+    }
+
     private void RefreshList()
     {
         if (_sosList == null) return;
