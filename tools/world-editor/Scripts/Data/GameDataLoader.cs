@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
-using AoPak;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -94,16 +93,6 @@ public static class GameDataLoader
         return (bodies, heads);
     }
 
-    /// <summary>Load Personajes.ind from an AopakReader (INIT/Personajes.ind entry).</summary>
-    public static (int[] grhs, int[] headOfsX, int[] headOfsY) LoadBodyData(AopakReader initsReader)
-    {
-        const string entryName = "INIT/Personajes.ind";
-        if (!initsReader.Contains(entryName))
-            return (Array.Empty<int>(), Array.Empty<int>(), Array.Empty<int>());
-        var data = initsReader.ReadEntry(entryName);
-        return ParseBodyData(data);
-    }
-
     /// <summary>
     /// Load Personajes.ind binary — returns south-facing walk GRH and head offsets.
     /// Format: 263B header + i16 count + (i16[4] walk + i16 headOfsX + i16 headOfsY) per entry.
@@ -139,14 +128,6 @@ public static class GameDataLoader
 
         GD.Print($"[GameData] Loaded {count} body data (GRH + head offsets)");
         return (grhs, ofsX, ofsY);
-    }
-
-    /// <summary>Load Cabezas.ind from an AopakReader (INIT/Cabezas.ind entry).</summary>
-    public static int[] LoadHeadGrhs(AopakReader initsReader)
-    {
-        const string entryName = "INIT/Cabezas.ind";
-        if (!initsReader.Contains(entryName)) return Array.Empty<int>();
-        return ParseHeadGrhs(initsReader.ReadEntry(entryName));
     }
 
     /// <summary>

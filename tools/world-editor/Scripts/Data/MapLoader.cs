@@ -2,7 +2,6 @@
 using System;
 using System.IO;
 using System.Text;
-using AoPak;
 using Godot;
 
 namespace AOWorldEditor.Data;
@@ -11,7 +10,6 @@ namespace AOWorldEditor.Data;
 /// Loads and saves AO binary map files.
 /// Supports both legacy (.map + .inf + .dat) 100x100 format
 /// and new (.aomap + .aoinf + .dat) dynamic-size format.
-/// Also supports reading from / writing to maps.aopak archives.
 /// </summary>
 public static class MapLoader
 {
@@ -58,59 +56,6 @@ public static class MapLoader
             LoadDatFile(datFileLegacy, legacy, mapNumber);
 
         return legacy;
-    }
-
-    /// <summary>
-    /// Load a map from a maps.aopak archive, falling back to loose files in mapDir.
-    /// </summary>
-    public static MapData Load(AopakReader mapsReader, string mapDir, int mapNumber)
-    {
-        string aoMapEntry = $"Maps/Mapa{mapNumber}.aomap";
-        if (mapsReader.Contains(aoMapEntry))
-        {
-            byte[] mapBytes = mapsReader.ReadEntry(aoMapEntry);
-            var mapData = LoadAoMapData(mapBytes);
-            mapData.MapNumber = mapNumber;
-
-            string aoInfEntry = $"Maps/Mapa{mapNumber}.aoinf";
-            if (mapsReader.Contains(aoInfEntry))
-            {
-                byte[] infBytes = mapsReader.ReadEntry(aoInfEntry);
-                LoadAoInfData(infBytes, mapData);
-            }
-
-            // .dat is not stored in maps.aopak — load from loose file
-            string datFile = Path.Combine(mapDir, $"Mapa{mapNumber}.dat");
-            if (File.Exists(datFile))
-                LoadDatFile(datFile, mapData, mapNumber);
-
-            return mapData;
-        }
-
-        // Fall back to loose files
-        return Load(mapDir, mapNumber);
-    }
-
-    /// <summary>
-    /// Save .aomap and .aoinf entries to a maps.aopak archive, and also save all files
-    /// to serverMapDir (loose). The .dat is always written loose only.
-    /// </summary>
-    public static void SaveToArchive(string mapsArchivePath, byte[] amk, string serverMapDir, MapData mapData)
-    {
-        // Build .aomap bytes
-        byte[] aoMapBytes = BuildAoMapBytes(mapData);
-        // Build .aoinf bytes
-        byte[] aoInfBytes = BuildAoInfBytes(mapData);
-
-        // Write to archive (client)
-        string aoMapEntry = $"Maps/Mapa{mapData.MapNumber}.aomap";
-        string aoInfEntry = $"Maps/Mapa{mapData.MapNumber}.aoinf";
-        AopakWriter.UpdateEntry(mapsArchivePath, aoMapEntry, aoMapBytes, amk);
-        AopakWriter.UpdateEntry(mapsArchivePath, aoInfEntry, aoInfBytes, amk);
-
-        // Write loose files to server
-        if (serverMapDir.Length > 0 && Directory.Exists(serverMapDir))
-            Save(serverMapDir, mapData);
     }
 
     /// <summary>

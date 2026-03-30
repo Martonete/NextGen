@@ -2,13 +2,12 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using AoPak;
 using Godot;
 
 namespace AOWorldEditor.Data;
 
 /// <summary>
-/// LRU cache of textures from Graficos/ folder or a graphics.aopak archive.
+/// LRU cache of textures from Graficos/ folder (loose files).
 /// Black (0,0,0) color key → transparent.
 /// Supports bulk preload at startup with time-budgeted batching
 /// to avoid frame drops on large textures (2048x2048).
@@ -16,7 +15,6 @@ namespace AOWorldEditor.Data;
 public class TextureManager
 {
     private readonly string _graficosPath;
-    private AopakReader? _graphicsReader;
     private readonly Dictionary<int, Texture2D> _cache = new();
     private readonly Dictionary<int, Image> _imageCache = new(); // CPU-side cache to avoid GetImage() stalls
     private readonly LinkedList<int> _lruOrder = new();
@@ -32,12 +30,6 @@ public class TextureManager
     public TextureManager(string graficosPath)
     {
         _graficosPath = graficosPath;
-    }
-
-    /// <summary>Set an AopakReader for graphics.aopak. When set, textures are loaded from the archive.</summary>
-    public void SetArchiveReader(AopakReader? reader)
-    {
-        _graphicsReader = reader;
     }
 
     /// <summary>
@@ -133,35 +125,10 @@ public class TextureManager
         if (_cache.TryGetValue(fileNum, out var existing))
             return existing;
 
-        Image? image = null;
-
-        if (_graphicsReader != null)
-        {
-            string entryName = $"Graficos/{fileNum}.png";
-            if (_graphicsReader.Contains(entryName))
-            {
-                try
-                {
-                    byte[] data = _graphicsReader.ReadEntry(entryName);
-                    image = new Image();
-                    if (image.LoadPngFromBuffer(data) != Error.Ok)
-                        image = null;
-                }
-                catch (Exception ex)
-                {
-                    GD.PrintErr($"[TextureManager] Failed to read {entryName} from archive: {ex.Message}");
-                    image = null;
-                }
-            }
-        }
-
-        if (image == null)
-        {
-            string filePath = System.IO.Path.Combine(_graficosPath, $"{fileNum}.png");
-            if (!System.IO.File.Exists(filePath))
-                return null;
-            image = Image.LoadFromFile(filePath);
-        }
+        string filePath = System.IO.Path.Combine(_graficosPath, $"{fileNum}.png");
+        if (!System.IO.File.Exists(filePath))
+            return null;
+        Image? image = Image.LoadFromFile(filePath);
 
         if (image == null) return null;
 

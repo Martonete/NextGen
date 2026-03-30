@@ -3,8 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
-using AoPak;
 using Godot;
 using AOWorldEditor.Data;
 
@@ -31,12 +29,6 @@ public partial class EditorMain : Control
     private string _clientMapDir = "";  // client/Data/Maps/
     private string _serverMapDir = "";  // server/maps/
     private string _serverDatDir = "";  // server/dat/
-
-    // AoPak archive readers (null = loose file mode)
-    private AopakReader? _graphicsReader;
-    private AopakReader? _initsReader;
-    private AopakReader? _mapsReader;
-    private string _mapsArchivePath = "";
 
     // Editor
     private readonly EditorState _state = new();
@@ -1216,9 +1208,6 @@ public partial class EditorMain : Control
         _dataLoaded = true; // Set early to prevent re-entrant calls
         _dataPath = dataPath;
 
-        // Detect .aopak archives (sets _graphicsReader, _initsReader, _mapsReader)
-        DetectArchives(dataPath);
-
         string graficosInd = Path.Combine(dataPath, "INIT", "Graficos.ind");
         string graficosDir = Path.Combine(dataPath, "Graficos");
         // indices.ini lives in client Data/INIT/ — load via System.IO
@@ -1242,10 +1231,8 @@ public partial class EditorMain : Control
         }
         string mapsDir = Path.Combine(dataPath, "Maps");
 
-        // Graficos.ind must be present either as a loose file or inside inits.aopak
-        bool hasGraficosInd = File.Exists(graficosInd) ||
-            (_initsReader != null && _initsReader.Contains("INIT/Graficos.ind"));
-        if (!hasGraficosInd)
+        // Graficos.ind must be present as a loose file
+        if (!File.Exists(graficosInd))
         {
             GD.PrintErr($"[Editor] Graficos.ind NOT FOUND at: {graficosInd}");
             SetStatus($"ERROR: {graficosInd} no encontrado");
@@ -1254,11 +1241,10 @@ public partial class EditorMain : Control
             if (_preloadOverlay != null) _preloadOverlay.Visible = false;
             return;
         }
-        GD.Print($"[Editor] Found Graficos.ind ({(_initsReader != null && _initsReader.Contains("INIT/Graficos.ind") ? "archive" : "loose")})");
+        GD.Print($"[Editor] Found Graficos.ind (loose)");
 
-        _grhs = _initsReader != null ? GrhLoader.Load(_initsReader) : GrhLoader.Load(graficosInd);
+        _grhs = GrhLoader.Load(graficosInd);
         _textures = new TextureManager(graficosDir);
-        _textures.SetArchiveReader(_graphicsReader);
 
         if (indicesLines != null)
         {
@@ -1322,20 +1308,12 @@ public partial class EditorMain : Control
         if (File.Exists(particlesIni))
             _particles.LoadDefinitions(particlesIni);
 
-        // Load body + head data (prefer archive, fall back to loose)
-        if (_initsReader != null)
-        {
-            (_npcBodyGrhs, _npcHeadOfsX, _npcHeadOfsY) = GameDataLoader.LoadBodyData(_initsReader);
-            _headGrhs = GameDataLoader.LoadHeadGrhs(_initsReader);
-        }
-        else
-        {
-            string personajesInd = Path.Combine(dataPath, "INIT", "Personajes.ind");
-            (_npcBodyGrhs, _npcHeadOfsX, _npcHeadOfsY) = GameDataLoader.LoadBodyData(personajesInd);
+        // Load body + head data from loose files
+        string personajesInd = Path.Combine(dataPath, "INIT", "Personajes.ind");
+        (_npcBodyGrhs, _npcHeadOfsX, _npcHeadOfsY) = GameDataLoader.LoadBodyData(personajesInd);
 
-            string cabezasInd = Path.Combine(dataPath, "INIT", "Cabezas.ind");
-            _headGrhs = GameDataLoader.LoadHeadGrhs(cabezasInd);
-        }
+        string cabezasInd = Path.Combine(dataPath, "INIT", "Cabezas.ind");
+        _headGrhs = GameDataLoader.LoadHeadGrhs(cabezasInd);
 
         // Load object and NPC data from server dat/
         if (_serverDatDir.Length > 0 && Directory.Exists(_serverDatDir))
@@ -1371,20 +1349,6 @@ public partial class EditorMain : Control
 
         // Scan available maps and update nav bar
         _state.ScanAvailableMaps(_state.MapDir);
-        // In archive mode, also add maps found in the archive that aren't on disk
-        if (_mapsReader != null)
-        {
-            foreach (string entryName in _mapsReader.GetEntryNames())
-            {
-                // Expected format: "Maps/MapaN.aomap"
-                if (!entryName.StartsWith("Maps/Mapa", StringComparison.OrdinalIgnoreCase)) continue;
-                if (!entryName.EndsWith(".aomap", StringComparison.OrdinalIgnoreCase)) continue;
-                string nameOnly = Path.GetFileNameWithoutExtension(entryName); // "MapaN"
-                if (nameOnly.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase) &&
-                    int.TryParse(nameOnly.Substring(4), out int archiveMapNum) && archiveMapNum > 0)
-                    _state.AvailableMaps.Add(archiveMapNum);
-            }
-        }
         UpdateNavBar();
         GD.Print($"[Editor] Found {_state.AvailableMaps.Count} maps in {_state.MapDir}");
 
@@ -1620,18 +1584,13 @@ public partial class EditorMain : Control
         if (string.IsNullOrEmpty(_state.MapDir)) return;
         string aomapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.aomap");
         string mapFile = Path.Combine(_state.MapDir, $"Mapa{mapNumber}.map");
-        string archiveEntry = $"Maps/Mapa{mapNumber}.aomap";
-        bool existsLoose = File.Exists(aomapFile) || File.Exists(mapFile);
-        bool existsInArchive = _mapsReader != null && _mapsReader.Contains(archiveEntry);
-        if (!existsLoose && !existsInArchive)
+        if (!File.Exists(aomapFile) && !File.Exists(mapFile))
         {
             SetStatus($"Mapa{mapNumber} no existe en {_state.MapDir}");
             return;
         }
 
-        _map = _mapsReader != null
-            ? MapLoader.Load(_mapsReader, _state.MapDir, mapNumber)
-            : MapLoader.Load(_state.MapDir, mapNumber);
+        _map = MapLoader.Load(_state.MapDir, mapNumber);
         _state.CurrentMapNumber = mapNumber;
         _undo.Clear();
         _state.ResetDirty();
@@ -1675,27 +1634,17 @@ public partial class EditorMain : Control
         if (string.IsNullOrEmpty(_state.MapDir)) { OnSaveAsMap(); return; }
         if (_map.MapNumber <= 0) _map.MapNumber = _state.CurrentMapNumber > 0 ? _state.CurrentMapNumber : 1;
 
-        // Save .aomap — to archive (client) and loose files (server)
-        if (_mapsArchivePath.Length > 0 && File.Exists(_mapsArchivePath))
+        // Save .aomap — loose files to both client and server dirs
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
         {
-            // archive mode: write .aomap/.aoinf into maps.aopak; write all to server loose
-            MapLoader.SaveToArchive(_mapsArchivePath, GetAmk(), _serverMapDir, _map);
-            GD.Print($"[Editor] Saved to archive: {_mapsArchivePath}");
+            MapLoader.Save(_clientMapDir, _map);
+            GD.Print($"[Editor] Saved to client: {_clientMapDir}");
         }
-        else
-        {
-            // loose file mode: write to both client and server dirs
-            if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
-            {
-                MapLoader.Save(_clientMapDir, _map);
-                GD.Print($"[Editor] Saved to client: {_clientMapDir}");
-            }
 
-            if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-            {
-                MapLoader.Save(_serverMapDir, _map);
-                GD.Print($"[Editor] Saved to server: {_serverMapDir}");
-            }
+        if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+        {
+            MapLoader.Save(_serverMapDir, _map);
+            GD.Print($"[Editor] Saved to server: {_serverMapDir}");
         }
 
         // Save .aozone to both client and server dirs
@@ -1738,68 +1687,20 @@ public partial class EditorMain : Control
             _state.CurrentMapNumber = parsedNum;
         }
 
-        // Save map — archive mode if maps.aopak exists, else loose files
-        if (_mapsArchivePath.Length > 0 && File.Exists(_mapsArchivePath))
-        {
-            MapLoader.SaveToArchive(_mapsArchivePath, GetAmk(), _serverMapDir, _map);
-        }
-        else
-        {
-            if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
-                MapLoader.Save(_clientMapDir, _map);
-            if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
-                MapLoader.Save(_serverMapDir, _map);
-            // Also save to the explicitly chosen dir if different
-            if (dir != _clientMapDir && dir != _serverMapDir)
-                MapLoader.Save(dir, _map);
-        }
+        // Save map — loose files
+        if (_clientMapDir.Length > 0 && Directory.Exists(_clientMapDir))
+            MapLoader.Save(_clientMapDir, _map);
+        if (_serverMapDir.Length > 0 && Directory.Exists(_serverMapDir))
+            MapLoader.Save(_serverMapDir, _map);
+        // Also save to the explicitly chosen dir if different
+        if (dir != _clientMapDir && dir != _serverMapDir)
+            MapLoader.Save(dir, _map);
 
         _state.MapDir = dir;
         _state.ResetDirty();
         _state.ScanAvailableMaps(dir);
         UpdateNavBar();
         SetStatus($"Mapa {_map.MapNumber} guardado (cliente + server)");
-    }
-
-    private static byte[] GetAmk()
-    {
-        return SHA256.HashData(System.Text.Encoding.UTF8.GetBytes("argentum-nextgen-dev-key-2026"));
-    }
-
-    private void DetectArchives(string dataPath)
-    {
-        // Dispose any existing readers before replacing
-        _graphicsReader?.Dispose();
-        _initsReader?.Dispose();
-        _mapsReader?.Dispose();
-        _graphicsReader = null;
-        _initsReader = null;
-        _mapsReader = null;
-        _mapsArchivePath = "";
-
-        byte[] amk = GetAmk();
-
-        string gfxPath = Path.Combine(dataPath, "graphics.aopak");
-        if (File.Exists(gfxPath))
-        {
-            _graphicsReader = new AopakReader(gfxPath, amk);
-            GD.Print($"[Editor] Using graphics.aopak: {gfxPath}");
-        }
-
-        string initsPath = Path.Combine(dataPath, "inits.aopak");
-        if (File.Exists(initsPath))
-        {
-            _initsReader = new AopakReader(initsPath, amk);
-            GD.Print($"[Editor] Using inits.aopak: {initsPath}");
-        }
-
-        string mapsPath = Path.Combine(dataPath, "maps.aopak");
-        if (File.Exists(mapsPath))
-        {
-            _mapsReader = new AopakReader(mapsPath, amk);
-            _mapsArchivePath = mapsPath;
-            GD.Print($"[Editor] Using maps.aopak: {mapsPath}");
-        }
     }
 
     private void OnDataPathSelected(string path)

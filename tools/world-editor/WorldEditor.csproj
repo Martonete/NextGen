@@ -6,7 +6,4 @@
     <EnableDynamicLoading>true</EnableDynamicLoading>
     <Nullable>enable</Nullable>
   </PropertyGroup>
-  <ItemGroup>
-    <ProjectReference Include="..\resources\compressor\AoPakLib.csproj" />
-  </ItemGroup>
 </Project>
