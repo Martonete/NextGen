@@ -6,7 +6,7 @@ using Godot;
 namespace ArgentumNextgen.Game;
 
 /// <summary>
-/// User configuration — persisted to Data/INIT/Options.ao (INI format).
+/// User configuration — persisted to Data/Options.ao (INI format).
 /// Mirrors VB6 User_Config from frmOpcionesNew (46 fields).
 /// A temporary copy is used while the options dialog is open to support Cancel.
 /// </summary>
