@@ -11,6 +11,6 @@
     <Compile Remove="test/**" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\tools\aopak\AoPakLib.csproj" />
+    <ProjectReference Include="..\tools\resources\compressor\AoPakLib.csproj" />
   </ItemGroup>
 </Project>

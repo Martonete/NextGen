@@ -57,7 +57,6 @@ public partial class EditorMain : Control
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
-    private FileDialog? _serverPathDialog;
     private Window? _insertFormatWindow;
     private OptionButton? _insertFormatSelect;
     private FileDialog? _insertFileDialog;
@@ -191,8 +190,7 @@ public partial class EditorMain : Control
         fileMenu.AddSeparator();
         fileMenu.AddItem("Insertar Mapa... (Ctrl+I)", 8);
         fileMenu.AddSeparator();
-        fileMenu.AddItem("Configurar Ruta Cliente (Data/)...", 6);
-        fileMenu.AddItem("Configurar Ruta Server...", 7);
+        fileMenu.AddItem("Seleccionar Carpeta de Recursos...", 6);
         fileMenu.IdPressed += OnFileMenuId;
         _menuBar.AddChild(fileMenu);
 
@@ -694,21 +692,12 @@ public partial class EditorMain : Control
         {
             FileMode = FileDialog.FileModeEnum.OpenDir,
             Access = FileDialog.AccessEnum.Filesystem,
-            Title = "Seleccionar carpeta Data/ del cliente",
+            Title = "Seleccionar carpeta de recursos",
             Size = new Vector2I(600, 400),
         };
         _dataPathDialog.DirSelected += OnDataPathSelected;
         AddChild(_dataPathDialog);
 
-        _serverPathDialog = new FileDialog
-        {
-            FileMode = FileDialog.FileModeEnum.OpenDir,
-            Access = FileDialog.AccessEnum.Filesystem,
-            Title = "Seleccionar carpeta server/ (contiene dat/ y maps/)",
-            Size = new Vector2I(600, 400),
-        };
-        _serverPathDialog.DirSelected += OnServerPathSelected;
-        AddChild(_serverPathDialog);
 
         // Insert Map: compact centered format selector window
         _insertFormatWindow = new Window();
@@ -1069,17 +1058,14 @@ public partial class EditorMain : Control
         string exeDir = OS.GetExecutablePath().GetBaseDir();
         string cwd = Directory.GetCurrentDirectory();
 
-        // From res:// (tools/world-editor/) → resource-manager/data/ has loose files
-        candidates.Add(Path.Combine(resPath, "../resource-manager/data"));
-        candidates.Add(Path.Combine(resPath, "../../tools/resource-manager/data"));
-        // Legacy: client/Data (if loose files still exist there)
+        // From res:// (tools/world-editor/) → primary: tools/resources/data/
+        candidates.Add(Path.Combine(resPath, "../../tools/resources/data"));
+        // From cwd (repo root)
+        candidates.Add(Path.Combine(cwd, "tools/resources/data"));
+        // Fallbacks for backwards compat
         candidates.Add(Path.Combine(resPath, "../../client/Data"));
-        // From cwd
-        candidates.Add(Path.Combine(cwd, "tools/resource-manager/data"));
-        candidates.Add(Path.Combine(cwd, "../../tools/resource-manager/data"));
         candidates.Add(Path.Combine(cwd, "client/Data"));
         // From exe
-        candidates.Add(Path.Combine(exeDir, "../../tools/resource-manager/data"));
         candidates.Add(Path.Combine(exeDir, "Data"));
         // User data
         candidates.Add(Path.Combine(OS.GetUserDataDir(), "Data"));
@@ -1117,7 +1103,6 @@ public partial class EditorMain : Control
     // ── Setup form (shown when data paths not found) ──
     private Window? _setupWindow;
     private LineEdit? _setupClientPath;
-    private LineEdit? _setupServerPath;
 
     private void ShowSetupForm()
     {
@@ -1149,16 +1134,16 @@ public partial class EditorMain : Control
         vbox.AddChild(EditorTheme.Heading("Configurar Rutas"));
 
         // Client path
-        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Cliente"));
+        vbox.AddChild(EditorTheme.MakeLabel("Carpeta de Recursos"));
         var clientRow = new HBoxContainer();
         clientRow.AddThemeConstantOverride("separation", 6);
-        _setupClientPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/client" };
+        _setupClientPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/tools/resources/data" };
         _setupClientPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
         clientRow.AddChild(_setupClientPath);
         var clientBrowse = EditorTheme.MakeButton("...");
         clientBrowse.Pressed += () =>
         {
-            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta Data/ del cliente" };
+            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta de recursos" };
             dlg.DirSelected += (path) => { _setupClientPath.Text = path; dlg.QueueFree(); };
             dlg.Canceled += () => dlg.QueueFree();
             _setupWindow.AddChild(dlg);
@@ -1166,25 +1151,6 @@ public partial class EditorMain : Control
         };
         clientRow.AddChild(clientBrowse);
         vbox.AddChild(clientRow);
-
-        // Server path
-        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Server"));
-        var serverRow = new HBoxContainer();
-        serverRow.AddThemeConstantOverride("separation", 6);
-        _setupServerPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/server" };
-        _setupServerPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-        serverRow.AddChild(_setupServerPath);
-        var serverBrowse = EditorTheme.MakeButton("...");
-        serverBrowse.Pressed += () =>
-        {
-            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta dat/ del server" };
-            dlg.DirSelected += (path) => { _setupServerPath.Text = path; dlg.QueueFree(); };
-            dlg.Canceled += () => dlg.QueueFree();
-            _setupWindow.AddChild(dlg);
-            dlg.PopupCentered(new Vector2I(600, 400));
-        };
-        serverRow.AddChild(serverBrowse);
-        vbox.AddChild(serverRow);
 
         // Buttons
         var btnRow = new HBoxContainer();
@@ -1205,11 +1171,10 @@ public partial class EditorMain : Control
     private void OnSetupApply()
     {
         string clientPath = _setupClientPath?.Text.Trim() ?? "";
-        string serverPath = _setupServerPath?.Text.Trim() ?? "";
 
         if (clientPath.Length == 0 || !Directory.Exists(clientPath))
         {
-            SetStatus("La carpeta del cliente no existe.");
+            SetStatus("La carpeta de recursos no existe.");
             return;
         }
 
@@ -1234,15 +1199,6 @@ public partial class EditorMain : Control
         if (_loadingTitle != null) _loadingTitle.Visible = true;
         _dataLoaded = false; // User explicitly applying new paths — allow reload
         LoadDataPath(dataPath);
-
-        // Server path — resolve dat/ subfolder
-        if (serverPath.Length > 0 && Directory.Exists(serverPath))
-        {
-            string datSub = Path.Combine(serverPath, "dat");
-            _serverDatDir = Directory.Exists(datSub) ? datSub : serverPath;
-            string mapsSub = Path.Combine(serverPath, "maps");
-            if (Directory.Exists(mapsSub)) _serverMapDir = mapsSub;
-        }
 
         // Persist paths for next launch
         SaveConfig();
@@ -1325,18 +1281,33 @@ public partial class EditorMain : Control
             : "";
         if (serverDir.Length == 0)
         {
-            foreach (var rel in new[] { "..", "../.." })
+            // Primary: tools/resources/dats (relative to repo root, detected via dataPath)
+            foreach (var rel in new[] { "../..", "../../.." })
             {
-                string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
-                if (Directory.Exists(candidate)) { serverDir = candidate; break; }
+                string resourcesDats = Path.GetFullPath(Path.Combine(dataPath, rel, "tools/resources/dats"));
+                if (Directory.Exists(resourcesDats)) { _serverDatDir = resourcesDats; break; }
+            }
+            // Fallback: legacy server/ directory
+            if (_serverDatDir.Length == 0)
+            {
+                foreach (var rel in new[] { "..", "../.." })
+                {
+                    string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
+                    if (Directory.Exists(candidate)) { serverDir = candidate; break; }
+                }
+                if (serverDir.Length > 0)
+                    _serverDatDir = Path.Combine(serverDir, "dat");
             }
         }
 
         // Store server paths
-        if (serverDir.Length > 0)
+        if (_serverDatDir.Length > 0)
         {
-            _serverDatDir = Path.Combine(serverDir, "dat");
-            string serverMapsDir = Path.Combine(serverDir, "maps");
+            // Primary: maps alongside resources/data/Maps (new structure)
+            string serverMapsDir = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(_serverDatDir)) ?? "", "resources/data/Maps");
+            // Fallback: maps/ sibling of dat dir (legacy server/ layout)
+            if (!Directory.Exists(serverMapsDir))
+                serverMapsDir = Path.Combine(Path.GetDirectoryName(_serverDatDir) ?? "", "maps");
             if (Directory.Exists(serverMapsDir))
             {
                 _serverMapDir = serverMapsDir;
@@ -1381,7 +1352,7 @@ public partial class EditorMain : Control
         }
         else
         {
-            GD.Print("[Editor] Server dat/ not found — NPC names unavailable. Use Archivo > Configurar Ruta Server");
+            GD.Print("[Editor] Server dat/ not found — NPC names unavailable (expected ../dats/ sibling of resources/data).");
         }
 
         // Push data to palette
@@ -1422,9 +1393,9 @@ public partial class EditorMain : Control
         if (_clientMapDir.Length > 0) pathInfo += $"Cliente: {_clientMapDir}  ";
         if (_serverMapDir.Length > 0) pathInfo += $"Server: {_serverMapDir}  ";
         if (_serverMapDir.Length == 0)
-            pathInfo += "⚠ Sin ruta server — Archivo > Configurar Ruta Server";
+            pathInfo += "⚠ dats/ no detectado";
         if (_clientMapDir.Length == 0)
-            pathInfo += "⚠ Sin ruta cliente";
+            pathInfo += "⚠ Sin carpeta de recursos — Archivo > Seleccionar Carpeta de Recursos";
         GD.Print($"[Editor] {pathInfo}");
 
         // Auto-load map 1 if it exists, otherwise create empty map
@@ -1532,7 +1503,6 @@ public partial class EditorMain : Control
             case 4: ShowMapProperties(); break;
             case 5: ToggleTileProperties(); break;
             case 6: _dataPathDialog?.Popup(); break;
-            case 7: _serverPathDialog?.Popup(); break;
             case 8: InsertMap(); break;
         }
     }
@@ -1836,42 +1806,6 @@ public partial class EditorMain : Control
     {
         _dataLoaded = false; // User explicitly chose a new path — allow reload
         LoadDataPath(path);
-    }
-
-    private void OnServerPathSelected(string path)
-    {
-        // Validate: must contain dat/ subfolder
-        string datDir = Path.Combine(path, "dat");
-        if (!Directory.Exists(datDir))
-        {
-            SetStatus($"ERROR: {path} no contiene carpeta dat/");
-            return;
-        }
-
-        _serverDatDir = datDir;
-        string mapsDir = Path.Combine(path, "maps");
-        if (Directory.Exists(mapsDir))
-        {
-            _serverMapDir = mapsDir;
-            _state.MapDir = mapsDir;
-            _state.ScanAvailableMaps(mapsDir);
-            GD.Print($"[Editor] Server maps: {mapsDir}");
-        }
-
-        // Load NPC + object data from the new server path
-        string objDat = Path.Combine(datDir, "Obj.dat");
-        _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
-        _doorData = GameDataLoader.LoadDoorData(objDat);
-        string npcDat = Path.Combine(datDir, "NPCs.dat");
-        (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
-        _npcDb = NpcDatabase.Load(datDir);
-        _objDb = ObjectDatabase.Load(objDat);
-
-        SyncNpcPaletteData();
-        SyncObjPaletteData();
-        SyncViewportData();
-        UpdateNavBar();
-        SetStatus($"Server configurado: {path}");
     }
 
     private void SyncNpcPaletteData()

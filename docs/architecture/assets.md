@@ -272,7 +272,7 @@ Per FX (6 bytes):
 - Sizes range from 32x32 to 2048x2048
 - Total: ~90 MB
 
-### Server Data (server/dat/)
+### Server Data (tools/resources/dats/)
 
 | File | Size | Entries | Purpose |
 |------|------|---------|---------|
@@ -288,7 +288,7 @@ Per FX (6 bytes):
 | QUESTS.DAT | 3.4K | -- | Quest definitions |
 | AreasStats.dat | 20K | -- | Zone loot tables |
 
-### Server Maps (server/maps/)
+### Server Maps (tools/resources/data/Maps/)
 - 194 maps with .map + .inf + .dat triplets
 - Client Maps dir has .map files but few .inf (only 3)
 
