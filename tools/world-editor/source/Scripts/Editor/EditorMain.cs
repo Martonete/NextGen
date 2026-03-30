@@ -1393,6 +1393,20 @@ public partial class EditorMain : Control
 
         // Scan available maps and update nav bar
         _state.ScanAvailableMaps(_state.MapDir);
+        // In archive mode, also add maps found in the archive that aren't on disk
+        if (_mapsReader != null)
+        {
+            foreach (string entryName in _mapsReader.GetEntryNames())
+            {
+                // Expected format: "Maps/MapaN.aomap"
+                if (!entryName.StartsWith("Maps/Mapa", StringComparison.OrdinalIgnoreCase)) continue;
+                if (!entryName.EndsWith(".aomap", StringComparison.OrdinalIgnoreCase)) continue;
+                string nameOnly = Path.GetFileNameWithoutExtension(entryName); // "MapaN"
+                if (nameOnly.StartsWith("Mapa", StringComparison.OrdinalIgnoreCase) &&
+                    int.TryParse(nameOnly.Substring(4), out int archiveMapNum) && archiveMapNum > 0)
+                    _state.AvailableMaps.Add(archiveMapNum);
+            }
+        }
         GD.Print($"[Editor] Found {_state.AvailableMaps.Count} maps in {_state.MapDir}");
 
         // Show path status

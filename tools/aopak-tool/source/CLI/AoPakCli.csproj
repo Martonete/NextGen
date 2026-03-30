@@ -3,11 +3,11 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>AoPak.CLI</RootNamespace>
-    <AssemblyName>aopak</AssemblyName>
+    <AssemblyName>aopak-cli</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
-    <ProjectReference Include="..\AoPak.csproj" />
+    <ProjectReference Include="..\AoPakLib.csproj" />
   </ItemGroup>
 </Project>
