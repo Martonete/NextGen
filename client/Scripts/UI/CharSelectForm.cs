@@ -105,7 +105,7 @@ public partial class CharSelectForm : RpgBaseForm
         _previewViewport = new SubViewport();
         _previewViewport.Size = new Vector2I(130, 130);
         _previewViewport.TransparentBg = true;
-        _previewViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Always;
+        _previewViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Disabled;
         previewContainer.AddChild(_previewViewport);
 
         _previewNode = new Node2D();
@@ -147,13 +147,6 @@ public partial class CharSelectForm : RpgBaseForm
         btnRow.AddChild(exitBtn);
     }
 
-    public override void _Process(double delta)
-    {
-        base._Process(delta);
-        // Keep preview redrawing (animator needs continuous updates for static frame resolve)
-        _previewNode?.QueueRedraw();
-    }
-
     private void UpdatePreview(int index)
     {
         if (_state == null || index < 0 || index >= _state.CharacterList.Count)
@@ -162,6 +155,9 @@ public partial class CharSelectForm : RpgBaseForm
             return;
         }
         if (_previewHintLabel != null) _previewHintLabel.Visible = false;
+        if (_previewViewport != null)
+            _previewViewport.RenderTargetUpdateMode = SubViewport.UpdateMode.Once;
+        _previewNode?.QueueRedraw();
     }
 
     private void DrawCharPreview()

@@ -16,6 +16,8 @@ public partial class StatsPanel : RpgBaseForm
     private GameState? _state;
     private AoTcpClient? _tcp;
 
+    private bool _dirty = true;
+
     // Tab system
     private HBoxContainer? _tabBar;
     private VBoxContainer? _infoTab;
@@ -147,6 +149,7 @@ public partial class StatsPanel : RpgBaseForm
 
     private void SetTab(int index)
     {
+        _dirty = true;
         _activeTab = index;
         if (_infoTab != null) _infoTab.Visible = index == 0;
         if (_attribTab != null) _attribTab.Visible = index == 1;
@@ -379,6 +382,7 @@ public partial class StatsPanel : RpgBaseForm
     public void Open()
     {
         if (_state == null) return;
+        _dirty = true;
         _state.StatsPanelOpen = true;
         ShowForm();
         ResetPendingSkills();
@@ -553,9 +557,12 @@ public partial class StatsPanel : RpgBaseForm
 
     // ── Per-frame update ──────────────────────────────────────
 
+    public void MarkDirty() => _dirty = true;
+
     public override void _Process(double delta)
     {
-        if (!Visible || _state == null) return;
+        if (!Visible || _state == null || !_dirty) return;
+        _dirty = false;
         RefreshCurrentTab();
     }
 }

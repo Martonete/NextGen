@@ -28,6 +28,8 @@ public partial class BankPanel : RpgBaseForm
     private LineEdit? _goldInput;
     private bool _isDepositing;
 
+    private long _lastBankGold = -1;
+
     public event Action? OnOpenVault;
 
     public BankPanel() : base("Banco", new Vector2(240, 260), "v2") { }
@@ -130,7 +132,11 @@ public partial class BankPanel : RpgBaseForm
     public override void _Process(double delta)
     {
         if (!Visible || _state == null) return;
-        _goldLabel!.Text = _state.BankGold.ToString("N0");
+        if (_state.BankGold != _lastBankGold)
+        {
+            _lastBankGold = _state.BankGold;
+            _goldLabel!.Text = _state.BankGold.ToString("N0");
+        }
     }
 
     private void OnBovedaPressed()

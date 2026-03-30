@@ -55,6 +55,7 @@ public partial class CommercePanel : RpgBaseForm
     // Filtered user inventory (non-empty slots)
     private int[] _userSlots = new int[25];
     private int _userSlotCount;
+    private bool _dirty = true;
 
     // UI controls
     private Control? _drawArea;
@@ -127,6 +128,7 @@ public partial class CommercePanel : RpgBaseForm
 
     public void OpenShop()
     {
+        _dirty = true;
         _selectedNpcIdx = -1;
         _selectedUserIdx = -1;
         _npcScrollRow = 0;
@@ -160,17 +162,27 @@ public partial class CommercePanel : RpgBaseForm
             RichTooltip?.Hide();
     }
 
-    public override void _Process(double delta)
+    private void RebuildUserSlots()
     {
-        if (!Visible || _state == null) return;
-
         _userSlotCount = 0;
         for (int i = 0; i < 25; i++)
         {
-            if (_state.Inventory[i].ObjIndex > 0)
+            if (_state!.Inventory[i].ObjIndex > 0)
                 _userSlots[_userSlotCount++] = i;
         }
+    }
 
+    public void MarkDirty()
+    {
+        _dirty = true;
+        _drawArea?.QueueRedraw();
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!Visible || _state == null || !_dirty) return;
+        _dirty = false;
+        RebuildUserSlots();
         _drawArea?.QueueRedraw();
     }
 

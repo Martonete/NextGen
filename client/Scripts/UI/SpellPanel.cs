@@ -47,6 +47,8 @@ public partial class SpellPanel : Control
         _ttfFontSize = 12;
     }
 
+    private bool _dirty = true;
+
     // Accumulated time for auto-scroll while dragging outside bounds
     private float _dragOutTimer;
     private const float DragScrollInterval = 0.08f; // seconds between auto-scroll ticks
@@ -100,8 +102,14 @@ public partial class SpellPanel : Control
             }
         }
 
-        QueueRedraw();
+        if (_dragging || _dirty || _hoveredSlot >= 0)
+        {
+            _dirty = false;
+            QueueRedraw();
+        }
     }
+
+    public void MarkDirty() => _dirty = true;
 
     public override void _Draw()
     {

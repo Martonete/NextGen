@@ -30,6 +30,9 @@ public partial class MinimapPanel : Control
     private static readonly Color NpcFriendlyColor = new(1f, 0.85f, 0.2f); // Yellow
     private static readonly Color NpcHostileColor = new(1f, 0.2f, 0.2f);   // Red
 
+    private const float MinimapRedrawInterval = 0.1f; // 10 Hz
+    private float _redrawTimer = 0f;
+
     private GameState? _state;
     private GameData? _data;
     private ImageTexture? _terrainTexture;
@@ -69,8 +72,13 @@ public partial class MinimapPanel : Control
 
     public override void _Process(double delta)
     {
-        if (Visible)
+        if (!Visible) return;
+        _redrawTimer += (float)delta;
+        if (_redrawTimer >= MinimapRedrawInterval)
+        {
+            _redrawTimer = 0f;
             QueueRedraw();
+        }
     }
 
     /// <summary>

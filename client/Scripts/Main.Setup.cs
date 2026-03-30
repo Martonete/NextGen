@@ -423,7 +423,7 @@ public partial class Main
 
         // Inventory/spell tab UI manager
         _inventoryUI = new UI.InventoryUI(_state);
-        _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, null, _dydToggle!,
+        _inventoryUI.BindPanels(_inventoryPanel, _spellPanel, _dydToggle!,
             _dydOffTex, _dydOnTex, _lanzarButton!, _infoButton!, _spellUpButton!, _spellDownButton!,
             null, null, null, _tooltipPanel);
         _inventoryUI.BindTabButtons(_invTabButton!, _spellTabButton!);

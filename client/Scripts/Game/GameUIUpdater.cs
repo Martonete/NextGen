@@ -25,13 +25,30 @@ public class GameUIUpdater
     private Label? _weaponLabel;
     private Label? _fuerzaLabel;
     private Label? _agilidadLabel;
-    private Label? _repLabel;
     private Label? _fpsLabel;
     private Label? _macroStatusLabel;
     private Control? _btnCastiGM;
     private StatBarOverlay? _statBarOverlay;
     private MinimapPanel? _minimapPanel;
     private PartyPanel? _partyPanel;
+
+    // Delta-check caches — only write .Text when value changes
+    private string _cachedExp = "";
+    private string _cachedGold = "";
+    private string _cachedLevel = "";
+    private string _cachedName = "";
+    private string _cachedOnline = "";
+    private string _cachedCoords = "";
+    private string _cachedArmor = "";
+    private string _cachedHelm = "";
+    private string _cachedShield = "";
+    private string _cachedWeapon = "";
+    private string _cachedFuerza = "";
+    private string _cachedAgilidad = "";
+    private string _cachedFps = "";
+    private string _cachedMacroText = "";
+    private bool _cachedMacroVisible = false;
+    private bool _cachedBtnCastiVisible = false;
 
     /// <summary>Callback to get WorldRenderer for arrow redraw.</summary>
     public Action? QueueWorldRedraw;
@@ -46,7 +63,7 @@ public class GameUIUpdater
         Label expLabel, Label goldLabel, Label levelLabel, Label nameLabel,
         Label onlineLabel, Label coordsLabel,
         Label armorLabel, Label helmLabel, Label shieldLabel, Label weaponLabel,
-        Label fuerzaLabel, Label agilidadLabel, Label? repLabel,
+        Label fuerzaLabel, Label agilidadLabel, Label? repLabel, // repLabel parameter kept for API compatibility — unused
         Label fpsLabel, Label? macroStatusLabel,
         Control? btnCastiGM, StatBarOverlay? statBarOverlay)
     {
@@ -62,7 +79,6 @@ public class GameUIUpdater
         _weaponLabel = weaponLabel;
         _fuerzaLabel = fuerzaLabel;
         _agilidadLabel = agilidadLabel;
-        _repLabel = repLabel;
         _fpsLabel = fpsLabel;
         _macroStatusLabel = macroStatusLabel;
         _btnCastiGM = btnCastiGM;
@@ -91,28 +107,55 @@ public class GameUIUpdater
             _state.Exp, _state.ExpNext
         );
 
-        _expLabel!.Text = $"EXP: {_state.Exp}/{_state.ExpNext}";
-        _goldLabel!.Text = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
-        _levelLabel!.Text = $"{_state.Level}";
-        _nameLabel!.Text = _state.UserName;
-        _onlineLabel!.Text = $"Onlines: {_state.OnlineCount}";
+        var newExp = $"EXP: {_state.Exp}/{_state.ExpNext}";
+        if (_expLabel!.Text != newExp) { _expLabel.Text = newExp; _cachedExp = newExp; }
+
+        var newGold = _state.Gold.ToString("N0", System.Globalization.CultureInfo.InvariantCulture).Replace(",", ".");
+        if (_goldLabel!.Text != newGold) { _goldLabel.Text = newGold; _cachedGold = newGold; }
+
+        var newLevel = $"{_state.Level}";
+        if (_levelLabel!.Text != newLevel) { _levelLabel.Text = newLevel; _cachedLevel = newLevel; }
+
+        var newName = _state.UserName;
+        if (_nameLabel!.Text != newName) { _nameLabel.Text = newName; _cachedName = newName; }
+
+        var newOnline = $"Onlines: {_state.OnlineCount}";
+        if (_onlineLabel!.Text != newOnline) { _onlineLabel.Text = newOnline; _cachedOnline = newOnline; }
+
         // Zone name replaces map name when inside a zone
         string locationName = _state.CurrentZoneName.Length > 0 ? _state.CurrentZoneName : _state.MapName;
-        _coordsLabel!.Text = $"{locationName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
+        var newCoords = $"{locationName}\n({_state.CurrentMap}, {_state.UserPosX}, {_state.UserPosY})";
+        if (_coordsLabel!.Text != newCoords) { _coordsLabel.Text = newCoords; _cachedCoords = newCoords; }
 
         // GM button visibility
-        if (_btnCastiGM != null) _btnCastiGM.Visible = _state.Privileges >= 1;
+        if (_btnCastiGM != null)
+        {
+            bool newBtnCastiVisible = _state.Privileges >= 1;
+            if (_cachedBtnCastiVisible != newBtnCastiVisible) { _btnCastiGM.Visible = newBtnCastiVisible; _cachedBtnCastiVisible = newBtnCastiVisible; }
+        }
 
         // Combat stat labels
-        _armorLabel!.Text = $"Armadura: {_state.ArmourLabel}";
-        _helmLabel!.Text = $"Casco: {_state.HelmLabel}";
-        _shieldLabel!.Text = $"Escudo: {_state.ShieldLabel}";
-        _weaponLabel!.Text = $"Arma: {_state.WeaponLabel}";
-        _fuerzaLabel!.Text = $"Fuerza: {_state.Strength}";
-        _agilidadLabel!.Text = $"Agilidad: {_state.Agility}";
+        var newArmor = $"Armadura: {_state.ArmourLabel}";
+        if (_armorLabel!.Text != newArmor) { _armorLabel.Text = newArmor; _cachedArmor = newArmor; }
+
+        var newHelm = $"Casco: {_state.HelmLabel}";
+        if (_helmLabel!.Text != newHelm) { _helmLabel.Text = newHelm; _cachedHelm = newHelm; }
+
+        var newShield = $"Escudo: {_state.ShieldLabel}";
+        if (_shieldLabel!.Text != newShield) { _shieldLabel.Text = newShield; _cachedShield = newShield; }
+
+        var newWeapon = $"Arma: {_state.WeaponLabel}";
+        if (_weaponLabel!.Text != newWeapon) { _weaponLabel.Text = newWeapon; _cachedWeapon = newWeapon; }
+
+        var newFuerza = $"Fuerza: {_state.Strength}";
+        if (_fuerzaLabel!.Text != newFuerza) { _fuerzaLabel.Text = newFuerza; _cachedFuerza = newFuerza; }
+
+        var newAgilidad = $"Agilidad: {_state.Agility}";
+        if (_agilidadLabel!.Text != newAgilidad) { _agilidadLabel.Text = newAgilidad; _cachedAgilidad = newAgilidad; }
 
         // FPS
-        _fpsLabel!.Text = $"FPS: {Engine.GetFramesPerSecond()}";
+        var newFps = $"FPS: {Engine.GetFramesPerSecond()}";
+        if (_fpsLabel!.Text != newFps) { _fpsLabel.Text = newFps; _cachedFps = newFps; }
 
         // Macro status indicator
         if (_macroStatusLabel != null)
@@ -121,12 +164,13 @@ public class GameUIUpdater
             bool spellActive = _state.SpellMacro.Active;
             if (workActive || spellActive)
             {
-                _macroStatusLabel.Text = workActive ? "MACRO" : "MACROSP";
-                _macroStatusLabel.Visible = true;
+                string newMacroText = workActive ? "MACRO" : "MACROSP";
+                if (_cachedMacroText != newMacroText) { _macroStatusLabel.Text = newMacroText; _cachedMacroText = newMacroText; }
+                if (!_cachedMacroVisible) { _macroStatusLabel.Visible = true; _cachedMacroVisible = true; }
             }
             else
             {
-                _macroStatusLabel.Visible = false;
+                if (_cachedMacroVisible) { _macroStatusLabel.Visible = false; _cachedMacroVisible = false; }
             }
         }
 

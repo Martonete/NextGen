@@ -51,12 +51,6 @@ public partial class OptionsPanel
             BuildClanNoGuildContent();
     }
 
-    /// <summary>Clan tab removed from Options — this is now a no-op.</summary>
-    public void OpenClanTab()
-    {
-        // Clan has its own panel now, no longer in Options.
-    }
-
     // ── No Guild View (VB6: frmGuildMember without a guild) ──
 
     private void BuildClanNoGuildContent()

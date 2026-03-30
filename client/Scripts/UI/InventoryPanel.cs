@@ -37,6 +37,7 @@ public partial class InventoryPanel : Control
     private Vector2 _dragStartPos; // position where press started (for drag threshold)
     private bool _dragPending;     // press happened but drag not yet activated (needs movement threshold)
     private const float DragThreshold = 6f; // pixels of movement before drag activates
+    private bool _dirty = true;
 
     // Tooltip label (set by Main.cs) — simple name display in bottom bar
     public Label? TooltipLabel;
@@ -77,9 +78,16 @@ public partial class InventoryPanel : Control
         TextureFilter = TextureFilterEnum.Nearest;
     }
 
+    public void MarkDirty() => _dirty = true;
+
     public override void _Process(double delta)
     {
-        QueueRedraw();
+        if (!Visible) return;
+        if (_dirty || _hoveredSlot >= 0)
+        {
+            _dirty = false;
+            QueueRedraw();
+        }
     }
 
     public override void _Notification(int what)
