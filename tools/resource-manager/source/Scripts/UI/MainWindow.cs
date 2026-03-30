@@ -1,8 +1,10 @@
 #nullable enable
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Godot;
+using AoPak;
 using AOResourceConverter.Converters;
 using AOResourceConverter.UI;
 
@@ -37,6 +39,16 @@ public partial class MainWindow : Control
     private LineEdit? _mapOutputPath;
     private ProgressBar? _mapProgress;
     private Label? _mapStatus;
+
+    // Pack tab
+    private LineEdit? _packInputPath;
+    private LineEdit? _packOutputPath;
+    private CheckBox? _packGfx;
+    private CheckBox? _packInits;
+    private CheckBox? _packMaps;
+    private CheckBox? _packSounds;
+    private ProgressBar? _packProgress;
+    private Label? _packStatus;
 
     // File dialogs
     private FileDialog? _dirDialog;
@@ -102,11 +114,13 @@ public partial class MainWindow : Control
         _tabs.AddChild(BuildGraphicsTab());
         _tabs.AddChild(BuildInitsTab());
         _tabs.AddChild(BuildMapsTab());
+        _tabs.AddChild(BuildPackTab());
 
         // Set tab names
         _tabs.SetTabTitle(0, "Graficos");
         _tabs.SetTabTitle(1, "INITs");
         _tabs.SetTabTitle(2, "Mapas");
+        _tabs.SetTabTitle(3, "Empaquetar");
 
         // File dialogs
         _dirDialog = new FileDialog

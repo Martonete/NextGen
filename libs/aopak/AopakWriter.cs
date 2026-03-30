@@ -225,6 +225,84 @@ public static class AopakWriter
         updatedHeader.Write(writer);
     }
 
+    /// <summary>
+    /// Append a tombstone TOC entry to an existing archive for a file that was deleted.
+    /// The tombstone tells layered readers to not fall through to lower-priority archives.
+    /// </summary>
+    public static void AddTombstone(string archiveFile, string entryName, byte[] amk)
+    {
+        if (amk.Length != 32)
+            throw new ArgumentException("AMK must be exactly 32 bytes.", nameof(amk));
+
+        AopakHeader existingHeader;
+        var existingEntries = new List<AopakTocEntry>();
+        byte[] archiveKey;
+
+        using (var readStream = new FileStream(archiveFile, FileMode.Open, FileAccess.Read))
+        using (var reader = new BinaryReader(readStream))
+        {
+            existingHeader = AopakHeader.Read(reader);
+            if (!existingHeader.IsValid())
+                throw new InvalidDataException("Invalid AOPAK archive.");
+
+            archiveKey = AopakCrypto.DeriveArchiveKey(amk, existingHeader.ArchiveId);
+
+            readStream.Seek(existingHeader.TocOffset, SeekOrigin.Begin);
+            var encryptedToc = reader.ReadBytes((int)existingHeader.TocSize);
+            var tocBytes = AopakCrypto.Decrypt(encryptedToc, archiveKey, existingHeader.TocIV);
+
+            using var tocStream = new MemoryStream(tocBytes);
+            using var tocReader = new BinaryReader(tocStream);
+            for (int i = 0; i < existingHeader.EntryCount; i++)
+                existingEntries.Add(AopakTocEntry.Read(tocReader));
+        }
+
+        // Skip if tombstone already exists for this entry
+        if (existingEntries.Any(e =>
+            string.Equals(e.Name, entryName, StringComparison.OrdinalIgnoreCase) &&
+            e.EncryptionScheme == EncryptionScheme.Tombstone))
+            return;
+
+        // Add tombstone entry (no data block — DataOffset/DataSize are zero)
+        existingEntries.Add(new AopakTocEntry
+        {
+            Name = entryName,
+            DataOffset = 0,
+            DataSize = 0,
+            OriginalSize = 0,
+            EntryIV = new byte[16],
+            ContentHash = new byte[32],
+            CompressionScheme = CompressionScheme.None,
+            EncryptionScheme = EncryptionScheme.Tombstone,
+        });
+
+        // Rewrite TOC with tombstone appended
+        using var output = new FileStream(archiveFile, FileMode.Open, FileAccess.ReadWrite);
+        using var writer = new BinaryWriter(output);
+
+        output.Seek(existingHeader.TocOffset, SeekOrigin.Begin);
+        var newTocIV = AopakCrypto.GenerateIV();
+        var newTocBytes = SerializeToc(existingEntries);
+        var newEncryptedToc = AopakCrypto.Encrypt(newTocBytes, archiveKey, newTocIV);
+        writer.Write(newEncryptedToc);
+        output.SetLength(output.Position);
+
+        output.Seek(0, SeekOrigin.Begin);
+        var updatedHeader = new AopakHeader
+        {
+            Magic = AopakHeader.MagicString,
+            Version = AopakHeader.CurrentVersion,
+            ArchiveId = existingHeader.ArchiveId,
+            EntryCount = (uint)existingEntries.Count,
+            TocOffset = existingHeader.TocOffset,
+            TocSize = (uint)newEncryptedToc.Length,
+            TocIV = newTocIV,
+            LayerPriority = existingHeader.LayerPriority,
+            SplitPartIndex = existingHeader.SplitPartIndex,
+        };
+        updatedHeader.Write(writer);
+    }
+
     private static byte[] SerializeToc(IEnumerable<AopakTocEntry> entries)
     {
         using var stream = new MemoryStream();

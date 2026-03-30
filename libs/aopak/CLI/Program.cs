@@ -1,4 +1,5 @@
 using AoPak;
+using AoPak.CLI;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -7,14 +8,23 @@ using System.Text;
 // aopak unpack <input.aopak> <output-dir> [--key <passphrase>]
 // aopak list <input.aopak> [--key <passphrase>]
 // aopak verify <input.aopak> [--key <passphrase>]
+// aopak patch --old <OldDir> --new <NewDir> --output <patch.aopak> --layer <N> [--key <passphrase>]
+// aopak squash --dir <ArchiveDir> --output <NewBase.aopak> [--key <passphrase>]
+// aopak manifest --dir <ArchiveDir> [--sign] [--key <passphrase>]
+// aopak keygen --key <passphrase>
 
-if (args.Length < 2)
+if (args.Length < 1)
 {
     PrintUsage();
     return 1;
 }
 
 string command = args[0].ToLowerInvariant();
+
+// keygen does not require an AMK — handle before GetAmk()
+if (command == "keygen")
+    return KeyGenerator.Run(args);
+
 byte[] amk = GetAmk(args);
 
 try
@@ -29,6 +39,12 @@ try
             return List(args, amk);
         case "verify":
             return Verify(args, amk);
+        case "patch":
+            return Patch(args, amk);
+        case "squash":
+            return Squash(args, amk);
+        case "manifest":
+            return Manifest(args, amk);
         default:
             Console.Error.WriteLine($"Unknown command: {command}");
             PrintUsage();
@@ -134,6 +150,269 @@ static int Verify(string[] args, byte[] amk)
     return fail > 0 ? 1 : 0;
 }
 
+
+static int Patch(string[] args, byte[] amk)
+{
+    string? oldDir = null, newDir = null, outputFile = null;
+    ushort layer = 1;
+
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        switch (args[i])
+        {
+            case "--old":    oldDir     = args[++i]; break;
+            case "--new":    newDir     = args[++i]; break;
+            case "--output": outputFile = args[++i]; break;
+            case "--layer":  layer      = ushort.Parse(args[++i]); break;
+        }
+    }
+
+    if (oldDir == null || newDir == null || outputFile == null)
+    {
+        Console.Error.WriteLine("Usage: aopak patch --old <OldDir> --new <NewDir> --output <patch.aopak> --layer <N>");
+        return 1;
+    }
+    if (!Directory.Exists(oldDir)) { Console.Error.WriteLine($"Directory not found: {oldDir}"); return 1; }
+    if (!Directory.Exists(newDir)) { Console.Error.WriteLine($"Directory not found: {newDir}"); return 1; }
+
+    var oldFiles = CollectFiles(oldDir);
+    var newFiles = CollectFiles(newDir);
+
+    var changedOrAdded = new List<string>();
+    var deleted = new List<string>();
+
+    foreach (var (rel, newPath) in newFiles)
+    {
+        if (!oldFiles.TryGetValue(rel, out var oldPath))
+        {
+            changedOrAdded.Add(rel);
+        }
+        else
+        {
+            var oldHash = SHA256.HashData(File.ReadAllBytes(oldPath));
+            var newHash = SHA256.HashData(File.ReadAllBytes(newPath));
+            if (!oldHash.AsSpan().SequenceEqual(newHash))
+                changedOrAdded.Add(rel);
+        }
+    }
+
+    foreach (var rel in oldFiles.Keys)
+    {
+        if (!newFiles.ContainsKey(rel))
+            deleted.Add(rel);
+    }
+
+    Console.WriteLine($"Patch: {changedOrAdded.Count} changed/added, {deleted.Count} deleted");
+
+    if (changedOrAdded.Count == 0 && deleted.Count == 0)
+    {
+        Console.WriteLine("No changes detected. Patch archive not written.");
+        return 0;
+    }
+
+    Console.WriteLine($"Writing patch archive with layer={layer}...");
+
+    var tempDir = Path.Combine(Path.GetTempPath(), $"aopak-patch-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDir);
+
+    try
+    {
+        foreach (var rel in changedOrAdded)
+        {
+            var src = newFiles[rel];
+            var dst = Path.Combine(tempDir, rel.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+            File.Copy(src, dst, overwrite: true);
+        }
+
+        if (changedOrAdded.Count > 0)
+        {
+            AopakWriter.Pack(tempDir, outputFile, amk, layerPriority: layer, progress: (cur, total, name) =>
+            {
+                Console.Write($"\r[{cur}/{total}] {name}".PadRight(80));
+            });
+            Console.WriteLine();
+        }
+        else
+        {
+            // No changed files but have deletions — create minimal archive with just tombstones
+            // Pack an empty directory first (AopakWriter handles zero entries)
+            AopakWriter.Pack(tempDir, outputFile, amk, layerPriority: layer);
+        }
+
+        if (deleted.Count > 0)
+        {
+            Console.WriteLine($"Adding {deleted.Count} tombstone(s) for deleted files...");
+            foreach (var rel in deleted)
+            {
+                AopakWriter.AddTombstone(outputFile, rel, amk);
+                Console.WriteLine($"  tombstone: {rel}");
+            }
+        }
+    }
+    finally
+    {
+        Directory.Delete(tempDir, recursive: true);
+    }
+
+    Console.WriteLine("Done.");
+    return 0;
+}
+
+static int Squash(string[] args, byte[] amk)
+{
+    string? archiveDir = null, outputFile = null;
+
+    for (int i = 1; i < args.Length - 1; i++)
+    {
+        switch (args[i])
+        {
+            case "--dir":    archiveDir = args[++i]; break;
+            case "--output": outputFile = args[++i]; break;
+        }
+    }
+
+    if (archiveDir == null || outputFile == null)
+    {
+        Console.Error.WriteLine("Usage: aopak squash --dir <ArchiveDir> --output <NewBase.aopak>");
+        return 1;
+    }
+    if (!Directory.Exists(archiveDir)) { Console.Error.WriteLine($"Directory not found: {archiveDir}"); return 1; }
+
+    string manifestPath = Path.Combine(archiveDir, AopakManifest.ManifestFileName);
+    List<AopakManifest.ArchiveEntry> entries;
+
+    if (File.Exists(manifestPath))
+    {
+        entries = AopakManifest.Read(manifestPath, amk);
+        entries.Sort((a, b) => b.Layer.CompareTo(a.Layer));
+        Console.WriteLine($"Squashing {entries.Count} archive(s) from manifest...");
+    }
+    else
+    {
+        entries = Directory.GetFiles(archiveDir, "*.aopak")
+            .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+            .Select(f => new AopakManifest.ArchiveEntry(Path.GetFileName(f), "unknown", 0, 0))
+            .ToList();
+        Console.WriteLine($"No manifest found. Squashing {entries.Count} archive(s)...");
+    }
+
+    var merged = new Dictionary<string, byte[]>(StringComparer.OrdinalIgnoreCase);
+    var tombstoned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    foreach (var entry in entries)
+    {
+        string archivePath = Path.Combine(archiveDir, entry.FileName);
+        if (!File.Exists(archivePath))
+        {
+            Console.Error.WriteLine($"  SKIP (missing): {entry.FileName}");
+            continue;
+        }
+
+        using var reader = new AopakReader(archivePath, amk);
+        foreach (var name in reader.GetEntryNames())
+        {
+            if (merged.ContainsKey(name) || tombstoned.Contains(name))
+                continue;
+
+            if (reader.IsTombstone(name))
+            {
+                tombstoned.Add(name);
+                continue;
+            }
+
+            try
+            {
+                merged[name] = reader.ReadEntry(name);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"  WARN: could not read '{name}' from {entry.FileName}: {ex.Message}");
+            }
+        }
+    }
+
+    Console.WriteLine($"Merged: {merged.Count} entries ({tombstoned.Count} tombstoned/skipped)");
+    Console.WriteLine($"Writing squashed archive → {outputFile}");
+
+    var tempDir = Path.Combine(Path.GetTempPath(), $"aopak-squash-{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tempDir);
+    try
+    {
+        int idx = 0;
+        foreach (var (name, data) in merged)
+        {
+            idx++;
+            var dst = Path.Combine(tempDir, name.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(dst)!);
+            File.WriteAllBytes(dst, data);
+        }
+
+        AopakWriter.Pack(tempDir, outputFile, amk, layerPriority: 0, progress: (cur, total, name) =>
+        {
+            Console.Write($"\r  packing [{cur}/{total}] {name}".PadRight(80));
+        });
+        Console.WriteLine();
+    }
+    finally
+    {
+        Directory.Delete(tempDir, recursive: true);
+    }
+
+    Console.WriteLine("Done.");
+    return 0;
+}
+
+static int Manifest(string[] args, byte[] amk)
+{
+    string? archiveDir = null;
+    bool sign = false;
+
+    for (int i = 1; i < args.Length; i++)
+    {
+        switch (args[i])
+        {
+            case "--dir":  archiveDir = args[++i]; break;
+            case "--sign": sign = true; break;
+        }
+    }
+
+    if (archiveDir == null)
+    {
+        Console.Error.WriteLine("Usage: aopak manifest --dir <ArchiveDir> [--sign]");
+        return 1;
+    }
+    if (!Directory.Exists(archiveDir)) { Console.Error.WriteLine($"Directory not found: {archiveDir}"); return 1; }
+
+    Console.WriteLine($"Scanning {archiveDir} for .aopak files...");
+    var entries = AopakManifest.ScanDirectory(archiveDir, amk);
+    Console.WriteLine($"Found {entries.Count} archive(s).");
+
+    if (!sign)
+        Console.WriteLine("NOTE: Use --sign to include HMAC. Unsigned manifest will fail HMAC verification.");
+
+    string manifestPath = Path.Combine(archiveDir, AopakManifest.ManifestFileName);
+    AopakManifest.Write(manifestPath, entries, amk);
+    Console.WriteLine($"Manifest written: {manifestPath}");
+
+    foreach (var entry in entries)
+        Console.WriteLine($"  [{entry.FileName}] type={entry.Type} layer={entry.Layer} part={entry.Part}");
+
+    return 0;
+}
+
+/// <summary>Collect all files in a directory recursively. Returns relative path → full path.</summary>
+static Dictionary<string, string> CollectFiles(string dir)
+{
+    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    foreach (var file in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+    {
+        var rel = Path.GetRelativePath(dir, file).Replace('\\', '/');
+        result[rel] = file;
+    }
+    return result;
+}
+
 // --- Helpers ---
 
 static byte[] GetAmk(string[] args)
@@ -169,4 +448,11 @@ static void PrintUsage()
     Console.WriteLine("  aopak unpack <input.aopak> <output-dir> [--key <passphrase>]");
     Console.WriteLine("  aopak list <input.aopak> [--key <passphrase>]");
     Console.WriteLine("  aopak verify <input.aopak> [--key <passphrase>]");
+    Console.WriteLine("  aopak patch --old <OldDir> --new <NewDir> --output <patch.aopak> --layer <N> [--key <passphrase>]");
+    Console.WriteLine("  aopak squash --dir <ArchiveDir> --output <NewBase.aopak> [--key <passphrase>]");
+    Console.WriteLine("  aopak manifest --dir <ArchiveDir> [--sign] [--key <passphrase>]");
+    Console.WriteLine("  aopak keygen --key <passphrase>");
+    Console.WriteLine();
+    Console.WriteLine("keygen: Derives AMK from passphrase (SHA256) and outputs obfuscated");
+    Console.WriteLine("        C# byte array literals to paste into AopakKeyStore.cs");
 }

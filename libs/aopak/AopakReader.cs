@@ -59,6 +59,13 @@ public class AopakReader : IDisposable
 
     public bool Contains(string name) => _toc.ContainsKey(name);
 
+    /// <summary>Returns true if the entry exists and is marked as a tombstone (deleted).</summary>
+    public bool IsTombstone(string name)
+    {
+        return _toc.TryGetValue(name, out var item) &&
+               item.Entry.EncryptionScheme == EncryptionScheme.Tombstone;
+    }
+
     public IReadOnlyCollection<string> GetEntryNames() => _toc.Keys;
 
     /// <summary>

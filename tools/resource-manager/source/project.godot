@@ -10,7 +10,7 @@ config_version=5
 
 [application]
 
-config/name="AO Resource Converter"
+config/name="AO Resource Manager"
 run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.3", "C#")
 

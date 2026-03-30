@@ -43,11 +43,49 @@ public class AopakResourceProvider : IResourceProvider, IDisposable
         GD.Print($"[AoPak] Loaded {_readers.Count} archive(s) from {dataPath}");
     }
 
+    /// <summary>
+    /// Create provider from a single .aopak file path.
+    /// Used by CompositeResourceProvider when building from a manifest.
+    /// </summary>
+    public AopakResourceProvider(string archiveFilePath, byte[] amk, bool singleFile)
+    {
+        BasePath = System.IO.Path.GetDirectoryName(archiveFilePath) ?? string.Empty;
+        _amk = amk;
+
+        if (!singleFile)
+            throw new ArgumentException("Use the directory constructor when singleFile is false.");
+
+        try
+        {
+            var reader = new AopakReader(archiveFilePath, amk);
+            _readers[System.IO.Path.GetFileName(archiveFilePath)] = reader;
+        }
+        catch (Exception ex)
+        {
+            GD.PrintErr($"[AoPak] Failed to open {archiveFilePath}: {ex.Message}");
+            throw;
+        }
+    }
+
     public bool Exists(string relativePath)
     {
         foreach (var reader in _readers.Values)
         {
             if (reader.Contains(relativePath))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Returns true if the entry exists in this provider and is a tombstone (intentionally deleted).
+    /// Used by CompositeResourceProvider to stop fallthrough to lower-priority providers.
+    /// </summary>
+    public bool IsTombstone(string relativePath)
+    {
+        foreach (var reader in _readers.Values)
+        {
+            if (reader.IsTombstone(relativePath))
                 return true;
         }
         return false;
