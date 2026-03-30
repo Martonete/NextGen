@@ -49,6 +49,8 @@ public partial class MainWindow : Control
     private CheckBox? _packInits;
     private CheckBox? _packMaps;
     private CheckBox? _packSounds;
+    private CheckBox? _packUi;
+    private CheckBox? _packFonts;
     private ProgressBar? _packProgress;
     private Label? _packStatus;
 
@@ -532,14 +534,18 @@ public partial class MainWindow : Control
         var checkRow = new HBoxContainer();
         checkRow.AddThemeConstantOverride("separation", 16);
 
-        _packGfx    = MakePackCheckbox("Graficos → graphics.aopak", true);
-        _packInits  = MakePackCheckbox("INITs → inits.aopak",        true);
+        _packGfx    = MakePackCheckbox("Graficos → graficos.aopak", true);
+        _packInits  = MakePackCheckbox("INITs → init.aopak",         true);
         _packMaps   = MakePackCheckbox("Mapas → maps.aopak",         true);
         _packSounds = MakePackCheckbox("Sonidos → sounds.aopak",     true);
+        _packUi     = MakePackCheckbox("UI → ui.aopak",              true);
+        _packFonts  = MakePackCheckbox("Fonts → fonts.aopak",        true);
         checkRow.AddChild(_packGfx);
         checkRow.AddChild(_packInits);
         checkRow.AddChild(_packMaps);
         checkRow.AddChild(_packSounds);
+        checkRow.AddChild(_packUi);
+        checkRow.AddChild(_packFonts);
         vbox.AddChild(checkRow);
 
         // Progress
@@ -594,10 +600,12 @@ public partial class MainWindow : Control
         }
 
         var targets = new List<(string Subdir, string Archive)>();
-        if (_packGfx?.ButtonPressed    == true) targets.Add(("Graficos", "graphics.aopak"));
-        if (_packInits?.ButtonPressed   == true) targets.Add(("INIT",     "inits.aopak"));
-        if (_packMaps?.ButtonPressed    == true) targets.Add(("Maps",     "maps.aopak"));
-        if (_packSounds?.ButtonPressed  == true) targets.Add(("Sounds",   "sounds.aopak"));
+        if (_packGfx?.ButtonPressed    == true) targets.Add(("Graficos", "graficos.aopak"));
+        if (_packInits?.ButtonPressed   == true) targets.Add(("INIT",    "init.aopak"));
+        if (_packMaps?.ButtonPressed    == true) targets.Add(("Maps",    "maps.aopak"));
+        if (_packSounds?.ButtonPressed  == true) targets.Add(("Sounds",  "sounds.aopak"));
+        if (_packUi?.ButtonPressed      == true) targets.Add(("UI",      "ui.aopak"));
+        if (_packFonts?.ButtonPressed   == true) targets.Add(("Fonts",   "fonts.aopak"));
 
         if (targets.Count == 0)
         {

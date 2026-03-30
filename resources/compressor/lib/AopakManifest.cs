@@ -198,12 +198,8 @@ public static class AopakManifest
 
     private static string InferType(string fileName)
     {
-        var lower = fileName.ToLowerInvariant();
-        if (lower.Contains("graphics")) return "graphics";
-        if (lower.Contains("inits"))    return "inits";
-        if (lower.Contains("maps"))     return "maps";
-        if (lower.Contains("sounds"))   return "sounds";
-        return "unknown";
+        // Convention: archive name matches folder name (graficos, init, maps, sounds, ui, fonts, …)
+        return Path.GetFileNameWithoutExtension(fileName).ToLowerInvariant();
     }
 
     /// <summary>Constant-time hex string comparison to prevent timing attacks.</summary>

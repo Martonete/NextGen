@@ -8,24 +8,20 @@ namespace ArgentumNextgen.Data.Resources;
 
 /// <summary>
 /// Reads game resources from encrypted .aopak archives.
-/// Wraps one or more AopakReader instances.
+///
+/// Naming convention: the first path segment (lowercased) + ".aopak" is the archive name,
+/// and everything after the first slash is the entry name inside that archive.
+///
+/// Examples:
+///   "Graficos/1.png"        → graficos.aopak, entry "1.png"
+///   "INIT/Graficos.ind"     → init.aopak,     entry "Graficos.ind"
+///   "UI/Icons/sword.png"    → ui.aopak,        entry "Icons/sword.png"
+///   "Fonts/Liberation.ttf"  → fonts.aopak,     entry "Liberation.ttf"
 /// </summary>
 public class AopakResourceProvider : IResourceProvider, IDisposable
 {
-    // Each archive maps: prefix to strip → reader
-    // e.g. "Graficos/" → graphics.aopak reader
-    private readonly List<(string Prefix, AopakReader Reader)> _prefixedReaders = new();
-    private readonly Dictionary<string, AopakReader> _readers = new();
+    private readonly Dictionary<string, AopakReader> _readers = new(StringComparer.OrdinalIgnoreCase);
     private readonly byte[] _amk;
-
-    // Archive filename → directory prefix the client uses in relative paths
-    private static readonly Dictionary<string, string> ArchivePrefixMap = new(StringComparer.OrdinalIgnoreCase)
-    {
-        { "graphics.aopak", "Graficos/" },
-        { "inits.aopak", "INIT/" },
-        { "maps.aopak", "Maps/" },
-        { "sounds.aopak", "Sounds/" },
-    };
 
     public string BasePath { get; }
 
@@ -45,9 +41,6 @@ public class AopakResourceProvider : IResourceProvider, IDisposable
                 var reader = new AopakReader(file, amk);
                 string fileName = System.IO.Path.GetFileName(file);
                 _readers[fileName] = reader;
-
-                if (ArchivePrefixMap.TryGetValue(fileName, out string? prefix))
-                    _prefixedReaders.Add((prefix, reader));
             }
             catch (Exception ex)
             {
@@ -82,27 +75,36 @@ public class AopakResourceProvider : IResourceProvider, IDisposable
         }
     }
 
+    /// <summary>
+    /// Splits "Folder/path/to/entry.ext" into ("folder.aopak", "path/to/entry.ext").
+    /// Convention: first segment lowercased → archive name; remainder → entry name.
+    /// </summary>
+    private static (string ArchiveName, string EntryName) SplitPath(string relativePath)
+    {
+        int slash = relativePath.IndexOf('/');
+        if (slash <= 0)
+            return (relativePath.ToLowerInvariant() + ".aopak", relativePath);
+        return (relativePath[..slash].ToLowerInvariant() + ".aopak",
+                relativePath[(slash + 1)..]);
+    }
+
     public bool Exists(string relativePath)
     {
-        string entryName = ResolveEntryName(relativePath, out _);
+        string? entryName = ResolveEntryName(relativePath, out _);
         return entryName != null;
     }
 
     public bool IsTombstone(string relativePath)
     {
-        foreach (var (prefix, reader) in _prefixedReaders)
+        var (archiveName, entryName) = SplitPath(relativePath);
+
+        if (_readers.TryGetValue(archiveName, out var reader) && reader.IsTombstone(entryName))
+            return true;
+
+        // Fallback: direct match (entries stored without a folder prefix)
+        foreach (var r in _readers.Values)
         {
-            if (relativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                string stripped = relativePath[prefix.Length..];
-                if (reader.IsTombstone(stripped))
-                    return true;
-            }
-        }
-        // Also check without prefix stripping (direct match)
-        foreach (var reader in _readers.Values)
-        {
-            if (reader.IsTombstone(relativePath))
+            if (r.IsTombstone(relativePath))
                 return true;
         }
         return false;
@@ -133,33 +135,30 @@ public class AopakResourceProvider : IResourceProvider, IDisposable
     }
 
     /// <summary>
-    /// Resolve a client relative path (e.g. "Graficos/1.png") to the entry name
-    /// inside the appropriate archive (e.g. "1.png" in graphics.aopak).
+    /// Resolve a client relative path to the (entryName, reader) pair.
+    /// Uses the naming convention: first segment → archive, remainder → entry.
+    /// Falls back to direct match across all archives.
     /// </summary>
     private string? ResolveEntryName(string relativePath, out AopakReader? foundReader)
     {
-        // Try prefix-stripped match first (Graficos/1.png → 1.png in graphics.aopak)
-        foreach (var (prefix, reader) in _prefixedReaders)
+        var (archiveName, entryName) = SplitPath(relativePath);
+
+        if (_readers.TryGetValue(archiveName, out var reader) && reader.Contains(entryName))
         {
-            if (relativePath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                string stripped = relativePath[prefix.Length..];
-                if (reader.Contains(stripped))
-                {
-                    foundReader = reader;
-                    return stripped;
-                }
-            }
+            foundReader = reader;
+            return entryName;
         }
-        // Fallback: direct match across all readers
-        foreach (var reader in _readers.Values)
+
+        // Fallback: direct match across all archives (for entries without a folder prefix)
+        foreach (var r in _readers.Values)
         {
-            if (reader.Contains(relativePath))
+            if (r.Contains(relativePath))
             {
-                foundReader = reader;
+                foundReader = r;
                 return relativePath;
             }
         }
+
         foundReader = null;
         return null;
     }
