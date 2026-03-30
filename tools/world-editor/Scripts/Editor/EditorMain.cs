@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using AoPak;
 using Godot;
@@ -43,6 +44,7 @@ public partial class EditorMain : Control
 
     // UI components
     private MenuBar? _menuBar;
+    private PopupMenu? _mapsMenu;
     private TabContainer? _sidebarTabs;
     private TilePalette? _palette;
     private NpcPalette? _npcPalette;
@@ -229,6 +231,10 @@ public partial class EditorMain : Control
         }
         _viewMenu.IdPressed += OnViewMenuId;
         _menuBar.AddChild(_viewMenu);
+
+        _mapsMenu = new PopupMenu { Name = "Mapas" };
+        _mapsMenu.IdPressed += OnMapsMenuId;
+        _menuBar.AddChild(_mapsMenu);
 
         AddChild(_menuBar);
 
@@ -1407,6 +1413,7 @@ public partial class EditorMain : Control
                     _state.AvailableMaps.Add(archiveMapNum);
             }
         }
+        UpdateNavBar();
         GD.Print($"[Editor] Found {_state.AvailableMaps.Count} maps in {_state.MapDir}");
 
         // Show path status
@@ -1970,18 +1977,40 @@ public partial class EditorMain : Control
             _walkWindow = new Window
             {
                 Title = "Modo Caminata",
-                Size = new Vector2I(544, 416),
+                Size = new Vector2I(800, 638), // 608 (19*32 viewport) + 30 (top bar)
                 Visible = false,
                 Exclusive = false,
                 AlwaysOnTop = true,
-                Unresizable = true, // fixed to match AO viewport exactly
+                Unresizable = false,
                 ContentScaleMode = Window.ContentScaleModeEnum.Disabled,
             };
             _walkWindow.CloseRequested += () => _walkWindow.Visible = false;
             AddChild(_walkWindow);
 
+            // Resolution selector bar at top
+            var topBar = new HBoxContainer();
+            topBar.Position = Vector2.Zero;
+            topBar.AddThemeConstantOverride("separation", 8);
+            var resLabel = new Label { Text = "Resolución:" };
+            topBar.AddChild(resLabel);
+            var resOption = new OptionButton();
+            for (int i = 0; i < WalkModePanel.Resolutions.Length; i++)
+                resOption.AddItem(WalkModePanel.Resolutions[i].Label, i);
+            resOption.Selected = 0; // 800x600 default
+            topBar.AddChild(resOption);
+            _walkWindow.AddChild(topBar);
+
             _walkPanel = new WalkModePanel();
+            _walkPanel.Position = new Vector2(0, 30); // below the top bar
             _walkWindow.AddChild(_walkPanel);
+
+            resOption.ItemSelected += (long idx) =>
+            {
+                var res = WalkModePanel.Resolutions[(int)idx];
+                _walkPanel.SetResolution(res.W, res.H);
+                int viewH = (res.H / 32 / 2 * 2 + 1) * 32;
+                _walkWindow.Size = new Vector2I(Math.Max(res.W, (res.W / 32 / 2 * 2 + 1) * 32), viewH + 30);
+            };
         }
 
         // Inject dependencies
@@ -2012,8 +2041,8 @@ public partial class EditorMain : Control
 
         _walkWindow.Visible = true;
         _walkWindow.Position = new Vector2I(
-            (int)(GetViewportRect().Size.X / 2 - 280),
-            (int)(GetViewportRect().Size.Y / 2 - 220));
+            (int)(GetViewportRect().Size.X / 2 - _walkWindow.Size.X / 2),
+            (int)(GetViewportRect().Size.Y / 2 - _walkWindow.Size.Y / 2));
 
         // Give focus to walk panel
         _walkPanel.GrabFocus();
@@ -2381,8 +2410,42 @@ public partial class EditorMain : Control
 
     #region Map Navigation Bar
 
-    // Map nav bar removed — single map mode. UpdateNavBar kept as no-op for callers.
-    private void UpdateNavBar() { }
+    private void UpdateNavBar()
+    {
+        if (_mapsMenu == null) return;
+        _mapsMenu.Clear();
+
+        var maps = _state.AvailableMaps.OrderBy(n => n).ToList();
+        if (maps.Count == 0)
+        {
+            _mapsMenu.AddItem("(sin mapas)", -1);
+            _mapsMenu.SetItemDisabled(0, true);
+            return;
+        }
+
+        foreach (int num in maps)
+        {
+            string label = _state.CurrentMapNumber == num ? $"► Mapa {num}" : $"Mapa {num}";
+            _mapsMenu.AddItem(label, num);
+        }
+    }
+
+    private void OnMapsMenuId(long id)
+    {
+        if (id <= 0) return;
+        CheckDirtyThen(() =>
+        {
+            if (string.IsNullOrEmpty(_state.MapDir) || !System.IO.Directory.Exists(_state.MapDir)) return;
+            _map = MapLoader.Load(_state.MapDir, (int)id);
+            if (_map == null) { SetStatus($"No se pudo cargar Mapa {id}"); return; }
+            _state.CurrentMapNumber = (int)id;
+            _undo.Clear();
+            _state.ResetDirty();
+            UpdateViewport();
+            UpdateNavBar();
+            SetStatus($"Mapa {id} cargado");
+        });
+    }
 
     #endregion
 

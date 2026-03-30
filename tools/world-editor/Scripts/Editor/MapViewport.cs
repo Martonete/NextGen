@@ -65,6 +65,10 @@ public partial class MapViewport : Control
     private Vector2 _handClickScreenPos;
     private const float HandPanThreshold = 5f;
 
+    // Keyboard panning (WASD / Arrow keys)
+    private bool _keyUp, _keyDown, _keyLeft, _keyRight;
+    private const float KeyPanSpeed = 500f; // pixels per second
+
     // Move tool: live snapshot system
     private MapTile[,]? _moveSnapshot;   // Full map state before drag started
     private MapTile[,]? _moveBuffer;     // Tiles being moved (selection copy)
@@ -90,6 +94,16 @@ public partial class MapViewport : Control
     public override void _Process(double delta)
     {
         _animTime += delta * 1000.0;
+
+        // Keyboard panning (WASD / Arrow keys)
+        if (State != null && (_keyUp || _keyDown || _keyLeft || _keyRight))
+        {
+            float step = KeyPanSpeed * (float)delta;
+            if (_keyUp)    State.CameraOffset -= new Vector2(0, step);
+            if (_keyDown)  State.CameraOffset += new Vector2(0, step);
+            if (_keyLeft)  State.CameraOffset -= new Vector2(step, 0);
+            if (_keyRight) State.CameraOffset += new Vector2(step, 0);
+        }
 
         // Animate marching ants for selection
         if (State != null && (State.HasSelection || _isSelecting))
@@ -1175,6 +1189,21 @@ public partial class MapViewport : Control
         {
             if (ek.Keycode == Key.Space)
                 _spaceHeld = ek.Pressed;
+
+            // WASD / Arrow keys for map panning
+            // Always process key-up to avoid stuck keys; only set on key-down when no modifier/textfield
+            bool canPanPress = !ek.CtrlPressed && !ek.AltPressed
+                && GetViewport().GuiGetFocusOwner() is not LineEdit and not TextEdit;
+            if (!ek.Pressed || canPanPress)
+            {
+                switch (ek.Keycode)
+                {
+                    case Key.W: case Key.Up:    _keyUp    = ek.Pressed; break;
+                    case Key.S: case Key.Down:  _keyDown  = ek.Pressed; break;
+                    case Key.A: case Key.Left:  _keyLeft  = ek.Pressed; break;
+                    case Key.D: case Key.Right: _keyRight = ek.Pressed; break;
+                }
+            }
         }
         else if (@event is InputEventMouseButton mb)
         {

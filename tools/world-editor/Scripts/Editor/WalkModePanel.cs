@@ -8,9 +8,9 @@ using AOWorldEditor.Data;
 namespace AOWorldEditor.Editor;
 
 /// <summary>
-/// Walk mode: simulates the in-game AO view. Renders 17x13 visible tiles,
-/// a centered character with walk animation, roof/tree transparency, and
-/// blocked tile collision. Shows NPCs, objects, exits on the map.
+/// Walk mode: simulates the in-game AO view with selectable resolution.
+/// Renders a centered character with walk animation, roof/tree transparency,
+/// and blocked tile collision. Shows NPCs, objects, exits on the map.
 /// Supports map transitions via exit tiles.
 /// </summary>
 public partial class WalkModePanel : Control
@@ -39,21 +39,32 @@ public partial class WalkModePanel : Control
     // Map loading — for exit tile transitions
     public string MapDir = "";  // directory where Mapa{N}.map/.inf/.dat live
 
-    // ── Constants (matching AO client) ──────────────────────────────────────
+    // ── Resolution presets ───────────────────────────────────────────────────
+    public static readonly (string Label, int W, int H)[] Resolutions =
+    {
+        ("800x600 (AO Clásico)", 800, 600),
+        ("1024x768",             1024, 768),
+        ("1280x720 (HD)",        1280, 720),
+        ("1366x768",             1366, 768),
+        ("1600x900",             1600, 900),
+        ("1920x1080 (Full HD)",  1920, 1080),
+    };
+
+    // ── Viewport metrics (recalculated on resolution change) ───────────────
     private const int TileSize = 32;
     private const int HalfTileSize = TileSize / 2; // 16
-    private const int HalfTilesX = 8;
-    private const int HalfTilesY = 6;
-    private const int ViewTilesX = HalfTilesX * 2 + 1; // 17
-    private const int ViewTilesY = HalfTilesY * 2 + 1; // 13
-    private const int ViewWidth = ViewTilesX * TileSize;  // 544
-    private const int ViewHeight = ViewTilesY * TileSize; // 416
-    private const int ExtraTiles = 3;       // extra tiles beyond viewport for L1 scroll coverage
-    private const int ExtraTilesLarge = 12; // extra tiles for L2/L3/L4 (large multi-tile GRHs like roofs)
+    private int _halfTilesX = 12; // default for 800x600
+    private int _halfTilesY = 9;
+    private int _viewTilesX = 25;
+    private int _viewTilesY = 19;
+    private int _viewWidth = 800;
+    private int _viewHeight = 608;
+    private const int ExtraTiles = 3;
+    private const int ExtraTilesLarge = 12;
 
-    // Movement: AO uses ScrollPixels=8 per 40ms tick → 200 pixels/sec
-    private const float PixelsPerSecond = 200f;
-    private const float ScrollPixels = 8f; // VB6: each scroll step is 8px
+    // Movement
+    private const float PixelsPerSecond = 320f; // smoother than original 200
+    private const float ScrollPixels = 8f;
 
     // ── Character state ─────────────────────────────────────────────────────
     public int CharX = 50, CharY = 50; // current tile position (1-indexed)
@@ -75,11 +86,24 @@ public partial class WalkModePanel : Control
 
     public override void _Ready()
     {
-        CustomMinimumSize = new Vector2(ViewWidth, ViewHeight);
-        Size = new Vector2(ViewWidth, ViewHeight);
-        ClipContents = true; // clip rendering to viewport rect
+        SetResolution(800, 600);
+        ClipContents = true;
         FocusMode = FocusModeEnum.All;
         GrabFocus();
+    }
+
+    /// <summary>Recalculates viewport metrics for the given resolution.</summary>
+    public void SetResolution(int width, int height)
+    {
+        _halfTilesX = width / TileSize / 2;
+        _halfTilesY = height / TileSize / 2;
+        _viewTilesX = _halfTilesX * 2 + 1;
+        _viewTilesY = _halfTilesY * 2 + 1;
+        _viewWidth = _viewTilesX * TileSize;
+        _viewHeight = _viewTilesY * TileSize;
+        CustomMinimumSize = new Vector2(_viewWidth, _viewHeight);
+        Size = new Vector2(_viewWidth, _viewHeight);
+        QueueRedraw();
     }
 
     public override void _Process(double delta)
@@ -247,8 +271,8 @@ public partial class WalkModePanel : Control
                 // Double-click: try to toggle a door
                 float worldX = mb.Position.X - _moveOffsetX;
                 float worldY = mb.Position.Y - _moveOffsetY;
-                int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
-                int ty = (int)Math.Floor(worldY / TileSize) - HalfTilesY + CharY;
+                int tx = (int)Math.Floor(worldX / TileSize) - _halfTilesX + CharX;
+                int ty = (int)Math.Floor(worldY / TileSize) - _halfTilesY + CharY;
                 TryToggleDoor(tx, ty);
                 AcceptEvent();
                 return;
@@ -257,8 +281,8 @@ public partial class WalkModePanel : Control
             {
                 float worldX = mb.Position.X - _moveOffsetX;
                 float worldY = mb.Position.Y - _moveOffsetY;
-                int tx = (int)Math.Floor(worldX / TileSize) - HalfTilesX + CharX;
-                int ty = (int)Math.Floor(worldY / TileSize) - HalfTilesY + CharY;
+                int tx = (int)Math.Floor(worldX / TileSize) - _halfTilesX + CharX;
+                int ty = (int)Math.Floor(worldY / TileSize) - _halfTilesY + CharY;
                 if (Map.InBounds(tx, ty))
                 {
                     CharX = tx;
@@ -332,15 +356,15 @@ public partial class WalkModePanel : Control
         float ofsY = (float)Math.Round(_moveOffsetY);
 
         // L1 uses smaller buffer; L2/L3/L4 need large buffer for multi-tile GRHs
-        int minDY_L1 = -HalfTilesY - ExtraTiles;
-        int maxDY_L1 = HalfTilesY + ExtraTiles;
-        int minDX_L1 = -HalfTilesX - ExtraTiles;
-        int maxDX_L1 = HalfTilesX + ExtraTiles;
+        int minDY_L1 = -_halfTilesY - ExtraTiles;
+        int maxDY_L1 = _halfTilesY + ExtraTiles;
+        int minDX_L1 = -_halfTilesX - ExtraTiles;
+        int maxDX_L1 = _halfTilesX + ExtraTiles;
 
-        int minDY = -HalfTilesY - ExtraTilesLarge;
-        int maxDY = HalfTilesY + ExtraTilesLarge;
-        int minDX = -HalfTilesX - ExtraTilesLarge;
-        int maxDX = HalfTilesX + ExtraTilesLarge;
+        int minDY = -_halfTilesY - ExtraTilesLarge;
+        int maxDY = _halfTilesY + ExtraTilesLarge;
+        int minDX = -_halfTilesX - ExtraTilesLarge;
+        int maxDX = _halfTilesX + ExtraTilesLarge;
 
         // ── Pass 1: Ground (L1) ── top-left aligned
         for (int dy = minDY_L1; dy <= maxDY_L1; dy++)
@@ -348,8 +372,8 @@ public partial class WalkModePanel : Control
             {
                 int tx = CharX + dx, ty = CharY + dy;
                 if (!Map.InBounds(tx, ty)) continue;
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
                 DrawGrh(Map.Tiles[tx, ty].Layer1, sx, sy, Colors.White);
             }
 
@@ -361,8 +385,8 @@ public partial class WalkModePanel : Control
                 if (!Map.InBounds(tx, ty)) continue;
                 int l2 = Map.Tiles[tx, ty].Layer2;
                 if (l2 <= 0) continue;
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
                 DrawGrhCentered(l2, sx, sy, Colors.White);
             }
 
@@ -380,8 +404,8 @@ public partial class WalkModePanel : Control
                 int tx = CharX + dx;
                 if (!Map.InBounds(tx, ty)) continue;
 
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
 
                 // Ground objects from .inf data (includes doors)
                 DrawTileObject(tx, ty, sx, sy);
@@ -411,8 +435,8 @@ public partial class WalkModePanel : Control
                     if (!Map.InBounds(tx, ty)) continue;
                     int l4 = Map.Tiles[tx, ty].Layer4;
                     if (l4 <= 0) continue;
-                    float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                    float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                    float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                    float sy = (dy + _halfTilesY) * TileSize + ofsY;
                     DrawGrhCentered(l4, sx, sy, new Color(1, 1, 1, roofA));
                 }
         }
@@ -480,8 +504,8 @@ public partial class WalkModePanel : Control
                 if (!Map.InBounds(tx, ty)) continue;
                 if (!Map.Tiles[tx, ty].HasExit) continue;
 
-                float sx = (dx + HalfTilesX) * TileSize + ofsX;
-                float sy = (dy + HalfTilesY) * TileSize + ofsY;
+                float sx = (dx + _halfTilesX) * TileSize + ofsX;
+                float sy = (dy + _halfTilesY) * TileSize + ofsY;
 
                 DrawRect(new Rect2(sx + 2, sy + 2, TileSize - 4, TileSize - 4),
                     new Color(0.2f, 1f, 0.2f, 0.25f));
@@ -500,8 +524,8 @@ public partial class WalkModePanel : Control
         if (bodyGrh <= 0) return;
 
         // Character is ALWAYS at viewport center
-        float cx = HalfTilesX * TileSize;
-        float cy = HalfTilesY * TileSize;
+        float cx = _halfTilesX * TileSize;
+        float cy = _halfTilesY * TileSize;
 
         // VB6-style walk animation: frame synced to pixel displacement, one frame per 8px step
         int frameCount = GetGrhFrameCount(bodyGrh);
