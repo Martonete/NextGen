@@ -16,7 +16,6 @@ public partial class TutorialPanel : Control
     private string _dataPath = "";
 
     // Controls
-    private ColorRect? _overlay;
     private Control? _panel;
     private Label? _titleLabel;
     private Label? _bodyLabel;
@@ -28,6 +27,8 @@ public partial class TutorialPanel : Control
     // State
     private int _currentStep;
     private bool _completed;
+    private bool _dragging;
+    private Vector2 _dragOffset;
 
     // Tutorial step data
     private static readonly (string title, string body)[] Steps = new[]
@@ -100,19 +101,15 @@ public partial class TutorialPanel : Control
         Visible = false;
         ZIndex = 150; // Above game, below loading screen
 
-        // Semi-transparent overlay
-        _overlay = new ColorRect();
-        _overlay.Color = new Color(0, 0, 0, 0.5f);
-        _overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _overlay.Size = new Vector2(ResolutionManager.WindowWidth, ResolutionManager.WindowHeight);
-        _overlay.MouseFilter = MouseFilterEnum.Stop;
-        AddChild(_overlay);
+        MouseFilter = MouseFilterEnum.Ignore;
 
         // Central panel with NinePatch frame
         _panel = new Control();
-        _panel.Position = new Vector2(150, 100);
         _panel.Size = new Vector2(500, 400);
         _panel.CustomMinimumSize = new Vector2(500, 400);
+        _panel.Position = new Vector2(
+            (ResolutionManager.WindowWidth - 500) / 2f,
+            (ResolutionManager.WindowHeight - 400) / 2f);
         _panel.ClipContents = true;
         _panel.MouseFilter = MouseFilterEnum.Stop;
 
@@ -190,6 +187,34 @@ public partial class TutorialPanel : Control
         _skipBtn.CustomMinimumSize = new Vector2(60, 30);
         _skipBtn.Pressed += OnSkipPressed;
         bottomBar.AddChild(_skipBtn);
+    }
+
+    public override void _Input(InputEvent @event)
+    {
+        if (!Visible || _panel == null) return;
+
+        if (@event is InputEventMouseButton mb)
+        {
+            if (mb.ButtonIndex == MouseButton.Left)
+            {
+                var panelRect = new Rect2(_panel.GlobalPosition, _panel.Size);
+                if (mb.Pressed && panelRect.HasPoint(mb.GlobalPosition))
+                {
+                    _dragging = true;
+                    _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
+                    GetViewport().SetInputAsHandled();
+                }
+                else if (!mb.Pressed)
+                {
+                    _dragging = false;
+                }
+            }
+        }
+        else if (@event is InputEventMouseMotion mm && _dragging)
+        {
+            _panel.GlobalPosition = mm.GlobalPosition - _dragOffset;
+            GetViewport().SetInputAsHandled();
+        }
     }
 
     /// <summary>
