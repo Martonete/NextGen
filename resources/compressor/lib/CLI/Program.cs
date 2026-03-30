@@ -116,6 +116,7 @@ static int Unpack(string[] args, byte[] amk)
     int i = 0;
     foreach (var name in names)
     {
+        if (reader.IsTombstone(name)) continue;
         i++;
         Console.Write($"\r[{i}/{names.Count}] {name}".PadRight(80));
 
@@ -145,7 +146,7 @@ static int List(string[] args, byte[] amk)
     Console.WriteLine($"Archive: {inputFile} ({names.Count} entries, Layer={reader.Header.LayerPriority}, Part={reader.Header.SplitPartIndex})");
     Console.WriteLine();
     foreach (var name in names)
-        Console.WriteLine($"  {name}");
+        Console.WriteLine(reader.IsTombstone(name) ? $"  [TOMBSTONE] {name}" : $"  {name}");
     return 0;
 }
 
@@ -161,6 +162,7 @@ static int Verify(string[] args, byte[] amk)
     int ok = 0, fail = 0;
     foreach (var name in names)
     {
+        if (reader.IsTombstone(name)) continue;
         try
         {
             reader.ReadEntry(name); // This verifies hash internally

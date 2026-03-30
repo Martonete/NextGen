@@ -2,6 +2,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Godot;
 using AoPak;
@@ -491,6 +493,187 @@ public partial class MainWindow : Control
         if (_mapStatus == null) return;
         _mapStatus.Text = text;
         _mapStatus.AddThemeColorOverride("font_color", isError ? AppTheme.TEXT_DANGER : AppTheme.TEXT_SUCCESS);
+    }
+
+    #endregion
+
+    #region Pack Tab
+
+    private Control BuildPackTab()
+    {
+        var margin = CreateTabMargin();
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 12);
+
+        vbox.AddChild(AppTheme.Heading("Empaquetar en .aopak"));
+        vbox.AddChild(AppTheme.MakeLabel("Comprime y encripta carpetas de recursos en archivos .aopak.", AppTheme.TEXT_SECONDARY));
+        vbox.AddChild(AppTheme.Sep());
+
+        // Source dir
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA DE RECURSOS (resources/data/)"));
+        var packInputRow = CreatePathRow(out _packInputPath, "Seleccionar...", () =>
+        {
+            _pendingDirCallback = path => _packInputPath!.Text = path;
+            _dirDialog!.Popup();
+        });
+        vbox.AddChild(packInputRow);
+
+        // Output dir
+        vbox.AddChild(AppTheme.SectionLabel("CARPETA DE SALIDA (resources/output/)"));
+        var packOutputRow = CreatePathRow(out _packOutputPath, "Seleccionar...", () =>
+        {
+            _pendingDirCallback = path => _packOutputPath!.Text = path;
+            _dirDialog!.Popup();
+        });
+        vbox.AddChild(packOutputRow);
+
+        // Archive checkboxes
+        vbox.AddChild(AppTheme.SectionLabel("INCLUIR ARCHIVOS"));
+        var checkRow = new HBoxContainer();
+        checkRow.AddThemeConstantOverride("separation", 16);
+
+        _packGfx    = MakePackCheckbox("Graficos → graphics.aopak", true);
+        _packInits  = MakePackCheckbox("INITs → inits.aopak",        true);
+        _packMaps   = MakePackCheckbox("Mapas → maps.aopak",         true);
+        _packSounds = MakePackCheckbox("Sonidos → sounds.aopak",     true);
+        checkRow.AddChild(_packGfx);
+        checkRow.AddChild(_packInits);
+        checkRow.AddChild(_packMaps);
+        checkRow.AddChild(_packSounds);
+        vbox.AddChild(checkRow);
+
+        // Progress
+        _packProgress = AppTheme.MakeProgressBar();
+        vbox.AddChild(_packProgress);
+
+        _packStatus = AppTheme.MakeLabel("", AppTheme.TEXT_MUTED, AppTheme.FONT_SM);
+        _packStatus.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        vbox.AddChild(_packStatus);
+
+        // Pack button
+        var packBtn = AppTheme.PrimaryButton("Empaquetar");
+        packBtn.Pressed += OnPackArchives;
+        vbox.AddChild(packBtn);
+
+        margin.AddChild(vbox);
+        return margin;
+    }
+
+    private static CheckBox MakePackCheckbox(string text, bool defaultChecked)
+    {
+        var cb = new CheckBox { Text = text, ButtonPressed = defaultChecked };
+        cb.AddThemeFontSizeOverride("font_size", AppTheme.FONT_MD);
+        return cb;
+    }
+
+    private async void OnPackArchives()
+    {
+        string inputBase = _packInputPath?.Text ?? "";
+        string outputDir = _packOutputPath?.Text ?? "";
+
+        if (string.IsNullOrWhiteSpace(inputBase) || !Directory.Exists(inputBase))
+        {
+            SetPackStatus("La carpeta de recursos no existe.", true);
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(outputDir))
+        {
+            SetPackStatus("Seleccioná carpeta de salida.", true);
+            return;
+        }
+        if (_converting) return;
+        _converting = true;
+
+        byte[] amk;
+        try { amk = GetAmk(); }
+        catch (Exception ex)
+        {
+            SetPackStatus($"ERROR: {ex.Message}", true);
+            _converting = false;
+            return;
+        }
+
+        var targets = new List<(string Subdir, string Archive)>();
+        if (_packGfx?.ButtonPressed    == true) targets.Add(("Graficos", "graphics.aopak"));
+        if (_packInits?.ButtonPressed   == true) targets.Add(("INIT",     "inits.aopak"));
+        if (_packMaps?.ButtonPressed    == true) targets.Add(("Maps",     "maps.aopak"));
+        if (_packSounds?.ButtonPressed  == true) targets.Add(("Sounds",   "sounds.aopak"));
+
+        if (targets.Count == 0)
+        {
+            SetPackStatus("Seleccioná al menos un tipo de archivo.", true);
+            _converting = false;
+            return;
+        }
+
+        Directory.CreateDirectory(outputDir);
+        SetPackStatus("Empaquetando...", false);
+        _packProgress!.Value = 0;
+
+        int doneArchives = 0;
+        int totalArchives = targets.Count;
+        int errors = 0;
+
+        try
+        {
+            foreach (var (subdir, archiveName) in targets)
+            {
+                string sourceDir = Path.Combine(inputBase, subdir);
+                if (!Directory.Exists(sourceDir))
+                {
+                    Callable.From(() => SetPackStatus($"Carpeta no encontrada: {subdir}/", true)).CallDeferred();
+                    errors++;
+                    doneArchives++;
+                    continue;
+                }
+
+                string outputFile = Path.Combine(outputDir, archiveName);
+                int capturedDone = doneArchives;
+                string capturedName = archiveName;
+
+                await Task.Run(() =>
+                    AopakWriter.Pack(sourceDir, outputFile, amk,
+                        progress: (cur, total, name) => Callable.From(() =>
+                        {
+                            _packProgress.Value = ((double)capturedDone / totalArchives + (double)cur / total / totalArchives) * 100;
+                            _packStatus!.Text = $"[{capturedName}] [{cur}/{total}] {name}";
+                        }).CallDeferred()));
+
+                doneArchives++;
+            }
+
+            _packProgress.Value = 100;
+            SetPackStatus(errors == 0
+                ? $"Listo: {doneArchives} archivo(s) empaquetado(s)."
+                : $"Completado con {errors} error(es).", errors > 0);
+        }
+        catch (Exception ex)
+        {
+            SetPackStatus($"ERROR: {ex.Message}", true);
+            GD.PrintErr($"[PACK] {ex}");
+        }
+        finally { _converting = false; }
+
+        SetStatus("Empaquetado completado");
+    }
+
+    private static byte[] GetAmk()
+    {
+        var envKey = Environment.GetEnvironmentVariable("AOPAK_KEY");
+        if (!string.IsNullOrEmpty(envKey))
+            return SHA256.HashData(Encoding.UTF8.GetBytes(envKey));
+#if DEBUG
+        return SHA256.HashData(Encoding.UTF8.GetBytes("argentum-nextgen-dev-key-2026"));
+#else
+        throw new InvalidOperationException("Variable AOPAK_KEY no configurada. Exportala antes de empaquetar.");
+#endif
+    }
+
+    private void SetPackStatus(string text, bool isError)
+    {
+        if (_packStatus == null) return;
+        _packStatus.Text = text;
+        _packStatus.AddThemeColorOverride("font_color", isError ? AppTheme.TEXT_DANGER : AppTheme.TEXT_SUCCESS);
     }
 
     #endregion

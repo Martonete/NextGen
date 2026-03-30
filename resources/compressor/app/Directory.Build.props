@@ -1,5 +1,1 @@
-<Project>
-  <ItemGroup>
-    <ProjectReference Include="..\compressor\AoPakLib.csproj" />
-  </ItemGroup>
-</Project>
+<Project />
