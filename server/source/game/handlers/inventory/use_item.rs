@@ -443,8 +443,25 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             }
         }
         ObjType::EmptyBottle => {
-            // Fill at water source — simplified, just inform
-            state.send_msg_id(conn_id, 103, ""); // TEXTO103: No hay agua allí
+            // VB6: Fill bottle at water source — check if standing on water tile
+            let on_water = {
+                let (map, px, py) = match state.users.get(&conn_id) {
+                    Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+                    None => { return; }
+                };
+                state.hay_agua(map, px, py)
+            };
+
+            if on_water && obj_data.index_abierta > 0 {
+                // Fill the bottle — swap to full variant
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[idx].obj_index = obj_data.index_abierta;
+                }
+                send_inventory_slot(state, conn_id, idx).await;
+                state.send_console(conn_id, "Has llenado la botella.", crate::protocol::font_index::INFO);
+            } else {
+                state.send_msg_id(conn_id, 103, ""); // No hay agua allí
+            }
         }
         ObjType::FullBottle => {
             // Drink from bottle → restore thirst, swap to empty bottle variant

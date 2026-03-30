@@ -341,8 +341,14 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
         skill_id::OCULTARSE => {
             stealth::do_ocultarse(state, conn_id).await;
         }
+        skill_id::SUERTE | skill_id::TACTICAS | skill_id::ARMAS |
+        skill_id::MEDITAR | skill_id::APUNALAR | skill_id::SUPERVIVENCIA |
+        skill_id::COMERCIAR | skill_id::DEFENSA | skill_id::LIDERAZGO |
+        skill_id::WRESTERLING | skill_id::NAVEGACION | skill_id::DEFENSA_MAGICA => {
+            // Passive skills have no click action — VB6 silently ignores
+        }
         _ => {
-            tracing::info!("[WLC] #{} unsupported skill type {}", conn_id, skill_type);
+            tracing::info!("[WLC] #{} unknown skill type {}", conn_id, skill_type);
         }
     }
 }

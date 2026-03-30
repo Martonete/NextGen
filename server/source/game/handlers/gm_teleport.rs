@@ -80,8 +80,10 @@ pub(super) async fn handle_slash_telep(state: &mut GameState, conn_id: Connectio
 /// /TELEPLOC — Teleport self to last left-click target location.
 pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: ConnectionId) {
     // This uses the target coordinates set by left-click (LC packet).
-    // For now, we don't track target_x/target_y from LC, so fall back to a message.
-    // TODO: Track target_x/target_y from LC handler and warp there.
+    // VB6-PARITY: VB6 stores the last left-click tile in Flags.TargetX/TargetY on the LC handler
+    // (server reads the MapNum, X, Y from the packet). Clicking a tile sets the target and the GM
+    // then uses /TELEPLOC to warp to that exact tile. Currently target_x/target_y default to 0
+    // until a player has clicked a tile, falling back to a console message below.
     let _priv_level = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => u.privileges,
         _ => return,

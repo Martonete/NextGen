@@ -487,9 +487,14 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_talkas(state, conn_id, args).await;
     } else if cmd_upper == "/GUARDARMAPA" {
         // VB6: Admin only. Saves current map to disk (GrabarMapa).
+        // VB6-PARITY: VB6 serialises the in-memory map tile array back to the .map/.inf binary
+        // format and writes MapaN.map + MapaN.inf to disk. This allows GMs to persist tile edits
+        // (blocked states, trigger changes, placed objects) made during a live session.
+        // Currently not implemented: maps are loaded read-only and there is no in-memory mutation
+        // layer for tile edits, so saving would produce an identical file. Needs a tile-edit
+        // subsystem before this can be meaningfully wired up.
         let is_admin = state.users.get(&conn_id).map(|u| u.privileges >= privilege_level::ADMINISTRADOR).unwrap_or(false);
         if !is_admin { return; }
-        // Map saving not implemented (maps are loaded read-only from binary files)
         state.send_console(conn_id, "Mapa guardado.", font_index::INFO);
     } else if cmd_upper.starts_with("/SETDESC ") {
         let args = &cmd[9..];

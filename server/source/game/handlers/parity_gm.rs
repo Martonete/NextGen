@@ -769,7 +769,10 @@ pub(super) async fn alertar_faccionarios(state: &mut GameState, conn_id: Connect
 }
 
 /// /PANELGM — Send GM panel data to client. Requires SEMIDIOS+.
-/// TODO: Client-side GM panel packet not fully implemented — sends console summary.
+/// VB6-PARITY: VB6 sends a dedicated PANELGM binary packet (opcode ~0x2A in the original client)
+/// that populates a floating GM control panel with server stats, toggle buttons for rain/night,
+/// multiplier sliders, and the SOS queue list. The Rust server currently sends a console text
+/// summary instead because the client-side PANELGM packet handler is not yet implemented.
 pub(super) async fn handle_slash_panelgm(state: &mut GameState, conn_id: ConnectionId) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}

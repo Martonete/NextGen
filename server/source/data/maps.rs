@@ -217,9 +217,22 @@ pub struct GameMap {
     pub info: MapInfo,
     pub tiles: MapTiles,
     pub zones: Option<super::zones::MapZones>,
+    /// .aomap header flags (0 for legacy .map files).
+    /// Bit 0: PK zone (PvP allowed)
+    /// Bit 1: Safe zone (no PvP)
+    /// Bit 2: No magic zone
+    /// Bit 3: Dungeon (indoor)
+    /// Bit 4: No respawn zone
+    pub flags: i32,
 }
 
 impl GameMap {
+    pub fn is_pk_zone(&self)       -> bool { self.flags & 0x01 != 0 }
+    pub fn is_safe_zone(&self)     -> bool { self.flags & 0x02 != 0 }
+    pub fn is_no_magic_zone(&self) -> bool { self.flags & 0x04 != 0 }
+    pub fn is_dungeon(&self)       -> bool { self.flags & 0x08 != 0 }
+    pub fn is_no_respawn(&self)    -> bool { self.flags & 0x10 != 0 }
+
     /// Pre-cache zone_id on every tile for O(1) lookup.
     /// Called after loading the .aozone file.
     pub fn init_zones(&mut self) {
@@ -368,7 +381,7 @@ fn load_map_file(path: &Path, tiles: &mut MapTiles) -> Result<(), String> {
 ///   Flags: u32 LE (reserved)
 ///   Padding: 2 bytes (reserved)
 /// Tiles: Width x Height, same ByFlags encoding as legacy .map
-fn load_aomap_file(path: &Path) -> Result<MapTiles, String> {
+fn load_aomap_file(path: &Path) -> Result<(MapTiles, i32), String> {
     let data = std::fs::read(path)
         .map_err(|e| format!("Failed to read .aomap: {}", e))?;
 
@@ -406,8 +419,8 @@ fn load_aomap_file(path: &Path) -> Result<MapTiles, String> {
         return Err(format!("Unreasonable .aomap dimensions: {}x{}", width, height));
     }
 
-    // Read flags (reserved, ignored for now)
-    let _flags = read_i32(&mut cursor)
+    // .aomap flags: bit0=PK zone, bit1=Safe zone, bit2=NoMagic, bit3=Dungeon, bit4=NoRespawn
+    let flags = read_i32(&mut cursor)
         .map_err(|e| format!("Failed to read .aomap flags: {}", e))?;
 
     // Header is exactly 16 bytes: magic(6) + version(2) + width(2) + height(2) + flags(4)
@@ -417,7 +430,7 @@ fn load_aomap_file(path: &Path) -> Result<MapTiles, String> {
     let mut tiles = MapTiles::new(width, height);
     read_map_tiles(&mut cursor, &mut tiles)?;
 
-    Ok(tiles)
+    Ok((tiles, flags))
 }
 
 /// Load .inf binary file (exits, NPCs, objects on tiles).
@@ -588,14 +601,14 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
 
     // Check for .aomap first (extended format with variable dimensions)
     let aomap_file = maps_dir.join(format!("{}.aomap", name));
-    let mut tiles = if aomap_file.exists() {
+    let (mut tiles, map_flags) = if aomap_file.exists() {
         load_aomap_file(&aomap_file)?
     } else {
-        // Fallback to legacy .map format (fixed 100x100)
+        // Fallback to legacy .map format (fixed 100x100); flags not encoded in legacy format
         let map_file = resolve_map_path(&maps_dir, &name, &["map", "Map", "MAP"]);
         let mut tiles = MapTiles::new(MAP_WIDTH, MAP_HEIGHT);
         load_map_file(&map_file, &mut tiles)?;
-        tiles
+        (tiles, 0i32)
     };
 
     // Load .aoinf first (extended format), fallback to legacy .inf
@@ -624,7 +637,7 @@ pub fn load_map(base: &Path, map_num: usize) -> Result<GameMap, String> {
     // Load zone data (.aozone file)
     let zones = super::zones::load_zone_file(maps_dir.to_str().unwrap_or(""), map_num as i32);
 
-    let mut game_map = GameMap { info, tiles, zones };
+    let mut game_map = GameMap { info, tiles, zones, flags: map_flags };
     game_map.init_zones(); // Pre-cache zone_id on every tile
 
     Ok(game_map)

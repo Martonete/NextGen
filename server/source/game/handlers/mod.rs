@@ -495,19 +495,43 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             handle_trade_chat(state, conn_id, &msg).await;
         }
 
-        // Banking
+        // Banking — route to guild bank or personal bank based on open state.
+        // Slot 0 is the gold sentinel: deposit/withdraw gold instead of an item.
         ClientPacketID::BankDeposit => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            handle_bank_deposit(state, conn_id, slot as usize, amount as i32).await;
+            let is_guild = state.users.get(&conn_id).map(|u| u.guild_bank_open).unwrap_or(false);
+            if is_guild {
+                if slot == 0 {
+                    handle_guild_bank_deposit_gold(state, conn_id, amount as i32).await;
+                } else {
+                    handle_guild_bank_deposit(state, conn_id, slot as usize, amount as i32).await;
+                }
+            } else {
+                handle_bank_deposit(state, conn_id, slot as usize, amount as i32).await;
+            }
         }
         ClientPacketID::BankWithdraw => {
             let slot = bq.read_byte().unwrap_or(0);
             let amount = bq.read_integer().unwrap_or(0);
-            handle_bank_withdraw(state, conn_id, slot as usize, amount as i32).await;
+            let is_guild = state.users.get(&conn_id).map(|u| u.guild_bank_open).unwrap_or(false);
+            if is_guild {
+                if slot == 0 {
+                    handle_guild_bank_withdraw_gold(state, conn_id, amount as i32).await;
+                } else {
+                    handle_guild_bank_withdraw(state, conn_id, slot as usize, amount as i32).await;
+                }
+            } else {
+                handle_bank_withdraw(state, conn_id, slot as usize, amount as i32).await;
+            }
         }
         ClientPacketID::BankClose => {
-            handle_bank_close(state, conn_id).await;
+            let is_guild = state.users.get(&conn_id).map(|u| u.guild_bank_open).unwrap_or(false);
+            if is_guild {
+                handle_guild_bank_close(state, conn_id).await;
+            } else {
+                handle_bank_close(state, conn_id).await;
+            }
         }
 
         // Crafting
@@ -588,9 +612,13 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         }
 
         // Misc
-        ClientPacketID::HouseQuery | ClientPacketID::HouseBuy => {
-            // UNSUPPORTED: client never sends these opcodes — drain bytes and ignore
-            let _ = bq.read_ascii_string();
+        ClientPacketID::HouseQuery => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_fwo(state, conn_id, &data_str).await;
+        }
+        ClientPacketID::HouseBuy => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            handle_cuc(state, conn_id, &data_str).await;
         }
         ClientPacketID::PetRename => {
             let data_str = bq.read_ascii_string().unwrap_or_default();
@@ -600,9 +628,17 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
             let data_str = bq.read_ascii_string().unwrap_or_default();
             handle_slash_voto(state, conn_id, &data_str).await;
         }
-        ClientPacketID::DragDrop | ClientPacketID::Report => {
-            // UNSUPPORTED: client never sends these opcodes — drain bytes and ignore
-            let _ = bq.read_ascii_string();
+        ClientPacketID::DragDrop => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let slot: usize = read_field(1, &data_str, ',').parse().unwrap_or(0);
+            let amount: i32 = read_field(2, &data_str, ',').parse().unwrap_or(0);
+            handle_dydtra(state, conn_id, slot, amount).await;
+        }
+        ClientPacketID::Report => {
+            let data_str = bq.read_ascii_string().unwrap_or_default();
+            let target_name = read_field(1, &data_str, ',');
+            let reason = read_field(2, &data_str, ',');
+            handle_newd(state, conn_id, &target_name, &reason).await;
         }
         ClientPacketID::SosView => {
             handle_consul(state, conn_id).await;
