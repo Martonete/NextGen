@@ -889,12 +889,7 @@ public partial class Main : Control
 			else
 				ExitFullscreen();
 		}
-		else
-		{
-			// First launch — show window mode dialog (will be behind startup loading screen)
-			_dialogManager?.ShowWindowModeDialog();
-			CallDeferred(MethodName.CenterWindowModeDialog);
-		}
+		// Window mode dialog will be shown AFTER loading screen completes (first launch)
 
 		// Create startup loading screen on UILayer (above everything, blocks all input)
 		_startupLoadingScreen = new LoadingScreen();
@@ -981,11 +976,17 @@ public partial class Main : Control
 					_startupLoadingScreen?.Complete();
 					GD.Print("[MAIN] Texture preload complete");
 
-					// Now show login (or window mode dialog if first launch)
+					// Now show login or window mode dialog
 					if (_state.Config.LoadedFromFile)
 					{
 						if (_loginForm != null) _loginForm.ShowForm();
 						CallDeferred(MethodName.FocusAccountInput);
+					}
+					else
+					{
+						// First launch — show window mode dialog (loading screen is gone)
+						_dialogManager?.ShowWindowModeDialog();
+						CallDeferred(MethodName.CenterWindowModeDialog);
 					}
 				}
 			}

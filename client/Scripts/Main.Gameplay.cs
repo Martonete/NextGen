@@ -694,7 +694,7 @@ public partial class Main
         _dialogManager?.HideWindowModeDialog();
 
         if (_loginForm != null)
-            _loginForm.Visible = true;
+            _loginForm.ShowForm();
 
         CallDeferred(MethodName.FocusAccountInput);
     }
