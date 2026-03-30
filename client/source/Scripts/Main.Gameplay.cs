@@ -543,7 +543,7 @@ public partial class Main
 
         try
         {
-            _state.MapData = MapLoader.Load(mapDir, _state.CurrentMap);
+            _state.MapData = MapLoader.Load(_resources, _state.CurrentMap);
             _animator.Clear(); // Resets global clock — all tile anims restart from frame 0
             _gameData.Textures?.ResetPreload(); // Allow re-evaluation of preload state on map change
 

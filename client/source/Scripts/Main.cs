@@ -490,7 +490,7 @@ public partial class Main : Control
 		GD.Print($"[MAIN] Data path: {dataPath}");
 		_dataPath = dataPath;
 		_resources = ResourceProviderFactory.Create(dataPath);
-		_gameData.LoadAll(dataPath);
+		_gameData.LoadAll(_resources);
 		_state.TextMessages = _gameData.TextMessages;
 
 		// Load particle definitions
