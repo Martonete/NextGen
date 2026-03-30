@@ -5,10 +5,11 @@ namespace AoPak;
 
 public static class AopakWriter
 {
-    // Extensions that are already compressed — skip zlib for these
+    // Extensions that are already well-compressed — skip zlib for these
+    // Note: .wav is NOT here because WAVs are raw PCM and compress very well
     private static readonly HashSet<string> AlreadyCompressedExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".png", ".jpg", ".jpeg", ".mp3", ".wav", ".ogg", ".webp",
+        ".mp3", ".ogg",
     };
 
     // Extensions that benefit from zlib compression
