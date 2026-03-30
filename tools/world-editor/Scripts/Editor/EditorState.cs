@@ -190,6 +190,7 @@ public class PickState
 public enum PickTarget
 {
     None,
+    Layer2,    // mask/alpha transition
     Layer3,    // tree/object graphic
     Layer4,    // roof
     Npc,

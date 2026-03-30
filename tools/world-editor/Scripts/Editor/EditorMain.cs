@@ -2421,6 +2421,93 @@ public partial class EditorMain : Control
 
     #endregion
 
+    #region Export Map Image
+
+    private void ExportMapAsPng()
+    {
+        if (_map == null || _grhs == null || _textures == null)
+        {
+            SetStatus("No hay mapa para exportar");
+            return;
+        }
+
+        int w = _map.Width;
+        int h = _map.Height;
+        int pixelW = w * 32;
+        int pixelH = h * 32;
+
+        var image = Image.CreateEmpty(pixelW, pixelH, false, Image.Format.Rgba8);
+
+        // Render all 4 layers
+        for (int y = 1; y <= h; y++)
+        {
+            for (int x = 1; x <= w; x++)
+            {
+                int px = (x - 1) * 32;
+                int py = (y - 1) * 32;
+                ref var tile = ref _map.Tiles[x, y];
+
+                // L1 (ground)
+                BlitGrhToImage(image, tile.Layer1, px, py, false);
+                // L2 (mask — centered)
+                if (tile.Layer2 != 0) BlitGrhToImage(image, tile.Layer2, px, py, true);
+                // L3 (trees/objects — centered)
+                if (tile.Layer3 != 0) BlitGrhToImage(image, tile.Layer3, px, py, true);
+                // L4 (roof — centered)
+                if (tile.Layer4 != 0) BlitGrhToImage(image, tile.Layer4, px, py, true);
+            }
+        }
+
+        // Save to disk next to the map files
+        string dir = _state.MapDir.Length > 0 ? _state.MapDir : OS.GetUserDataDir();
+        string filename = $"Mapa{_map.MapNumber}_export.png";
+        string path = Path.Combine(dir, filename);
+        image.SavePng(path);
+        SetStatus($"Exportado: {path}");
+        GD.Print($"[Editor] Exported map as PNG: {path}");
+    }
+
+    private void BlitGrhToImage(Image dest, int grhIdx, int tileX, int tileY, bool centered)
+    {
+        if (grhIdx <= 0 || _grhs == null || grhIdx >= _grhs.Length) return;
+        var grh = _grhs[grhIdx];
+        if (grh.FileNum <= 0) return;
+
+        // Resolve animation frame 0
+        if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+        {
+            int f0 = grh.Frames[0];
+            if (f0 > 0 && f0 < _grhs.Length) grh = _grhs[f0];
+        }
+        if (grh.FileNum <= 0) return;
+
+        var texture = _textures!.GetTexture(grh.FileNum);
+        if (texture == null) return;
+
+        var srcImage = texture.GetImage();
+        if (srcImage == null) return;
+
+        int srcX = grh.SX;
+        int srcY = grh.SY;
+        int srcW = grh.PixelWidth;
+        int srcH = grh.PixelHeight;
+        if (srcW <= 0 || srcH <= 0) return;
+
+        int dstX = tileX;
+        int dstY = tileY;
+        if (centered)
+        {
+            dstX = tileX + 16 - srcW / 2;
+            dstY = tileY + 16 - srcH / 2;
+        }
+
+        // Blit with alpha blending
+        var srcRect = new Rect2I(srcX, srcY, srcW, srcH);
+        dest.BlendRect(srcImage, srcRect, new Vector2I(dstX, dstY));
+    }
+
+    #endregion
+
     #region Map Navigation Bar
 
     private void UpdateNavBar()
@@ -2515,6 +2602,7 @@ public partial class EditorMain : Control
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
+                case Key.F12: ExportMapAsPng(); break;
                 case Key.Key1: _state.ActiveLayer = 1; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
                 case Key.Key2: _state.ActiveLayer = 2; SyncLayerTabs(); _viewport?.QueueRedraw(); break;
                 case Key.Key3: _state.ActiveLayer = 3; SyncLayerTabs(); _viewport?.QueueRedraw(); break;

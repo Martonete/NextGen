@@ -69,6 +69,10 @@ public partial class MapViewport : Control
     private bool _keyUp, _keyDown, _keyLeft, _keyRight;
     private const float KeyPanSpeed = 500f; // pixels per second
 
+    // Auto-scroll when dragging selection near viewport edge
+    private const float EdgePanMargin = 40f;  // pixels from edge to start panning
+    private const float EdgePanSpeed = 400f;  // pixels per second
+
     // Move tool: live snapshot system
     private MapTile[,]? _moveSnapshot;   // Full map state before drag started
     private MapTile[,]? _moveBuffer;     // Tiles being moved (selection copy)
@@ -103,6 +107,21 @@ public partial class MapViewport : Control
             if (_keyDown)  State.CameraOffset += new Vector2(0, step);
             if (_keyLeft)  State.CameraOffset -= new Vector2(step, 0);
             if (_keyRight) State.CameraOffset += new Vector2(step, 0);
+        }
+
+        // Auto-scroll when dragging selection near viewport edge
+        if (State != null && (_isSelecting || _isResizingSelection || _isMovingSelection || _isDragging))
+        {
+            var mousePos = GetLocalMousePosition();
+            float step = EdgePanSpeed * (float)delta;
+            if (mousePos.Y < EdgePanMargin)          State.CameraOffset += new Vector2(0, step);
+            if (mousePos.Y > Size.Y - EdgePanMargin) State.CameraOffset -= new Vector2(0, step);
+            if (mousePos.X < EdgePanMargin)          State.CameraOffset += new Vector2(step, 0);
+            if (mousePos.X > Size.X - EdgePanMargin) State.CameraOffset -= new Vector2(step, 0);
+
+            // Update drag target tile while auto-scrolling
+            if (_isSelecting)
+                _dragCurrent = ClampToMap(ScreenToTile(GetGlobalMousePosition()));
         }
 
         // Animate marching ants for selection
@@ -1395,13 +1414,22 @@ public partial class MapViewport : Control
                 else
                 {
                     var tile = ScreenToTile(mb.Position);
-                    EyedropAt(tile.X, tile.Y);
+                    // Right-click grab: pick entity or layer graphic to move it
+                    PickStartAt(tile.X, tile.Y);
+                    if (State?.Pick.HasPick != true)
+                        EyedropAt(tile.X, tile.Y); // fallback to eyedrop if nothing to pick
                 }
             }
             else if (!mb.Pressed)
             {
                 if (_mosaicHandleDrag) { _mosaicHandleDrag = false; QueueRedraw(); }
                 if (_isPanning) _isPanning = false;
+                // Drop picked entity on right-click release
+                if (State?.Pick.HasPick == true)
+                {
+                    var tile = ScreenToTile(mb.Position);
+                    PickDropAt(tile.X, tile.Y);
+                }
             }
             return;
         }
@@ -1799,7 +1827,7 @@ public partial class MapViewport : Control
 
     /// <summary>
     /// Detect what entity is at tile (x,y) and start dragging it.
-    /// Priority: NPC > Object > Layer3 > Layer4.
+    /// Priority: NPC > Object > Particle > L3 > L4 > L2.
     /// </summary>
     private void PickStartAt(int tx, int ty)
     {
@@ -1819,6 +1847,8 @@ public partial class MapViewport : Control
             pick.Target = PickTarget.Layer3;
         else if (tile.Layer4 != 0)
             pick.Target = PickTarget.Layer4;
+        else if (tile.Layer2 != 0)
+            pick.Target = PickTarget.Layer2;
         else
             return; // nothing to pick
 
@@ -1850,6 +1880,10 @@ public partial class MapViewport : Control
 
         switch (pick.Target)
         {
+            case PickTarget.Layer2:
+                Map.Tiles[tx, ty].Layer2 = Map.Tiles[sx, sy].Layer2;
+                Map.Tiles[sx, sy].Layer2 = 0;
+                break;
             case PickTarget.Layer3:
                 Map.Tiles[tx, ty].Layer3 = Map.Tiles[sx, sy].Layer3;
                 Map.Tiles[sx, sy].Layer3 = 0;
@@ -1898,6 +1932,7 @@ public partial class MapViewport : Control
 
         return pick.Target switch
         {
+            PickTarget.Layer2 => tile.Layer2,
             PickTarget.Layer3 => tile.Layer3,
             PickTarget.Layer4 => tile.Layer4,
             PickTarget.Npc => GetNpcBodyGrh(tile.NpcIndex),
