@@ -16,14 +16,7 @@ public static class ResourceProviderFactory
     /// </summary>
     public static IResourceProvider Create(string dataPath)
     {
-        // In editor/dev mode: always use loose files (fast, no encryption overhead)
-        if (OS.HasFeature("editor"))
-        {
-            GD.Print("[Resources] Editor mode → FileResourceProvider");
-            return new FileResourceProvider(dataPath);
-        }
-
-        // Release mode: prefer archives
+        // Check for .aopak archives (works in both editor and release)
         string manifestPath = Path.Combine(dataPath, AopakManifest.ManifestFileName);
 
         if (File.Exists(manifestPath))
