@@ -1,16 +1,13 @@
 //! Spell casting and effect handlers.
 //! Extracted from mod.rs to reduce file size.
 
-use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, MAX_SPELL_SLOTS};
-use crate::game::world;
 use crate::protocol::{font_index, binary_packets};
-use crate::data::objects::ObjType;
 use crate::data::experience::MAX_LEVEL;
 use super::common::*;
-use super::{user_die, npc_die, check_user_level, revive_user, warp_user};
+use super::{user_die, npc_die, check_user_level, revive_user};
 
 // =====================================================================
 // Spell handler

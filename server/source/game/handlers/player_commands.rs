@@ -7,13 +7,9 @@ use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
 use crate::db::charfile;
-use crate::data::objects::ObjType;
 use super::common::*;
-use crate::game::types::InventorySlot;
 use super::{
-    warp_user, revive_user, send_inventory_slot, send_full_inventory,
-    iniciar_comercio_npc, iniciar_comercio_usuario, iniciar_banco, enviar_banco_inv,
-    send_to_party,
+    iniciar_comercio_usuario, enviar_banco_inv,
 };
 
 // GM / Admin command handlers (TCP_HandleData3.bas — GM section)

@@ -14,7 +14,7 @@ use super::common::*;
 use crate::game::types::MAX_INVENTORY_SLOTS;
 use crate::protocol::font_index;
 use super::{
-    user_die, check_user_level, send_inventory_slot, send_full_inventory,
+    user_die, check_user_level, send_full_inventory,
     calc_armor_absorption_with_penetration,
     poder_evasion, poder_evasion_escudo,
     poder_ataque_arma, poder_ataque_proyectil, poder_ataque_wrestling,

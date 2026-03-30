@@ -2,7 +2,6 @@
 //! Extracted from mod.rs to reduce file size.
 
 use crate::net::ConnectionId;
-use crate::game::class_race::{PlayerClass, PlayerRace};
 use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
 use crate::protocol::font_index;
 use crate::data::balance;

@@ -1,14 +1,11 @@
 //! Player passive tick handlers: meditation, HP/mana/stamina regen, hunger/thirst,
 //! poison, buff expiry, cooldowns, auto-save.
 
-use tracing::{info, error};
 use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, UserState};
 use crate::db::charfile;
 use crate::protocol::{binary_packets, font_index};
 use crate::game::handlers::common::*;
-use crate::game::handlers::world;
 use crate::game::handlers::{
     user_die, revive_user, warp_user,
 };

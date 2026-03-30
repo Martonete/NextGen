@@ -2,12 +2,11 @@
 //! citizenship, travel, training, centinela, navigation, voting, marriage.
 
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
+use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
 use super::common::*;
 use super::{
     warp_user, send_full_inventory,
-    remove_pet_from_owner,
 };
 
 // =====================================================================

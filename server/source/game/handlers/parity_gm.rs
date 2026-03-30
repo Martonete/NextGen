@@ -5,9 +5,7 @@ use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, privilege_level};
 use crate::protocol::{font_index, binary_packets};
 use super::common::*;
-use super::{
-    warp_user, send_full_inventory,
-};
+use super::warp_user;
 
 // =====================================================================
 // 7. Missing GM Commands

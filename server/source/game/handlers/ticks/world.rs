@@ -1,12 +1,10 @@
 //! World-level tick handlers: anti-cheat intervals, world cleanup, security, utilities.
 
-use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
 use crate::protocol::{binary_packets, font_index};
 use crate::game::handlers::common::*;
-use crate::game::handlers::world;
 use crate::game::handlers::{warp_user};
 use super::remove_pet_from_owner;
 

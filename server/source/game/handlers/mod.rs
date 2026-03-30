@@ -48,13 +48,11 @@ use parity_gm::*;
 use inventory::*;
 // Re-export functions from new submodules so sibling modules can use `super::fn_name`
 pub(crate) use warp::{
-    make_user_visible, check_update_needed_user, warp_user, warp_user_inner,
-    warp_user_exact, warp_mascotas, mover_casper, send_warp_fx,
+    make_user_visible, check_update_needed_user, warp_user,
+    warp_user_exact, mover_casper, send_warp_fx,
 };
 pub(crate) use leveling::check_user_level;
-pub(crate) use auth::connect_user;
 // Re-export quest/party functions called from other modules
-pub use quests_party::party_share_exp;
 // Re-export tick functions called from main.rs
 pub use ticks::{
     tick_npc_ai, tick_npc_respawn, tick_player_passive,
@@ -86,23 +84,16 @@ pub use events::{
 
 // Many functions/constants are declared for VB6 parity but not yet wired up.
 
-use std::collections::HashMap;
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::net::ConnectionId;
 use crate::protocol::{client_opcodes, font_index, fields::read_field};
 use crate::protocol::byte_queue::ByteQueue;
 use crate::protocol::packets::ClientPacketID;
 use crate::protocol::binary_packets;
-use crate::db::{accounts, charfile, guilds};
-use crate::db::password;
-use crate::data::objects::ObjType;
-use crate::data::maps::Trigger;
-use super::class_race::{PlayerClass, PlayerRace};
-use super::types::{GameState, UserState, SendTarget, InventorySlot, EquipSlots, PartyState, CleanWorldEntry, privilege_level, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS, MAX_SPELL_SLOTS, MAX_PARTY_MEMBERS, MAX_PARTIES};
+use crate::db::charfile;
+use super::types::{GameState, privilege_level};
 use super::world;
-use super::npc;
-use crate::data::npcs::NpcType;
 
 /// Decode coordinate-bearing packet using the per-connection rolling cipher.
 /// Returns None if cipher is not active (pre-login) or decoding fails validation.

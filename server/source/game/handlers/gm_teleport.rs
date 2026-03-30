@@ -3,7 +3,6 @@
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, privilege_level};
 use crate::protocol::{font_index};
-use super::world;
 use super::{warp_user, warp_user_exact, send_warp_fx};
 
 /// After a GM warp, check if the destination tile has an exit and follow it.

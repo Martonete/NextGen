@@ -2,14 +2,14 @@
 
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::protocol::{font_index, binary_packets};
-use crate::data::objects::{ObjData, ObjType};
+use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::handlers::{send_inventory_slot, send_full_inventory, check_user_level};
+use crate::game::handlers::{send_inventory_slot, send_full_inventory};
 use crate::game::constants::*;
-use super::{skill_id, luck_denominator, max_items_extraibles, grant_crafting_rep,
-    has_items, remove_items, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj, has_tool_equipped,
+use super::{skill_id, grant_crafting_rep,
+    has_items, remove_items, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj,
     mod_herreria, mod_carpinteria, mod_fundicion,
 };
 

@@ -3,13 +3,12 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget, privilege_level};
-use crate::game::npc;
 use crate::protocol::{font_index, binary_packets};
 use super::common::*;
 use super::world;
 
 // Functions from parent module (mod.rs)
-use super::{warp_user, revive_user, move_npc};
+use super::{warp_user, move_npc};
 
 /// /REGRESAR — Return to home city (die and respawn at home).
 pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: ConnectionId) {

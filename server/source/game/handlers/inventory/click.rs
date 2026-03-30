@@ -1,22 +1,15 @@
 //! Inventory click handlers: left click (look at), right click (interact), doors, forum, safe toggle.
 //! Split from inventory.rs for file size management.
 
-use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::class_race::PlayerRace;
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
+use crate::game::types::{GameState, SendTarget};
 use crate::game::world;
 use crate::protocol::font_index;
 use crate::protocol::binary_packets;
-use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::constants::*;
 use crate::game::handlers::{
-    send_inventory_slot, send_full_inventory, build_anm_packet,
     warp_user, iniciar_comercio_npc, iniciar_banco,
-    naked_body,
 };
-use crate::game::handlers::skills::skill_id;
 use super::doors::{accion_para_puerta, accion_para_foro};
 
 pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {

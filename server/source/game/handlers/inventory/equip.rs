@@ -2,12 +2,10 @@
 //! Split from inventory.rs for file size management.
 
 use crate::net::ConnectionId;
-use crate::game::class_race::PlayerRace;
 use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
 use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::ObjType;
-use crate::game::handlers::common::*;
 use crate::game::constants::*;
 use crate::game::handlers::{
     send_inventory_slot, build_anm_packet,

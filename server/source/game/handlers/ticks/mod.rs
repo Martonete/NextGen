@@ -12,6 +12,6 @@ mod player;
 mod world;
 
 pub use npc_ai::*;
-pub use npc_move::*;
+pub(crate) use npc_move::*;
 pub use player::*;
 pub use world::*;

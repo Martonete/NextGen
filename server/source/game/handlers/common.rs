@@ -5,8 +5,8 @@
 
 use crate::net::ConnectionId;
 use crate::data::maps::Trigger;
-use crate::protocol::{fields::read_field, binary_packets};
-use crate::game::types::{GameState, UserState, SendTarget, CleanWorldEntry, MAX_INVENTORY_SLOTS, MAX_SPELL_SLOTS};
+use crate::protocol::binary_packets;
+use crate::game::types::{GameState, UserState, SendTarget, CleanWorldEntry, MAX_INVENTORY_SLOTS};
 use crate::game::class_race::PlayerRace;
 use crate::data::npcs::NpcType;
 use crate::game::world;

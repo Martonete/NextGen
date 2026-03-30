@@ -2,9 +2,8 @@
 
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
-use crate::data::npcs::NpcType;
 use crate::game::npc;
-use crate::protocol::{binary_packets, font_index};
+use crate::protocol::binary_packets;
 use crate::game::handlers::common::*;
 use crate::game::handlers::world;
 use crate::game::handlers::{npc_die};

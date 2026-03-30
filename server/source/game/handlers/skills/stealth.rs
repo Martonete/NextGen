@@ -2,14 +2,12 @@
 
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::game::world;
+use crate::game::types::{GameState, UserState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::handlers::{send_inventory_slot, check_user_level};
-use crate::game::constants::*;
-use super::{skill_id, luck_denominator_lookup, try_level_skill_with_hit};
+use crate::game::handlers::send_inventory_slot;
+use super::{luck_denominator_lookup, try_level_skill_with_hit};
 
 pub(crate) async fn do_robar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, skill, class, level) = match state.users.get(&conn_id) {

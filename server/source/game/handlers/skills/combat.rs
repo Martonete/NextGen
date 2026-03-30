@@ -1,22 +1,16 @@
 //! Combat-related skills: taming, ranged attacks.
 
 use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::game::world;
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::protocol::{font_index, binary_packets};
 use crate::protocol::packets::MultiMessageID;
-use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
-    send_inventory_slot, user_die, do_cast_spell,
-    calc_attack_power, calc_attack_power_with_balance, calc_defense_power, calc_armor_absorption,
-    class_damage_modifier_from_balance,
+    send_inventory_slot, user_die, calc_attack_power_with_balance, calc_armor_absorption,
     check_user_level,
     poder_evasion, poder_evasion_escudo,
 };
-use crate::game::constants::*;
-use super::{skill_id, luck_denominator, luck_denominator_lookup, try_level_skill, try_level_skill_with_hit};
+use super::{try_level_skill, try_level_skill_with_hit};
 
 pub(crate) async fn do_domar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy) = match state.users.get(&conn_id) {

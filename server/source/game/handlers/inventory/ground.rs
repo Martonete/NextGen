@@ -1,18 +1,14 @@
 //! Inventory ground interaction: pickup, drop items, drop gold.
 //! Split from inventory.rs for file size management.
 
-use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::constants::*;
-use crate::game::handlers::{
-    send_inventory_slot, send_full_inventory,
-};
+use crate::game::handlers::send_inventory_slot;
 use super::equip::unequip_slot;
 
 pub(crate) async fn handle_pick_up(state: &mut GameState, conn_id: ConnectionId) {

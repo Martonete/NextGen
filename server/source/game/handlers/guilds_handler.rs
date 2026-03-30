@@ -6,7 +6,6 @@ use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, fields::read_field, binary_packets};
 use crate::db::guilds;
-use super::common::*;
 use super::send_full_inventory;
 
 // =====================================================================

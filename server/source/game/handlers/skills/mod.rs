@@ -12,22 +12,17 @@ mod combat;
 mod stealth;
 
 // Re-export all sub-module items to parent (handlers) scope
-pub(crate) use resource::*;
 pub(crate) use craft::*;
-pub(crate) use combat::*;
 pub(crate) use stealth::*;
 
 
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
+use crate::game::types::{GameState, UserState};
 use crate::game::world;
-use crate::protocol::{font_index, binary_packets};
-use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
-    send_inventory_slot, send_full_inventory, user_die, do_cast_spell,
-    check_user_level,
+    send_inventory_slot, do_cast_spell,
 };
 
 pub(super) mod skill_id {
@@ -56,7 +51,6 @@ pub(super) mod skill_id {
     pub const FUNDIR_METAL: i32 = 88;
 }
 
-use crate::game::constants::*;
 
 /// Stamina costs.
 pub(crate) const ESFUERZO_TALAR_RECOLECTOR: i32 = 2;

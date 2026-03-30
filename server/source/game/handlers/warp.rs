@@ -208,7 +208,7 @@ pub(crate) async fn check_update_needed_user(
     }
 
     // Get self char_index and invisible/hidden flags for [CD and NOVER
-    let (my_char_idx, my_invisible, my_privileges) = match state.users.get(&conn_id) {
+    let (my_char_idx, my_invisible, _my_privileges) = match state.users.get(&conn_id) {
         Some(u) => (u.char_index.0, u.admin_invisible || u.invisible || u.hidden, u.privileges),
         None => return,
     };

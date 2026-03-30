@@ -1,16 +1,14 @@
 //! Resource gathering skills: fishing, woodcutting, mining.
 
 use crate::net::ConnectionId;
-use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, UserState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
-use crate::game::world;
+use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::handlers::{send_inventory_slot, send_full_inventory, check_user_level};
+use crate::game::handlers::send_inventory_slot;
 use crate::game::constants::*;
-use super::{skill_id, luck_denominator, max_items_extraibles, grant_crafting_rep,
-    is_recolector, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj,
+use super::{luck_denominator, max_items_extraibles,
+    is_recolector, try_level_skill_with_hit, equipped_weapon_obj,
     mod_fundicion,
     ESFUERZO_PESCAR_RECOLECTOR, ESFUERZO_PESCAR_GENERAL,
     ESFUERZO_TALAR_RECOLECTOR, ESFUERZO_TALAR_GENERAL,

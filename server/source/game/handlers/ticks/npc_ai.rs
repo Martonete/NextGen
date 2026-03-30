@@ -1,10 +1,9 @@
 //! NPC AI tick handlers: movement, chase, attack, healing, respawn.
 
-use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::data::npcs::NpcType;
 use crate::game::npc;
-use crate::protocol::{binary_packets, font_index};
+use crate::protocol::binary_packets;
 use crate::game::handlers::common::*;
 use crate::game::handlers::world;
 use crate::game::handlers::{
@@ -15,8 +14,7 @@ use crate::game::handlers::{
 use super::{
     send_npc_move, send_ghost_push, find_adjacent_player, find_nearest_player,
     find_player_by_name, chase_heading, restore_old_movement, npc_attack_npc,
-    find_target_npc_in_vision, find_nearest_hostile_npc,
-    is_pretoriano, find_wounded_pretoriano_ally, find_paralyzed_pretoriano_ally,
+    find_target_npc_in_vision, find_nearest_hostile_npc, find_wounded_pretoriano_ally, find_paralyzed_pretoriano_ally,
     has_pretoriano_allies,
 };
 

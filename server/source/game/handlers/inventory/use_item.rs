@@ -1,23 +1,18 @@
 //! Inventory use-item handlers (potions, food, keys, scrolls, etc.).
 //! Split from inventory.rs for file size management.
 
-use tracing::info;
 use crate::net::ConnectionId;
-use crate::game::class_race::{PlayerClass, PlayerRace};
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 use crate::protocol::font_index;
 use crate::protocol::binary_packets;
-use crate::data::objects::{ObjData, ObjType};
+use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 use crate::game::constants::*;
 use crate::game::handlers::{
-    send_inventory_slot, send_full_inventory, build_anm_packet,
-    warp_user, revive_user, naked_body, user_die,
-    iniciar_comercio_npc, iniciar_banco,
+    send_inventory_slot, revive_user, naked_body, user_die,
 };
 use crate::game::handlers::skills::skill_id;
-use super::equip::unequip_slot;
 
 /// USA<slot> — Use item from inventory.
 /// QSA<slot>,<visible> — Use item via double-click on inventory picture.

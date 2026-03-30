@@ -6,16 +6,13 @@
 use tracing::info;
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget, InventorySlot, MAX_INVENTORY_SLOTS};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::game::world;
 use crate::protocol::{font_index, binary_packets};
-use crate::data::objects::ObjType;
 use super::common::*;
 use crate::game::constants::*;
 use super::{
-    user_attack_npc, check_user_level, warp_user, naked_body,
-    send_inventory_slot, send_full_inventory,
-    pretoriano_check_death,
+    user_attack_npc, check_user_level, warp_user, send_full_inventory,
 };
 use super::npcs::fire_elemental_react;
 use super::skills::{

@@ -2,11 +2,8 @@
 //! Split from inventory.rs for file size management.
 
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, privilege_level};
-use crate::game::world;
-use crate::protocol::{font_index, fields::read_field};
+use crate::game::types::{GameState, SendTarget};
 use crate::protocol::binary_packets;
-use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
 
 pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: ConnectionId, map: i32, x: i32, y: i32, obj_index: i32) {

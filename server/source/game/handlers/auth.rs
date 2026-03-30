@@ -5,11 +5,11 @@
 use tracing::{info, warn};
 
 use crate::net::ConnectionId;
-use crate::protocol::{font_index, fields::read_field, binary_packets};
+use crate::protocol::{fields::read_field, binary_packets};
 use crate::db::{accounts, charfile, password};
 use crate::data::objects::ObjType;
 use crate::game::class_race::{PlayerClass, PlayerRace};
-use crate::game::types::{GameState, SendTarget, InventorySlot, EquipSlots, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS};
+use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS, MAX_NORMAL_INVENTORY_SLOTS};
 use crate::game::constants::{DEAD_BODY_NEUTRAL, DEAD_HEAD_NEUTRAL};
 use crate::game::world;
 use super::common::*;
