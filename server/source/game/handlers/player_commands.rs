@@ -24,7 +24,7 @@ use super::{
 
 /// /DESC <text> — Set character description. Saved to charfile.
 pub(super) async fn handle_slash_desc(state: &mut GameState, conn_id: ConnectionId, desc: &str) {
-    let name = match state.users.get(&conn_id) {
+    let _name = match state.users.get(&conn_id) {
         Some(u) if u.logged => u.char_name.clone(),
         _ => return,
     };
@@ -464,7 +464,7 @@ pub(super) async fn handle_slash_onlinemap(state: &mut GameState, conn_id: Conne
 /// VB6: Sets AtacablePor on both users so they can attack each other
 /// outside of normal PvP rules (e.g. in safe zones).
 pub(super) async fn handle_slash_desafio(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
-    let (my_name, dead, my_map, mx, my_) = match state.users.get(&conn_id) {
+    let (my_name, dead, my_map, _mx, _my_) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.char_name.clone(), u.dead, u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };

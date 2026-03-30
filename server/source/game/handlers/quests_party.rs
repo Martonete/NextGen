@@ -393,7 +393,7 @@ pub(super) async fn handle_slash_darpartido(state: &mut GameState, conn_id: Conn
     }
 
     let target_name_display = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
-    let old_leader_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    let _old_leader_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
 
     // Transfer leadership (VB6: HacerLeader swaps positions in array)
     if let Some(Some(party)) = state.parties.get_mut(party_index as usize) {

@@ -711,7 +711,7 @@ pub(super) async fn handle_centinela_improved(state: &mut GameState, conn_id: Co
 /// AlertarFaccionarios — Alert all online faction members.
 /// VB6: Plays a sound and sends a message to all faction members.
 pub(super) async fn alertar_faccionarios(state: &mut GameState, conn_id: ConnectionId) {
-    let (armada, caos, name, map, x, y) = match state.users.get(&conn_id) {
+    let (armada, caos, name, map, _x, _y) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.armada_real, u.fuerzas_caos, u.char_name.clone(), u.pos_map, u.pos_x, u.pos_y),
         _ => return,
     };

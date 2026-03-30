@@ -167,7 +167,7 @@ pub(super) async fn handle_slash_liberarmascota(state: &mut GameState, conn_id: 
 /// /COMPARTIR — Share owned NPCs with target player.
 /// VB6: HandleShareNpc — faction-restricted sharing.
 pub(super) async fn handle_slash_compartir(state: &mut GameState, conn_id: ConnectionId) {
-    let (target_user, my_criminal, my_armada, my_caos, my_name) = match state.users.get(&conn_id) {
+    let (target_user, my_criminal, _my_armada, my_caos, my_name) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.target_user, u.criminal, u.armada_real, u.fuerzas_caos, u.char_name.clone()),
         _ => return,
     };

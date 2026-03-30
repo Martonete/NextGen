@@ -404,7 +404,7 @@ pub(super) async fn handle_slash_bloq(state: &mut GameState, conn_id: Connection
     };
 
     if let Some(is_blocked) = toggle_result {
-        let blocked_val = if is_blocked { 1 } else { 0 };
+        let _blocked_val = if is_blocked { 1 } else { 0 };
 
         // Broadcast BQ packet to everyone on the map
         let bq_pkt = binary_packets::write_block_position(x as i16, y as i16, is_blocked);

@@ -187,7 +187,7 @@ pub(super) async fn handle_slash_fps(state: &mut GameState, conn_id: ConnectionI
 }
 
 /// /CT map x y — Create teleport at current position (requires map .inf modification).
-pub(super) async fn handle_slash_ct(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+pub(super) async fn handle_slash_ct(state: &mut GameState, conn_id: ConnectionId, _args: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => return,
@@ -251,7 +251,7 @@ pub(super) async fn handle_slash_talkas(state: &mut GameState, conn_id: Connecti
 }
 
 /// /SETDESC nick description — Set NPC/user description.
-pub(super) async fn handle_slash_setdesc(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+pub(super) async fn handle_slash_setdesc(state: &mut GameState, conn_id: ConnectionId, _args: &str) {
     match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
         _ => return,

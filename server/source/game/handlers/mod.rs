@@ -107,7 +107,7 @@ use crate::data::npcs::NpcType;
 /// Decode coordinate-bearing packet using the per-connection rolling cipher.
 /// Returns None if cipher is not active (pre-login) or decoding fails validation.
 fn decode_coords(state: &mut GameState, conn_id: ConnectionId, enc_x: i16, enc_y: i16) -> Option<(i16, i16)> {
-    let (map, map_w, map_h) = state.users.get(&conn_id)
+    let (map, _map_w, _map_h) = state.users.get(&conn_id)
         .map(|u| (u.pos_map, 0i32, 0i32))
         .unwrap_or((0, 0, 0));
     let (grid_w, grid_h) = state.grid_dimensions(map);

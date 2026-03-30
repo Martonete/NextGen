@@ -316,7 +316,7 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
         ),
         _ => return,
     };
-    let (armada, caos, _char_name, _guild_index) = user_data;
+    let (armada, caos, _char_name, guild_index) = user_data;
 
     if !armada && !caos {
         state.send_console(conn_id, "No perteneces a ninguna faccion.", font_index::INFO);
@@ -544,7 +544,7 @@ pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, me
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.dead),
         _ => return,
     };
-    let (map, x, y, char_index, dead) = user_data;
+    let (map, _x, _y, char_index, dead) = user_data;
 
     if dead {
         return; // Dead players can't yell

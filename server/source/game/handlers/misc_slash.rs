@@ -558,7 +558,7 @@ pub(super) async fn handle_cnm(state: &mut GameState, conn_id: ConnectionId, pay
 
 
 /// /VOTO — Vote for guild leader candidate.
-pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, candidate: &str) {
+pub(super) async fn handle_slash_voto(state: &mut GameState, conn_id: ConnectionId, _candidate: &str) {
     let guild_idx = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
     if guild_idx <= 0 {
         state.send_console(conn_id, "No perteneces a ningun clan.", font_index::INFO);

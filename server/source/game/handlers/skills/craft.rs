@@ -372,7 +372,7 @@ pub(crate) async fn do_upgrade(state: &mut GameState, conn_id: ConnectionId, inv
         None => return,
     };
 
-    let (item_idx, upgrade_idx, obj_type, cur_ling_h, cur_ling_p, cur_ling_o,
+    let (_item_idx, upgrade_idx, obj_type, cur_ling_h, cur_ling_p, cur_ling_o,
          cur_madera, _cur_piedras, item_name, is_equipped) = match item_data {
         Some(d) => d,
         None => {

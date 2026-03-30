@@ -16,6 +16,14 @@ public static class ResourceProviderFactory
     /// </summary>
     public static IResourceProvider Create(string dataPath)
     {
+        // In editor/dev mode: always use loose files (fast, no encryption overhead)
+        if (OS.HasFeature("editor"))
+        {
+            GD.Print("[Resources] Editor mode → FileResourceProvider");
+            return new FileResourceProvider(dataPath);
+        }
+
+        // Release mode: prefer archives
         string manifestPath = Path.Combine(dataPath, AopakManifest.ManifestFileName);
 
         if (File.Exists(manifestPath))
@@ -24,13 +32,15 @@ public static class ResourceProviderFactory
             return CreateFromManifest(dataPath, manifestPath, amk);
         }
 
-        bool hasArchives = Directory.GetFiles(dataPath, "*.aopak").Length > 0;
+        bool hasArchives = Directory.Exists(dataPath) &&
+            Directory.GetFiles(dataPath, "*.aopak").Length > 0;
         if (hasArchives)
         {
             byte[] amk = GetApplicationMasterKey();
             return new AopakResourceProvider(dataPath, amk);
         }
 
+        // Fallback to loose files even in release (graceful degradation)
         return new FileResourceProvider(dataPath);
     }
 

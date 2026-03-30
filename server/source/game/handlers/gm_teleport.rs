@@ -83,7 +83,7 @@ pub(super) async fn handle_slash_teleploc(state: &mut GameState, conn_id: Connec
     // This uses the target coordinates set by left-click (LC packet).
     // For now, we don't track target_x/target_y from LC, so fall back to a message.
     // TODO: Track target_x/target_y from LC handler and warp there.
-    let priv_level = match state.users.get(&conn_id) {
+    let _priv_level = match state.users.get(&conn_id) {
         Some(u) if u.logged && u.privileges >= privilege_level::CONSEJERO => u.privileges,
         _ => return,
     };

@@ -176,7 +176,7 @@ pub(super) async fn handle_slash_banacc(state: &mut GameState, conn_id: Connecti
 
     let parts: Vec<&str> = args.splitn(2, '@').collect();
     let nick = parts[0].trim().replace(['\\', '/'], "");
-    let reason = if parts.len() > 1 { parts[1].trim() } else { "Sin razon" };
+    let _reason = if parts.len() > 1 { parts[1].trim() } else { "Sin razon" };
 
     if nick.is_empty() {
         state.send_msg_id(conn_id, 758, "");

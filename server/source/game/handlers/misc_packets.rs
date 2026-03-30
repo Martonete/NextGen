@@ -319,7 +319,7 @@ pub(super) async fn handle_entr(state: &mut GameState, conn_id: ConnectionId, cr
         return;
     }
 
-    let (target_npc, map, x, y, nro_mascotas, gold) = match state.users.get(&conn_id) {
+    let (target_npc, _map, _x, _y, nro_mascotas, _gold) = match state.users.get(&conn_id) {
         Some(u) => (u.target_npc, u.pos_map, u.pos_x, u.pos_y, u.nro_mascotas, u.gold),
         None => return,
     };
@@ -449,7 +449,7 @@ pub(super) async fn handle_dydtra(state: &mut GameState, conn_id: ConnectionId, 
         return;
     }
 
-    let (map, x, y, _heading) = match state.users.get(&conn_id) {
+    let (_map, _x, _y, _heading) = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.heading),
         None => return,
     };

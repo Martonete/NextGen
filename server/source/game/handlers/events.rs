@@ -17,7 +17,7 @@ pub(super) async fn handle_slash_regresar(state: &mut GameState, conn_id: Connec
         Some(u) if u.logged => (u.dead, u.privileges, u.level, u.pos_map),
         _ => return,
     };
-    let (dead, privileges, level, cur_map) = user_data;
+    let (dead, privileges, level, _cur_map) = user_data;
 
     if privileges >= privilege_level::CONSEJERO {
         return;

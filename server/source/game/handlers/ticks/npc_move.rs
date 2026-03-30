@@ -14,7 +14,7 @@ pub(crate) async fn send_npc_move(state: &mut GameState, npc_idx: usize) {
         Some(n) => (n.char_index.0, n.x, n.y, n.map, n.heading, n.area_min_x, n.area_min_y),
         None => return,
     };
-    let (char_idx, x, y, map, heading, area_min_x, area_min_y) = data;
+    let (char_idx, x, y, map, heading, _area_min_x, _area_min_y) = data;
 
     // VB6 movement packet: *charindex,x,y → binary CharacterMove
     let pkt = binary_packets::write_character_move(char_idx as i16, x as i16, y as i16);
