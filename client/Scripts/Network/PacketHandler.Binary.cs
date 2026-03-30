@@ -237,7 +237,7 @@ public partial class PacketHandler
                 _state.UserDumb = true;
                 break;
             case ServerPacketId.ShowSignal: // 58
-                // STUB: reads wire bytes but not yet implemented
+                // UNSUPPORTED: ShowSignal — reads wire bytes only
                 { string text = bq.ReadString(); int grh = (ushort)bq.ReadInteger(); }
                 break;
             case ServerPacketId.DiceRoll: // 59
@@ -337,26 +337,26 @@ public partial class PacketHandler
                 HandleBinUpdateTagAndStatus(bq);
                 break;
             case ServerPacketId.SpawnList: // 90
-                // STUB: reads wire bytes but not yet implemented
+                // UNSUPPORTED: SpawnList — reads wire bytes only
                 { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowSOSForm: // 91
-                // STUB: reads wire bytes but not yet implemented
+                // UNSUPPORTED: ShowSOSForm — reads wire bytes only
                 { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowMOTDEditionForm: // 92
-                // STUB: reads wire bytes but not yet implemented
+                // UNSUPPORTED: ShowMOTDEditionForm — reads wire bytes only
                 { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowGMPanelForm: // 93
-                // STUB: no payload — GM panel not yet implemented
+                // UNSUPPORTED: ShowGMPanelForm — reads wire bytes only
                 break;
             case ServerPacketId.UserNameList: // 94
-                // STUB: reads wire bytes but not yet implemented
+                // UNSUPPORTED: UserNameList — reads wire bytes only
                 { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.ShowGuildAlign: // 95
-                // STUB: no payload — guild alignment panel not yet implemented
+                // UNSUPPORTED: ShowGuildAlign — reads wire bytes only
                 break;
             case ServerPacketId.MapMusic: // 96
                 HandleBinMapMusic(bq);
@@ -381,7 +381,7 @@ public partial class PacketHandler
                 _state.BankGold = bq.ReadLong();
                 break;
             case ServerPacketId.AddSlots: // 103
-                // STUB: reads wire bytes but not yet implemented
+                // UNSUPPORTED: AddSlots — reads wire bytes only
                 { byte slots = bq.ReadByte(); }
                 break;
             case ServerPacketId.MultiMessage: // 104
@@ -561,7 +561,7 @@ public partial class PacketHandler
                 HandleBinCraftList(bq, _state.CarpItems, false);
                 break;
             case ServerPacketId.MeditateOK: // 161
-                // STUB: no payload — acknowledgement, not yet visually handled
+                // UNSUPPORTED: MeditateOK — reads wire bytes only
                 break;
             case ServerPacketId.Navigation: // 162
                 HandleBinNavigationData(bq);
@@ -617,7 +617,7 @@ public partial class PacketHandler
                 HandleBinResponseMsg(bq);
                 break;
             case ServerPacketId.AuctionInit: // 178
-                // STUB: no payload — auction UI not yet implemented
+                // UNSUPPORTED: AuctionInit — reads wire bytes only
                 break;
             case ServerPacketId.AuctionBid: // 179
                 HandleBinAuctionBid(bq);
@@ -650,7 +650,7 @@ public partial class PacketHandler
 
             // ── Guild (legacy) ────────────────────────────────────
             case ServerPacketId.GuildListLegacy: // 190
-                // STUB: reads wire bytes but not yet implemented (legacy opcode)
+                // OBSOLETE: legacy opcode, no-op
                 { string _ = bq.ReadString(); }
                 break;
             case ServerPacketId.GuildInfoLeader: // 191
@@ -660,7 +660,7 @@ public partial class PacketHandler
                 HandleBinGuildInfoStr(bq, "Member");
                 break;
             case ServerPacketId.GuildShowForm: // 193
-                // STUB: no payload — guild show form not yet implemented
+                // UNSUPPORTED: GuildShowForm — reads wire bytes only
                 break;
             case ServerPacketId.GuildDetailsResp: // 194
                 HandleBinGuildInfoStr(bq, "Details");
@@ -686,7 +686,7 @@ public partial class PacketHandler
                 HandleBinQuestData(bq, "QuestSelected");
                 break;
             case ServerPacketId.QuestNpcList: // 203
-                // STUB: no payload — quest NPC list not yet implemented
+                // UNSUPPORTED: QuestNpcList — reads wire bytes only
                 break;
 
             // ── Misc data ─────────────────────────────────────────

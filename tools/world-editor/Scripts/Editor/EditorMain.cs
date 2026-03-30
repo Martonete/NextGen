@@ -984,7 +984,7 @@ public partial class EditorMain : Control
             return;
         }
 
-        string cliProject = Path.GetFullPath(Path.Combine(_dataPath, "..", "compressor", "lib", "CLI", "AoPakCli.csproj"));
+        string cliProject = Path.GetFullPath(Path.Combine(_dataPath, "compressor", "lib", "CLI", "AoPakCli.csproj"));
         string mapsDir = Path.Combine(_dataPath, "Maps");
 
         GD.Print($"[Editor] ExportMapsAopak: cli={cliProject} maps={mapsDir} outputDir={clientDataPath}");
@@ -1197,8 +1197,31 @@ public partial class EditorMain : Control
                 if (Directory.Exists(full) && File.Exists(Path.Combine(full, "INIT", "Graficos.ind")))
                 {
                     GD.Print($"[Editor] Auto-detected Data path: {full}");
-                    LoadDataPath(full);
-                    SaveConfig();
+
+                    // Also try to auto-detect server/ alongside resources/
+                    string baseDir = Path.GetDirectoryName(Path.GetDirectoryName(full) ?? full) ?? full;
+                    string serverCandidate = Path.Combine(baseDir, "server");
+                    if (Directory.Exists(Path.Combine(serverCandidate, "maps")) &&
+                        Directory.Exists(Path.Combine(serverCandidate, "dat")))
+                    {
+                        _serverMapDir = Path.Combine(serverCandidate, "maps");
+                        _serverDatDir = Path.Combine(serverCandidate, "dat");
+                        GD.Print($"[Editor] Auto-detected Server path: {serverCandidate}");
+                        LoadDataPath(full);
+                        SaveConfig();
+                        return;
+                    }
+
+                    // Client data found but server path unknown — show setup form with client path pre-filled
+                    GD.Print("[Editor] Server path not found, showing setup form");
+                    if (_loadingBar != null) _loadingBar.Visible = false;
+                    if (_loadingLabel != null) _loadingLabel.Visible = false;
+                    if (_loadingTitle != null) _loadingTitle.Visible = false;
+                    if (_preloadOverlay != null) { _preloadOverlay.Visible = true; _preloadOverlay.Modulate = Colors.White; }
+                    _loadingFadeAlpha = 1f;
+                    _preloadPhase = 0;
+                    CallDeferred(MethodName.ShowSetupForm);
+                    CallDeferred(MethodName.PreFillSetupClientPath, full);
                     return;
                 }
             }
@@ -1221,6 +1244,12 @@ public partial class EditorMain : Control
     private Window? _setupWindow;
     private LineEdit? _setupClientPath;
     private LineEdit? _setupServerPath;
+
+    private void PreFillSetupClientPath(string path)
+    {
+        if (_setupClientPath != null)
+            _setupClientPath.Text = path;
+    }
 
     private void ShowSetupForm()
     {

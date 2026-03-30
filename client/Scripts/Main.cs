@@ -955,102 +955,117 @@ public partial class Main : Control
 
 	public override void _Process(double delta)
 	{
-		// Startup texture preload (blocks everything until done)
-		if (!_startupPreloadDone && _texturePreloadIter != null)
-		{
-			var texMgr = _gameData.Textures;
-			if (texMgr != null)
-			{
-				bool done = texMgr.TickPreload(_texturePreloadIter, 12.0);
-				float progress = texMgr.PreloadTotal > 0
-					? (float)texMgr.PreloadDone / texMgr.PreloadTotal
-					: 1f;
-				_startupLoadingScreen?.SetProgress(progress);
-				_startupLoadingScreen?.SetLabel(
-					$"Cargando gráficos... ({texMgr.PreloadDone}/{texMgr.PreloadTotal})");
-
-				if (done)
-				{
-					_startupPreloadDone = true;
-					_texturePreloadIter = null;
-					_startupLoadingScreen?.Complete();
-					GD.Print("[MAIN] Texture preload complete");
-
-					// Now show login or window mode dialog
-					if (_state.Config.LoadedFromFile)
-					{
-						if (_loginForm != null) _loginForm.ShowForm();
-						CallDeferred(MethodName.FocusAccountInput);
-					}
-					else
-					{
-						// First launch — show window mode dialog (loading screen is gone)
-						_dialogManager?.ShowWindowModeDialog();
-						CallDeferred(MethodName.CenterWindowModeDialog);
-					}
-				}
-			}
-			return; // Block all other processing
-		}
-
+		if (ProcessPreload()) return;
 		if (_tcp == null || _packetHandler == null) return;
+		if (ProcessConnection()) return;
+		ProcessPackets();
+		ProcessScreenTransitions();
+		ProcessErrors(delta);
+		ProcessGameLoop(delta);
+	}
 
-		// VB6: Socket1_Disconnect — detect lost connection and return to login
-		if (!_connecting && !_tcp.IsConnected)
+	// Startup texture preload (blocks everything until done).
+	// Returns true if preload is still in progress (caller should return).
+	private bool ProcessPreload()
+	{
+		if (_startupPreloadDone || _texturePreloadIter == null) return false;
+
+		var texMgr = _gameData.Textures;
+		if (texMgr != null)
 		{
-			if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
+			bool done = texMgr.TickPreload(_texturePreloadIter, 12.0);
+			float progress = texMgr.PreloadTotal > 0
+				? (float)texMgr.PreloadDone / texMgr.PreloadTotal
+				: 1f;
+			_startupLoadingScreen?.SetProgress(progress);
+			_startupLoadingScreen?.SetLabel(
+				$"Cargando gráficos... ({texMgr.PreloadDone}/{texMgr.PreloadTotal})");
+
+			if (done)
 			{
-				// Drain packets buffered before disconnect (e.g. success message sent just before server closed)
-				if (_tcp != null)
+				_startupPreloadDone = true;
+				_texturePreloadIter = null;
+				_startupLoadingScreen?.Complete();
+				GD.Print("[MAIN] Texture preload complete");
+
+				// Now show login or window mode dialog
+				if (_state.Config.LoadedFromFile)
 				{
-					foreach (var chunk in _tcp.PollPackets())
-						_packetHandler?.HandleBinaryData(chunk);
-				}
-
-				// Server dropped connection during login/account creation — reset UI
-				_tcp?.Dispose();
-				_tcp = null;
-				_packetHandler = null;
-				_inputHandler = null;
-
-				// After draining packets, show any error/success message from the server
-				if (!string.IsNullOrEmpty(_state.LoginError))
-				{
-					string msg = _state.LoginError;
-					_state.LoginError = "";
-
-					// Check for account creation success
-					if (_state.CurrentScreen == Screen.AccountCreate &&
-						msg.Contains("exito", StringComparison.OrdinalIgnoreCase))
-					{
-						_state.CurrentScreen = Screen.Login;
-						HandleScreenChange(Screen.Login);
-						_lastScreen = Screen.Login;
-						_dialogManager?.ShowMensaje("Cuenta creada exitosamente. Ingrese sus datos.", GetViewportRect().Size);
-					}
-					else
-					{
-						// Show the actual error message from the server
-						_dialogManager?.ShowMensaje(msg, GetViewportRect().Size);
-					}
+					if (_loginForm != null) _loginForm.ShowForm();
+					CallDeferred(MethodName.FocusAccountInput);
 				}
 				else
 				{
-					_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
+					// First launch — show window mode dialog (loading screen is gone)
+					_dialogManager?.ShowWindowModeDialog();
+					CallDeferred(MethodName.CenterWindowModeDialog);
 				}
-
-				if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
-				return;
 			}
-			HandleDisconnect("Conexión perdida con el servidor.");
-			return;
 		}
+		return true; // Block all other processing
+	}
 
-		// Poll and process inbound binary data
-		var dataChunks = _tcp.PollPackets();
+	// VB6: Socket1_Disconnect — detect lost connection and return to login.
+	// Returns true if the connection was lost and the caller should return.
+	private bool ProcessConnection()
+	{
+		if (_connecting || _tcp!.IsConnected) return false;
+
+		if (_state.CurrentScreen == Screen.Login || _state.CurrentScreen == Screen.AccountCreate)
+		{
+			// Drain packets buffered before disconnect (e.g. success message sent just before server closed)
+			if (_tcp != null)
+			{
+				foreach (var chunk in _tcp.PollPackets())
+					_packetHandler?.HandleBinaryData(chunk);
+			}
+
+			// Server dropped connection during login/account creation — reset UI
+			_tcp?.Dispose();
+			_tcp = null;
+			_packetHandler = null;
+			_inputHandler = null;
+
+			// After draining packets, show any error/success message from the server
+			if (!string.IsNullOrEmpty(_state.LoginError))
+			{
+				string msg = _state.LoginError;
+				_state.LoginError = "";
+
+				// Check for account creation success
+				if (_state.CurrentScreen == Screen.AccountCreate &&
+					msg.Contains("exito", StringComparison.OrdinalIgnoreCase))
+				{
+					_state.CurrentScreen = Screen.Login;
+					HandleScreenChange(Screen.Login);
+					_lastScreen = Screen.Login;
+					_dialogManager?.ShowMensaje("Cuenta creada exitosamente. Ingrese sus datos.", GetViewportRect().Size);
+				}
+				else
+				{
+					// Show the actual error message from the server
+					_dialogManager?.ShowMensaje(msg, GetViewportRect().Size);
+				}
+			}
+			else
+			{
+				_dialogManager?.ShowMensaje("El servidor cerró la conexión.", GetViewportRect().Size);
+			}
+
+			if (_loginForm?.ConnectButton != null) _loginForm!.ConnectButton.Disabled = false;
+			return true;
+		}
+		HandleDisconnect("Conexión perdida con el servidor.");
+		return true;
+	}
+
+	// Poll and process inbound binary data.
+	private void ProcessPackets()
+	{
+		var dataChunks = _tcp!.PollPackets();
 		foreach (byte[] chunk in dataChunks)
 		{
-			_packetHandler.HandleBinaryData(chunk);
+			_packetHandler!.HandleBinaryData(chunk);
 			if (_packetHandler.StreamCorrupted)
 			{
 				HandleDisconnect("Stream corrupted (unknown opcode) — disconnected.");
@@ -1060,14 +1075,21 @@ public partial class Main : Control
 
 		// Update spatial audio listener position each frame
 		_soundManager?.UpdateListenerPosition(_state.UserPosX, _state.UserPosY);
+	}
 
-		// React to screen transitions driven by PacketHandler
+	// React to screen transitions driven by PacketHandler.
+	private void ProcessScreenTransitions()
+	{
 		if (_state.CurrentScreen != _lastScreen)
 		{
 			HandleScreenChange(_state.CurrentScreen);
 			_lastScreen = _state.CurrentScreen;
 		}
+	}
 
+	// Show login/server errors and Mensaje dialogs; handle account creation timer.
+	private void ProcessErrors(double delta)
+	{
 		// Show login/server errors via Mensaje dialog (not inline labels)
 		if (!string.IsNullOrEmpty(_state.LoginError))
 		{
@@ -1128,7 +1150,11 @@ public partial class Main : Control
 				_dialogManager?.ShowMensaje("Cuenta creada exitosamente. Ingrese sus datos.", GetViewportRect().Size);
 			}
 		}
+	}
 
+	// Animations, particles, lighting, input, macros, UI, and movement updates.
+	private void ProcessGameLoop(double delta)
+	{
 		// Map loading is now handled immediately in HandleChangeMap via OnMapLoad callback.
 		// This ensures BQ/HO packets apply to the correct MapData.
 
