@@ -512,11 +512,7 @@ public partial class EditorMain : Control
         };
         _rightSelectionSection.AddChild(_rightMoveAreaButton);
 
-        var clearAllBtn = EditorTheme.MakeButton("Borrar todo");
-        clearAllBtn.Pressed += () => ClearSelectionTiles_Confirm1();
-        _rightSelectionSection.AddChild(clearAllBtn);
-
-        _rightDeselectButton = EditorTheme.MakeButton("Deseleccionar");
+        _rightDeselectButton = EditorTheme.MakeButton("Cancelar");
         _rightDeselectButton.Pressed += OnDeselectSelection;
         _rightSelectionSection.AddChild(_rightDeselectButton);
 
