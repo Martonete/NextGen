@@ -427,6 +427,9 @@ public partial class Main : Control
 	// Tutorial panel
 	private TutorialPanel? _tutorialPanel;
 
+	// Signal/cartel overlay (VB6: frmCartel)
+	private SignalPanel? _signalPanel;
+
 	// Dialog manager (extracted to DialogManager.cs)
 	private UI.DialogManager? _dialogManager;
 

@@ -333,6 +333,7 @@ public class GameState
 	public bool ShowQuestPanel;         // Trigger to open quest panel
 	public string QuestDataTag = "";    // Tag for pending quest data ("QuestList"/"QuestCurrent"/"QuestSelected")
 	public string QuestDataPayload = ""; // Payload for pending quest data
+	public string QuestNpcListData = ""; // NPC quest list data from QuestNpcList packet (ID 203)
 
 	// Pet / Trainer system (VB6: frmEntrenador)
 	public List<PetInfo> PetList = new();          // Current player's pets

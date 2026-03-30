@@ -698,12 +698,7 @@ public partial class PacketHandler
 
     private void HandleBinCharacterInfo(ByteQueue bq)
     {
-        // LEGACY / UNIMPLEMENTED (opcode 75 — CharacterInfo)
-        // Reads 10 fields to advance the byte queue and prevent stream corruption,
-        // but stores nothing. The newer FullCharInfo (opcode 245) supersedes this
-        // packet and populates _state.CharInfoCurrent via HandleBinFullCharInfo.
-        // TODO: either remove from server send list or populate CharInfoCurrent here
-        // once it is confirmed opcode 75 is still sent by 13.3+ servers.
+        // VB6 Protocol.bas:4552 — legacy CharacterInfo opcode (75)
         string name = bq.ReadString();
         byte race = bq.ReadByte();
         byte charClass = bq.ReadByte();
@@ -714,7 +709,21 @@ public partial class PacketHandler
         int reputation = bq.ReadLong();
         string description = bq.ReadString();
         string guildName = bq.ReadString();
-        GD.Print($"[PKT] CharacterInfo (opcode 75) received for '{name}' — legacy, data discarded");
+
+        // Map to CharInfoData for CharInfoPopup display
+        string[] raceNames = { "Humano", "Elfo", "Elfo Oscuro", "Enano", "Gnomo" };
+        string[] classNames = { "Mago", "Clerigo", "Guerrero", "Asesino", "Ladron", "Bardo", "Druida", "Bandido", "Paladin", "Cazador", "Trabajador", "Pirata" };
+
+        _state.CharInfoCurrent = new CharInfoData
+        {
+            Name = name,
+            Race = race > 0 && race <= raceNames.Length ? raceNames[race - 1] : $"Raza {race}",
+            ClassName = charClass > 0 && charClass <= classNames.Length ? classNames[charClass - 1] : $"Clase {charClass}",
+            Level = level,
+            Gold = gold,
+            Reputation = reputation,
+        };
+        _state.ShowCharInfo = true;
     }
 
     // ── Console message by ID ─────────────────────────────────────

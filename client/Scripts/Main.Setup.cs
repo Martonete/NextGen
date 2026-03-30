@@ -402,6 +402,10 @@ public partial class Main
         _tutorialPanel.Init(_state, _dataPath);
         _tutorialPanel.LoadCompletion();
         _gameUI.AddChild(_tutorialPanel);
+
+        // Signal/cartel overlay (VB6: frmCartel)
+        _signalPanel = new SignalPanel();
+        _gameUI.AddChild(_signalPanel);
     }
 
     private void SetupOverlayPanels()
@@ -545,7 +549,7 @@ public partial class Main
             _tooltipPanel, _blindOverlay);
         _panelSync.UpdateDropDialogVisibility = () => _dialogManager?.UpdateDropDialogVisibility();
         _panelSync.BindNewPanels(_gmPanel, _spawnListPanel, _sosPanel, _peaceProposalPanel, _guildAlignmentPanel,
-            _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel);
+            _motdEditorPanel, _guildMemberPanel, _dayNightCycle, _loadingScreen, _tutorialPanel, _signalPanel);
 
         // Input router
         _inputRouter = new InputRouter(_state);

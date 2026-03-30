@@ -579,7 +579,7 @@ public partial class PacketHandler
                 HandleBinCraftList(bq, _state.CarpItems, false);
                 break;
             case ServerPacketId.MeditateOK: // 161
-                // UNSUPPORTED: MeditateOK — reads wire bytes only
+                _state.Meditating = true;
                 break;
             case ServerPacketId.Navigation: // 162
                 HandleBinNavigationData(bq);
@@ -635,7 +635,7 @@ public partial class PacketHandler
                 HandleBinResponseMsg(bq);
                 break;
             case ServerPacketId.AuctionInit: // 178
-                // UNSUPPORTED: AuctionInit — reads wire bytes only
+                // VB6-PARITY: Auction house not in core 13.3 — no action needed
                 break;
             case ServerPacketId.AuctionBid: // 179
                 HandleBinAuctionBid(bq);
@@ -678,7 +678,7 @@ public partial class PacketHandler
                 HandleBinGuildInfoStr(bq, "Member");
                 break;
             case ServerPacketId.GuildShowForm: // 193
-                // UNSUPPORTED: GuildShowForm — reads wire bytes only
+                _state.ShowGuildPanel = true;
                 break;
             case ServerPacketId.GuildDetailsResp: // 194
                 HandleBinGuildInfoStr(bq, "Details");
@@ -704,8 +704,12 @@ public partial class PacketHandler
                 HandleBinQuestData(bq, "QuestSelected");
                 break;
             case ServerPacketId.QuestNpcList: // 203
-                // UNSUPPORTED: QuestNpcList — reads wire bytes only
-                break;
+            {
+                string data = bq.ReadString();
+                _state.QuestNpcListData = data;
+                _state.ShowQuestPanel = true;
+            }
+            break;
 
             // ── Misc data ─────────────────────────────────────────
             case ServerPacketId.MenuData: // 221
