@@ -51,6 +51,7 @@ public partial class EditorMain : Control
     private FileDialog? _openDialog;
     private FileDialog? _saveDialog;
     private FileDialog? _dataPathDialog;
+    private FileDialog? _serverPathDialog;
     private Window? _insertFormatWindow;
     private OptionButton? _insertFormatSelect;
     private FileDialog? _insertFileDialog;
@@ -190,6 +191,7 @@ public partial class EditorMain : Control
         fileMenu.AddItem("Insertar Mapa... (Ctrl+I)", 8);
         fileMenu.AddSeparator();
         fileMenu.AddItem("Seleccionar Carpeta de Recursos...", 6);
+        fileMenu.AddItem("Configurar Ruta Server...", 7);
         fileMenu.IdPressed += OnFileMenuId;
         _menuBar.AddChild(fileMenu);
 
@@ -693,6 +695,15 @@ public partial class EditorMain : Control
         _dataPathDialog.DirSelected += OnDataPathSelected;
         AddChild(_dataPathDialog);
 
+        _serverPathDialog = new FileDialog
+        {
+            FileMode = FileDialog.FileModeEnum.OpenDir,
+            Access = FileDialog.AccessEnum.Filesystem,
+            Title = "Seleccionar carpeta server/ (contiene dat/ y maps/)",
+            Size = new Vector2I(600, 400),
+        };
+        _serverPathDialog.DirSelected += OnServerPathSelected;
+        AddChild(_serverPathDialog);
 
         // Insert Map: compact centered format selector window
         _insertFormatWindow = new Window();
@@ -1207,6 +1218,7 @@ public partial class EditorMain : Control
     // ── Setup form (shown when data paths not found) ──
     private Window? _setupWindow;
     private LineEdit? _setupClientPath;
+    private LineEdit? _setupServerPath;
 
     private void ShowSetupForm()
     {
@@ -1214,7 +1226,7 @@ public partial class EditorMain : Control
 
         _setupWindow = new Window();
         _setupWindow.Title = "Configuración Inicial";
-        _setupWindow.Size = new Vector2I(500, 260);
+        _setupWindow.Size = new Vector2I(500, 340);
         _setupWindow.Exclusive = false;
         _setupWindow.Unresizable = true;
         _setupWindow.CloseRequested += () => _setupWindow.Hide();
@@ -1256,6 +1268,25 @@ public partial class EditorMain : Control
         clientRow.AddChild(clientBrowse);
         vbox.AddChild(clientRow);
 
+        // Server path
+        vbox.AddChild(EditorTheme.MakeLabel("Carpeta del Server"));
+        var serverRow = new HBoxContainer();
+        serverRow.AddThemeConstantOverride("separation", 6);
+        _setupServerPath = new LineEdit { PlaceholderText = "Ej: C:/Proyecto/server" };
+        _setupServerPath.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+        serverRow.AddChild(_setupServerPath);
+        var serverBrowse = EditorTheme.MakeButton("...");
+        serverBrowse.Pressed += () =>
+        {
+            var dlg = new FileDialog { FileMode = FileDialog.FileModeEnum.OpenDir, Access = FileDialog.AccessEnum.Filesystem, Title = "Seleccionar carpeta server/" };
+            dlg.DirSelected += (path) => { _setupServerPath.Text = path; dlg.QueueFree(); };
+            dlg.Canceled += () => dlg.QueueFree();
+            _setupWindow.AddChild(dlg);
+            dlg.PopupCentered(new Vector2I(600, 400));
+        };
+        serverRow.AddChild(serverBrowse);
+        vbox.AddChild(serverRow);
+
         // Buttons
         var btnRow = new HBoxContainer();
         btnRow.AddThemeConstantOverride("separation", 10);
@@ -1294,6 +1325,16 @@ public partial class EditorMain : Control
         {
             SetStatus($"No se encontró Graficos.ind en {dataPath}/INIT/");
             return;
+        }
+
+        // Server path
+        string serverPath = _setupServerPath?.Text.Trim() ?? "";
+        if (serverPath.Length > 0 && Directory.Exists(serverPath))
+        {
+            string datSub = Path.Combine(serverPath, "dat");
+            string mapsSub = Path.Combine(serverPath, "maps");
+            if (Directory.Exists(datSub)) _serverDatDir = datSub;
+            if (Directory.Exists(mapsSub)) _serverMapDir = mapsSub;
         }
 
         if (_setupWindow != null) _setupWindow.Hide();
@@ -1454,7 +1495,7 @@ public partial class EditorMain : Control
         if (_clientMapDir.Length > 0) pathInfo += $"Cliente: {_clientMapDir}  ";
         if (_serverMapDir.Length > 0) pathInfo += $"Server: {_serverMapDir}  ";
         if (_serverMapDir.Length == 0)
-            pathInfo += "⚠ dats/ no detectado";
+            pathInfo += "⚠ Server no configurado — Archivo > Configurar Ruta Server";
         if (_clientMapDir.Length == 0)
             pathInfo += "⚠ Sin carpeta de recursos — Archivo > Seleccionar Carpeta de Recursos";
         GD.Print($"[Editor] {pathInfo}");
@@ -1564,6 +1605,7 @@ public partial class EditorMain : Control
             case 4: ShowMapProperties(); break;
             case 5: ToggleTileProperties(); break;
             case 6: _dataPathDialog?.Popup(); break;
+            case 7: _serverPathDialog?.Popup(); break;
             case 8: InsertMap(); break;
         }
     }
@@ -1803,6 +1845,39 @@ public partial class EditorMain : Control
     {
         _dataLoaded = false; // User explicitly chose a new path — allow reload
         LoadDataPath(path);
+    }
+
+    private void OnServerPathSelected(string path)
+    {
+        string datDir = Path.Combine(path, "dat");
+        string mapsDir = Path.Combine(path, "maps");
+
+        if (Directory.Exists(datDir)) _serverDatDir = datDir;
+        if (Directory.Exists(mapsDir))
+        {
+            _serverMapDir = mapsDir;
+            _state.MapDir = mapsDir;
+            _state.ScanAvailableMaps(mapsDir);
+        }
+
+        // Reload NPC/object data from server
+        if (_serverDatDir.Length > 0 && Directory.Exists(_serverDatDir))
+        {
+            string objDat = Path.Combine(_serverDatDir, "Obj.dat");
+            _objGrhs = GameDataLoader.LoadObjectGrhs(objDat);
+            _doorData = GameDataLoader.LoadDoorData(objDat);
+            string npcDat = Path.Combine(_serverDatDir, "NPCs.dat");
+            (_npcBodies, _npcHeads) = GameDataLoader.LoadNpcData(npcDat);
+            _npcDb = NpcDatabase.Load(_serverDatDir);
+            _objDb = ObjectDatabase.Load(objDat);
+            SyncNpcPaletteData();
+            SyncObjPaletteData();
+            SyncViewportData();
+        }
+
+        SaveConfig();
+        UpdateNavBar();
+        SetStatus($"Server configurado: {path}");
     }
 
     private void SyncNpcPaletteData()
