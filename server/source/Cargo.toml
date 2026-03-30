@@ -6,7 +6,7 @@ description = "Argentum Nextgen - Game Server (Rust port)"
 
 [[bin]]
 name = "ao-server"
-path = "server/source/main.rs"
+path = "main.rs"
 
 [features]
 _db_integration_tests = []

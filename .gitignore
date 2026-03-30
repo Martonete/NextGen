@@ -1,14 +1,26 @@
 /target/
-/server/ao-server
-/server/logs/*.log
-/server/charfile/*.chr
-/server/Accounts/*.act
-/server/guilds/Bancos/
 *.log
 **/.godot/
-client/build/
 dist/
 *.import
+
+# Build outputs (keep .gitkeep, ignore everything else)
+client/build/**
+!client/build/**/.gitkeep
+server/build/**
+!server/build/**/.gitkeep
+tools/world-editor/build/**
+!tools/world-editor/build/**/.gitkeep
+tools/indexer/build/**
+!tools/indexer/build/**/.gitkeep
+tools/resource-manager/build/**
+!tools/resource-manager/build/**/.gitkeep
+
+# Server runtime data
+server/source/logs/*.log
+server/source/charfile/*.chr
+server/source/Accounts/*.act
+server/source/guilds/Bancos/
 
 # Environment secrets
 .env
