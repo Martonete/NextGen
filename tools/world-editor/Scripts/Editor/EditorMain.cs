@@ -1414,15 +1414,19 @@ public partial class EditorMain : Control
         _clientMapDir = mapsDir;
         _state.MapDir = mapsDir;
 
-        // Find server/ directory (auto-detect relative to dataPath = tools/resources/data)
+        // Find server/ directory (auto-detect relative to dataPath)
         if (_serverDatDir.Length == 0)
         {
-            foreach (var rel in new[] { "../../..", "../../../.." })
+            // Try multiple levels up from dataPath to find server/dat
+            for (int up = 1; up <= 5; up++)
             {
-                string candidate = Path.GetFullPath(Path.Combine(dataPath, rel, "server"));
+                string dots = string.Join("/", Enumerable.Repeat("..", up));
+                string candidate = Path.GetFullPath(Path.Combine(dataPath, dots, "server"));
+                GD.Print($"[Editor] Server probe: {candidate}");
                 if (Directory.Exists(Path.Combine(candidate, "dat")))
                 {
                     _serverDatDir = Path.Combine(candidate, "dat");
+                    GD.Print($"[Editor] Server dat found: {_serverDatDir}");
                     break;
                 }
             }
