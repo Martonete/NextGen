@@ -206,25 +206,18 @@ public partial class TutorialPanel : Control
     {
         if (!Visible || _panel == null) return;
 
-        // Check if mouse event is over the panel area
-        var panelRect = new Rect2(_panel.GlobalPosition, _panel.Size);
-
+        // Drag handling only — buttons are handled by Godot GUI system first
         if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
         {
             if (mb.Pressed)
             {
-                if (panelRect.HasPoint(mb.GlobalPosition))
+                // Only drag from the title bar area (top 48px of the panel)
+                var titleRect = new Rect2(_panel.GlobalPosition, new Vector2(_panel.Size.X, 48));
+                if (titleRect.HasPoint(mb.GlobalPosition))
                 {
-                    // Consume the click so it doesn't pass to game/window behind
+                    _dragging = true;
+                    _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
                     GetViewport().SetInputAsHandled();
-
-                    // Only drag from the title bar area (top 48px of the panel)
-                    var titleRect = new Rect2(_panel.GlobalPosition, new Vector2(_panel.Size.X, 48));
-                    if (titleRect.HasPoint(mb.GlobalPosition))
-                    {
-                        _dragging = true;
-                        _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
-                    }
                 }
             }
             else
@@ -242,6 +235,21 @@ public partial class TutorialPanel : Control
     /// <summary>
     /// Show the tutorial from the beginning.
     /// </summary>
+    public override void _UnhandledInput(InputEvent @event)
+    {
+        if (!Visible || _panel == null) return;
+
+        // Consume any click over the panel that wasn't handled by a button
+        if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left && mb.Pressed)
+        {
+            var panelRect = new Rect2(_panel.GlobalPosition, _panel.Size);
+            if (panelRect.HasPoint(mb.GlobalPosition))
+            {
+                GetViewport().SetInputAsHandled();
+            }
+        }
+    }
+
     public void Open()
     {
         if (_completed) return;
