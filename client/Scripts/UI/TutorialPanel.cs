@@ -101,6 +101,8 @@ public partial class TutorialPanel : Control
         Visible = false;
         ZIndex = 150; // Above game, below loading screen
 
+        // Cover full viewport so centering logic works correctly
+        SetAnchorsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Ignore;
 
         // Central panel with NinePatch frame
@@ -233,14 +235,8 @@ public partial class TutorialPanel : Control
         RefreshStep();
         Visible = true;
 
-        // Center panel in viewport
-        if (_panel != null)
-        {
-            var vp = GetViewportRect().Size;
-            _panel.Position = new Vector2(
-                (vp.X - _panel.Size.X) / 2f,
-                (vp.Y - _panel.Size.Y) / 2f);
-        }
+        // Center panel in viewport (deferred to ensure layout is ready)
+        CallDeferred(nameof(CenterPanel));
     }
 
     /// <summary>
@@ -249,6 +245,15 @@ public partial class TutorialPanel : Control
     public bool IsCompleted()
     {
         return _completed;
+    }
+
+    private void CenterPanel()
+    {
+        if (_panel == null) return;
+        var vp = GetViewportRect().Size;
+        _panel.Position = new Vector2(
+            (vp.X - _panel.Size.X) / 2f,
+            (vp.Y - _panel.Size.Y) / 2f);
     }
 
     /// <summary>
