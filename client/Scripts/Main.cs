@@ -493,6 +493,7 @@ public partial class Main : Control
 		GD.Print($"[MAIN] Data path: {dataPath}");
 		_dataPath = dataPath;
 		_resources = ResourceProviderFactory.Create(dataPath);
+		RpgTheme.ResourceProvider = _resources;
 		_gameData.LoadAll(_resources);
 		_state.TextMessages = _gameData.TextMessages;
 

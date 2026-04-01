@@ -1,5 +1,6 @@
 using Godot;
 using System.Collections.Generic;
+using ArgentumNextgen.Data.Resources;
 
 namespace ArgentumNextgen.UI;
 
@@ -12,6 +13,13 @@ public static partial class RpgTheme
     private static readonly Dictionary<string, Texture2D> _texCache = new();
     private static readonly Dictionary<string, ImageTexture> _scaledTexCache = new();
 
+    /// <summary>
+    /// Injected resource provider for loading UI assets from .aopak archives.
+    /// Must be set early (e.g., in Main.cs after ResourceProviderFactory.Create).
+    /// When null, falls back to direct filesystem loading from AssetsPath.
+    /// </summary>
+    public static IResourceProvider? ResourceProvider { get; set; }
+
     // =========================================================================
     // CORE HELPERS
     // =========================================================================
@@ -20,24 +28,43 @@ public static partial class RpgTheme
     {
         if (!_texCache.TryGetValue(filename, out var tex))
         {
-            string resPath = AssetsPath + filename;
-            // Load PNG via Image.Load — works with res:// paths, no .import needed
-            var img = new Image();
-            var err = img.Load(resPath);
-            if (err == Error.Ok)
+            Image? img = null;
+
+            // Try IResourceProvider first (reads from ui.aopak via "UI/<filename>")
+            if (ResourceProvider != null)
             {
+                string aopakPath = "UI/" + filename;
+                try
+                {
+                    img = ResourceProvider.ReadImage(aopakPath);
+                }
+                catch
+                {
+                    // Entry not found in aopak — fall through to filesystem
+                }
+            }
+
+            // Fallback: direct filesystem load (res://Data/UI/...)
+            if (img == null)
+            {
+                string resPath = AssetsPath + filename;
+                img = new Image();
+                var err = img.Load(resPath);
+                if (err != Error.Ok)
+                {
+                    string globalPath = ProjectSettings.GlobalizePath(resPath);
+                    err = img.Load(globalPath);
+                    if (err != Error.Ok)
+                    {
+                        GD.PrintErr($"[RpgTheme] FAILED to load: {resPath} (err={err})");
+                        img = null;
+                    }
+                }
+            }
+
+            if (img != null)
                 tex = ImageTexture.CreateFromImage(img);
-            }
-            else
-            {
-                // Fallback: try absolute filesystem path
-                string globalPath = ProjectSettings.GlobalizePath(resPath);
-                err = img.Load(globalPath);
-                if (err == Error.Ok)
-                    tex = ImageTexture.CreateFromImage(img);
-                else
-                    GD.PrintErr($"[RpgTheme] FAILED to load: {resPath} (err={err})");
-            }
+
             _texCache[filename] = tex!;
         }
         return tex!;
