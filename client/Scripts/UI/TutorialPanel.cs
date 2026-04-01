@@ -206,16 +206,25 @@ public partial class TutorialPanel : Control
     {
         if (!Visible || _panel == null) return;
 
+        // Check if mouse event is over the panel area
+        var panelRect = new Rect2(_panel.GlobalPosition, _panel.Size);
+
         if (@event is InputEventMouseButton mb && mb.ButtonIndex == MouseButton.Left)
         {
             if (mb.Pressed)
             {
-                // Only drag from the title bar area (top 48px of the panel)
-                var titleRect = new Rect2(_panel.GlobalPosition, new Vector2(_panel.Size.X, 48));
-                if (titleRect.HasPoint(mb.GlobalPosition))
+                if (panelRect.HasPoint(mb.GlobalPosition))
                 {
-                    _dragging = true;
-                    _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
+                    // Consume the click so it doesn't pass to game/window behind
+                    GetViewport().SetInputAsHandled();
+
+                    // Only drag from the title bar area (top 48px of the panel)
+                    var titleRect = new Rect2(_panel.GlobalPosition, new Vector2(_panel.Size.X, 48));
+                    if (titleRect.HasPoint(mb.GlobalPosition))
+                    {
+                        _dragging = true;
+                        _dragOffset = mb.GlobalPosition - _panel.GlobalPosition;
+                    }
                 }
             }
             else
