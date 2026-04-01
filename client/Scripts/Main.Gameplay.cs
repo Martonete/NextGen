@@ -252,6 +252,10 @@ public partial class Main
         // Reset all game state (VB6: clear logged, skills, attributes, etc.)
         ResetGameState();
 
+        // Stop map music and sound effects
+        _soundManager?.StopMusic();
+        _soundManager?.StopAllSfx();
+
         // Hide chat input and clear console
         _chatSystem?.HideChat();
         _chatSystem?.ClearConsole();
