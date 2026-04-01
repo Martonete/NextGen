@@ -59,9 +59,15 @@ public class EditorState
     // Selected Object from palette (for quick-place with Object tool)
     public int SelectedObjectNumber;
 
+    // Selected Particle group (for quick-place with Particle tool)
+    public int SelectedParticleGroup = 1;
+
     // Light tool config
     public int LightR = 255, LightG = 220, LightB = 180;
     public int LightRange = 6;
+
+    // Trigger tool: selected trigger type to paint (0 = erase)
+    public short SelectedTriggerType = 1;
 
     // Zone system (editor metadata for sub-regions)
     public List<MapZone> Zones { get; } = new();
@@ -267,4 +273,5 @@ public enum EditorTool
     Npc,      // Place NPC (opens properties)
     Object,   // Place Object (opens properties)
     Trigger,  // Set trigger type (opens properties)
+    Particle, // Paint particle group on tiles
 }

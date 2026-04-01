@@ -712,6 +712,27 @@ public partial class MapViewport : Control
                 DrawArc(center, radius, 0, MathF.Tau, 32,
                     new Color(lightCol.R, lightCol.G, lightCol.B, 0.4f), 1.5f);
         }
+        else if (State.ActiveTool == EditorTool.Trigger)
+        {
+            // Show a preview of the trigger color that will be painted
+            short trigType = State.SelectedTriggerType;
+            var (trigColor, trigName) = trigType switch
+            {
+                1 => (new Color(0.5f, 0.5f, 0.5f, 0.45f), "Indoor"),
+                3 => (new Color(0.8f, 0.2f, 0.2f, 0.45f), "InvPos"),
+                4 => (new Color(0, 0.7f, 1, 0.45f), "Safe"),
+                5 => (new Color(0.8f, 0.8f, 0, 0.45f), "AntiBl"),
+                6 => (new Color(1, 0, 0, 0.4f), "Combat"),
+                0 => (new Color(0.3f, 0.3f, 0.3f, 0.35f), "Borrar"),
+                _ => (new Color(1, 1, 0, 0.4f), $"T{trigType}"),
+            };
+            DrawRect(new Rect2(hx * TileSize + 1, hy * TileSize + 1, TileSize - 2, TileSize - 2), trigColor);
+            DrawRect(new Rect2(hx * TileSize + 0.5f, hy * TileSize + 0.5f, TileSize - 1, TileSize - 1),
+                trigColor with { A = 0.85f }, false, 2f);
+            DrawOverlayPill(hx * TileSize + 1, hy * TileSize + 1,
+                trigName, trigColor with { A = 0.75f },
+                new Color(trigColor.R, trigColor.G, trigColor.B, 0.95f), 6);
+        }
     }
 
     private void DrawOverlays(int mapW, int mapH)
@@ -1392,13 +1413,35 @@ public partial class MapViewport : Control
             return;
         }
 
-        // Right click: light tool erases, otherwise mosaic drag or eyedrop
+        // Right click: light/particle/trigger tool erases, otherwise mosaic drag or eyedrop
         if (mb.ButtonIndex == MouseButton.Right)
         {
             if (mb.Pressed && State?.ActiveTool == EditorTool.Light)
             {
                 var tile = ScreenToTile(mb.Position);
                 EraseLightAt(tile.X, tile.Y);
+                return;
+            }
+            if (mb.Pressed && State?.ActiveTool == EditorTool.Particle)
+            {
+                var tile = ScreenToTile(mb.Position);
+                EraseParticleAt(tile.X, tile.Y);
+                return;
+            }
+            if (State?.ActiveTool == EditorTool.Trigger)
+            {
+                if (mb.Pressed)
+                {
+                    _isPainting = true;
+                    _paintedThisStroke.Clear();
+                    Undo?.BeginBatch("Erase Trigger");
+                    var tile = ScreenToTile(mb.Position);
+                    EraseTriggerAt(tile.X, tile.Y);
+                }
+                else
+                {
+                    if (_isPainting) { _isPainting = false; Undo?.EndBatch(); }
+                }
                 return;
             }
             if (mb.Pressed && !_isPainting)
@@ -1631,11 +1674,22 @@ public partial class MapViewport : Control
                         Undo?.BeginBatch("Place Light");
                         PlaceLightAt(tile.X, tile.Y);
                         break;
+                    case EditorTool.Particle:
+                        _isPainting = true;
+                        _paintedThisStroke.Clear();
+                        Undo?.BeginBatch("Paint Particle");
+                        PlaceParticleAt(tile.X, tile.Y);
+                        break;
                     case EditorTool.Exit:
-                    case EditorTool.Trigger:
                         State.ShowTileProperties = true;
                         State.PropTileX = tile.X;
                         State.PropTileY = tile.Y;
+                        break;
+                    case EditorTool.Trigger:
+                        _isPainting = true;
+                        _paintedThisStroke.Clear();
+                        Undo?.BeginBatch("Paint Trigger");
+                        PaintTriggerAt(tile.X, tile.Y);
                         break;
                 }
             }
@@ -1761,6 +1815,16 @@ public partial class MapViewport : Control
             var tile = ScreenToTile(mm.Position);
             if (State!.ActiveTool == EditorTool.Light)
                 PlaceLightAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Particle)
+                PlaceParticleAt(tile.X, tile.Y);
+            else if (State.ActiveTool == EditorTool.Trigger)
+            {
+                // Left-click drag paints; right-click drag erases (determined by which button started _isPainting)
+                if (Input.IsMouseButtonPressed(MouseButton.Left))
+                    PaintTriggerAt(tile.X, tile.Y);
+                else
+                    EraseTriggerAt(tile.X, tile.Y);
+            }
             else if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Block)
                 ApplyToolAt(tile.X, tile.Y);
             else
@@ -1816,8 +1880,8 @@ public partial class MapViewport : Control
 
         // (auto-align mosaic removed — it caused the offset to jump while painting)
 
-        // Redraw on hover for paint preview and pending placement
-        if (State.ActiveTool == EditorTool.Paint || State.Pending.Active)
+        // Redraw on hover for paint preview, trigger preview, and pending placement
+        if (State.ActiveTool == EditorTool.Paint || State.ActiveTool == EditorTool.Trigger || State.Pending.Active)
             QueueRedraw();
     }
 
@@ -1995,6 +2059,63 @@ public partial class MapViewport : Control
         Undo?.BeginBatch("Erase Light");
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         Undo?.EndBatch();
+        QueueRedraw();
+    }
+
+    /// <summary>Paint a particle group on a tile using current editor particle selection.</summary>
+    private void PlaceParticleAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        int key = y * 10000 + x;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].ParticleGroup = (short)State.SelectedParticleGroup;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        Particles?.BuildStreamsFromMap(Map);
+        QueueRedraw();
+    }
+
+    /// <summary>Erase the particle group from a tile (right-click).</summary>
+    private void EraseParticleAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        if (Map.Tiles[x, y].ParticleGroup == 0) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].ParticleGroup = 0;
+        Undo?.BeginBatch("Erase Particle");
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        Undo?.EndBatch();
+        Particles?.BuildStreamsFromMap(Map);
+        QueueRedraw();
+    }
+
+    /// <summary>Paint the selected trigger type onto a tile.</summary>
+    private void PaintTriggerAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y) || State == null) return;
+        long key = (long)x << 32 | (uint)y;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        short newTrigger = State.SelectedTriggerType;
+        if (Map.Tiles[x, y].Trigger == newTrigger) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].Trigger = newTrigger;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        QueueRedraw();
+    }
+
+    /// <summary>Erase the trigger from a tile (right-click drag).</summary>
+    private void EraseTriggerAt(int x, int y)
+    {
+        if (Map == null || !Map.InBounds(x, y)) return;
+        long key = (long)x << 32 | (uint)y;
+        if (_paintedThisStroke.Contains(key)) return;
+        _paintedThisStroke.Add(key);
+        if (Map.Tiles[x, y].Trigger == 0) return;
+        var before = Map.Tiles[x, y];
+        Map.Tiles[x, y].Trigger = 0;
+        Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
         QueueRedraw();
     }
 

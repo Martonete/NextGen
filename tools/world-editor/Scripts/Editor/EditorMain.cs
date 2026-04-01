@@ -43,6 +43,7 @@ public partial class EditorMain : Control
     private TilePalette? _palette;
     private NpcPalette? _npcPalette;
     private ObjectPalette? _objPalette;
+    private ParticlePalette? _particlePalette;
     private ZonePanel? _zonePanel;
     private MapZoneData? _mapZones;
     private MapViewport? _viewport;
@@ -103,6 +104,10 @@ public partial class EditorMain : Control
     private Window? _trimBordersWindow;
     private ZoneEditPopup? _pendingZonePopup;
     private SpinBox? _trimBordersSpin;
+
+    // Left sidebar: trigger tool overlay panel
+    private PanelContainer? _triggerPanel;
+    private Button[] _triggerTypeButtons = Array.Empty<Button>();
 
     // Right sidebar: light tool section
     private HSeparator? _rightLightSeparator;
@@ -300,9 +305,10 @@ public partial class EditorMain : Control
 
         var propToolDefs = new (EditorTool tool, string icon, string label)[]
         {
-            (EditorTool.Light,   "\u2600", "Luz"),
-            (EditorTool.Exit,    "\u2197", "Salida"),
-            (EditorTool.Trigger, "\u26a1", "Trigger"),
+            (EditorTool.Light,    "\u2600", "Luz"),
+            (EditorTool.Exit,     "\u2197", "Salida"),
+            (EditorTool.Trigger,  "\u26a1", "Trigger"),
+            (EditorTool.Particle, "\u2728", "Partículas"),
         };
         var extButtons = new Button[propToolDefs.Length];
         for (int i = 0; i < propToolDefs.Length; i++)
@@ -393,11 +399,18 @@ public partial class EditorMain : Control
         _objPalette.RequestServerPath += () => _serverPathDialog?.Popup();
         _sidebarTabs.AddChild(_objPalette);
 
+        _particlePalette = new ParticlePalette { Name = "Partículas", State = _state };
+        _particlePalette.ParticleSelected += OnParticlePaletteSelected;
+        _sidebarTabs.AddChild(_particlePalette);
+
         _zonePanel = new ZonePanel { Name = "Zonas", State = _state, ZoneData = _mapZones };
         _zonePanel.OnZonesChanged += () => { _state.MarkDirty(); _viewport?.QueueRedraw(); };
         _zonePanel.OnZoneSelected += (zone) => { _viewport?.CenterOnTile((zone.X1 + zone.X2) / 2, (zone.Y1 + zone.Y2) / 2); };
         _zonePanel.OnEditZone += (zone) => ShowZoneEditPopup(zone);
         _sidebarTabs.AddChild(_zonePanel);
+
+        // --- Trigger tool panel (overlay on left sidebar, shown when Trigger tool is active) ---
+        BuildTriggerPanel();
 
         // --- Tile info panel (bottom of left sidebar, themed) ---
         _tileInfoPanel = new VBoxContainer();
@@ -809,6 +822,14 @@ public partial class EditorMain : Control
             _sidebarTabs.Position = new Vector2(0, contentTop);
             _sidebarTabs.Size = new Vector2(PaletteWidth, paletteH);
             _sidebarTabs.ZIndex = 2;
+        }
+
+        // Trigger panel: overlay over the sidebar tabs area
+        if (_triggerPanel != null)
+        {
+            _triggerPanel.Position = new Vector2(0, contentTop);
+            _triggerPanel.Size = new Vector2(PaletteWidth, paletteH);
+            _triggerPanel.ZIndex = 3;
         }
 
         if (_tileInfoPanel != null)
@@ -1513,9 +1534,10 @@ public partial class EditorMain : Control
         _palette.IndicesPath = System.IO.Path.Combine(_dataPath, "INIT", "indices.ini");
         _palette.Rebuild();
 
-        // Push data to NPC + Object palettes
+        // Push data to NPC + Object + Particle palettes
         SyncNpcPaletteData();
         SyncObjPaletteData();
+        SyncParticlePaletteData();
 
         // Push data to viewport
         SyncViewportData();
@@ -1907,6 +1929,7 @@ public partial class EditorMain : Control
             _objDb = ObjectDatabase.Load(objDat);
             SyncNpcPaletteData();
             SyncObjPaletteData();
+            SyncParticlePaletteData();
             SyncViewportData();
         }
 
@@ -1940,6 +1963,13 @@ public partial class EditorMain : Control
         _objPalette.Rebuild();
     }
 
+    private void SyncParticlePaletteData()
+    {
+        if (_particlePalette == null) return;
+        _particlePalette.Engine = _particles;
+        _particlePalette.Rebuild();
+    }
+
     private void OnNpcPaletteSelected(int npcNumber)
     {
         SetActiveTool(EditorTool.Npc);
@@ -1952,6 +1982,13 @@ public partial class EditorMain : Control
         SetActiveTool(EditorTool.Object);
         _state.SelectedObjectNumber = objNumber;
         SetStatus($"Objeto #{objNumber} seleccionado — click en el mapa para colocar");
+    }
+
+    private void OnParticlePaletteSelected(int groupId)
+    {
+        SetActiveTool(EditorTool.Particle);
+        _state.SelectedParticleGroup = groupId;
+        SetStatus($"Partícula #{groupId} seleccionada — click para pintar, click derecho para borrar");
     }
 
     private void OnExitFollow(int mapNum, int x, int y)
@@ -2628,6 +2665,7 @@ public partial class EditorMain : Control
                     break;
                 case Key.I: newTool = EditorTool.Eyedrop; break;
                 case Key.B: newTool = EditorTool.Block; break;
+                case Key.Q: newTool = EditorTool.Particle; break;
                 case Key.G: _state.ShowGrid = !_state.ShowGrid; _viewport?.QueueRedraw(); break;
                 case Key.T: ToggleTileProperties(); break;
                 case Key.F5: OpenWalkMode(); break;
@@ -2679,6 +2717,7 @@ public partial class EditorMain : Control
             _state.ClearSelection();
         SyncToolBar();
         UpdateLightSection();
+        UpdateTriggerPanel();
     }
 
     private void SyncLayerTabs()
@@ -2693,7 +2732,7 @@ public partial class EditorMain : Control
         EditorTool.Select,
         EditorTool.Pick, EditorTool.Eyedrop, EditorTool.Block,
         // property tools (after separator)
-        EditorTool.Light, EditorTool.Exit, EditorTool.Trigger,
+        EditorTool.Light, EditorTool.Exit, EditorTool.Trigger, EditorTool.Particle,
     };
 
     private void SyncToolBar()
@@ -2975,6 +3014,7 @@ public partial class EditorMain : Control
         SyncLayerTabs();
         UpdateRightSidebar();
         UpdateSelectionSection();
+        UpdateTriggerPanel();
         _viewport?.QueueRedraw();
     }
 
@@ -3171,6 +3211,93 @@ public partial class EditorMain : Control
         bool show = _state.ActiveTool == EditorTool.Light;
         if (_rightLightSection != null) _rightLightSection.Visible = show;
         if (_rightLightSeparator != null) _rightLightSeparator.Visible = show;
+    }
+
+    private static readonly (short Id, string Label, Color Color)[] TriggerTypeDefs =
+    {
+        (0, "0: Ninguno (Borrar)", new Color(0.35f, 0.35f, 0.35f)),
+        (1, "1: Indoor (Bajo techo)", new Color(0.5f, 0.5f, 0.5f)),
+        (3, "3: Posición Inválida", new Color(0.8f, 0.2f, 0.2f)),
+        (4, "4: Zona Segura", new Color(0, 0.7f, 1f)),
+        (5, "5: Anti-bloqueo", new Color(0.8f, 0.8f, 0f)),
+        (6, "6: Zona de Combate", new Color(1f, 0.15f, 0.15f)),
+    };
+
+    private void BuildTriggerPanel()
+    {
+        _triggerPanel = new PanelContainer();
+        _triggerPanel.AddThemeStyleboxOverride("panel",
+            EditorTheme.FlatBox(EditorTheme.BG_PANEL, 0, 6, 4, EditorTheme.BORDER, 1));
+        _triggerPanel.Visible = false;
+        _triggerPanel.ClipContents = true;
+        _triggerPanel.MouseFilter = MouseFilterEnum.Stop;
+
+        var vbox = new VBoxContainer();
+        vbox.AddThemeConstantOverride("separation", 6);
+
+        vbox.AddChild(EditorTheme.SectionLabel("TIPO DE TRIGGER"));
+
+        var hint = EditorTheme.MakeLabel(
+            "Click/arrastrar: pintar\nClick derecho: borrar",
+            EditorTheme.TEXT_SECONDARY, EditorTheme.FONT_SM);
+        hint.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        vbox.AddChild(hint);
+
+        _triggerTypeButtons = new Button[TriggerTypeDefs.Length];
+        for (int i = 0; i < TriggerTypeDefs.Length; i++)
+        {
+            var (id, label, color) = TriggerTypeDefs[i];
+            var btn = new Button
+            {
+                Text = label,
+                ToggleMode = true,
+                ClipText = false,
+                Flat = false,
+            };
+            btn.AddThemeFontSizeOverride("font_size", EditorTheme.FONT_SM);
+
+            // Color swatch: use a subtle tinted normal style
+            var normalStyle = EditorTheme.FlatBox(
+                new Color(color.R * 0.25f, color.G * 0.25f, color.B * 0.25f, 1f),
+                4, 8, 4, new Color(color.R, color.G, color.B, 0.5f), 1);
+            var pressedStyle = EditorTheme.FlatBox(
+                new Color(color.R * 0.55f, color.G * 0.55f, color.B * 0.55f, 1f),
+                4, 8, 4, new Color(color.R, color.G, color.B, 0.9f), 2);
+            btn.AddThemeStyleboxOverride("normal", normalStyle);
+            btn.AddThemeStyleboxOverride("pressed", pressedStyle);
+            btn.AddThemeStyleboxOverride("hover", pressedStyle);
+            btn.AddThemeColorOverride("font_color", Colors.White);
+            btn.AddThemeColorOverride("font_pressed_color", Colors.White);
+            btn.AddThemeColorOverride("font_hover_color", Colors.White);
+
+            var capturedId = id;
+            btn.Pressed += () =>
+            {
+                _state.SelectedTriggerType = capturedId;
+                SyncTriggerButtons();
+            };
+            vbox.AddChild(btn);
+            _triggerTypeButtons[i] = btn;
+        }
+
+        _triggerPanel.AddChild(vbox);
+        AddChild(_triggerPanel);
+    }
+
+    private void SyncTriggerButtons()
+    {
+        for (int i = 0; i < _triggerTypeButtons.Length && i < TriggerTypeDefs.Length; i++)
+            _triggerTypeButtons[i].SetPressedNoSignal(_state.SelectedTriggerType == TriggerTypeDefs[i].Id);
+    }
+
+    private void UpdateTriggerPanel()
+    {
+        if (_triggerPanel == null) return;
+        bool show = _state.ActiveTool == EditorTool.Trigger;
+        if (_triggerPanel.Visible != show)
+            _triggerPanel.Visible = show;
+        if (show)
+            SyncTriggerButtons();
     }
 
     private Texture2D? GenerateGrhPreview(int grhIndex)
