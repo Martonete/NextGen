@@ -41,9 +41,25 @@ public partial class SpellPanel : Control
         _tcp = tcp;
 
         // Load TTF font for crisp text at any resolution (bitmap fonts pixelate when scaled)
-        string fontPath = System.IO.Path.Combine("Data", "Fonts", "LiberationSans-Bold.ttf");
-        if (System.IO.File.Exists(fontPath))
-            _ttfFont = ResourceLoader.Load<Font>($"res://{fontPath}");
+        // Try IResourceProvider first (reads from fonts.aopak), fallback to loose file
+        var rp = RpgTheme.ResourceProvider;
+        if (rp != null && rp.Exists("Fonts/LiberationSans-Bold.ttf"))
+        {
+            try
+            {
+                byte[] fontBytes = rp.ReadBytes("Fonts/LiberationSans-Bold.ttf");
+                var fontFile = new FontFile();
+                fontFile.Data = fontBytes;
+                _ttfFont = fontFile;
+            }
+            catch { /* fallback below */ }
+        }
+        if (_ttfFont == null)
+        {
+            string fontPath = System.IO.Path.Combine("Data", "Fonts", "LiberationSans-Bold.ttf");
+            if (System.IO.File.Exists(fontPath))
+                _ttfFont = ResourceLoader.Load<Font>($"res://{fontPath}");
+        }
         _ttfFontSize = 12;
     }
 

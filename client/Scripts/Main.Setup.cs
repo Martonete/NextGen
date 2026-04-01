@@ -73,8 +73,12 @@ public partial class Main
         _gameUI.AddChild(_inventoryPanel);
 
         // DyD toggle
-        _dydOffTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
-        _dydOnTex = LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
+        _dydOffTex = _resources != null
+            ? UIHelpers.LoadJpgTexture(_resources, "Graficos/DyD_off.jpg")
+            : LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_off.jpg"));
+        _dydOnTex = _resources != null
+            ? UIHelpers.LoadJpgTexture(_resources, "Graficos/DyD_on.jpg")
+            : LoadJpgTexture(System.IO.Path.Combine(_dataPath, "Graficos", "DyD_on.jpg"));
         _dydToggle = new TextureButton();
         _dydToggle.Position = new Vector2(sideX - S(25), S(338));
         _dydToggle.Size = new Vector2(S(21), S(21));
