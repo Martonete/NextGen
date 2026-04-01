@@ -235,8 +235,8 @@ public partial class TutorialPanel : Control
         RefreshStep();
         Visible = true;
 
-        // Center panel in viewport (deferred to ensure layout is ready)
-        CallDeferred(nameof(CenterPanel));
+        // Center _panel using its own size against the window
+        CenterPanel();
     }
 
     /// <summary>
@@ -250,10 +250,11 @@ public partial class TutorialPanel : Control
     private void CenterPanel()
     {
         if (_panel == null) return;
-        var vp = GetViewportRect().Size;
+        // Use DisplayServer window size — always correct regardless of parent layout
+        var winSize = DisplayServer.WindowGetSize();
         _panel.Position = new Vector2(
-            (vp.X - _panel.Size.X) / 2f,
-            (vp.Y - _panel.Size.Y) / 2f);
+            (winSize.X - 360) / 2f,
+            (winSize.Y - 300) / 2f);
     }
 
     /// <summary>
