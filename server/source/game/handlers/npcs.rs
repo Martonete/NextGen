@@ -980,21 +980,24 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
                     }
                 }
             }
-            damage = damage.max(1);
+            // VB6: If daño < 0 Then daño = 0  (minimum is 0, not 1)
+            damage = damage.max(0);
 
-            // Apply damage
-            if let Some(user) = state.users.get_mut(&target_conn) {
-                user.min_hp -= damage;
-            }
+            if damage > 0 {
+                // Apply damage
+                if let Some(user) = state.users.get_mut(&target_conn) {
+                    user.min_hp -= damage;
+                }
 
-            // Send damage console message (VB6: msg 830 — NpcName@Damage)
-            state.send_msg_id(target_conn, 830, &format!("{}@{}", npc_name, damage));
-            send_stats_hp(state, target_conn).await;
+                // Send damage console message (VB6: msg 830 — NpcName@Damage)
+                state.send_msg_id(target_conn, 830, &format!("{}@{}", npc_name, damage));
+                send_stats_hp(state, target_conn).await;
 
-            // Check death
-            let hp = state.users.get(&target_conn).map(|u| u.min_hp).unwrap_or(0);
-            if hp <= 0 {
-                user_die(state, target_conn, None).await;
+                // Check death
+                let hp = state.users.get(&target_conn).map(|u| u.min_hp).unwrap_or(0);
+                if hp <= 0 {
+                    user_die(state, target_conn, None).await;
+                }
             }
         }
         _ => {}

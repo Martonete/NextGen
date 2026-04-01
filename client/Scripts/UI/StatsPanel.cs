@@ -56,6 +56,8 @@ public partial class StatsPanel : RpgBaseForm
     // ── Skills tab controls ──
     private Label[] _lblSkillValues = new Label[22];
     private ProgressBar[] _skillBars = new ProgressBar[22];
+    // XP progress bars: show PorcentajeSkills (0-99) — how close to next level
+    private ProgressBar[] _xpBars = new ProgressBar[22];
     private Button[] _btnSkillUp = new Button[22];
     private Label? _lblSkillPoints;
     private TextureButton? _btnApplySkills;
@@ -290,7 +292,7 @@ public partial class StatsPanel : RpgBaseForm
             nameLabel.ClipText = true;
             row.AddChild(nameLabel);
 
-            // Progress bar — fixed width, no expand
+            // Skill level progress bar — fixed width, no expand
             var bar = RpgTheme.CreateRpgProgressBar(70, 14, new Color(0.2f, 0.5f, 0.8f));
             bar.MaxValue = 100;
             bar.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
@@ -298,7 +300,7 @@ public partial class StatsPanel : RpgBaseForm
             row.AddChild(bar);
             _skillBars[i] = bar;
 
-            // Value label centered INSIDE the progress bar
+            // Value label centered INSIDE the skill level bar
             var valLabel = RpgTheme.CreateInfoLabel("0", 10);
             valLabel.HorizontalAlignment = HorizontalAlignment.Center;
             valLabel.VerticalAlignment = VerticalAlignment.Center;
@@ -306,6 +308,15 @@ public partial class StatsPanel : RpgBaseForm
             valLabel.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
             bar.AddChild(valLabel);
             _lblSkillValues[i] = valLabel;
+
+            // XP progress bar — shows PorcentajeSkills (0-99, progress toward next level)
+            // Orange/yellow tint to distinguish from the blue skill level bar
+            var xpBar = RpgTheme.CreateRpgProgressBar(40, 7, new Color(0.8f, 0.55f, 0.1f));
+            xpBar.MaxValue = 99;
+            xpBar.Value = 0;
+            xpBar.SizeFlagsHorizontal = SizeFlags.ShrinkCenter;
+            row.AddChild(xpBar);
+            _xpBars[i] = xpBar;
 
             // [+] button
             int skillIdx = i;
@@ -478,6 +489,14 @@ public partial class StatsPanel : RpgBaseForm
 
             if (_skillBars[i] != null)
                 _skillBars[i].Value = displayVal;
+
+            // XP progress bar — show actual server XP%, but hide when pending changes are applied
+            if (_xpBars[i] != null)
+            {
+                int pct = (i < _state.SkillPct.Length) ? _state.SkillPct[i] : 0;
+                _xpBars[i].Value = pending > 0 ? 0 : pct;
+                _xpBars[i].Visible = skillVal < 100; // hide at max level
+            }
 
             if (_btnSkillUp[i] != null)
                 _btnSkillUp[i].Visible = hasPoints || pending > 0;

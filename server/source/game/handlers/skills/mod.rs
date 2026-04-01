@@ -227,6 +227,20 @@ pub(super) fn mod_carpinteria(class: PlayerClass) -> f32 {
     if class.is_recolector() { 1.0 } else { 3.0 }
 }
 
+/// VB6: ModNavegacion — navigation skill modifier for boat boarding.
+/// Pirata=1.0 (no penalty), Worker with Pesca=100: 1.71, Worker otherwise: 2.0,
+/// all others: 2.0.
+/// `fishing_skill` is the player's Pesca skill value (0–100).
+pub(crate) fn mod_navegacion(class: PlayerClass, fishing_skill: i32) -> f32 {
+    match class {
+        PlayerClass::Pirata => 1.0,
+        PlayerClass::Trabajador => {
+            if fishing_skill >= 100 { 1.71 } else { 2.0 }
+        }
+        _ => 2.0,
+    }
+}
+
 /// Helper: check if user has at least `amount` of an item.
 fn has_items(state: &GameState, conn_id: ConnectionId, obj_index: i32, amount: i32) -> bool {
     if amount <= 0 { return true; }

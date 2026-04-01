@@ -84,11 +84,14 @@ public partial class PacketHandler
 
     private void HandleBinSendSkills(ByteQueue bq)
     {
-        // Read exactly as many skills as the server sends (Skills array has 22 slots).
-        // Previous code read only 20, leaving indices 20 and 21 at default zero.
+        // VB6 Protocol.bas HandleSendSkills: for each skill, server sends
+        //   UserSkills(i)      = skill level (byte, 0-100)
+        //   PorcentajeSkills(i) = XP progress % toward next level (byte, 0-99)
+        // Both must be read to keep the packet stream in sync.
         for (int i = 0; i < _state.Skills.Length; i++)
         {
             _state.Skills[i] = bq.ReadByte();
+            _state.SkillPct[i] = bq.ReadByte();
         }
     }
 

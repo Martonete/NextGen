@@ -229,6 +229,24 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     state.send_msg_id(conn_id, 106, ""); // TEXTO106
                     return;
                 }
+
+                // VB6: Navigation skill check — UserSkills(eSkill.Navegacion) / ModNavegacion >= Barco.MinSkill
+                // Pirata: 1.0 modifier, Worker with Pesca=100: 1.71, all others: 2.0
+                if obj_data.min_skill > 0 {
+                    let (nav_skill, fishing_skill, user_class) = match state.users.get(&conn_id) {
+                        Some(u) => (
+                            u.skills[(skill_id::NAVEGACION - 1) as usize],
+                            u.skills[(skill_id::PESCA - 1) as usize],
+                            u.class,
+                        ),
+                        None => return,
+                    };
+                    let modifier = crate::game::handlers::skills::mod_navegacion(user_class, fishing_skill);
+                    if (nav_skill as f32 / modifier) < obj_data.min_skill as f32 {
+                        state.send_console(conn_id, "No tenes suficiente habilidad de navegación para pilotar esta embarcación.", font_index::INFO);
+                        return;
+                    }
+                }
             }
 
             // Auto-dismount from mount if mounted (before boarding boat)

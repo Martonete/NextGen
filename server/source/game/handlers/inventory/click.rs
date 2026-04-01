@@ -21,7 +21,7 @@ pub(crate) async fn handle_left_click(state: &mut GameState, conn_id: Connection
 pub(crate) async fn do_lookat_tile(state: &mut GameState, conn_id: ConnectionId, x: i32, y: i32) {
     let (map, user_x, user_y, my_privileges, my_survival_skill) = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.privileges,
-            u.skills.get(9).copied().unwrap_or(0)), // eSkill.Supervivencia = 9
+            u.skills.get(8).copied().unwrap_or(0)), // eSkill.Supervivencia = 9 (1-based) → skills[8] (0-based)
         _ => return,
     };
 
@@ -333,33 +333,48 @@ pub(crate) fn titulo_caos(recompensas: i32) -> &'static str {
 }
 
 /// VB6 NPC health status based on Survival skill (GameLogic.bas:993-1036).
+///
+/// Replicates VB6 Acciones.bas Supervivencia logic exactly:
+/// - skill <= 10: "Dudoso"
+/// - skill <= 20: >50% → "Sano", else "Herido"
+/// - skill <= 30: >75% → "Sano", >50% → "Herido", else "Malherido"
+/// - skill <= 40: >75% → "Sano", >50% → "Herido", >25% → "Malherido", else "Agonizando"
+/// - skill 41-59: fine-grained 5%/10%/25%/50%/75% thresholds
+/// - skill >= 60: exact "Tiene X puntos de vida"
 pub(crate) fn npc_health_by_survival(min_hp: i32, max_hp: i32, survival_skill: i32) -> String {
     if max_hp <= 0 { return "Intacto".to_string(); }
+
+    // VB6: NpcHP% = Int(Npc(NpcIndex).MIN_HP * 100 / Npc(NpcIndex).MAX_HP)
+    let npc_hp_pct = (min_hp as f64 / max_hp as f64 * 100.0) as i32;
+
     if survival_skill >= 60 {
-        return format!("{}/{}", min_hp, max_hp);
-    }
-    let ratio = min_hp as f64 / max_hp as f64;
-    if survival_skill >= 40 {
-        if ratio < 0.05 { "Agonizando".to_string() }
-        else if ratio < 0.10 { "Casi muerto".to_string() }
-        else if ratio < 0.25 { "Muy Malherido".to_string() }
-        else if ratio < 0.50 { "Herido".to_string() }
-        else if ratio < 0.75 { "Levemente herido".to_string() }
-        else if ratio < 1.0 { "Sano".to_string() }
-        else { "Intacto".to_string() }
-    } else if survival_skill > 30 {
-        if ratio < 0.25 { "Muy malherido".to_string() }
-        else if ratio < 0.50 { "Herido".to_string() }
-        else if ratio < 0.75 { "Levemente herido".to_string() }
+        // VB6: "Tiene " & Npc(NpcIndex).MIN_HP & " puntos de vida"
+        return format!("Tiene {} puntos de vida", min_hp);
+    } else if survival_skill >= 41 {
+        // VB6 skill < 60 branch — 5-tier detail with 5%/10%/25%/50%/75% thresholds
+        if npc_hp_pct <= 5 { "Agonizando".to_string() }
+        else if npc_hp_pct <= 10 { "Casi muerto".to_string() }
+        else if npc_hp_pct <= 25 { "Muy malherido".to_string() }
+        else if npc_hp_pct <= 50 { "Malherido".to_string() }
+        else if npc_hp_pct <= 75 { "Herido".to_string() }
         else { "Sano".to_string() }
-    } else if survival_skill > 20 {
-        if ratio < 0.50 { "Malherido".to_string() }
-        else if ratio < 0.75 { "Herido".to_string() }
+    } else if survival_skill <= 40 && survival_skill >= 31 {
+        // VB6 skill <= 40 branch
+        if npc_hp_pct <= 25 { "Agonizando".to_string() }
+        else if npc_hp_pct <= 50 { "Malherido".to_string() }
+        else if npc_hp_pct <= 75 { "Herido".to_string() }
         else { "Sano".to_string() }
-    } else if survival_skill > 10 {
-        if ratio < 0.50 { "Herido".to_string() }
+    } else if survival_skill <= 30 && survival_skill >= 21 {
+        // VB6 skill <= 30 branch
+        if npc_hp_pct <= 50 { "Malherido".to_string() }
+        else if npc_hp_pct <= 75 { "Herido".to_string() }
+        else { "Sano".to_string() }
+    } else if survival_skill <= 20 && survival_skill >= 11 {
+        // VB6 skill <= 20 branch
+        if npc_hp_pct <= 50 { "Herido".to_string() }
         else { "Sano".to_string() }
     } else {
+        // VB6 skill <= 10 branch
         "Dudoso".to_string()
     }
 }

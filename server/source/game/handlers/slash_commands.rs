@@ -40,12 +40,22 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_desertar(state, conn_id).await;
     } else if cmd_upper.starts_with("/NUEVAPARTY") {
         handle_slash_nuevaparty(state, conn_id).await;
+    // VB6: /GRUPO <target> — invite to party (primary VB6 command)
+    } else if cmd_upper.starts_with("/GRUPO ") {
+        let target = cmd[7..].trim();
+        handle_slash_party_invite(state, conn_id, target).await;
+    } else if cmd_upper == "/GRUPO" {
+        // /GRUPO without args: show usage hint
+        state.send_console(conn_id, "Uso: /GRUPO <nombre> para invitar a un jugador. Usa /NUEVAPARTY para crear el grupo primero.", font_index::INFO);
     } else if cmd_upper.starts_with("/PARTY ") {
         let target = cmd[7..].trim();
         handle_slash_party_invite(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/ACEPTAR") {
         handle_slash_party_accept(state, conn_id).await;
     } else if cmd_upper.starts_with("/CANCELAR") {
+        handle_slash_party_cancel(state, conn_id).await;
+    // VB6: /SALIRGRUPO — leave party
+    } else if cmd_upper.starts_with("/SALIRGRUPO") {
         handle_slash_party_cancel(state, conn_id).await;
     } else if cmd_upper.starts_with("/FINPARTY") {
         handle_slash_finparty(state, conn_id).await;
@@ -55,6 +65,10 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         let target = cmd[7..].trim();
         handle_slash_sacar(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/ECHARPARTY ") {
+        let target = cmd[12..].trim();
+        handle_slash_sacar(state, conn_id, target).await;
+    // VB6: /ECHARGRUPO <target> — kick member from party (leader only)
+    } else if cmd_upper.starts_with("/ECHARGRUPO ") {
         let target = cmd[12..].trim();
         handle_slash_sacar(state, conn_id, target).await;
     } else if cmd_upper.starts_with("/DARPARTIDO ") {

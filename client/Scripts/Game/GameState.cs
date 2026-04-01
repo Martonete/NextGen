@@ -208,6 +208,8 @@ public class GameState
 
 	// Skills (22 skill values, indices 0-21 map to skill IDs 1-22)
 	public int[] Skills = new int[22];
+	// PorcentajeSkills: XP progress toward next level (0-99). Sent alongside Skills by server.
+	public int[] SkillPct = new int[22];
 	public int FreeSkillPoints;
 
 	// Character info strings (from server)

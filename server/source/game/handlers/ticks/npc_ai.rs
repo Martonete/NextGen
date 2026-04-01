@@ -1063,9 +1063,13 @@ async fn npc_cast_spell_on_npc(state: &mut GameState, caster_idx: usize, target_
 
     let damage = rand_range(spell.min_hp.max(1), spell.max_hp.max(1));
 
-    // Apply magic defense of target NPC (VB6: DEFm)
+    // Apply magic defense of target NPC (VB6: DEFm — If daño < 0 Then daño = 0)
     let def_m = state.get_npc(target_idx).map(|n| n.def_m).unwrap_or(0);
-    let damage = (damage - def_m).max(1);
+    let damage = (damage - def_m).max(0);
+
+    if damage == 0 {
+        return;
+    }
 
     let target_dead = match state.get_npc_mut(target_idx) {
         Some(target) => {

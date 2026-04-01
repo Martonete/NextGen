@@ -3,7 +3,9 @@
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, PartyState, MAX_PARTIES, MAX_PARTY_MEMBERS, PARTY_MAX_DISTANCE, MAX_DISTANCE_INGRESO_PARTY};
 use crate::protocol::font_index;
+use crate::data::experience::MAX_LEVEL;
 use super::common::*;
+use super::check_user_level;
 
 // =====================================================================
 // Party system handlers (mdParty.bas)
@@ -11,13 +13,27 @@ use super::common::*;
 
 /// /NUEVAPARTY — Create a new party.
 pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: ConnectionId) {
-    let party_index = match state.users.get(&conn_id) {
-        Some(u) if u.logged => u.party_index,
+    let (party_index, liderazgo, carisma) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (
+            u.party_index,
+            u.skills[16], // LIDERAZGO = skill_id 17 → index 16 (0-based)
+            u.attributes[3], // Charisma = attributes[3]
+        ),
         _ => return,
     };
 
     if party_index > 0 {
         state.send_console(conn_id, "Ya perteneces a un grupo.", font_index::INFO);
+        return;
+    }
+
+    // VB6: Carisma * Liderazgo >= 100 AND Liderazgo >= 5
+    if liderazgo < 5 {
+        state.send_console(conn_id, "Necesitas al menos 5 puntos en Liderazgo para crear un grupo.", font_index::INFO);
+        return;
+    }
+    if carisma * liderazgo < 100 {
+        state.send_console(conn_id, "Necesitas Carisma * Liderazgo >= 100 para crear un grupo.", font_index::INFO);
         return;
     }
 
@@ -45,14 +61,18 @@ pub(super) async fn handle_slash_nuevaparty(state: &mut GameState, conn_id: Conn
         user.party_index = new_index;
     }
 
-    state.send_console(conn_id, "Has creado un grupo. Usa /PARTY <nombre> para invitar jugadores.", font_index::INFO);
+    state.send_console(conn_id, "Has creado un grupo. Usa /GRUPO <nombre> para invitar jugadores.", font_index::INFO);
 }
 
-/// /PARTY <target> — Invite a player to party (leader only, max 2 tiles distance).
+/// /GRUPO <target> or /PARTY <target> — Invite a player to party (leader only, max 2 tiles distance).
 /// VB6: SolicitarIngresoAParty + AprobarIngresoAParty combined.
 pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: ConnectionId, target_name: &str) {
-    let (party_index, map, x, y) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.party_index > 0 => (u.party_index, u.pos_map, u.pos_x, u.pos_y),
+    let (party_index, map, x, y, liderazgo, carisma) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.party_index > 0 => (
+            u.party_index, u.pos_map, u.pos_x, u.pos_y,
+            u.skills[16], // LIDERAZGO index (0-based)
+            u.attributes[3], // Charisma
+        ),
         Some(u) if u.logged => {
             state.send_console(conn_id, "No perteneces a un grupo. Usa /NUEVAPARTY.", font_index::INFO);
             return;
@@ -70,12 +90,16 @@ pub(super) async fn handle_slash_party_invite(state: &mut GameState, conn_id: Co
         return;
     }
 
+    // VB6: max party size = floor(Carisma * Liderazgo / 100), capped at MAX_PARTY_MEMBERS
+    // Minimum of 2 so leader can at least invite one member.
+    let max_members = ((carisma * liderazgo) / 100).clamp(2, MAX_PARTY_MEMBERS as i32) as usize;
+
     // Check party not full
     let member_count = state.parties.get(party_index as usize)
         .and_then(|p| p.as_ref())
         .map(|p| p.members.len())
         .unwrap_or(0);
-    if member_count >= MAX_PARTY_MEMBERS {
+    if member_count >= max_members {
         state.send_console(conn_id, "El grupo esta lleno.", font_index::INFO);
         return;
     }
@@ -134,14 +158,31 @@ pub(super) async fn handle_slash_party_accept(state: &mut GameState, conn_id: Co
         return;
     }
 
-    // Check party still exists and not full
-    let party_ok = state.parties.get(party_pending as usize)
+    // Check party still exists; get leader conn to compute dynamic max size
+    let (party_exists, leader_conn, member_count) = state.parties.get(party_pending as usize)
         .and_then(|p| p.as_ref())
-        .map(|p| p.members.len() < MAX_PARTY_MEMBERS)
-        .unwrap_or(false);
+        .map(|p| (true, p.leader, p.members.len()))
+        .unwrap_or((false, 0, 0));
 
-    if !party_ok {
-        state.send_console(conn_id, "El grupo ya no existe o esta lleno.", font_index::INFO);
+    if !party_exists {
+        state.send_console(conn_id, "El grupo ya no existe.", font_index::INFO);
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.party_pending = 0;
+        }
+        return;
+    }
+
+    // Dynamic max based on leader's current stats
+    let max_members = state.users.get(&leader_conn)
+        .map(|u| {
+            let liderazgo = u.skills[16];
+            let carisma = u.attributes[3];
+            ((carisma * liderazgo) / 100).clamp(2, MAX_PARTY_MEMBERS as i32) as usize
+        })
+        .unwrap_or(MAX_PARTY_MEMBERS);
+
+    if member_count >= max_members {
+        state.send_console(conn_id, "El grupo esta lleno.", font_index::INFO);
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.party_pending = 0;
         }
@@ -466,13 +507,21 @@ pub async fn party_share_exp(state: &mut GameState, killer_conn: ConnectionId, t
     if nearby.is_empty() || sum_levels_elevated <= 0.0 { return; }
 
     // VB6: expThisUser = ExpGanada * (Level ^ ExponenteNivelParty) / p_SumaNivelesElevados
-    for (member_conn, level_elevated) in &nearby {
+    for (member_conn, level_elevated) in nearby {
         let exp_this_user = (total_exp as f64 * level_elevated / sum_levels_elevated).floor() as i64;
         if exp_this_user <= 0 { continue; }
 
-        if let Some(user) = state.users.get_mut(member_conn) {
+        let can_level = state.users.get(&member_conn)
+            .map(|u| u.level < MAX_LEVEL as i32)
+            .unwrap_or(false);
+        if !can_level { continue; }
+
+        if let Some(user) = state.users.get_mut(&member_conn) {
             user.exp += exp_this_user;
         }
-        send_stats_exp(state, *member_conn).await;
+        // Notify member of XP gain (msg 170) and update stats bar
+        state.send_msg_id(member_conn, 170, &exp_this_user.to_string());
+        send_stats_exp(state, member_conn).await;
+        check_user_level(state, member_conn).await;
     }
 }
