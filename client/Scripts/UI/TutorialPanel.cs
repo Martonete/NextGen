@@ -105,8 +105,13 @@ public partial class TutorialPanel : Control
         SetAnchorsPreset(LayoutPreset.FullRect);
         MouseFilter = MouseFilterEnum.Ignore;
 
-        // Central panel with NinePatch frame
+        // Central panel with NinePatch frame — anchored to center of parent
         _panel = new Control();
+        _panel.SetAnchorsPreset(LayoutPreset.Center);
+        _panel.OffsetLeft = -180;   // -360/2
+        _panel.OffsetTop = -150;    // -300/2
+        _panel.OffsetRight = 180;   // +360/2
+        _panel.OffsetBottom = 150;  // +300/2
         _panel.Size = new Vector2(360, 300);
         _panel.CustomMinimumSize = new Vector2(360, 300);
         _panel.ClipContents = true;
@@ -234,9 +239,7 @@ public partial class TutorialPanel : Control
         _currentStep = 0;
         RefreshStep();
         Visible = true;
-
-        // Center _panel using its own size against the window
-        CenterPanel();
+        // _panel is centered via anchors (LayoutPreset.Center + offsets), no manual calc needed
     }
 
     /// <summary>
@@ -245,16 +248,6 @@ public partial class TutorialPanel : Control
     public bool IsCompleted()
     {
         return _completed;
-    }
-
-    private void CenterPanel()
-    {
-        if (_panel == null) return;
-        // Use DisplayServer window size — always correct regardless of parent layout
-        var winSize = DisplayServer.WindowGetSize();
-        _panel.Position = new Vector2(
-            (winSize.X - 360) / 2f,
-            (winSize.Y - 300) / 2f);
     }
 
     /// <summary>
