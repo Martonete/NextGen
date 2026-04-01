@@ -5,18 +5,26 @@
 //!   spell_offensive — damage/status helpers, InfoHechizo, NPC/user property/status effects
 //!   spell_support   — buffs, invocation, summon, teleport, mimicry, lookat helpers
 
+#[path = "spell_offensive.rs"]
 mod spell_offensive;
+#[path = "spell_support.rs"]
 mod spell_support;
 
-pub(super) use spell_offensive::*;
-pub(super) use spell_support::*;
+// Bring submodule items into spells scope (not re-exported to handlers)
+use spell_offensive::*;
+use spell_support::*;
 
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
-use crate::game::types::{GameState, SendTarget, MAX_SPELL_SLOTS};
-use crate::protocol::{font_index, binary_packets};
-use super::common::*;
-use super::{user_die, npc_die, check_user_level, revive_user};
+use crate::game::types::{GameState, MAX_SPELL_SLOTS};
+use crate::protocol::font_index;
+// Re-export handlers items for use by spell_offensive/spell_support submodules via super::
+#[allow(unused_imports)]
+pub(super) use super::common;
+#[allow(unused_imports)]
+pub(super) use super::common::*;
+#[allow(unused_imports)]
+pub(super) use super::{user_die, npc_die, check_user_level, revive_user};
 
 // =====================================================================
 // Spell handler

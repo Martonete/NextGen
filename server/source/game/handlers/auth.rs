@@ -8,5 +8,5 @@ mod auth_login;
 #[path = "auth_char.rs"]
 mod auth_char;
 
-pub(super) use auth_login::*;
-pub(super) use auth_char::*;
+pub(crate) use auth_login::*;
+pub(crate) use auth_char::*;

@@ -19,7 +19,7 @@ use super::super::{make_user_visible, send_warp_fx};
 // =====================================================================
 
 /// HardwareCheck — Hardware serial check (first packet from client).
-pub(super) async fn handle_hardware_check(state: &mut GameState, conn_id: ConnectionId, hd_serial: &str) {
+pub(crate) async fn handle_hardware_check(state: &mut GameState, conn_id: ConnectionId, hd_serial: &str) {
     info!("[AUTH] HD serial check from #{}: HD={}", conn_id, hd_serial);
 
     let is_banned = state.bans.is_hd_banned(&hd_serial);
@@ -70,7 +70,7 @@ fn check_rate_limit(
 }
 
 /// AccountLogin — Account login.
-pub(super) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str) {
+pub(crate) async fn handle_account_login(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str) {
     info!("[AUTH] Login attempt: account='{}' pass_len={} pass_bytes={:?} from #{}", account_name, password.len(), password.as_bytes(), conn_id);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
@@ -199,7 +199,7 @@ pub(super) async fn handle_account_login(state: &mut GameState, conn_id: Connect
 }
 
 /// CreateAccount — Create new account.
-pub(super) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str, pin: &str) {
+pub(crate) async fn handle_create_account(state: &mut GameState, conn_id: ConnectionId, account_name: &str, password: &str, pin: &str) {
     info!("[AUTH] New account request: '{}' from #{}", account_name, conn_id);
 
     // Rate limiting: block IPs that have exceeded the failed-attempt threshold.
@@ -280,7 +280,7 @@ pub(super) async fn handle_create_account(state: &mut GameState, conn_id: Connec
 }
 
 /// CharacterSelect — Character login (primary, with full validation).
-pub(super) async fn handle_character_select(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
+pub(crate) async fn handle_character_select(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
     info!("[AUTH] Character login (CharacterSelect): '{}' account='{}' from #{}", char_name, account, conn_id);
 
     let paso_hd = state.users.get(&conn_id).map(|u| u.paso_hd).unwrap_or(false);
@@ -323,7 +323,7 @@ pub(super) async fn handle_character_select(state: &mut GameState, conn_id: Conn
 }
 
 /// CharacterLogin — Character login (simplified variant).
-pub(super) async fn handle_character_login(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
+pub(crate) async fn handle_character_login(state: &mut GameState, conn_id: ConnectionId, char_name: &str, account: &str, codex: &str) {
     info!("[AUTH] Character login (CharacterLogin): '{}' from #{}", char_name, conn_id);
 
     // HD ban check (VB6 13.3 parity)

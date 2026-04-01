@@ -12,12 +12,12 @@ use super::poder_ataque_arma;
 // =====================================================================
 
 /// Calculate attack power with balance class modifier.
-pub(super) fn calc_attack_power_with_balance(skill: i32, agility: i32, level: i32, class_mod: f32) -> f64 {
+pub(crate) fn calc_attack_power_with_balance(skill: i32, agility: i32, level: i32, class_mod: f32) -> f64 {
     poder_ataque_arma(skill, agility, level, class_mod) as f64
 }
 
 /// Get armor absorption for NPC combat (unchanged from before).
-pub(super) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, body_part: i32) -> i32 {
+pub(crate) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, body_part: i32) -> i32 {
     let user = match state.users.get(&conn_id) {
         Some(u) => u,
         None => return 0,
@@ -47,7 +47,7 @@ pub(super) fn calc_armor_absorption(state: &GameState, conn_id: ConnectionId, bo
 }
 
 /// Get armor absorption with weapon penetration (for NPC combat).
-pub(super) fn calc_armor_absorption_with_penetration(state: &GameState, conn_id: ConnectionId, body_part: i32, refuerzo: i32) -> i32 {
+pub(crate) fn calc_armor_absorption_with_penetration(state: &GameState, conn_id: ConnectionId, body_part: i32, refuerzo: i32) -> i32 {
     let user = match state.users.get(&conn_id) {
         Some(u) => u,
         None => return 0,

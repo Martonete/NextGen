@@ -3,7 +3,7 @@
 use crate::net::ConnectionId;
 use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, binary_packets};
-use super::common::*;
+use super::super::common::*;
 
 // =====================================================================
 // Constants

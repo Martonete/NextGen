@@ -206,7 +206,7 @@ pub(super) async fn user_attack_npc(
         Some(n) => (n.poder_evasion, n.char_index, n.name.clone(), n.give_exp, n.max_hp),
         None => return,
     };
-    let (npc_evasion, npc_char_index, _npc_name, _npc_give_exp, npc_max_hp) = npc_data;
+    let (npc_evasion, npc_char_index, _npc_name, _npc_give_exp, _npc_max_hp) = npc_data;
 
     // VB6: UserImpactoNpc — determine weapon type and calculate attack power
     let weapon_info = get_weapon_info(state, conn_id);

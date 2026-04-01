@@ -5,7 +5,7 @@ use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget};
 use crate::protocol::{font_index, binary_packets};
 use crate::data::experience::MAX_LEVEL;
-use super::common::*;
+use super::super::common::*;
 use super::super::{user_die, npc_die, check_user_level, revive_user};
 
 // =====================================================================

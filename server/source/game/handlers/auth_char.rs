@@ -14,7 +14,7 @@ use super::connect_user;
 // =====================================================================
 
 /// CreateCharacter — Create new character.
-pub(super) async fn handle_create_character(
+pub(crate) async fn handle_create_character(
     state: &mut GameState,
     conn_id: ConnectionId,
     char_name: &str,
@@ -120,7 +120,7 @@ pub(super) async fn handle_create_character(
 ///   INT = max(16, 13 + rand(0,3) + rand(0,2))   → 16-18
 ///   CHA = max(15, 12 + rand(0,3) + rand(0,3))   → 15-18
 ///   CON = 16 + rand(0,1) + rand(0,1)            → 16-18
-pub(super) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionId) {
+pub(crate) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionId) {
     info!("[AUTH] Dice roll request from #{}", conn_id);
 
     let str_val = (13 + rand_range(0, 3) + rand_range(0, 2)).max(15);
@@ -141,7 +141,7 @@ pub(super) async fn handle_roll_dice(state: &mut GameState, conn_id: ConnectionI
 }
 
 /// DeleteCharacter — Delete character.
-pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, char_name: &str, _account_name: &str, password: &str) {
+pub(crate) async fn handle_delete_character(state: &mut GameState, conn_id: ConnectionId, char_name: &str, _account_name: &str, password: &str) {
     info!("[AUTH] Delete character request: '{}' from #{}", char_name, conn_id);
 
     // Rate limit: 5-second cooldown between delete attempts
@@ -214,7 +214,7 @@ pub(super) async fn handle_delete_character(state: &mut GameState, conn_id: Conn
 }
 
 /// ChangePassword — Change account password.
-pub(super) async fn handle_change_password(state: &mut GameState, conn_id: ConnectionId, account_name: &str, old_password: &str, new_password: &str, confirm_password: &str) {
+pub(crate) async fn handle_change_password(state: &mut GameState, conn_id: ConnectionId, account_name: &str, old_password: &str, new_password: &str, confirm_password: &str) {
     info!("[AUTH] Password change request for '{}' from #{}", account_name, conn_id);
 
     if new_password == old_password {
@@ -266,7 +266,7 @@ pub(super) async fn handle_change_password(state: &mut GameState, conn_id: Conne
 }
 
 /// AccountRecovery — Account recovery via PIN.
-pub(super) async fn handle_account_recovery(state: &mut GameState, conn_id: ConnectionId, account_name: &str, pin: &str) {
+pub(crate) async fn handle_account_recovery(state: &mut GameState, conn_id: ConnectionId, account_name: &str, pin: &str) {
     info!("[AUTH] Account recovery request for '{}' from #{}", account_name, conn_id);
 
     let account = match accounts::load_account(&state.pool, &account_name).await {

@@ -8,8 +8,8 @@ mod combat_pvp;
 #[path = "combat_npc.rs"]
 mod combat_npc;
 
-pub(super) use combat_pvp::*;
-pub(super) use combat_npc::*;
+use combat_pvp::*;
+pub(crate) use combat_npc::*;
 
 use tracing::info;
 use crate::net::ConnectionId;
