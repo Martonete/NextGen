@@ -23,10 +23,8 @@ server/guilds/Bancos/
 *.pdb
 *.cache
 
-# AoPak archives — build output, never commit
-*.aopak
+# AoPak build output directory
 resources/output/
-client/Data/*.aopak
 
 # Claude Code local settings
 .claude/
