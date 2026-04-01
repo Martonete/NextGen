@@ -153,11 +153,6 @@ public partial class SpellPanel : Control
                 DrawRect(new Rect2(2, lineY, Size.X - 4, LineHeight),
                     new Color(0.3f, 0.3f, 0.8f, 0.6f));
             }
-            else if (slot == _hoveredSlot)
-            {
-                DrawRect(new Rect2(2, lineY, Size.X - 4, LineHeight),
-                    new Color(1f, 1f, 1f, 0.1f));
-            }
 
             // Spell name
             string text = spell.SpellId > 0 ? spell.Name : "(vacio)";
@@ -206,7 +201,6 @@ public partial class SpellPanel : Control
         if (@event is InputEventMouseMotion motion)
         {
             int slot = HitTestSlot(motion.Position);
-            _hoveredSlot = slot;
 
             // VB6 ListBox behavior: drag with left button held changes selection
             if (_dragging && slot >= 0 && slot < MaxSpells)

@@ -462,6 +462,7 @@ public partial class Main : Control
 			_packetHandler.OnPlayMusic = (id) => _soundManager.PlayMusic(id);
 			_packetHandler.OnStopSfx = () => _soundManager?.StopAllSfx();
 		}
+		_packetHandler.OnInventoryChanged = () => _inventoryPanel?.MarkDirty();
 		_packetHandler.OnFloatingText = (charIndex, text, colorHex) =>
 		{
 			var floatingLayer = _worldRenderer?.FloatingText;
