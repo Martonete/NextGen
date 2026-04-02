@@ -13,6 +13,100 @@ use super::{
 };
 
 // =====================================================================
+// Helpers
+// =====================================================================
+
+/// Check map/zone entry restrictions for a teleport destination.
+///
+/// Returns `true` if the player is allowed to enter, `false` if blocked.
+/// Sends an appropriate console message when blocked.
+///
+/// Checks (in order):
+/// 1. Newbie zone: blocked if player level exceeds `max_level` (when > 0).
+/// 2. Level range: blocked if player level is below `min_level` (when > 0).
+/// 3. Faction zone: blocked if `solo_faccion` is set and player isn't in the required faction.
+fn check_teleport_restrictions(
+    state: &mut GameState,
+    conn_id: ConnectionId,
+    dest_map: i32,
+    dest_x: i32,
+    dest_y: i32,
+) -> bool {
+    // Collect the fields we need from the user.
+    let (level, armada_real, fuerzas_caos) = match state.users.get(&conn_id) {
+        Some(u) => (u.level, u.armada_real, u.fuerzas_caos),
+        None => return true, // No user — let warp_user handle it.
+    };
+
+    // Look up zone data at destination (zones use 0-based coordinates).
+    let map_idx = dest_map as usize;
+    let zone_opt: Option<(bool, i32, i32, bool, i32)> =
+        state.game_data.maps.get(map_idx)
+            .and_then(|m| m.as_ref())
+            .and_then(|gm| gm.get_zone_at(dest_x - 1, dest_y - 1))
+            .map(|z| (z.newbie, z.min_level, z.max_level, z.solo_faccion, z.faccion));
+
+    if let Some((newbie, min_level, max_level, solo_faccion, faccion)) = zone_opt {
+        // Newbie zone: block high-level players (max_level > 0).
+        if newbie && max_level > 0 && level > max_level {
+            state.send_console(
+                conn_id,
+                "Solo jugadores nuevos pueden ingresar a esa zona.",
+                font_index::INFO,
+            );
+            return false;
+        }
+
+        // Min-level restriction (e.g. entering a high-level area).
+        if min_level > 0 && level < min_level {
+            state.send_console(
+                conn_id,
+                "No tienes el nivel requerido para ingresar a esa zona.",
+                font_index::INFO,
+            );
+            return false;
+        }
+
+        // Faction-restricted zone.
+        if solo_faccion {
+            let allowed = match faccion {
+                1 => armada_real,  // Royal Army only
+                2 => fuerzas_caos, // Chaos Forces only
+                _ => true,         // 0 or unknown = no restriction
+            };
+            if !allowed {
+                state.send_console(
+                    conn_id,
+                    "No perteneces a la faccion que controla esa zona.",
+                    font_index::INFO,
+                );
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+/// VB6 13.3 parity: when a teleport exit has Radio > 0, randomize the destination
+/// within that radius. Tries up to 5 positions; falls back to the exact exit on failure.
+fn randomize_exit(state: &GameState, exit_map: i32, exit_x: i32, exit_y: i32, radio: i32) -> (i32, i32) {
+    if radio <= 0 {
+        return (exit_x, exit_y);
+    }
+    for _ in 0..5 {
+        let rx = rand_range(-radio, radio);
+        let ry = rand_range(-radio, radio);
+        let try_x = exit_x + rx;
+        let try_y = exit_y + ry;
+        if !state.is_tile_blocked(exit_map, try_x, try_y) {
+            return (try_x, try_y);
+        }
+    }
+    (exit_x, exit_y)
+}
+
+// =====================================================================
 // In-game handlers
 // =====================================================================
 
@@ -106,15 +200,22 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         // Check if there's a map exit at the target tile
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
             // FX if tile has otTeleport object OR particle group (particle teleports)
-            let has_teleport_fx = {
+            let (has_teleport_fx, teleport_radio) = {
                 let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
                 let has_obj = obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false);
                 let has_particle = get_map_tile_particle(state, map, new_x, new_y) > 0;
-                has_obj || has_particle
+                let radio = if obj_idx > 0 { state.get_object(obj_idx).map(|o| o.radio).unwrap_or(0) } else { 0 };
+                (has_obj || has_particle, radio)
             };
-            warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
-            if has_teleport_fx {
-                send_warp_fx(state, conn_id).await;
+            let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, teleport_radio);
+            if check_teleport_restrictions(state, conn_id, exit_map, dest_x, dest_y) {
+                warp_user(state, conn_id, exit_map, dest_x, dest_y).await;
+                if has_teleport_fx {
+                    send_warp_fx(state, conn_id).await;
+                }
+            } else {
+                // Blocked — send position correction so the client doesn't drift.
+                state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
             }
             return;
         }
@@ -239,15 +340,19 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     // VB6 DoTileEvents: check tile exit AFTER successful movement (map transitions)
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
         // FX if tile has otTeleport object OR particle group (particle teleports)
-        let has_teleport_fx = {
+        let (has_teleport_fx, teleport_radio) = {
             let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
             let has_obj = obj_idx > 0 && state.get_object(obj_idx).map(|o| o.obj_type == crate::data::objects::ObjType::Teleport).unwrap_or(false);
             let has_particle = get_map_tile_particle(state, map, new_x, new_y) > 0;
-            has_obj || has_particle
+            let radio = if obj_idx > 0 { state.get_object(obj_idx).map(|o| o.radio).unwrap_or(0) } else { 0 };
+            (has_obj || has_particle, radio)
         };
-        warp_user(state, conn_id, exit_map, exit_x, exit_y).await;
-        if has_teleport_fx {
-            send_warp_fx(state, conn_id).await;
+        let (dest_x, dest_y) = randomize_exit(state, exit_map, exit_x, exit_y, teleport_radio);
+        if check_teleport_restrictions(state, conn_id, exit_map, dest_x, dest_y) {
+            warp_user(state, conn_id, exit_map, dest_x, dest_y).await;
+            if has_teleport_fx {
+                send_warp_fx(state, conn_id).await;
+            }
         }
     }
 }

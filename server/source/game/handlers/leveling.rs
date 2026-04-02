@@ -131,6 +131,11 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         info!("[LEVEL] '{}' reached level {} (HP+{}, MANA+{}, STA+{}, HIT+{})",
             name, new_level, hp_gain, mana_gain, sta_gain, hit_gain);
 
+        // VB6 13.3 parity: at level 25, expel from faction guild (Armada/Caos pretoriano guilds).
+        if new_level == 25 {
+            super::guilds_handler::expel_from_faction_guild_at_25(state, conn_id).await;
+        }
+
         // 13.3: Level 50 — announcement + 50 bonus skill points (one-time)
         if new_level == 50 {
             state.send_chat_talk_to(SendTarget::ToAll, 0i16, &format!("{} ha alcanzado el nivel 50!", name), 65535);

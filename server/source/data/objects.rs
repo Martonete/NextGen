@@ -230,6 +230,9 @@ pub struct ObjData {
 
     // Backpack (VB6: MochilaType — 1=small +5 slots, 2=large +10 slots)
     pub mochila_type: i32,
+
+    // Teleport radius (VB6: Radio — randomize destination within this radius when > 0)
+    pub radio: i32,
 }
 
 impl Default for ObjData {
@@ -304,6 +307,7 @@ impl Default for ObjData {
             upgrade: 0,
             foro_id: String::new(),
             mochila_type: 0,
+            radio: 0,
         }
     }
 }
@@ -408,6 +412,7 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             upgrade: get_int("Upgrade"),
             foro_id: get_str("ForoID"),
             mochila_type: get_int("MochilaType"),
+            radio: get_int("Radio"),
             ..Default::default()
         };
 

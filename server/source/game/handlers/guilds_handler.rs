@@ -1209,3 +1209,43 @@ pub(super) async fn handle_slash_relaciones(state: &mut GameState, conn_id: Conn
         state.send_console(conn_id, &format!("Aliados con: {}", allies.join(", ")), font_index::GUILD_MSG);
     }
 }
+
+/// VB6 13.3 parity: at level 25, expel user from faction guild (Armada/Caos pretoriano guilds).
+/// Faction guilds are identified by alignment ALIGN_ARMADA (5) or ALIGN_LEGION (1).
+/// Called from check_user_level when new_level == 25.
+pub(super) async fn expel_from_faction_guild_at_25(state: &mut GameState, conn_id: ConnectionId) {
+    let (guild_index, char_name) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
+        _ => return,
+    };
+
+    let guild = match guilds::load_guild(&state.pool, guild_index).await {
+        Some(g) => g,
+        None => return,
+    };
+
+    // Only expel from faction guilds (Armada Real or Legion del Caos).
+    if guild.alignment != guilds::ALIGN_ARMADA && guild.alignment != guilds::ALIGN_LEGION {
+        return;
+    }
+
+    // If sublider, clear the slot before removal.
+    let is_sub1 = guild.sub_lider1.to_uppercase() == char_name.to_uppercase();
+    let is_sub2 = guild.sub_lider2.to_uppercase() == char_name.to_uppercase();
+    if is_sub1 || is_sub2 {
+        let mut updated = guild.clone();
+        if is_sub1 { updated.sub_lider1 = String::new(); }
+        if is_sub2 { updated.sub_lider2 = String::new(); }
+        guilds::save_guild(&state.pool, &updated).await;
+    }
+
+    // Remove from members DB and clear guild_index in charfile.
+    guilds::remove_member(&state.pool, &guild.name, &char_name).await;
+    crate::db::charfile::update_guild_index(&state.pool, &char_name, 0).await.ok();
+
+    // Update online user state and refresh CC.
+    clear_user_guild(state, conn_id).await;
+
+    // Notify the player.
+    state.send_console(conn_id, "Has alcanzado el nivel 25 y has sido expulsado del clan de faccion.", font_index::INFO);
+}

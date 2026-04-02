@@ -96,6 +96,25 @@ pub(super) async fn handle_slash_comerciar(state: &mut GameState, conn_id: Conne
         return;
     }
 
+    // VB6 13.3 parity: both players must be on the same map and within 3 tiles (Chebyshev)
+    let (user_map, user_x, user_y) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    let (target_map, target_x, target_y) = match state.users.get(&target_user) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    if user_map != target_map {
+        state.send_console(conn_id, "El jugador no esta en el mismo mapa.", font_index::INFO);
+        return;
+    }
+    let dist = (user_x - target_x).abs().max((user_y - target_y).abs());
+    if dist > 3 {
+        state.send_console(conn_id, "Estás demasiado lejos para comerciar.", font_index::INFO);
+        return;
+    }
+
     // VB6 mutual confirmation: check if target already requested trade with us
     let target_wants_us = state.users.get(&target_user)
         .map(|u| u.trade_partner == Some(conn_id) && !u.trading)

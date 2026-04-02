@@ -889,9 +889,9 @@ pub(crate) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
                 // Black potion — handled above (instant death for non-GMs)
             }
             _ => {
-                // Generic consumable (ObjType::UseOnce food items, etc.)
-                // HP restoration
-                if amount > 0 {
+                // Generic consumable — HP restoration only for potions, NOT for UseOnce (food).
+                // VB6 13.3 parity: food only restores hunger, never HP.
+                if amount > 0 && obj.obj_type != ObjType::UseOnce {
                     let new_hp = (user.min_hp + amount).min(user.max_hp);
                     user.min_hp = new_hp;
                 }

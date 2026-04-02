@@ -510,6 +510,9 @@ pub(super) async fn apply_spell_status(
         if spell.estupidez {
             target.stunned = true;
             target.counter_stun = state.intervals.paralizado; // VB6: same duration
+            // VB6: Blindness and Stun share Counters.Ceguera — they cannot stack
+            target.blind = false;
+            target.counter_blind = 0;
         }
         if spell.remover_estupidez {
             target.stunned = false;
@@ -518,6 +521,9 @@ pub(super) async fn apply_spell_status(
         if spell.ceguera {
             target.blind = true;
             target.counter_blind = state.intervals.paralizado / 3; // VB6: IntervaloParalizado / 3
+            // VB6: Blindness and Stun share Counters.Ceguera — they cannot stack
+            target.stunned = false;
+            target.counter_stun = 0;
         }
         if spell.invisibilidad {
             target.invisible = true;

@@ -108,12 +108,6 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
         // VB6: GMs (>= Semidios) bypass ALL equipment restrictions
         let is_gm = user_privileges >= privilege_level::SEMIDIOS;
 
-        // Level requirement
-        if obj_data.lvl > 0 && user_level < obj_data.lvl && !is_gm {
-            state.send_msg_id(conn_id, 112, &obj_data.lvl.to_string());
-            return;
-        }
-
         // VB6 parity: newbie items can only be used by players level <= 12
         if obj_data.newbie && user_level > 12 && !is_gm {
             state.send_console(conn_id, "Solo los newbies pueden usar este objeto.", font_index::INFO);
@@ -189,6 +183,31 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
 
         // Arrow equip handling
         if obj_data.obj_type == ObjType::Arrow {
+            // Class restriction (VB6: ClasePuedeUsarItem)
+            if !is_gm && !obj_data.class_prohibida.is_empty() {
+                let uc = user_class.to_string().to_uppercase();
+                if obj_data.class_prohibida.iter().any(|c| c.to_uppercase() == uc) {
+                    state.send_msg_id(conn_id, 113, ""); // TEXTO113: Tu clase, genero o raza no puede usar este objeto
+                    return;
+                }
+            }
+
+            // Faction restriction (VB6: FaccionPuedeUsarItem)
+            if !is_gm {
+                if obj_data.real {
+                    if user_criminal || !user_armada {
+                        state.send_console(conn_id, "Solo miembros de la Armada Real pueden usar este item", font_index::INFO);
+                        return;
+                    }
+                }
+                if obj_data.caos {
+                    if !user_criminal || !user_caos {
+                        state.send_console(conn_id, "Solo miembros de las Fuerzas del Caos pueden usar este item", font_index::INFO);
+                        return;
+                    }
+                }
+            }
+
             // Equip as ammo
             let old_ammo = state.users.get(&conn_id).map(|u| u.equip.municion).unwrap_or(0);
             if old_ammo > 0 && old_ammo <= MAX_INVENTORY_SLOTS {

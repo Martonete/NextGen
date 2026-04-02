@@ -553,9 +553,10 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
 
                 // VB6 Accion(): First check Comercia, then check NPCtype
                 // Commerce takes priority over type (VB6 line 135)
+                // VB6 13.3 parity: max 3 tiles for all NPC interactions
                 if comercia {
                     if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                    if dist > 6 {
+                    if dist > 3 {
                         state.send_msg_id(conn_id, 13, ""); return;
                     }
                     iniciar_comercio_npc(state, conn_id, npc_idx).await;
@@ -563,14 +564,14 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                     match npc_type {
                         NpcType::Banker => {
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 10 {
+                            if dist > 3 {
                                 state.send_msg_id(conn_id, 13, ""); return;
                             }
                             iniciar_banco(state, conn_id).await;
                         }
                         NpcType::BoveClan => {
                             if dead { state.send_msg_id(conn_id, 3, ""); return; }
-                            if dist > 10 {
+                            if dist > 3 {
                                 state.send_msg_id(conn_id, 13, ""); return;
                             }
                             iniciar_banco_clan(state, conn_id).await;

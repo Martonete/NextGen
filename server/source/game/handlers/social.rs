@@ -582,7 +582,7 @@ pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, me
         Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.dead),
         _ => return,
     };
-    let (map, _x, _y, char_index, dead) = user_data;
+    let (map, x, y, char_index, dead) = user_data;
 
     if dead {
         return; // Dead players can't yell
@@ -592,8 +592,8 @@ pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, me
         return;
     }
 
-    // Yell uses red color and goes to the whole map (binary overhead chat)
-    state.send_chat_over_head_to(SendTarget::ToMap(map), message, char_index.0 as i16, 255);
+    // VB6 13.3 parity: yell goes to ToPCArea (standard vision range), not entire map
+    state.send_chat_over_head_to(SendTarget::ToArea { map, x, y }, message, char_index.0 as i16, 255);
 }
 
 /// \ — Whisper (private message).

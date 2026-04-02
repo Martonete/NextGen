@@ -177,6 +177,16 @@ pub(crate) async fn handle_drop_item(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
+    // VB6 13.3 parity: cannot drop items while navigating, except the boat itself (dismount)
+    let is_navigating = state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
+    if is_navigating {
+        let is_boat = state.get_object(obj_idx).map(|o| o.obj_type == ObjType::Boat).unwrap_or(false);
+        if !is_boat {
+            state.send_console(conn_id, "No puedes tirar objetos mientras navegas.", font_index::INFO);
+            return;
+        }
+    }
+
     let drop_amount = amount.min(inv_amount);
     let map = user.pos_map;
     let x = user.pos_x;
@@ -407,8 +417,15 @@ pub(crate) async fn handle_drop_gold(state: &mut GameState, conn_id: ConnectionI
         return;
     }
 
-    // VB6: Cap at 500,000 per drop
-    let drop_total = (amount as i64).min(500_000).min(gold) as i32;
+    // VB6 13.3 parity: cannot drop gold while navigating
+    let is_navigating = state.users.get(&conn_id).map(|u| u.navigating).unwrap_or(false);
+    if is_navigating {
+        state.send_console(conn_id, "No puedes tirar objetos mientras navegas.", font_index::INFO);
+        return;
+    }
+
+    // VB6 13.3 parity: protocol caps gold drops at 10,000
+    let drop_total = (amount as i64).min(10_000).min(gold) as i32;
 
     // Deduct gold
     if let Some(user) = state.users.get_mut(&conn_id) {

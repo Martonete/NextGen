@@ -551,6 +551,19 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             }
         }
 
+        // VB6 13.3: ZONAPELEA — if BOTH players are in CombatZone, allow PvP without criminal penalty.
+        // If only one is in CombatZone, block PvP entirely.
+        let attacker_in_arena = get_map_tile_trigger(state, map, x, y) == crate::data::maps::Trigger::CombatZone;
+        let victim_arena_pos = state.users.get(&victim_id).map(|v| (v.pos_map, v.pos_x, v.pos_y)).unwrap_or((0, 0, 0));
+        let victim_in_arena = get_map_tile_trigger(state, victim_arena_pos.0, victim_arena_pos.1, victim_arena_pos.2) == crate::data::maps::Trigger::CombatZone;
+
+        if attacker_in_arena != victim_in_arena {
+            // One player is in the arena, the other is not — block combat entirely.
+            state.send_console(conn_id, "Ambos jugadores deben estar en la zona de pelea.", font_index::INFO);
+            return;
+        }
+        let both_in_arena = attacker_in_arena && victim_in_arena;
+
         let victim_data = match state.users.get(&victim_id) {
             Some(v) if v.logged => (
                 v.dead, v.privileges, v.char_name.clone(),
@@ -932,7 +945,8 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // VB6 13.3: PvP hit reputation update
         // Attack citizen: rep_bandido += 100, rep_noble halved
         // Attack criminal: rep_noble += 5
-        {
+        // ZONAPELEA: skip all reputation changes when both players are in CombatZone
+        if !both_in_arena {
             let victim_is_criminal = state.users.get(&victim_id).map(|u| u.criminal).unwrap_or(false);
             if victim_is_criminal {
                 if let Some(attacker) = state.users.get_mut(&conn_id) {
@@ -1223,37 +1237,46 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
             k.exp += exp_gain;
         }
 
+        // VB6 13.3: ZONAPELEA — both players in CombatZone suppresses criminal penalty on kill.
+        let victim_in_arena_kill = get_map_tile_trigger(state, map, x, y) == crate::data::maps::Trigger::CombatZone;
+        let killer_arena_pos = state.users.get(&killer).map(|k| (k.pos_map, k.pos_x, k.pos_y)).unwrap_or((0, 0, 0));
+        let killer_in_arena_kill = get_map_tile_trigger(state, killer_arena_pos.0, killer_arena_pos.1, killer_arena_pos.2) == crate::data::maps::Trigger::CombatZone;
+        let both_in_arena_kill = victim_in_arena_kill && killer_in_arena_kill;
+
         // VB6 13.3: PvP kill reputation update
         // Kill citizen: rep_asesino += 2000
         // Kill criminal: rep_noble += 500
         // Also update kill counters (criminales_matados / ciudadanos_matados)
+        // ZONAPELEA: skip all reputation and kill-counter changes when both players are in CombatZone
         let victim_criminal = state.users.get(&conn_id).map(|u| u.criminal).unwrap_or(false);
         let victim_name_upper = victim_name.to_uppercase();
-        if victim_criminal {
-            let last = state.users.get(&killer).map(|k| k.last_crim_matado.clone()).unwrap_or_default();
-            if last != victim_name_upper {
-                if let Some(k) = state.users.get_mut(&killer) {
-                    k.last_crim_matado = victim_name_upper;
-                    if k.criminales_matados < 65000 {
-                        k.criminales_matados += 1;
+        if !both_in_arena_kill {
+            if victim_criminal {
+                let last = state.users.get(&killer).map(|k| k.last_crim_matado.clone()).unwrap_or_default();
+                if last != victim_name_upper {
+                    if let Some(k) = state.users.get_mut(&killer) {
+                        k.last_crim_matado = victim_name_upper;
+                        if k.criminales_matados < 65000 {
+                            k.criminales_matados += 1;
+                        }
                     }
                 }
-            }
-            if let Some(k) = state.users.get_mut(&killer) {
-                k.rep_noble += 500;
-            }
-        } else {
-            let last = state.users.get(&killer).map(|k| k.last_ciud_matado.clone()).unwrap_or_default();
-            if last != victim_name_upper {
                 if let Some(k) = state.users.get_mut(&killer) {
-                    k.last_ciud_matado = victim_name_upper;
-                    if k.ciudadanos_matados < 65000 {
-                        k.ciudadanos_matados += 1;
+                    k.rep_noble += 500;
+                }
+            } else {
+                let last = state.users.get(&killer).map(|k| k.last_ciud_matado.clone()).unwrap_or_default();
+                if last != victim_name_upper {
+                    if let Some(k) = state.users.get_mut(&killer) {
+                        k.last_ciud_matado = victim_name_upper;
+                        if k.ciudadanos_matados < 65000 {
+                            k.ciudadanos_matados += 1;
+                        }
                     }
                 }
-            }
-            if let Some(k) = state.users.get_mut(&killer) {
-                k.rep_asesino += 2000;
+                if let Some(k) = state.users.get_mut(&killer) {
+                    k.rep_asesino += 2000;
+                }
             }
         }
         recalc_criminal(state, killer);
