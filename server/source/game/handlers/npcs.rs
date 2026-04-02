@@ -420,6 +420,36 @@ pub(super) async fn user_attack_npc(
         }
     }
 
+    // VB6 13.3 parity: award XP proportional to base damage dealt this swing.
+    // Formula: hit_exp = damage * NPC.GiveEXP / NPC.MaxHP
+    {
+        let (give_exp_val, max_hp_val) = state.get_npc(npc_idx)
+            .map(|n| (n.give_exp, n.max_hp))
+            .unwrap_or((0, 0));
+
+        if give_exp_val > 0 && max_hp_val > 0 && damage > 0 {
+            let hit_exp = (damage as i64 * give_exp_val as i64) / max_hp_val as i64;
+            if hit_exp > 0 {
+                let in_party = state.users.get(&conn_id).map(|u| u.party_index > 0).unwrap_or(false);
+                if in_party {
+                    party_share_exp(state, conn_id, hit_exp).await;
+                } else {
+                    let can_level = state.users.get(&conn_id)
+                        .map(|u| u.logged && u.level < MAX_LEVEL as i32)
+                        .unwrap_or(false);
+                    if can_level {
+                        if let Some(user) = state.users.get_mut(&conn_id) {
+                            user.exp += hit_exp;
+                        }
+                        state.send_msg_id(conn_id, 170, &hit_exp.to_string());
+                        send_stats_exp(state, conn_id).await;
+                        check_user_level(state, conn_id).await;
+                    }
+                }
+            }
+        }
+    }
+
     // Re-check dead status after backstab/crit
     let npc_dead = state.get_npc(npc_idx).map(|n| n.min_hp <= 0).unwrap_or(false);
 
@@ -453,7 +483,7 @@ pub(super) async fn npc_die(
     state: &mut GameState,
     npc_idx: usize,
     killer_id: ConnectionId,
-    give_exp: i32,
+    _give_exp: i32,
     give_gld_min: i32,
     give_gld_max: i32,
 ) {
@@ -492,25 +522,8 @@ pub(super) async fn npc_die(
         pretoriano_check_death(state, npc_idx);
     }
 
-    // 5) Distribute EXP on death (VB6: PARTY_EXPERIENCIAPORGOLPE = False — exp is awarded at kill time)
-    // If killer is in a party, share among nearby members; otherwise give directly to killer.
-    let give_exp_i64 = give_exp as i64;
-    let in_party = state.users.get(&killer_id).map(|u| u.party_index > 0).unwrap_or(false);
-    if in_party {
-        party_share_exp(state, killer_id, give_exp_i64).await;
-    } else {
-        let can_level = state.users.get(&killer_id)
-            .map(|u| u.logged && u.level < MAX_LEVEL as i32)
-            .unwrap_or(false);
-        if can_level && give_exp_i64 > 0 {
-            if let Some(user) = state.users.get_mut(&killer_id) {
-                user.exp += give_exp_i64;
-            }
-            state.send_msg_id(killer_id, 170, &give_exp_i64.to_string());
-            send_stats_exp(state, killer_id).await;
-            check_user_level(state, killer_id).await;
-        }
-    }
+    // 5) EXP is distributed per-hit (proportional to damage) in user_attack_npc — not at death.
+    // VB6 13.3: PARTY_EXPERIENCIAPORGOLPE = True — each melee hit awards hit_exp = damage * GiveEXP / MaxHP.
 
     // 6) Gold drops to floor at NPC position (VB6: TirarOro in MuereNpc)
     let gold_mult = state.multiplicador_oro;
@@ -531,14 +544,14 @@ pub(super) async fn npc_die(
     }
 
     // 9) Notify killer (VB6: ||50 + ||56@gold)
-    // Note: ||50 already sent at step 2. ||170 exp notification sent in step 5 for solo kills.
+    // Note: ||50 already sent at step 2. ||170 exp notification sent per-hit in user_attack_npc.
     if gold_award > 0 {
         state.send_msg_id(killer_id, 56, &gold_award.to_string()); // TEXTO56: La criatura ha dejado %1 monedas
     }
 
-    info!("[NPC] '{}' killed NPC '{}' (idx={}, +{} exp, +{} gold)",
+    info!("[NPC] '{}' killed NPC '{}' (idx={}, +{} gold)",
           state.users.get(&killer_id).map(|u| u.char_name.as_str()).unwrap_or("?"),
-          npc_name, npc_idx, give_exp, gold_award);
+          npc_name, npc_idx, gold_award);
 }
 
 

@@ -27,15 +27,15 @@ const FXMEDITARXXGRANDE: i16 = 34;   // level >= 42
 // VB6 original values are in ticks (~100ms each): IntervaloHambre=6500, IntervaloSed=6000,
 // IntervaloVeneno=500, SanaIntervaloSinDescansar=1600, SanaIntervaloDescansar=100,
 // StaminaIntervaloSinDescansar=10, StaminaIntervaloDescansar=5.
-// Converted: VB6_ticks / 10 = seconds.
-const HUNGER_INTERVAL: i32 = 650;  // VB6: 6500 ticks = ~650 seconds (~10.8 min)
-const THIRST_INTERVAL: i32 = 600;  // VB6: 6000 ticks = ~600 seconds (~10 min)
+// Converted: VB6_ticks * 50ms = seconds (VB6 tick = 50ms = 1/20s).
+const HUNGER_INTERVAL: i32 = 325;  // VB6: 6500 ticks × 50ms = 325s (~5.4 min)
+const THIRST_INTERVAL: i32 = 300;  // VB6: 6000 ticks × 50ms = 300s (~5 min)
 const HUNGER_DRAIN: i32 = 10;      // VB6: 10 per interval
 const THIRST_DRAIN: i32 = 10;      // VB6: 10 per interval
 const STAMINA_INTERVAL: i32 = 1;   // VB6: 10 ticks = ~1 second (standing)
 const STAMINA_INTERVAL_REST: i32 = 1; // VB6: 5 ticks = ~0.5s — compensated by 2x regen amount per tick
-const HP_REGEN_INTERVAL: i32 = 160; // VB6: SanaIntervaloSinDescansar=1600 ticks (~160s)
-const HP_REGEN_INTERVAL_REST: i32 = 10; // VB6: SanaIntervaloDescansar=100 ticks (~10s)
+const HP_REGEN_INTERVAL: i32 = 80;  // VB6: SanaIntervaloSinDescansar=1600 ticks × 50ms = 80s
+const HP_REGEN_INTERVAL_REST: i32 = 5; // VB6: SanaIntervaloDescansar=100 ticks × 50ms = 5s
 const POISON_INTERVAL: i32 = 25;    // VB6: IntervaloVeneno=500 ticks × 50ms = 25s
 const COLD_LAVA_INTERVAL: i32 = 2;  // VB6: IntervaloFrio=15 ticks (~2s at 1s tick)
 

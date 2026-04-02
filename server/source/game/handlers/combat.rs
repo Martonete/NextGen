@@ -477,6 +477,20 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
+    // VB6 13.3 parity: melee attacks require min 10 stamina, deduct random 1-10.
+    {
+        let min_sta = state.users.get(&conn_id).map(|u| u.min_sta).unwrap_or(0);
+        if min_sta < 10 {
+            state.send_console(conn_id, "No tienes suficiente energía para atacar.", font_index::INFO);
+            return;
+        }
+        let sta_cost = rand_range(1, 10);
+        if let Some(user) = state.users.get_mut(&conn_id) {
+            user.min_sta = (user.min_sta - sta_cost).max(0);
+        }
+        send_stats_sta(state, conn_id).await;
+    }
+
     // Get target tile based on heading
     let (dx, dy) = world::heading_to_offset(heading);
     let target_x = x + dx;
@@ -910,6 +924,24 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         // Update victim HP
         send_stats_hp(state, victim_id).await;
 
+        // VB6 13.3: PvP hit reputation update
+        // Attack citizen: rep_bandido += 100, rep_noble halved
+        // Attack criminal: rep_noble += 5
+        {
+            let victim_is_criminal = state.users.get(&victim_id).map(|u| u.criminal).unwrap_or(false);
+            if victim_is_criminal {
+                if let Some(attacker) = state.users.get_mut(&conn_id) {
+                    attacker.rep_noble += 5;
+                }
+            } else {
+                if let Some(attacker) = state.users.get_mut(&conn_id) {
+                    attacker.rep_bandido += 100;
+                    attacker.rep_noble = (attacker.rep_noble as f32 * 0.5) as i32;
+                }
+            }
+            recalc_criminal(state, conn_id);
+        }
+
         // Check death
         let v_hp = state.users.get(&victim_id).map(|u| u.min_hp).unwrap_or(0);
         if v_hp <= 0 {
@@ -1185,7 +1217,10 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
             k.exp += exp_gain;
         }
 
-        // Criminal/citizen reputation tracking on PvP kill
+        // VB6 13.3: PvP kill reputation update
+        // Kill citizen: rep_asesino += 2000
+        // Kill criminal: rep_noble += 500
+        // Also update kill counters (criminales_matados / ciudadanos_matados)
         let victim_criminal = state.users.get(&conn_id).map(|u| u.criminal).unwrap_or(false);
         let victim_name_upper = victim_name.to_uppercase();
         if victim_criminal {
@@ -1198,6 +1233,9 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                     }
                 }
             }
+            if let Some(k) = state.users.get_mut(&killer) {
+                k.rep_noble += 500;
+            }
         } else {
             let last = state.users.get(&killer).map(|k| k.last_ciud_matado.clone()).unwrap_or_default();
             if last != victim_name_upper {
@@ -1206,26 +1244,25 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                     if k.ciudadanos_matados < 65000 {
                         k.ciudadanos_matados += 1;
                     }
-                    k.criminal = true;
-                }
-            } else {
-                if let Some(k) = state.users.get_mut(&killer) {
-                    k.criminal = true;
                 }
             }
-            // Broadcast appearance change (criminal status)
-            let (km, kx, ky) = state.users.get(&killer)
-                .map(|u| (u.pos_map, u.pos_x, u.pos_y))
-                .unwrap_or((0, 0, 0));
-            if km > 0 {
-                if let Some(k) = state.users.get(&killer) {
-                    let cp = binary_packets::write_character_change(
-                        k.char_index.0 as i16, k.body as i16, k.head as i16,
-                        k.heading as u8, k.weapon_anim as i16, k.shield_anim as i16,
-                        k.casco_anim as i16, 0, 0,
-                    );
-                    state.send_data_bytes(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp);
-                }
+            if let Some(k) = state.users.get_mut(&killer) {
+                k.rep_asesino += 2000;
+            }
+        }
+        recalc_criminal(state, killer);
+        // Broadcast appearance change (criminal status may have changed)
+        let (km, kx, ky) = state.users.get(&killer)
+            .map(|u| (u.pos_map, u.pos_x, u.pos_y))
+            .unwrap_or((0, 0, 0));
+        if km > 0 {
+            if let Some(k) = state.users.get(&killer) {
+                let cp = binary_packets::write_character_change(
+                    k.char_index.0 as i16, k.body as i16, k.head as i16,
+                    k.heading as u8, k.weapon_anim as i16, k.shield_anim as i16,
+                    k.casco_anim as i16, 0, 0,
+                );
+                state.send_data_bytes(SendTarget::ToArea { map: km, x: kx, y: ky }, &cp);
             }
         }
 

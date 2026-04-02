@@ -945,12 +945,13 @@ pub(super) async fn handle_resucitar(state: &mut GameState, conn_id: ConnectionI
 /// Core revive logic — shared between /RESUCITAR, resurrection spell, and delayed resurrection timer.
 /// VB6: RevivirUsuario() — sets dead=false, HP=35, DarCuerpoDesnudo, ChangeUserChar(OrigChar.Head).
 pub(super) async fn revive_user(state: &mut GameState, conn_id: ConnectionId) {
-    let (race, gender, max_hp, orig_head) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.dead => (u.race, u.gender, u.max_hp, u.orig_head),
+    let (race, gender, max_hp, orig_head, constitution) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.dead => (u.race, u.gender, u.max_hp, u.orig_head, u.attributes[4]),
         _ => return,
     };
 
-    let revive_hp = 35.min(max_hp);
+    // VB6 13.3 parity: MinHP = UserAtributos(Constitucion)
+    let revive_hp = constitution.min(max_hp);
     let new_body = naked_body(race, gender);
 
     if let Some(user) = state.users.get_mut(&conn_id) {

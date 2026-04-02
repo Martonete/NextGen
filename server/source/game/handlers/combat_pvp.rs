@@ -7,6 +7,21 @@ use super::super::common::rand_range;
 use crate::game::constants::BODY_PART_HEAD;
 
 // =====================================================================
+// VB6 13.3: Criminal status recalculation
+// =====================================================================
+
+/// VB6 13.3: Recalculate criminal status from 6 reputation fields.
+/// L = (-asesino - bandido + burgues - ladrones + noble + plebe) / 6
+/// criminal = L < 0
+pub(super) fn recalc_criminal(state: &mut GameState, conn_id: ConnectionId) {
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        let l = (-user.rep_asesino - user.rep_bandido + user.rep_burgues
+                 - user.rep_ladrones + user.rep_noble + user.rep_plebe) / 6;
+        user.criminal = l < 0;
+    }
+}
+
+// =====================================================================
 // PvP armor absorption (VB6: UserDañoUser)
 // =====================================================================
 

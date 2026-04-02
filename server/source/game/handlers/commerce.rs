@@ -11,7 +11,7 @@ use super::{send_inventory_slot, send_full_inventory};
 use super::skills::try_level_skill_with_hit;
 
 /// Commerce skill index in skills array.
-const SK_COMERCIAR: usize = 11; // VB6 eSkill.Comerciar = 11
+const SK_COMERCIAR: usize = 9; // VB6 eSkill.Comerciar = 10 (1-based), 0-based = 9
 
 /// Start NPC commerce (VB6: IniciarComercioNPC).
 /// Sends NPC inventory, gold, sets flag, sends INITCOM.
