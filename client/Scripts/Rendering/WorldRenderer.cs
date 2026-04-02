@@ -56,7 +56,7 @@ public partial class WorldRenderer : Node2D
 	private static int HalfWindowTileHeight => ResolutionManager.HalfTilesY;
 
 	// Buffer sizes beyond visible area
-	private const int TerrainBufferSize = 16; // L1-L4: supports GRHs up to 512px (16 tiles)
+	private const int TerrainBufferSize = 4; // L1-L4: supports GRHs up to 128px (4 tiles). VB6 max sprite ~128px.
 	private const int CharBufferSize = 1;     // Characters/NPCs: +1 tile for smooth fade at viewport edge
 
 	// VB6: bTechoAB — roof alpha (per-region fade, delta-time based)

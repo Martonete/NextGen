@@ -176,7 +176,10 @@ public class LightSystem
     {
         int sizeX = mapWidth + 1;
         int sizeY = mapHeight + 1;
-        var img = Image.CreateEmpty(sizeX, sizeY, false, Image.Format.Rgb8);
+
+        // Build raw RGB8 byte array directly — avoids 1M+ individual SetPixel calls
+        byte[] pixels = new byte[sizeX * sizeY * 3];
+        int idx = 0;
 
         for (int py = 0; py < sizeY; py++)
         {
@@ -184,30 +187,20 @@ public class LightSystem
             {
                 Color c;
                 if (px < mapWidth && py < mapHeight)
-                {
-                    // NW corner of tile (px+1, py+1) = index 1
                     c = tileLightColors.Get(px + 1, py + 1, 1);
-                }
                 else if (px == mapWidth && py < mapHeight)
-                {
-                    // Right edge: NE corner of tile (W, py+1) = index 3
                     c = tileLightColors.Get(mapWidth, py + 1, 3);
-                }
                 else if (px < mapWidth && py == mapHeight)
-                {
-                    // Bottom edge: SW corner of tile (px+1, H) = index 0
                     c = tileLightColors.Get(px + 1, mapHeight, 0);
-                }
                 else
-                {
-                    // Corner (W,H): SE corner of tile (W, H) = index 2
                     c = tileLightColors.Get(mapWidth, mapHeight, 2);
-                }
 
-                img.SetPixel(px, py, new Color(c.R, c.G, c.B, 1f));
+                pixels[idx++] = (byte)(c.R * 255f);
+                pixels[idx++] = (byte)(c.G * 255f);
+                pixels[idx++] = (byte)(c.B * 255f);
             }
         }
 
-        return img;
+        return Image.CreateFromData(sizeX, sizeY, false, Image.Format.Rgb8, pixels);
     }
 }
