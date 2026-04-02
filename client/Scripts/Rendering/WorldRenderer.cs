@@ -848,7 +848,7 @@ void fragment() {
 				foreach (var p in stream.Particles)
 				{
 					if (!p.Alive || p.GrhIndex <= 0) continue;
-					var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+					var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], p.Alpha);
 					Vector2 pPos = streamPos + new Vector2(p.X, p.Y);
 					int frame = _animator.GetCurrentFrame(p.GrhIndex, _data);
 					_pendingMapParticleDraws.Add((p.GrhIndex, frame, pPos, color));

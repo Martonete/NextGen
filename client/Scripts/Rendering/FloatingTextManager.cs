@@ -73,10 +73,16 @@ public partial class FloatingTextLayer : Node2D
     /// <summary>
     /// Convenience: red damage received on user char.
     /// </summary>
+    // Pre-computed floating text colors
+    private static readonly Color DamageReceivedColor = new Color(1f, 0.2f, 0.2f);
+    private static readonly Color DamageDealtColor = new Color(1f, 1f, 0.4f);
+    private static readonly Color HealColor = new Color(0.3f, 1f, 0.3f);
+    private static readonly Color MissColor = new Color(0.8f, 0.8f, 0.8f);
+
     public void AddDamageReceived(int damage)
     {
         if (_state == null) return;
-        AddText(_state.UserCharIndex, $"-{damage}", new Color(1f, 0.2f, 0.2f));
+        AddText(_state.UserCharIndex, $"-{damage}", DamageReceivedColor);
     }
 
     /// <summary>
@@ -84,7 +90,7 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddDamageDealt(int charIndex, int damage)
     {
-        AddText(charIndex, $"-{damage}", new Color(1f, 1f, 0.4f));
+        AddText(charIndex, $"-{damage}", DamageDealtColor);
     }
 
     /// <summary>
@@ -92,7 +98,7 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddHeal(int charIndex, int amount)
     {
-        AddText(charIndex, $"+{amount}", new Color(0.3f, 1f, 0.3f));
+        AddText(charIndex, $"+{amount}", HealColor);
     }
 
     /// <summary>
@@ -100,7 +106,7 @@ public partial class FloatingTextLayer : Node2D
     /// </summary>
     public void AddMiss(int charIndex, string text = "Fallo!")
     {
-        AddText(charIndex, text, new Color(0.8f, 0.8f, 0.8f));
+        AddText(charIndex, text, MissColor);
     }
 
     public override void _Process(double delta)

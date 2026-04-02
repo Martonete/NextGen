@@ -198,32 +198,35 @@ public static partial class CharRenderer
     /// <summary>
     /// VB6 name colors from colores.dat (ColoresPJ array).
     /// </summary>
+    // Pre-computed name colors — avoids new Color() per character per frame
+    private static readonly Color NameColorCitizen = new Color(0f, 128 / 255f, 1f);
+    private static readonly Color NameColorCriminal = new Color(1f, 0f, 0f);
+    private static readonly Color[] NameColorsByPrivilege = new Color[]
+    {
+        new Color(180 / 255f, 180 / 255f, 180 / 255f),    // 0: fallback
+        new Color(0f, 185 / 255f, 0f),                     // 1: Consejero
+        new Color(0f, 170 / 255f, 190 / 255f),             // 2: Semidios
+        new Color(128 / 255f, 128 / 255f, 64 / 255f),     // 3: Event Master
+        new Color(120 / 255f, 250 / 255f, 250 / 255f),    // 4: Dios
+        new Color(180 / 255f, 180 / 255f, 180 / 255f),    // 5: Rol Master
+        new Color(140 / 255f, 0f, 0f),                     // 6: Caos
+        new Color(0f, 64 / 255f, 128 / 255f),              // 7: Consejo Bander
+        new Color(0f, 1f, 128 / 255f),                     // 8: Gran Dios
+        new Color(123 / 255f, 55 / 255f, 0f),             // 9: Director
+        new Color(128 / 255f, 1f, 128 / 255f),            // 10: Developer
+        new Color(1f, 198 / 255f, 0f),                     // 11: Sub Admin
+        new Color(1f, 1f, 1f),                             // 12: Administrador
+    };
+
     private static Color GetNameColor(Character ch)
     {
+        if (ch.Privileges > 0 && ch.Privileges < NameColorsByPrivilege.Length)
+            return NameColorsByPrivilege[ch.Privileges];
         if (ch.Privileges > 0)
-        {
-            return ch.Privileges switch
-            {
-                1 => new Color(0 / 255f, 185 / 255f, 0 / 255f),       // Consejero
-                2 => new Color(0 / 255f, 170 / 255f, 190 / 255f),     // Semidios
-                3 => new Color(128 / 255f, 128 / 255f, 64 / 255f),    // Event Master
-                4 => new Color(120 / 255f, 250 / 255f, 250 / 255f),   // Dios
-                5 => new Color(180 / 255f, 180 / 255f, 180 / 255f),   // Rol Master
-                6 => new Color(140 / 255f, 0 / 255f, 0 / 255f),       // Caos
-                7 => new Color(0 / 255f, 64 / 255f, 128 / 255f),      // Consejo Bander
-                8 => new Color(0 / 255f, 255 / 255f, 128 / 255f),     // Gran Dios
-                9 => new Color(123 / 255f, 55 / 255f, 0 / 255f),      // Director
-                10 => new Color(128 / 255f, 255 / 255f, 128 / 255f),  // Developer
-                11 => new Color(255 / 255f, 198 / 255f, 0 / 255f),    // Sub Admin
-                12 => new Color(255 / 255f, 255 / 255f, 255 / 255f),  // Administrador
-                _ => new Color(180 / 255f, 180 / 255f, 180 / 255f),
-            };
-        }
-
+            return NameColorsByPrivilege[0];
         if (ch.Criminal)
-            return new Color(1.0f, 0.0f, 0.0f);
-
-        return new Color(0 / 255f, 128 / 255f, 255 / 255f);
+            return NameColorCriminal;
+        return NameColorCitizen;
     }
 
     /// <summary>

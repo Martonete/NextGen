@@ -153,6 +153,13 @@ public partial class WorldRenderer
         DrawStatusOverlayTo(canvas);
     }
 
+    // Pre-computed status overlay colors
+    private static readonly Color StatusColorParalyzed = new Color(1f, 0.2f, 0.2f);
+    private static readonly Color StatusColorInvisible = new Color(0.6f, 0.6f, 1f);
+    private static readonly Color StatusColorMeditating = new Color(0.4f, 0.8f, 1f);
+    private static readonly Color StatusColorResting = new Color(0.4f, 1f, 0.4f);
+    private static readonly Color StatusColorNavigating = new Color(0.3f, 0.7f, 1f);
+
     private void DrawStatusOverlayTo(CanvasItem canvas)
     {
         if (_state == null || _data == null) return;
@@ -162,39 +169,37 @@ public partial class WorldRenderer
         if (_state.UserParalyzed)
         {
             DrawStatusIconTo(canvas, slot, 23610, _state.ParalysisTimer, _state.ParalysisMaxTimer, "PARALIZADO",
-                           new Color(1f, 0.2f, 0.2f));
+                           StatusColorParalyzed);
             slot++;
         }
 
         if (_state.Characters.TryGetValue(_state.UserCharIndex, out var selfCh) && selfCh.Invisible)
         {
             float inviCurrent = selfCh.InvisibleCountdown;
-            // Spell invisibility has countdown (label "INVISIBLE"), hide skill has no countdown (label "OCULTO")
             bool isSpellInvi = selfCh.InvisibleMaxCountdown > 0;
             string inviLabel = isSpellInvi ? "INVISIBLE" : "OCULTO";
             DrawStatusIconTo(canvas, slot, 23611, inviCurrent, selfCh.InvisibleMaxCountdown, inviLabel,
-                           new Color(0.6f, 0.6f, 1f));
+                           StatusColorInvisible);
             slot++;
         }
 
         if (_state.Meditating)
         {
             DrawStatusIconTo(canvas, slot, 0, -1, -1, "MEDITANDO",
-                           new Color(0.4f, 0.8f, 1f));
+                           StatusColorMeditating);
             slot++;
         }
 
         if (_state.Resting)
         {
             DrawStatusIconTo(canvas, slot, 0, -1, -1, "DESCANSANDO",
-                           new Color(0.4f, 1f, 0.4f));
+                           StatusColorResting);
             slot++;
         }
 
         if (_state.UserNavigating)
         {
-            // Draw on the right side to avoid overlapping countdown bars
-            DrawStatusLabelRight(canvas, "NAVEGANDO", new Color(0.3f, 0.7f, 1f));
+            DrawStatusLabelRight(canvas, "NAVEGANDO", StatusColorNavigating);
         }
     }
 

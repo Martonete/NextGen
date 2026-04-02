@@ -7,6 +7,19 @@ using ArgentumNextgen.Game;
 namespace ArgentumNextgen.Rendering;
 
 /// <summary>
+/// Pre-computed byte-to-float lookup table. Avoids repeated byte/255f divisions
+/// in particle and aura color conversions during hot render loops.
+/// </summary>
+internal static class ByteToFloat
+{
+    internal static readonly float[] Table = new float[256];
+    static ByteToFloat()
+    {
+        for (int i = 0; i < 256; i++) Table[i] = i / 255f;
+    }
+}
+
+/// <summary>
 /// Renders a character with heading-dependent layer order matching VB6 exactly.
 /// VB6 dibujarPersonaje() changes draw order per heading:
 ///   Heading 1 (N):  Arma → Escudo → Body → Head
@@ -483,7 +496,7 @@ public static partial class CharRenderer
 		float auraY = pos.Y + headOffset.Y + 72 - aura.Offset;
 
 		// VB6 color: static R,G,B. Alpha reduced when invisible (pulsing with body).
-		Color color = new Color(aura.R / 255f, aura.G / 255f, aura.B / 255f, alphaOverride);
+		Color color = new Color(ByteToFloat.Table[aura.R], ByteToFloat.Table[aura.G], ByteToFloat.Table[aura.B], alphaOverride);
 
 		// Resolve animated GRH frame
 		int grhIndex = aura.GrhIndex;
@@ -552,7 +565,7 @@ public static partial class CharRenderer
 			foreach (var p in stream.Particles)
 			{
 				if (!p.Alive || p.GrhIndex <= 0) continue;
-				var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+				var color = new Color(ByteToFloat.Table[p.ColR], ByteToFloat.Table[p.ColG], ByteToFloat.Table[p.ColB], p.Alpha);
 				Vector2 pPos = pos + new Vector2(p.X, p.Y);
 
 				// Use animated GRH frame (VB6: particles animate)
