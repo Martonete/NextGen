@@ -199,11 +199,6 @@ public partial class InventoryPanel : Control
                 // Drag destination highlight — green tint
                 DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(0f, 1f, 0f, 0.2f));
             }
-            else if (slot == _hoveredSlot)
-            {
-                // Hover highlight
-                DrawRect(new Rect2(x, y, SlotSize, SlotSize), new Color(1f, 1f, 1f, 0.1f));
-            }
 
             // Item icon — dimmed if this is the drag source
             bool isDragSource = _dragging && _dydEnabled && slot == _dragSourceSlot;

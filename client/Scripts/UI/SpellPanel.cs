@@ -302,6 +302,7 @@ public partial class SpellPanel : Control
                 else if (_selectedSlot >= _scrollOffset + VisibleLines)
                     _scrollOffset = _selectedSlot - VisibleLines + 1;
             }
+            QueueRedraw();
         }
     }
 
