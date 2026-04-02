@@ -241,15 +241,37 @@ public partial class InventoryPanel : Control
                 // VB6: Engine_Text_Draw X-1, Y+3, amount, white
                 if (invSlot.Amount > 0 && font != null)
                 {
-                    font.DrawText(this, (int)x - 1, (int)y + 3,
-                        invSlot.Amount.ToString(), Colors.White);
+                    if (uiScale > 1.001f)
+                    {
+                        float inv = 1f / uiScale;
+                        float tx = x - 1, ty = y + 3;
+                        DrawSetTransform(new Vector2(tx, ty), 0f, new Vector2(inv, inv));
+                        font.DrawText(this, 0, 0, invSlot.Amount.ToString(), Colors.White);
+                        DrawSetTransform(Vector2.Zero);
+                    }
+                    else
+                    {
+                        font.DrawText(this, (int)x - 1, (int)y + 3,
+                            invSlot.Amount.ToString(), Colors.White);
+                    }
                 }
 
                 // VB6: Engine_Text_Draw X+23, Y+20, "E", yellow
                 if (invSlot.Equipped && font != null)
                 {
-                    font.DrawText(this, (int)x + 23, (int)y + 20, "E",
-                        new Color(1f, 1f, 0f));
+                    if (uiScale > 1.001f)
+                    {
+                        float inv = 1f / uiScale;
+                        float tx = x + 23, ty = y + 20;
+                        DrawSetTransform(new Vector2(tx, ty), 0f, new Vector2(inv, inv));
+                        font.DrawText(this, 0, 0, "E", new Color(1f, 1f, 0f));
+                        DrawSetTransform(Vector2.Zero);
+                    }
+                    else
+                    {
+                        font.DrawText(this, (int)x + 23, (int)y + 20, "E",
+                            new Color(1f, 1f, 0f));
+                    }
                 }
             }
 
