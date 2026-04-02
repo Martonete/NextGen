@@ -239,6 +239,7 @@ pub struct UserState {
     pub target_obj_y: i32,              // VB6: flags.TargetObjY
     pub pending_spell: usize,           // VB6 flags.Hechizo — spell slot selected via LH, cast on next RC click
     pub counter_paralisis: i32,         // VB6 Counters.Paralisis — countdown to auto-remove paralysis
+    pub paralyzed_by: Option<ConnectionId>, // VB6 parity #16: who cast the paralysis (None = unknown/NPC)
     pub counter_invisible: i32,         // VB6 Counters.Invisibilidad — counts up to IntervaloInvisible
     pub counter_oculto: i32,            // VB6 Counters.TiempoOculto — counts down to 0 (hide duration)
 
@@ -500,6 +501,7 @@ impl UserState {
             target_obj_y: 0,
             pending_spell: 0,
             counter_paralisis: 0,
+            paralyzed_by: None,
             counter_invisible: 0,
             counter_oculto: 0,
             counter_hunger: 0,

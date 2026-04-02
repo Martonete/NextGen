@@ -560,8 +560,19 @@ pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, me
         16777215 // White (vbWhite)
     };
 
-    // Send binary talk packet to area
-    state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, message, color);
+    // VB6 13.3: dead players' chat (ToDeadArea) is only visible to other dead players nearby
+    if dead {
+        let pkt = crate::protocol::binary_packets::write_chat_over_head(message, char_index.0 as i16, color as i32);
+        let area_users = state.get_area_users(map, x, y, conn_id);
+        for other_id in area_users {
+            if state.users.get(&other_id).map(|u| u.dead).unwrap_or(false) {
+                state.send_bytes(other_id, &pkt);
+            }
+        }
+        state.send_bytes(conn_id, &pkt);
+    } else {
+        state.send_chat_talk_to(SendTarget::ToArea { map, x, y }, char_index.0 as i16, message, color);
+    }
 }
 
 /// - — Yell message (larger area, red text).

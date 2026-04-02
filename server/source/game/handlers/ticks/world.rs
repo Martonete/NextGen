@@ -3,6 +3,7 @@
 use crate::net::ConnectionId;
 use crate::game::class_race::PlayerClass;
 use crate::game::types::{GameState, SendTarget, CleanWorldEntry};
+use crate::game::world;
 use crate::protocol::{binary_packets, font_index};
 use crate::game::handlers::common::*;
 use crate::game::handlers::{warp_user};
@@ -11,6 +12,41 @@ use super::remove_pet_from_owner;
 pub async fn tick_intervals(state: &mut GameState) {
     // Collect IDs of users whose paralysis expired this tick (need to send PARADOK)
     let mut unparalyze: Vec<ConnectionId> = Vec::new();
+
+    // VB6 parity #16: collect paralyzed non-magic users whose caster may be out of range.
+    // We need two immutable borrows (victim + caster) so we gather data in a first pass,
+    // then apply the reduction in a second pass before the mutable countdown loop.
+    // Tuple: (victim_conn_id, caster_conn_id, victim_map, victim_x, victim_y)
+    let mut para_range_check: Vec<(ConnectionId, ConnectionId, i32, i32, i32)> = Vec::new();
+    for (&conn_id, user) in state.users.iter() {
+        if !user.logged || !user.paralyzed || user.counter_paralisis <= 2 { continue; }
+        if user.max_mana > 0 { continue; } // magic class — no reduction
+        if let Some(caster_id) = user.paralyzed_by {
+            para_range_check.push((conn_id, caster_id, user.pos_map, user.pos_x, user.pos_y));
+        }
+    }
+
+    // Apply range-based reduction: if caster is on a different map or outside the vision
+    // rectangle, cap the victim's remaining paralysis at 2 ticks (~0.08s, near-instant).
+    // This fires every tick while caster is out of range (capped at 2, so harmless repeat).
+    // VB6 13.3: reduces to 37 ticks; at 25 Hz Rust tick rate 2 ticks ≈ 0.08s is the
+    // closest "nearly expired" value that avoids a one-frame flash of movement.
+    for (victim_id, caster_id, v_map, v_x, v_y) in para_range_check {
+        let caster_out_of_range = state.users.get(&caster_id).map(|c| {
+            c.pos_map != v_map
+                || (c.pos_x - v_x).abs() > world::MIN_X_BORDER
+                || (c.pos_y - v_y).abs() > world::MIN_Y_BORDER
+        }).unwrap_or(true); // caster offline = out of range
+
+        if caster_out_of_range {
+            if let Some(victim) = state.users.get_mut(&victim_id) {
+                // VB6 13.3: reduce to 37 VB6 ticks ≈ 3.7s. At Rust 25Hz ≈ 50 ticks.
+                if victim.counter_paralisis > 50 {
+                    victim.counter_paralisis = 50;
+                }
+            }
+        }
+    }
 
     for (&conn_id, user) in state.users.iter_mut() {
         if !user.logged { continue; }
@@ -34,6 +70,7 @@ pub async fn tick_intervals(state: &mut GameState) {
                 // Timer expired — remove paralysis
                 user.paralyzed = false;
                 user.immobilized = false;
+                user.paralyzed_by = None;
                 unparalyze.push(conn_id);
             }
         }

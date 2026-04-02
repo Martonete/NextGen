@@ -482,6 +482,7 @@ pub(super) async fn apply_spell_status(
                     target.immobilized = true;
                 }
                 target.counter_paralisis = state.intervals.paralizado;
+                target.paralyzed_by = Some(caster_id);
                 send_paradok_on = true;
             }
         }
@@ -490,6 +491,7 @@ pub(super) async fn apply_spell_status(
                 target.paralyzed = false;
                 target.immobilized = false;
                 target.counter_paralisis = 0;
+                target.paralyzed_by = None;
                 send_paradok_off = true;
             }
         }

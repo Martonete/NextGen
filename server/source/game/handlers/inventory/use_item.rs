@@ -13,6 +13,7 @@ use crate::game::handlers::{
     send_inventory_slot, revive_user, naked_body, user_die,
 };
 use crate::game::handlers::skills::skill_id;
+use crate::game::class_race::PlayerClass;
 
 /// USA<slot> — Use item from inventory.
 /// QSA<slot>,<visible> — Use item via double-click on inventory picture.
@@ -230,6 +231,24 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                     return;
                 }
 
+                // VB6 13.3 parity: level check for boarding.
+                // Pirata / Trabajador with Pesca >= 100: level 20. All others: level 25.
+                {
+                    let (user_level, user_class, fishing_skill) = match state.users.get(&conn_id) {
+                        Some(u) => (u.level, u.class, u.skills[(skill_id::PESCA - 1) as usize]),
+                        None => return,
+                    };
+                    let min_level = if (user_class == PlayerClass::Pirata || user_class == PlayerClass::Trabajador) && fishing_skill >= 100 {
+                        20
+                    } else {
+                        25
+                    };
+                    if user_level < min_level {
+                        state.send_console(conn_id, &format!("Necesitas nivel {} para abordar una embarcación.", min_level), font_index::INFO);
+                        return;
+                    }
+                }
+
                 // VB6: Navigation skill check — UserSkills(eSkill.Navegacion) / ModNavegacion >= Barco.MinSkill
                 // Pirata: 1.0 modifier, Worker with Pesca=100: 1.71, all others: 2.0
                 if obj_data.min_skill > 0 {
@@ -419,6 +438,13 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             // Learn spell from scroll
             let spell_id = obj_data.hechizo_index;
             if spell_id <= 0 { return; }
+
+            // VB6 13.3 parity: only magic classes (max_mana > 0) can learn spells.
+            let max_mana = state.users.get(&conn_id).map(|u| u.max_mana).unwrap_or(0);
+            if max_mana == 0 {
+                state.send_console(conn_id, "Solo las clases mágicas pueden aprender hechizos.", font_index::INFO);
+                return;
+            }
 
             // VB6: Check if user already knows this spell
             let already_known = state.users.get(&conn_id)

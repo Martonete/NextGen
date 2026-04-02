@@ -424,16 +424,15 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         return;
     }
 
-    // VB6: Attacking ALWAYS reveals hidden users (no chance check).
-    let (was_hidden, was_invisible) = state.users.get(&conn_id)
-        .map(|u| (u.hidden && !u.admin_invisible, u.invisible && !u.admin_invisible))
-        .unwrap_or((false, false));
-    if was_hidden || was_invisible {
+    // VB6 13.3 parity: Attacking reveals hidden (stealth) but NOT invisible (spell).
+    // Spell invisibility runs on its own timer and is NOT broken by combat.
+    let was_hidden = state.users.get(&conn_id)
+        .map(|u| u.hidden && !u.admin_invisible)
+        .unwrap_or(false);
+    if was_hidden {
         if let Some(user) = state.users.get_mut(&conn_id) {
             user.hidden = false;
             user.counter_oculto = 0;
-            user.invisible = false;
-            user.counter_invisible = 0;
         }
         // Send CC+CD only to non-clanmates (they had CharacterRemove).
         // Clanmates get SetInvisible(false) — avoids animation reset/tosqueo.
@@ -520,8 +519,13 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             && super::guilds_handler::get_guild_relation(state, attacker_guild, victim_guild) == super::guilds_handler::GUILD_REL_WAR;
 
         if safe_on && !guilds_at_war {
-            state.send_msg_id(conn_id, 207, "");
-            return;
+            // VB6 13.3 parity: safety toggle only blocks attacking citizens (non-criminals).
+            // Attacking criminals is always allowed.
+            let victim_is_criminal = state.users.get(&victim_id).map(|u| u.criminal).unwrap_or(false);
+            if !victim_is_criminal {
+                state.send_msg_id(conn_id, 207, "");
+                return;
+            }
         }
 
         // Clan safe check
@@ -738,6 +742,7 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
                         if let Some(victim) = state.users.get_mut(&victim_id) {
                             victim.paralyzed = true;
                             victim.counter_paralisis = half_para;
+                            victim.paralyzed_by = Some(conn_id);
                         }
                         let para_secs = (half_para as f32 * 0.04) as i16;
                         let pkt = binary_packets::write_paralize_ok(para_secs);
@@ -1005,6 +1010,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         // Clear status effects
         user.paralyzed = false;
         user.immobilized = false;
+        user.paralyzed_by = None;
         user.invisible = false;
         user.meditating = false;
         user.resting = false;

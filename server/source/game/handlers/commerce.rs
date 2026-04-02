@@ -262,23 +262,38 @@ pub(super) async fn handle_commerce_buy(state: &mut GameState, conn_id: Connecti
         if user.gold < 0 { user.gold = 0; }
     }
 
-    // Get original slot data for restock before mutating
-    let original_slot = {
+    // Get NPC static data (original inventory + inv_respawn flag) before mutating
+    let (npc_data_items, npc_inv_respawn) = {
         let npc_number = state.get_npc(target_npc).map(|n| n.npc_number).unwrap_or(0);
-        state.game_data.npcs.get(npc_number)
-            .and_then(|d| d.items.get(slot_idx))
-            .map(|s| (s.obj_index, s.amount))
+        match state.game_data.npcs.get(npc_number) {
+            Some(d) => (d.items.clone(), d.inv_respawn),
+            None => (Vec::new(), false),
+        }
     };
 
-    // Remove from NPC inventory and auto-restock the slot if depleted
+    // Remove from NPC inventory. VB6 parity: items deplete when bought.
+    // Restock only happens when the ENTIRE inventory is empty AND inv_respawn != true.
     if let Some(npc) = state.get_npc_mut(target_npc) {
         npc.inventory[slot_idx].amount -= cantidad;
         if npc.inventory[slot_idx].amount <= 0 {
-            // Slot depleted — immediately restock from original data
-            if let Some((orig_obj, orig_amount)) = original_slot {
-                if orig_obj > 0 {
-                    npc.inventory[slot_idx].obj_index = orig_obj;
-                    npc.inventory[slot_idx].amount = orig_amount;
+            // Slot depleted — clear it
+            npc.inventory[slot_idx].obj_index = 0;
+            npc.inventory[slot_idx].amount = 0;
+        }
+
+        // Check if all slots are now empty (only non-empty original slots count)
+        if !npc_inv_respawn {
+            let all_empty = npc.inventory.iter().enumerate().all(|(i, slot)| {
+                let orig_obj = npc_data_items.get(i).map(|s| s.obj_index).unwrap_or(0);
+                orig_obj == 0 || slot.obj_index == 0
+            });
+            if all_empty {
+                // Restock entire inventory from original data
+                for (i, orig) in npc_data_items.iter().enumerate() {
+                    if i < npc.inventory.len() && orig.obj_index > 0 {
+                        npc.inventory[i].obj_index = orig.obj_index;
+                        npc.inventory[i].amount = orig.amount;
+                    }
                 }
             }
         }
@@ -353,10 +368,24 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
         None => return,
     };
 
-    // VB6: Faction items cannot be sold to NPCs (they are bound to the faction)
-    if obj.real || obj.caos {
-        state.send_console(conn_id, "No puedes vender objetos de faccion.", font_index::INFO);
-        return;
+    // VB6 13.3: Faction items can only be sold to matching faction NPCs (SR/SC).
+    if obj.real {
+        let npc_name = state.get_npc(target_npc)
+            .map(|n| n.name.to_uppercase())
+            .unwrap_or_default();
+        if npc_name != "SR" {
+            state.send_console(conn_id, "Solo puedes vender objetos reales al Soldado Real.", font_index::INFO);
+            return;
+        }
+    }
+    if obj.caos {
+        let npc_name = state.get_npc(target_npc)
+            .map(|n| n.name.to_uppercase())
+            .unwrap_or_default();
+        if npc_name != "SC" {
+            state.send_console(conn_id, "Solo puedes vender objetos del caos al Soldado del Caos.", font_index::INFO);
+            return;
+        }
     }
 
     // Reject conditions (VB6: NpcCompraObj)
@@ -813,7 +842,7 @@ pub(super) async fn handle_trade_chat(state: &mut GameState, conn_id: Connection
 // =====================================================================
 
 /// Maximum bank item stack.
-const MAX_BANK_STACK: i32 = 999;
+const MAX_BANK_STACK: i32 = 10_000; // VB6 13.3: MAX_INVENTORY_OBJS = 10000
 
 /// Check if another character from the same account is currently using the bank.
 /// Defense-in-depth against item duplication via concurrent bank access.

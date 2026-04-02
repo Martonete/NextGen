@@ -253,8 +253,8 @@ pub(super) async fn handle_guild_create(state: &mut GameState, conn_id: Connecti
 
 /// /FUNDARCLAN — Start guild creation flow. Auto-detect alignment from character status.
 pub(super) async fn handle_slash_fundarclan(state: &mut GameState, conn_id: ConnectionId) {
-    let (guild_index, level, criminal, _reputation) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.guild_index, u.level, u.criminal, u.reputation),
+    let (guild_index, level, criminal, _reputation, liderazgo) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.guild_index, u.level, u.criminal, u.reputation, u.skills[16]),
         _ => return,
     };
 
@@ -263,8 +263,14 @@ pub(super) async fn handle_slash_fundarclan(state: &mut GameState, conn_id: Conn
         return;
     }
 
-    if level < 50 {
-        state.send_console(conn_id, "Necesitas nivel 50 para fundar un clan.", font_index::INFO);
+    if level < 25 {
+        state.send_console(conn_id, "Necesitas nivel 25 para fundar un clan.", font_index::INFO);
+        return;
+    }
+
+    // VB6 13.3 parity: Liderazgo >= 90 required to found a guild.
+    if liderazgo < 90 {
+        state.send_console(conn_id, "Necesitas 90 de liderazgo para fundar un clan.", font_index::INFO);
         return;
     }
 
