@@ -18,6 +18,7 @@ public class FloatingText
     public float Duration;   // total lifetime in seconds
     public float RisePixels; // total pixels to rise
     public float OffsetY;    // extra Y offset (stacks multiple texts)
+    public float CachedTextWidth;  // cached width to avoid GetStringSize every frame
 
     public FloatingText(int charIndex, string text, Color color, float duration = 1.5f, float risePixels = 40f, float offsetY = 0f)
     {
@@ -28,6 +29,7 @@ public class FloatingText
         Duration = duration;
         RisePixels = risePixels;
         OffsetY = offsetY;
+        CachedTextWidth = -1f;  // will be computed on first use
     }
 }
 
@@ -62,7 +64,10 @@ public partial class FloatingTextLayer : Node2D
         float offsetY = stack * 16f;
         _recentCountPerChar[charIndex] = stack + 1;
 
-        _texts.Add(new FloatingText(charIndex, text, color, 1.5f, 40f, offsetY));
+        var ft = new FloatingText(charIndex, text, color, 1.5f, 40f, offsetY);
+        if (_font != null)
+            ft.CachedTextWidth = _font.GetStringSize(text, HorizontalAlignment.Center, -1, FontSize).X;
+        _texts.Add(ft);
     }
 
     /// <summary>
@@ -161,15 +166,13 @@ public partial class FloatingTextLayer : Node2D
             var outlineColor = new Color(0f, 0f, 0f, alpha * 0.8f);
             var pos = new Vector2(finalX, finalY);
 
-            // Center the text horizontally
-            var textSize = _font.GetStringSize(ft.Text, HorizontalAlignment.Center, -1, FontSize);
-            pos.X -= textSize.X * 0.5f;
+            // Center the text horizontally using cached width
+            if (ft.CachedTextWidth < 0)
+                ft.CachedTextWidth = _font.GetStringSize(ft.Text, HorizontalAlignment.Center, -1, FontSize).X;
+            pos.X -= ft.CachedTextWidth * 0.5f;
 
-            // Outline (draw text 4 times offset by 1px in each direction)
-            DrawString(_font, pos + new Vector2(-1, 0), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
-            DrawString(_font, pos + new Vector2(1, 0), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
-            DrawString(_font, pos + new Vector2(0, -1), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
-            DrawString(_font, pos + new Vector2(0, 1), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
+            // Shadow (offset by 1px down-right for depth effect)
+            DrawString(_font, pos + new Vector2(1, 1), ft.Text, HorizontalAlignment.Left, -1, FontSize, outlineColor);
             // Main text
             DrawString(_font, pos, ft.Text, HorizontalAlignment.Left, -1, FontSize, textColor);
         }

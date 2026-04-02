@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Godot;
 using ArgentumNextgen.Data;
 using ArgentumNextgen.Game;
@@ -13,6 +12,8 @@ namespace ArgentumNextgen.Rendering;
 /// </summary>
 public partial class WorldRenderer
 {
+    private static readonly List<int> _charSortBuffer = new(16);
+
     /// <summary>
     /// Draw PASS 3 content: ground objects, characters, layer 3, status overlay.
     /// Called by ContentLayer._Draw().
@@ -44,9 +45,23 @@ public partial class WorldRenderer
                 {
                     var charsHere = GetCharsAt(x, y);
                     // Sort by effective Y for correct isometric z-order (higher Y = drawn on top)
-                    var sortedChars = charsHere.Count > 1
-                        ? charsHere.OrderBy(cid => _state.Characters.TryGetValue(cid, out var c) ? c.MoveOffsetY : 0f).ToList()
-                        : (IEnumerable<int>)charsHere;
+                    IEnumerable<int> sortedChars;
+                    if (charsHere.Count > 1)
+                    {
+                        _charSortBuffer.Clear();
+                        _charSortBuffer.AddRange(charsHere);
+                        _charSortBuffer.Sort((a, b) =>
+                        {
+                            float ay = _state.Characters.TryGetValue(a, out var ca) ? ca.MoveOffsetY : 0f;
+                            float by = _state.Characters.TryGetValue(b, out var cb) ? cb.MoveOffsetY : 0f;
+                            return ay.CompareTo(by);
+                        });
+                        sortedChars = _charSortBuffer;
+                    }
+                    else
+                    {
+                        sortedChars = charsHere;
+                    }
                     foreach (var cid in sortedChars)
                     {
                         if (!_state.Characters.TryGetValue(cid, out var ch)) continue;

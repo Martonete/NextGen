@@ -967,6 +967,8 @@ public partial class Main : Control
 		ProcessScreenTransitions();
 		ProcessErrors(delta);
 		ProcessGameLoop(delta);
+		// Flush all queued TCP writes in one batch (reduces syscalls)
+		_tcp?.FlushOutbound();
 	}
 
 	// Startup texture preload (blocks everything until done).
