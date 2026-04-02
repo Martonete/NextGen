@@ -48,6 +48,13 @@ public partial class WeatherRenderer : Node2D
     // Rain drop base color (RGB only — alpha is applied per-drop based on _dropAlpha[i])
     private static readonly Color RainDropBaseColor = new(0.7f, 0.75f, 0.9f, 1f);
 
+    // Opt 6: Pre-allocated point buffers for batched rain rendering.
+    // Drops are bucketed into 5 alpha tiers; each tier emits one DrawMultiline call
+    // instead of one DrawLine per drop — reducing 300 draw calls to at most 5.
+    private const int RainAlphaBuckets = 5;
+    private readonly Vector2[][] _rainBucketPoints = new Vector2[RainAlphaBuckets][];
+    private readonly int[] _rainBucketCount = new int[RainAlphaBuckets];
+
     // Rain sound
     private AudioStreamPlayer? _rainSoundPlayer;
     private bool _rainSoundPlaying;
@@ -64,6 +71,10 @@ public partial class WeatherRenderer : Node2D
         _soundManager = soundManager;
         _resources = resources;
         _lightningTimer = (float)(_rng.NextDouble() * (LightningIntervalMax - LightningIntervalMin) + LightningIntervalMin);
+
+        // Opt 6: allocate per-bucket point buffers (2 points per drop)
+        for (int b = 0; b < RainAlphaBuckets; b++)
+            _rainBucketPoints[b] = new Vector2[(MaxRainDrops / RainAlphaBuckets + 2) * 2];
 
         // Create rain sound player (looping)
         _rainSoundPlayer = new AudioStreamPlayer();
@@ -320,22 +331,46 @@ public partial class WeatherRenderer : Node2D
         var tint = new Color(RainTintColor.R, RainTintColor.G, RainTintColor.B, RainTintAlpha * alpha);
         DrawRect(new Rect2(0, 0, ViewW, ViewH), tint);
 
-        // Rain drops (diagonal lines)
-        for (int i = 0; i < MaxRainDrops; i++)
+        // Opt 6: Batch rain drops into alpha buckets and use DrawMultiline —
+        // reduces 300 DrawLine calls to at most RainAlphaBuckets calls per frame.
+        // Alpha range per drop: _dropAlpha[i] in [0.3, 0.8], multiplied by global alpha.
+        // Buckets span [0, 1] in equal steps; bucket index = clamp(floor(a * buckets), 0, buckets-1).
         {
-            float a = _dropAlpha[i] * alpha;
-            var color = new Color(RainDropBaseColor.R, RainDropBaseColor.G, RainDropBaseColor.B, a);
-            float x = _dropX[i];
-            float y = _dropY[i];
-            // Diagonal line: top-left to bottom-right
-            float dx = RainWindSpeed / RainSpeed * RainDropLength;
-            DrawLine(
-                new Vector2(x, y),
-                new Vector2(x + dx, y + RainDropLength),
-                color,
-                RainDropWidth,
-                true
-            );
+            float ddx = RainWindSpeed / RainSpeed * RainDropLength;
+            Array.Clear(_rainBucketCount, 0, RainAlphaBuckets);
+
+            for (int i = 0; i < MaxRainDrops; i++)
+            {
+                float a = _dropAlpha[i] * alpha;
+                int bucket = Math.Clamp((int)(a * RainAlphaBuckets), 0, RainAlphaBuckets - 1);
+                var pts = _rainBucketPoints[bucket];
+                int idx = _rainBucketCount[bucket] * 2;
+                // Grow bucket array if needed (safety — bucket size is pre-allocated for average)
+                if (idx + 1 >= pts.Length)
+                {
+                    Array.Resize(ref _rainBucketPoints[bucket], pts.Length * 2);
+                    pts = _rainBucketPoints[bucket];
+                }
+                float x = _dropX[i];
+                float y = _dropY[i];
+                pts[idx]     = new Vector2(x, y);
+                pts[idx + 1] = new Vector2(x + ddx, y + RainDropLength);
+                _rainBucketCount[bucket]++;
+            }
+
+            // Emit one DrawMultiline per non-empty bucket (at most RainAlphaBuckets calls)
+            for (int b = 0; b < RainAlphaBuckets; b++)
+            {
+                int count = _rainBucketCount[b];
+                if (count == 0) continue;
+                // Representative alpha = midpoint of bucket range
+                float bucketAlpha = ((b + 0.5f) / RainAlphaBuckets);
+                var bColor = new Color(RainDropBaseColor.R, RainDropBaseColor.G, RainDropBaseColor.B, bucketAlpha);
+                // DrawMultiline expects a flat array of paired points
+                var pts = _rainBucketPoints[b];
+                // Slice to only the used portion — Godot's DrawMultiline takes ReadOnlySpan/Array
+                DrawMultiline(pts[..(count * 2)], bColor, RainDropWidth);
+            }
         }
 
         // Lightning flash overlay (white)

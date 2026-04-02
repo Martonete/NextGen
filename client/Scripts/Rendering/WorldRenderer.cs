@@ -120,6 +120,11 @@ public partial class WorldRenderer : Node2D
 	// 1-indexed: _waterMap[x, y] = true if L1 GRH is in any known water range.
 	private bool[,]? _waterMap;
 
+	// Cached per-column and per-row screen coordinate arrays (Opt 4).
+	// Resized only when the frame range changes. Avoids per-tile multiply in the hot path.
+	private float[] _screenXCache = Array.Empty<float>();
+	private float[] _screenYCache = Array.Empty<float>();
+
 
 
 	// Per-frame camera data (computed in _Draw, used by child layer callbacks)
@@ -616,6 +621,19 @@ void fragment() {
 		_frameCharMinY = Math.Max(1, screenMinY - CharBufferSize);
 		_frameCharMaxY = Math.Min(mapH, screenMaxY + CharBufferSize);
 
+		// Opt 4: Pre-compute per-column X and per-row Y screen coords for the terrain buffer range.
+		// These are reused by DrawContent, DrawNonWaterMask, DrawLayer2, and the roof loop.
+		{
+			int colCount = _frameMaxX - _frameMinX + 1;
+			int rowCount = _frameMaxY - _frameMinY + 1;
+			if (_screenXCache.Length < colCount) _screenXCache = new float[colCount];
+			if (_screenYCache.Length < rowCount) _screenYCache = new float[rowCount];
+			for (int xi = 0; xi < colCount; xi++)
+				_screenXCache[xi] = (_frameMinX + xi - _frameUserX + HalfWindowTileWidth) * TileSize + _framePixelOffsetX;
+			for (int yi = 0; yi < rowCount; yi++)
+				_screenYCache[yi] = (_frameMinY + yi - _frameUserY + HalfWindowTileHeight) * TileSize + _framePixelOffsetY;
+		}
+
 		_frameHasLights = (_state.Config?.ShowLights ?? true)
 						  && _state.MapLights.Count > 0 && _state.TileLightColors != null;
 
@@ -694,12 +712,23 @@ void fragment() {
 		bool showReflections = _state.Config?.ShowReflections ?? true;
 		_frameAnyReflection = false;
 
+		// Opt 2 & 3: viewport bounds used for culling both reflections and aura collection.
+		int reflMinX = _frameUserX - HalfWindowTileWidth - 2;
+		int reflMaxX = _frameUserX + HalfWindowTileWidth + 2;
+		int reflMinY = _frameUserY - HalfWindowTileHeight - 2;
+		int reflMaxY = _frameUserY + HalfWindowTileHeight + 2;
+
 		if (showReflections)
 		{
 			foreach (var kvp in _state.Characters)
 			{
 				var ch = kvp.Value;
 				if (ch.Invisible) continue;
+
+				// Skip characters outside viewport + small buffer — no visual impact
+				if (ch.PosX < reflMinX || ch.PosX > reflMaxX ||
+					ch.PosY < reflMinY || ch.PosY > reflMaxY)
+					continue;
 
 				// Draw reflection if ANY tile below (Y+1..Y+3) and within sprite width
 				// has water. Uses pre-computed _waterMap for O(1) lookups instead of
@@ -763,6 +792,7 @@ void fragment() {
 		// ==========================================
 		// Collect aura draws by iterating characters and updating their aura state.
 		// This populates _pendingAuraDraws before AuraLayer._Draw() fires.
+		// Opt 3: reuse viewport bounds from reflection pass (already computed above).
 		foreach (var kvp in _state.Characters)
 		{
 			var ch = kvp.Value;
@@ -770,6 +800,11 @@ void fragment() {
 			if (ch.Invisible && kvp.Key != _state.UserCharIndex) continue;
 			// Auras not drawn when Navegando or Montado (equipment hidden)
 			if (ch.Navigating || ch.Mounted) continue;
+
+			// Opt 3: skip aura collection for characters well outside viewport
+			if (ch.PosX < reflMinX || ch.PosX > reflMaxX ||
+				ch.PosY < reflMinY || ch.PosY > reflMaxY)
+				continue;
 
 			// Compute character screen position
 			var tilePos = TileToScreen(ch.PosX, ch.PosY, _frameUserX, _frameUserY,
@@ -828,6 +863,7 @@ void fragment() {
 
 			for (int y = _frameMinY; y <= _frameMaxY; y++)
 			{
+				float sy = _screenYCache[y - _frameMinY];
 				for (int x = _frameMinX; x <= _frameMaxX; x++)
 				{
 					ref var tile = ref _state.MapData.Tiles[x, y];
@@ -847,7 +883,8 @@ void fragment() {
 						roofColor = Colors.White; // other roofs always visible
 					}
 
-					Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+					// Opt 4: use pre-computed screen coords
+					Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
 					_pendingRoofDraws.Add((tile.Layer4, pos, roofColor));
 				}
 			}

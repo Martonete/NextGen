@@ -23,21 +23,30 @@ public partial class WorldRenderer
         if (_state == null || _data == null || _animator == null) return;
         if (_state.MapData == null) return;
 
+        // Opt 5: Pre-compute reusable colors for ground objects and fully-opaque trees.
+        // These constants avoid per-tile Color allocations in the common case.
+        const float objBright = 220f / 255f;
+        const float treeBright = 220f / 255f;
+        var objColor = new Color(objBright, objBright, objBright, 1f);
+        var treeFullColor = new Color(treeBright, treeBright, treeBright, 1f);
+
         // Terrain layers (L2 objects, L3 trees) + ground objects — large buffer for big sprites
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
+            // Opt 4: use pre-computed screen Y for this row
+            float tileScreenY = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
-                Vector2 tilePos = TileToScreen(x, y, _frameUserX, _frameUserY,
-                                                _framePixelOffsetX, _framePixelOffsetY);
+                // Opt 4: use pre-computed screen X for this column
+                Vector2 tilePos = new Vector2(_screenXCache[x - _frameMinX], tileScreenY);
                 ref var tile = ref _state.MapData.Tiles[x, y];
 
                 // Ground objects — skip if same GRH exists in L3 (prevents z-fighting flicker)
                 if (_state.GroundObjects.TryGetValue((x, y), out int objGrh) && objGrh > 0
                     && objGrh != tile.Layer3)
                 {
-                    const float objBright = 220f / 255f;
-                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: new Color(objBright, objBright, objBright, 1f));
+                    // Opt 5: use pre-computed color constant
+                    DrawTileGrhTo(canvas, objGrh, tilePos, center: true, modulate: objColor);
                 }
 
                 // Characters/NPCs — only within viewport bounds (no large buffer)
@@ -79,7 +88,6 @@ public partial class WorldRenderer
                 // Layer 3 (trees/objects) — dimmed slightly, with proximity transparency for trees
                 if (tile.Layer3 > 0)
                 {
-                    const float treeBright = 220f / 255f;
                     float l3Alpha = 1f;
                     if ((_state.Config?.TreeRoofTransparency ?? true) && IsTree(tile.Layer3))
                     {
@@ -95,7 +103,9 @@ public partial class WorldRenderer
                         float treeAlpha = (_state.Config?.TreeTransparencyAlpha ?? 47) / 100f;
                         l3Alpha = treeAlpha + (1f - treeAlpha) * t;
                     }
-                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: new Color(treeBright, treeBright, treeBright, l3Alpha));
+                    // Opt 5: use pre-computed full-alpha color when tree is fully opaque
+                    Color l3Color = l3Alpha < 1f ? new Color(treeBright, treeBright, treeBright, l3Alpha) : treeFullColor;
+                    DrawTileGrhTo(canvas, tile.Layer3, tilePos, center: true, modulate: l3Color);
                 }
             }
         }
@@ -318,14 +328,15 @@ public partial class WorldRenderer
         // Must cover same range as L2/L3 terrain buffer to prevent flash at edges
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
+            float sy = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer1 <= 0) continue;
                 if (IsWaterGrh(tile.Layer1)) continue; // skip water
 
-                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY,
-                                            _framePixelOffsetX, _framePixelOffsetY);
+                // Opt 4: use pre-computed screen coords
+                Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
                 DrawTileGrhTo(canvas, tile.Layer1, pos, center: false);
             }
         }
@@ -341,12 +352,14 @@ public partial class WorldRenderer
 
         for (int y = _frameMinY; y <= _frameMaxY; y++)
         {
+            float sy = _screenYCache[y - _frameMinY];
             for (int x = _frameMinX; x <= _frameMaxX; x++)
             {
                 ref var tile = ref _state.MapData.Tiles[x, y];
                 if (tile.Layer2 <= 0) continue;
 
-                Vector2 pos = TileToScreen(x, y, _frameUserX, _frameUserY, _framePixelOffsetX, _framePixelOffsetY);
+                // Opt 4: use pre-computed screen coords
+                Vector2 pos = new Vector2(_screenXCache[x - _frameMinX], sy);
                 DrawTileGrhTo(canvas, tile.Layer2, pos, center: true);
             }
         }
