@@ -857,6 +857,26 @@ pub(crate) async fn connect_user(
         char_data.exp as i32,
     ));
 
+    // --- PHASE 9b: Attributes ---
+    state.send_bytes(conn_id, &binary_packets::write_attributes(
+        char_data.attributes[0] as u8, // STR
+        char_data.attributes[1] as u8, // AGI
+        char_data.attributes[2] as u8, // INT
+        char_data.attributes[3] as u8, // CON
+        char_data.attributes[4] as u8, // CHA
+    ));
+
+    // --- PHASE 9c: Skills ---
+    // Calculate ELU for each skill: 200 * 1.05^level
+    let elu_skills: Vec<i32> = char_data.skills.iter()
+        .map(|&lvl| (200.0 * 1.05_f64.powi(lvl) ) as i32)
+        .collect();
+    state.send_bytes(conn_id, &binary_packets::write_send_skills(
+        &char_data.skills,
+        &char_data.exp_skills,
+        &elu_skills,
+    ));
+
     // --- PHASE 10: Stop state (VB6 line 1730) ---
     state.send_bytes(conn_id, &binary_packets::write_stop_dancing(false));
 

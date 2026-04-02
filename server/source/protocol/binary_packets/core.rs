@@ -339,6 +339,35 @@ pub fn write_update_user_stats(
     pkt.into_bytes()
 }
 
+/// ID 49: Send player attributes (STR, AGI, INT, CON, CHA).
+pub fn write_attributes(str_: u8, agi: u8, int: u8, con: u8, cha: u8) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Attributes.to_byte());
+    pkt.write_byte(str_);
+    pkt.write_byte(agi);
+    pkt.write_byte(int);
+    pkt.write_byte(con);
+    pkt.write_byte(cha);
+    pkt.into_bytes()
+}
+
+/// ID 50: Send all 22 skills (level + XP percentage per skill).
+pub fn write_send_skills(skills: &[i32], exp_skills: &[i32], elu_skills: &[i32]) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SendSkills.to_byte());
+    for i in 0..22 {
+        let level = if i < skills.len() { skills[i].clamp(0, 100) as u8 } else { 0 };
+        let pct = if i < exp_skills.len() && i < elu_skills.len() && elu_skills[i] > 0 {
+            ((exp_skills[i] as f64 / elu_skills[i] as f64) * 100.0).clamp(0.0, 99.0) as u8
+        } else {
+            0
+        };
+        pkt.write_byte(level);
+        pkt.write_byte(pct);
+    }
+    pkt.into_bytes()
+}
+
 /// ID 60: Update hunger and thirst.
 pub fn write_update_hunger_thirst(max_agua: u8, min_agua: u8, max_ham: u8, min_ham: u8) -> Vec<u8> {
     let mut pkt = ByteQueue::new();
