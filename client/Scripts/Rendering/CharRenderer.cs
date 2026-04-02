@@ -600,6 +600,23 @@ public static partial class CharRenderer
 	/// called multiple times per frame.
 	/// Covers: FovAlpha, TransparenciaBody, FxFrameCounter/FxLoops, dialog timers.
 	/// </summary>
+	/// <summary>
+	/// Lightweight timer update for off-viewport characters — only FOV fade.
+	/// Skips FX counters, transparency pulse, and other visual-only timers.
+	/// </summary>
+	public static void UpdateCharacterFovOnly(Character ch, float deltaMs, GameState state)
+	{
+		bool insideCore = IsInsideCoreViewport(ch.PosX, ch.PosY, state.UserPosX, state.UserPosY);
+		float fovTarget = insideCore ? 1f : 0f;
+		if (Math.Abs(ch.FovAlpha - fovTarget) > 0.001f)
+		{
+			float fovStep = FovFadeRate * deltaMs / 1000f;
+			ch.FovAlpha = ch.FovAlpha < fovTarget
+				? Math.Min(ch.FovAlpha + fovStep, fovTarget)
+				: Math.Max(ch.FovAlpha - fovStep, fovTarget);
+		}
+	}
+
 	public static void UpdateCharacterTimers(Character ch, float deltaMs, GameState state, GameData data)
 	{
 		// ── FOV fade ──

@@ -93,18 +93,27 @@ public class TextureManager
     /// <summary>
     /// Get texture by file number. Returns cached texture or loads on demand.
     /// </summary>
+    private int _lruSkipCounter;
+    private const int LruBumpInterval = 60; // Only bump LRU every N accesses (reduces overhead 60x)
+
     public Texture2D? GetTexture(int fileNum)
     {
         if (fileNum <= 0) return null;
 
         if (_cache.TryGetValue(fileNum, out var cached))
         {
-            // Bump LRU — O(1)
-            if (_lruNodes.TryGetValue(fileNum, out var node))
+            // Lazy LRU: only bump position every N accesses to reduce overhead.
+            // Exact LRU ordering isn't critical — we only need recently-used textures
+            // to survive eviction, not perfect ordering.
+            if (++_lruSkipCounter >= LruBumpInterval)
             {
-                _lruOrder.Remove(node);
-                var newNode = _lruOrder.AddFirst(fileNum);
-                _lruNodes[fileNum] = newNode;
+                _lruSkipCounter = 0;
+                if (_lruNodes.TryGetValue(fileNum, out var node))
+                {
+                    _lruOrder.Remove(node);
+                    var newNode = _lruOrder.AddFirst(fileNum);
+                    _lruNodes[fileNum] = newNode;
+                }
             }
             return cached;
         }

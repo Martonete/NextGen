@@ -444,8 +444,20 @@ void fragment() {
 	private void UpdateAllCharacterTimers()
 	{
 		if (_state == null || _data == null) return;
+		int ux = _state.UserPosX;
+		int uy = _state.UserPosY;
+		int halfX = HalfWindowTileWidth + 3; // viewport + small buffer
+		int halfY = HalfWindowTileHeight + 3;
 		foreach (var ch in _state.Characters.Values)
-			CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
+		{
+			// Full update for characters near viewport (visible or about to be)
+			// Lightweight FOV-only update for distant characters
+			bool nearViewport = Math.Abs(ch.PosX - ux) <= halfX && Math.Abs(ch.PosY - uy) <= halfY;
+			if (nearViewport)
+				CharRenderer.UpdateCharacterTimers(ch, _deltaMs, _state, _data);
+			else
+				CharRenderer.UpdateCharacterFovOnly(ch, _deltaMs, _state);
+		}
 	}
 
 	/// <summary>
