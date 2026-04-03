@@ -278,7 +278,7 @@ pub(super) fn puede_acuchillar(class: PlayerClass, weapon_acuchilla: bool) -> bo
 pub(super) fn do_acuchillar(base_damage: i64) -> Option<i64> {
     if rand_range(1, 100) <= PROB_ACUCHILLAR {
         let dmg = (base_damage as f64 * DANO_ACUCHILLAR) as i64;
-        Some(dmg.max(1))
+        Some(dmg)
     } else {
         None
     }
@@ -625,6 +625,14 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
         };
         victim_evasion += victim_shield_evasion;
 
+        // VB6 13.3 parity: any PvP targeting cancels victim meditation (before hit/miss)
+        let victim_meditating = state.users.get(&victim_id).map(|u| u.meditating).unwrap_or(false);
+        if victim_meditating {
+            if let Some(victim) = state.users.get_mut(&victim_id) {
+                victim.meditating = false;
+            }
+        }
+
         // VB6: ProbExito = clamp(50 + (PoderAtaque - UserPoderEvasion) * 0.4, 10, 90)
         let mut prob_exito = (50.0 + (attack_power - victim_evasion) as f64 * 0.4) as i32;
         prob_exito = prob_exito.clamp(10, 90);
@@ -833,26 +841,21 @@ pub(super) async fn handle_attack(state: &mut GameState, conn_id: ConnectionId) 
             victim.min_hp = victim.min_hp.saturating_sub(damage as i32);
         }
 
-        // VB6: Any PvP hit cancels victim meditation unconditionally
-        {
-            let victim_meditating = state.users.get(&victim_id).map(|u| u.meditating).unwrap_or(false);
-            if victim_meditating {
-                if let Some(victim) = state.users.get_mut(&victim_id) {
-                    victim.meditating = false;
-                }
-                state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
-                if let Some(v) = state.users.get(&victim_id) {
-                    let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
-                    state.send_data_bytes(
-                        SendTarget::ToArea { map: v.pos_map, x: v.pos_x, y: v.pos_y },
-                        &fx_clear,
-                    );
-                }
+        // VB6 13.3 parity: send meditation cancel packets if victim was meditating when targeted
+        // (victim.meditating was already set to false earlier, before the hit/miss roll)
+        if v_meditating {
+            state.send_bytes(victim_id, &binary_packets::write_meditate_toggle());
+            if let Some(v) = state.users.get(&victim_id) {
+                let fx_clear = binary_packets::write_create_fx(v.char_index.0 as i16, 0, 0);
+                state.send_data_bytes(
+                    SendTarget::ToArea { map: v.pos_map, x: v.pos_x, y: v.pos_y },
+                    &fx_clear,
+                );
             }
         }
 
         // VB6: Weapon poison application (60% chance if weapon has Envenena=1)
-        if weapon.envenena && rand_range(1, 100) <= 60 {
+        if weapon.envenena && rand_range(1, 100) < 60 {
             let already_poisoned = state.users.get(&victim_id).map(|u| u.poisoned).unwrap_or(true);
             if !already_poisoned {
                 if let Some(victim) = state.users.get_mut(&victim_id) {
@@ -1230,7 +1233,7 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
 
     // Award experience to killer
     if let Some(killer) = killer_id {
-        let exp_gain = (victim_level as i64) * state.multiplicador_exp as i64;
+        let exp_gain = (victim_level as i64) * 2;
         let killer_name = state.users.get(&killer).map(|u| u.char_name.clone()).unwrap_or_default();
 
         if let Some(k) = state.users.get_mut(&killer) {

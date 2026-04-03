@@ -12,8 +12,10 @@ pub(crate) async fn accion_para_puerta(state: &mut GameState, conn_id: Connectio
         None => return,
     };
 
-    // Distance check: must be within 3 tiles (VB6: Distance > 3)
-    if (x - user_x).abs() > 3 || (y - user_y).abs() > 3 {
+    // Distance check: VB6 uses Euclidean distance <= 2.0
+    let dx = (x - user_x) as f64;
+    let dy = (y - user_y) as f64;
+    if (dx * dx + dy * dy).sqrt() > 2.0 {
         state.send_msg_id(conn_id, 10, "");
         return;
     }

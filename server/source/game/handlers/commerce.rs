@@ -3,7 +3,7 @@
 
 use tracing::{info, warn};
 use crate::net::ConnectionId;
-use crate::game::types::{GameState, InventorySlot, MAX_BANK_SLOTS};
+use crate::game::types::{GameState, InventorySlot, MAX_BANK_SLOTS, privilege_level};
 use crate::protocol::{binary_packets, font_index};
 use crate::data::objects::ObjType;
 use super::common::*;
@@ -326,14 +326,19 @@ pub(super) async fn handle_commerce_sell(state: &mut GameState, conn_id: Connect
     if slot < 1 || cantidad < 1 { return; }
 
     // Validate user state
-    let (dead, comerciando, target_npc) = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.dead, u.comerciando, u.target_npc),
+    let (dead, comerciando, target_npc, privileges) = match state.users.get(&conn_id) {
+        Some(u) if u.logged => (u.dead, u.comerciando, u.target_npc, u.privileges),
         _ => return,
     };
 
     if dead {
         let pkt = binary_packets::write_console_msg_id(3, ""); // TEXTO3: Estás muerto
         state.send_bytes(conn_id, &pkt);
+        return;
+    }
+    // VB6 13.3 parity: Consejero cannot sell items
+    if privileges == privilege_level::CONSEJERO {
+        state.send_console(conn_id, "Los consejeros no pueden vender objetos.", font_index::INFO);
         return;
     }
     if !comerciando || target_npc == 0 { return; }

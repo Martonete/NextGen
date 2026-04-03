@@ -362,6 +362,25 @@ pub(super) async fn handle_slash_renunciar(state: &mut GameState, conn_id: Conne
         user.reenlistadas = true; // Can never re-enlist
     }
 
+    // VB6 13.3 parity: unequip faction armor on /RENUNCIA (same as /DESERTAR)
+    let is_real = armada;
+    let armor_slot = state.users.get(&conn_id).map(|u| u.equip.armor).unwrap_or(0);
+    if armor_slot > 0 && armor_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id).map(|u| u.inventory[armor_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_faction = state.game_data.objects.get(obj_idx as usize)
+                .map(|o| if is_real { o.real } else { o.caos })
+                .unwrap_or(false);
+            if is_faction {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[armor_slot - 1].equipped = false;
+                    user.equip.armor = 0;
+                }
+                send_inventory_slot(state, conn_id, armor_slot - 1).await;
+            }
+        }
+    }
+
     state.send_console(conn_id, "Has renunciado a tu faccion.", font_index::INFO);
 }
 
@@ -585,7 +604,16 @@ pub(super) async fn handle_yell(state: &mut GameState, conn_id: ConnectionId, me
     let (map, x, y, char_index, dead) = user_data;
 
     if dead {
-        return; // Dead players can't yell
+        // VB6 13.3: dead players can yell, but only to other dead players
+        let area_users = state.get_area_users(map, x, y, conn_id);
+        let pkt = binary_packets::write_chat_over_head(message, char_index.0 as i16, 255);
+        for other_id in area_users {
+            if state.users.get(&other_id).map(|u| u.dead).unwrap_or(false) {
+                state.send_bytes(other_id, &pkt);
+            }
+        }
+        state.send_bytes(conn_id, &pkt);
+        return;
     }
 
     if message.is_empty() {

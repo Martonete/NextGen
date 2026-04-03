@@ -160,13 +160,9 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         state.send_console(conn_id, "Te levantás.", font_index::INFO);
     }
 
-    // Cancel GoHome traveling on movement (VB6: movement interrupts /HOGAR travel)
+    // VB6 13.3: movement is blocked while traveling home
     if traveling {
-        if let Some(user) = state.users.get_mut(&conn_id) {
-            user.traveling = false;
-            user.counter_go_home = 0;
-        }
-        state.send_console(conn_id, "Has cancelado el viaje a tu hogar.", font_index::INFO);
+        return;
     }
 
     let (dx, dy) = world::heading_to_offset(heading);

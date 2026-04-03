@@ -603,8 +603,8 @@ pub(super) async fn handle_slash_seguroclan(state: &mut GameState, conn_id: Conn
 
 /// /CMSG <text> — Send clan chat message.
 pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: ConnectionId, text: &str) {
-    let (guild_index, char_name) = match state.users.get(&conn_id) {
-        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone()),
+    let (guild_index, char_name, map, pos_x, pos_y, char_index) = match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.guild_index > 0 => (u.guild_index, u.char_name.clone(), u.pos_map, u.pos_x, u.pos_y, u.char_index),
         _ => {
             state.send_msg_id(conn_id, 120, "");
             return;
@@ -631,6 +631,18 @@ pub(super) async fn handle_slash_cmsg(state: &mut GameState, conn_id: Connection
 
     let msg = format!("{}{}: {}", prefix, char_name, text);
     state.send_guild_chat_to(SendTarget::ToGuildMembers(guild_index), &msg);
+
+    // VB6 13.3 parity: /CMSG also sends yellow overhead bubble to nearby clanmates
+    let bubble_pkt = binary_packets::write_chat_over_head(text, char_index.0 as i16, 65535); // vbYellow
+    let area_users = state.get_area_users(map, pos_x, pos_y, conn_id);
+    for other_id in area_users {
+        if let Some(other) = state.users.get(&other_id) {
+            if other.guild_index == guild_index {
+                state.send_bytes(other_id, &bubble_pkt);
+            }
+        }
+    }
+    state.send_bytes(conn_id, &bubble_pkt); // self
 }
 
 /// DESCOD — Update guild codex and description.

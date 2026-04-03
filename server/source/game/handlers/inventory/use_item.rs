@@ -904,8 +904,8 @@ pub(crate) fn apply_consumable(state: &mut GameState, conn_id: ConnectionId, obj
             user.min_ham = new_ham;
         }
 
-        // Thirst restoration (applies to all subtypes)
-        if obj.min_agua > 0 {
+        // VB6 13.3 parity: potions don't restore thirst, only food (UseOnce) does
+        if obj.min_agua > 0 && obj.obj_type != ObjType::Potion {
             let new_agua = (user.min_agua + obj.min_agua).min(user.max_agua);
             user.min_agua = new_agua;
         }

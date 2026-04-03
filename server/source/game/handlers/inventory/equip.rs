@@ -79,18 +79,6 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
             return;
         }
 
-        // VB6: Can't unequip armor/weapon/shield/helmet while mounted
-        let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
-        if is_mounted {
-            match obj_data.obj_type {
-                ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
-                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO);
-                    return;
-                }
-                _ => {}
-            }
-        }
-
         // Unequip
         // Check if unequipping clears an aura
         let had_aura = obj_data.crea_aura > 0;
@@ -160,17 +148,7 @@ pub(crate) async fn handle_equip(state: &mut GameState, conn_id: ConnectionId, s
             }
         }
 
-        // VB6: Can't equip armor/weapon/shield/helmet while mounted (InvUsuario.bas line 631)
-        let is_mounted = state.users.get(&conn_id).map(|u| u.montado).unwrap_or(false);
-        if is_mounted {
-            match obj_data.obj_type {
-                ObjType::Armor | ObjType::Weapon | ObjType::Shield | ObjType::Helmet => {
-                    state.send_console(conn_id, "No puedes cambiar de equipamiento mientras estas montado.", font_index::INFO);
-                    return;
-                }
-                _ => {}
-            }
-        }
+
 
         // Two-handed weapon check: unequip shield if equipping 2h weapon
         if obj_data.obj_type == ObjType::Weapon && obj_data.dos_manos {

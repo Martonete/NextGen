@@ -150,8 +150,8 @@ pub(super) fn try_level_skill_with_hit(user: &mut UserState, skill_idx: usize, h
     if skill_idx == 0 || skill_idx > 21 { return false; }
     let idx = skill_idx - 1; // 0-based
 
-    // Must not be hungry or thirsty
-    if user.min_ham <= 0 || user.min_agua <= 0 { return false; }
+    // VB6 13.3 parity: can't level skills while starving or dehydrated
+    if user.min_ham <= 1 || user.min_agua <= 1 { return false; }
 
     // Max skill check
     if user.skills[idx] >= MAXSKILLPOINTS { return false; }
