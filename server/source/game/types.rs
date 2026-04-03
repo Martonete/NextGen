@@ -356,6 +356,13 @@ pub struct UserState {
     // Rate limiting for character deletion
     pub last_delete_attempt: Option<std::time::Instant>,
     pub delete_attempt_count: u8,
+
+    // VB6 13.3: Speed-hack detection — max 30 steps per 5800ms
+    pub speed_steps: i32,
+    pub speed_window_start: std::time::Instant,
+
+    // VB6 13.3: GM custom chat color (0 = default color by status)
+    pub chat_color: i32,
 }
 
 impl UserState {
@@ -575,6 +582,9 @@ impl UserState {
             current_zone_id: 0,
             last_delete_attempt: None,
             delete_attempt_count: 0,
+            speed_steps: 0,
+            speed_window_start: std::time::Instant::now(),
+            chat_color: 0,
         }
     }
 

@@ -2,6 +2,7 @@
 //
 // Replaces data/guilds.rs (INI file I/O).
 
+use std::collections::HashMap;
 use sqlx::{PgPool, Postgres, Transaction};
 
 pub const MAX_GUILDS: i32 = 1000;
@@ -613,6 +614,46 @@ pub async fn dissolve_guild(pool: &PgPool, guild_num: i32) {
     .execute(pool).await
     {
         tracing::error!("Guild DB error: {e}");
+    }
+}
+
+/// Load all non-peace guild relations into a HashMap keyed by normalized (smaller, larger) pair.
+pub async fn load_all_guild_relations(pool: &PgPool) -> HashMap<(i32, i32), i32> {
+    let rows: Vec<(i32, i32, i32)> = sqlx::query_as(
+        "SELECT guild_a, guild_b, relation FROM guild_relations"
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut map = HashMap::new();
+    for (a, b, rel) in rows {
+        let key = if a <= b { (a, b) } else { (b, a) };
+        map.insert(key, rel);
+    }
+    map
+}
+
+/// Persist a guild relation. Deletes the row when relation is peace (0 = default).
+pub async fn save_guild_relation(pool: &PgPool, guild_a: i32, guild_b: i32, relation: i32) {
+    let (a, b) = if guild_a <= guild_b { (guild_a, guild_b) } else { (guild_b, guild_a) };
+    if relation == 0 {
+        if let Err(e) = sqlx::query(
+            "DELETE FROM guild_relations WHERE guild_a = $1 AND guild_b = $2"
+        )
+        .bind(a).bind(b)
+        .execute(pool).await
+        {
+            tracing::error!("Guild relation DB error: {e}");
+        }
+    } else if let Err(e) = sqlx::query(
+        "INSERT INTO guild_relations (guild_a, guild_b, relation) VALUES ($1, $2, $3)
+         ON CONFLICT (guild_a, guild_b) DO UPDATE SET relation = $3"
+    )
+    .bind(a).bind(b).bind(relation)
+    .execute(pool).await
+    {
+        tracing::error!("Guild relation DB error: {e}");
     }
 }
 

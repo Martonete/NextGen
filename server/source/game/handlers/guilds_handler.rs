@@ -974,6 +974,10 @@ pub fn get_guild_relation(state: &GameState, guild_a: i32, guild_b: i32) -> i32 
 /// Set relation between two guilds
 fn set_guild_relation(state: &mut GameState, guild_a: i32, guild_b: i32, relation: i32) {
     state.guild_relations.insert(guild_pair(guild_a, guild_b), relation);
+    let pool = state.pool.clone();
+    tokio::spawn(async move {
+        crate::db::guilds::save_guild_relation(&pool, guild_a, guild_b, relation).await;
+    });
 }
 
 /// /DECLARARGUERRA <clan> — Declare war on another guild (leader only).

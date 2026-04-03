@@ -8,7 +8,7 @@ use crate::protocol::font_index;
 use crate::protocol::binary_packets;
 use crate::game::handlers::common::*;
 use crate::game::handlers::{
-    warp_user, iniciar_comercio_npc, iniciar_banco, iniciar_banco_clan,
+    warp_user, iniciar_comercio_npc, iniciar_banco, iniciar_banco_clan, user_die,
 };
 use super::doors::{accion_para_puerta, accion_para_foro};
 
@@ -538,7 +538,7 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
             (npc.is_alive(), npc.comercia, npc.name.clone(), npc.npc_type, npc.desc.clone(), npc.npc_number)
         });
 
-        if let Some((alive, comercia, _npc_name, npc_type, _npc_desc, _npc_num)) = npc_info {
+        if let Some((alive, comercia, _npc_name, npc_type, _npc_desc, npc_num)) = npc_info {
             if alive {
                 // Set target NPC
                 if let Some(user) = state.users.get_mut(&conn_id) {
@@ -683,6 +683,31 @@ pub(crate) async fn handle_right_click(state: &mut GameState, conn_id: Connectio
                                 state.send_msg_id(conn_id, 13, ""); return;
                             }
                             state.send_console(conn_id, "Trae las cajas de quest para recibir tu recompensa.", font_index::INFO);
+                        }
+                        NpcType::Noble => {
+                            // VB6 13.3: Noble NPC (Rey/Demonio) kills enemy-faction players on click.
+                            // alineacion 1 = Royal NPC → kills Caos players.
+                            // alineacion 2 = Chaos NPC → kills Armada players.
+                            if dead { return; }
+                            if dist > 3 {
+                                state.send_msg_id(conn_id, 13, ""); return;
+                            }
+                            let (is_armada, is_caos) = match state.users.get(&conn_id) {
+                                Some(u) => (u.armada_real, u.fuerzas_caos),
+                                None => return,
+                            };
+                            let npc_alineacion = state.game_data.npcs.get(npc_num as usize)
+                                .map(|d| d.alineacion)
+                                .unwrap_or(0);
+                            let should_kill = match npc_alineacion {
+                                1 => is_caos,    // Royal NPC kills Caos players
+                                2 => is_armada,  // Chaos NPC kills Armada players
+                                _ => false,
+                            };
+                            if should_kill {
+                                state.send_console(conn_id, "Los guardias te han matado.", font_index::INFO);
+                                user_die(state, conn_id, None).await;
+                            }
                         }
                         _ => {
                             // Non-interactive NPC — description already shown above

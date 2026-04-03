@@ -100,6 +100,8 @@ async fn main() {
 
     // Initialize game state
     let mut state = GameState::new(config.clone(), base_path.clone(), game_data, pool, bans);
+    // Load persisted guild diplomacy relations
+    state.guild_relations = db::guilds::load_all_guild_relations(&state.pool).await;
     info!("Game state initialized");
 
     // Spawn NPCs from map data + zone definitions

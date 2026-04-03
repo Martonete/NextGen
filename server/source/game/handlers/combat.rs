@@ -1304,6 +1304,26 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
         check_user_level(state, killer).await;
 
         info!("[COMBAT] '{}' killed '{}' (+{} exp)", killer_name, victim_name, exp_gain);
+
+        // VB6 13.3 parity: party death XP penalty — all party members lose ELV * 10 * CantMiembros
+        let victim_party_idx = state.users.get(&conn_id).map(|u| u.party_index).unwrap_or(0);
+        if victim_party_idx > 0 {
+            if let Some(Some(party)) = state.parties.get(victim_party_idx as usize) {
+                let member_count = party.members.len() as i64;
+                let member_ids: Vec<ConnectionId> = party.members.clone();
+                for member_id in member_ids {
+                    let penalty = state.users.get(&member_id)
+                        .map(|u| (u.level as i64) * -10 * member_count)
+                        .unwrap_or(0);
+                    if penalty < 0 {
+                        if let Some(m) = state.users.get_mut(&member_id) {
+                            m.exp = (m.exp + penalty).max(0);
+                        }
+                        send_stats_exp(state, member_id).await;
+                    }
+                }
+            }
+        }
     }
 
     // Zone exit point: if the player died inside a zone with a defined exit point,

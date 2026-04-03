@@ -165,6 +165,38 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         return;
     }
 
+    // VB6 13.3 parity: speed-hack detection — max 30 steps per 5800ms (GMs exempt)
+    {
+        let privileges = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
+        if privileges == 0 {
+            let now = std::time::Instant::now();
+            let (elapsed_ms, steps) = match state.users.get(&conn_id) {
+                Some(u) => (now.duration_since(u.speed_window_start).as_millis() as i64, u.speed_steps),
+                None => return,
+            };
+
+            if elapsed_ms > 5800 {
+                // Reset window
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.speed_steps = 1;
+                    user.speed_window_start = now;
+                }
+            } else {
+                let new_steps = steps + 1;
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.speed_steps = new_steps;
+                }
+                if new_steps > 30 {
+                    // Speed hack detected — disconnect
+                    let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+                    tracing::warn!("[SECURITY] Speed-hack detected: '{}' moved {} steps in {}ms", name, new_steps, elapsed_ms);
+                    state.security_kick_queue.push(conn_id);
+                    return;
+                }
+            }
+        }
+    }
+
     let (dx, dy) = world::heading_to_offset(heading);
     let new_x = old_x + dx;
     let new_y = old_y + dy;

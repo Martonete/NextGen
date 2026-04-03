@@ -552,10 +552,10 @@ pub(super) async fn handle_slash_stats(state: &mut GameState, conn_id: Connectio
 /// or ReadField(N, rData, 126) for console text.
 pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, message: &str) {
     let user_data = match state.users.get(&conn_id) {
-        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.dead, u.privileges, u.silenced),
+        Some(u) if u.logged => (u.pos_map, u.pos_x, u.pos_y, u.char_index, u.dead, u.privileges, u.silenced, u.chat_color),
         _ => return,
     };
-    let (map, x, y, char_index, dead, privileges, silenced) = user_data;
+    let (map, x, y, char_index, dead, privileges, silenced, chat_color) = user_data;
 
     // Handle slash commands (e.g., /RESUCITAR) — silenced users can still use commands
     // VB6: empty messages are allowed (used for "cartelear" — clearing text bubbles)
@@ -570,9 +570,11 @@ pub(super) async fn handle_talk(state: &mut GameState, conn_id: ConnectionId, me
         return;
     }
 
-    // Color based on status
+    // Color based on status; custom GM color overrides the default GM yellow
     let color: i32 = if dead {
         12632256 // Gray for dead
+    } else if chat_color > 0 {
+        chat_color // GM custom color (/CHATCOLOR)
     } else if privileges > 0 {
         65535 // Yellow for GM (vbYellow)
     } else {

@@ -706,8 +706,36 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
         handle_slash_encuesta_crear(state, conn_id, args).await;
     } else if cmd_upper == "/CERRARENCUESTA" {
         handle_slash_cerrar_encuesta(state, conn_id).await;
+    } else if cmd_upper.starts_with("/CHATCOLOR ") {
+        let args = &cmd["/CHATCOLOR ".len()..];
+        handle_slash_chatcolor(state, conn_id, args).await;
     } else {
         // Unknown command — send feedback
         state.send_msg_id(conn_id, 714, ""); // TEXTO714: Comando no reconocido
     }
+}
+
+/// VB6 13.3: /CHATCOLOR <r> <g> <b> — GM sets custom chat color for the session.
+async fn handle_slash_chatcolor(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    let privs = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
+    if privs < privilege_level::DIOS {
+        return;
+    }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.len() != 3 {
+        state.send_console(conn_id, "Uso: /CHATCOLOR <r> <g> <b>", font_index::INFO);
+        return;
+    }
+
+    let r: i32 = parts[0].parse().unwrap_or(255).clamp(0, 255);
+    let g: i32 = parts[1].parse().unwrap_or(255).clamp(0, 255);
+    let b: i32 = parts[2].parse().unwrap_or(255).clamp(0, 255);
+    // VB6 RGB() macro: R | (G << 8) | (B << 16)
+    let color = r | (g << 8) | (b << 16);
+
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.chat_color = color;
+    }
+    state.send_console(conn_id, &format!("Color de chat cambiado a ({}, {}, {}).", r, g, b), font_index::INFO);
 }
