@@ -63,7 +63,7 @@ public partial class WalkModePanel : Control
     private const int ExtraTilesLarge = 12;
 
     // Movement
-    private const float PixelsPerSecond = 320f; // smoother than original 200
+    private const float PixelsPerSecond = 200f; // VB6 exact: ScrollPixels=8 per 40ms tick = 200px/s
     private const float ScrollPixels = 8f;
 
     // ── Character state ─────────────────────────────────────────────────────
@@ -664,7 +664,13 @@ public partial class WalkModePanel : Control
         if (grhIndex <= 0 || Grhs == null || Textures == null) return;
         if (grhIndex >= Grhs.Length) return;
 
-        var grh = ResolveStaticFrame(grhIndex);
+        // Animate L1 tiles (water, lava, etc.) using _globalTime
+        var baseGrh = Grhs[grhIndex];
+        int frameIdx = 0;
+        if (baseGrh.NumFrames > 1 && baseGrh.Speed > 0)
+            frameIdx = (int)(_globalTime * baseGrh.NumFrames / baseGrh.Speed) % baseGrh.NumFrames;
+
+        var grh = ResolveFrame(grhIndex, frameIdx);
         if (grh.FileNum <= 0 || grh.PixelWidth <= 0) return;
 
         var texture = Textures.GetTexture(grh.FileNum);

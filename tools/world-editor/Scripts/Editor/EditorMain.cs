@@ -2069,23 +2069,30 @@ public partial class EditorMain : Control
             // Resolution selector bar at top
             var topBar = new HBoxContainer();
             topBar.Position = Vector2.Zero;
+            topBar.Size = new Vector2(800, 28);
             topBar.AddThemeConstantOverride("separation", 8);
             var resLabel = new Label { Text = "Resolución:" };
+            resLabel.AddThemeFontSizeOverride("font_size", 13);
             topBar.AddChild(resLabel);
-            var resOption = new OptionButton();
+
+            // Use MenuButton instead of OptionButton to avoid popup z-order issues
+            var resMenu = new MenuButton { Text = WalkModePanel.Resolutions[0].Label, Flat = false };
+            resMenu.AddThemeFontSizeOverride("font_size", 13);
+            resMenu.CustomMinimumSize = new Vector2(220, 0);
+            var popup = resMenu.GetPopup();
             for (int i = 0; i < WalkModePanel.Resolutions.Length; i++)
-                resOption.AddItem(WalkModePanel.Resolutions[i].Label, i);
-            resOption.Selected = 0; // 800x600 default
-            topBar.AddChild(resOption);
+                popup.AddItem(WalkModePanel.Resolutions[i].Label, i);
+            topBar.AddChild(resMenu);
             _walkWindow.AddChild(topBar);
 
             _walkPanel = new WalkModePanel();
             _walkPanel.Position = new Vector2(0, 30); // below the top bar
             _walkWindow.AddChild(_walkPanel);
 
-            resOption.ItemSelected += (long idx) =>
+            popup.IdPressed += (long idx) =>
             {
                 var res = WalkModePanel.Resolutions[(int)idx];
+                resMenu.Text = res.Label;
                 _walkPanel.SetResolution(res.W, res.H);
                 int viewH = (res.H / 32 / 2 * 2 + 1) * 32;
                 _walkWindow.Size = new Vector2I(Math.Max(res.W, (res.W / 32 / 2 * 2 + 1) * 32), viewH + 30);
