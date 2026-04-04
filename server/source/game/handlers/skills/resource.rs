@@ -15,6 +15,11 @@ use super::{luck_denominator, max_items_extraibles,
     ESFUERZO_EXCAVAR_RECOLECTOR, ESFUERZO_EXCAVAR_GENERAL,
 };
 
+/// VB6: PECES_POSIBLES — fish types obtainable from net fishing (ListaPeces).
+/// Regular fishing (rod) always yields PESCADO_OBJ (139).
+/// Net fishing yields a random fish from this list.
+const LISTA_PECES: [i32; 4] = [139, 544, 545, 546];
+
 pub(crate) async fn do_pescar(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
     let (map, ux, uy, class, skill) = match state.users.get(&conn_id) {
         Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class, u.skills[12]), // Pesca = index 12 (1-based 13)
@@ -295,5 +300,106 @@ pub(crate) async fn do_mineria(state: &mut GameState, conn_id: ConnectionId, tx:
             try_level_skill_with_hit(u, 13, false);
         }
     }
+    send_stats_sta(state, conn_id).await;
+}
+
+/// Net fishing (DoPescarRed) — VB6: Trabajo.bas:1559.
+/// Requires RED_PESCA (543) equipped, target tile has a fish school (ObjType::FishingSpot),
+/// Manhattan distance from player <= 2, and player is not on the same tile.
+/// Yields a random fish from LISTA_PECES instead of always PESCADO_OBJ.
+pub(crate) async fn do_pescar_red(state: &mut GameState, conn_id: ConnectionId, tx: i32, ty: i32) {
+    let (map, ux, uy, class, skill) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.class, u.skills[12]), // Pesca = index 12
+        None => return,
+    };
+
+    // Distance check — VB6: Abs(.Pos.X - X) + Abs(.Pos.Y - Y) > 2 (Manhattan)
+    let manhattan = (tx - ux).abs() + (ty - uy).abs();
+    if manhattan > 2 {
+        state.send_console(conn_id, "Estás demasiado lejos para pescar.", font_index::INFO);
+        return;
+    }
+
+    // Can't fish from your own tile
+    if tx == ux && ty == uy {
+        state.send_console(conn_id, "No puedes pescar desde allí.", font_index::INFO);
+        return;
+    }
+
+    // Check the static map tile has a fish school object (ObjType::FishingSpot = otYacimientoPez)
+    let tile_obj_index = state.game_data.maps.get(map as usize)
+        .and_then(|m| m.as_ref())
+        .and_then(|m| m.tiles.get((tx - 1) as usize, (ty - 1) as usize))
+        .map(|t| t.obj.obj_index)
+        .unwrap_or(0);
+
+    if tile_obj_index == 0 {
+        state.send_console(conn_id, "No hay un yacimiento de peces donde pescar.", font_index::INFO);
+        return;
+    }
+
+    let is_fish_spot = state.get_object(tile_obj_index as i32)
+        .map(|o| o.obj_type == ObjType::FishingSpot)
+        .unwrap_or(false);
+
+    if !is_fish_spot {
+        state.send_console(conn_id, "No hay un yacimiento de peces donde pescar.", font_index::INFO);
+        return;
+    }
+
+    // Stamina cost
+    let sta_cost = if is_recolector(class) { ESFUERZO_PESCAR_RECOLECTOR } else { ESFUERZO_PESCAR_GENERAL };
+    if let Some(u) = state.users.get(&conn_id) {
+        if u.min_sta < sta_cost {
+            state.send_msg_id(conn_id, 17, "");
+            return;
+        }
+    }
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        u.min_sta -= sta_cost;
+    }
+
+    // Play sound to area
+    let snd = binary_packets::write_play_wave(SND_PESCAR as u8, ux as i16, uy as i16);
+    state.send_data_bytes(SendTarget::ToArea { map, x: ux, y: uy }, &snd);
+
+    // Luck roll — same formula as DoPescar
+    let suerte = luck_denominator(skill);
+    let roll = random_number(1, suerte);
+
+    if roll <= 6 {
+        let level = state.users.get(&conn_id).map(|u| u.level).unwrap_or(1);
+        let amount = if is_recolector(class) {
+            random_number(1, max_items_extraibles(level))
+        } else {
+            1
+        };
+
+        // VB6: ListaPeces(RandomNumber(1, NUM_PECES)) — random fish type from 4 possible
+        let fish_idx = random_number(0, (LISTA_PECES.len() as i32) - 1) as usize;
+        let fish_obj = LISTA_PECES[fish_idx];
+
+        let slot = find_or_add_inv_slot(state, conn_id, fish_obj, amount);
+        if let Some(idx) = slot {
+            send_inventory_slot(state, conn_id, idx).await;
+            state.send_console(conn_id, "¡Has pescado algunos peces!", font_index::INFO);
+        }
+
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 12, true); // Pesca = index 12
+        }
+    } else {
+        state.send_console(conn_id, "¡No has pescado nada!", font_index::INFO);
+
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            try_level_skill_with_hit(u, 12, false);
+        }
+    }
+
+    // VB6: Always grant proleta reputation (DoPescarRed doesn't check criminal unlike DoPescar)
+    if let Some(u) = state.users.get_mut(&conn_id) {
+        super::grant_crafting_rep(u);
+    }
+
     send_stats_sta(state, conn_id).await;
 }

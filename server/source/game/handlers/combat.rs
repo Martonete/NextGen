@@ -1282,6 +1282,26 @@ pub(super) async fn user_die(state: &mut GameState, conn_id: ConnectionId, kille
                 }
             }
         }
+        // VB6 M26: Guild war kill — increment killer guild's puntos_clan when killing an enemy guild member.
+        // Only if both players are in different guilds and those guilds are at war.
+        {
+            let killer_guild = state.users.get(&killer).map(|u| u.guild_index).unwrap_or(0);
+            let victim_guild = state.users.get(&conn_id).map(|u| u.guild_index).unwrap_or(0);
+            if killer_guild > 0 && victim_guild > 0 && killer_guild != victim_guild {
+                let relation = crate::game::handlers::guilds_handler::get_guild_relation(state, killer_guild, victim_guild);
+                if relation == crate::game::handlers::guilds_handler::GUILD_REL_WAR {
+                    // Guilds are at war — award kill point
+                    let pool = state.pool.clone();
+                    tokio::spawn(async move {
+                        if let Some(mut gi) = crate::db::guilds::load_guild(&pool, killer_guild).await {
+                            gi.puntos_clan += 1;
+                            let _ = crate::db::guilds::save_guild(&pool, &gi).await;
+                        }
+                    });
+                }
+            }
+        }
+
         recalc_criminal(state, killer);
         // Broadcast appearance change (criminal status may have changed)
         let (km, kx, ky) = state.users.get(&killer)

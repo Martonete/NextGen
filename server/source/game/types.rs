@@ -240,6 +240,7 @@ pub struct UserState {
     pub pending_spell: usize,           // VB6 flags.Hechizo — spell slot selected via LH, cast on next RC click
     pub counter_paralisis: i32,         // VB6 Counters.Paralisis — countdown to auto-remove paralysis
     pub paralyzed_by: Option<ConnectionId>, // VB6 parity #16: who cast the paralysis (None = unknown/NPC)
+    pub paralyzed_by_npc: Option<usize>, // VB6: flags.ParalizedByNpcIndex — NPC runtime index that paralyzed this user
     pub counter_invisible: i32,         // VB6 Counters.Invisibilidad — counts up to IntervaloInvisible
     pub counter_oculto: i32,            // VB6 Counters.TiempoOculto — counts down to 0 (hide duration)
 
@@ -363,6 +364,12 @@ pub struct UserState {
 
     // VB6 13.3: GM custom chat color (0 = default color by status)
     pub chat_color: i32,
+
+    // VB6 M21: Idle timeout — ticks since last packet (kick at IdleLimit seconds)
+    pub idle_count: u32,
+
+    // VB6 I3: Speed-hack 2-strike — timestamp (ms since epoch) of first detection; None = no strike yet
+    pub count_sh: Option<u64>,
 }
 
 impl UserState {
@@ -509,6 +516,7 @@ impl UserState {
             pending_spell: 0,
             counter_paralisis: 0,
             paralyzed_by: None,
+            paralyzed_by_npc: None,
             counter_invisible: 0,
             counter_oculto: 0,
             counter_hunger: 0,
@@ -585,6 +593,8 @@ impl UserState {
             speed_steps: 0,
             speed_window_start: std::time::Instant::now(),
             chat_color: 0,
+            idle_count: 0,
+            count_sh: None,
         }
     }
 

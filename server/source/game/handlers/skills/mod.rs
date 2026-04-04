@@ -309,7 +309,14 @@ pub(super) async fn handle_work_left_click(state: &mut GameState, conn_id: Conne
 
     match skill_type {
         skill_id::PESCA => {
-            resource::do_pescar(state, conn_id, target_x, target_y).await;
+            // VB6 Protocol.bas:3033: RED_PESCA → DoPescarRed (fish school tile check inside),
+            // CANA_PESCA / CANA_PESCA_NEWBIE → DoPescar (water tile check inside).
+            let weapon = state.users.get(&conn_id).map(|u| equipped_weapon_obj(u)).unwrap_or(0);
+            if weapon == crate::game::constants::RED_PESCA {
+                resource::do_pescar_red(state, conn_id, target_x, target_y).await;
+            } else {
+                resource::do_pescar(state, conn_id, target_x, target_y).await;
+            }
         }
         skill_id::TALAR => {
             resource::do_talar(state, conn_id, target_x, target_y).await;

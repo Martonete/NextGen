@@ -709,6 +709,19 @@ async fn handle_slash_command(state: &mut GameState, conn_id: ConnectionId, cmd:
     } else if cmd_upper.starts_with("/CHATCOLOR ") {
         let args = &cmd["/CHATCOLOR ".len()..];
         handle_slash_chatcolor(state, conn_id, args).await;
+    // M30: Missing GM commands
+    } else if cmd_upper.starts_with("/CONDEN ") {
+        let target = cmd[8..].trim();
+        handle_slash_conden(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/RAJAR ") {
+        let target = cmd[7..].trim();
+        handle_slash_rajar(state, conn_id, target).await;
+    } else if cmd_upper.starts_with("/FORCEMIDIMAP ") {
+        let args = cmd[14..].trim();
+        handle_slash_forcemidimap(state, conn_id, args).await;
+    } else if cmd_upper.starts_with("/ANAME ") {
+        let args = cmd[7..].trim();
+        handle_slash_aname(state, conn_id, args).await;
     } else {
         // Unknown command — send feedback
         state.send_msg_id(conn_id, 714, ""); // TEXTO714: Comando no reconocido

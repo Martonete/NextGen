@@ -354,4 +354,13 @@ pub fn write_levitate(ci: i16, flag: bool) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 87: Send night mode status (VB6: WriteSendNight / NOC packet).
+/// `is_night = true` forces night; `false` returns to normal day/night cycle.
+pub fn write_send_night(is_night: bool) -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SendNight.to_byte());
+    pkt.write_byte(if is_night { 1 } else { 0 });
+    pkt.into_bytes()
+}
+
 

@@ -123,6 +123,37 @@ pub async fn tick_player_passive(state: &mut GameState) {
     // Collect logged user connections
     let user_ids: Vec<ConnectionId> = state.users.keys().copied().collect();
 
+    // VB6 M21: Idle timeout — kick players who haven't sent a packet in IdleLimit seconds.
+    // VB6 IdleLimit = 300 seconds (5 minutes). GMs are exempt.
+    const IDLE_LIMIT_SECS: u32 = 300;
+    let mut idle_kick: Vec<ConnectionId> = Vec::new();
+    for &cid in &user_ids {
+        if let Some(u) = state.users.get_mut(&cid) {
+            if u.logged && u.privileges == 0 {
+                u.idle_count += 1;
+                if u.idle_count >= IDLE_LIMIT_SECS {
+                    idle_kick.push(cid);
+                }
+            }
+        }
+    }
+    for cid in idle_kick {
+        // VB6: cancel active trade before kicking idle player
+        let trade_partner = state.users.get(&cid).and_then(|u| u.trade_partner);
+        if let Some(partner) = trade_partner {
+            if let Some(pu) = state.users.get_mut(&partner) {
+                pu.trading = false;
+                pu.trade_partner = None;
+            }
+        }
+        if let Some(u) = state.users.get_mut(&cid) {
+            u.trading = false;
+            u.trade_partner = None;
+        }
+        state.send_console(cid, "Has sido desconectado por inactividad.", crate::protocol::font_index::INFO);
+        state.security_kick_queue.push(cid);
+    }
+
     for conn_id in user_ids {
         let user_data = match state.users.get(&conn_id) {
             Some(u) if u.logged && !u.dead => Some((

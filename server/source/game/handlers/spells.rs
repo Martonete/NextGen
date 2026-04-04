@@ -376,7 +376,7 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                 consume_spell_mana(state, conn_id, &spell, privileges).await;
             }
             TargetType::Terrain | TargetType::Unknown => {
-                // Terrain spells (invocation, summon, teleport)
+                // Terrain spells (invocation, summon, teleport, status-terrain)
                 match spell.tipo {
                     crate::data::spells::SpellType::Invocation => {
                         apply_spell_invocation(state, conn_id, &spell).await;
@@ -386,6 +386,13 @@ pub(super) async fn do_cast_spell(state: &mut GameState, conn_id: ConnectionId) 
                     }
                     crate::data::spells::SpellType::Teleport => {
                         apply_spell_teleport(state, conn_id, &spell).await;
+                    }
+                    crate::data::spells::SpellType::Status => {
+                        // M8: RemueveInvisibilidadParcial (Detect Hidden) terrain spell
+                        // VB6: HechizoTerrenoEstado — scan ±8 tiles around target, reveal invisible users
+                        if spell.remuve_invisibilidad_parcial {
+                            apply_terrain_detect_hidden(state, conn_id, target_x, target_y, map, &spell).await;
+                        }
                     }
                     _ => {}
                 }

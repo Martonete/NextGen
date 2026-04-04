@@ -509,3 +509,42 @@ pub(super) async fn apply_mimetiza_npc(state: &mut GameState, caster_id: Connect
     }
 }
 
+/// M8: VB6: HechizoTerrenoEstado — RemueveInvisibilidadParcial (Detect Hidden) terrain spell.
+/// Scans an ±8-tile radius around the target tile. For each spell-invisible (non-admin-invisible)
+/// player found, sends the spell FX to the caster's area showing their position.
+/// VB6: Only sends FX — does NOT remove invisibility, does NOT notify the invisible player.
+pub(super) async fn apply_terrain_detect_hidden(
+    state: &mut GameState,
+    caster_id: ConnectionId,
+    target_x: i32,
+    target_y: i32,
+    map: i32,
+    spell: &crate::data::spells::SpellData,
+) {
+    if spell.fx_grh <= 0 {
+        return;
+    }
+
+    // Collect spell-invisible users within ±8 tile radius on the same map
+    // VB6: checks flags.invisible = 1 AND flags.AdminInvisible = 0
+    let targets: Vec<i32> = state.users.values()
+        .filter(|u| {
+            u.logged && !u.dead && u.pos_map == map
+                && u.invisible && !u.admin_invisible
+                && (u.pos_x - target_x).abs() <= 8
+                && (u.pos_y - target_y).abs() <= 8
+        })
+        .map(|u| u.char_index.0)
+        .collect();
+
+    // VB6: SendData(ToPCArea, caster, CreateFX(invis_user.CharIndex, FXgrh, loops))
+    // Sends FX to caster's area, using the invisible user's CharIndex
+    let caster_pos = state.users.get(&caster_id).map(|u| (u.pos_map, u.pos_x, u.pos_y));
+    if let Some((cmap, cx, cy)) = caster_pos {
+        for char_idx in &targets {
+            let fx = binary_packets::write_create_fx(*char_idx as i16, spell.fx_grh as i16, spell.loops as i16);
+            state.send_data_bytes(SendTarget::ToArea { map: cmap, x: cx, y: cy }, &fx);
+        }
+    }
+}
+

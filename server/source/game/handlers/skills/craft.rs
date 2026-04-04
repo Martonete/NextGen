@@ -6,7 +6,7 @@ use crate::game::types::{GameState, SendTarget, MAX_INVENTORY_SLOTS};
 use crate::protocol::{font_index, binary_packets};
 use crate::data::objects::ObjType;
 use crate::game::handlers::common::*;
-use crate::game::handlers::{send_inventory_slot, send_full_inventory};
+use crate::game::handlers::send_inventory_slot;
 use crate::game::constants::*;
 use super::{skill_id, grant_crafting_rep,
     has_items, remove_items, try_level_skill, try_level_skill_with_hit, equipped_weapon_obj,
@@ -124,7 +124,7 @@ pub(crate) async fn do_carpinteria(state: &mut GameState, conn_id: ConnectionId)
                     name: obj.name.clone(),
                     grh_index: obj.grh_index as i16,
                     mat1: obj.madera as i16,
-                    mat2: 0, // MaderaElfica — not loaded yet
+                    mat2: obj.madera_elfica as i16,
                     mat3: 0, // unused for carpenter
                     obj_index: obj.index as i16,
                     upgrade: 0,
@@ -627,9 +627,11 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
         return;
     }
 
-    // Check materials (wood + stones)
+    // Check materials (wood + elven wood + stones)
+    // VB6: CarpinteroQuitarMateriales — consumes Madera, MaderaElfica, and Piedras
     let has_materials = check_has_items(state, conn_id, &[
         (LENA_OBJ, obj.madera),
+        (LENA_ELFICA, obj.madera_elfica),
         (PIEDRA_OBJ, obj.piedras),
     ]);
 
@@ -640,6 +642,9 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 
     // Remove materials
     remove_items_from_inv(state, conn_id, LENA_OBJ, obj.madera).await;
+    if obj.madera_elfica > 0 {
+        remove_items_from_inv(state, conn_id, LENA_ELFICA, obj.madera_elfica).await;
+    }
     remove_items_from_inv(state, conn_id, PIEDRA_OBJ, obj.piedras).await;
 
     // Give crafted item
@@ -668,35 +673,52 @@ pub(crate) async fn handle_construct_carp(state: &mut GameState, conn_id: Connec
 /// Campfire object indices
 // FOGATA_OBJ and LENA_FOGATA imported from crate::game::constants
 
-/// /FOGATA or survival skill — Create a campfire using firewood from inventory.
-/// VB6: Requires 3+ Leña, success based on survival skill level.
+/// /FOGATA or survival skill — Create campfires from ground firewood at the target tile.
+/// VB6: TratarDeHacerFogata(Map, X, Y, UserIndex)
+///   - Checks ground tile has Leña (ObjIndex 58) with Amount >= 3
+///   - Distance check <= 2
+///   - On success: places Amount\3 campfires at target tile (replaces leña)
+///   - Success chance based on survival skill level
 pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: ConnectionId) {
     let user_data = match state.users.get(&conn_id) {
         Some(u) if u.logged => (u.dead, u.pos_map, u.pos_x, u.pos_y,
-            u.skills.get((skill_id::SUPERVIVENCIA - 1) as usize).copied().unwrap_or(0),
-            u.criminal),
+            u.target_x, u.target_y,
+            u.skills.get((skill_id::SUPERVIVENCIA - 1) as usize).copied().unwrap_or(0)),
         _ => return,
     };
-    let (dead, map, x, y, skill_surv, _criminal) = user_data;
+    let (dead, map, ux, uy, tx, ty, skill_surv) = user_data;
 
     if dead {
-        state.send_console(conn_id, "Estas muerto.", font_index::INFO);
+        state.send_console(conn_id, "No puedes hacer fogatas estando muerto.", font_index::INFO);
         return;
     }
 
-    // Zone-aware safe check — no campfires in safe zones
-    if is_safe_at(state, map, x, y) {
-        state.send_console(conn_id, "No puedes crear fogatas en zona segura.", font_index::INFO);
+    // VB6: LegalPos check (implicit — target must be on map)
+    if tx <= 0 || ty <= 0 {
+        state.send_console(conn_id, "Necesitas clickear sobre leña para hacer ramitas.", font_index::INFO);
         return;
     }
 
-    // Check for firewood in inventory (need 3+)
-    let lena_count: i32 = state.users.get(&conn_id)
-        .map(|u| u.inventory.iter().filter(|s| s.obj_index == LENA_FOGATA).map(|s| s.amount).sum())
+    // VB6: check ground tile has Leña (ObjIndex 58)
+    let ground_lena_amount = state.world.grid(map)
+        .and_then(|g| g.tile(tx, ty))
+        .map(|t| if t.ground_item.obj_index == LENA_FOGATA { t.ground_item.amount } else { 0 })
         .unwrap_or(0);
 
-    if lena_count < 3 {
-        state.send_console(conn_id, "Necesitas al menos 3 leñas para crear una fogata.", font_index::INFO);
+    if ground_lena_amount == 0 {
+        state.send_console(conn_id, "Necesitas clickear sobre leña para hacer ramitas.", font_index::INFO);
+        return;
+    }
+
+    // VB6: Distance check (<= 2)
+    if (tx - ux).abs() > 2 || (ty - uy).abs() > 2 {
+        state.send_console(conn_id, "Estás demasiado lejos para prender la fogata.", font_index::INFO);
+        return;
+    }
+
+    // VB6: Need at least 3 logs on the ground
+    if ground_lena_amount < 3 {
+        state.send_console(conn_id, "Necesitas por lo menos tres troncos para hacer una fogata.", font_index::INFO);
         return;
     }
 
@@ -712,57 +734,37 @@ pub(crate) async fn handle_crear_fogata(state: &mut GameState, conn_id: Connecti
     let roll = rand_range(1, suerte);
     let success = roll == 1;
 
-    // Consume 3 firewood
-    let mut removed = 0;
-    if let Some(user) = state.users.get_mut(&conn_id) {
-        for slot in user.inventory.iter_mut() {
-            if slot.obj_index == LENA_FOGATA && slot.amount > 0 && removed < 3 {
-                let take = (3 - removed).min(slot.amount);
-                slot.amount -= take;
-                removed += take;
-                if slot.amount <= 0 {
-                    slot.obj_index = 0;
-                    slot.amount = 0;
-                }
-            }
-        }
-    }
-    send_full_inventory(state, conn_id).await;
-
     if success {
-        // Place campfire on ground
-        let tile_free = state.world.grid(map).and_then(|g| g.tile(x, y))
-            .map(|t| t.ground_item.obj_index == 0)
-            .unwrap_or(false);
+        // VB6: Obj.Amount = MapData(Map, X, Y).ObjInfo.Amount \ 3
+        let campfire_count = ground_lena_amount / 3;
 
-        if tile_free {
-            {
-                let grid = state.world.grid_mut(map);
-                if let Some(tile) = grid.tile_mut(x, y) {
-                    tile.ground_item.obj_index = FOGATA_OBJ;
-                    tile.ground_item.amount = 1;
-                }
+        // Replace leña on ground with campfires
+        {
+            let grid = state.world.grid_mut(map);
+            if let Some(tile) = grid.tile_mut(tx, ty) {
+                tile.ground_item.obj_index = FOGATA_OBJ;
+                tile.ground_item.amount = campfire_count;
             }
-
-            // Get campfire GRH for visual
-            let grh = state.get_object(FOGATA_OBJ).map(|o| o.grh_index).unwrap_or(0);
-            let ho_pkt = binary_packets::write_object_create(x as i16, y as i16, grh as i16);
-            state.send_data_bytes(SendTarget::ToArea { map, x, y }, &ho_pkt);
-
-            // Add to cleanup list (temporary — VB6 uses garbage collector)
-            clean_world_add_item(state, map, x, y, 180, FOGATA_OBJ);
         }
 
-        state.send_console(conn_id, "Has creado una fogata.", font_index::INFO);
+        // Send visual update to area
+        let grh = state.get_object(FOGATA_OBJ).map(|o| o.grh_index).unwrap_or(0);
+        let ho_pkt = binary_packets::write_object_create(tx as i16, ty as i16, grh as i16);
+        state.send_data_bytes(SendTarget::ToArea { map, x: tx, y: ty }, &ho_pkt);
+
+        // Add to cleanup list
+        clean_world_add_item(state, map, tx, ty, 180, FOGATA_OBJ);
+
+        state.send_console(conn_id, &format!("Has hecho {} fogatas.", campfire_count), font_index::INFO);
 
         // XP gain on success
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill(u, skill_id::SUPERVIVENCIA as usize);
         }
     } else {
-        state.send_console(conn_id, "No lograste encender la fogata.", font_index::INFO);
+        state.send_console(conn_id, "No has podido hacer la fogata.", font_index::INFO);
 
-        // XP on failure (half)
+        // XP on failure
         if let Some(u) = state.users.get_mut(&conn_id) {
             try_level_skill_with_hit(u, skill_id::SUPERVIVENCIA as usize, false);
         }

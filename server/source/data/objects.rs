@@ -174,6 +174,7 @@ pub struct ObjData {
 
     // Crafting (extended)
     pub madera: i32,          // Wood needed (carpentry)
+    pub madera_elfica: i32,   // Elven wood needed (carpentry — VB6: MaderaElfica)
     pub piedras: i32,         // Magic stones needed (carpentry)
     pub mineral_index: i32,   // What mineral a yacimiento yields
     pub lingote_index: i32,   // What ingot a raw mineral produces
@@ -277,6 +278,7 @@ impl Default for ObjData {
             ling_o: 0,
             ling_p: 0,
             madera: 0,
+            madera_elfica: 0,
             piedras: 0,
             mineral_index: 0,
             lingote_index: 0,
@@ -383,6 +385,7 @@ pub fn load_objects(base: &Path) -> Result<Vec<ObjData>, String> {
             ling_o: get_int("LingO"),
             ling_p: get_int("LingP"),
             madera: get_int("Madera"),
+            madera_elfica: get_int("MaderaElfica"),
             piedras: get_int("Piedras"),
             mineral_index: get_int("MineralIndex"),
             lingote_index: get_int("LingoteIndex"),

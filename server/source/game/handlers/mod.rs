@@ -221,6 +221,11 @@ async fn handle_one_packet(state: &mut GameState, conn_id: ConnectionId, bq: &mu
         }
     };
 
+    // VB6 M21: Reset idle counter on every received packet so only truly idle users get kicked.
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.idle_count = 0;
+    }
+
     // Bridge: read binary fields, call typed handlers directly.
     match packet_id {
         // Pre-login

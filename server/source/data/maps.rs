@@ -185,6 +185,10 @@ pub struct MapInfo {
     pub g: i32,
     pub b: i32,
 
+    /// VB6 M22: OnDeathGoTo — if map != 0, dead players cannot enter this map.
+    /// Format "Map-X-Y", zero-map means unrestricted. Loaded from .dat [MapN]/OnDeathGoTo.
+    pub on_death_go_to: (i32, i32, i32), // (map, x, y) — (0,0,0) = no restriction
+
     // Runtime state
     pub num_users: i32,
 }
@@ -207,6 +211,7 @@ impl Default for MapInfo {
             restringir: "NO".into(),
             backup: false,
             r: 200, g: 200, b: 200,
+            on_death_go_to: (0, 0, 0),
             num_users: 0,
         }
     }
@@ -579,6 +584,12 @@ fn load_map_dat(path: &Path, map_num: usize) -> MapInfo {
         r: { let v = get_int("R"); if v == 0 { 200 } else { v } },
         g: { let v = get_int("G"); if v == 0 { 200 } else { v } },
         b: { let v = get_int("B"); if v == 0 { 200 } else { v } },
+        on_death_go_to: {
+            // VB6: "Map-X-Y" format. Zero map means no restriction.
+            let raw = get_str("OnDeathGoTo");
+            let parts: Vec<i32> = raw.split('-').filter_map(|s| s.parse().ok()).collect();
+            if parts.len() >= 3 { (parts[0], parts[1], parts[2]) } else { (0, 0, 0) }
+        },
         num_users: 0,
     }
 }

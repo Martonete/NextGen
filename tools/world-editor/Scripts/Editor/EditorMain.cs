@@ -1966,7 +1966,9 @@ public partial class EditorMain : Control
     private void SyncParticlePaletteData()
     {
         if (_particlePalette == null) return;
-        _particlePalette.Engine = _particles;
+        _particlePalette.Engine   = _particles;
+        _particlePalette.Grhs     = _grhs;
+        _particlePalette.Textures = _textures;
         _particlePalette.Rebuild();
     }
 

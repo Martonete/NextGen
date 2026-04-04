@@ -88,19 +88,40 @@ fn check_teleport_restrictions(
     true
 }
 
-/// VB6 13.3 parity: when a teleport exit has Radio > 0, randomize the destination
-/// within that radius. Tries up to 5 positions; falls back to the exact exit on failure.
+/// VB6 13.3 parity (M23): RhombLegalPos — outward diamond/rhombus spiral search.
+///
+/// Starting at (exit_x, exit_y), walks outward in diamond layers from distance 0 to `radio`.
+/// At each distance d, walks the 4 perimeter segments (NE, SE, SW, NW diagonals).
+/// Returns the first unblocked tile, or (exit_x, exit_y) as fallback.
+///
+/// VB6 RhombLegalPos algorithm: 4 loop iterations each stepping diagonally:
+///   i=1: dx+1, dy-1 (NE quadrant)
+///   i=2: dx+1, dy+1 (SE quadrant)
+///   i=3: dx-1, dy+1 (SW quadrant)
+///   i=4: dx-1, dy-1 (NW quadrant)
 fn randomize_exit(state: &GameState, exit_map: i32, exit_x: i32, exit_y: i32, radio: i32) -> (i32, i32) {
     if radio <= 0 {
         return (exit_x, exit_y);
     }
-    for _ in 0..5 {
-        let rx = rand_range(-radio, radio);
-        let ry = rand_range(-radio, radio);
-        let try_x = exit_x + rx;
-        let try_y = exit_y + ry;
-        if !state.is_tile_blocked(exit_map, try_x, try_y) {
-            return (try_x, try_y);
+    // Check center first (distance 0)
+    if !state.is_tile_blocked(exit_map, exit_x, exit_y) {
+        return (exit_x, exit_y);
+    }
+    // Walk outward diamond layers
+    for d in 1..=radio {
+        // Start position of this diamond layer: top vertex
+        let mut cx = exit_x;
+        let mut cy = exit_y - d;
+        // 4 quadrant walks, each of length d steps
+        let steps = [(1i32, 1i32), (1i32, -1i32), (-1i32, -1i32), (-1i32, 1i32)];
+        for (sdx, sdy) in steps {
+            for _ in 0..d {
+                cx += sdx;
+                cy += sdy;
+                if !state.is_tile_blocked(exit_map, cx, cy) {
+                    return (cx, cy);
+                }
+            }
         }
     }
     (exit_x, exit_y)
@@ -165,11 +186,15 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
         return;
     }
 
-    // VB6 13.3 parity: speed-hack detection — max 30 steps per 5800ms (GMs exempt)
+    // VB6 13.3 parity (I3): speed-hack detection — max 30 steps per 5800ms (GMs exempt).
+    // 2-strike system: first detection stores timestamp; second detection within 30s kicks.
     {
         let privileges = state.users.get(&conn_id).map(|u| u.privileges).unwrap_or(0);
         if privileges == 0 {
             let now = std::time::Instant::now();
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default().as_millis() as u64;
             let (elapsed_ms, steps) = match state.users.get(&conn_id) {
                 Some(u) => (now.duration_since(u.speed_window_start).as_millis() as i64, u.speed_steps),
                 None => return,
@@ -187,11 +212,35 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
                     user.speed_steps = new_steps;
                 }
                 if new_steps > 30 {
-                    // Speed hack detected — disconnect
                     let name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
-                    tracing::warn!("[SECURITY] Speed-hack detected: '{}' moved {} steps in {}ms", name, new_steps, elapsed_ms);
-                    state.security_kick_queue.push(conn_id);
-                    return;
+                    let first_strike_ms = state.users.get(&conn_id).and_then(|u| u.count_sh);
+                    match first_strike_ms {
+                        None => {
+                            // First detection — record timestamp and warn
+                            tracing::warn!("[SECURITY] Speed-hack first strike: '{}' ({} steps in {}ms)", name, new_steps, elapsed_ms);
+                            if let Some(user) = state.users.get_mut(&conn_id) {
+                                user.count_sh = Some(now_ms);
+                                user.speed_steps = 0;
+                                user.speed_window_start = now;
+                            }
+                        }
+                        Some(first_ms) => {
+                            // Second detection — check if within 30 seconds
+                            if now_ms.saturating_sub(first_ms) <= 30_000 {
+                                tracing::warn!("[SECURITY] Speed-hack second strike: '{}' kicked ({} steps in {}ms)", name, new_steps, elapsed_ms);
+                                state.security_kick_queue.push(conn_id);
+                                return;
+                            } else {
+                                // More than 30s since first strike — reset to first strike
+                                tracing::warn!("[SECURITY] Speed-hack first strike (reset): '{}' ({} steps in {}ms)", name, new_steps, elapsed_ms);
+                                if let Some(user) = state.users.get_mut(&conn_id) {
+                                    user.count_sh = Some(now_ms);
+                                    user.speed_steps = 0;
+                                    user.speed_window_start = now;
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -227,6 +276,19 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
     if !legal {
         // Check if there's a map exit at the target tile
         if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
+            // VB6 M22: dead players cannot enter maps that have OnDeathGoTo defined
+            let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
+            let exit_map_restricts_dead = state.game_data.maps
+                .get(exit_map as usize)
+                .and_then(|m| m.as_ref())
+                .map(|m| m.info.on_death_go_to.0 != 0)
+                .unwrap_or(false);
+            if is_dead && exit_map_restricts_dead {
+                state.send_console(conn_id, "Solo se permite entrar al mapa a los personajes vivos.", crate::protocol::font_index::INFO);
+                state.send_bytes(conn_id, &binary_packets::write_pos_update(old_x as i16, old_y as i16));
+                return;
+            }
+
             // FX if tile has otTeleport object OR particle group (particle teleports)
             let (has_teleport_fx, teleport_radio) = {
                 let obj_idx = get_map_tile_obj(state, map, new_x, new_y);
@@ -367,6 +429,19 @@ pub(super) async fn handle_walk(state: &mut GameState, conn_id: ConnectionId, he
 
     // VB6 DoTileEvents: check tile exit AFTER successful movement (map transitions)
     if let Some((exit_map, exit_x, exit_y)) = state.get_tile_exit(map, new_x, new_y) {
+        // VB6 M22: dead players cannot enter maps that have OnDeathGoTo defined
+        let is_dead = state.users.get(&conn_id).map(|u| u.dead).unwrap_or(false);
+        let exit_map_restricts_dead = state.game_data.maps
+            .get(exit_map as usize)
+            .and_then(|m| m.as_ref())
+            .map(|m| m.info.on_death_go_to.0 != 0)
+            .unwrap_or(false);
+        if is_dead && exit_map_restricts_dead {
+            state.send_console(conn_id, "Solo se permite entrar al mapa a los personajes vivos.", crate::protocol::font_index::INFO);
+            state.send_bytes(conn_id, &binary_packets::write_pos_update(new_x as i16, new_y as i16));
+            return;
+        }
+
         // FX if tile has otTeleport object OR particle group (particle teleports)
         let (has_teleport_fx, teleport_radio) = {
             let obj_idx = get_map_tile_obj(state, map, new_x, new_y);

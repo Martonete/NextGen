@@ -809,3 +809,230 @@ pub(super) async fn handle_slash_panelgm(state: &mut GameState, conn_id: Connect
 pub(super) async fn handle_slash_alerta(state: &mut GameState, conn_id: ConnectionId) {
     alertar_faccionarios(state, conn_id).await;
 }
+
+// =====================================================================
+// M30: Missing GM Commands — TurnCriminal, ResetFacciones, ForceMidiMap, AlterName
+// =====================================================================
+
+/// /CONDEN <name> — TurnCriminal: make target player criminal. Requires DIOS+.
+/// VB6: VolverCriminal — zeroes burgues/noble/plebe rep, adds 100 to bandido (capped at 6M),
+/// expels from Royal Army, clears atacable_por, recalculates criminal status.
+pub(super) async fn handle_slash_conden(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+        _ => return,
+    }
+
+    let target_conn = match state.find_user_by_name(target) {
+        Some(c) => c,
+        None => {
+            state.send_console(conn_id, "Jugador no encontrado.", font_index::INFO);
+            return;
+        }
+    };
+
+    // VB6: only applies to User/Consejero privilege levels (not GMs — SEMIDIOS and above)
+    let target_priv = state.users.get(&target_conn).map(|u| u.privileges).unwrap_or(-1);
+    if target_priv > privilege_level::CONSEJERO {
+        state.send_console(conn_id, "No puedes condenar a un GM.", font_index::INFO);
+        return;
+    }
+
+    const VL_ASALTO: i32 = 100;
+    const MAX_REP: i32 = 6_000_000;
+
+    // Check if in combat zone (VB6: ZonaPelea trigger skips)
+    let (pos_map, pos_x, pos_y) = match state.users.get(&target_conn) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+        None => return,
+    };
+    let in_combat_zone = {
+        use crate::data::maps::Trigger;
+        state.game_data.maps.get(pos_map as usize)
+            .and_then(|m| m.as_ref())
+            .and_then(|m| m.tiles.get((pos_x - 1) as usize, (pos_y - 1) as usize))
+            .map(|t| matches!(t.trigger, Trigger::CombatZone))
+            .unwrap_or(false)
+    };
+
+    if in_combat_zone {
+        state.send_console(conn_id, "El jugador se encuentra en zona de pelea.", font_index::INFO);
+        return;
+    }
+
+    // Apply criminal penalties
+    let was_armada = if let Some(u) = state.users.get_mut(&target_conn) {
+        u.rep_burgues = 0;
+        u.rep_noble = 0;
+        u.rep_plebe = 0;
+        u.rep_bandido = (u.rep_bandido + VL_ASALTO).min(MAX_REP);
+        u.atacable_por = 0;
+        u.armada_real
+    } else {
+        false
+    };
+
+    // Expel from Royal Army if member (reset flag; full armor unequip happens via /NOREAL)
+    if was_armada {
+        if let Some(u) = state.users.get_mut(&target_conn) {
+            u.armada_real = false;
+        }
+        state.send_console(target_conn, "Has sido expulsado del ejercito real.", font_index::FIGHT);
+    }
+
+    // Recalculate criminal status: L = (-asesino - bandido + burgues - ladrones + noble + plebe) / 6
+    if let Some(u) = state.users.get_mut(&target_conn) {
+        let l = (-u.rep_asesino - u.rep_bandido + u.rep_burgues
+                 - u.rep_ladrones + u.rep_noble + u.rep_plebe) / 6;
+        u.criminal = l < 0;
+    }
+
+    // Refresh CC for nearby players
+    let (cc_pkt, map, x, y) = match state.users.get(&target_conn) {
+        Some(u) if u.logged => (u.build_cc_binary(), u.pos_map, u.pos_x, u.pos_y),
+        _ => return,
+    };
+    state.send_data_bytes(SendTarget::ToArea { map, x, y }, &cc_pkt);
+
+    let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(conn_id, &format!("{} ha sido condenado.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Un administrador te ha convertido en criminal.", font_index::FIGHT);
+    info!("[GM] {} condemned {} to criminal", admin_name, target_name);
+}
+
+/// /RAJAR <name> — ResetFacciones: reset all faction data for target player. Requires DIOS+.
+/// VB6: Only works on online players (offline support omitted — no file-based charfiles in Rust).
+pub(super) async fn handle_slash_rajar(state: &mut GameState, conn_id: ConnectionId, target: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::DIOS => {}
+        _ => return,
+    }
+
+    let target_conn = match state.find_user_by_name(target) {
+        Some(c) => c,
+        None => {
+            state.send_console(conn_id, "Jugador no encontrado (debe estar online).", font_index::INFO);
+            return;
+        }
+    };
+
+    // Reset all faction fields (VB6: ResetFacciones)
+    if let Some(u) = state.users.get_mut(&target_conn) {
+        u.armada_real = false;
+        u.fuerzas_caos = false;
+        u.ciudadanos_matados = 0;
+        u.criminales_matados = 0;
+        u.recompensas_real = 0;
+        u.recompensas_caos = 0;
+        u.reenlistadas = false;
+        u.nivel_ingreso = 0;
+        u.fecha_ingreso = String::new();
+        u.matados_ingreso = 0;
+        u.next_recompensa = 0;
+        u.recibio_armadura_real = false;
+        u.recibio_armadura_caos = false;
+    }
+
+    let target_name = state.users.get(&target_conn).map(|u| u.char_name.clone()).unwrap_or_default();
+    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(conn_id, &format!("Facciones de {} reseteadas.", target_name), font_index::INFO);
+    state.send_console(target_conn, "Tus datos de faccion han sido reseteados por un administrador.", font_index::FIGHT);
+    info!("[GM] {} reset factions for {}", admin_name, target_name);
+}
+
+/// /FORCEMIDIMAP <midi> [map] — Force play a MIDI on all users of a map. Requires SEMIDIOS+.
+/// If map is omitted, uses the GM's current map.
+pub(super) async fn handle_slash_forcemidimap(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::SEMIDIOS => {}
+        _ => return,
+    }
+
+    let parts: Vec<&str> = args.split_whitespace().collect();
+    if parts.is_empty() {
+        state.send_console(conn_id, "Uso: /FORCEMIDIMAP <midi_id> [mapa]", font_index::INFO);
+        return;
+    }
+
+    let midi_id: u8 = parts[0].parse().unwrap_or(0);
+    if midi_id == 0 {
+        state.send_console(conn_id, "ID de MIDI invalido.", font_index::INFO);
+        return;
+    }
+
+    let gm_map = state.users.get(&conn_id).map(|u| u.pos_map).unwrap_or(0);
+    let target_map: i32 = if parts.len() >= 2 {
+        parts[1].parse().unwrap_or(gm_map)
+    } else {
+        gm_map
+    };
+
+    let targets: Vec<ConnectionId> = state.users.values()
+        .filter(|u| u.logged && u.pos_map == target_map)
+        .map(|u| u.conn_id)
+        .collect();
+
+    let midi_pkt = binary_packets::write_play_midi(midi_id);
+    let count = targets.len();
+    for t in targets {
+        state.send_bytes(t, &midi_pkt);
+    }
+
+    let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    state.send_console(conn_id, &format!("MIDI {} enviado a {} jugadores en mapa {}.", midi_id, count, target_map), font_index::INFO);
+    info!("[GM] {} forced MIDI {} on map {} ({} players)", admin_name, midi_id, target_map, count);
+}
+
+/// /ANAME <old_name> <new_name> — AlterName: rename a character (offline only). Requires ADMINISTRADOR+.
+/// Updates the character name in the database account charlist.
+pub(super) async fn handle_slash_aname(state: &mut GameState, conn_id: ConnectionId, args: &str) {
+    match state.users.get(&conn_id) {
+        Some(u) if u.logged && u.privileges >= privilege_level::ADMINISTRADOR => {}
+        _ => return,
+    }
+
+    let parts: Vec<&str> = args.splitn(2, ' ').collect();
+    if parts.len() < 2 {
+        state.send_console(conn_id, "Uso: /ANAME <nombre_actual> <nombre_nuevo>", font_index::INFO);
+        return;
+    }
+
+    let old_name = parts[0].trim();
+    let new_name = parts[1].trim();
+
+    if new_name.is_empty() || new_name.len() > 20 {
+        state.send_console(conn_id, "El nuevo nombre debe tener entre 1 y 20 caracteres.", font_index::INFO);
+        return;
+    }
+
+    // Target must be offline (VB6: character must not be online)
+    if state.find_user_by_name(old_name).is_some() {
+        state.send_console(conn_id, "El personaje debe estar offline para cambiar su nombre.", font_index::INFO);
+        return;
+    }
+
+    // Also ensure new name is not taken by any online user
+    if state.find_user_by_name(new_name).is_some() {
+        state.send_console(conn_id, "El nuevo nombre ya esta en uso.", font_index::INFO);
+        return;
+    }
+
+    // Rename in DB
+    let pool = state.pool.clone();
+    let old_name_owned = old_name.to_string();
+    let new_name_owned = new_name.to_string();
+    match crate::db::charfile::rename_character(&pool, &old_name_owned, &new_name_owned).await {
+        Ok(true) => {
+            let admin_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+            state.send_console(conn_id, &format!("Personaje '{}' renombrado a '{}'.", old_name_owned, new_name_owned), font_index::INFO);
+            info!("[GM] {} renamed character '{}' -> '{}'", admin_name, old_name_owned, new_name_owned);
+        }
+        Ok(false) => {
+            state.send_console(conn_id, "Personaje no encontrado en la base de datos.", font_index::INFO);
+        }
+        Err(_) => {
+            state.send_console(conn_id, "Error al renombrar el personaje.", font_index::INFO);
+        }
+    }
+}

@@ -119,6 +119,7 @@ pub struct SpellData {
     pub mimetiza: bool,     // VB6: Druid mimicry
     pub remover_maldicion: bool, // VB6: Remove curse
     pub remover_estupidez: bool, // VB6: Remove stun
+    pub remuve_invisibilidad_parcial: bool, // VB6: RemueveInvisibilidadParcial — detect hidden (terrain spell)
     // Staff requirement (VB6: NeedStaff, StaffAffected)
     pub need_staff: i32,
     pub staff_affected: bool,
@@ -166,6 +167,7 @@ impl Default for SpellData {
             cura_veneno: false, remover_paralisis: false, revivir: false,
             estupidez: false, ceguera: false, mimetiza: false,
             remover_maldicion: false, remover_estupidez: false,
+            remuve_invisibilidad_parcial: false,
             need_staff: 0, staff_affected: false,
             num_npc: 0, cant: 0,
             portal_map: 0, portal_x: 0, portal_y: 0,
@@ -254,6 +256,7 @@ pub fn load_spells(base: &Path) -> Result<Vec<SpellData>, String> {
             mimetiza: get_bool("Mimetiza"),
             remover_maldicion: get_bool("RemoverMaldicion"),
             remover_estupidez: get_bool("RemoverEstupidez"),
+            remuve_invisibilidad_parcial: get_bool("RemueveInvisibilidadParcial"),
             need_staff: get_int("NeedStaff"),
             staff_affected: get_bool("StaffAffected"),
             num_npc: get_int("numNPC"),

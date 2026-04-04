@@ -1015,6 +1015,11 @@ pub(crate) async fn connect_user(
         state.send_bytes(conn_id, &binary_packets::write_rain_toggle());
     }
 
+    // --- PHASE 16b: Night state (VB6 M19: send NOC packet so client reflects day/night on login) ---
+    if state.forced_night {
+        state.send_bytes(conn_id, &binary_packets::write_send_night(true));
+    }
+
     info!(
         "[AUTH] '{}' logged in (CharIdx={}, Map {}, {},{}) — {} users online",
         char_name, char_index.0, map, x, y, state.num_users

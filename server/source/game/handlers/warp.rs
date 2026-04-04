@@ -495,6 +495,40 @@ pub(crate) async fn warp_user_inner(state: &mut GameState, conn_id: ConnectionId
     }
     state.world.remove_user(old_map, old_x, old_y);
 
+    // VB6 I8: On map change, clear NPC combat state targeting this player.
+    // Clear the player's target flags, and clear any NPCs that were attacking this player.
+    let char_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
+    {
+        // Find all NPC indices that target this user or were attacked by them
+        let npc_count = state.npcs.len();
+        let mut npcs_to_clear: Vec<usize> = Vec::new();
+        for i in 0..npc_count {
+            if let Some(Some(npc)) = state.npcs.get(i) {
+                let targets_player = npc.target == Some(conn_id);
+                let attacked_by_player = npc.attacked_by == char_name && !char_name.is_empty();
+                if targets_player || attacked_by_player {
+                    npcs_to_clear.push(i);
+                }
+            }
+        }
+        for i in npcs_to_clear {
+            if let Some(Some(npc)) = state.npcs.get_mut(i) {
+                if npc.target == Some(conn_id) {
+                    npc.target = None;
+                }
+                if npc.attacked_by == char_name && !char_name.is_empty() {
+                    npc.attacked_by = String::new();
+                    // Restore original movement/hostile if in defense mode
+                    if npc.old_movement != 0 {
+                        npc.movement = npc.old_movement;
+                        npc.old_movement = 0;
+                    }
+                    npc.hostile = npc.old_hostile;
+                }
+            }
+        }
+    }
+
     // Cancel resting and meditating on map change (VB6: WarpUserChar)
     let was_meditating = state.users.get(&conn_id).map(|u| u.meditating).unwrap_or(false);
     if let Some(user) = state.users.get_mut(&conn_id) {

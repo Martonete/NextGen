@@ -446,6 +446,15 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
                 return;
             }
 
+            // VB6 parity: cannot learn spells while starving or dehydrated
+            let (min_ham, min_agua) = state.users.get(&conn_id)
+                .map(|u| (u.min_ham, u.min_agua))
+                .unwrap_or((1, 1));
+            if min_ham <= 0 || min_agua <= 0 {
+                state.send_console(conn_id, "No puedes aprender hechizos estando hambriento o sediento.", font_index::INFO);
+                return;
+            }
+
             // VB6: Check if user already knows this spell
             let already_known = state.users.get(&conn_id)
                 .map(|u| u.spells.iter().any(|&s| s == spell_id))
@@ -487,13 +496,14 @@ pub(crate) async fn handle_use_item_inner(state: &mut GameState, conn_id: Connec
             }
         }
         ObjType::EmptyBottle => {
-            // VB6: Fill bottle at water source — check if standing on water tile
+            // VB6: Fill bottle at water source — check if target tile (last left-click) has water.
+            // VB6: HayAgua(.Pos.Map, .flags.TargetX, .flags.TargetY)
             let on_water = {
-                let (map, px, py) = match state.users.get(&conn_id) {
-                    Some(u) => (u.pos_map, u.pos_x, u.pos_y),
+                let (map, tx, ty) = match state.users.get(&conn_id) {
+                    Some(u) => (u.pos_map, u.target_x, u.target_y),
                     None => { return; }
                 };
-                state.hay_agua(map, px, py)
+                state.hay_agua(map, tx, ty)
             };
 
             if on_water && obj_data.index_abierta > 0 {

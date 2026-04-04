@@ -489,11 +489,11 @@ pub(super) async fn npc_die(
 ) {
     let npc_info = match state.get_npc(npc_idx) {
         Some(n) => (n.map, n.x, n.y, n.char_index, n.name.clone(), n.npc_number,
-                    n.snd3, n.maestro_user),
+                    n.snd3, n.maestro_user, n.alineacion),
         None => return,
     };
     let (map, x, y, char_index, npc_name, npc_number,
-         snd3, is_pet_owner) = npc_info;
+         snd3, is_pet_owner, npc_alineacion) = npc_info;
 
     // 1) Death sound (VB6: TW{snd3})
     if snd3 > 0 {
@@ -549,9 +549,196 @@ pub(super) async fn npc_die(
         state.send_msg_id(killer_id, 56, &gold_award.to_string()); // TEXTO56: La criatura ha dejado %1 monedas
     }
 
+    // M2: Increment npcs_muertos counter (VB6: Stats.NPCsMuertos + 1)
+    if let Some(killer) = state.users.get_mut(&killer_id) {
+        if killer.npcs_muertos < 32000 {
+            killer.npcs_muertos += 1;
+        }
+    }
+
+    // M1: Reputation awards based on NPC alignment (VB6: MuereNpc alignment branch)
+    // Constants from VB6 Declares.bas: vlASESINO=1000, vlCAZADOR=5, MAXREP=6000000
+    // Also: Guardias NPC number = 6 (VB6: Public Const Guardias = 6)
+    const MAXREP: i32 = 6_000_000;
+    const VL_ASESINO: i32 = 1000;
+    const VL_CAZADOR: i32 = 5;
+    const NPC_NUMBER_GUARDIAS: usize = 6;
+    let was_criminal = state.users.get(&killer_id).map(|u| u.criminal).unwrap_or(false);
+    let is_caos = state.users.get(&killer_id).map(|u| u.fuerzas_caos).unwrap_or(false);
+    let npc_is_pet = is_pet_owner.is_some();
+
+    if npc_alineacion == 0 {
+        // Alignment 0 (citizen/guardia): killing a guard zeros noble+plebe, raises asesino
+        // Killing any alignment-0 NPC (not a pet) raises asesino
+        if npc_number == NPC_NUMBER_GUARDIAS {
+            if let Some(killer) = state.users.get_mut(&killer_id) {
+                killer.rep_noble = 0;
+                killer.rep_plebe = 0;
+                killer.rep_asesino = (killer.rep_asesino + 500).min(MAXREP);
+            }
+        }
+        if !npc_is_pet {
+            if let Some(killer) = state.users.get_mut(&killer_id) {
+                killer.rep_asesino = (killer.rep_asesino + VL_ASESINO).min(MAXREP);
+            }
+        }
+    } else if !is_caos {
+        // Non-citizen NPCs: only non-Caos users get reputation for killing them
+        if npc_alineacion == 1 {
+            // Alignment 1: raise plebe (vlCAZADOR)
+            if let Some(killer) = state.users.get_mut(&killer_id) {
+                killer.rep_plebe = (killer.rep_plebe + VL_CAZADOR).min(MAXREP);
+            }
+        } else if npc_alineacion == 2 {
+            // Alignment 2: raise noble (vlASESINO / 2)
+            if let Some(killer) = state.users.get_mut(&killer_id) {
+                killer.rep_noble = (killer.rep_noble + VL_ASESINO / 2).min(MAXREP);
+            }
+        } else if npc_alineacion == 4 {
+            // Alignment 4: raise plebe (vlCAZADOR)
+            if let Some(killer) = state.users.get_mut(&killer_id) {
+                killer.rep_plebe = (killer.rep_plebe + VL_CAZADOR).min(MAXREP);
+            }
+        }
+    }
+
+    // Recalculate criminal status after reputation change
+    // VB6: L = (-asesino - bandido + burgues - ladrones + noble + plebe) / 6; criminal = L < 0
+    {
+        let new_criminal = if let Some(killer) = state.users.get_mut(&killer_id) {
+            let l = (-killer.rep_asesino - killer.rep_bandido + killer.rep_burgues
+                     - killer.rep_ladrones + killer.rep_noble + killer.rep_plebe) / 6;
+            killer.criminal = l < 0;
+            killer.criminal
+        } else {
+            was_criminal
+        };
+
+        // M3: Faction expulsion after criminal status change (VB6: ExpulsarFaccionReal/ExpulsarFaccionCaos)
+        if was_criminal != new_criminal {
+            let (armada, caos) = state.users.get(&killer_id)
+                .map(|u| (u.armada_real, u.fuerzas_caos))
+                .unwrap_or((false, false));
+
+            if new_criminal && armada {
+                // User became criminal — expel from Armada Real
+                expulsar_faccion_real(state, killer_id).await;
+            } else if !new_criminal && caos {
+                // User became citizen — expel from Fuerzas Caos
+                expulsar_faccion_caos(state, killer_id).await;
+            }
+        }
+    }
+
+    // M4: Remove paralysis from users whose paralysis was caused by this dying NPC
+    // VB6: If NpcIndex = UserList(UserIndex).flags.ParalizedByNpcIndex Then RemoveParalisis
+    let paralysis_victims: Vec<ConnectionId> = state.users.values()
+        .filter(|u| u.logged && u.paralyzed && u.paralyzed_by_npc == Some(npc_idx))
+        .map(|u| u.conn_id)
+        .collect();
+    for victim_conn in paralysis_victims {
+        if let Some(victim) = state.users.get_mut(&victim_conn) {
+            victim.paralyzed = false;
+            victim.immobilized = false;
+            victim.counter_paralisis = 0;
+            victim.paralyzed_by = None;
+            victim.paralyzed_by_npc = None;
+        }
+        let pkt = binary_packets::write_paralize_ok(0);
+        state.send_bytes(victim_conn, &pkt);
+    }
+
     info!("[NPC] '{}' killed NPC '{}' (idx={}, +{} gold)",
           state.users.get(&killer_id).map(|u| u.char_name.as_str()).unwrap_or("?"),
           npc_name, npc_idx, gold_award);
+}
+
+/// VB6: ExpulsarFaccionReal — expel user from Armada Real.
+/// Resets faction flag, unequips faction armor/shield, sends message.
+async fn expulsar_faccion_real(state: &mut GameState, conn_id: ConnectionId) {
+    // Unequip faction armor if equipped
+    let armor_slot = state.users.get(&conn_id).map(|u| u.equip.armor).unwrap_or(0);
+    if armor_slot > 0 && armor_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id)
+            .map(|u| u.inventory[armor_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_real = state.get_object(obj_idx).map(|o| o.real).unwrap_or(false);
+            if is_real {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[armor_slot - 1].equipped = false;
+                    user.equip.armor = 0;
+                }
+            }
+        }
+    }
+
+    // Unequip faction shield if equipped
+    let shield_slot = state.users.get(&conn_id).map(|u| u.equip.shield).unwrap_or(0);
+    if shield_slot > 0 && shield_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id)
+            .map(|u| u.inventory[shield_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_real = state.get_object(obj_idx).map(|o| o.real).unwrap_or(false);
+            if is_real {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[shield_slot - 1].equipped = false;
+                    user.equip.shield = 0;
+                    user.shield_anim = 0;
+                }
+            }
+        }
+    }
+
+    // Reset faction flag
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.armada_real = false;
+    }
+
+    state.send_console(conn_id, "¡¡¡Has sido expulsado del ejército real!!!", font_index::FIGHT);
+}
+
+/// VB6: ExpulsarFaccionCaos — expel user from Fuerzas Caos.
+/// Resets faction flag, unequips faction armor/shield, sends message.
+async fn expulsar_faccion_caos(state: &mut GameState, conn_id: ConnectionId) {
+    // Unequip faction armor if equipped
+    let armor_slot = state.users.get(&conn_id).map(|u| u.equip.armor).unwrap_or(0);
+    if armor_slot > 0 && armor_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id)
+            .map(|u| u.inventory[armor_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_caos = state.get_object(obj_idx).map(|o| o.caos).unwrap_or(false);
+            if is_caos {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[armor_slot - 1].equipped = false;
+                    user.equip.armor = 0;
+                }
+            }
+        }
+    }
+
+    // Unequip faction shield if equipped
+    let shield_slot = state.users.get(&conn_id).map(|u| u.equip.shield).unwrap_or(0);
+    if shield_slot > 0 && shield_slot <= MAX_INVENTORY_SLOTS {
+        let obj_idx = state.users.get(&conn_id)
+            .map(|u| u.inventory[shield_slot - 1].obj_index).unwrap_or(0);
+        if obj_idx > 0 {
+            let is_caos = state.get_object(obj_idx).map(|o| o.caos).unwrap_or(false);
+            if is_caos {
+                if let Some(user) = state.users.get_mut(&conn_id) {
+                    user.inventory[shield_slot - 1].equipped = false;
+                    user.equip.shield = 0;
+                    user.shield_anim = 0;
+                }
+            }
+        }
+    }
+
+    // Reset faction flag
+    if let Some(user) = state.users.get_mut(&conn_id) {
+        user.fuerzas_caos = false;
+    }
+
+    state.send_console(conn_id, "¡¡¡Has sido expulsado de la Legión Oscura!!!", font_index::FIGHT);
 }
 
 
@@ -1029,10 +1216,66 @@ pub(super) async fn npc_cast_spell(state: &mut GameState, npc_idx: usize, target
             if let Some(user) = state.users.get_mut(&target_conn) {
                 user.paralyzed = true;
                 user.counter_paralisis = state.intervals.paralizado;
+                // VB6: flags.ParalizedByNpcIndex — track which NPC paralyzed this user
+                user.paralyzed_by_npc = Some(npc_idx);
             }
             let duration_secs = (state.intervals.paralizado as f32 * 0.04) as i16;
             let pkt = binary_packets::write_paralize_ok(duration_secs);
             state.send_bytes(target_conn, &pkt);
+        }
+    }
+
+    // Stun/Estupidez effect — VB6: NpcLanzaSpellSobreUser, flags.Estupidez
+    // Only applies if target is not already stunned. SUPERANILLO blocks.
+    if spell.estupidez {
+        const SUPERANILLO: i32 = 700;
+        let ring_slot = state.users.get(&target_conn).map(|u| u.equip.ring).unwrap_or(0);
+        let ring_obj = if ring_slot > 0 && ring_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+            state.users.get(&target_conn).map(|u| u.inventory[ring_slot - 1].obj_index).unwrap_or(0)
+        } else { 0 };
+        let already_stunned = state.users.get(&target_conn).map(|u| u.stunned).unwrap_or(false);
+        if !already_stunned {
+            if ring_obj == SUPERANILLO {
+                state.send_console(target_conn, "Tu anillo rechaza los efectos del hechizo.", font_index::INFO);
+            } else {
+                let interval = state.intervals.invisible;
+                if let Some(user) = state.users.get_mut(&target_conn) {
+                    user.stunned = true;
+                    user.counter_stun = interval; // VB6: Counters.Ceguera = IntervaloInvisible
+                    // VB6: Blindness and Stun share Counters.Ceguera — they cannot stack
+                    user.blind = false;
+                    user.counter_blind = 0;
+                }
+                let pkt = binary_packets::write_silence();
+                state.send_bytes(target_conn, &pkt);
+            }
+        }
+    }
+
+    // Blindness/Ceguera effect — VB6: NpcLanzaSpellSobreUser, flags.Ceguera
+    // Only applies if target is not already blinded. SUPERANILLO blocks.
+    if spell.ceguera {
+        const SUPERANILLO: i32 = 700;
+        let ring_slot = state.users.get(&target_conn).map(|u| u.equip.ring).unwrap_or(0);
+        let ring_obj = if ring_slot > 0 && ring_slot <= crate::game::types::MAX_INVENTORY_SLOTS {
+            state.users.get(&target_conn).map(|u| u.inventory[ring_slot - 1].obj_index).unwrap_or(0)
+        } else { 0 };
+        let already_blind = state.users.get(&target_conn).map(|u| u.blind).unwrap_or(false);
+        if !already_blind {
+            if ring_obj == SUPERANILLO {
+                state.send_console(target_conn, "Tu anillo rechaza los efectos del hechizo.", font_index::INFO);
+            } else {
+                let interval = state.intervals.invisible;
+                if let Some(user) = state.users.get_mut(&target_conn) {
+                    user.blind = true;
+                    user.counter_blind = interval; // VB6: Counters.Ceguera = IntervaloInvisible
+                    // VB6: Blindness and Stun share Counters.Ceguera — they cannot stack
+                    user.stunned = false;
+                    user.counter_stun = 0;
+                }
+                let pkt = binary_packets::write_blind();
+                state.send_bytes(target_conn, &pkt);
+            }
         }
     }
 }

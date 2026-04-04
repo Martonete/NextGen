@@ -18,6 +18,10 @@ const MAX_LEVEL: i32 = 255;
 /// Check if user has enough exp to level up, and apply it.
 /// VB6 parity: two separate paths for levels 1-49 vs 50+.
 pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionId) {
+    // VB6: QuitarNewbieObj is called when player stops being newbie (level > 12).
+    // Record whether they were newbie before the level-up loop.
+    let was_newbie = state.users.get(&conn_id).map(|u| u.level <= 12).unwrap_or(false);
+
     loop {
         let (level, exp, class, race, intelligence, constitution) = match state.users.get(&conn_id) {
             Some(u) if u.logged => (
@@ -148,6 +152,76 @@ pub(crate) async fn check_user_level(state: &mut GameState, conn_id: ConnectionI
         }
 
         // Continue looping in case of multi-level jumps
+    }
+
+    // VB6: QuitarNewbieObj — called when player was newbie and is now no longer newbie.
+    // Removes newbie items from inventory; teleports out of newbie dungeon.
+    let is_now_newbie = state.users.get(&conn_id).map(|u| u.level <= 12).unwrap_or(true);
+    if was_newbie && !is_now_newbie {
+        quitar_newbie_obj(state, conn_id).await;
+    }
+}
+
+/// VB6: QuitarNewbieObj — remove newbie items when player stops being a newbie.
+/// Removes all inventory items with `newbie == true`, then teleports player out
+/// of the newbie dungeon if they're currently in a newbie zone.
+async fn quitar_newbie_obj(state: &mut GameState, conn_id: ConnectionId) {
+    // Remove newbie items from inventory
+    let slots_to_clear: Vec<usize> = {
+        match state.users.get(&conn_id) {
+            Some(u) => u.inventory.iter().enumerate().filter_map(|(i, slot)| {
+                if slot.obj_index > 0 {
+                    let is_newbie_item = state.game_data.objects
+                        .get((slot.obj_index - 1) as usize)
+                        .map(|o| o.newbie)
+                        .unwrap_or(false);
+                    if is_newbie_item { Some(i) } else { None }
+                } else {
+                    None
+                }
+            }).collect(),
+            None => return,
+        }
+    };
+
+    for slot_idx in slots_to_clear {
+        if let Some(u) = state.users.get_mut(&conn_id) {
+            u.inventory[slot_idx].obj_index = 0;
+            u.inventory[slot_idx].amount = 0;
+            u.inventory[slot_idx].equipped = false;
+        }
+        super::send_inventory_slot(state, conn_id, slot_idx).await;
+    }
+
+    // VB6: If in newbie dungeon, teleport to hometown
+    let (map, x, y, hogar) = match state.users.get(&conn_id) {
+        Some(u) => (u.pos_map, u.pos_x, u.pos_y, u.hogar.clone()),
+        None => return,
+    };
+
+    let in_newbie_zone = state.game_data.maps
+        .get(map as usize)
+        .and_then(|m| m.as_ref())
+        .and_then(|gm| gm.get_zone_at(x - 1, y - 1))
+        .map(|z| z.newbie)
+        .unwrap_or(false);
+
+    if in_newbie_zone {
+        let (home_map, home_x, home_y) = resolve_home_city_for_newbie(&hogar);
+        if home_map > 0 {
+            super::warp_user(state, conn_id, home_map, home_x, home_y).await;
+        }
+    }
+}
+
+/// Resolve hometown warp coordinates for QuitarNewbieObj.
+/// VB6: Lindos/Ullathorpe/Banderbill/Nix select block.
+fn resolve_home_city_for_newbie(hogar: &str) -> (i32, i32, i32) {
+    match hogar.to_uppercase().as_str() {
+        "LINDOS"      => (28, 50, 50),
+        "ULLATHORPE"  => (1, 50, 50),
+        "BANDERBILL"  => (14, 50, 50),
+        _             => (3, 50, 50), // Default: Nix
     }
 }
 

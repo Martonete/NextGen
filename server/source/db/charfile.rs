@@ -1000,6 +1000,20 @@ pub async fn load_penalties(pool: &PgPool, char_name: &str) -> Vec<String> {
     rows.into_iter().map(|(t,)| t).collect()
 }
 
+/// Rename a character. Returns Ok(true) if found and renamed, Ok(false) if not found.
+/// VB6 /ANAME parity: updates the name column in characters table.
+pub async fn rename_character(pool: &PgPool, old_name: &str, new_name: &str) -> Result<bool, String> {
+    let rows = sqlx::query(
+        "UPDATE characters SET name = $1 WHERE UPPER(name) = UPPER($2)"
+    )
+    .bind(new_name)
+    .bind(old_name)
+    .execute(pool)
+    .await
+    .map_err(|e| format!("DB error renaming character: {}", e))?;
+    Ok(rows.rows_affected() > 0)
+}
+
 // --- Starter data helpers (same as data/charfile.rs) ---
 
 fn starter_body(race: &str, gender: i32) -> i32 {

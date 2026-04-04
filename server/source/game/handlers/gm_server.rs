@@ -615,6 +615,16 @@ pub(super) async fn handle_slash_noche(state: &mut GameState, conn_id: Connectio
     let status = if state.forced_night { "activada" } else { "desactivada" };
     state.send_console(conn_id, &format!("Noche forzada {}.", status), font_index::INFO);
 
+    // VB6 M19: broadcast NOC packet to all online users so clients update sky color.
+    let night_pkt = binary_packets::write_send_night(state.forced_night);
+    let online_ids: Vec<ConnectionId> = state.users.iter()
+        .filter(|(_, u)| u.logged)
+        .map(|(id, _)| *id)
+        .collect();
+    for id in online_ids {
+        state.send_bytes(id, &night_pkt);
+    }
+
     let gm_name = state.users.get(&conn_id).map(|u| u.char_name.clone()).unwrap_or_default();
     info!("[GM] {} toggled forced night: {}", gm_name, state.forced_night);
 }

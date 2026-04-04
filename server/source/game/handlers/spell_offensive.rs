@@ -309,7 +309,40 @@ pub(super) async fn apply_spell_status_npc(
             // VB6: NPCs use the same paralysis duration as users (IntervaloParalizado)
             npc.counter_paralisis = paralisis_interval;
         }
-        // VB6: RemoverParalisis does NOT work on NPCs (only users)
+        // I2: Invisibility on NPC — VB6: HechizoEstadoNPC, Invisibilidad branch
+        // NpcState has no invisible field; invisibility not currently supported for NPCs.
+        // I2: Curse/Bless/RemoverMaldicion on NPC — VB6: HechizoEstadoNPC branches
+        // NpcState has no curse/bless fields; these are informational in VB6 and not implemented.
+        let _ = spell.invisibilidad; // placeholder — no NPC invisible flag in this version
+    }
+
+    // I1: RemoverParalisis on NPC — VB6: HechizoEstadoNPC faction restriction
+    // Only works if: NPC master == caster, OR NPC is GuardiaReal and caster is Armada,
+    // OR NPC is GuardiasCaos and caster is Caos.
+    if spell.remover_paralisis {
+        use crate::data::npcs::NpcType;
+        let (npc_paralyzed, npc_maestro, npc_type) = state.get_npc(npc_idx)
+            .map(|n| (n.paralyzed, n.maestro_user, n.npc_type))
+            .unwrap_or((false, None, NpcType::Common));
+        let (caster_armada, caster_caos) = state.users.get(&caster_id)
+            .map(|u| (u.armada_real, u.fuerzas_caos))
+            .unwrap_or((false, false));
+        let allowed = npc_maestro == Some(caster_id)
+            || (npc_type == NpcType::RoyalGuard && caster_armada)
+            || (npc_type == NpcType::ChaosGuard && caster_caos);
+        if npc_paralyzed && allowed {
+            if let Some(npc) = state.get_npc_mut(npc_idx) {
+                npc.paralyzed = false;
+                npc.counter_paralisis = 0;
+            }
+        } else if npc_paralyzed && !allowed {
+            state.send_console(caster_id,
+                "Solo puedes remover la parálisis de los NPCs que te consideren su amo.",
+                font_index::INFO);
+        } else {
+            state.send_console(caster_id, "Este NPC no está paralizado",
+                font_index::INFO);
+        }
     }
 }
 

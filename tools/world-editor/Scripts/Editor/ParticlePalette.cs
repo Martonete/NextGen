@@ -17,7 +17,10 @@ public partial class ParticlePalette : VBoxContainer
 
     public ParticleEngine? Engine;
     public EditorState? State;
+    public GrhData[]? Grhs;
+    public TextureManager? Textures;
 
+    private ParticlePreview? _preview;
     private LineEdit? _searchBox;
     private ScrollContainer? _scroll;
     private VBoxContainer? _listContainer;
@@ -32,6 +35,14 @@ public partial class ParticlePalette : VBoxContainer
         SizeFlagsHorizontal = SizeFlags.ExpandFill;
         ClipContents = true;
         AddThemeConstantOverride("separation", 3);
+
+        // Preview area (live animated particle preview)
+        var previewLabel = EditorTheme.MakeLabel("Preview", EditorTheme.TEXT_MUTED, EditorTheme.FONT_SM);
+        previewLabel.HorizontalAlignment = HorizontalAlignment.Center;
+        AddChild(previewLabel);
+
+        _preview = new ParticlePreview();
+        AddChild(_preview);
 
         // Search box
         _searchBox = new LineEdit
@@ -198,6 +209,14 @@ public partial class ParticlePalette : VBoxContainer
 
         btn.SetPressedNoSignal(true);
 
+        if (_preview != null)
+        {
+            _preview.Grhs = Grhs;
+            _preview.Textures = Textures;
+            _preview.Engine = Engine;
+            _preview.SetDefinition(groupId);
+        }
+
         if (State != null)
         {
             State.SelectedParticleGroup = groupId;
@@ -213,4 +232,129 @@ public partial class ParticlePalette : VBoxContainer
     }
 
     public int SelectedGroup => _selectedGroup;
+
+    // -------------------------------------------------------------------------
+    // Inner class: live particle preview control
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// A fixed-size Control that simulates and renders a single particle stream
+    /// for live preview of the selected particle definition.
+    /// </summary>
+    private sealed partial class ParticlePreview : Control
+    {
+        private const int PreviewWidth  = 160;
+        private const int PreviewHeight = 120;
+        private const float CenterX = PreviewWidth  / 2f;
+        private const float CenterY = PreviewHeight / 2f;
+
+        public GrhData[]?      Grhs;
+        public TextureManager? Textures;
+        public ParticleEngine? Engine;
+
+        private EditorParticleStream? _stream;
+        private int _defIndex;
+        private bool _hasDefinition;
+        private Label? _placeholder;
+
+        public override void _Ready()
+        {
+            CustomMinimumSize = new Vector2(PreviewWidth, PreviewHeight);
+            Size              = new Vector2(PreviewWidth, PreviewHeight);
+            ClipContents      = true;
+
+            // Dark background panel
+            var bg = new Panel();
+            bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            bg.AddThemeStyleboxOverride("panel",
+                EditorTheme.FlatBox(EditorTheme.BG_DARK, 2, 0, 0));
+            bg.MouseFilter = MouseFilterEnum.Ignore;
+            AddChild(bg);
+
+            // Placeholder label shown when nothing is selected
+            _placeholder = EditorTheme.MakeLabel(
+                "Selecciona una partícula",
+                EditorTheme.TEXT_MUTED,
+                EditorTheme.FONT_SM);
+            _placeholder.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            _placeholder.HorizontalAlignment = HorizontalAlignment.Center;
+            _placeholder.VerticalAlignment   = VerticalAlignment.Center;
+            _placeholder.AutowrapMode        = TextServer.AutowrapMode.WordSmart;
+            _placeholder.MouseFilter         = MouseFilterEnum.Ignore;
+            AddChild(_placeholder);
+
+            // Additive-blend material, same as ParticleOverlay in MapViewport
+            Material = new CanvasItemMaterial
+            {
+                BlendMode = CanvasItemMaterial.BlendModeEnum.Add
+            };
+        }
+
+        /// <summary>Switch to previewing a new particle definition.</summary>
+        public void SetDefinition(int defIndex)
+        {
+            _defIndex      = defIndex;
+            _hasDefinition = false;
+            _stream        = null;
+
+            if (Engine == null || defIndex < 1 || defIndex >= Engine.Defs.Length) return;
+            var def = Engine.Defs[defIndex];
+            if (def == null || def.NumParticles <= 0) return;
+
+            var stream = new EditorParticleStream
+            {
+                DefIndex  = defIndex,
+                Particles = new EditorParticle[def.NumParticles],
+                Active    = true
+            };
+            for (int i = 0; i < def.NumParticles; i++)
+                stream.Particles[i] = new EditorParticle();
+
+            _stream        = stream;
+            _hasDefinition = true;
+
+            if (_placeholder != null) _placeholder.Visible = false;
+        }
+
+        public override void _Process(double delta)
+        {
+            if (!_hasDefinition || _stream == null || Engine == null) return;
+            if (_defIndex < 1 || _defIndex >= Engine.Defs.Length) return;
+
+            var def = Engine.Defs[_defIndex];
+            if (def == null) return;
+
+            ParticleEngine.UpdateSingleStream(_stream, def, (float)(delta * 1000.0));
+            QueueRedraw();
+        }
+
+        public override void _Draw()
+        {
+            if (!_hasDefinition || _stream == null || Grhs == null || Textures == null) return;
+
+            foreach (var p in _stream.Particles)
+            {
+                if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
+                var grh = Grhs[p.GrhIndex];
+
+                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+                {
+                    int frameIdx = grh.Frames[0];
+                    if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
+                    grh = Grhs[frameIdx];
+                }
+
+                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+                var texture = Textures.GetTexture(grh.FileNum);
+                if (texture == null) continue;
+
+                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+                float drawX = CenterX + p.X - grh.PixelWidth  / 2f;
+                float drawY = CenterY + p.Y - grh.PixelHeight / 2f;
+                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+                var color    = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
+                DrawTextureRectRegion(texture, destRect, srcRect, color);
+            }
+        }
+    }
 }

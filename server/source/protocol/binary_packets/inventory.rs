@@ -255,6 +255,34 @@ pub fn write_paralize_ok(duration_secs: i16) -> Vec<u8> {
     pkt.into_bytes()
 }
 
+/// ID 56: Blind — notify player that they are now blinded (VB6: WriteBlind).
+pub fn write_blind() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Blind.to_byte());
+    pkt.into_bytes()
+}
+
+/// ID 57: Silence (Dumb/Estupidez) — notify player that they are stunned (VB6: WriteDumb).
+pub fn write_silence() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::Silence.to_byte());
+    pkt.into_bytes()
+}
+
+/// ID 70: BlindNoMore — notify player that blindness has ended (VB6: WriteBlindNoMore).
+pub fn write_blind_no_more() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::BlindNoMore.to_byte());
+    pkt.into_bytes()
+}
+
+/// ID 71: SilenceEnd (DumbNoMore) — notify player that stun has ended (VB6: WriteDumbNoMore).
+pub fn write_silence_end() -> Vec<u8> {
+    let mut pkt = ByteQueue::new();
+    pkt.write_byte(ServerPacketID::SilenceEnd.to_byte());
+    pkt.into_bytes()
+}
+
 /// ID 88: Pong.
 pub fn write_pong() -> Vec<u8> {
     let mut pkt = ByteQueue::new();
