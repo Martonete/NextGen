@@ -20,6 +20,7 @@ public partial class MapViewport : Control
     public Action? OnPendingAccept;   // Fire when user clicks ✓ on pending placement
     public Action? OnPendingCancel;   // Fire when user clicks ✗ on pending placement
     public Action? OnSelectionCompleted; // Fire when a drag-selection is released
+    public Action? OnLightEditRequested; // Fire when double-click on light with Light tool
     public int[]? ObjGrhs;
     public int[]? NpcBodies;
     public int[]? NpcHeads;
@@ -1528,13 +1529,23 @@ public partial class MapViewport : Control
 
             if (mb.Pressed)
             {
-                // Double-click: follow exits (any tool)
+                // Double-click: follow exits, or edit light when Light tool is active
                 if (mb.DoubleClick && Map!.InBounds(tile.X, tile.Y))
                 {
                     ref var t = ref Map.Tiles[tile.X, tile.Y];
                     if (t.HasExit)
                     {
                         State!.RequestExitFollow(t.ExitMap, t.ExitX, t.ExitY);
+                        return;
+                    }
+                    // Double-click on existing light with Light tool → load into editor
+                    if (State.ActiveTool == EditorTool.Light && t.HasLight)
+                    {
+                        State.LightR = t.LightR;
+                        State.LightG = t.LightG;
+                        State.LightB = t.LightB;
+                        State.LightRange = t.LightRange;
+                        OnLightEditRequested?.Invoke();
                         return;
                     }
                 }
@@ -2045,6 +2056,55 @@ public partial class MapViewport : Control
         Map.Tiles[x, y].LightB = (short)State.LightB;
         Map.Tiles[x, y].LightRange = (short)State.LightRange;
         Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+        QueueRedraw();
+    }
+
+    /// <summary>Fill a rectangular area with the current light settings.
+    /// Used to quickly illuminate an entire zone or selection.</summary>
+    public void FillLightInRect(int x1, int y1, int x2, int y2)
+    {
+        if (Map == null || State == null) return;
+        int minX = Math.Min(x1, x2), maxX = Math.Max(x1, x2);
+        int minY = Math.Min(y1, y2), maxY = Math.Max(y1, y2);
+
+        Undo?.BeginBatch($"Fill Light ({minX},{minY})→({maxX},{maxY})");
+        int count = 0;
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (!Map.InBounds(x, y)) continue;
+                var before = Map.Tiles[x, y];
+                Map.Tiles[x, y].LightR = (short)State.LightR;
+                Map.Tiles[x, y].LightG = (short)State.LightG;
+                Map.Tiles[x, y].LightB = (short)State.LightB;
+                Map.Tiles[x, y].LightRange = (short)State.LightRange;
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+                count++;
+            }
+        Undo?.EndBatch();
+        QueueRedraw();
+    }
+
+    /// <summary>Clear all lights in a rectangular area.</summary>
+    public void ClearLightInRect(int x1, int y1, int x2, int y2)
+    {
+        if (Map == null) return;
+        int minX = Math.Min(x1, x2), maxX = Math.Max(x1, x2);
+        int minY = Math.Min(y1, y2), maxY = Math.Max(y1, y2);
+
+        Undo?.BeginBatch($"Clear Lights ({minX},{minY})→({maxX},{maxY})");
+        for (int y = minY; y <= maxY; y++)
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (!Map.InBounds(x, y) || !Map.Tiles[x, y].HasLight) continue;
+                var before = Map.Tiles[x, y];
+                Map.Tiles[x, y].LightR = 0;
+                Map.Tiles[x, y].LightG = 0;
+                Map.Tiles[x, y].LightB = 0;
+                Map.Tiles[x, y].LightRange = 0;
+                Undo?.RecordTileChange(x, y, before, Map.Tiles[x, y]);
+            }
+        Undo?.EndBatch();
         QueueRedraw();
     }
 

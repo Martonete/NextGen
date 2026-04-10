@@ -438,6 +438,7 @@ public partial class EditorMain : Control
         _viewport.OnPendingAccept += CommitPendingPlacement;
         _viewport.OnPendingCancel += CancelPendingPlacement;
         _viewport.OnSelectionCompleted += OnSelectionCompleted;
+        _viewport.OnLightEditRequested += OnLightEditRequested;
         AddChild(_viewport);
 
         // Opaque header background — covers viewport overflow in toolbar/navbar area
@@ -594,6 +595,21 @@ public partial class EditorMain : Control
         _lightEraseButton = EditorTheme.MakeButton("Borrar luz (click derecho)");
         _lightEraseButton.Disabled = true; // informational
         _rightLightSection.AddChild(_lightEraseButton);
+
+        // Fill selection with light
+        var fillSelBtn = EditorTheme.MakeButton("Iluminar selección");
+        fillSelBtn.Pressed += OnFillLightSelection;
+        _rightLightSection.AddChild(fillSelBtn);
+
+        // Fill zone with light
+        var fillZoneBtn = EditorTheme.MakeButton("Iluminar zona actual");
+        fillZoneBtn.Pressed += OnFillLightZone;
+        _rightLightSection.AddChild(fillZoneBtn);
+
+        // Clear selection lights
+        var clearSelBtn = EditorTheme.MakeButton("Borrar luces de selección");
+        clearSelBtn.Pressed += OnClearLightSelection;
+        _rightLightSection.AddChild(clearSelBtn);
 
         rightVBox.AddChild(_rightLightSection);
 
@@ -2409,6 +2425,69 @@ public partial class EditorMain : Control
                 _state.SelX1, _state.SelY1, _state.SelX2, _state.SelY2);
             _pendingZonePopup = null;
         }
+    }
+
+    /// <summary>Called when user double-clicks on a light tile — sync sliders to loaded values.</summary>
+    private void OnLightEditRequested()
+    {
+        // Ensure Light tool is active and the right sidebar sliders reflect _state values
+        SetActiveTool(EditorTool.Light);
+        if (_lightSliderR != null) _lightSliderR.Value = _state.LightR;
+        if (_lightSliderG != null) _lightSliderG.Value = _state.LightG;
+        if (_lightSliderB != null) _lightSliderB.Value = _state.LightB;
+        if (_lightSliderRange != null) _lightSliderRange.Value = _state.LightRange;
+        if (_lightLabelR != null) _lightLabelR.Text = $"R: {_state.LightR}";
+        if (_lightLabelG != null) _lightLabelG.Text = $"G: {_state.LightG}";
+        if (_lightLabelB != null) _lightLabelB.Text = $"B: {_state.LightB}";
+        if (_lightLabelRange != null) _lightLabelRange.Text = $"Rango: {_state.LightRange}";
+        UpdateLightPreview();
+        SetStatus("Luz cargada en el editor — modificá y aplicá");
+    }
+
+    /// <summary>Fill the current selection rectangle with current light settings.</summary>
+    private void OnFillLightSelection()
+    {
+        if (_map == null || _viewport == null) return;
+        if (!_state.HasSelection)
+        {
+            SetStatus("No hay selección — usá la herramienta Seleccionar primero");
+            return;
+        }
+        _viewport.FillLightInRect(_state.SelX1, _state.SelY1, _state.SelX2, _state.SelY2);
+        SetStatus($"Luz aplicada a selección {_state.SelX2 - _state.SelX1 + 1}x{_state.SelY2 - _state.SelY1 + 1}");
+    }
+
+    /// <summary>Clear all lights in the current selection rectangle.</summary>
+    private void OnClearLightSelection()
+    {
+        if (_map == null || _viewport == null) return;
+        if (!_state.HasSelection)
+        {
+            SetStatus("No hay selección — usá la herramienta Seleccionar primero");
+            return;
+        }
+        _viewport.ClearLightInRect(_state.SelX1, _state.SelY1, _state.SelX2, _state.SelY2);
+        SetStatus("Luces borradas en selección");
+    }
+
+    /// <summary>Fill the currently selected zone with current light settings.</summary>
+    private void OnFillLightZone()
+    {
+        if (_map == null || _viewport == null || _mapZones == null || _zonePanel == null) return;
+        int zoneId = _zonePanel.SelectedZoneId;
+        if (zoneId < 0)
+        {
+            SetStatus("No hay zona seleccionada — elegí una en el panel Zonas");
+            return;
+        }
+        var zone = _mapZones.Zones.Find(z => z.Id == zoneId);
+        if (zone == null)
+        {
+            SetStatus("Zona no encontrada");
+            return;
+        }
+        _viewport.FillLightInRect(zone.X1, zone.Y1, zone.X2, zone.Y2);
+        SetStatus($"Luz aplicada a zona \"{zone.Name}\"");
     }
 
     private void ShowTrimBordersDialog()
