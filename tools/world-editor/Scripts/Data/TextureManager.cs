@@ -154,29 +154,37 @@ public class TextureManager
 
     /// <summary>
     /// Fast black color key using raw byte buffer.
-    /// Always converts near-black OPAQUE pixels to transparent, even in PNGs
-    /// that already have partial alpha (e.g. particle atlas with soft edges
-    /// AND black padding between sprites).
+    /// Matches the game client exactly: skips PNGs with existing alpha.
     /// </summary>
     private static void ApplyBlackColorKeyFast(Image image)
     {
-        if (image.GetFormat() != Image.Format.Rgba8)
+        bool needsConvert = image.GetFormat() != Image.Format.Rgba8;
+        if (needsConvert)
             image.Convert(Image.Format.Rgba8);
 
         byte[] data = image.GetData();
         int len = data.Length;
 
-        // Apply black color key: near-black pixels that are opaque → transparent.
-        // Preserves existing partial alpha (soft edges, anti-aliasing).
+        // If the image already had alpha, check if it has any non-opaque pixels.
+        // If yes, the PNG has proper transparency — skip color key.
+        if (!needsConvert)
+        {
+            for (int i = 3; i < len; i += 4)
+            {
+                if (data[i] < 250)
+                    return; // image has real transparency, don't touch it
+            }
+        }
+
+        // Apply black color key: (R,G,B) near (0,0,0) → alpha=0
         bool modified = false;
         for (int i = 0; i < len; i += 4)
         {
-            if (data[i] <= BlackThreshold &&      // R near 0
-                data[i + 1] <= BlackThreshold &&   // G near 0
-                data[i + 2] <= BlackThreshold &&   // B near 0
-                data[i + 3] >= 250)                 // currently opaque
+            if (data[i] <= BlackThreshold &&
+                data[i + 1] <= BlackThreshold &&
+                data[i + 2] <= BlackThreshold)
             {
-                data[i + 3] = 0; // A = transparent
+                data[i + 3] = 0;
                 modified = true;
             }
         }

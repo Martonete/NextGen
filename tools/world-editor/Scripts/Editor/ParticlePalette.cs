@@ -293,7 +293,7 @@ public partial class ParticlePalette : VBoxContainer
 
             // Additive overlay draws particles ON TOP of the dark bg
             _overlay = new PreviewOverlay { Owner = this };
-            _overlay.Material = MapViewport.LoadParticleShader();
+            _overlay.Material = MapViewport.AdditiveBlendMaterial();
             _overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
             _overlay.MouseFilter = MouseFilterEnum.Ignore;
             AddChild(_overlay);

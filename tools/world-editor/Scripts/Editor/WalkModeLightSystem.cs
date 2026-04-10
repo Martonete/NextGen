@@ -30,7 +30,7 @@ public class WalkModeLightSystem
         _mapHeight = map.Height;
         _tileColors = new Color[_mapWidth + 1, _mapHeight + 1];
 
-        // Build per-tile ambient from zone data
+        // Step 1: Per-tile ambient — direct from zone or map default (no interpolation)
         float[,] ambR = new float[_mapWidth + 1, _mapHeight + 1];
         float[,] ambG = new float[_mapWidth + 1, _mapHeight + 1];
         float[,] ambB = new float[_mapWidth + 1, _mapHeight + 1];
@@ -45,32 +45,30 @@ public class WalkModeLightSystem
                     if (zone != null && (zone.AmbientR > 0 || zone.AmbientG > 0 || zone.AmbientB > 0))
                     { r = zone.AmbientR; g = zone.AmbientG; b = zone.AmbientB; }
                 }
-                // Normalize to 0-1 range
                 ambR[x, y] = r / 255f; ambG[x, y] = g / 255f; ambB[x, y] = b / 255f;
+                // Initialize tile color to its own ambient (no corner shift)
+                _tileColors[x, y] = new Color(ambR[x, y], ambG[x, y], ambB[x, y]);
             }
 
-        // Corner grid: corner (cx,cy) = NW corner of tile (cx,cy).
-        // Each corner is shared by up to 4 tiles. We average the ambient
-        // of those tiles so zone boundaries are centered (no 1-tile offset)
-        // and edges get a natural 1-tile gradient.
+        // Step 2: Light sources — use corner grid for smooth radial gradients
+        // Only tiles near lights get their color modified via 4-corner averaging.
+        bool hasLights = false;
+        for (int y = 1; y <= _mapHeight && !hasLights; y++)
+            for (int x = 1; x <= _mapWidth && !hasLights; x++)
+                hasLights = map.Tiles[x, y].HasLight;
+
+        if (!hasLights) return; // No lights → ambient-only, already set
+
         float[,] cR = new float[_mapWidth + 2, _mapHeight + 2];
         float[,] cG = new float[_mapWidth + 2, _mapHeight + 2];
         float[,] cB = new float[_mapWidth + 2, _mapHeight + 2];
 
+        // Initialize corners from per-tile ambient
         for (int cy = 1; cy <= _mapHeight + 1; cy++)
             for (int cx = 1; cx <= _mapWidth + 1; cx++)
             {
-                // Corner (cx,cy) touches tiles (cx-1,cy-1), (cx,cy-1), (cx-1,cy), (cx,cy)
-                float sr = 0, sg = 0, sb = 0;
-                int n = 0;
-                for (int dy = -1; dy <= 0; dy++)
-                    for (int dx = -1; dx <= 0; dx++)
-                    {
-                        int tx = cx + dx, ty = cy + dy;
-                        if (tx >= 1 && tx <= _mapWidth && ty >= 1 && ty <= _mapHeight)
-                        { sr += ambR[tx, ty]; sg += ambG[tx, ty]; sb += ambB[tx, ty]; n++; }
-                    }
-                if (n > 0) { cR[cx, cy] = sr / n; cG[cx, cy] = sg / n; cB[cx, cy] = sb / n; }
+                int tx = Math.Min(cx, _mapWidth), ty = Math.Min(cy, _mapHeight);
+                cR[cx, cy] = ambR[tx, ty]; cG[cx, cy] = ambG[tx, ty]; cB[cx, cy] = ambB[tx, ty];
             }
 
         // Apply lights (exact CalcCorner from client LightSystem)
@@ -107,14 +105,19 @@ public class WalkModeLightSystem
                     }
             }
 
-        // Average 4 corners per tile
+        // Average 4 corners, then MAX with tile's own ambient.
+        // This ensures zone ambient is never shifted by corner averaging,
+        // while lights still create smooth radial gradients.
         for (int y = 1; y <= _mapHeight; y++)
             for (int x = 1; x <= _mapWidth; x++)
             {
-                float r = (cR[x, y] + cR[x + 1, y] + cR[x, y + 1] + cR[x + 1, y + 1]) * 0.25f;
-                float g = (cG[x, y] + cG[x + 1, y] + cG[x, y + 1] + cG[x + 1, y + 1]) * 0.25f;
-                float b = (cB[x, y] + cB[x + 1, y] + cB[x, y + 1] + cB[x + 1, y + 1]) * 0.25f;
-                _tileColors[x, y] = new Color(r, g, b);
+                float lr = (cR[x, y] + cR[x + 1, y] + cR[x, y + 1] + cR[x + 1, y + 1]) * 0.25f;
+                float lg = (cG[x, y] + cG[x + 1, y] + cG[x, y + 1] + cG[x + 1, y + 1]) * 0.25f;
+                float lb = (cB[x, y] + cB[x + 1, y] + cB[x, y + 1] + cB[x + 1, y + 1]) * 0.25f;
+                _tileColors[x, y] = new Color(
+                    MathF.Max(ambR[x, y], lr),
+                    MathF.Max(ambG[x, y], lg),
+                    MathF.Max(ambB[x, y], lb));
             }
     }
 

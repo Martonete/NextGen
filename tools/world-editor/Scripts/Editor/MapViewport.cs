@@ -93,7 +93,7 @@ public partial class MapViewport : Control
     public override void _Ready()
     {
         _particleOverlay = new ParticleOverlay { Viewport = this };
-        _particleOverlay.Material = LoadParticleShader();
+        _particleOverlay.Material = AdditiveBlendMaterial();
         _particleOverlay.ZIndex = 1;
         _particleOverlay.SetAnchorsPreset(LayoutPreset.FullRect);
         AddChild(_particleOverlay);
@@ -106,15 +106,9 @@ public partial class MapViewport : Control
         _cpuLightsDirty = true;
     }
 
-    /// <summary>Load the particle additive glow shader (brightness → alpha).</summary>
-    internal static ShaderMaterial LoadParticleShader()
-    {
-        var shader = GD.Load<Shader>("res://Shaders/particle_additive.gdshader");
-        if (shader != null)
-            return new ShaderMaterial { Shader = shader };
-        // Fallback if shader not found
-        return new ShaderMaterial();
-    }
+    /// <summary>Additive blend material for particle overlays — matches game client exactly.</summary>
+    internal static CanvasItemMaterial AdditiveBlendMaterial() =>
+        new() { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
 
     private static bool HasAnyLight(MapData map)
     {

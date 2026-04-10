@@ -121,7 +121,7 @@ public partial class WalkModePanel : Control
 
         // Additive particle layer — separate CanvasItem so particles glow correctly
         var particleOverlay = new WalkParticleOverlay { Owner = this, Name = "ParticleOverlay" };
-        particleOverlay.Material = MapViewport.LoadParticleShader();
+        particleOverlay.Material = MapViewport.AdditiveBlendMaterial();
         particleOverlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
         particleOverlay.MouseFilter = MouseFilterEnum.Ignore;
         AddChild(particleOverlay);
