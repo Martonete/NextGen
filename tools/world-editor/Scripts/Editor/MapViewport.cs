@@ -963,7 +963,7 @@ public partial class MapViewport : Control
                     if (Map.Tiles[x, y].HasLight)
                     {
                         ref var tile = ref Map.Tiles[x, y];
-                        var center = new Vector2((x - 0.5f) * TileSize, (y - 0.5f) * TileSize);
+                        var center = new Vector2((x + 0.5f) * TileSize, (y + 0.5f) * TileSize);
                         var lightCol = new Color(tile.LightR / 255f, tile.LightG / 255f, tile.LightB / 255f);
                         // Tiny bright dot at the light source (helps you locate it)
                         DrawCircle(center, 4f, new Color(lightCol.R, lightCol.G, lightCol.B, 0.9f));

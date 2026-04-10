@@ -47,7 +47,7 @@ public class EditorState
     public bool ShowNpcs = true;
     public bool ShowObjects = true;
     public bool ShowParticles = true;
-    public bool ShowLights = true;
+    public bool ShowLights = false; // OFF by default — CanvasModulate darkens the entire editor viewport when ON
 
     // Tile property editing
     public bool ShowTileProperties;
