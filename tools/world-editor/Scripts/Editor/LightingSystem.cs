@@ -82,10 +82,14 @@ public class LightingSystem
     /// <summary>Toggle the entire lighting system on or off.</summary>
     public void SetEnabled(bool enabled)
     {
+        if (_enabled == enabled) return;
         _enabled = enabled;
         if (_modulate != null) _modulate.Visible = enabled;
-        foreach (var light in _pool) light.Visible = false;
-        _activeCount = 0;
+        if (!enabled)
+        {
+            foreach (var light in _pool) light.Visible = false;
+            _activeCount = 0;
+        }
     }
 
     private void EnsureModulate()

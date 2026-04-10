@@ -99,6 +99,7 @@ public partial class WalkModePanel : Control
     // ── Native 2D lighting (CanvasModulate + PointLight2D) ──
     private LightingSystem? _lighting;
     private bool _lightingDirty = true;
+    private int _lastMapNumber = -1;
 
     // ── Weather FX ──
     private readonly WeatherFx _weather = new();
@@ -347,6 +348,14 @@ public partial class WalkModePanel : Control
 
         _diagPrinted = false; // print diagnostics for new map
 
+        // Reload zone data for new map
+        if (MapDir.Length > 0)
+            Zones = MapZoneData.Load(MapDir, destMap);
+
+        // Rebuild particles and lights for new map
+        Particles?.BuildStreamsFromMap(newMap);
+        _lightingDirty = true;
+
         // Update window title
         var parentWindow = GetParent<Window>();
         if (parentWindow != null)
@@ -466,6 +475,13 @@ public partial class WalkModePanel : Control
         }
 
         DrawRect(new Rect2(Vector2.Zero, Size), Colors.Black);
+
+        // Detect map change → rebuild lights
+        if (Map.MapNumber != _lastMapNumber)
+        {
+            _lastMapNumber = Map.MapNumber;
+            _lightingDirty = true;
+        }
 
         float ofsX = (float)Math.Round(_moveOffsetX);
         float ofsY = (float)Math.Round(_moveOffsetY);
