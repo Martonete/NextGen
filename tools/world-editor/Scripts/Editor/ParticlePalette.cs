@@ -241,22 +241,29 @@ public partial class ParticlePalette : VBoxContainer
     /// A fixed-size Control that simulates and renders a single particle stream
     /// for live preview of the selected particle definition.
     /// </summary>
+    /// <summary>
+    /// Preview panel with dark background + additive particle overlay child.
+    /// The dark bg renders normally; the overlay draws particles additively on top.
+    /// Same pattern as MapViewport.ParticleOverlay and WalkModePanel.WalkParticleOverlay.
+    /// </summary>
     private sealed partial class ParticlePreview : Control
     {
         private const int PreviewWidth  = 160;
         private const int PreviewHeight = 120;
-        private const float CenterX = PreviewWidth  / 2f;
-        private const float CenterY = PreviewHeight / 2f;
+        internal const float CenterX = PreviewWidth  / 2f;
+        internal const float CenterY = PreviewHeight / 2f;
 
         public GrhData[]?      Grhs;
         public TextureManager? Textures;
         public ParticleEngine? Engine;
 
-        private EditorParticleStream? _stream;
-        private int _defIndex;
-        private bool _hasDefinition;
+        internal EditorParticleStream? _stream;
+        internal int _defIndex;
+        internal bool _hasDefinition;
         private Label? _placeholder;
-        private double _animTime; // ms, for GRH frame animation
+        internal double _animTime; // ms, for GRH frame animation
+
+        private PreviewOverlay? _overlay;
 
         public override void _Ready()
         {
@@ -264,7 +271,7 @@ public partial class ParticlePalette : VBoxContainer
             Size              = new Vector2(PreviewWidth, PreviewHeight);
             ClipContents      = true;
 
-            // Dark background panel
+            // Dark background — normal blend (NOT additive)
             var bg = new Panel();
             bg.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
             bg.AddThemeStyleboxOverride("panel",
@@ -284,11 +291,12 @@ public partial class ParticlePalette : VBoxContainer
             _placeholder.MouseFilter         = MouseFilterEnum.Ignore;
             AddChild(_placeholder);
 
-            // Additive-blend material, same as ParticleOverlay in MapViewport
-            Material = new CanvasItemMaterial
-            {
-                BlendMode = CanvasItemMaterial.BlendModeEnum.Add
-            };
+            // Additive overlay draws particles ON TOP of the dark bg
+            _overlay = new PreviewOverlay { Owner = this };
+            _overlay.Material = new CanvasItemMaterial { BlendMode = CanvasItemMaterial.BlendModeEnum.Add };
+            _overlay.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+            _overlay.MouseFilter = MouseFilterEnum.Ignore;
+            AddChild(_overlay);
         }
 
         /// <summary>Switch to previewing a new particle definition.</summary>
@@ -327,10 +335,11 @@ public partial class ParticlePalette : VBoxContainer
             if (def == null) return;
 
             ParticleEngine.UpdateSingleStream(_stream, def, (float)(delta * 1000.0));
-            QueueRedraw();
+            _overlay?.QueueRedraw();
         }
 
-        public override void _Draw()
+        /// <summary>Draw particles on the given canvas item (called from overlay).</summary>
+        internal void DrawParticlesOn(CanvasItem canvas)
         {
             if (!_hasDefinition || _stream == null || Grhs == null || Textures == null) return;
 
@@ -356,8 +365,15 @@ public partial class ParticlePalette : VBoxContainer
                 float drawY = CenterY + p.Y - grh.PixelHeight / 2f;
                 var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
                 var color    = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                DrawTextureRectRegion(texture, destRect, srcRect, color);
+                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
             }
+        }
+
+        /// <summary>Additive-blend child that draws particles on top of the dark bg.</summary>
+        private sealed partial class PreviewOverlay : Control
+        {
+            public ParticlePreview? Owner;
+            public override void _Draw() => Owner?.DrawParticlesOn(this);
         }
     }
 }

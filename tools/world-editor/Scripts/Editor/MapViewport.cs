@@ -823,37 +823,12 @@ public partial class MapViewport : Control
         }
         else if (State.ActiveTool == EditorTool.Particle && State.SelectedParticleGroup > 0)
         {
-            // Live particle preview at cursor + label
-            var tileCenter = new Vector2((hx + 0.5f) * TileSize, (hy + 0.5f) * TileSize);
-            if (_particlePreviewStream != null && Grhs != null && Textures != null)
-            {
-                foreach (var p in _particlePreviewStream.Particles)
-                {
-                    if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
-                    var grh = Grhs[p.GrhIndex];
-                    if (grh.NumFrames > 1 && grh.Frames is { Length: > 0 })
-                    {
-                        int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
-                        int fi = grh.Frames[frame];
-                        if (fi > 0 && fi < Grhs.Length) grh = Grhs[fi];
-                    }
-                    if (grh.FileNum <= 0 || grh.PixelWidth <= 0) continue;
-                    var tex = Textures.GetTexture(grh.FileNum);
-                    if (tex == null) continue;
-                    var src = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-                    float px = tileCenter.X + p.X - grh.PixelWidth / 2f;
-                    float py = tileCenter.Y + p.Y - grh.PixelHeight / 2f;
-                    var dst = new Rect2(px, py, grh.PixelWidth, grh.PixelHeight);
-                    var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * 0.7f);
-                    DrawTextureRectRegion(tex, dst, src, color);
-                }
-            }
-            // Label
+            // Particles now drawn on the additive ParticleOverlay (DrawParticlesOn).
+            // Only the label + tile outline are drawn here in _Draw.
             var font = ThemeDB.Singleton.FallbackFont;
             DrawString(font, new Vector2(hx * TileSize + 2, hy * TileSize + TileSize - 3),
                 $"P{State.SelectedParticleGroup}", HorizontalAlignment.Left, -1, 9,
                 new Color(0.3f, 1f, 0.9f, 0.9f));
-            // Tile outline
             DrawRect(new Rect2(hx * TileSize, hy * TileSize, TileSize, TileSize),
                 new Color(0.3f, 1f, 0.9f, 0.3f), false, 1f);
         }
@@ -1326,39 +1301,56 @@ public partial class MapViewport : Control
 
     public void DrawParticlesOn(CanvasItem canvas)
     {
-        if (Particles == null || Grhs == null || Textures == null || State == null) return;
+        if (Grhs == null || Textures == null || State == null) return;
         canvas.DrawSetTransform(State.CameraOffset, 0f, new Vector2(State.Zoom, State.Zoom));
 
-        foreach (var stream in Particles.Streams)
-        {
-            if (!stream.Active) continue;
-            float streamX = stream.MapX * TileSize + TileSize / 2f;
-            float streamY = stream.MapY * TileSize + TileSize / 2f;
-
-            foreach (var p in stream.Particles)
+        // Map particles (already placed on tiles)
+        if (Particles != null)
+            foreach (var stream in Particles.Streams)
             {
-                if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
-                var grh = Grhs[p.GrhIndex];
-                if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
-                {
-                    int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
-                    int frameIdx = grh.Frames[frame];
-                    if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
-                    grh = Grhs[frameIdx];
-                }
-                if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
-                var texture = Textures.GetTexture(grh.FileNum);
-                if (texture == null) continue;
-
-                var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
-                float drawX = streamX + p.X - grh.PixelWidth / 2f;
-                float drawY = streamY + p.Y - grh.PixelHeight / 2f;
-                var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
-                var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha);
-                canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+                if (!stream.Active) continue;
+                float streamX = stream.MapX * TileSize + TileSize / 2f;
+                float streamY = stream.MapY * TileSize + TileSize / 2f;
+                DrawParticleStream(canvas, stream, streamX, streamY);
             }
+
+        // Cursor preview particles (live-simulated at hovered tile)
+        if (_particlePreviewStream != null && State.HoverX > 0 && State.HoverY > 0)
+        {
+            float previewX = (State.HoverX + 0.5f) * TileSize;
+            float previewY = (State.HoverY + 0.5f) * TileSize;
+            DrawParticleStream(canvas, _particlePreviewStream, previewX, previewY, alphaScale: 0.7f);
         }
+
         canvas.DrawSetTransform(Vector2.Zero, 0f, Vector2.One);
+    }
+
+    private void DrawParticleStream(CanvasItem canvas, EditorParticleStream stream,
+        float centerX, float centerY, float alphaScale = 1f)
+    {
+        if (Grhs == null || Textures == null) return;
+        foreach (var p in stream.Particles)
+        {
+            if (!p.Alive || p.GrhIndex <= 0 || p.GrhIndex >= Grhs.Length) continue;
+            var grh = Grhs[p.GrhIndex];
+            if (grh.NumFrames > 1 && grh.Frames != null && grh.Frames.Length > 0)
+            {
+                int frame = grh.Speed > 0 ? (int)(_animTime * grh.NumFrames / grh.Speed) % grh.NumFrames : 0;
+                int frameIdx = grh.Frames[frame];
+                if (frameIdx <= 0 || frameIdx >= Grhs.Length) continue;
+                grh = Grhs[frameIdx];
+            }
+            if (grh.FileNum <= 0 || grh.PixelWidth <= 0 || grh.PixelHeight <= 0) continue;
+            var texture = Textures.GetTexture(grh.FileNum);
+            if (texture == null) continue;
+
+            var srcRect = new Rect2(grh.SX, grh.SY, grh.PixelWidth, grh.PixelHeight);
+            float drawX = centerX + p.X - grh.PixelWidth / 2f;
+            float drawY = centerY + p.Y - grh.PixelHeight / 2f;
+            var destRect = new Rect2(drawX, drawY, grh.PixelWidth, grh.PixelHeight);
+            var color = new Color(p.ColR / 255f, p.ColG / 255f, p.ColB / 255f, p.Alpha * alphaScale);
+            canvas.DrawTextureRectRegion(texture, destRect, srcRect, color);
+        }
     }
 
     #endregion
